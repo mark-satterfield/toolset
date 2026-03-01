@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "mark-satterfield",
+  "description": "Personal Claude Code plugins",
+  "owner": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "plugins": [
+    {
+      "name": "prompt",
+      "description": "Full-featured prompt management — create, search, run, compose, and orchestrate prompt templates with variable substitution.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/prompt-library"
+    }
+  ]
+}
