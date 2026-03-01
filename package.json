@@ -1,0 +1,21 @@
+{
+  "name": "@mark-satterfield/toolset",
+  "version": "0.1.0",
+  "description": "A curated collection of Claude Code plugins and skills, organized by capability.",
+  "private": false,
+  "workspaces": [
+    "plugins/*",
+    "skills/**/*"
+  ],
+  "scripts": {
+    "install:plugin": "node scripts/install-plugin.js",
+    "install:skill": "node scripts/install-skill.js",
+    "list": "node scripts/list.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "author": "mark-satterfield",
+  "license": "MIT"
+}

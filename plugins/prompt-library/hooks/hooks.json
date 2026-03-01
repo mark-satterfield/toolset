@@ -1,0 +1,14 @@
+{
+  "UserPromptSubmit": [
+    {
+      "matcher": ".*",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "Check whether the user's message could be addressed by a stored prompt in their library.\n\nSteps:\n1. Read ~/.claude/prompts/ and .claude/prompts/ (if they exist). If neither exists, do nothing.\n2. Scan prompt names and descriptions for semantic relevance to the user's message.\n3. If you find a stored prompt that is a strong match (>70% confidence), suggest it ONCE before responding:\n   'I have a stored prompt that might fit this: [name] — [description]. Run it with `/prompt:run [name]`, or I\\'ll proceed with your message as-is.'\n4. If no strong match exists, do nothing. Do not mention the prompt library.\n\nThis suggestion is opt-in — only surface it when confidence is high. Never block the user's message.",
+          "async": false
+        }
+      ]
+    }
+  ]
+}

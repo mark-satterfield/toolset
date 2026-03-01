@@ -1,0 +1,12 @@
+{
+  "name": "@mark-satterfield/plugin-prompt-library",
+  "version": "0.1.0",
+  "description": "A sophisticated Claude Code plugin for managing a prompt library with full CRUD, search, execution, composition, and orchestration commands.",
+  "keywords": ["claude-code", "plugin", "prompts", "prompt-library", "prompt-management"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mark-satterfield/toolset",
+    "directory": "plugins/prompt-library"
+  }
+}
