@@ -15,6 +15,15 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/prompt-library"
+    },
+    {
+      "name": "qa",
+      "description": "Validates plugins, skills, and slash commands for structural correctness and content quality",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/qa"
     }
   ]
 }
