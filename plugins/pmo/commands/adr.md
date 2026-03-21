@@ -105,9 +105,9 @@ Chosen option: "{option}", because {justification}.
 
 ## Architecture Diagram
 
-```mermaid
-{Mermaid diagram illustrating the architecture, decision flow, or component relationships.
-Use flowchart, sequence, or C4 diagrams as appropriate.}
+```d2
+# {D2 diagram illustrating the architecture, decision flow, or component relationships.
+# Use directed graphs, sequence diagrams, or container groupings as appropriate.}
 ```
 
 ## More Information

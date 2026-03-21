@@ -16,7 +16,7 @@ VALID_TOOLS = {
     "TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskStop", "TaskOutput",
     "SendMessage", "TeamCreate", "TeamDelete",
     "EnterPlanMode", "ExitPlanMode", "EnterWorktree", "ExitWorktree",
-    "LSP", "CronCreate", "CronDelete", "CronList", "Skill",
+    "LSP", "CronCreate", "CronDelete", "CronList", "Skill", "ToolSearch",
 }
 
 
@@ -79,11 +79,16 @@ def parse_frontmatter(content: str) -> tuple[dict[str, str], str]:
 
 
 def parse_tools_list(value: str) -> list[str]:
-    """Parse a YAML inline list like '[Read, Write, Bash]'."""
+    """Parse a YAML tools list in bracketed or bare comma-separated format.
+
+    Handles both '[Read, Write, Bash]' and 'Read, Write, Bash'.
+    """
     value = value.strip()
+    if not value:
+        return []
     if value.startswith("[") and value.endswith("]"):
-        return [t.strip() for t in value[1:-1].split(",") if t.strip()]
-    return [value] if value else []
+        value = value[1:-1]
+    return [t.strip() for t in value.split(",") if t.strip()]
 
 
 def is_valid_tool(tool: str) -> bool:

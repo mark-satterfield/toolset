@@ -66,13 +66,15 @@ def run_validator(
 
 
 def discover_plugins(repo_root: Path) -> list[Path]:
-    """Return all plugin directories under <repo_root>/plugins/."""
+    """Return plugin directories that have a .claude-plugin/plugin.json manifest."""
     plugins_dir = repo_root / "plugins"
     if not plugins_dir.exists():
         return []
     return sorted(
         p for p in plugins_dir.iterdir()
-        if p.is_dir() and not p.name.startswith(".")
+        if p.is_dir()
+        and not p.name.startswith(".")
+        and (p / ".claude-plugin" / "plugin.json").exists()
     )
 
 

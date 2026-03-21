@@ -125,10 +125,10 @@ Follow the standard team handoff protocol from the plugin's `references/shared-p
 
 ## Architecture
 
-{High-level architecture description. MUST include at least one Mermaid diagram.}
+{High-level architecture description. MUST include at least one D2 diagram.}
 
-```mermaid
-{Mermaid diagram: C4 context/container for system-level, sequence for flows, ERD for data models.}
+```d2
+# {D2 diagram: C4 context/container for system-level, sequence for flows, ERD for data models.}
 ```
 
 ## Risks / Trade-offs

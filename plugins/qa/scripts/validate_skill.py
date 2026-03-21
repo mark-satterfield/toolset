@@ -221,26 +221,24 @@ def validate_skill(skill_dir: Path) -> dict[str, Any]:
                 f"scripts/ directory exists but script_tester.py not found at {script_tester}")
         else:
             py_files = list(scripts_dir.glob("*.py"))
-            script_failures = 0
-            for py_file in py_files:
-                try:
-                    proc = subprocess.run(
-                        [sys.executable, str(script_tester), str(py_file)],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                        encoding="utf-8",
-                    )
-                    if proc.returncode != 0:
-                        script_failures += 1
-                except (subprocess.TimeoutExpired, OSError):
-                    script_failures += 1
-            if script_failures > 0:
+            try:
+                # script_tester.py expects the skill directory (not individual files)
+                proc = subprocess.run(
+                    [sys.executable, str(script_tester), str(skill_dir)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    encoding="utf-8",
+                )
+                if proc.returncode != 0:
+                    add("script_tester", "BEST_PRACTICE", "FAIL",
+                        f"script_tester reported failures for {len(py_files)} script(s)")
+                else:
+                    add("script_tester", "BEST_PRACTICE", "PASS",
+                        f"All {len(py_files)} script(s) passed script_tester checks")
+            except (subprocess.TimeoutExpired, OSError) as exc:
                 add("script_tester", "BEST_PRACTICE", "FAIL",
-                    f"script_tester reported failures for {script_failures} script(s)")
-            else:
-                add("script_tester", "BEST_PRACTICE", "PASS",
-                    f"All {len(py_files)} script(s) passed script_tester checks")
+                    f"script_tester failed to run: {exc}")
 
     result = "FAIL" if failures > 0 else ("WARN" if warnings > 0 else "PASS")
     return {
