@@ -1,0 +1,13 @@
+{
+  "name": "research-summarizer",
+  "version": "2.1.2",
+  "description": "Structured research summarization agent skill and plugin for Claude Code, Codex, and Gemini CLI. Summarize academic papers, compare web articles, extract citations, and produce actionable research briefs.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/product-team/research-summarizer",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./"
+}

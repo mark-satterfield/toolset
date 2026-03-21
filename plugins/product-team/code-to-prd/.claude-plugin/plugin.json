@@ -1,0 +1,13 @@
+{
+  "name": "code-to-prd",
+  "version": "2.1.2",
+  "description": "Reverse-engineer any codebase into a complete Product Requirements Document (PRD). Analyzes routes, components, models, APIs, and interactions for frontend (React, Vue, Angular, Next.js), backend (NestJS, Django, Express, FastAPI), and fullstack applications.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/product-team/code-to-prd",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./"
+}
