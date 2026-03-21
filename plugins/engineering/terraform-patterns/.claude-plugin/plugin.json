@@ -1,0 +1,13 @@
+{
+  "name": "terraform-patterns",
+  "version": "2.1.2",
+  "description": "Terraform infrastructure-as-code agent skill and plugin for module design patterns, state management strategies, provider configuration, security hardening, and CI/CD plan/apply workflows. Covers mono-repo vs multi-repo, workspaces, policy-as-code, and drift detection.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/engineering/terraform-patterns",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./"
+}

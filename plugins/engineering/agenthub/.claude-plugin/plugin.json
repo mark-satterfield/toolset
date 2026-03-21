@@ -1,0 +1,13 @@
+{
+  "name": "agenthub",
+  "version": "2.1.2",
+  "description": "Multi-agent collaboration plugin for Claude Code. Spawn N parallel subagents that compete on code optimization, content drafts, research approaches, or any problem that benefits from diverse solutions. Evaluate by metric or LLM judge, merge the winner. 7 slash commands, agent templates, git DAG orchestration, message board coordination.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/engineering/agenthub",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./"
+}
