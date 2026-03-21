@@ -1,5 +1,6 @@
 {
-  "UserPromptSubmit": [
+  "hooks": {
+    "UserPromptSubmit": [
     {
       "matcher": ".*",
       "hooks": [
@@ -10,5 +11,6 @@
         }
       ]
     }
-  ]
+    ]
+  }
 }
