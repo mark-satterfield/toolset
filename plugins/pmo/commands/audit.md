@@ -16,7 +16,7 @@ You are performing a deep, comprehensive audit of design artifact alignment acro
    - If scope matches nothing, report: "No design artifacts or source files matched the scope \"{scope}\". Try a broader scope, or run `/pmo:audit` without a scope for a full project audit."
 
 2. **Locate design artifacts**:
-   - Scan `docs/adrs/` for ADR files. If the directory does not exist, report: "The docs/adrs/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
+   - Scan `docs/adrs/` for ADR files. If the directory does not exist, report: "The docs/adr/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
    - Scan `docs/openspec/specs/` for spec files. If the directory does not exist, report: "The docs/openspec/specs/ directory does not exist. Run `/pmo:spec [capability]` to create your first spec."
    - If neither ADRs nor specs exist, report: "No design artifacts found. Create an ADR with `/pmo:adr` or a spec with `/pmo:spec` first."
    - It is valid for only ADRs or only specs to exist -- proceed with whatever is available and note which categories cannot be checked.

@@ -1,7 +1,7 @@
 /**
  * Transform ADRs for Docusaurus (Integration Mode)
  *
- * Reads ADR files from the project's docs/adrs/ directory and writes them
+ * Reads ADR files from the project's docs/adr/ directory and writes them
  * to the integration output directory with Docusaurus frontmatter, RFC 2119
  * keyword highlighting, and cross-references.
  *

@@ -39,7 +39,7 @@ You are creating a new ADR using the MADR (Markdown Architectural Decision Recor
    - Check if a `CLAUDE.md` exists in the project root
    - If it exists, check if it already references `docs/adrs/`
    - If no reference exists, ask the user: "I can add an Architecture Context section to your CLAUDE.md so future sessions know about your decisions. Shall I?"
-   - If the user says yes, append an `## Architecture Context` section with `- Architecture Decision Records are in docs/adrs/`
+   - If the user says yes, append an `## Architecture Context` section with `- Architecture Decision Records are in docs/adr/`
    - If `CLAUDE.md` doesn't exist, suggest creating one
 
 ### Team Handoff Protocol (only for `--review` mode)

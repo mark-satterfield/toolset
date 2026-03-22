@@ -45,7 +45,7 @@ Load existing ADRs and specs into the session so Claude can give architecture-aw
      ```
 
 5. **Handle edge cases**:
-   - If `docs/adrs/` does not exist: "The docs/adrs/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
+   - If `docs/adrs/` does not exist: "The docs/adr/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
    - If `docs/openspec/specs/` does not exist: "The docs/openspec/specs/ directory does not exist. Run `/pmo:spec [capability]` to create your first spec."
    - If neither directory has any artifacts: "No design artifacts found. Create an ADR with `/pmo:adr` or a spec with `/pmo:spec` first."
    - If ADRs exist but no specs (or vice versa), present whichever exists and note the other is empty

@@ -88,7 +88,7 @@ CLAUDE.md updated with architecture context.
 
 CLAUDE.md already contains architecture context references. No changes made.
 
-- ADR path: docs/adrs/
+- ADR path: docs/adr/
 - Spec path: docs/openspec/specs/
 ```
 

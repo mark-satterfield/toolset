@@ -19,11 +19,11 @@ You are performing a fast, focused drift check on a specific target. This skill 
 
 2. **Validate the target exists**:
    - For file/directory targets: verify the path exists. If not, report: "Target not found: `{target}`. Provide a valid file path, directory, ADR reference (ADR-XXXX), or SPEC reference (SPEC-XXXX)."
-   - For ADR references: glob `docs/adrs/ADR-{number}-*.md`. If not found, report: "ADR-{XXXX} not found in docs/adrs/. Run `/pmo:list adr` to see available ADRs."
+   - For ADR references: glob `docs/adrs/ADR-{number}-*.md`. If not found, report: "ADR-{XXXX} not found in docs/adr/. Run `/pmo:list adr` to see available ADRs."
    - For SPEC references: glob `docs/openspec/specs/*/spec.md` and search for the matching SPEC number. If not found, report: "SPEC-{XXXX} not found in docs/openspec/specs/. Run `/pmo:list spec` to see available specs."
 
 3. **Locate design artifacts**:
-   - Scan `docs/adrs/` for ADR files. If the directory does not exist, report: "The docs/adrs/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
+   - Scan `docs/adrs/` for ADR files. If the directory does not exist, report: "The docs/adr/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
    - Scan `docs/openspec/specs/` for spec files. If the directory does not exist, report: "The docs/openspec/specs/ directory does not exist. Run `/pmo:spec [capability]` to create your first spec."
    - If neither ADRs nor specs exist, report: "No design artifacts found. Create an ADR with `/pmo:adr` or a spec with `/pmo:spec` first."
    - It is valid for only ADRs or only specs to exist -- proceed with whatever is available.

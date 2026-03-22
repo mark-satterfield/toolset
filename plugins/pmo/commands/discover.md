@@ -19,7 +19,7 @@ Explore an existing codebase to discover implicit architectural decisions and sp
    - For directory paths: verify the path exists. If not, report: "Scope not found: `{scope}`. Provide a valid directory path or omit the scope to analyze the entire project."
 
 3. **Load existing design artifacts**:
-   - Glob `docs/adrs/ADR-*.md` and read each file's title, context, and decision outcome
+   - Glob `docs/adr/ADR-*.md` and read each file's title, context, and decision outcome
    - Glob `docs/openspec/specs/*/spec.md` and read each file's title and overview
    - Build an exclusion list of already-documented decisions and subsystems
    - If neither directory exists, note that no existing artifacts were found (this is expected for first-time discovery)

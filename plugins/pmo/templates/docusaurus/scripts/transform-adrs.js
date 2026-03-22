@@ -2,7 +2,7 @@
 /**
  * Transform ADRs for Docusaurus
  *
- * Reads ADR files from docs/adrs/ and writes them to docs-generated/decisions/
+ * Reads ADR files from docs/adr/ and writes them to docs-generated/decisions/
  * with Docusaurus frontmatter, RFC 2119 keyword highlighting, and cross-references.
  */
 
