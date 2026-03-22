@@ -141,6 +141,168 @@ Quick reference for identifying routes, components, state, and APIs across front
 | Auth | `OAuth2PasswordBearer`, JWT middleware, `Depends(get_current_user)` |
 | Background | `BackgroundTasks`, Celery integration |
 
+## AWS CDK (Python + TypeScript)
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Stack definitions | Classes ending in `Stack` inheriting from `Stack` — `class FooStack(Stack)` (Python) or `class FooStack extends Stack` (TS) |
+| Construct definitions | Classes ending in `Construct` inheriting from `Construct` |
+| Lambda functions | `aws_lambda.Function(...)` / `lambda_.Function(...)` (Python), `new lambda.Function(...)` / `new NodejsFunction(...)` / `new PythonFunction(...)` (TS) |
+| DynamoDB tables | `aws_dynamodb.Table(...)` (Python), `new dynamodb.Table(...)` (TS) |
+| API Gateway | `aws_apigateway.RestApi(...)` / `LambdaRestApi(...)` (Python), `new RestApi(...)` / `new HttpApi(...)` (TS) |
+| SQS queues | `aws_sqs.Queue(...)` (Python), `new sqs.Queue(...)` (TS) |
+| EventBridge | `aws_events.EventBus(...)`, `aws_events.Rule(...)` |
+| Cognito | `aws_cognito.UserPool(...)` |
+| SSM cross-stack wiring | `ssm.StringParameter.fromStringParameterName(...)` (consume), `ssm.StringParameter(...)` (produce) |
+| CloudFront | `aws_cloudfront.Distribution(...)` + `aws_cloudfront_origins.S3Origin(...)` |
+| Stack props | `class FooStackProps(StackProps)` (Python), `interface FooStackProps extends StackProps` (TS) |
+| CDK app entry | `app.py` (Python), `bin/*.ts` (TypeScript) |
+
+**Key CDK patterns to document:**
+- Cross-stack SSM parameter paths (interface contract between stacks)
+- Lambda event sources: `lambda_.add_event_source(SqsEventSource(...))` or `add_event_source(new SqsEventSource(...))`
+- Lambda Powertools layer: ARN-pinned layer attachment
+- 4-wave deployment: infra → layers → services → frontends (ordering constraint)
+
+## AWS Lambda (Python 3.12)
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Handler function | `def handler(event, context)` in main file |
+| Powertools logger | `@logger.inject_lambda_context` decorator |
+| Powertools tracer | `@tracer.capture_lambda_handler` decorator |
+| Powertools metrics | `@metrics.log_metrics` decorator |
+| Event source type | `event` structure: API Gateway (`event["httpMethod"]`), SQS (`event["Records"]`), EventBridge (`event["detail"]`) |
+| Environment variables | `os.environ["PARAM_NAME"]` — often SSM params injected at deploy time |
+| DynamoDB access | `boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])` |
+| Response format | API Gateway expects `{"statusCode": 200, "body": json.dumps(...)}` |
+| Error handling | Try/except with structured log + re-raise vs returning error response |
+
+**Lambda Powertools V3 patterns:**
+```python
+from aws_lambda_powertools import Logger, Tracer, Metrics
+logger = Logger()
+tracer = Tracer()
+metrics = Metrics(namespace="SkillSpoke")
+
+@logger.inject_lambda_context
+@tracer.capture_lambda_handler
+@metrics.log_metrics
+def handler(event, context):
+    ...
+```
+
+## GitHub Actions
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Trigger events | `on:` block — `push`, `pull_request`, `workflow_dispatch`, `schedule` |
+| Job definitions | `jobs:` block — each named job with `runs-on`, `steps` |
+| Environment secrets | `${{ secrets.SECRET_NAME }}` |
+| Environment variables | `env:` block at workflow/job/step level |
+| Deployment environments | `environment:` field on jobs (dev/staging/prod) |
+| Step outputs | `id:` + `${{ steps.id.outputs.name }}` |
+| Conditional execution | `if: github.ref == 'refs/heads/main'` |
+| Matrix builds | `strategy.matrix` — multiple versions or environments in one workflow |
+| Artifact upload | `actions/upload-artifact@v4` |
+| CDK deploy step | `run: cdk deploy --all` or task runner invocation |
+
+## Taskfile (go-task)
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Task targets | Top-level keys under `tasks:` |
+| Task description | `desc:` field on each task |
+| Task dependencies | `deps:` array — tasks that must run first |
+| Commands | `cmds:` array of shell commands |
+| Environment variables | `env:` block at task level |
+| Dotenv loading | `dotenv:` field |
+| Directory context | `dir:` field (task runs in this directory) |
+| Silent mode | `silent: true` suppresses echo |
+| Default task | `default:` task alias |
+
+**4-wave deployment pattern:**
+```yaml
+tasks:
+  deploy:infra:
+    desc: Deploy base network, IAM, shared resources
+    cmds: [cdk deploy InfraStack]
+  deploy:layers:
+    desc: Deploy Lambda layers
+    deps: [deploy:infra]
+    cmds: [cdk deploy LayersStack]
+  deploy:services:
+    desc: Deploy backend Lambda stacks
+    deps: [deploy:layers]
+    cmds: [cdk deploy --all --exclusively services/*]
+  deploy:frontends:
+    desc: Deploy Next.js static export + CloudFront
+    deps: [deploy:services]
+    cmds: [cdk deploy FrontendStack]
+```
+
+## React Native + Expo (SDK 54+ / Expo Router 6)
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Screens | `app/` directory — Expo Router file-system routing (same as Next.js App Router) |
+| Layouts | `app/_layout.tsx` — root layout, `app/(tabs)/_layout.tsx` — tab layout |
+| Tab navigation | `app/(tabs)/` directory — each file = one tab |
+| Stack navigation | `expo-router` `<Stack>` component in `_layout.tsx` |
+| Styling | NativeWind — `className` props with Tailwind classes |
+| Native modules | `expo-*` packages (`expo-camera`, `expo-location`, etc.) |
+| State | Zustand, React Context, or TanStack Query for server state |
+| API calls | Same patterns as React: `fetch`, axios, TanStack Query |
+| Auth guards | `useRouter().replace('/login')` in `useEffect` or layout-level redirect |
+| Deep links | `app.json` `scheme:` field + Expo Router dynamic routes |
+| Notifications | `expo-notifications` |
+
+**Key Expo Router patterns:**
+```
+app/
+├── _layout.tsx          # Root layout (auth check, theme provider)
+├── (tabs)/
+│   ├── _layout.tsx      # Tab bar config
+│   ├── index.tsx        # Home tab
+│   └── profile.tsx      # Profile tab
+├── (auth)/
+│   ├── login.tsx        # Login screen
+│   └── register.tsx     # Register screen
+└── [id]/
+    └── detail.tsx       # Dynamic screen with `id` param
+```
+
+## MCP Servers (fastmcp / Python)
+
+| Aspect | Where to Look |
+|--------|--------------|
+| Server definition | `mcp = FastMCP("server-name")` or `server = Server("server-name")` |
+| Tool registration | `@mcp.tool()` decorator on async functions |
+| Tool input schema | Function parameters with type hints — auto-converted to JSON Schema |
+| Tool description | Docstring on the tool function |
+| Resources | `@mcp.resource("path://pattern")` decorator |
+| Prompts | `@mcp.prompt()` decorator |
+| Transport | `mcp.run(transport="stdio")` or `mcp.run(transport="sse")` |
+| Error handling | Raise `McpError` with `ErrorCode` for protocol-level errors |
+
+**fastmcp tool pattern:**
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+async def search_users(query: str, limit: int = 10) -> list[dict]:
+    """Search users by name or email. Returns list of user objects."""
+    ...
+```
+
+**What to document per MCP server:**
+- Each tool: name, description, input params (type, required, description), return shape
+- Transport type: stdio (embedded) vs SSE/HTTP (standalone service)
+- Auth mechanism (if any)
+- Which Claude agent/workflow uses this server
+
 ## Common Patterns Across Frameworks
 
 ### Mock Detection

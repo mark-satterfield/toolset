@@ -267,6 +267,229 @@ def generate_page_relationships(routes: List[Dict]) -> str:
     return "\n".join(lines)
 
 
+def generate_infra_stack_stub(stack: Dict, index: int, date: str) -> str:
+    """Generate a per-CDK-stack PRD stub."""
+    name = stack.get("name", f"Stack {index}")
+    source = stack.get("source", "unknown")
+    kind = stack.get("type", "stack")
+    return f"""# {name} ({kind.capitalize()})
+
+> **Type:** CDK {kind.capitalize()}
+> **Source:** `{source}`
+> **Generated:** {date}
+
+## Purpose
+<!-- TODO: What does this {kind} create and why does it exist? -->
+
+## AWS Resources Created
+<!-- TODO: List each construct: DynamoDB tables, Lambda functions, S3 buckets, API Gateway, SQS queues, etc. -->
+
+| Resource | Type | Key Config |
+|----------|------|-----------|
+| <!-- TODO --> | | |
+
+## Props / Configuration
+<!-- TODO: What inputs does this {kind} accept? What are the required vs optional props? -->
+
+## Cross-Stack Dependencies
+
+### SSM Parameters Consumed
+<!-- TODO: Which SSM paths does this {kind} read? Which stack produces them? -->
+
+### SSM Parameters Exported
+<!-- TODO: Which SSM paths does this {kind} write for downstream stacks? -->
+
+## Deployment Wave
+<!-- TODO: infra / layers / services / frontends -->
+
+## Deploy Command
+<!-- TODO: `task deploy-<name>` or `cdk deploy <StackName>` -->
+
+## Business Rules / Constraints
+<!-- TODO: Memory limits, timeout constraints, PITR requirements, billing mode decisions, etc. -->
+"""
+
+
+def generate_mobile_screen_stub(screen: Dict, index: int, date: str) -> str:
+    """Generate a per-screen mobile PRD stub."""
+    path = screen.get("path", "/")
+    name = route_to_page_name(path)
+    source = screen.get("source", "unknown")
+    return f"""# {name} (Mobile Screen)
+
+> **Route:** `{path}`
+> **Source:** `{source}`
+> **Generated:** {date}
+
+## Overview
+<!-- TODO: What does this screen show? Who uses it and when? -->
+
+## Layout
+<!-- TODO: Sections, tab bar presence, header config, scroll behavior -->
+
+## Fields / Elements
+
+| Element | Type | Behavior |
+|---------|------|----------|
+| <!-- TODO --> | | |
+
+## Interactions
+
+### Screen Load
+<!-- TODO: What data is fetched on mount? Loading state? -->
+
+### User Actions
+<!-- TODO: Buttons, gestures, navigation triggers -->
+
+## Navigation
+- **From:** <!-- TODO: Which screens navigate here? -->
+- **To:** <!-- TODO: Where can users go from here? -->
+- **Params received:** <!-- TODO: What params does this screen expect? -->
+
+## API Dependencies
+| API | Method | Path | Trigger |
+|-----|--------|------|---------|
+| <!-- TODO --> | | | |
+
+## Business Rules
+<!-- TODO -->
+"""
+
+
+def generate_mcp_stub(tool: Dict, index: int, date: str) -> str:
+    """Generate a per-MCP-tool PRD stub."""
+    name = tool.get("name", f"tool-{index}")
+    source = tool.get("source", "unknown")
+    return f"""# MCP Tool: {name}
+
+> **Source:** `{source}`
+> **Generated:** {date}
+
+## Purpose
+<!-- TODO: What does this tool do? What agent uses it? -->
+
+## Input Schema
+<!-- TODO: Parameters this tool accepts -->
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| <!-- TODO --> | | | |
+
+## Output
+<!-- TODO: What does this tool return? -->
+
+## Error Conditions
+<!-- TODO: What errors can this tool return and why? -->
+
+## Usage Context
+<!-- TODO: Which agent invokes this tool? Under what conditions? -->
+"""
+
+
+def generate_infrastructure_inventory(infra: Dict, date: str) -> str:
+    """Generate the infrastructure appendix."""
+    lines = [
+        "# Infrastructure Inventory",
+        "",
+        f"> Generated: {date}",
+        "",
+        "All AWS constructs and cross-stack wiring detected in the codebase.",
+        "",
+    ]
+
+    stacks = infra.get("cdk_stacks", [])
+    if stacks:
+        lines.append("## CDK Stacks and Constructs")
+        lines.append("")
+        lines.append("| Name | Type | Source |")
+        lines.append("|------|------|--------|")
+        for s in stacks:
+            src = s.get("source", "").split("/")[-1]
+            lines.append(f"| {s['name']} | {s.get('type', 'stack')} | `{src}` |")
+        lines.append("")
+
+    aws_services = infra.get("aws_services", {})
+    if aws_services:
+        lines.append("## AWS Services Used")
+        lines.append("")
+        for svc in sorted(aws_services.keys()):
+            lines.append(f"- **{svc}**")
+        lines.append("")
+
+    handlers = infra.get("lambda_handlers", [])
+    if handlers:
+        lines.append("## Lambda Handler Inventory")
+        lines.append("")
+        lines.append("| Handler File | Language |")
+        lines.append("|-------------|---------|")
+        for h in handlers:
+            src = h.get("source", "").split("/")[-1]
+            lines.append(f"| `{src}` | {h.get('language', '?')} |")
+        lines.append("")
+
+    ssm = infra.get("ssm_parameters", [])
+    if ssm:
+        lines.append("## SSM Cross-Stack Parameter Paths")
+        lines.append("")
+        lines.append("| Parameter Path | Source File |")
+        lines.append("|---------------|------------|")
+        for p in ssm:
+            src = p.get("source", "").split("/")[-1]
+            lines.append(f"| `{p['path']}` | `{src}` |")
+        lines.append("")
+
+    if not stacks and not aws_services and not handlers:
+        lines.append("*No CDK infrastructure detected. Manual review recommended.*")
+
+    return "\n".join(lines)
+
+
+def generate_cicd_inventory(cicd: Dict, date: str) -> str:
+    """Generate the CI/CD appendix."""
+    lines = [
+        "# CI/CD Inventory",
+        "",
+        f"> Generated: {date}",
+        "",
+        "All GitHub Actions workflows and Taskfile targets detected in the codebase.",
+        "",
+    ]
+
+    gha = cicd.get("github_actions", {})
+    workflows = gha.get("workflows", [])
+    if workflows:
+        lines.append("## GitHub Actions Workflows")
+        lines.append("")
+        for wf in workflows:
+            lines.append(f"### {wf['name']}")
+            lines.append(f"**File:** `{wf.get('file', '')}`")
+            if wf.get("triggers"):
+                lines.append(f"**Triggers:** {', '.join(wf['triggers'])}")
+            if wf.get("jobs"):
+                lines.append(f"**Jobs:** {', '.join(wf['jobs'])}")
+            if wf.get("secrets"):
+                lines.append(f"**Secrets required:** {', '.join(f'`{s}`' for s in wf['secrets'])}")
+            if wf.get("environments"):
+                lines.append(f"**Environments:** {', '.join(wf['environments'])}")
+            lines.append("")
+
+    taskfile = cicd.get("taskfile", {})
+    targets = taskfile.get("targets", [])
+    if targets:
+        lines.append("## Taskfile Targets")
+        lines.append("")
+        lines.append("| Target | Description |")
+        lines.append("|--------|-------------|")
+        for t in targets:
+            lines.append(f"| `{t['name']}` | {t.get('desc', '')} |")
+        lines.append("")
+
+    if not workflows and not targets:
+        lines.append("*No CI/CD configuration detected. Manual review recommended.*")
+
+    return "\n".join(lines)
+
+
 def scaffold(analysis: Dict[str, Any], output_dir: Path, project_name: Optional[str] = None):
     """Create the full PRD directory structure."""
     date = datetime.now().strftime("%Y-%m-%d")
@@ -275,8 +498,12 @@ def scaffold(analysis: Dict[str, Any], output_dir: Path, project_name: Optional[
     apis = analysis.get("apis", {}).get("endpoints", [])
     enums = analysis.get("enums", {}).get("definitions", [])
     summary = analysis.get("summary", {})
+    infra = analysis.get("infrastructure", {})
+    cicd = analysis.get("cicd", {})
+    mobile = analysis.get("mobile", {})
+    agentic = analysis.get("agentic", {})
 
-    # Create directories
+    # Create core directories
     pages_dir = output_dir / "pages"
     appendix_dir = output_dir / "appendix"
     pages_dir.mkdir(parents=True, exist_ok=True)
@@ -287,7 +514,7 @@ def scaffold(analysis: Dict[str, Any], output_dir: Path, project_name: Optional[
     (output_dir / "README.md").write_text(readme)
     print(f"  Created: README.md")
 
-    # Per-page stubs
+    # Per-page stubs (frontend)
     for i, route in enumerate(routes, 1):
         page_name = route_to_page_name(route.get("path", "/"))
         slug = slugify(page_name) or f"page-{i}"
@@ -296,7 +523,44 @@ def scaffold(analysis: Dict[str, Any], output_dir: Path, project_name: Optional[
         (pages_dir / filename).write_text(content)
         print(f"  Created: pages/{filename}")
 
-    # Appendix
+    # Infrastructure stubs (CDK stacks)
+    cdk_stacks = infra.get("cdk_stacks", [])
+    if cdk_stacks:
+        infra_dir = output_dir / "infrastructure"
+        infra_dir.mkdir(exist_ok=True)
+        for i, stack in enumerate(cdk_stacks, 1):
+            slug = slugify(stack.get("name", f"stack-{i}")) or f"stack-{i}"
+            filename = f"{i:02d}-{slug}.md"
+            content = generate_infra_stack_stub(stack, i, date)
+            (infra_dir / filename).write_text(content)
+            print(f"  Created: infrastructure/{filename}")
+
+    # Mobile screen stubs
+    mobile_screens = mobile.get("screens", [])
+    if mobile_screens:
+        mobile_dir = output_dir / "mobile"
+        mobile_dir.mkdir(exist_ok=True)
+        for i, screen in enumerate(mobile_screens, 1):
+            page_name = route_to_page_name(screen.get("path", "/"))
+            slug = slugify(page_name) or f"screen-{i}"
+            filename = f"{i:02d}-{slug}.md"
+            content = generate_mobile_screen_stub(screen, i, date)
+            (mobile_dir / filename).write_text(content)
+            print(f"  Created: mobile/{filename}")
+
+    # Agentic / MCP stubs
+    mcp_tools = agentic.get("mcp_tools", [])
+    if mcp_tools:
+        agentic_dir = output_dir / "agentic"
+        agentic_dir.mkdir(exist_ok=True)
+        for i, tool in enumerate(mcp_tools, 1):
+            slug = slugify(tool.get("name", f"tool-{i}")) or f"tool-{i}"
+            filename = f"{i:02d}-{slug}.md"
+            content = generate_mcp_stub(tool, i, date)
+            (agentic_dir / filename).write_text(content)
+            print(f"  Created: agentic/{filename}")
+
+    # Appendix — standard
     (appendix_dir / "enum-dictionary.md").write_text(generate_enum_dictionary(enums))
     print(f"  Created: appendix/enum-dictionary.md")
 
@@ -306,9 +570,31 @@ def scaffold(analysis: Dict[str, Any], output_dir: Path, project_name: Optional[
     (appendix_dir / "page-relationships.md").write_text(generate_page_relationships(routes))
     print(f"  Created: appendix/page-relationships.md")
 
-    print(f"\n✅ PRD scaffold complete: {output_dir}")
+    # Appendix — infrastructure (always generate if CDK detected)
+    if infra.get("detected") or cdk_stacks:
+        (appendix_dir / "infrastructure-inventory.md").write_text(
+            generate_infrastructure_inventory(infra, date)
+        )
+        print(f"  Created: appendix/infrastructure-inventory.md")
+
+    # Appendix — CI/CD (always generate if any CI/CD detected)
+    has_cicd = (cicd.get("github_actions", {}).get("detected") or
+                cicd.get("taskfile", {}).get("detected"))
+    if has_cicd:
+        (appendix_dir / "cicd-inventory.md").write_text(
+            generate_cicd_inventory(cicd, date)
+        )
+        print(f"  Created: appendix/cicd-inventory.md")
+
+    print(f"\nPRD scaffold complete: {output_dir}")
     print(f"   {len(routes)} page stubs, {len(apis)} API endpoints, {len(enums)} enums")
-    print(f"\n   Next: Review each page stub and fill in the TODO sections.")
+    if cdk_stacks:
+        print(f"   {len(cdk_stacks)} infrastructure stubs")
+    if mobile_screens:
+        print(f"   {len(mobile_screens)} mobile screen stubs")
+    if mcp_tools:
+        print(f"   {len(mcp_tools)} agentic/MCP stubs")
+    print(f"\n   Next: Review each stub and fill in the TODO sections.")
 
 
 def validate_analysis(analysis: Dict[str, Any]) -> List[str]:
@@ -366,7 +652,18 @@ def print_summary(output_dir: Path, analysis: Dict[str, Any]):
     print(f"  Enums:          {len(enums)}")
     if models:
         print(f"  Models:         {len(models)}")
-    print(f"\n  Next: Review each page stub and fill in the TODO sections.")
+    if summary.get("has_cdk"):
+        print(f"  CDK stacks:     {summary.get('cdk_stacks', 0)}")
+        print(f"  Lambda handlers:{summary.get('lambda_handlers', 0)}")
+    if summary.get("github_workflows"):
+        print(f"  GH workflows:   {summary['github_workflows']}")
+    if summary.get("taskfile_targets"):
+        print(f"  Taskfile tasks: {summary['taskfile_targets']}")
+    if summary.get("mobile_screens"):
+        print(f"  Mobile screens: {summary['mobile_screens']}")
+    if summary.get("mcp_tools"):
+        print(f"  MCP tools:      {summary['mcp_tools']}")
+    print(f"\n  Next: Review each stub and fill in the TODO sections.")
 
 
 def main():
@@ -414,16 +711,35 @@ def main():
 
     if args.dry_run:
         routes = analysis.get("routes", {}).get("pages", [])
+        infra = analysis.get("infrastructure", {})
+        cicd = analysis.get("cicd", {})
+        mobile = analysis.get("mobile", {})
+        agentic = analysis.get("agentic", {})
         print(f"Dry run — would create in {output_dir}/:\n")
         print(f"  {output_dir}/README.md")
         for i, route in enumerate(routes, 1):
-            name = route_to_page_name(route.get("path", "/"))
-            slug = slugify(name) or f"page-{i}"
+            page_name = route_to_page_name(route.get("path", "/"))
+            slug = slugify(page_name) or f"page-{i}"
             print(f"  {output_dir}/pages/{i:02d}-{slug}.md")
+        for i, stack in enumerate(infra.get("cdk_stacks", []), 1):
+            slug = slugify(stack.get("name", f"stack-{i}")) or f"stack-{i}"
+            print(f"  {output_dir}/infrastructure/{i:02d}-{slug}.md")
+        for i, screen in enumerate(mobile.get("screens", []), 1):
+            page_name = route_to_page_name(screen.get("path", "/"))
+            slug = slugify(page_name) or f"screen-{i}"
+            print(f"  {output_dir}/mobile/{i:02d}-{slug}.md")
+        for i, tool in enumerate(agentic.get("mcp_tools", []), 1):
+            slug = slugify(tool.get("name", f"tool-{i}")) or f"tool-{i}"
+            print(f"  {output_dir}/agentic/{i:02d}-{slug}.md")
         print(f"  {output_dir}/appendix/enum-dictionary.md")
         print(f"  {output_dir}/appendix/api-inventory.md")
         print(f"  {output_dir}/appendix/page-relationships.md")
-        print(f"\n  Total: {len(routes) + 4} files")
+        if infra.get("detected") or infra.get("cdk_stacks"):
+            print(f"  {output_dir}/appendix/infrastructure-inventory.md")
+        has_cicd = (cicd.get("github_actions", {}).get("detected") or
+                    cicd.get("taskfile", {}).get("detected"))
+        if has_cicd:
+            print(f"  {output_dir}/appendix/cicd-inventory.md")
         return
 
     print(f"Scaffolding PRD in {output_dir}/...\n")

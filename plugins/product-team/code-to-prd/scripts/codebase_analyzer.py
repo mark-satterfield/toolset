@@ -114,6 +114,71 @@ REAL_API_SIGNALS = [
     r"this\.http\.",
 ]
 
+# ── CDK / AWS infrastructure detection ──────────────────────────────────────
+CDK_DEP_SIGNALS = {"aws-cdk-lib", "constructs", "@aws-cdk/core", "aws-cdk", "@aws-cdk/aws-lambda"}
+
+CDK_STACK_PATTERNS = [
+    r"class\s+(\w+Stack)\s*\(\s*Stack\b",           # Python: class FooStack(Stack)
+    r"class\s+(\w+Stack)\s+extends\s+(?:cdk\.)?Stack\b",  # TS: class FooStack extends Stack
+]
+
+CDK_CONSTRUCT_PATTERNS = [
+    r"class\s+(\w+Construct)\s*\(\s*Construct\b",
+    r"class\s+(\w+Construct)\s+extends\s+Construct\b",
+]
+
+LAMBDA_HANDLER_PATTERNS = [
+    r"def\s+handler\s*\(\s*event\s*[\s,]",          # Python handler
+    r"export\s+(?:const\s+)?handler\s*[=:]",         # TS handler export
+    r"exports\.handler\s*=",                          # CommonJS handler
+]
+
+AWS_SERVICE_KEYWORDS = {
+    "DynamoDB":    ["aws_dynamodb", "dynamodb.Table", "dynamodb.CfnTable", "TableV2"],
+    "S3":          ["aws_s3", "s3.Bucket", "s3.CfnBucket"],
+    "Lambda":      ["aws_lambda", "lambda_.Function", "lambda.Function", "NodejsFunction", "PythonFunction"],
+    "APIGateway":  ["aws_apigateway", "RestApi", "HttpApi", "LambdaRestApi", "aws_apigatewayv2"],
+    "SQS":         ["aws_sqs", "sqs.Queue", "sqs.CfnQueue"],
+    "SNS":         ["aws_sns", "sns.Topic"],
+    "EventBridge": ["aws_events", "events.EventBus", "events.Rule"],
+    "Cognito":     ["aws_cognito", "cognito.UserPool"],
+    "CloudFront":  ["aws_cloudfront", "cloudfront.Distribution", "CloudFrontWebDistribution"],
+    "SSM":         ["aws_ssm", "ssm.StringParameter"],
+    "ElastiCache": ["aws_elasticache", "elasticache.CfnReplicationGroup"],
+}
+
+SSM_PARAM_PATTERNS = [
+    r"StringParameter\.(?:fromStringParameterName|valueForStringParameter)\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
+    r"StringParameter\s*\([^,]+,\s*['\"]([^'\"]+)['\"]",
+]
+
+# ── CI/CD detection ──────────────────────────────────────────────────────────
+TASKFILE_TARGET_PATTERN = re.compile(
+    r"^(\w[\w\-]+):\s*$",  # task name line in YAML (simplified)
+)
+
+# ── Mobile detection ─────────────────────────────────────────────────────────
+MOBILE_DEP_SIGNALS = {"react-native", "expo", "@expo/vector-icons", "expo-router"}
+
+EXPO_ROUTE_DIR_PATTERNS = ["app", "src/app"]  # Expo Router file-system routing
+
+# ── Agentic / MCP detection ──────────────────────────────────────────────────
+AGENTIC_DEP_SIGNALS = {"fastmcp", "anthropic", "@anthropic-ai/sdk", "agentic-flow",
+                        "langchain", "@langchain/core"}
+
+MCP_TOOL_PATTERNS = [
+    r"@mcp\.tool\(\)",                        # fastmcp Python decorator
+    r"server\.tool\s*\(",                     # MCP SDK tool registration
+    r"mcp\.tool\s*\(",
+]
+
+AGENT_PATTERNS = [
+    r"Anthropic\s*\(",                        # Anthropic SDK client instantiation
+    r"anthropic\.messages\.create",
+    r"client\.messages\.create",
+    r"agentic[_-]flow",
+]
+
 ROUTE_PATTERNS = [
     # React Router
     r'<Route\s+[^>]*path\s*=\s*["\']([^"\']+)["\']',
@@ -201,6 +266,45 @@ def detect_framework(project_root: Path) -> Dict[str, Any]:
                 except IOError:
                     pass
 
+    # Detect CDK from Node.js or Python deps
+    has_cdk = any(s in all_deps for s in CDK_DEP_SIGNALS)
+    if not has_cdk and (project_root / "cdk.json").exists():
+        has_cdk = True
+    if not has_cdk:
+        for req_file in ["requirements.txt", "pyproject.toml"]:
+            req_path = project_root / req_file
+            if req_path.exists():
+                try:
+                    content = req_path.read_text(errors="replace").lower()
+                    if "aws-cdk-lib" in content or "aws_cdk" in content:
+                        has_cdk = True
+                        break
+                except IOError:
+                    pass
+    if has_cdk and "cdk" not in detected:
+        detected.append("cdk")
+
+    # Detect mobile (React Native / Expo)
+    if any(s in all_deps for s in MOBILE_DEP_SIGNALS):
+        if "mobile" not in detected:
+            detected.append("mobile")
+
+    # Detect agentic / MCP layer
+    has_agentic = any(s in all_deps for s in AGENTIC_DEP_SIGNALS)
+    if not has_agentic:
+        for req_file in ["requirements.txt", "pyproject.toml"]:
+            req_path = project_root / req_file
+            if req_path.exists():
+                try:
+                    content = req_path.read_text(errors="replace").lower()
+                    if any(s in content for s in {"fastmcp", "anthropic", "agentic-flow", "langchain"}):
+                        has_agentic = True
+                        break
+                except IOError:
+                    pass
+    if has_agentic and "agentic" not in detected:
+        detected.append("agentic")
+
     # Prefer specific over generic
     priority = [
         "sveltekit", "next", "nuxt", "remix", "astro",  # fullstack JS
@@ -219,6 +323,9 @@ def detect_framework(project_root: Path) -> Dict[str, Any]:
         "name": pkg_name or project_root.name,
         "version": pkg_version,
         "detected_frameworks": detected,
+        "has_cdk": has_cdk,
+        "has_mobile": "mobile" in detected,
+        "has_agentic": "agentic" in detected,
         "dependency_count": len(all_deps),
         "key_deps": {k: v for k, v in all_deps.items()
                      if any(s in k for s in ["router", "redux", "vuex", "pinia", "zustand",
@@ -226,7 +333,9 @@ def detect_framework(project_root: Path) -> Dict[str, Any]:
                                               "axios", "tailwind", "material", "ant",
                                               "chakra", "shadcn", "i18n", "intl",
                                               "typeorm", "prisma", "sequelize", "mongoose",
-                                              "passport", "jwt", "class-validator"])},
+                                              "passport", "jwt", "class-validator",
+                                              "aws-cdk", "constructs", "react-native",
+                                              "expo", "fastmcp", "anthropic"])},
     }
 
 
@@ -449,6 +558,204 @@ def extract_models(filepath: Path, framework: str) -> List[Dict[str, Any]]:
     return models
 
 
+def detect_cdk_stacks(all_files: List[Path]) -> List[Dict[str, Any]]:
+    """Detect CDK Stack and Construct class definitions."""
+    stacks = []
+    seen: Set[str] = set()
+    for filepath in all_files:
+        if filepath.suffix not in {".py", ".ts"}:
+            continue
+        try:
+            content = filepath.read_text(errors="replace")
+        except IOError:
+            continue
+        for pattern in CDK_STACK_PATTERNS:
+            for match in re.finditer(pattern, content):
+                name = match.group(1)
+                if name not in seen:
+                    seen.add(name)
+                    stacks.append({
+                        "name": name,
+                        "type": "stack",
+                        "source": str(filepath),
+                        "line": content[:match.start()].count("\n") + 1,
+                    })
+        for pattern in CDK_CONSTRUCT_PATTERNS:
+            for match in re.finditer(pattern, content):
+                name = match.group(1)
+                if name not in seen:
+                    seen.add(name)
+                    stacks.append({
+                        "name": name,
+                        "type": "construct",
+                        "source": str(filepath),
+                        "line": content[:match.start()].count("\n") + 1,
+                    })
+    return sorted(stacks, key=lambda s: s["name"])
+
+
+def detect_lambda_handlers(all_files: List[Path]) -> List[Dict[str, Any]]:
+    """Find Lambda handler functions in Python and TypeScript files."""
+    handlers = []
+    for filepath in all_files:
+        if filepath.suffix not in {".py", ".ts", ".js"}:
+            continue
+        try:
+            content = filepath.read_text(errors="replace")
+        except IOError:
+            continue
+        for pattern in LAMBDA_HANDLER_PATTERNS:
+            if re.search(pattern, content):
+                handlers.append({
+                    "source": str(filepath),
+                    "language": "python" if filepath.suffix == ".py" else "typescript",
+                })
+                break  # one entry per file
+    return handlers
+
+
+def detect_aws_services(all_files: List[Path]) -> Dict[str, int]:
+    """Count AWS service usages across CDK and application files."""
+    counts: Dict[str, int] = {}
+    for filepath in all_files:
+        if filepath.suffix not in {".py", ".ts", ".js"}:
+            continue
+        try:
+            content = filepath.read_text(errors="replace")
+        except IOError:
+            continue
+        for service, keywords in AWS_SERVICE_KEYWORDS.items():
+            if any(kw in content for kw in keywords):
+                counts[service] = counts.get(service, 0) + 1
+    return counts
+
+
+def detect_ssm_parameters(all_files: List[Path]) -> List[Dict[str, str]]:
+    """Find SSM Parameter Store paths used for cross-stack wiring."""
+    params: List[Dict[str, str]] = []
+    seen: Set[str] = set()
+    for filepath in all_files:
+        if filepath.suffix not in {".py", ".ts"}:
+            continue
+        try:
+            content = filepath.read_text(errors="replace")
+        except IOError:
+            continue
+        for pattern in SSM_PARAM_PATTERNS:
+            for match in re.finditer(pattern, content):
+                path = match.group(1)
+                if path not in seen:
+                    seen.add(path)
+                    params.append({"path": path, "source": str(filepath)})
+    return sorted(params, key=lambda p: p["path"])
+
+
+def scan_github_actions(project_root: Path) -> List[Dict[str, Any]]:
+    """Scan .github/workflows/*.yml for CI/CD workflow definitions."""
+    workflows = []
+    workflows_dir = project_root / ".github" / "workflows"
+    if not workflows_dir.is_dir():
+        return workflows
+    for wf_file in sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml")):
+        try:
+            content = wf_file.read_text(errors="replace")
+        except IOError:
+            continue
+        # Extract trigger events from `on:` block (simplified regex — avoids PyYAML dep)
+        triggers = re.findall(r"^\s{0,2}(\w[\w\-_]*):\s*$", content, re.MULTILINE)
+        # Extract job names
+        job_names = re.findall(r"^\s{2}(\w[\w\-_]+):\s*$", content, re.MULTILINE)
+        # Extract secrets referenced
+        secrets = re.findall(r"\$\{\{\s*secrets\.(\w+)\s*\}\}", content)
+        # Extract environment names
+        envs = re.findall(r"environment:\s*(\w+)", content)
+        workflows.append({
+            "name": wf_file.stem,
+            "file": str(wf_file.name),
+            "triggers": triggers[:10],
+            "jobs": job_names[:20],
+            "secrets": list(set(secrets)),
+            "environments": list(set(envs)),
+        })
+    return workflows
+
+
+def scan_taskfile(project_root: Path) -> List[Dict[str, str]]:
+    """Scan Taskfile.yml for task targets and their descriptions."""
+    tasks = []
+    taskfile = project_root / "Taskfile.yml"
+    if not taskfile.exists():
+        taskfile = project_root / "Taskfile.yaml"
+    if not taskfile.exists():
+        return tasks
+    try:
+        content = taskfile.read_text(errors="replace")
+    except IOError:
+        return tasks
+    # Extract task names and their desc fields (simplified parse — avoids PyYAML dep)
+    current_task: Optional[str] = None
+    for line in content.splitlines():
+        # Task name: indented 2 spaces under `tasks:`
+        task_match = re.match(r"^  (\w[\w\-:]+):\s*$", line)
+        if task_match:
+            current_task = task_match.group(1)
+            tasks.append({"name": current_task, "desc": ""})
+            continue
+        # Description line
+        if current_task and tasks:
+            desc_match = re.match(r"^\s+desc:\s*['\"]?(.+?)['\"]?\s*$", line)
+            if desc_match:
+                tasks[-1]["desc"] = desc_match.group(1)
+    return tasks
+
+
+def detect_mobile_screens(all_files: List[Path], project_root: Path) -> List[Dict[str, str]]:
+    """Infer mobile screen inventory from Expo Router file-system structure."""
+    screens = []
+    for dir_pattern in EXPO_ROUTE_DIR_PATTERNS:
+        app_dir = project_root / dir_pattern
+        if app_dir.is_dir():
+            for filepath in sorted(app_dir.rglob("*")):
+                if filepath.is_file() and filepath.suffix in {".tsx", ".jsx", ".ts", ".js"}:
+                    rel = filepath.relative_to(app_dir)
+                    route = "/" + str(rel.with_suffix("")).replace("\\", "/")
+                    route = re.sub(r"/index$", "", route) or "/"
+                    route = re.sub(r"\[\.\.\.(\w+)\]", r"*\1", route)
+                    route = re.sub(r"\[(\w+)\]", r":\1", route)
+                    screens.append({
+                        "path": route,
+                        "source": str(filepath),
+                        "type": "screen",
+                    })
+            break  # use first matching dir
+    return screens
+
+
+def detect_mcp_tools(all_files: List[Path]) -> List[Dict[str, str]]:
+    """Find MCP tool registrations in Python and TypeScript files."""
+    tools = []
+    for filepath in all_files:
+        if filepath.suffix not in {".py", ".ts", ".js"}:
+            continue
+        try:
+            content = filepath.read_text(errors="replace")
+        except IOError:
+            continue
+        found = False
+        for pattern in MCP_TOOL_PATTERNS:
+            if re.search(pattern, content):
+                found = True
+                break
+        if found:
+            # Try to extract tool function names (Python decorator pattern)
+            for match in re.finditer(r"@(?:mcp|server)\.tool\(\)\s*\nasync\s+def\s+(\w+)", content):
+                tools.append({"name": match.group(1), "source": str(filepath)})
+            # TypeScript tool registration
+            for match in re.finditer(r"(?:mcp|server)\.tool\s*\(\s*['\"](\w[^'\"]+)['\"]", content):
+                tools.append({"name": match.group(1), "source": str(filepath)})
+    return tools
+
+
 def count_components(files: List[Path]) -> Dict[str, int]:
     """Count components by type."""
     counts: Dict[str, int] = defaultdict(int)
@@ -554,11 +861,37 @@ def analyze_project(project_root: Path) -> Dict[str, Any]:
     model_dirs = find_dirs(root, MODEL_DIR_PATTERNS)
     dto_dirs = find_dirs(root, DTO_DIR_PATTERNS)
 
-    # 8. Summary
+    # 8. Infrastructure analysis (CDK / AWS)
+    has_cdk = framework_info.get("has_cdk", False)
+    cdk_stacks = detect_cdk_stacks(all_files) if has_cdk else []
+    lambda_handlers = detect_lambda_handlers(all_files) if has_cdk else []
+    aws_services = detect_aws_services(all_files) if has_cdk else {}
+    ssm_params = detect_ssm_parameters(all_files) if has_cdk else []
+
+    # 9. CI/CD analysis
+    github_workflows = scan_github_actions(root)
+    taskfile_targets = scan_taskfile(root)
+
+    # 10. Mobile analysis
+    has_mobile = framework_info.get("has_mobile", False)
+    mobile_screens = detect_mobile_screens(all_files, root) if has_mobile else []
+
+    # 11. Agentic / MCP analysis
+    has_agentic = framework_info.get("has_agentic", False)
+    mcp_tools = detect_mcp_tools(all_files) if has_agentic else []
+
+    # 12. Summary
     mock_count = sum(1 for a in apis if a.get("mock_detected"))
     real_count = sum(1 for a in apis if a.get("integrated"))
     backend_routes = [r for r in routes if r.get("type") == "backend"]
     frontend_routes = [r for r in routes if r.get("type") != "backend"]
+
+    stack_type = (
+        "backend" if fw in ("django", "fastapi", "flask", "nestjs", "express", "fastify")
+                  and not frontend_routes
+        else "fullstack" if backend_routes and frontend_routes
+        else "frontend"
+    )
 
     analysis = {
         "project": {
@@ -567,8 +900,10 @@ def analyze_project(project_root: Path) -> Dict[str, Any]:
             "framework": framework_info["framework"],
             "detected_frameworks": framework_info.get("detected_frameworks", []),
             "key_dependencies": framework_info.get("key_deps", {}),
-            "stack_type": "backend" if fw in ("django", "fastapi", "flask", "nestjs", "express", "fastify") and not frontend_routes else
-                          "fullstack" if backend_routes and frontend_routes else "frontend",
+            "stack_type": stack_type,
+            "has_cdk": has_cdk,
+            "has_mobile": has_mobile,
+            "has_agentic": has_agentic,
         },
         "structure": {
             "total_files": len(all_files),
@@ -601,6 +936,31 @@ def analyze_project(project_root: Path) -> Dict[str, Any]:
             "count": len(models),
             "definitions": models,
         },
+        "infrastructure": {
+            "detected": has_cdk,
+            "cdk_stacks": cdk_stacks,
+            "lambda_handlers": lambda_handlers,
+            "aws_services": aws_services,
+            "ssm_parameters": ssm_params,
+        },
+        "cicd": {
+            "github_actions": {
+                "detected": len(github_workflows) > 0,
+                "workflows": github_workflows,
+            },
+            "taskfile": {
+                "detected": len(taskfile_targets) > 0,
+                "targets": taskfile_targets,
+            },
+        },
+        "mobile": {
+            "detected": has_mobile,
+            "screens": mobile_screens,
+        },
+        "agentic": {
+            "detected": has_agentic,
+            "mcp_tools": mcp_tools,
+        },
         "summary": {
             "pages": len(frontend_routes),
             "backend_endpoints": len(backend_routes),
@@ -611,8 +971,14 @@ def analyze_project(project_root: Path) -> Dict[str, Any]:
             "models": len(models),
             "has_i18n": len(i18n_dirs) > 0,
             "has_state_management": len(state_dirs) > 0,
-            "stack_type": "backend" if fw in ("django", "fastapi", "flask", "nestjs", "express", "fastify") and not frontend_routes else
-                          "fullstack" if backend_routes and frontend_routes else "frontend",
+            "stack_type": stack_type,
+            "has_cdk": has_cdk,
+            "cdk_stacks": len(cdk_stacks),
+            "lambda_handlers": len(lambda_handlers),
+            "github_workflows": len(github_workflows),
+            "taskfile_targets": len(taskfile_targets),
+            "mobile_screens": len(mobile_screens),
+            "mcp_tools": len(mcp_tools),
         },
     }
 
@@ -642,6 +1008,17 @@ def format_markdown(analysis: Dict[str, Any]) -> str:
         lines.append(f"**Models/entities:** {summary['models']}")
     lines.append(f"**i18n:** {'Yes' if summary['has_i18n'] else 'No'}")
     lines.append(f"**State management:** {'Yes' if summary['has_state_management'] else 'No'}")
+    if summary.get("has_cdk"):
+        lines.append(f"**CDK stacks:** {summary.get('cdk_stacks', 0)}")
+        lines.append(f"**Lambda handlers:** {summary.get('lambda_handlers', 0)}")
+    if summary.get("github_workflows"):
+        lines.append(f"**GitHub Actions workflows:** {summary['github_workflows']}")
+    if summary.get("taskfile_targets"):
+        lines.append(f"**Taskfile targets:** {summary['taskfile_targets']}")
+    if summary.get("mobile_screens"):
+        lines.append(f"**Mobile screens:** {summary['mobile_screens']}")
+    if summary.get("mcp_tools"):
+        lines.append(f"**MCP tools:** {summary['mcp_tools']}")
     lines.append("")
 
     if analysis["routes"]["pages"]:
@@ -689,6 +1066,98 @@ def format_markdown(analysis: Dict[str, Any]) -> str:
                 for fld in m["fields"]:
                     lines.append(f"| {fld['name']} | {fld['type']} | {fld.get('args', '')} |")
             lines.append("")
+
+    # Infrastructure section
+    infra = analysis.get("infrastructure", {})
+    if infra.get("detected"):
+        lines.append("## AWS Infrastructure")
+        lines.append("")
+        stacks = infra.get("cdk_stacks", [])
+        if stacks:
+            lines.append(f"**CDK Stacks/Constructs:** {len(stacks)}")
+            lines.append("")
+            lines.append("| Name | Type | Source |")
+            lines.append("|------|------|--------|")
+            for s in stacks:
+                src = s.get("source", "").split("/")[-1]
+                lines.append(f"| {s['name']} | {s.get('type', 'stack')} | {src} |")
+            lines.append("")
+        handlers = infra.get("lambda_handlers", [])
+        if handlers:
+            lines.append(f"**Lambda Handlers:** {len(handlers)}")
+            lines.append("")
+            for h in handlers[:20]:
+                lines.append(f"- `{h['source'].split('/')[-1]}` ({h.get('language', '?')})")
+            lines.append("")
+        aws_services = infra.get("aws_services", {})
+        if aws_services:
+            lines.append("**AWS Services Detected:**")
+            lines.append("")
+            for svc in sorted(aws_services.keys()):
+                lines.append(f"- {svc}")
+            lines.append("")
+        ssm = infra.get("ssm_parameters", [])
+        if ssm:
+            lines.append(f"**SSM Parameter Paths (cross-stack wiring):** {len(ssm)}")
+            lines.append("")
+            for p in ssm[:15]:
+                lines.append(f"- `{p['path']}`")
+            lines.append("")
+
+    # CI/CD section
+    cicd = analysis.get("cicd", {})
+    gha = cicd.get("github_actions", {})
+    taskfile = cicd.get("taskfile", {})
+    if gha.get("detected") or taskfile.get("detected"):
+        lines.append("## CI/CD")
+        lines.append("")
+        if gha.get("detected"):
+            workflows = gha.get("workflows", [])
+            lines.append(f"**GitHub Actions Workflows:** {len(workflows)}")
+            lines.append("")
+            lines.append("| Workflow | Jobs | Secrets |")
+            lines.append("|----------|------|---------|")
+            for wf in workflows:
+                jobs = ", ".join(wf.get("jobs", [])[:5])
+                secrets = len(wf.get("secrets", []))
+                lines.append(f"| {wf['name']} | {jobs} | {secrets} |")
+            lines.append("")
+        if taskfile.get("detected"):
+            targets = taskfile.get("targets", [])
+            lines.append(f"**Taskfile Targets:** {len(targets)}")
+            lines.append("")
+            lines.append("| Target | Description |")
+            lines.append("|--------|-------------|")
+            for t in targets[:30]:
+                lines.append(f"| `{t['name']}` | {t.get('desc', '')} |")
+            lines.append("")
+
+    # Mobile section
+    mobile = analysis.get("mobile", {})
+    if mobile.get("detected"):
+        screens = mobile.get("screens", [])
+        lines.append(f"## Mobile Screens ({len(screens)} detected)")
+        lines.append("")
+        lines.append("| # | Route | Source |")
+        lines.append("|---|-------|--------|")
+        for i, s in enumerate(screens, 1):
+            src = s.get("source", "").split("/")[-1]
+            lines.append(f"| {i} | `{s['path']}` | {src} |")
+        lines.append("")
+
+    # Agentic / MCP section
+    agentic = analysis.get("agentic", {})
+    if agentic.get("detected"):
+        tools = agentic.get("mcp_tools", [])
+        lines.append(f"## Agentic / MCP Layer ({len(tools)} tools detected)")
+        lines.append("")
+        if tools:
+            lines.append("| Tool | Source |")
+            lines.append("|------|--------|")
+            for t in tools:
+                src = t.get("source", "").split("/")[-1]
+                lines.append(f"| `{t['name']}` | {src} |")
+        lines.append("")
 
     if proj.get("key_dependencies"):
         lines.append("## Key Dependencies")

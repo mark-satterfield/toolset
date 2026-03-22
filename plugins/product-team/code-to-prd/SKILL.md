@@ -4,22 +4,26 @@ Tier: STANDARD
 Category: product
 Dependencies: none
 Author: Alireza Rezvani
-Version: 2.1.2
+Version: 3.0.0
 name: code-to-prd
 description: |
   Reverse-engineer any codebase into a complete Product Requirements Document (PRD).
-  Analyzes routes, components, state management, API integrations, and user interactions to produce
-  business-readable documentation detailed enough for engineers or AI agents to fully reconstruct
-  every page and endpoint. Works with frontend frameworks (React, Vue, Angular, Svelte, Next.js, Nuxt),
-  backend frameworks (NestJS, Django, Express, FastAPI), and fullstack applications.
+  Analyzes frontend pages, backend endpoints, AWS infrastructure (CDK stacks, Lambda functions,
+  DynamoDB tables, S3 buckets, API Gateway, SQS, EventBridge, Cognito), CI/CD pipelines
+  (GitHub Actions workflows, Taskfile targets, deployment waves), mobile screens (React Native,
+  Expo), and agentic/MCP layers to produce business-readable documentation detailed enough for
+  engineers or AI agents to fully reconstruct every system component.
+
+  Works with: React, Vue, Angular, Svelte, Next.js, Nuxt (frontend); NestJS, Django, Express,
+  FastAPI, Flask (backend); AWS CDK (Python + TypeScript), Lambda (Python 3.12, Node.js)
+  (infrastructure); React Native + Expo (mobile); fastmcp, Anthropic SDK, agentic-flow (agentic).
 
   Trigger when users mention: generate PRD, reverse-engineer requirements, code to documentation,
   extract product specs from code, document page logic, analyze page fields and interactions,
   create a functional inventory, write requirements from an existing codebase, document API endpoints,
-  or analyze backend routes.
+  analyze backend routes, document infrastructure, CDK stacks, Lambda functions, CI/CD pipeline,
+  GitHub Actions, deployment model, mobile screens, MCP servers, or agentic workflows.
 license: MIT
-metadata:
-  updated: 2026-03-17
 ---
 
 ## Name
@@ -28,19 +32,23 @@ Code → PRD
 
 ## Description
 
-Reverse-engineer any frontend, backend, or fullstack codebase into a complete Product Requirements Document (PRD). Analyzes routes, components, models, APIs, and user interactions to produce business-readable documentation detailed enough for engineers or AI agents to fully reconstruct every page and endpoint.
+Reverse-engineer any frontend, backend, fullstack, infrastructure, CI/CD, mobile, or agentic codebase into a complete Product Requirements Document (PRD). Analyzes routes, components, models, APIs, CDK stacks, Lambda handlers, deployment pipelines, mobile screens, and MCP servers to produce business-readable documentation detailed enough for engineers or AI agents to fully reconstruct every system component.
 
 # Code → PRD: Reverse-Engineer Any Codebase into Product Requirements
 
 ## Features
 
-- **3-phase workflow**: global scan → page-by-page analysis → structured document generation
+- **3-phase workflow**: global scan → component-by-component analysis → structured document generation
 - **Frontend support**: React, Vue, Angular, Svelte, Next.js (App + Pages Router), Nuxt, SvelteKit, Remix
 - **Backend support**: NestJS, Express, Django, Django REST Framework, FastAPI, Flask
 - **Fullstack support**: Combined frontend + backend analysis with unified PRD output
+- **AWS infrastructure support**: CDK stacks (Python + TypeScript), Lambda functions, DynamoDB, S3, API Gateway, SQS, EventBridge, Cognito, CloudFront, SSM, ElastiCache
+- **CI/CD support**: GitHub Actions workflows, Taskfile targets, multi-wave deployment models
+- **Mobile support**: React Native + Expo screens, navigation stacks, NativeWind styling
+- **Agentic/MCP support**: fastmcp servers, Anthropic SDK integrations, multi-agent orchestration (agentic-flow)
 - **Mock detection**: Automatically distinguishes real API integrations from mock/fixture data
 - **Enum extraction**: Exhaustively lists all status codes, type mappings, and constants
-- **Model extraction**: Parses Django models, NestJS entities, Pydantic schemas
+- **Model extraction**: Parses Django models, NestJS entities, Pydantic schemas, CDK constructs
 - **Automation scripts**: `codebase_analyzer.py` for scanning, `prd_scaffolder.py` for directory generation
 - **Quality checklist**: Validation checklist for completeness, accuracy, readability
 
@@ -93,13 +101,21 @@ Your document must describe functionality in non-technical language while omitti
 
 ### Supported Stacks
 
-| Stack | Frameworks |
-|-------|-----------|
+| Stack | Frameworks / Technologies |
+|-------|--------------------------|
 | **Frontend** | React, Vue, Angular, Svelte, Next.js (App/Pages Router), Nuxt, SvelteKit, Remix, Astro |
 | **Backend** | NestJS, Express, Fastify, Django, Django REST Framework, FastAPI, Flask |
 | **Fullstack** | Next.js (API routes + pages), Nuxt (server/ + pages/), Django (views + templates) |
+| **AWS Infrastructure** | CDK (Python + TypeScript), Lambda, DynamoDB, S3, API Gateway, SQS FIFO, EventBridge, Cognito, CloudFront, SSM, ElastiCache |
+| **CI/CD** | GitHub Actions workflows (`.github/workflows/`), Taskfile targets (`Taskfile.yml`), multi-wave deployment models |
+| **Mobile** | React Native + Expo (SDK 54+), Expo Router, NativeWind |
+| **Agentic / MCP** | fastmcp servers, Anthropic SDK, agentic-flow orchestration, multi-agent configs |
 
 For **backend-only** projects, the "page" concept maps to **API resource groups** or **admin views**. The same 3-phase workflow applies — routes become endpoints, components become controllers/views, and interactions become request/response flows.
+
+For **infrastructure-only** projects, the "page" concept maps to **CDK stacks** or **Lambda function groups**. Document each stack's constructs, props, and cross-stack wiring via SSM Parameter Store.
+
+For **CI/CD** analysis, document each workflow's triggers, jobs, steps, secrets consumed, and artifacts produced. For Taskfile projects, document every `task` target and its dependencies.
 
 ---
 
@@ -182,6 +198,52 @@ Before analyzing individual pages, capture:
 - **DTOs/Serializers** (backend) — request validation shapes, response formats
 
 These will be referenced throughout page/endpoint analysis.
+
+#### 4. Identify Infrastructure Layer (if present)
+
+If `cdk.json`, `aws-cdk-lib`, or CDK stack files exist, perform infrastructure scan:
+
+**CDK Stack Inventory:**
+- Scan all `*Stack` class definitions (Python: `class FooStack(Stack)`, TypeScript: `class FooStack extends Stack`)
+- Identify each stack's purpose, props interface, and constructs
+- Map cross-stack dependencies — which stacks pass SSM parameters to which
+- Identify deployment wave (infra → layers → services → frontends)
+
+**Lambda Function Inventory:**
+- Find all Lambda handler files (`def handler(event, context)` in Python, `export const handler` in TS)
+- Document each function's: runtime, memory, timeout, event sources (API Gateway, EventBridge, SQS), environment variables, layers attached
+- Identify Lambda Powertools decorators (`@logger.inject_lambda_context`, `@tracer.capture_lambda_handler`)
+
+**AWS Service Inventory:**
+- DynamoDB: table names, partition/sort key, GSIs, PITR, billing mode
+- S3: bucket names, versioning, encryption, lifecycle policies
+- API Gateway: REST vs HTTP API, auth type (Cognito/IAM/API key), CORS, custom domains
+- SQS FIFO: queue names, visibility timeout, dead-letter queues, EventBridge source rule
+- EventBridge: custom bus name, rules, targets
+- Cognito: User Pool ID, app clients, trigger Lambdas (pre-token, post-confirmation)
+- SSM Parameter Store: parameter paths used for cross-stack wiring
+
+**Cross-Stack Wiring Pattern:**
+For projects using SSM Parameter Store (not CloudFormation exports) for cross-stack wiring:
+- Find all `StringParameter.fromStringParameterName()` / `StringParameter.valueForStringParameter()` calls
+- Document the parameter path, producing stack, and consuming stacks
+
+#### 5. Identify CI/CD Layer (if present)
+
+**GitHub Actions:**
+- Scan `.github/workflows/*.yml` for all workflows
+- Document each workflow's: trigger (`on:` block), jobs, steps, secrets consumed (`${{ secrets.X }}`), artifacts produced
+- Identify environment-specific deployments (dev/staging/prod)
+
+**Taskfile:**
+- Scan `Taskfile.yml` for all task targets
+- Document each task's: description, dependencies (`deps:`), commands, env vars
+- Group tasks by layer: infra, layers, services, frontends
+- Identify deployment order (4-wave model if present)
+
+**Deployment Model:**
+- If 4-wave pattern detected (`infra`, `layers`, `services`, `frontends`), document the wave sequence and why ordering matters
+- Document any `cdk deploy --all` vs selective stack deployment conventions
 
 ---
 
@@ -282,20 +344,34 @@ For each needed API, document:
 
 #### Output Structure
 
-Create `prd/` in project root (or user-specified directory):
+Create `prd/` in project root (or user-specified directory). Omit sections not present in the codebase.
 
 ```
 prd/
-├── README.md                     # System overview
-├── pages/
-│   ├── 01-user-mgmt-list.md      # One file per page
+├── README.md                         # System overview, module map, page/stack inventory
+├── pages/                            # Frontend pages (if frontend detected)
+│   ├── 01-user-mgmt-list.md
 │   ├── 02-user-mgmt-detail.md
-│   ├── 03-order-mgmt-list.md
+│   └── ...
+├── endpoints/                        # Backend API endpoints (if backend detected)
+│   ├── 01-users-resource.md
+│   └── ...
+├── infrastructure/                   # AWS CDK / Lambda (if CDK detected)
+│   ├── 01-infra-stack.md             # One file per CDK stack
+│   ├── 02-services-stack.md
+│   └── ...
+├── mobile/                           # Mobile screens (if React Native / Expo detected)
+│   ├── 01-home-screen.md
+│   └── ...
+├── agentic/                          # MCP servers / agents (if agentic layer detected)
+│   ├── 01-mcp-server.md
 │   └── ...
 └── appendix/
-    ├── enum-dictionary.md         # All enums, status codes, type mappings
-    ├── page-relationships.md      # Navigation map between pages
-    └── api-inventory.md           # Complete API reference
+    ├── enum-dictionary.md             # All enums, status codes, type mappings
+    ├── page-relationships.md          # Navigation map between pages/screens
+    ├── api-inventory.md               # Complete API reference
+    ├── infrastructure-inventory.md    # All AWS constructs with props and wiring
+    └── cicd-inventory.md             # All workflows, Taskfile targets, deployment waves
 ```
 
 #### README.md Template
@@ -441,6 +517,58 @@ Each page's Markdown should be **standalone** — reading just that file gives c
 | **Background job** | Trigger, schedule, input/output, failure handling, monitoring |
 | **Admin views** (Django) | Registered models, list_display, search_fields, filters, inline models, custom actions |
 
+### AWS Infrastructure (CDK Stacks)
+
+| Component Type | Focus Areas |
+|----------------|------------|
+| **CDK Stack** | Stack name, purpose, constructs created, props interface, cross-stack SSM parameters exported/consumed, deployment wave |
+| **Lambda Function** | Handler path, runtime, memory (MB), timeout (s), event sources, environment variables, layers, Powertools decorators, IAM permissions |
+| **DynamoDB Table** | Table name, partition key, sort key, GSIs (name, keys, projection), billing mode, PITR, TTL attribute |
+| **S3 Bucket** | Bucket name, versioning, encryption (SSE-S3/KMS), CORS, lifecycle rules, public access settings |
+| **API Gateway** | Type (REST/HTTP), routes, authorizer (Cognito/IAM/None), CORS config, throttling, custom domain |
+| **SQS Queue** | Queue type (Standard/FIFO), visibility timeout, message retention, dead-letter queue, EventBridge rule feeding it |
+| **EventBridge** | Bus name, rules (pattern → target), event schema format |
+| **Cognito User Pool** | Pool name, password policy, MFA, app clients, trigger Lambdas, identity providers |
+| **CDK Construct** | Construct name, props interface, resources it creates, reuse pattern |
+
+For each CDK stack document, answer:
+- **What does this stack create?** — list all AWS resources with names and key config
+- **What does it depend on?** — SSM parameters consumed, other stacks required to exist first
+- **What does it export?** — SSM parameters written for downstream stacks
+- **Deployment wave** — infra / layers / services / frontends
+- **Deploy command** — exact `task` or `cdk deploy` command for this stack
+
+### CI/CD Pipelines (GitHub Actions / Taskfile)
+
+| Component Type | Focus Areas |
+|----------------|------------|
+| **GitHub Actions workflow** | Filename, trigger (push/PR/manual/schedule), jobs, steps, secrets used, environments targeted, artifacts produced |
+| **Taskfile target** | Task name, description, `deps`, commands, env vars, which layer it deploys |
+| **Deployment wave** | Wave name (infra/layers/services/frontends), stacks in wave, required pre-conditions |
+| **Secret / env var** | Name, purpose, where it must be set (GitHub Secrets, SSM, .env) |
+
+### Mobile Screens (React Native / Expo)
+
+| Screen Type | Focus Areas |
+|-------------|------------|
+| **Tab screen** | Tab label, icon, stack navigator contents, auth guard |
+| **Stack screen** | Route name, params received, header config, back navigation behavior |
+| **Modal** | Trigger, content, dismiss behavior |
+| **Form screen** | Fields, validation, submit action, keyboard handling |
+| **List screen** | Data source, empty state, pull-to-refresh, infinite scroll |
+| **Detail screen** | Data fetched, sections displayed, action buttons, share behavior |
+
+Note NativeWind-specific patterns: `className` props instead of StyleSheet, responsive `sm:` / `lg:` modifiers.
+
+### Agentic / MCP Layer
+
+| Component Type | Focus Areas |
+|----------------|------------|
+| **MCP server** | Server name, transport (stdio/SSE/HTTP), tools exposed (name, description, input schema, output shape) |
+| **Agent** | Agent ID, system prompt purpose, tools available, model used, memory mechanism |
+| **Orchestration flow** | Multi-agent sequence, how agents hand off to each other, shared state mechanism |
+| **Claude integration** | API calls using Anthropic SDK — model, system prompt, tool use patterns, streaming vs batch |
+
 ---
 
 ## Execution Pacing
@@ -465,6 +593,14 @@ Each page's Markdown should be **standalone** — reading just that file gives c
 | Missing NestJS guards/pipes | `@UseGuards`, `@UsePipes` contain auth and validation logic that affects behavior |
 | Ignoring database constraints | Model field constraints (unique, max_length, choices) are validation rules for the PRD |
 | Overlooking middleware | Auth middleware, rate limiters, and CORS config define system-wide behavior |
+| Treating CDK stacks as "just IaC" | CDK stacks encode architecture decisions — document them as first-class requirements |
+| Missing SSM cross-stack wiring | SSM Parameter Store paths ARE the interface contract between stacks; document them |
+| Ignoring Lambda timeout/memory | These are product constraints — a Lambda timing out is a user-visible failure |
+| Skipping Taskfile task descriptions | Task `desc` fields describe the deployment intent, not just the command |
+| Missing GitHub Actions secrets | Undocumented secrets = hidden deployment prerequisites |
+| Overlooking 4-wave deployment order | Wave ordering is a hard constraint — infra must exist before services |
+| Treating Expo Router screens as pages | Expo Router uses file-system routing like Next.js — scan `app/` directory for screen inventory |
+| Skipping MCP tool schemas | The `inputSchema` of each MCP tool IS the API contract for that tool |
 
 ---
 
@@ -479,16 +615,16 @@ Each page's Markdown should be **standalone** — reading just that file gives c
 
 **Recommended workflow:**
 ```bash
-# 1. Analyze the project (JSON output — works for frontend, backend, or fullstack)
+# 1. Analyze the project (JSON output — works for frontend, backend, fullstack, CDK, CI/CD, mobile, agentic)
 python3 scripts/codebase_analyzer.py /path/to/project -o analysis.json
 
-# 2. Review the analysis (markdown summary)
+# 2. Review the analysis as a markdown summary
 python3 scripts/codebase_analyzer.py /path/to/project -f markdown
 
-# 3. Scaffold the PRD directory with stubs
+# 3. Scaffold the PRD directory with stubs (infra/cicd/mobile/agentic dirs created if detected)
 python3 scripts/prd_scaffolder.py analysis.json -o prd/ -n "My App"
 
-# 4. Fill in TODO sections page-by-page using the SKILL.md workflow
+# 4. Fill in TODO sections component-by-component using the SKILL.md workflow
 ```
 
 Both scripts are **stdlib-only** — no pip install needed.

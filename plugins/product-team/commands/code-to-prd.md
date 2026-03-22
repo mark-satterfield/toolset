@@ -1,11 +1,11 @@
 ---
 name: code-to-prd
-description: Reverse-engineer a frontend codebase into a PRD. Usage: /code-to-prd [path]
+description: Reverse-engineer a full-stack codebase (frontend, backend, AWS infrastructure, CI/CD, mobile, agentic) into a PRD. Usage: /code-to-prd [path]
 ---
 
 # /code-to-prd
 
-Reverse-engineer a frontend codebase into a complete Product Requirements Document.
+Reverse-engineer a full-stack codebase into a complete Product Requirements Document covering frontend, backend, AWS infrastructure, CI/CD pipelines, mobile, and agentic layers.
 
 ## Usage
 
