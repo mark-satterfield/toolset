@@ -433,28 +433,54 @@ This skill includes **PreToolUse hooks** that protect `.gitignore` from dangerou
 - Create overly broad patterns (e.g., `*.py`)
 - Break tracked-but-ignored file protections (`@protect:` annotations)
 
-### Installation (Optional)
+### Installation
 
-**To enable automatic protection in this project:**
+Hooks are registered as `PreToolUse` entries in the project's `.claude/settings.local.json`. This keeps hook configuration local to each developer and out of committed project settings.
 
-```bash
-# Copy hooks from skill to project
-mkdir -p .claude/hooks
-cp .claude/skills/gitignore-guardian/hooks/*.sh .claude/hooks/
+**To install, add the following to `.claude/settings.local.json`:**
 
-# Verify installation
-ls -la .claude/hooks/gitignore*.sh
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{
+          "type": "command",
+          "command": "<SKILL_PATH>/hooks/gitignore-guard.sh"
+        }]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{
+          "type": "command",
+          "command": "<SKILL_PATH>/hooks/gitignore-edit-guard.sh"
+        }]
+      }
+    ]
+  }
+}
 ```
 
-After installation, the hooks automatically activate on `.gitignore` edits.
+Replace `<SKILL_PATH>` with the **absolute path** to the skill directory:
+
+| Install location | Example `<SKILL_PATH>` |
+| --- | --- |
+| Project-local skill | `/absolute/path/to/project/.claude/skills/gitignore-guardian` |
+| Global skill | `~/.claude/skills/gitignore-guardian` |
+| Source repo (this repo) | `/Users/<you>/git-repos/toolset/skills/gitignore-guardian` |
+
+**Step-by-step (for Claude to follow when asked to install):**
+
+1. Determine the absolute path to this skill's `hooks/` directory
+2. If `.claude/settings.local.json` does not exist, create it with the JSON above
+3. If it already exists, merge the two `PreToolUse` entries into the existing `hooks.PreToolUse` array (create the array if only other hook types exist)
+4. Ensure the hook scripts are executable: `chmod +x <SKILL_PATH>/hooks/*.sh`
+5. Verify by reading back `.claude/settings.local.json`
 
 ### Removal (Disable Protection)
 
-```bash
-# Remove hooks to disable automatic protection
-rm .claude/hooks/gitignore-guard.sh
-rm .claude/hooks/gitignore-edit-guard.sh
-```
+Remove the two `PreToolUse` entries (matchers `Bash` and `Edit|Write|MultiEdit`) from `.claude/settings.local.json`. If the `PreToolUse` array becomes empty, remove the entire key.
 
 **Note:** Removing hooks disables automatic validation but does not affect:
 - The `scripts/gitignore_audit.py` audit tool (still available via manual invocation)
@@ -463,10 +489,10 @@ rm .claude/hooks/gitignore-edit-guard.sh
 
 ### When This Skill is Global
 
-When gitignore-guardian is installed at the global level (`~/.claude/skills/`):
-- ✅ The skill is available for reference and commands across all projects
-- ✅ Audit tools can be invoked manually
-- ❌ Hooks are **NOT auto-wired** — each project must follow the installation steps above if it wants automatic protection
+When gitignore-guardian is installed globally (`~/.claude/skills/`):
+- The skill activates for reference and commands across all projects
+- Audit tools can be invoked manually in any project
+- Hooks are **NOT auto-wired** — each project needs its own `.claude/settings.local.json` entries pointing to the global hook scripts (e.g., `~/.claude/skills/gitignore-guardian/hooks/gitignore-guard.sh`)
 
 ---
 
