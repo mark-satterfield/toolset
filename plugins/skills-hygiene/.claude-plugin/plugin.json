@@ -1,0 +1,13 @@
+{
+  "name": "skills-hygiene",
+  "version": "1.0.0",
+  "description": "Manage Claude Code skill installations — deduplicate, promote, audit, internalize, and generalize skills across global and project levels.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/skills-hygiene",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./"
+}

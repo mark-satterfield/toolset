@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/proof-of-work.json",
+  "title": "Proof of Work",
+  "description": "Structured evidence of what a worker produced. The orchestrator independently verifies every claim — file hashes, external reference existence — before accepting this document. Domain-agnostic.",
+  "type": "object",
+  "properties": {
+
+    "workerId": { "type": "string" },
+    "teamId": { "type": "string" },
+    "role": { "type": "string", "enum": ["worker", "reviewer", "integrator"] },
+    "taskRef": { "type": "string", "description": "Path to assignments/{worker-id}.json." },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "iterationCount": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of ralph-loop iterations this PoW represents."
+    },
+    "ralphLoopStatus": {
+      "type": "string",
+      "enum": ["INCOMPLETE", "READY_FOR_REVIEW", "IN_REMEDIATION", "APPROVED"]
+    },
+
+    "artifacts": {
+      "type": "array",
+      "description": "Every file written or modified. Orchestrator re-hashes each to verify.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Relative path from project root." },
+          "type": { "type": "string", "enum": ["created", "modified", "deleted"], "default": "created" },
+          "description": { "type": "string" },
+          "contentHash": { "type": "string", "description": "SHA-256 hash. Orchestrator re-hashes independently." },
+          "sizeBytes": { "type": "integer" },
+          "satisfiesRequirement": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Requirement IDs from the assignment this artifact satisfies."
+          }
+        },
+        "required": ["path", "description", "contentHash"]
+      }
+    },
+
+    "externalRefs": {
+      "type": "array",
+      "description": "Any external resource created or modified — Figma nodes, URLs, API resources, database records, etc. Domain-specific. Orchestrator independently verifies each.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Category of external resource e.g. figmaNode, url, apiEndpoint, s3Object, dbRecord"
+          },
+          "id": { "type": "string", "description": "Identifier — node ID, URL, ARN, key, etc." },
+          "operation": { "type": "string", "enum": ["created", "modified", "deleted", "published", "deployed"] },
+          "description": { "type": "string" },
+          "verificationHint": {
+            "type": "string",
+            "description": "How the orchestrator should verify this ref exists e.g. 'call get_node', 'HTTP GET', 'aws s3 ls'"
+          },
+          "satisfiesRequirement": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["type", "id", "operation", "description"]
+      }
+    },
+
+    "toolCallSummary": {
+      "type": "object",
+      "properties": {
+        "totalCalls": { "type": "integer" },
+        "byCategory": {
+          "type": "object",
+          "properties": {
+            "fileRead": { "type": "integer" },
+            "fileWrite": { "type": "integer" },
+            "externalRead": { "type": "integer" },
+            "externalWrite": { "type": "integer" },
+            "bash": { "type": "integer" },
+            "other": { "type": "integer" }
+          }
+        }
+      },
+      "required": ["totalCalls"]
+    },
+
+    "peerCommunications": {
+      "type": "array",
+      "description": "Files this worker read from other workers' directories.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fromWorkerId": { "type": "string" },
+          "filePath": { "type": "string" },
+          "readAt": { "type": "string", "format": "date-time" },
+          "purpose": { "type": "string" }
+        },
+        "required": ["fromWorkerId", "filePath", "purpose"]
+      }
+    },
+
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "impact": { "type": "string", "enum": ["blocking", "partial", "minor"] },
+          "proposedResolution": { "type": "string" },
+          "requiresOrchestratorDecision": { "type": "boolean" }
+        },
+        "required": ["description", "impact", "proposedResolution"]
+      }
+    },
+
+    "remediationHistory": {
+      "type": "array",
+      "description": "Record of previous remediation cycles. Populated on iteration 2+.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "iteration": { "type": "integer" },
+          "checkpointRef": { "type": "string" },
+          "issuesAddressed": { "type": "array", "items": { "type": "string" } },
+          "issuesNotAddressed": { "type": "array", "items": { "type": "string" } },
+          "addressedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+
+  "required": [
+    "workerId", "teamId", "role", "taskRef",
+    "completedAt", "iterationCount", "ralphLoopStatus",
+    "artifacts", "toolCallSummary"
+  ]
+}

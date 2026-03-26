@@ -433,66 +433,11 @@ This skill includes **PreToolUse hooks** that protect `.gitignore` from dangerou
 - Create overly broad patterns (e.g., `*.py`)
 - Break tracked-but-ignored file protections (`@protect:` annotations)
 
-### Installation
+### Hook Activation
 
-Hooks are registered as `PreToolUse` entries in the project's `.claude/settings.local.json`. This keeps hook configuration local to each developer and out of committed project settings.
+Hooks auto-register when this plugin is enabled. No manual configuration needed.
 
-**To install, add the following to `.claude/settings.local.json`:**
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [{
-          "type": "command",
-          "command": "<SKILL_PATH>/hooks/gitignore-guard.sh"
-        }]
-      },
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [{
-          "type": "command",
-          "command": "<SKILL_PATH>/hooks/gitignore-edit-guard.sh"
-        }]
-      }
-    ]
-  }
-}
-```
-
-Replace `<SKILL_PATH>` with the **absolute path** to the skill directory:
-
-| Install location | Example `<SKILL_PATH>` |
-| --- | --- |
-| Project-local skill | `/absolute/path/to/project/.claude/skills/gitignore-guardian` |
-| Global skill | `~/.claude/skills/gitignore-guardian` |
-| Source repo (this repo) | `/Users/<you>/git-repos/toolset/skills/gitignore-guardian` |
-
-**Step-by-step (for Claude to follow when asked to install):**
-
-1. Determine the absolute path to this skill's `hooks/` directory
-2. If `.claude/settings.local.json` does not exist, create it with the JSON above
-3. If it already exists, merge the two `PreToolUse` entries into the existing `hooks.PreToolUse` array (create the array if only other hook types exist)
-4. Ensure the hook scripts are executable: `chmod +x <SKILL_PATH>/hooks/*.sh`
-5. Verify by reading back `.claude/settings.local.json`
-
-### Removal (Disable Protection)
-
-Remove the two `PreToolUse` entries (matchers `Bash` and `Edit|Write|MultiEdit`) from `.claude/settings.local.json`. If the `PreToolUse` array becomes empty, remove the entire key.
-
-**Note:** Removing hooks disables automatic validation but does not affect:
-- The `scripts/gitignore_audit.py` audit tool (still available via manual invocation)
-- The skill's knowledge base and documentation
-- The `@protect:` and `@index:` annotation system
-
-### When This Skill is Global
-
-When gitignore-guardian is installed globally (`~/.claude/skills/`):
-- The skill activates for reference and commands across all projects
-- Audit tools can be invoked manually in any project
-- Hooks are **NOT auto-wired** — each project needs its own `.claude/settings.local.json` entries pointing to the global hook scripts (e.g., `~/.claude/skills/gitignore-guardian/hooks/gitignore-guard.sh`)
+The two PreToolUse hooks are defined in `hooks/hooks.json` and use `${CLAUDE_PLUGIN_ROOT}` for portable path resolution. They activate automatically on every Claude Code session where this plugin is installed.
 
 ---
 

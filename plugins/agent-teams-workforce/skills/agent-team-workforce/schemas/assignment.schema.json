@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/assignment.json",
+  "title": "Worker Assignment",
+  "description": "Written by the orchestrator for each worker. The worker reads this at startup and uses it as the sole source of truth for what 'done' means. Updated by the orchestrator during remediation cycles. Domain-agnostic — requirements and deliverables are supplied by the invoking agent.",
+  "type": "object",
+  "properties": {
+
+    "workerId": { "type": "string" },
+    "teamId": { "type": "string" },
+    "role": { "type": "string", "enum": ["worker", "reviewer", "integrator"] },
+    "spec": { "type": "string", "description": "One-line description of this worker's responsibility." },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Increments on each remediation update. v1 = original assignment."
+    },
+
+    "context": {
+      "type": "object",
+      "description": "Background the worker needs. Content is domain-specific and supplied by the invoking agent.",
+      "properties": {
+        "parentTask": { "type": "string" },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths to files the worker must read before starting."
+        },
+        "peerWorkRefs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths to other workers' work directories to read for context."
+        },
+        "externalContext": {
+          "type": "object",
+          "description": "Any external system context (e.g. Figma file key, repo URL, API endpoint). Keys and values are domain-specific.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+
+    "requirements": {
+      "type": "array",
+      "description": "Explicit, verifiable requirements. Every requirement must be independently checkable by the orchestrator. Content is domain-specific.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "priority": { "type": "string", "enum": ["must", "should", "could"] },
+          "verificationMethod": {
+            "type": "string",
+            "description": "How the orchestrator will independently verify this requirement."
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Concrete, binary pass/fail criteria."
+          }
+        },
+        "required": ["id", "text", "priority", "acceptanceCriteria"]
+      }
+    },
+
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "doNotModify": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths or resource IDs the worker must not touch."
+        },
+        "mustReferTo": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths the worker must read before starting work."
+        },
+        "maxIterations": {
+          "type": "integer",
+          "default": 5,
+          "description": "Maximum ralph-loop iterations before escalation."
+        },
+        "custom": {
+          "type": "object",
+          "description": "Domain-specific constraints supplied by the invoking agent.",
+          "additionalProperties": {}
+        }
+      }
+    },
+
+    "deliverables": {
+      "type": "array",
+      "description": "Expected output artifacts. Used by orchestrator to verify pow.json is complete.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "description": "e.g. file, figmaNode, url, apiResource" },
+          "expectedPath": { "type": "string" },
+          "description": { "type": "string" },
+          "required": { "type": "boolean", "default": true }
+        },
+        "required": ["type", "description"]
+      }
+    },
+
+    "remediationNotes": {
+      "type": "array",
+      "description": "Appended by orchestrator during remediation cycles. Worker must address every note.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "iteration": { "type": "integer" },
+          "checkpointRef": { "type": "string" },
+          "issue": { "type": "string" },
+          "requiredAction": { "type": "string" },
+          "severity": { "type": "string", "enum": ["blocking", "major", "minor"] },
+          "addedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["iteration", "issue", "requiredAction", "severity"]
+      }
+    }
+  },
+
+  "required": ["workerId", "teamId", "role", "issuedAt", "version", "requirements", "deliverables"]
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/proof-of-completeness.json",
+  "title": "Proof of Completeness",
+  "description": "Structured evidence that every requirement in the original assignment has been addressed. Domain-agnostic. The orchestrator independently verifies every claim against the assignment and actual artifacts. Confidence scores are for audit trail only — never trusted.",
+  "type": "object",
+  "properties": {
+
+    "workerId": { "type": "string" },
+    "teamId": { "type": "string" },
+    "taskRef": { "type": "string" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "iterationCount": { "type": "integer", "minimum": 1 },
+
+    "requirementCoverage": {
+      "type": "array",
+      "description": "One entry per requirement in the original assignment. Every requirement must be listed — nothing may be omitted silently.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requirementId": { "type": "string" },
+          "requirementText": { "type": "string", "description": "Verbatim from the assignment." },
+          "status": {
+            "type": "string",
+            "enum": ["complete", "partial", "deferred", "out-of-scope", "blocked"]
+          },
+          "satisfiedBy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "artifactType": { "type": "string", "description": "file | externalRef" },
+                "ref": { "type": "string", "description": "File path or external ref ID." },
+                "description": { "type": "string" }
+              },
+              "required": ["artifactType", "ref", "description"]
+            }
+          },
+          "confidenceScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Self-assessed. For audit trail only — orchestrator does not trust this value."
+          },
+          "selfAssessmentNotes": { "type": "string" },
+          "deferralReason": {
+            "type": "string",
+            "description": "Required if status is deferred or out-of-scope."
+          },
+          "blockerRef": {
+            "type": "string",
+            "description": "Required if status is blocked. References blocker in pow.json."
+          }
+        },
+        "required": ["requirementId", "requirementText", "status", "satisfiedBy", "confidenceScore"]
+      }
+    },
+
+    "outOfScopeItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item": { "type": "string" },
+          "justification": { "type": "string" },
+          "handoffTo": { "type": "string", "description": "Worker ID or role that should handle this." }
+        },
+        "required": ["item", "justification"]
+      }
+    },
+
+    "coverageSummary": {
+      "type": "object",
+      "description": "Aggregate counts. Orchestrator verifies by counting requirementCoverage entries.",
+      "properties": {
+        "total": { "type": "integer" },
+        "complete": { "type": "integer" },
+        "partial": { "type": "integer" },
+        "deferred": { "type": "integer" },
+        "outOfScope": { "type": "integer" },
+        "blocked": { "type": "integer" },
+        "overallConfidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "For audit trail only."
+        }
+      },
+      "required": ["total", "complete", "partial", "deferred", "outOfScope", "blocked"]
+    },
+
+    "consistencyChecks": {
+      "type": "array",
+      "description": "Cross-worker consistency checks this worker performed.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "checkedWorkerId": { "type": "string" },
+          "checkedArtifact": { "type": "string" },
+          "checkDescription": { "type": "string" },
+          "result": { "type": "string", "enum": ["consistent", "inconsistent", "not-checked"] },
+          "inconsistencyDetails": { "type": "string" }
+        },
+        "required": ["checkedWorkerId", "checkedArtifact", "checkDescription", "result"]
+      }
+    }
+  },
+
+  "required": [
+    "workerId", "teamId", "taskRef",
+    "completedAt", "iterationCount",
+    "requirementCoverage", "coverageSummary"
+  ]
+}

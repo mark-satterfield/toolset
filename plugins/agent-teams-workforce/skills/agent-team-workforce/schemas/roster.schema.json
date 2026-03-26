@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/roster.json",
+  "title": "Team Roster",
+  "description": "Written by the orchestrator at team formation. Defines all workers, their roles, and review assignments. Domain-agnostic — no knowledge of what workers are building.",
+  "type": "object",
+  "properties": {
+
+    "teamId": { "type": "string" },
+    "orchestratorId": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "taskDescription": {
+      "type": "string",
+      "description": "Natural language description of what this team is doing."
+    },
+    "workspaceRoot": {
+      "type": "string",
+      "description": "Relative path to .agent-workspace/{team-id}/"
+    },
+    "invokedBy": {
+      "type": "object",
+      "description": "What invoked this team — an agent definition or a direct command.",
+      "properties": {
+        "mode": { "type": "string", "enum": ["embedded", "command"] },
+        "agentRef": { "type": "string", "description": "Path to agent .md file if embedded mode." },
+        "command": { "type": "string", "description": "Original command string if command mode." }
+      },
+      "required": ["mode"]
+    },
+
+    "workers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "workerId": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["orchestrator", "worker", "reviewer", "integrator"]
+          },
+          "spec": {
+            "type": "string",
+            "description": "One-line description of what this worker is responsible for. Domain-specific content supplied by the invoking agent."
+          },
+          "assignmentRef": {
+            "type": "string",
+            "description": "Path to assignments/{worker-id}.json."
+          },
+          "reviewAssignments": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Worker IDs this worker is responsible for reviewing. Never includes self."
+          },
+          "spawnedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["spawned", "working", "ready-for-review", "in-remediation", "approved", "terminated"]
+          }
+        },
+        "required": ["workerId", "role", "assignmentRef"]
+      }
+    },
+
+    "reviewPairs": {
+      "type": "array",
+      "description": "Explicit reviewer → reviewed pairs. Cross-cutting to avoid reviewing close collaborators.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "reviewerId": { "type": "string" },
+          "reviewedId": { "type": "string" }
+        },
+        "required": ["reviewerId", "reviewedId"]
+      }
+    },
+
+    "parallelWorkstreams": {
+      "type": "array",
+      "description": "Logical groupings of workers that can execute concurrently.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "streamId": { "type": "string" },
+          "workerIds": { "type": "array", "items": { "type": "string" } },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Stream IDs that must complete before this stream begins."
+          }
+        },
+        "required": ["streamId", "workerIds"]
+      }
+    }
+  },
+
+  "required": ["teamId", "orchestratorId", "createdAt", "taskDescription", "workers"]
+}

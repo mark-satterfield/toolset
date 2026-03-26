@@ -60,6 +60,51 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/product-team"
+    },
+    {
+      "name": "gitignore-guardian",
+      "description": "Gitignore management, auditing, and protection with PreToolUse hooks that block dangerous .gitignore modifications and git add of ignored files.",
+      "version": "1.0.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/gitignore-guardian"
+    },
+    {
+      "name": "chat-history",
+      "description": "Extract and organize Claude Code session history into a project .chats directory.",
+      "version": "1.0.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/chat-history"
+    },
+    {
+      "name": "dir-dr",
+      "description": "Scan, audit, reorganize, or map any directory, project, or file system structure.",
+      "version": "1.0.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/dir-dr"
+    },
+    {
+      "name": "skills-hygiene",
+      "description": "Manage Claude Code skill installations — deduplicate, promote, audit, internalize, and generalize skills across global and project levels.",
+      "version": "1.0.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/skills-hygiene"
+    },
+    {
+      "name": "agent-teams-workforce",
+      "description": "Parallel execution framework — calling agent spawns workers of its own type, workers cross-review each other, peer consensus required before done.",
+      "version": "2.0.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/agent-teams-workforce"
     }
   ]
 }
