@@ -100,7 +100,50 @@ Each worker is a full QA instance assigned to one audit type.
 2. Write one `assignments/{worker-id}.json` per worker
 3. Create workspace directories (see Workspace Layout)
 4. Set all `ralph-loop/{worker-id}.status` to `INCOMPLETE`
-5. Spawn workers (same agent type as self)
+5. Build the **worker prompt payload**
+
+   Claude Code's Agent tool spawns fresh subprocesses — they get only what
+   is in the `prompt` parameter. Workers will not automatically inherit
+   the orchestrator's skills, context, or agent definition. The
+   orchestrator must assemble a prompt payload that includes:
+
+   a. **Agent identity** — the full agent definition the orchestrator is
+      running as (e.g., the entire web-artisan prompt). This makes the
+      worker the same agent type in practice, not just in name.
+
+   b. **Mandatory reads** — any files the agent definition requires
+      reading before work begins. The orchestrator reads these files and
+      embeds their content (or the critical sections) directly into the
+      prompt. Workers cannot be trusted to read the right files unprompted.
+
+   c. **Skill content** — any skills listed as mandatory in the agent
+      definition. The orchestrator reads each SKILL.md and embeds the
+      content. Workers do not have access to the Skill tool's invocation
+      context.
+
+   d. **The worker's assignment** — path to `assignments/{worker-id}.json`
+      in the workspace, plus instructions to read it on startup.
+
+   e. **The workspace protocol** — this skill's execution protocol
+      (Phases 2–4), workspace layout, write permissions, proof schemas,
+      and ralph-loop rules. Embed or reference the full SKILL.md.
+
+   f. **Coordination state** — path to `roster.json` and the workspace
+      root so the worker can orient itself.
+
+   The orchestrator writes `orchestrator/worker-prompt-template.md` as the
+   base payload, then customizes per worker by appending the assignment
+   reference. This template is an auditable artifact — reviewers can verify
+   that workers were properly equipped.
+
+6. Spawn workers using the Agent tool. Each spawn call uses:
+   - `prompt`: the worker prompt payload from step 5, with the
+     worker-specific assignment appended
+   - `subagent_type`: the same agent type as the orchestrator
+   - `run_in_background: true`
+
+   The orchestrator MUST NOT proceed to integration or other work after
+   spawning. It waits for workers to reach consensus.
 
 ### Phase 2 — Parallel Work (Workers)
 
@@ -223,6 +266,7 @@ The orchestrator creates `.agent-workspace/{team-id}/` at team formation.
   consensus/
     round-{n}.json
   orchestrator/
+    worker-prompt-template.md  ← base prompt payload for spawning workers
     checkpoint.json            ← orchestrator's ratification review
     final-approval.json        ← written last; unblocks all workers
   ralph-loop/
@@ -292,5 +336,8 @@ schemas/roster.schema.json
 schemas/assignment.schema.json
 schemas/proof-of-work.schema.json
 schemas/proof-of-completeness.schema.json
+schemas/peer-review.schema.json
+schemas/consensus-round.schema.json
 schemas/orchestrator-checkpoint.schema.json
+schemas/final-approval.schema.json
 ```

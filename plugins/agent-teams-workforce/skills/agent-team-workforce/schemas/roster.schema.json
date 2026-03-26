@@ -2,12 +2,16 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://schema.skillspoke.com/agent-team-workforce/roster.json",
   "title": "Team Roster",
-  "description": "Written by the orchestrator at team formation. Defines all workers, their roles, and review assignments. Domain-agnostic — no knowledge of what workers are building.",
+  "description": "Written by the orchestrator at team formation. Lists all workers and their cross-review assignments. All workers are the same agent type as the orchestrator. Domain-agnostic.",
   "type": "object",
   "properties": {
 
     "teamId": { "type": "string" },
     "orchestratorId": { "type": "string" },
+    "agentType": {
+      "type": "string",
+      "description": "The agent type all workers share (same as orchestrator). e.g. 'web-artisan', 'backend-dev'."
+    },
     "createdAt": { "type": "string", "format": "date-time" },
     "taskDescription": {
       "type": "string",
@@ -34,10 +38,6 @@
         "type": "object",
         "properties": {
           "workerId": { "type": "string" },
-          "role": {
-            "type": "string",
-            "enum": ["orchestrator", "worker", "reviewer", "integrator"]
-          },
           "spec": {
             "type": "string",
             "description": "One-line description of what this worker is responsible for. Domain-specific content supplied by the invoking agent."
@@ -46,31 +46,31 @@
             "type": "string",
             "description": "Path to assignments/{worker-id}.json."
           },
-          "reviewAssignments": {
+          "crossReviewAssignments": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Worker IDs this worker is responsible for reviewing. Never includes self."
+            "description": "Worker IDs this worker must review after completing its own work. Never includes self."
           },
           "spawnedAt": { "type": "string", "format": "date-time" },
           "status": {
             "type": "string",
-            "enum": ["spawned", "working", "ready-for-review", "in-remediation", "approved", "terminated"]
+            "enum": ["spawned", "working", "ready-for-review", "in-review", "in-remediation", "approved", "terminated"]
           }
         },
-        "required": ["workerId", "role", "assignmentRef"]
+        "required": ["workerId", "assignmentRef", "crossReviewAssignments"]
       }
     },
 
-    "reviewPairs": {
+    "crossReviewPairs": {
       "type": "array",
-      "description": "Explicit reviewer → reviewed pairs. Cross-cutting to avoid reviewing close collaborators.",
+      "description": "Explicit worker-to-worker cross-review pairs. Every worker reviews at least one peer and is reviewed by at least one peer. No self-review.",
       "items": {
         "type": "object",
         "properties": {
-          "reviewerId": { "type": "string" },
-          "reviewedId": { "type": "string" }
+          "reviewerWorkerId": { "type": "string" },
+          "reviewedWorkerId": { "type": "string" }
         },
-        "required": ["reviewerId", "reviewedId"]
+        "required": ["reviewerWorkerId", "reviewedWorkerId"]
       }
     },
 
@@ -93,5 +93,5 @@
     }
   },
 
-  "required": ["teamId", "orchestratorId", "createdAt", "taskDescription", "workers"]
+  "required": ["teamId", "orchestratorId", "agentType", "createdAt", "taskDescription", "workers", "crossReviewPairs"]
 }

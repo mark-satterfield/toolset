@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/final-approval.json",
+  "title": "Final Approval",
+  "description": "Written by the orchestrator after ratifying peer consensus. This is the last file written in the workspace. Once it exists, all workers are set to APPROVED and may exit. Domain-agnostic.",
+  "type": "object",
+  "properties": {
+
+    "teamId": { "type": "string" },
+    "approvedAt": { "type": "string", "format": "date-time" },
+    "orchestratorId": { "type": "string" },
+    "checkpointRef": {
+      "type": "string",
+      "description": "Path to the orchestrator checkpoint that ratified consensus."
+    },
+    "consensusRound": {
+      "type": "integer",
+      "description": "Which consensus round achieved peer agreement."
+    },
+    "workersApproved": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Worker IDs whose ralph-loop status will be set to APPROVED."
+    },
+    "notes": { "type": "string" }
+  },
+
+  "required": ["teamId", "approvedAt", "orchestratorId", "checkpointRef", "consensusRound", "workersApproved"]
+}

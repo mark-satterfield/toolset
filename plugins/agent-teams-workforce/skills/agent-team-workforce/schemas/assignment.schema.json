@@ -8,7 +8,6 @@
 
     "workerId": { "type": "string" },
     "teamId": { "type": "string" },
-    "role": { "type": "string", "enum": ["worker", "reviewer", "integrator"] },
     "spec": { "type": "string", "description": "One-line description of this worker's responsibility." },
     "issuedAt": { "type": "string", "format": "date-time" },
     "version": {
@@ -42,7 +41,7 @@
 
     "requirements": {
       "type": "array",
-      "description": "Explicit, verifiable requirements. Every requirement must be independently checkable by the orchestrator. Content is domain-specific.",
+      "description": "Explicit, verifiable requirements. Every requirement must be independently checkable by peer reviewers and the orchestrator. Content is domain-specific.",
       "items": {
         "type": "object",
         "properties": {
@@ -51,7 +50,7 @@
           "priority": { "type": "string", "enum": ["must", "should", "could"] },
           "verificationMethod": {
             "type": "string",
-            "description": "How the orchestrator will independently verify this requirement."
+            "description": "How reviewers and the orchestrator will independently verify this requirement."
           },
           "acceptanceCriteria": {
             "type": "array",
@@ -91,7 +90,7 @@
 
     "deliverables": {
       "type": "array",
-      "description": "Expected output artifacts. Used by orchestrator to verify pow.json is complete.",
+      "description": "Expected output artifacts. Used by peer reviewers and orchestrator to verify pow.json is complete.",
       "items": {
         "type": "object",
         "properties": {
@@ -106,21 +105,21 @@
 
     "remediationNotes": {
       "type": "array",
-      "description": "Appended by orchestrator during remediation cycles. Worker must address every note.",
+      "description": "Appended by orchestrator or peer reviewers during remediation cycles. Worker must address every note.",
       "items": {
         "type": "object",
         "properties": {
           "iteration": { "type": "integer" },
-          "checkpointRef": { "type": "string" },
+          "source": { "type": "string", "description": "Who wrote this note — orchestrator ID or peer worker ID." },
           "issue": { "type": "string" },
           "requiredAction": { "type": "string" },
           "severity": { "type": "string", "enum": ["blocking", "major", "minor"] },
           "addedAt": { "type": "string", "format": "date-time" }
         },
-        "required": ["iteration", "issue", "requiredAction", "severity"]
+        "required": ["iteration", "source", "issue", "requiredAction", "severity"]
       }
     }
   },
 
-  "required": ["workerId", "teamId", "role", "issuedAt", "version", "requirements", "deliverables"]
+  "required": ["workerId", "teamId", "issuedAt", "version", "requirements", "deliverables"]
 }

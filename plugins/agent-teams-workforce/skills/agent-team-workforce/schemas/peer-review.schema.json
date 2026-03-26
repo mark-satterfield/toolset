@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/peer-review.json",
+  "title": "Peer Review",
+  "description": "Written by a worker when cross-reviewing another worker's output. The reviewing worker independently verifies artifacts, test results, and completeness claims against the original assignment. Domain-agnostic.",
+  "type": "object",
+  "properties": {
+
+    "reviewerWorkerId": { "type": "string", "description": "The worker performing this review." },
+    "reviewedWorkerId": { "type": "string", "description": "The worker whose work is being reviewed." },
+    "teamId": { "type": "string" },
+    "reviewedAt": { "type": "string", "format": "date-time" },
+    "assignmentRef": { "type": "string", "description": "Path to the reviewed worker's assignment file." },
+
+    "powVerification": {
+      "type": "object",
+      "description": "Verification of the reviewed worker's proof-of-work claims.",
+      "properties": {
+        "artifactsChecked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string" },
+              "exists": { "type": "boolean" },
+              "hashMatch": { "type": "boolean" },
+              "notes": { "type": "string" }
+            },
+            "required": ["path", "exists"]
+          }
+        },
+        "testsRerun": {
+          "type": "array",
+          "description": "Tests the reviewer re-ran independently.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "command": { "type": "string" },
+              "passed": { "type": "boolean" },
+              "notes": { "type": "string" }
+            },
+            "required": ["name", "passed"]
+          }
+        },
+        "externalRefsChecked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "id": { "type": "string" },
+              "exists": { "type": "boolean" },
+              "notes": { "type": "string" }
+            },
+            "required": ["type", "id", "exists"]
+          }
+        }
+      }
+    },
+
+    "pocVerification": {
+      "type": "object",
+      "description": "Verification of completeness claims against the original assignment.",
+      "properties": {
+        "requirementsChecked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "requirementId": { "type": "string" },
+              "workerClaimedStatus": { "type": "string" },
+              "reviewerVerifiedStatus": {
+                "type": "string",
+                "enum": ["confirmed-complete", "confirmed-partial", "confirmed-incomplete", "cannot-verify"]
+              },
+              "evidenceInspected": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Paths or ref IDs the reviewer actually opened to verify."
+              },
+              "notes": { "type": "string" }
+            },
+            "required": ["requirementId", "workerClaimedStatus", "reviewerVerifiedStatus"]
+          }
+        }
+      }
+    },
+
+    "verdict": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "PASS_WITH_NOTES"],
+      "description": "PASS = work meets all requirements. FAIL = work has issues that must be fixed. PASS_WITH_NOTES = work is acceptable but has observations."
+    },
+
+    "issues": {
+      "type": "array",
+      "description": "Required if verdict is FAIL. Each issue must explain what is wrong and what needs to change.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "requirementId": { "type": "string", "description": "Which requirement this issue relates to, if applicable." },
+          "description": { "type": "string" },
+          "severity": { "type": "string", "enum": ["blocking", "major", "minor"] },
+          "suggestedFix": { "type": "string" }
+        },
+        "required": ["description", "severity"]
+      }
+    },
+
+    "notes": {
+      "type": "string",
+      "description": "General observations. Used with PASS_WITH_NOTES to record non-blocking feedback."
+    }
+  },
+
+  "required": ["reviewerWorkerId", "reviewedWorkerId", "teamId", "reviewedAt", "assignmentRef", "verdict"]
+}

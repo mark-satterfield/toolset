@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.skillspoke.com/agent-team-workforce/consensus-round.json",
+  "title": "Consensus Round",
+  "description": "Written by the orchestrator after each cross-review round. Records the state of peer consensus — which workers passed, which have outstanding issues, and whether consensus was reached. Domain-agnostic.",
+  "type": "object",
+  "properties": {
+
+    "teamId": { "type": "string" },
+    "round": { "type": "integer", "minimum": 1 },
+    "recordedAt": { "type": "string", "format": "date-time" },
+
+    "workerStatuses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "workerId": { "type": "string" },
+          "peerReviewsReceived": { "type": "integer" },
+          "peerReviewsExpected": { "type": "integer" },
+          "allPeersPassed": { "type": "boolean" },
+          "outstandingIssues": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issues from FAIL reviews that remain unresolved."
+          }
+        },
+        "required": ["workerId", "peerReviewsReceived", "peerReviewsExpected", "allPeersPassed"]
+      }
+    },
+
+    "consensusReached": {
+      "type": "boolean",
+      "description": "True when all workers have all-peers-passed and zero outstanding issues."
+    },
+
+    "nextAction": {
+      "type": "string",
+      "enum": ["continue-remediation", "proceed-to-ratification"],
+      "description": "continue-remediation = at least one worker has unresolved issues. proceed-to-ratification = peer consensus achieved, orchestrator should ratify."
+    },
+
+    "notes": { "type": "string" }
+  },
+
+  "required": ["teamId", "round", "recordedAt", "workerStatuses", "consensusReached", "nextAction"]
+}

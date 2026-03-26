@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://schema.skillspoke.com/agent-team-workforce/orchestrator-checkpoint.json",
   "title": "Orchestrator Checkpoint",
-  "description": "Written by the orchestrator after each review pass. Documents every artifact independently inspected — not what workers claimed, but what the orchestrator actually found. Never written by workers. Domain-agnostic.",
+  "description": "Written by the orchestrator to ratify peer consensus. The orchestrator reads all peer review verdicts, spot-checks artifacts, and decides whether to approve or send workers back for remediation. Domain-agnostic.",
   "type": "object",
   "properties": {
 
@@ -21,12 +21,11 @@
           "workerId": { "type": "string" },
           "iterationReviewed": { "type": "integer" },
 
-          "powReview": {
+          "spotCheckResults": {
             "type": "object",
-            "description": "Orchestrator's independent review of this worker's pow.json claims.",
+            "description": "Orchestrator's spot-check of a sample of this worker's artifacts and claims.",
             "properties": {
-              "powRef": { "type": "string" },
-              "artifactsVerified": {
+              "artifactsSampled": {
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -36,65 +35,33 @@
                     "actualHash": { "type": "string" },
                     "exists": { "type": "boolean" },
                     "hashMatch": { "type": "boolean" },
-                    "orchestratorNotes": { "type": "string" }
+                    "notes": { "type": "string" }
                   },
                   "required": ["path", "exists"]
                 }
               },
-              "externalRefsVerified": {
+              "testsSampled": {
                 "type": "array",
-                "description": "Orchestrator's independent verification of external references (Figma nodes, URLs, etc.)",
+                "description": "Tests the orchestrator re-ran to verify.",
                 "items": {
                   "type": "object",
                   "properties": {
-                    "type": { "type": "string" },
-                    "id": { "type": "string" },
-                    "exists": { "type": "boolean" },
-                    "verificationMethod": { "type": "string", "description": "What the orchestrator did to verify." },
-                    "orchestratorNotes": { "type": "string" }
+                    "name": { "type": "string" },
+                    "command": { "type": "string" },
+                    "passed": { "type": "boolean" },
+                    "notes": { "type": "string" }
                   },
-                  "required": ["type", "id", "exists"]
+                  "required": ["name", "passed"]
                 }
               },
-              "powVerdict": { "type": "string", "enum": ["PASS", "FAIL", "PASS_WITH_NOTES"] },
-              "powIssues": { "type": "array", "items": { "type": "string" } }
+              "spotCheckVerdict": { "type": "string", "enum": ["PASS", "FAIL", "PASS_WITH_NOTES"] },
+              "issues": { "type": "array", "items": { "type": "string" } }
             }
           },
 
-          "pocReview": {
+          "peerCrossReviewSummary": {
             "type": "object",
-            "description": "Orchestrator's independent review of completeness claims against the original assignment.",
-            "properties": {
-              "pocRef": { "type": "string" },
-              "assignmentRef": { "type": "string" },
-              "requirementVerification": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "requirementId": { "type": "string" },
-                    "agentClaimedStatus": { "type": "string" },
-                    "orchestratorVerifiedStatus": {
-                      "type": "string",
-                      "enum": ["confirmed-complete", "confirmed-partial", "confirmed-incomplete", "cannot-verify"]
-                    },
-                    "evidenceInspected": {
-                      "type": "array",
-                      "items": { "type": "string" },
-                      "description": "Paths or ref IDs the orchestrator actually opened to verify."
-                    },
-                    "orchestratorNotes": { "type": "string" }
-                  },
-                  "required": ["requirementId", "agentClaimedStatus", "orchestratorVerifiedStatus"]
-                }
-              },
-              "pocVerdict": { "type": "string", "enum": ["PASS", "FAIL", "PASS_WITH_NOTES"] },
-              "pocIssues": { "type": "array", "items": { "type": "string" } }
-            }
-          },
-
-          "peerReviewSummary": {
-            "type": "object",
+            "description": "Summary of cross-reviews this worker received from peer workers.",
             "properties": {
               "reviewsReceived": { "type": "integer" },
               "reviewsExpected": { "type": "integer" },
@@ -103,9 +70,10 @@
                 "items": {
                   "type": "object",
                   "properties": {
-                    "reviewerId": { "type": "string" },
+                    "peerWorkerId": { "type": "string", "description": "The worker who performed this review." },
                     "verdict": { "type": "string", "enum": ["PASS", "FAIL", "PASS_WITH_NOTES"] }
-                  }
+                  },
+                  "required": ["peerWorkerId", "verdict"]
                 }
               },
               "allPeersPassed": { "type": "boolean" }
@@ -114,7 +82,8 @@
 
           "workerVerdict": {
             "type": "string",
-            "enum": ["APPROVED", "NEEDS_REMEDIATION", "ESCALATE_TO_USER"]
+            "enum": ["APPROVED", "NEEDS_REMEDIATION", "ESCALATE_TO_USER"],
+            "description": "Orchestrator's final decision. APPROVED = peer consensus ratified. NEEDS_REMEDIATION = orchestrator disagrees or spot-check failed."
           },
 
           "remediationInstructions": {
@@ -146,7 +115,7 @@
 
     "nextAction": {
       "type": "string",
-      "enum": ["continue-remediation", "next-checkpoint", "write-final-approval", "escalate-to-user"]
+      "enum": ["continue-remediation", "write-final-approval", "escalate-to-user"]
     },
 
     "orchestratorNotes": { "type": "string" }
