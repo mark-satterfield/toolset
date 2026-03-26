@@ -9,5 +9,5 @@
   "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/skills-hygiene",
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
-  "skills": "./"
+  "skills": "./skills/"
 }
