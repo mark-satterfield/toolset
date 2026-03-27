@@ -6,7 +6,7 @@
  * using Canvas API compositing.
  *
  * Dependencies:
- *   npm install canvas
+ *   canvas (declared in package.json)
  *
  * Usage:
  *   node glassify-png.js input.png [output.png] [--preset=standard] [--param=value ...]

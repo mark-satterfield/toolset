@@ -1,4 +1,5 @@
 ---
+Name: glassify
 name: glassify
 description: >-
   Convert logo images (PNG, SVG) into glass-effect versions or place them on
@@ -9,12 +10,33 @@ description: >-
   injection, outputs SVG). Trigger on keywords: glassify, glass logo, logo on
   glass, glass card logo, frosted logo, glass effect logo, make it glass,
   glass material logo, glass brand asset.
+Category: Frontend Design
+Tier: STANDARD
+Dependencies: "canvas (npm, for PNG pipeline)"
+Author: mark-satterfield
+Version: 1.0.0
 ---
 
 # Glassify — Glass Effect Generator for Logos and Brand Assets
 
+## Name
+
+glassify
+
+## Description
+
 Converts PNG and SVG logos, lettermarks, combomarks, and icons into
 glass-material versions or places them on glassmorphism card compositions.
+
+## Features
+
+- "Made of glass" — logo becomes translucent glass with refraction highlights
+- "On glass" — logo placed on a glassmorphism card background
+- "Glass on glass" — both logo and card get glass treatment
+- SVG pipeline with native filter injection (no dependencies)
+- PNG pipeline via Canvas API compositing
+- Five presets: subtle, standard, frosted, crystal, colored
+- Configurable parameters: blur, opacity, tint, highlight, shadow, refraction
 
 ---
 
@@ -375,3 +397,18 @@ When the user provides a PNG or SVG and requests a glass effect:
 
 ### Glass Card (HTML)
 - `liquid-glass.css` from the Liquid Glass Design System skill
+
+---
+
+## Usage
+
+Invoke this skill when converting a logo or brand asset into a glass-effect version.
+Provide the input image (PNG or SVG) and specify the desired mode: "made of glass",
+"on glass", or "glass on glass". Optionally select a preset (subtle, standard, frosted,
+crystal, colored) or provide custom parameters.
+
+## Examples
+
+- "Glassify our logo" — applies the standard preset to make the logo look like glass material
+- "Put the logo on a glass card" — places the logo on a glassmorphism card background
+- "Create a frosted glass version of this SVG" — uses the SVG pipeline with the frosted preset

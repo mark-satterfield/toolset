@@ -11,7 +11,7 @@
  *   1 = validation errors found
  *   2 = file not found or parse error
  *
- * Dependencies: ajv (npm install ajv)
+ * Dependencies: ajv (declared in package.json)
  */
 'use strict';
 
@@ -23,7 +23,7 @@ let Ajv;
 try {
   Ajv = require('ajv');
 } catch {
-  console.error('Missing dependency: npm install ajv');
+  console.error('Missing dependency: ajv — see package.json for required dependencies');
   process.exit(2);
 }
 

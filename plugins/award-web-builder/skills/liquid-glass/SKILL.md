@@ -1,4 +1,5 @@
 ---
+Name: liquid-glass
 name: liquid-glass
 description: >-
   Implement Apple-inspired Liquid Glass and Glassmorphism design systems.
@@ -10,14 +11,37 @@ description: >-
   Trigger on keywords: liquid glass, glassmorphism, frosted glass, translucent
   UI, glass card, glass effect, backdrop blur, refraction, glass material,
   glass design system, liquidGL, WebGL glass.
+Category: Frontend Design
+Tier: POWERFUL
+Dependencies: None
+Author: mark-satterfield
+Version: 1.0.0
 ---
 
 # Liquid Glass Design System
+
+## Name
+
+liquid-glass
+
+## Description
 
 A comprehensive design system for implementing Apple-style Liquid Glass and
 Glassmorphism effects across web platforms. Derived from Apple's WWDC 2025
 Liquid Glass introduction, Microsoft Fluent Design Acrylic materials, and
 established glassmorphism patterns refined since 2020.
+
+## Features
+
+- CSS design tokens and custom properties for glass effects
+- React component patterns (GlassContainer, GlassCard, GlassButton, GlassNav)
+- SVG distortion filters for refraction effects
+- WebGL refraction via liquidGL
+- Tailwind CSS utility classes
+- Accessibility: WCAG 2.2 AA contrast, reduced-motion and reduced-transparency support
+- Performance guardrails: max blur layers, nesting rules, element limits
+- Dark mode adaptation
+- Component catalog: nav bar, card, modal, tab bar, tooltip, FAB, menu
 
 ---
 
@@ -912,3 +936,18 @@ viewport width or height.
 - @developer-hub/liquid-glass (npm): liquid-glass-js.com
 - liquidGL (WebGL): github.com/naughtyduk/liquidGL
 - Josh W. Comeau: Next-level frosted glass with backdrop-filter
+
+---
+
+## Usage
+
+This skill activates automatically when building translucent UI components,
+frosted glass cards, navigation bars, modals, or any interface requiring depth
+through transparency. Reference the design tokens, CSS classes, and React
+components defined above when implementing glass effects.
+
+## Examples
+
+- "Build a frosted glass navigation bar" — use the Nav Bar component from the catalog with glass tokens
+- "Create a glassmorphism card layout" — apply the GlassCard React component with standard preset
+- "Add liquid glass effects to the modal" — use the three-layer composition model with CSS custom properties

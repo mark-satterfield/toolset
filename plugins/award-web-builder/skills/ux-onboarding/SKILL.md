@@ -1,11 +1,32 @@
 ---
+Name: ux-onboarding
 name: ux-onboarding
 description: Design onboarding flows that get users to value fast. Use when building sign-up flows, welcome screens, product tours, feature introductions, or any first-run experience. Also use when designing AI feature onboarding, contextual guidance, or progressive disclosure patterns.
+Category: UX Design
+Tier: STANDARD
+Dependencies: None
+Author: mark-satterfield
+Version: 1.0.0
 ---
 
 # UX Onboarding Design
 
+## Name
+
+ux-onboarding
+
+## Description
+
 Design onboarding experiences that get users to value fast without overwhelming them. This skill covers the full spectrum — from sign-up to first meaningful action — with specific guidance for AI-powered products.
+
+## Features
+
+- Five core UX onboarding principles
+- Anti-pattern catalog for common onboarding mistakes
+- AI-enhanced onboarding patterns (adaptive flows, copilot onboarding, progressive AI disclosure)
+- Onboarding flow element reference (welcome screen, profile wizard, guided tour, etc.)
+- Design checklist for validation
+- SaaS-specific onboarding guidance
 
 ## Five Principles
 
@@ -136,3 +157,17 @@ Users arriving at SkillSpoke may be stressed, uncertain, or overwhelmed. The onb
 - Don't explain every feature in the sidebar
 - Don't require a complete profile before showing value
 - Don't use corporate onboarding language ("Let's set up your workspace!")
+
+---
+
+## Usage
+
+Use this skill when designing sign-up flows, welcome screens, product tours,
+feature introductions, or any first-run experience. Apply the five principles
+and anti-pattern checklist to evaluate existing onboarding or design new flows.
+
+## Examples
+
+- "Design an onboarding flow for our SaaS app" — apply the five principles with progressive disclosure
+- "Review this sign-up flow" — check against anti-patterns and the design checklist
+- "Add AI copilot onboarding" — use the AI-enhanced onboarding patterns section
