@@ -15,12 +15,14 @@ knowledge lives in the agent that invokes it.
 plugins/agent-teams-workforce/skills/agent-team-workforce/
   SKILL.md
   README.md
+  
   schemas/
     roster.schema.json
     assignment.schema.json
     proof-of-work.schema.json
     proof-of-completeness.schema.json
     orchestrator-checkpoint.schema.json
+  
   .agent-workspace-spec/
     README.md
 ```
