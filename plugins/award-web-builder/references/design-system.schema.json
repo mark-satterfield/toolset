@@ -1,0 +1,1218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schema.design/system/ui-ux-comprehensive.json",
+  "title": "Comprehensive UI/UX Design System Schema",
+  "description": "A complete, iteratively expanded schema supporting multimodal color formats, comprehensive sizing units, typographic scales, architectural scales, modern visual states, accessibility standards, multi-sensory tokens, token aliasing, platform targets, RTL/LTR, density modes, component variants and slots, animation keyframes, iconography, imagery, surface semantics, data visualization, container queries, global focus tokens, empty/loading/error states, tooling references, and structured documentation.",
+  "type": "object",
+  "definitions": {
+
+    "TokenReference": {
+      "type": "object",
+      "description": "W3C Design Tokens spec-style alias. Use $value to reference another token by dot-path.",
+      "properties": {
+        "$value": { "type": "string", "description": "Dot-path reference e.g. '{color.brand.primary}'" },
+        "$type": { "type": "string", "enum": ["color", "dimension", "fontFamily", "fontWeight", "duration", "cubicBezier", "number", "string"] },
+        "$description": { "type": "string" },
+        "$status": { "type": "string", "enum": ["stable", "deprecated", "experimental", "internal"] },
+        "$deprecated": {
+          "type": "object",
+          "properties": {
+            "since": { "type": "string", "description": "Version when deprecated" },
+            "replacement": { "type": "string", "description": "Dot-path of replacement token" },
+            "message": { "type": "string" }
+          }
+        },
+        "$changelog": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "version": { "type": "string" },
+              "date": { "type": "string", "format": "date" },
+              "change": { "type": "string" },
+              "author": { "type": "string" }
+            },
+            "required": ["version", "change"]
+          }
+        }
+      },
+      "required": ["$value"]
+    },
+
+    "ColorMultiFormat": {
+      "type": "object",
+      "description": "Defines a color in all formats simultaneously, including alpha channels.",
+      "properties": {
+        "hex": { "type": "string", "pattern": "^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{8}|[A-Fa-f0-9]{3})$" },
+        "rgb": {
+          "type": "object",
+          "properties": {
+            "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["r", "g", "b"]
+        },
+        "cmyk": {
+          "type": "object",
+          "properties": {
+            "c": { "type": "number", "minimum": 0, "maximum": 100 },
+            "m": { "type": "number", "minimum": 0, "maximum": 100 },
+            "y": { "type": "number", "minimum": 0, "maximum": 100 },
+            "k": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "required": ["c", "m", "y", "k"]
+        },
+        "hsl": {
+          "type": "object",
+          "properties": {
+            "h": { "type": "number", "minimum": 0, "maximum": 360 },
+            "s": { "type": "number", "minimum": 0, "maximum": 100 },
+            "l": { "type": "number", "minimum": 0, "maximum": 100 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["h", "s", "l"]
+        },
+        "hsv": {
+          "type": "object",
+          "properties": {
+            "h": { "type": "number", "minimum": 0, "maximum": 360 },
+            "s": { "type": "number", "minimum": 0, "maximum": 100 },
+            "v": { "type": "number", "minimum": 0, "maximum": 100 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["h", "s", "v"]
+        },
+        "cssVar": { "type": "string", "pattern": "^--[a-zA-Z0-9-]+$" },
+        "$ref": { "$ref": "#/definitions/TokenReference" }
+      }
+    },
+
+    "GradientMultiFormat": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["linear", "radial", "conic", "mesh"] },
+        "stops": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "color": { "$ref": "#/definitions/ColorMultiFormat" },
+              "position": { "type": "number", "minimum": 0, "maximum": 100 }
+            }
+          }
+        },
+        "angle": { "type": "number", "description": "Degrees for linear/conic gradients" },
+        "cssValue": { "type": "string" }
+      }
+    },
+
+    "MeasurementMultiUnit": {
+      "type": "object",
+      "description": "Supports defining size, spacing, or layout in all available CSS, print, abstract, and scaling units simultaneously.",
+      "properties": {
+        "px": { "type": "number" },
+        "rem": { "type": "number" },
+        "em": { "type": "number" },
+        "percent": { "type": "number" },
+        "vw": { "type": "number" },
+        "vh": { "type": "number" },
+        "vmin": { "type": "number" },
+        "vmax": { "type": "number" },
+        "ch": { "type": "number" },
+        "ex": { "type": "number" },
+        "pt": { "type": "number" },
+        "pc": { "type": "number" },
+        "in": { "type": "number" },
+        "cm": { "type": "number" },
+        "mm": { "type": "number" },
+        "fr": { "type": "number" },
+        "dp": { "type": "number" },
+        "dip": { "type": "number" },
+        "sp": { "type": "number" },
+        "cqw": { "type": "number", "description": "Container query width unit" },
+        "cqh": { "type": "number", "description": "Container query height unit" },
+        "cqi": { "type": "number", "description": "Container query inline size unit" },
+        "cqb": { "type": "number", "description": "Container query block size unit" },
+        "grid8pt": { "type": "number", "multipleOf": 8 },
+        "tShirt": { "type": "string", "enum": ["XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL"] },
+        "architectural": { "type": "string", "pattern": "^1:\\d+$" },
+        "modularScale": { "type": "number", "enum": [1.067, 1.125, 1.200, 1.250, 1.333, 1.414, 1.500, 1.618] },
+        "classicalScale": { "type": "number", "enum": [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 21, 24, 36, 48, 60, 72] },
+        "$ref": { "$ref": "#/definitions/TokenReference" }
+      }
+    },
+
+    "PlatformOverride": {
+      "type": "object",
+      "description": "Per-platform token value overrides. Allows the same token to resolve differently per platform.",
+      "properties": {
+        "web": {},
+        "ios": {},
+        "android": {},
+        "macos": {},
+        "windows": {},
+        "watchos": {},
+        "print": {}
+      },
+      "additionalProperties": {}
+    },
+
+    "TypographyStyles": {
+      "type": "object",
+      "properties": {
+        "fontFamily": { "type": "array", "items": { "type": "string" } },
+        "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900, "multipleOf": 100 },
+        "fontSize": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "lineHeight": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "letterSpacing": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "textTransform": { "type": "string", "enum": ["none", "capitalize", "uppercase", "lowercase"] },
+        "textDecoration": { "type": "string", "enum": ["none", "underline", "line-through"] },
+        "direction": { "type": "string", "enum": ["ltr", "rtl", "auto"], "description": "Text direction" },
+        "unicodeBidi": { "type": "string", "enum": ["normal", "embed", "bidi-override", "isolate"] },
+        "writingMode": { "type": "string", "enum": ["horizontal-tb", "vertical-rl", "vertical-lr"] }
+      }
+    },
+
+    "ShadowStyles": {
+      "type": "object",
+      "properties": {
+        "offsetX": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "offsetY": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "blurRadius": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "spreadRadius": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "color": { "$ref": "#/definitions/ColorMultiFormat" },
+        "inset": { "type": "boolean", "default": false }
+      }
+    },
+
+    "KeyframeStep": {
+      "type": "object",
+      "description": "A single keyframe step in an animation.",
+      "properties": {
+        "offset": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage position in the animation timeline (0–100)"
+        },
+        "styles": { "$ref": "#/definitions/ComponentStateStyles" }
+      },
+      "required": ["offset"]
+    },
+
+    "AnimationStyles": {
+      "type": "object",
+      "properties": {
+        "duration": { "type": "number", "description": "Milliseconds" },
+        "delay": { "type": "number", "description": "Milliseconds" },
+        "easing": {
+          "anyOf": [
+            { "type": "string", "enum": ["linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end"] },
+            {
+              "type": "object",
+              "properties": {
+                "cubicBezier": {
+                  "type": "array",
+                  "items": { "type": "number" },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "[x1, y1, x2, y2]"
+                }
+              }
+            }
+          ]
+        },
+        "iterationCount": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "string", "enum": ["infinite"] }
+          ]
+        },
+        "direction": { "type": "string", "enum": ["normal", "reverse", "alternate", "alternate-reverse"] },
+        "fillMode": { "type": "string", "enum": ["none", "forwards", "backwards", "both"] },
+        "keyframes": {
+          "type": "array",
+          "description": "Full keyframe definition for complex animations.",
+          "items": { "$ref": "#/definitions/KeyframeStep" }
+        },
+        "reducedMotionAlternative": {
+          "type": "object",
+          "description": "Fallback styles/animation for prefers-reduced-motion.",
+          "properties": {
+            "strategy": { "type": "string", "enum": ["none", "instant", "fade", "custom"] },
+            "keyframes": { "type": "array", "items": { "$ref": "#/definitions/KeyframeStep" } }
+          }
+        }
+      }
+    },
+
+    "FocusRingStyles": {
+      "type": "object",
+      "description": "System-wide focus ring tokens. Apply globally rather than per-component.",
+      "properties": {
+        "color": { "$ref": "#/definitions/ColorMultiFormat" },
+        "offset": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "width": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "style": { "type": "string", "enum": ["solid", "dashed", "dotted", "double", "auto"] },
+        "borderRadius": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "highContrastColor": { "$ref": "#/definitions/ColorMultiFormat", "description": "Focus ring color in high-contrast mode" },
+        "insetFallback": { "type": "boolean", "description": "Use inset outline when offset clips outside overflow:hidden" }
+      }
+    },
+
+    "ComponentStateStyles": {
+      "type": "object",
+      "description": "Styles applied to specific interaction and rendering states.",
+      "properties": {
+        "layout": { "$ref": "#/definitions/MeasurementMultiUnit" },
+        "color": { "$ref": "#/definitions/ColorMultiFormat" },
+        "background": {
+          "oneOf": [
+            { "$ref": "#/definitions/ColorMultiFormat" },
+            { "$ref": "#/definitions/GradientMultiFormat" }
+          ]
+        },
+        "typography": { "$ref": "#/definitions/TypographyStyles" },
+        "border": {
+          "type": "object",
+          "properties": {
+            "width": { "$ref": "#/definitions/MeasurementMultiUnit" },
+            "style": { "type": "string", "enum": ["solid", "dashed", "dotted", "none"] },
+            "color": { "$ref": "#/definitions/ColorMultiFormat" },
+            "radius": { "$ref": "#/definitions/MeasurementMultiUnit" }
+          }
+        },
+        "shadows": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ShadowStyles" }
+        },
+        "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+        "transform": { "type": "string" },
+        "zIndex": { "type": "integer" },
+        "cursor": { "type": "string" },
+        "transition": { "$ref": "#/definitions/AnimationStyles" },
+        "glassmorphism": {
+          "type": "object",
+          "properties": {
+            "backdropFilter": { "type": "string", "description": "e.g., blur(16px) saturate(180%)" },
+            "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat", "description": "Requires alpha < 1" },
+            "border": { "type": "string", "description": "e.g., 1px solid rgba(255, 255, 255, 0.2)" },
+            "boxShadow": { "type": "string" }
+          }
+        },
+        "neumorphism": {
+          "type": "object",
+          "properties": {
+            "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat" },
+            "boxShadowLight": { "$ref": "#/definitions/ShadowStyles" },
+            "boxShadowDark": { "$ref": "#/definitions/ShadowStyles" }
+          }
+        }
+      }
+    },
+
+    "ComponentSlot": {
+      "type": "object",
+      "description": "A named insertion point in a component's composition model.",
+      "properties": {
+        "name": { "type": "string", "description": "Slot identifier, e.g. 'leadingIcon', 'label', 'trailingAction'" },
+        "description": { "type": "string" },
+        "required": { "type": "boolean", "default": false },
+        "accepts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Component IDs or categories accepted in this slot"
+        },
+        "defaultContent": { "type": "string", "description": "Default component ID or description if slot is empty" },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "maxItems": { "type": "integer" },
+            "minItems": { "type": "integer" }
+          }
+        }
+      },
+      "required": ["name"]
+    },
+
+    "ComponentVariantAxis": {
+      "type": "object",
+      "description": "A single orthogonal axis of variation (e.g. size, intent, visual style).",
+      "properties": {
+        "name": { "type": "string", "description": "Axis name, e.g. 'size', 'intent', 'visual'" },
+        "description": { "type": "string" },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "value": { "type": "string", "description": "e.g. 'sm', 'primary', 'filled'" },
+              "description": { "type": "string" },
+              "isDefault": { "type": "boolean" },
+              "styleOverrides": { "$ref": "#/definitions/ComponentStateStyles" },
+              "tokenOverrides": {
+                "type": "object",
+                "description": "Token dot-path overrides for this variant value",
+                "additionalProperties": { "type": "string" }
+              }
+            },
+            "required": ["value"]
+          }
+        }
+      },
+      "required": ["name", "values"]
+    },
+
+    "DocumentationNode": {
+      "type": "object",
+      "description": "Structured documentation attached to any token or component.",
+      "properties": {
+        "usage": { "type": "string", "description": "When and how to use this token or component" },
+        "doExamples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Positive usage examples"
+        },
+        "dontExamples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Anti-patterns to avoid"
+        },
+        "relatedComponents": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Component IDs that are related or commonly paired"
+        },
+        "accessibilityNotes": { "type": "string" },
+        "storybookUrl": { "type": "string", "format": "uri" },
+        "figmaUrl": { "type": "string", "format": "uri" },
+        "designReviewStatus": {
+          "type": "string",
+          "enum": ["draft", "review", "approved", "deprecated"]
+        }
+      }
+    },
+
+    "ToolingReferences": {
+      "type": "object",
+      "description": "Links between the schema and implementation/design tooling.",
+      "properties": {
+        "figmaNodeId": { "type": "string", "description": "Figma node ID for direct deep-link" },
+        "figmaFileKey": { "type": "string" },
+        "storybookId": { "type": "string", "description": "Storybook story ID" },
+        "storybookUrl": { "type": "string", "format": "uri" },
+        "importPath": { "type": "string", "description": "Code import path, e.g. '@acme/ui/Button'" },
+        "npmPackage": { "type": "string" },
+        "dataTestId": { "type": "string", "description": "Conventional data-testid value" },
+        "zeroHeightUrl": { "type": "string", "format": "uri" },
+        "supernova": {
+          "type": "object",
+          "properties": {
+            "tokenGroupId": { "type": "string" },
+            "componentId": { "type": "string" }
+          }
+        },
+        "figmaVariable": {
+          "type": "object",
+          "description": "Maps this token to a Figma variable for bidirectional sync.",
+          "properties": {
+            "collection": { "type": "string", "description": "Figma variable collection name, e.g. 'Colors', 'Spacing'" },
+            "variableName": { "type": "string", "description": "Figma variable name, e.g. 'steel-navy'" },
+            "modeBindings": {
+              "type": "object",
+              "description": "Per-mode value bindings, e.g. { 'Light': '#1a3550', 'Dark': '#e4edf4' }",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "codeConnect": {
+          "type": "object",
+          "description": "Figma Code Connect mapping linking design components to code implementations.",
+          "properties": {
+            "importPath": { "type": "string", "description": "e.g. '@skillspoke/ui/Button'" },
+            "propMapping": {
+              "type": "object",
+              "description": "Maps Figma variant properties to React props.",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "DesignComponent": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": ["token_chip", "atom", "molecule", "organism", "template", "page"]
+        },
+        "figmaTags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "status": {
+          "type": "string",
+          "enum": ["stable", "deprecated", "experimental", "internal"],
+          "default": "stable"
+        },
+        "tooling": { "$ref": "#/definitions/ToolingReferences" },
+        "documentation": { "$ref": "#/definitions/DocumentationNode" },
+        "accessibility": {
+          "type": "object",
+          "properties": {
+            "ariaRole": { "type": "string" },
+            "ariaLabel": { "type": "string" },
+            "ariaDescribedBy": { "type": "string" },
+            "tabIndex": { "type": "integer" },
+            "contrastRatio": { "type": "number", "minimum": 1 },
+            "wcagLevel": { "type": "string", "enum": ["A", "AA", "AAA"] },
+            "keyboardNavigation": { "type": "string", "description": "Description of keyboard interaction pattern" },
+            "screenReaderBehavior": { "type": "string" },
+            "reducedMotionBehavior": { "type": "string" }
+          }
+        },
+        "directionality": {
+          "type": "object",
+          "description": "RTL/LTR layout mirroring rules.",
+          "properties": {
+            "mirrorOnRTL": { "type": "boolean", "default": false, "description": "Whether the component layout mirrors in RTL" },
+            "mirrorIcons": { "type": "boolean", "default": false },
+            "rtlOverrides": { "$ref": "#/definitions/ComponentStateStyles" }
+          }
+        },
+        "density": {
+          "type": "object",
+          "description": "Style overrides per density mode.",
+          "properties": {
+            "comfortable": { "$ref": "#/definitions/ComponentStateStyles" },
+            "compact": { "$ref": "#/definitions/ComponentStateStyles" },
+            "cozy": { "$ref": "#/definitions/ComponentStateStyles" }
+          }
+        },
+        "variants": {
+          "type": "array",
+          "description": "Orthogonal variant axes (size, intent, visual style, etc.).",
+          "items": { "$ref": "#/definitions/ComponentVariantAxis" }
+        },
+        "slots": {
+          "type": "array",
+          "description": "Named composition slots for child components.",
+          "items": { "$ref": "#/definitions/ComponentSlot" }
+        },
+        "states": {
+          "type": "object",
+          "properties": {
+            "default": { "$ref": "#/definitions/ComponentStateStyles" },
+            "hover": { "$ref": "#/definitions/ComponentStateStyles" },
+            "active": { "$ref": "#/definitions/ComponentStateStyles" },
+            "focus": { "$ref": "#/definitions/ComponentStateStyles" },
+            "focusVisible": { "$ref": "#/definitions/ComponentStateStyles" },
+            "disabled": { "$ref": "#/definitions/ComponentStateStyles" },
+            "error": { "$ref": "#/definitions/ComponentStateStyles" },
+            "success": { "$ref": "#/definitions/ComponentStateStyles" },
+            "warning": { "$ref": "#/definitions/ComponentStateStyles" },
+            "loading": { "$ref": "#/definitions/ComponentStateStyles" },
+            "skeleton": { "$ref": "#/definitions/ComponentStateStyles" },
+            "empty": { "$ref": "#/definitions/ComponentStateStyles" },
+            "readonly": { "$ref": "#/definitions/ComponentStateStyles" },
+            "checked": { "$ref": "#/definitions/ComponentStateStyles" },
+            "indeterminate": { "$ref": "#/definitions/ComponentStateStyles" },
+            "selected": { "$ref": "#/definitions/ComponentStateStyles" },
+            "pressed": { "$ref": "#/definitions/ComponentStateStyles" },
+            "dragging": { "$ref": "#/definitions/ComponentStateStyles" },
+            "dropTarget": { "$ref": "#/definitions/ComponentStateStyles" }
+          }
+        },
+        "platformOverrides": {
+          "type": "object",
+          "description": "Per-platform style overrides.",
+          "properties": {
+            "web": { "$ref": "#/definitions/ComponentStateStyles" },
+            "ios": { "$ref": "#/definitions/ComponentStateStyles" },
+            "android": { "$ref": "#/definitions/ComponentStateStyles" },
+            "macos": { "$ref": "#/definitions/ComponentStateStyles" },
+            "windows": { "$ref": "#/definitions/ComponentStateStyles" }
+          }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/DesignComponent" },
+          "description": "Recursive structure allowing smaller elements to be grouped into larger components."
+        }
+      },
+      "required": ["id", "name", "category"]
+    }
+  },
+
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" },
+        "author": { "type": "string" },
+        "changelog": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "version": { "type": "string" },
+              "date": { "type": "string", "format": "date" },
+              "summary": { "type": "string" },
+              "author": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "prose": {
+      "type": "object",
+      "properties": {
+        "principles": { "type": "array", "items": { "type": "string" } },
+        "tone": { "type": "string" },
+        "voice": { "type": "string" },
+        "brandMission": { "type": "string" },
+        "writingGuidelines": { "type": "array", "items": { "type": "string" } },
+        "accessibilityStandards": { "type": "array", "items": { "type": "string" } },
+        "microcopy": {
+          "type": "object",
+          "description": "Reusable microcopy patterns for consistent UI language.",
+          "properties": {
+            "ctaVerbs": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Approved CTA verbs, e.g. ['Explore', 'Start', 'View', 'Connect']"
+            },
+            "errorTemplates": {
+              "type": "object",
+              "description": "Error message templates by category.",
+              "additionalProperties": { "type": "string" }
+            },
+            "aiDisclosure": {
+              "type": "object",
+              "description": "Standard language for AI transparency.",
+              "properties": {
+                "generatedLabel": { "type": "string", "description": "Label for AI-generated content, e.g. 'AI-generated'" },
+                "confidencePrefix": { "type": "string", "description": "Prefix for confidence indicators" },
+                "editPrompt": { "type": "string", "description": "CTA for user to edit AI output" },
+                "rejectPrompt": { "type": "string", "description": "CTA for user to reject AI suggestion" },
+                "explanationPrefix": { "type": "string", "description": "Prefix for explainability, e.g. 'Suggested because...'" }
+              }
+            },
+            "emptyStateTemplates": {
+              "type": "object",
+              "description": "Copy templates for empty states by context.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": "string" },
+                  "cta": { "type": "string" }
+                }
+              }
+            },
+            "bannedWords": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Words to avoid in UI copy, e.g. ['Orchestrate', 'Empower', 'Elevate', 'Seamless']"
+            }
+          }
+        }
+      },
+      "required": ["principles", "tone", "voice"]
+    },
+
+    "themes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "themeId": { "type": "string" },
+          "colorMode": { "type": "string", "enum": ["light", "dark", "system"] },
+          "contrastMode": { "type": "string", "enum": ["standard", "high"] },
+          "density": { "type": "string", "enum": ["comfortable", "compact", "cozy"] },
+          "directionality": { "type": "string", "enum": ["ltr", "rtl", "auto"] },
+          "tokenOverrides": {
+            "type": "object",
+            "description": "Token dot-path overrides scoped to this theme.",
+            "additionalProperties": {}
+          },
+          "platformTokenOverrides": {
+            "type": "object",
+            "description": "Per-platform token overrides within this theme.",
+            "properties": {
+              "web": { "type": "object", "additionalProperties": {} },
+              "ios": { "type": "object", "additionalProperties": {} },
+              "android": { "type": "object", "additionalProperties": {} },
+              "macos": { "type": "object", "additionalProperties": {} },
+              "windows": { "type": "object", "additionalProperties": {} }
+            }
+          }
+        }
+      }
+    },
+
+    "designTokens": {
+      "type": "object",
+      "description": "Three-tier token architecture: primitive → semantic → component. Tokens at each tier may reference tokens from the tier above using TokenReference.$value dot-path syntax.",
+      "properties": {
+
+        "primitive": {
+          "type": "object",
+          "description": "Tier 1 — raw values with no semantic meaning. e.g. blue.500, space.4, font.weight.700",
+          "properties": {
+            "colors": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" }
+            },
+            "spacing": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "sizing": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "typography": {
+              "type": "object",
+              "properties": {
+                "families": { "type": "object", "additionalProperties": { "type": "string" } },
+                "scales": { "type": "object", "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" } },
+                "weights": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 100, "maximum": 900 } }
+              }
+            },
+            "borderRadii": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "borderWidths": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "durations": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "description": "Milliseconds" }
+            },
+            "opacities": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "zIndices": {
+              "type": "object",
+              "additionalProperties": { "type": "integer" }
+            }
+          }
+        },
+
+        "semantic": {
+          "type": "object",
+          "description": "Tier 2 — intent-based aliases referencing primitives. e.g. color.action.primary → {primitive.colors.blue.500}",
+          "properties": {
+            "colors": {
+              "type": "object",
+              "properties": {
+                "brand": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "action": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "feedback": {
+                  "type": "object",
+                  "properties": {
+                    "error": { "$ref": "#/definitions/ColorMultiFormat" },
+                    "warning": { "$ref": "#/definitions/ColorMultiFormat" },
+                    "success": { "$ref": "#/definitions/ColorMultiFormat" },
+                    "info": { "$ref": "#/definitions/ColorMultiFormat" }
+                  }
+                },
+                "neutral": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "surface": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "text": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "border": { "type": "object", "additionalProperties": { "$ref": "#/definitions/ColorMultiFormat" } },
+                "dataVisualization": {
+                  "type": "array",
+                  "description": "Accessible categorical palette — ordered for maximum perceptual distance.",
+                  "items": { "$ref": "#/definitions/ColorMultiFormat" }
+                }
+              }
+            },
+            "gradients": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/GradientMultiFormat" }
+            },
+            "spacing": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "typography": {
+              "type": "object",
+              "additionalProperties": { "$ref": "#/definitions/TypographyStyles" }
+            }
+          }
+        },
+
+        "component": {
+          "type": "object",
+          "description": "Tier 3 — component-scoped tokens referencing semantic tokens. e.g. button.background.default → {semantic.colors.action.primary}",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+
+        "focus": {
+          "$ref": "#/definitions/FocusRingStyles",
+          "description": "Global focus ring tokens applied system-wide."
+        },
+
+        "elevation": {
+          "type": "object",
+          "description": "Surface elevation system. Higher levels get progressively lighter tinted backgrounds in dark mode (Material tonal elevation).",
+          "properties": {
+            "levels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "level": { "type": "integer", "minimum": 0 },
+                  "label": { "type": "string", "description": "e.g. 'surface', 'raised', 'overlay', 'modal'" },
+                  "zIndex": { "type": "integer" },
+                  "shadows": { "type": "array", "items": { "$ref": "#/definitions/ShadowStyles" } },
+                  "tonalOverlay": {
+                    "type": "object",
+                    "description": "Background tint applied in dark mode for tonal elevation.",
+                    "properties": {
+                      "color": { "$ref": "#/definitions/ColorMultiFormat" },
+                      "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                  }
+                },
+                "required": ["level"]
+              }
+            }
+          }
+        },
+
+        "surfaces": {
+          "type": "object",
+          "description": "Named surface types defining background treatment, elevation, and allowed techniques per context.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "context": {
+                "type": "string",
+                "enum": ["application", "landing", "chat", "auth", "overlay"],
+                "description": "Which surface context this belongs to"
+              },
+              "background": {
+                "oneOf": [
+                  { "$ref": "#/definitions/ColorMultiFormat" },
+                  { "$ref": "#/definitions/GradientMultiFormat" }
+                ]
+              },
+              "border": {
+                "type": "object",
+                "properties": {
+                  "width": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                  "style": { "type": "string" },
+                  "color": { "$ref": "#/definitions/ColorMultiFormat" },
+                  "radius": { "$ref": "#/definitions/MeasurementMultiUnit" }
+                }
+              },
+              "shadow": { "$ref": "#/definitions/ShadowStyles" },
+              "elevation": { "type": "integer", "description": "References elevation.levels by level number" },
+              "allowedTechniques": {
+                "type": "array",
+                "items": { "type": "string", "enum": ["glass", "blend-mode", "clip-path", "grain-texture", "bespoke-shadow", "gradient"] },
+                "description": "Visual techniques permitted on this surface type"
+              }
+            }
+          }
+        },
+
+        "glass": {
+          "type": "object",
+          "description": "Glass/frosted surface variant definitions. Only used on surfaces where allowedTechniques includes 'glass'.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "backdropFilter": { "type": "string", "description": "e.g. 'blur(16px) saturate(180%)'" },
+              "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat", "description": "Must have alpha < 1" },
+              "border": { "type": "string" },
+              "highlightLayer": { "type": "string", "description": "CSS for ::before gradient highlight" },
+              "shadowLayer": { "$ref": "#/definitions/ShadowStyles" },
+              "illuminationLayer": { "type": "string", "description": "backdrop-filter value" },
+              "hoverState": {
+                "type": "object",
+                "properties": {
+                  "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat" },
+                  "border": { "type": "string" }
+                }
+              },
+              "fallback": {
+                "type": "object",
+                "description": "Styles for browsers without backdrop-filter support",
+                "properties": {
+                  "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat" }
+                }
+              },
+              "maxPerViewport": { "type": "integer", "description": "Performance budget: max glass elements in a single viewport" }
+            }
+          }
+        },
+
+        "motion": {
+          "type": "object",
+          "properties": {
+            "durations": { "type": "object", "additionalProperties": { "type": "number" } },
+            "easings": { "type": "object", "additionalProperties": { "$ref": "#/definitions/AnimationStyles" } },
+            "springs": {
+              "type": "object",
+              "description": "Named spring physics profiles for structural motion. Values are consumed by Framer Motion, React Native Reanimated, or equivalent.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "stiffness": { "type": "number", "description": "Spring stiffness (higher = snappier)" },
+                  "damping": { "type": "number", "description": "Resistance to oscillation (higher = less bounce)" },
+                  "mass": { "type": "number", "default": 1, "description": "Mass of the animated object" },
+                  "bounce": { "type": "number", "minimum": 0, "maximum": 1, "description": "Bounce factor (0 = no overshoot, 1 = maximum)" },
+                  "restDelta": { "type": "number", "description": "Minimum distance from target to consider animation complete" },
+                  "description": { "type": "string" }
+                }
+              }
+            },
+            "scrollTriggers": {
+              "type": "object",
+              "description": "Named scroll-triggered animation configurations.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "Intersection Observer threshold (0-1)" },
+                  "rootMargin": { "type": "string", "description": "CSS margin around root, e.g. '0px 0px -100px 0px'" },
+                  "animation": { "$ref": "#/definitions/AnimationStyles" },
+                  "staggerChildren": { "type": "number", "description": "Delay in ms between child element animations" },
+                  "once": { "type": "boolean", "default": true, "description": "Whether to animate only on first intersection" }
+                }
+              }
+            },
+            "namedAnimations": {
+              "type": "object",
+              "description": "Named keyframe animations reusable across components.",
+              "additionalProperties": { "$ref": "#/definitions/AnimationStyles" }
+            }
+          }
+        },
+
+        "layout": {
+          "type": "object",
+          "properties": {
+            "breakpoints": {
+              "type": "object",
+              "description": "Viewport-based breakpoints.",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            },
+            "containerQueryBreakpoints": {
+              "type": "object",
+              "description": "Container query breakpoints — independent of viewport, scoped to container.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "minWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                  "maxWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                  "containerName": { "type": "string", "description": "CSS container-name value" }
+                }
+              }
+            },
+            "gridColumns": { "type": "object", "additionalProperties": { "type": "integer" } },
+            "gutters": { "type": "object", "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" } }
+          }
+        },
+
+        "iconography": {
+          "type": "object",
+          "description": "System-wide icon design tokens.",
+          "properties": {
+            "gridSize": { "$ref": "#/definitions/MeasurementMultiUnit", "description": "Icon bounding box grid (e.g. 24px)" },
+            "strokeWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+            "defaultStyle": { "type": "string", "enum": ["filled", "outlined", "rounded", "sharp", "two-tone"] },
+            "opticalSizeCorrections": {
+              "type": "object",
+              "description": "Size-specific stroke or optical adjustments.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "size": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                  "strokeWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                  "padding": { "$ref": "#/definitions/MeasurementMultiUnit" }
+                }
+              }
+            },
+            "padding": { "$ref": "#/definitions/MeasurementMultiUnit", "description": "Padding within bounding box" },
+            "mirrorOnRTL": { "type": "boolean", "default": false },
+            "flipList": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Icon names that should be horizontally flipped in RTL layouts"
+            },
+            "color": { "$ref": "#/definitions/ColorMultiFormat" },
+            "scales": {
+              "type": "object",
+              "description": "Named icon size scales (xs, sm, md, lg, xl).",
+              "additionalProperties": { "$ref": "#/definitions/MeasurementMultiUnit" }
+            }
+          }
+        },
+
+        "imagery": {
+          "type": "object",
+          "description": "Tokens for image and media handling.",
+          "properties": {
+            "aspectRatios": {
+              "type": "object",
+              "description": "Named aspect ratios.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "width": { "type": "number" },
+                  "height": { "type": "number" },
+                  "cssValue": { "type": "string", "description": "e.g. '16/9'" }
+                }
+              }
+            },
+            "objectFit": {
+              "type": "string",
+              "enum": ["cover", "contain", "fill", "none", "scale-down"],
+              "default": "cover"
+            },
+            "objectPosition": { "type": "string", "description": "CSS object-position value" },
+            "overlayStyles": {
+              "type": "object",
+              "description": "Overlay treatments applied on top of images.",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "background": {
+                    "oneOf": [
+                      { "$ref": "#/definitions/ColorMultiFormat" },
+                      { "$ref": "#/definitions/GradientMultiFormat" }
+                    ]
+                  },
+                  "opacity": { "type": "number", "minimum": 0, "maximum": 1 },
+                  "mixBlendMode": { "type": "string" }
+                }
+              }
+            },
+            "placeholder": {
+              "type": "object",
+              "description": "Placeholder and progressive loading behavior.",
+              "properties": {
+                "strategy": { "type": "string", "enum": ["blur-up", "dominant-color", "skeleton", "none"] },
+                "backgroundColor": { "$ref": "#/definitions/ColorMultiFormat" },
+                "blurAmount": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "skeletonAnimation": { "$ref": "#/definitions/AnimationStyles" }
+              }
+            },
+            "borderRadius": { "$ref": "#/definitions/MeasurementMultiUnit" }
+          }
+        },
+
+        "dataVisualization": {
+          "type": "object",
+          "description": "Chart and graph specific design tokens.",
+          "properties": {
+            "categoricalPalette": {
+              "type": "array",
+              "description": "Ordered accessible color palette for categorical data series.",
+              "items": { "$ref": "#/definitions/ColorMultiFormat" }
+            },
+            "sequentialPalettes": {
+              "type": "object",
+              "description": "Named sequential color ramps for heatmaps or choropleth.",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/ColorMultiFormat" }
+              }
+            },
+            "divergingPalettes": {
+              "type": "object",
+              "description": "Named diverging ramps for above/below-zero or bipolar data.",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "$ref": "#/definitions/ColorMultiFormat" }
+              }
+            },
+            "axis": {
+              "type": "object",
+              "properties": {
+                "color": { "$ref": "#/definitions/ColorMultiFormat" },
+                "strokeWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "labelTypography": { "$ref": "#/definitions/TypographyStyles" },
+                "tickLength": { "$ref": "#/definitions/MeasurementMultiUnit" }
+              }
+            },
+            "grid": {
+              "type": "object",
+              "properties": {
+                "color": { "$ref": "#/definitions/ColorMultiFormat" },
+                "strokeWidth": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "style": { "type": "string", "enum": ["solid", "dashed", "dotted"] }
+              }
+            },
+            "legend": {
+              "type": "object",
+              "properties": {
+                "spacing": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "swatchSize": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "typography": { "$ref": "#/definitions/TypographyStyles" }
+              }
+            },
+            "tooltip": {
+              "type": "object",
+              "properties": {
+                "background": { "$ref": "#/definitions/ColorMultiFormat" },
+                "typography": { "$ref": "#/definitions/TypographyStyles" },
+                "padding": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "borderRadius": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "shadow": { "$ref": "#/definitions/ShadowStyles" }
+              }
+            },
+            "annotationTypography": { "$ref": "#/definitions/TypographyStyles" }
+          }
+        },
+
+        "emptyStates": {
+          "type": "object",
+          "description": "Tokens for empty, loading, and error content states.",
+          "properties": {
+            "empty": {
+              "type": "object",
+              "properties": {
+                "illustrationSize": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "titleTypography": { "$ref": "#/definitions/TypographyStyles" },
+                "bodyTypography": { "$ref": "#/definitions/TypographyStyles" },
+                "spacing": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "maxBodyCharacters": { "type": "integer", "description": "Recommended max characters for empty state copy" }
+              }
+            },
+            "skeleton": {
+              "type": "object",
+              "properties": {
+                "baseColor": { "$ref": "#/definitions/ColorMultiFormat" },
+                "highlightColor": { "$ref": "#/definitions/ColorMultiFormat" },
+                "borderRadius": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "animation": { "$ref": "#/definitions/AnimationStyles" },
+                "waveDirection": { "type": "string", "enum": ["ltr", "rtl"] }
+              }
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "illustrationSize": { "$ref": "#/definitions/MeasurementMultiUnit" },
+                "titleTypography": { "$ref": "#/definitions/TypographyStyles" },
+                "bodyTypography": { "$ref": "#/definitions/TypographyStyles" },
+                "iconColor": { "$ref": "#/definitions/ColorMultiFormat" }
+              }
+            }
+          }
+        },
+
+        "multiSensory": {
+          "type": "object",
+          "properties": {
+            "haptics": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": { "type": "integer", "description": "Vibration pattern durations in ms" }
+              }
+            },
+            "audioCues": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "description": "Path to audio asset" }
+            }
+          }
+        }
+      }
+    },
+
+    "directionality": {
+      "type": "object",
+      "description": "Global RTL/LTR configuration and mirroring rules.",
+      "properties": {
+        "defaultDirection": { "type": "string", "enum": ["ltr", "rtl", "auto"] },
+        "supportedDirections": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["ltr", "rtl"] }
+        },
+        "logicalProperties": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the system uses CSS logical properties (margin-inline-start vs margin-left)"
+        },
+        "mirroredTokens": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Token dot-paths whose values are mirrored in RTL"
+        }
+      }
+    },
+
+    "density": {
+      "type": "object",
+      "description": "Global density configuration.",
+      "properties": {
+        "defaultMode": { "type": "string", "enum": ["comfortable", "compact", "cozy"] },
+        "modes": {
+          "type": "object",
+          "properties": {
+            "comfortable": {
+              "type": "object",
+              "description": "Default spacious layout.",
+              "properties": {
+                "spacingMultiplier": { "type": "number", "default": 1.0 },
+                "minimumTouchTarget": { "$ref": "#/definitions/MeasurementMultiUnit" }
+              }
+            },
+            "compact": {
+              "type": "object",
+              "description": "Reduced spacing for information-dense UIs.",
+              "properties": {
+                "spacingMultiplier": { "type": "number", "default": 0.75 },
+                "minimumTouchTarget": { "$ref": "#/definitions/MeasurementMultiUnit" }
+              }
+            },
+            "cozy": {
+              "type": "object",
+              "description": "Slightly reduced from comfortable — common middle ground.",
+              "properties": {
+                "spacingMultiplier": { "type": "number", "default": 0.875 },
+                "minimumTouchTarget": { "$ref": "#/definitions/MeasurementMultiUnit" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "properties": {
+        "tokenChips": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } },
+        "atoms": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } },
+        "molecules": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } },
+        "organisms": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } },
+        "templates": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } },
+        "pages": { "type": "array", "items": { "$ref": "#/definitions/DesignComponent" } }
+      }
+    }
+  },
+
+  "required": ["metadata", "prose", "themes", "designTokens", "components"]
+}

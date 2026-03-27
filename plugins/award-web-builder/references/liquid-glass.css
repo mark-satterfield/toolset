@@ -1,0 +1,271 @@
+/* ==========================================================================
+   Liquid Glass Design System — CSS Foundation
+   Version: 1.0.0
+   
+   Drop this file into any project. All glass components reference these
+   tokens. Override :root variables per-project to customize.
+   ========================================================================== */
+
+/* --- Design Tokens --- */
+:root {
+  /* Blur */
+  --glass-blur-light:       12px;
+  --glass-blur-medium:      20px;
+  --glass-blur-heavy:       30px;
+
+  /* Background (light mode) */
+  --glass-bg-light:         rgba(255, 255, 255, 0.12);
+  --glass-bg-medium:        rgba(255, 255, 255, 0.18);
+  --glass-bg-heavy:         rgba(255, 255, 255, 0.25);
+
+  /* Background (dark mode base) */
+  --glass-bg-dark-light:    rgba(0, 0, 0, 0.15);
+  --glass-bg-dark-medium:   rgba(0, 0, 0, 0.25);
+  --glass-bg-dark-heavy:    rgba(0, 0, 0, 0.35);
+
+  /* Saturation & Brightness */
+  --glass-saturation:       180%;
+  --glass-brightness:       1.05;
+
+  /* Borders */
+  --glass-border-light:     1px solid rgba(255, 255, 255, 0.25);
+  --glass-border-prominent: 1px solid rgba(255, 255, 255, 0.45);
+  --glass-border-dark:      1px solid rgba(255, 255, 255, 0.08);
+
+  /* Shadows */
+  --glass-shadow-sm:        0 2px 8px rgba(0, 0, 0, 0.12);
+  --glass-shadow-md:        0 8px 32px rgba(31, 38, 135, 0.20);
+  --glass-shadow-lg:        0 16px 48px rgba(0, 0, 0, 0.25);
+  --glass-shadow-inset:     inset 0 0 20px -5px rgba(255, 255, 255, 0.4);
+
+  /* Radii */
+  --glass-radius-sm:        12px;
+  --glass-radius-md:        20px;
+  --glass-radius-lg:        28px;
+  --glass-radius-pill:      999px;
+
+  /* Tints */
+  --glass-tint-primary:     rgba(0, 123, 255, 0.15);
+  --glass-tint-success:     rgba(52, 199, 89, 0.15);
+  --glass-tint-warning:     rgba(255, 159, 10, 0.15);
+  --glass-tint-danger:      rgba(255, 69, 58, 0.15);
+  --glass-tint-neutral:     rgba(142, 142, 147, 0.12);
+
+  /* Motion */
+  --glass-transition:       all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --glass-transition-fast:  all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Accessibility Fallbacks */
+  --glass-a11y-fallback-bg:      rgba(255, 255, 255, 0.92);
+  --glass-a11y-fallback-bg-dark: rgba(28, 28, 30, 0.95);
+}
+
+/* --- Dark Mode Token Overrides --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-bg-light:         rgba(255, 255, 255, 0.04);
+    --glass-bg-medium:        rgba(255, 255, 255, 0.06);
+    --glass-bg-heavy:         rgba(255, 255, 255, 0.10);
+    --glass-border-light:     1px solid rgba(255, 255, 255, 0.10);
+    --glass-border-prominent: 1px solid rgba(255, 255, 255, 0.18);
+    --glass-shadow-md:        0 8px 32px rgba(0, 0, 0, 0.45);
+    --glass-shadow-inset:     inset 0 0 20px -5px rgba(255, 255, 255, 0.08);
+    --glass-a11y-fallback-bg: var(--glass-a11y-fallback-bg-dark);
+  }
+}
+
+
+/* ==========================================================================
+   Base Glass Element
+   ========================================================================== */
+
+.glass {
+  position: relative;
+  background: var(--glass-a11y-fallback-bg);
+  border: var(--glass-border-light);
+  border-radius: var(--glass-radius-md);
+  box-shadow: var(--glass-shadow-md);
+  transition: var(--glass-transition);
+  isolation: isolate;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--glass-bg-medium);
+    backdrop-filter:
+      blur(var(--glass-blur-medium))
+      saturate(var(--glass-saturation))
+      brightness(var(--glass-brightness));
+    -webkit-backdrop-filter:
+      blur(var(--glass-blur-medium))
+      saturate(var(--glass-saturation))
+      brightness(var(--glass-brightness));
+  }
+}
+
+/* Highlight layer */
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  box-shadow: var(--glass-shadow-inset);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+}
+
+/* Top edge specular highlight */
+.glass::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.4),
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* Content must sit above pseudo-elements */
+.glass > * {
+  position: relative;
+  z-index: 1;
+}
+
+
+/* ==========================================================================
+   Variants
+   ========================================================================== */
+
+/* Frosted: high blur, minimal background */
+.glass--frosted {
+  background: rgba(255, 255, 255, 0.08);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .glass--frosted {
+    backdrop-filter:
+      blur(var(--glass-blur-heavy))
+      saturate(var(--glass-saturation));
+    -webkit-backdrop-filter:
+      blur(var(--glass-blur-heavy))
+      saturate(var(--glass-saturation));
+  }
+}
+
+/* Translucent: low blur, content shows through */
+.glass--translucent {
+  background: rgba(255, 255, 255, 0.06);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .glass--translucent {
+    backdrop-filter: blur(var(--glass-blur-light)) saturate(120%);
+    -webkit-backdrop-filter: blur(var(--glass-blur-light)) saturate(120%);
+  }
+}
+
+/* Prominent: higher opacity, thick border, strong shadow */
+.glass--prominent {
+  background: var(--glass-bg-heavy);
+  border: var(--glass-border-prominent);
+  box-shadow: var(--glass-shadow-lg), var(--glass-shadow-inset);
+}
+
+/* Tinted: brand color overlay */
+.glass--tinted {
+  background:
+    linear-gradient(135deg, var(--glass-tint-primary), transparent),
+    var(--glass-bg-medium);
+}
+
+/* Dark explicit override (for forced dark sections) */
+.glass--dark {
+  background: var(--glass-bg-dark-medium);
+  border: var(--glass-border-dark);
+}
+
+
+/* ==========================================================================
+   Shape Variants
+   ========================================================================== */
+
+.glass--sm    { border-radius: var(--glass-radius-sm); }
+.glass--lg    { border-radius: var(--glass-radius-lg); }
+.glass--pill  { border-radius: var(--glass-radius-pill); }
+
+
+/* ==========================================================================
+   Interactive States
+   ========================================================================== */
+
+.glass--interactive {
+  cursor: pointer;
+}
+
+.glass--interactive:hover {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: var(--glass-shadow-lg);
+  transform: translateY(-1px);
+}
+
+.glass--interactive:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: var(--glass-shadow-sm);
+  transition: var(--glass-transition-fast);
+}
+
+.glass--interactive:focus-visible {
+  outline: 2px solid #007AFF;
+  outline-offset: 2px;
+}
+
+
+/* ==========================================================================
+   Accessibility: Reduced Transparency
+   ========================================================================== */
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass--frosted,
+  .glass--translucent,
+  .glass--prominent,
+  .glass--tinted,
+  .glass--dark {
+    background: var(--glass-a11y-fallback-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+  }
+
+  .glass::before,
+  .glass::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass,
+  .glass::before,
+  .glass::after,
+  .glass--interactive {
+    transition: none;
+    animation: none;
+  }
+
+  .glass--interactive:hover {
+    transform: none;
+  }
+
+  .glass--interactive:active {
+    transform: none;
+  }
+}
