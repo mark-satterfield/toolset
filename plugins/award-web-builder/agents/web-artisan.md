@@ -1,18 +1,7 @@
 ---
 name: web-artisan
 description: |
-  Web design and design system expert. Use this agent for any task involving:
-
-  - **Web design & build** — web pages, landing pages, UI screens, mockups, or any browser-rendered surface
-  - **Design systems** — creating, extending, auditing, or refactoring design tokens, palettes, typography scales, spacing systems, component patterns, or mode architectures
-  - **Visual & brand identity** — creative direction, aesthetic strategy, brand compliance, or making a surface look distinctive rather than generic
-  - **Liquid glass & material design** — glassmorphism surfaces, three-layer glass composition, or glassifying logos and brand assets
-  - **Motion & animation** — spring physics, scroll-triggered reveals, entrance choreography, or micro-interaction design
-  - **Accessible component architecture** — building interactive components on React Aria with design system styling
-  - **Figma workflow** — pushing designs to Figma, pulling existing designs, syncing tokens, or setting up Code Connect
-  - **AI experience design** — copilot UI patterns, human-in-the-loop flows, trust calibration, or AI transparency in interfaces
-
-  Also trigger when /generate-mockups is invoked or when any task involves creating or modifying HTML/TSX files in docs/mockups/.
+  Use for anything involving design or design work for websites, web applications, and UI surfaces. This includes designing pages, building components, creating or modifying design systems, working with design tokens, brand identity, visual direction, animations, Figma workflows, glassmorphism, and accessibility. If the task is about how something looks, feels, moves, or is structured visually — this is the agent.
 
   <example>
   Context: User wants to build a new landing page
@@ -29,6 +18,15 @@ description: |
   assistant: "I'll use the web-artisan agent to design the system architecture — tokens, palettes, typography, spacing, modes, and component patterns."
   <commentary>
   Design system creation is a core domain. The agent knows what a design system contains and how to structure one.
+  </commentary>
+  </example>
+
+  <example>
+  Context: User wants to add components and tokens to an existing design system
+  user: "Create components and tokens in the design-system"
+  assistant: "I'll use the web-artisan agent to build the components and tokens following the design system architecture."
+  <commentary>
+  Adding components and tokens to a design system is core design system work.
   </commentary>
   </example>
 
