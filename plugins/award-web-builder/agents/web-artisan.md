@@ -1,41 +1,79 @@
 ---
 name: web-artisan
 description: |
-  Use this agent when the user asks to build, design, create, or implement a web page, website, landing page, UI screen, mockup, or any browser-rendered surface that must meet award-level visual quality. Also trigger proactively when /generate-mockups is invoked or when any task involves creating HTML/TSX files in docs/mockups/. Examples:
+  Web design and design system expert. Use this agent for any task involving:
+
+  - **Web design & build** — web pages, landing pages, UI screens, mockups, or any browser-rendered surface
+  - **Design systems** — creating, extending, auditing, or refactoring design tokens, palettes, typography scales, spacing systems, component patterns, or mode architectures
+  - **Visual & brand identity** — creative direction, aesthetic strategy, brand compliance, or making a surface look distinctive rather than generic
+  - **Liquid glass & material design** — glassmorphism surfaces, three-layer glass composition, or glassifying logos and brand assets
+  - **Motion & animation** — spring physics, scroll-triggered reveals, entrance choreography, or micro-interaction design
+  - **Accessible component architecture** — building interactive components on React Aria with design system styling
+  - **Figma workflow** — pushing designs to Figma, pulling existing designs, syncing tokens, or setting up Code Connect
+  - **AI experience design** — copilot UI patterns, human-in-the-loop flows, trust calibration, or AI transparency in interfaces
+
+  Also trigger when /generate-mockups is invoked or when any task involves creating or modifying HTML/TSX files in docs/mockups/.
 
   <example>
   Context: User wants to build a new landing page
   user: "Build me a landing page for the new feature"
   assistant: "I'll use the web-artisan agent to create an award-quality landing page following the design system."
   <commentary>
-  Direct request to build a web page. The web-artisan agent ensures design system compliance, skill invocation, and award-level quality.
+  Direct request to build a web surface — core domain.
   </commentary>
   </example>
 
   <example>
-  Context: User wants to create or update a mockup screen
-  user: "Create the opportunities screen mockup"
-  assistant: "I'll use the web-artisan agent to build the opportunities screen with spring animations, floating component standards, and the light-first application palette."
+  Context: User wants to create a design system
+  user: "Create a new design system for this project"
+  assistant: "I'll use the web-artisan agent to design the system architecture — tokens, palettes, typography, spacing, modes, and component patterns."
   <commentary>
-  Mockup generation requires deep design system knowledge, brand compliance, and mandatory skill usage. The web-artisan agent orchestrates all of this.
+  Design system creation is a core domain. The agent knows what a design system contains and how to structure one.
   </commentary>
   </example>
 
   <example>
   Context: User wants a professional website that could win design awards
   user: "I need a website that looks like it belongs on Awwwards"
-  assistant: "I'll use the web-artisan agent — it's specifically built to produce Webby/Awwwards/Dribbble-tier web surfaces with liquid glass, spring physics, and floating component choreography."
+  assistant: "I'll use the web-artisan agent — it's built to produce Webby/Awwwards/Dribbble-tier web surfaces."
   <commentary>
-  Explicit request for award-quality design triggers the web-artisan agent which embeds award-level standards and anti-patterns.
+  Award-quality design is this agent's identity.
   </commentary>
   </example>
 
   <example>
-  Context: User asks to redesign or improve a UI surface
+  Context: User asks to improve a generic-looking surface
   user: "This page looks too generic — make it distinctive"
-  assistant: "I'll use the web-artisan agent to rebuild this with bold creative direction, distinctive typography, and intentional spatial composition."
+  assistant: "I'll use the web-artisan agent to apply creative direction and rebuild with a distinctive visual identity."
   <commentary>
-  Request to improve visual quality triggers the agent which knows the specific anti-patterns that produce generic-looking output.
+  Visual identity and anti-slop are core domains.
+  </commentary>
+  </example>
+
+  <example>
+  Context: User wants to apply glass effects to a logo
+  user: "Make our logo look like frosted glass"
+  assistant: "I'll use the web-artisan agent to glassify the logo."
+  <commentary>
+  Liquid glass and material design are core domains.
+  </commentary>
+  </example>
+
+  <example>
+  Context: User wants to push a finalized design to Figma
+  user: "Push the hero section to Figma"
+  assistant: "I'll use the web-artisan agent to push the design and sync the tokens."
+  <commentary>
+  Figma workflow is a core domain.
+  </commentary>
+  </example>
+
+  <example>
+  Context: User wants spring animations on a screen
+  user: "Add scroll-triggered entrance animations to the dashboard"
+  assistant: "I'll use the web-artisan agent to choreograph spring-physics entrances for the dashboard components."
+  <commentary>
+  Motion and animation design is a core domain.
   </commentary>
   </example>
 model: inherit
