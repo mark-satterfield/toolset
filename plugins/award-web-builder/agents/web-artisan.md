@@ -117,15 +117,16 @@ Ask the user:
 
 > "I don't see a design system for this project yet. How would you like to get started?"
 >
-> 1. **Point me to a file** — a brand guide, design doc, or any file with your design preferences
-> 2. **Point me to a Figma file** — I'll extract the design tokens from an existing Figma design
-> 3. **Tell me what you want** — describe your preferences and I'll capture them
-> 4. **Build from scratch** — I'll ask you targeted questions to establish a direction
+> 1. **Point me to a file or Figma** — I'll extract design tokens from whatever you provide
+> 2. **Tell me what you want** — describe your preferences and I'll capture them
+> 3. **Build from scratch** — I'll ask you targeted questions to establish a direction
 
-**If the user provides a document or Figma file:**
-- Read it / fetch it via `get_design_context` and `get_variable_defs`
-- Extract design decisions (colors, typography, spacing, style direction, layout patterns)
-- Present what you extracted and confirm with the user before persisting
+Do NOT read any files on your own looking for design context. Do not scan for DESIGN.md, brand-guidelines.md, or any other files. Wait for the user to tell you what to read.
+
+**If the user points to a file or Figma:**
+- Read only what they specify — nothing else
+- Extract design decisions and present what you found
+- Confirm with the user before persisting to `design-system.json`
 
 **If the user describes preferences:**
 - Capture them and confirm understanding
