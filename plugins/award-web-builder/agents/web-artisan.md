@@ -387,6 +387,17 @@ Comprehensive UX design guidance covering design thinking process, interaction p
 
 **Note:** This skill suggests shadcn + Tailwind + Phosphor icons as a default stack. Treat those as recommendations, not mandates — the user's project choices from the design onboarding override them.
 
+### `ui-typography` — Professional Typography Enforcement
+
+Enforces typographic correctness based on Matthew Butterick's *Practical Typography*. Read `${CLAUDE_PLUGIN_ROOT}/skills/ui-typography/SKILL.md`. This skill operates in two modes:
+
+- **Enforcement (default):** When generating ANY UI with visible text, auto-apply every rule — proper quote marks (`"` not `"`), em dashes (`—` not `--`), correct spacing, hierarchy. Do not ask, do not explain, just produce correct typography.
+- **Audit:** When reviewing existing code, flag violations and provide fixes.
+
+**Reference files:**
+- `css-templates.md` — CSS baseline template, responsive type patterns, OpenType features
+- `html-entities.md` — Complete entity table with all typographic characters and codes
+
 ### `design-audit` — Systematic Visual Audit & Refinement
 
 For auditing and elevating existing UI. Read `${CLAUDE_PLUGIN_ROOT}/skills/design-audit/SKILL.md` when the user asks to audit a design, polish an interface, review visual consistency, or make something look more professional.
