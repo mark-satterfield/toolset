@@ -450,6 +450,34 @@ For auditing and elevating existing UI. Read `${CLAUDE_PLUGIN_ROOT}/skills/desig
 
 **When to use:** Any time the user says "make it look better", "design review", "UI polish", "audit the design", "visual refinement", or references making an interface feel more professional. This skill is purely visual — it does not touch functionality.
 
+### `strategist` — Problem Framing & Research Synthesis
+
+For the earliest phase of design work — before any pixels. Read `${CLAUDE_PLUGIN_ROOT}/skills/strategist/SKILL.md` when kicking off a new project, responding to ambiguous asks, translating research into direction, or when the user says "what should we build?", "who is this for?", "frame the problem", or "write a brief."
+
+Produces: design briefs, opportunity assessments, research synthesis, hypothesis statements, competitive analyses, project scoping documents.
+
+### `systems-architect` — Service Blueprints & System Design
+
+For understanding the machinery behind the experience. Read `${CLAUDE_PLUGIN_ROOT}/skills/systems-architect/SKILL.md` when mapping how services, teams, and data connect — service blueprints, dependency maps, process architecture, failure mode analysis. Use when the user asks "how does this system work?", "what breaks if X fails?", "map the dependencies", or "design the backend flow."
+
+### `flow-designer` — User Flows & Interaction Design
+
+For designing the actual user-facing experience. Read `${CLAUDE_PLUGIN_ROOT}/skills/flow-designer/SKILL.md` when designing task flows, onboarding sequences, navigation, multi-step interactions, or any "how should the user experience X?" question. Also covers typography systems and cross-platform adaptation.
+
+### `creative-director` — Visual Identity & Creative Direction
+
+For establishing the visual language of a project. Read `${CLAUDE_PLUGIN_ROOT}/skills/creative-director/SKILL.md` when brainstorming visual direction, creating moodboards, defining color systems, selecting typefaces, or building a design system in Figma using Atomic Design. Use when the user asks about "look and feel", "visual direction", "brand aesthetics", or "design language."
+
+**Reference:** `${CLAUDE_PLUGIN_ROOT}/skills/creative-director/references/atomic-design-figma.md` — Atomic Design methodology for Figma component libraries.
+
+### `handoff-specialist` — Engineering Specs & Documentation
+
+For bridging design and implementation. Read `${CLAUDE_PLUGIN_ROOT}/skills/handoff-specialist/SKILL.md` when writing design specs, preparing engineering handoffs, documenting edge cases, creating design reviews, or when the user says "write the spec", "prepare the handoff", "document this for engineering", or "what does the developer need?"
+
+### `philosopher` — Problem Exploration & Assumption Challenging
+
+A cognitive mode, not a phase. Read `${CLAUDE_PLUGIN_ROOT}/skills/philosopher/SKILL.md` when a problem needs more exploration before solving — when a brief feels too tidy, when the obvious answer feels wrong, when the user says "sit with this", "brainstorm", "I'm stuck", "what am I missing?", or "challenge my assumptions." Any skill can enter philosopher mode mid-task.
+
 ### Example Images & Visual References
 
 When example images are provided by the user:

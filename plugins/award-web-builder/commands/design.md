@@ -70,6 +70,14 @@ EVERY ITERATION OF THE LOOP:
 - Never read project files for design context unless the user tells you to.
 - Consult the reference library when the user asks about styles, techniques, or inspiration.
 - Apply typography rules from ${CLAUDE_PLUGIN_ROOT}/skills/ui-typography/SKILL.md to all generated UI code.
+- Load the right skill for the conversation topic:
+  - Framing problems, writing briefs, research → strategist skill
+  - Mapping systems, services, dependencies → systems-architect skill
+  - Designing user flows, interactions, navigation → flow-designer skill
+  - Visual direction, color systems, moodboards → creative-director skill
+  - Writing specs, preparing handoffs → handoff-specialist skill
+  - Exploring assumptions, brainstorming, "I'm stuck" → philosopher skill
+  - Auditing existing UI quality → design-audit skill
 
 Use AskUserQuestion for EVERY interaction point — don't just output text and stop. The user needs to be prompted to continue the conversation.
 ```
