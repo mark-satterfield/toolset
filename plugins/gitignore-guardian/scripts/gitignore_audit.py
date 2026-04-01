@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -166,11 +165,11 @@ def git_worktree_list() -> list[str]:
     )
     if result.returncode != 0:
         return []
-    worktrees = []
-    for line in result.stdout.splitlines():
-        if line.startswith("worktree "):
-            worktrees.append(line[len("worktree "):])
-    return worktrees
+    return [
+        line[len("worktree ") :]
+        for line in result.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -322,16 +321,10 @@ def find_tracked_ignored(repo_root: Path) -> list[tuple[str, bool]]:
 
     results = []
     for filepath in sorted(ignored):
-        # Check if any @protect pattern matches this file
-        is_protected = False
-        for pp in protected_patterns:
-            # Simple check -- exact match or the pattern is a prefix
-            if filepath == pp or filepath == pp.lstrip("./"):
-                is_protected = True
-                break
-            # Check using git check-ignore with the specific pattern
-            # (expensive, skip for now -- rely on exact match)
-
+        is_protected = any(
+            filepath == pp or filepath == pp.lstrip("./")
+            for pp in protected_patterns
+        )
         results.append((filepath, is_protected))
 
     return results
@@ -353,25 +346,10 @@ def find_dead_rules(repo_root: Path) -> list[GitignoreEntry]:
 
         # Try to find any matching file
         try:
-            # Use git ls-files with the pattern
-            result = subprocess.run(
-                ["git", "ls-files", "--others", "--ignored",
-                 "--exclude", pattern, "--"],
-                capture_output=True, text=True, timeout=10,
-                cwd=str(repo_root),
-            )
-            # Also check tracked files
-            result2 = subprocess.run(
-                ["git", "ls-files", "--"],
-                capture_output=True, text=True, timeout=10,
-                cwd=str(repo_root),
-            )
-
-            # Use pathlib glob as a simpler check
             matches = list(repo_root.glob(search_pattern))
             # Also check with ** prefix for non-anchored patterns
             if not pattern.startswith("/") and not matches:
-                matches = list(repo_root.glob("**/" + search_pattern))
+                matches = list(repo_root.glob(f"**/{search_pattern}"))
 
             if not matches:
                 dead.append(entry)
@@ -443,13 +421,11 @@ def suggest_optimizations(repo_root: Path) -> list[str]:
             dir_part = entry.pattern.rsplit("/", 1)[0]
             dir_patterns.setdefault(dir_part, []).append(entry)
 
-    for dir_path, dir_entries in dir_patterns.items():
-        if len(dir_entries) >= 3:
-            suggestions.append(
-                f"Consider consolidating {len(dir_entries)} patterns under "
-                f"'{dir_path}/' (lines {', '.join(str(e.line_number) for e in dir_entries)})"
-            )
-
+    suggestions.extend(
+        f"Consider consolidating {len(dir_entries)} patterns under '{dir_path}/' (lines {', '.join(str(e.line_number) for e in dir_entries)})"
+        for dir_path, dir_entries in dir_patterns.items()
+        if len(dir_entries) >= 3
+    )
     # Check for unanchored patterns that should be anchored
     for entry in patterns:
         if entry.pattern in (".env", "build/", "dist/", "lib/", "out/"):

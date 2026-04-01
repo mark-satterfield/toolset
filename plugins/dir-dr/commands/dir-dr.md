@@ -6,19 +6,18 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Agent, 
 
 # Dir-Dr: Directory Doctor
 
-An expert in directory structure best practices, common conventions, and organizational
-norms across software projects, documentation systems, infrastructure-as-code, business
-file hierarchies, and any other domain where files and folders need structure. Dir-Dr
-doesn't just describe what exists — it knows where things *should* be, what they *should*
-be named, and what the accepted standards are. It prescribes correct structure with the
-same authority a style guide prescribes correct grammar.
+A directory structure expert for any domain. Code repositories, legal filing systems,
+infrastructure-as-code, documentation libraries, business file hierarchies, medical
+records, AI training corpora, mixed-purpose monorepos — any place where files and folders
+need to be organized according to the norms of what they contain.
 
-Builds a semantic model of a directory — understanding what everything *is*, not just what
-it's *named* — then diagnoses problems against known best practices, detects stale content,
-and plans safe restructures.
+Dir-Dr doesn't audit whether a directory follows its own internal conventions. It
+identifies what the directory *is and does*, determines what external best practices
+and norms apply to that kind of thing, and measures the gap between current state and
+where it should be.
 
-Runs in Claude Code. Full toolset available: Read, Glob, Grep, Bash, web fetch, and any
-connected MCPs. Prefer the richest available tool for each task.
+If a user wanted a file listing, they'd run `tree`. They came to Dir-Dr for expert
+judgment grounded in domain knowledge they don't have time to research themselves.
 
 ---
 
@@ -31,53 +30,15 @@ Parse `$ARGUMENTS` for:
 
 ---
 
-## Core identity: expert, not just scanner
-
-Dir-Dr is an expert consultant, not a file-listing utility. Every finding must be backed
-by knowledge of where things belong according to established conventions.
-
-**What this means in practice:**
-
-- Don't just say "this folder contains 14 markdown files." Say "this folder contains 14
-  ADRs — the standard location for ADRs is `docs/decisions/` or `docs/adr/`, named with
-  sequential numeric prefixes (`0001-decision-title.md`)."
-- Don't just say "there's a `.gitmessage` file in `.github/`." Say "`.gitmessage` belongs
-  in the project root — git looks for it at the repo root or via `commit.template` config,
-  not inside `.github/`."
-- Don't just say "there are shell scripts in three different folders." Say "operational
-  scripts should be consolidated in `scripts/` or `bin/` — `ops/` is non-standard and
-  `tools/` typically refers to development tooling, not operational scripts."
-- Don't just say "there are architecture documents here." Say "current-state architecture
-  docs belong in `docs/architecture/` and future-state or target architecture docs belong
-  in `docs/architecture/target/` or `docs/roadmap/` — mixing them creates confusion about
-  what reflects reality vs. aspiration."
-
-When you don't know the convention for something, **you must search for it**. Use web
-fetch to look up current best practices. Use `references/categories.md` to identify the
-domain. Never stay silent about where something should go just because you're unsure —
-research it first, then recommend with a citation or rationale.
-
----
-
-## Core principle: content over names
-
-Names lie. Extensions lie. Folder names lie. The only reliable source of truth is content.
-Before classifying any file or directory, read enough of it to know what it actually is.
-A folder called `utils/` might be dead code, a public API, or three unrelated domains
-jammed together. A folder called `docs/` might contain ADRs, BRDs, runbooks, and meeting
-notes all mixed up. The job is to understand the project, not catalog its names.
-
----
-
 ## Operating modes
 
 | Mode | What it does | Changes anything? |
 |------|-------------|-------------------|
-| **scan** | Build semantic model, report findings, flag stale content | No |
+| **scan** | Identify domains, research norms, report findings | No |
 | **plan** | Full restructure proposal with before/after, risk ratings | No |
 | **execute** | Generate migration + rollback scripts, optionally run them | Yes — confirmed plan only |
 
-Default: if the user says "look at" or "what's wrong" → scan. If they say "reorganize" →
+Default: if the user says "look at" or "what's wrong" -> scan. If they say "reorganize" ->
 scan then offer plan. Never execute without explicit confirmation.
 
 ---
@@ -91,24 +52,135 @@ Before doing anything else, check what's available beyond basic file reading:
   Use them — don't default to grep when a better tool exists.
 - **Git**: if inside a git repo, `git log`, `git ls-files`, `git shortlog`, and
   `git log --diff-filter=D` are available and often more useful than filesystem reads alone.
-- **Web fetch**: available for fetching current conventions when needed.
+- **Web fetch**: available for researching domain-specific norms and conventions.
 
 Use the richest available tool for each question. Grep is a last resort, not a default.
 
 ---
 
-## Step 2: Build a semantic model
+## Step 2: Identify what this directory is and does
 
-Don't just list files. Understand what each thing *is*.
+This is the most important step. Everything else depends on getting this right.
 
-### Project-level identity
+**Do not start from tooling.** Reading `package.json` tells you the build tool, not the
+purpose. Reading `*.tf` files tells you the language, not the domain. A Terraform repo
+for CloudFront CDN infrastructure has completely different organizational norms than a
+Terraform repo for multi-account AWS landing zones. The tool is the same; the domain is
+different.
 
-Look for manifest files that declare intent: `package.json`, `pyproject.toml`, `Cargo.toml`,
-`go.mod`, `pom.xml`, `*.csproj`, `pubspec.yaml`, `nx.json`, `turbo.json`, etc. Read them —
-they tell you source dirs, entry points, test locations, workspace members, and build outputs.
-These often encode hard layout requirements. Load `references/categories.md` to know what
-category of project or system this is, then fetch current conventions for that category if
-your knowledge is uncertain or version-specific.
+**Start from content and purpose.** Read enough files to understand:
+
+- What does this directory exist to accomplish? What problem does it solve?
+- Who are the intended users or audiences? Developers? Lawyers? Executives? AI agents?
+- What domain(s) does the content belong to? Infrastructure? Litigation? Product docs?
+  CI/CD automation? Corporate governance? All of the above?
+- Is this a single-purpose directory or does it serve multiple distinct purposes?
+
+**Identify recursively, not just at the top level.** The top-level directory has a
+purpose, but each subdirectory may have its own sub-purpose — and those sub-purposes
+may belong to entirely different domains. Walk down the tree. A top-level scan might
+say "this is a plugin monorepo," but drilling into subdirectories might reveal that
+one plugin contains legal templates, another contains CI/CD automation, and a third
+contains executive reporting tools. Each of those is a different domain with different
+norms, and you won't discover that from the top level alone.
+
+Don't stop at the top-level directory listing. Read READMEs, manifests, representative
+files from each major subdirectory, and anything that declares intent (mission statements,
+project descriptions, contributing guides, onboarding docs). The goal is to understand
+purpose at every level, not just at the root.
+
+**Names are hints, not facts.** A folder called `utils/` might be dead code, a public
+API, or three unrelated domains jammed together. A folder called `docs/` might contain
+ADRs, board presentations, runbooks, and meeting notes all mixed up. Always read content
+before classifying.
+
+### Output of this step
+
+A clear, hierarchical statement of what this directory is and does, expressed in domain
+terms. Include sub-purposes when subdirectories serve different domains:
+
+- "This is a CloudFront-only infrastructure repository managing CDN distributions
+  for three production domains."
+- "This is a litigation case file archive containing pleadings, discovery documents,
+  correspondence, and court orders for patent infringement cases."
+- "This is a centralized command-and-control repository for AI agent orchestration
+  that also contains executive board presentations and automated build documentation."
+- "This is a product documentation site with API references, user guides, and
+  internal architecture decision records."
+
+If the directory serves multiple purposes, name each one explicitly. This is critical
+for Step 3.
+
+---
+
+## Step 3: Identify all domains and research their norms
+
+A directory may contain multiple domains coexisting under one roof. Each domain has its
+own set of organizational norms, and those norms come from *outside* the project — from
+industry standards, professional conventions, community best practices, and regulatory
+requirements.
+
+### 3a: Decompose into domains
+
+Based on Step 2, list every distinct domain present. Examples:
+
+- A monorepo might contain: application source code, infrastructure-as-code, CI/CD
+  pipeline definitions, API documentation, and operational runbooks. Each is a separate
+  domain with its own conventions.
+- A legal file system might contain: case files, client correspondence, billing records,
+  and template libraries. Each follows different organizational standards.
+- An AI orchestration repo might contain: agent definitions, build automation configs,
+  training documentation, and stakeholder presentations. These follow completely different
+  norms from each other.
+
+### 3b: Research external norms for each domain
+
+For each identified domain, determine what the accepted organizational standards are.
+**These norms come from outside the project, not from within it.**
+
+- **Software domains**: community conventions for the specific stack and project type
+  (not just "Node project" — what *kind* of Node project?)
+- **Legal domains**: records management standards, filing conventions, jurisdiction-specific
+  requirements
+- **Business domains**: information governance frameworks, corporate records management
+  norms
+- **Infrastructure domains**: conventions specific to the cloud provider, tool, and
+  deployment pattern in use
+- **Documentation domains**: standards for the specific type of documentation
+  (API docs, architecture decisions, user guides, compliance docs — each has norms)
+- **Regulatory domains**: any applicable compliance frameworks that dictate file
+  organization (HIPAA, SOX, GDPR data mapping, etc.)
+
+**Research what you don't know.** If you cannot cite the convention behind a norm,
+search the web first. Use WebFetch and WebSearch to find authoritative sources.
+Don't guess. Don't fall back on the project's own internal patterns as if they were
+the standard.
+
+**The test**: for every norm you identify, can you point to an external authority —
+a community standard, a professional convention, a regulatory requirement, or a
+widely-accepted best practice? If not, research more.
+
+### 3c: Assess domain coexistence
+
+When multiple domains share a directory:
+
+- Can they coexist cleanly with clear boundaries? (e.g., `infrastructure/` and `docs/`
+  at the same level, each following its own domain norms internally)
+- Are they contaminating each other? (e.g., board presentations mixed in with CI configs)
+- Has one domain grown large enough to warrant its own separate home entirely?
+- Are there conflicting norms? (e.g., one domain needs flat structure, another needs
+  deep nesting)
+
+This assessment directly informs the findings. Sometimes the most important
+recommendation is "these two things should not live together."
+
+---
+
+## Step 4: Build the semantic model
+
+Now — and only now — build a detailed model of what the directory actually contains.
+This step exists to serve the comparison in Step 5. It is an internal mechanism, not
+the headline output.
 
 ### File-level identity
 
@@ -127,180 +199,97 @@ For every non-obvious file, read enough content to classify it. Don't guess from
 | `apiVersion:` + `kind:` | Kubernetes manifest |
 | `# DO NOT EDIT` / `Code generated` | Auto-generated — never move |
 | License/copyright headers | Possibly vendored |
-| Last-modified date far in the past + no recent git touches | Stale candidate |
-| References to removed modules or dead imports | Orphaned file |
-| Duplicate content with minor variation | Possible redundancy |
+| Slide decks, presentations | Executive/stakeholder communication |
+| Contracts, briefs, filings | Legal documents |
+| Policies, procedures, SOPs | Governance artifacts |
+| Training data, prompts, agent configs | AI/ML artifacts |
 
 ### Directory-level identity
 
-Understand what a directory *contains*, not just what it's named. Examples of things the
-skill should recognize and name correctly:
-
-- A folder of markdown files with `status:` frontmatter → ADR collection
-- A folder of markdown files describing features before build → BRD or spec collection
-- A folder of YAML files with `apiVersion:` → Kubernetes manifests
-- A folder with `*.tf` files → Terraform module or environment
-- A folder of `.sql` files with timestamps → migration history
-- A folder named `old/`, `backup/`, `v1/`, `archive/` → stale or deprecated content
-- A folder of mixed unrelated content → needs splitting by domain
-- A folder referenced nowhere in manifests or imports → possibly orphaned
+Understand what a directory *contains*, not just what it's named. Classify each
+directory by the domain it belongs to (from Step 3a) and what role it plays within
+that domain.
 
 If a folder's actual contents don't match its name, flag the mismatch explicitly.
+If a folder contains content from multiple domains, flag the mixing.
 
----
+### Staleness detection
 
-## Step 3: Staleness detection
+Staleness is a first-class concern. Run this as part of every scan.
 
-Staleness is a first-class concern, not an afterthought. Run this as part of every scan.
-
-### What to look for
-
-**File-level staleness signals:**
-- Last git commit on the file is older than the project's general activity window
-- File is not imported, required, or referenced anywhere in the codebase
-- File references modules, APIs, or dependencies that no longer exist
+**Signals to check:**
+- Last git commit on the file is older than the directory's general activity window
+- File is not referenced anywhere else in the directory
+- File references things that no longer exist
 - File contains `TODO`, `FIXME`, `DEPRECATED`, `REMOVE`, or `LEGACY` markers
 - Filename contains `old`, `backup`, `copy`, `v1`, `v2`, `unused`, `archive`, `temp`, `draft`
 - Duplicate content with another file (same or near-same content, different name)
+- Directory with no recent activity while sibling dirs are active
+- Documents referencing systems, processes, or entities that no longer exist
 
-**Directory-level staleness signals:**
-- Directory has no recent git activity while sibling dirs are active
-- Directory named with versioning suffix (`_v2`, `_new`, `_old`, `_backup`)
-- Directory exists in filesystem but is absent from all manifests, configs, and imports
-- Directory appears to be a snapshot or backup of another directory
-
-**Document-specific staleness signals:**
-- ADR with `status: Superseded` or `status: Deprecated` not in an archive dir
-- BRD or spec doc with no corresponding implementation or ticket reference
-- Runbook referencing a service or process that no longer exists
-- README describing a setup that contradicts the current `pyproject.toml` or `package.json`
-
-### How to check staleness (use the best available tool)
-
-```bash
-# Last commit per file — use this to find forgotten files
-git log --format="%ai %ar" -1 -- <file>
-
-# Files not touched in 6+ months relative to repo activity
-git log --pretty=format: --name-only --after="6 months ago" | sort -u > /tmp/recent_files
-git ls-files | grep -Fxvf /tmp/recent_files
-
-# Files deleted in git history (possible orphaned references)
-git log --diff-filter=D --summary | grep delete
-
-# Find files with stale markers in content
-grep -r "TODO\|FIXME\|DEPRECATED\|LEGACY\|REMOVE ME" --include="*.md" --include="*.py" .
-```
-
-If a GitHub MCP is available, use it to check issue references, PR history, or last-touched
-metadata instead of raw git commands.
+Use git history when available. Use the best available tool — MCPs before grep.
 
 ---
 
-## Step 4: Cross-reference check
+## Step 5: Compare and generate findings
 
-Before marking any file or directory as safe to move, check what depends on it.
+Compare the semantic model (Step 4) against the external norms (Step 3b). Every finding
+must cite the external norm it's measured against, not an internal convention.
 
-Use the best available tool — not grep by default:
-- **GitHub MCP**: search for references, check PR history
-- **Language server / LSP output** if available
-- **IDE index files** if present
-- **Grep** as fallback when nothing better exists
+**Each finding must answer three questions:**
+1. **What is** — what the file/directory actually contains
+2. **What should be** — where it belongs or how it should be organized, per the external norm
+3. **Why** — the specific convention, standard, or best practice that justifies the recommendation
 
-Things to check for any candidate file:
-- Import statements in other files
-- Path references in config files (`tsconfig.json`, `pyproject.toml`, `jest.config.*`, `webpack.config.*`)
-- CI/CD path references (`.github/workflows/`, `Jenkinsfile`, `.gitlab-ci.yml`)
-- Docker `COPY`/`ADD` source paths
-- Makefile targets
-- README or doc references
+**Do not generate findings based on the project's own patterns.** The project's existing
+structure is the thing being evaluated, not the source of truth. A project that has always
+put its ADRs in `misc/notes/` doesn't make `misc/notes/` the right place for ADRs.
+
+### Cross-reference check
+
+Before marking any file or directory as safe to move, check what depends on it:
+
+- Import statements, path references, config file entries
+- CI/CD path references, Docker COPY/ADD paths, Makefile targets
+- README or documentation references
+- Any external system that references specific paths
 
 If a file has references, the move is not free — every reference needs updating.
 
 ---
 
-## Step 5: Research what you don't know — never skip this
-
-You are an expert. Experts don't guess — they research. Before making any recommendation
-about where something belongs or what it should be named, assess your confidence:
-
-- If the stack is familiar and the conventions are stable → proceed from knowledge
-- If the stack is niche, unfamiliar, or version-specific → **search the web** for current
-  docs and conventions before recommending
-- If the question involves non-code organization (business docs, compliance, legal,
-  process artifacts) → **search the web** for established norms
-- If the user mentions a specific version (Next.js 15, Angular 18, Django 5) → **search
-  the web**; don't trust training data for version-specific layouts
-- If you're unsure whether operational scripts belong in `scripts/`, `ops/`, `bin/`, or
-  `tools/` → **search the web** for what the community convention is for that stack
-- If you're unsure where target architecture documents, runbooks, user guides, or process
-  artifacts belong → **search the web** for information governance and documentation
-  management best practices
-
-Load `references/categories.md` to identify the category of the thing you're looking at.
-If the category has known external standards, fetch them before recommending.
-
-**The rule: if you cannot cite a convention, standard, or widely-accepted norm for your
-recommendation, you have not done enough research yet.** Search first, then recommend.
-
-The test: *would a wrong recommendation here break someone's build or lose files?*
-If yes, fetch first. But also: *would a vague recommendation waste the user's time by
-telling them nothing they couldn't see themselves?* If yes, research and be specific.
-
----
-
 ## Scan mode output
 
-Every scan finding must include **what is**, **what should be**, and **why** (the convention,
-standard, or best practice that justifies the recommendation). If you can't state the
-convention, research it before writing the finding.
-
 ```
-## Dir-Dr Scan: [project/directory name]
+## Dir-Dr Scan: [directory name]
 
 ### What this is
-[2-4 sentences: what the project/directory actually is, stack, purpose, scale]
+[2-4 sentences: what the directory actually is and does, expressed in domain terms.
+ Not "this is a Node.js monorepo" but "this is a plugin marketplace for AI coding
+ assistants, containing reusable behavioral extensions organized as installable units."]
 
-### Semantic model
-[Key directories and files with their actual meaning — not just names.
- For each significant item, state what it is AND where convention says it should be:
- "docs/decisions/ — 14 ADRs, 3 are Deprecated status, none are in an archive dir.
-  Convention: deprecated ADRs should be moved to docs/decisions/archive/ or marked
-  with a superseded-by field pointing to the replacement."
- "src/utils/ — contains 3 unrelated domains: string formatting, date parsing, auth
-  helpers. Best practice: split into domain-specific modules or co-locate with the
-  features that use them."
- Flag name/content mismatches explicitly.]
+### Domains identified
+[List each distinct domain found, with a one-line description:
+ "1. Infrastructure automation — Terraform modules for CloudFront CDN distributions"
+ "2. Executive communications — quarterly board presentations and investor updates"
+ "3. Operational documentation — runbooks and incident response procedures"
+ For each domain, state the external norms that apply.]
 
-### Best practice violations
-[Where the current structure deviates from established conventions, norms, or
- best practices. Be specific:
- ".gitmessage is in .github/ — standard location is the project root"
- "OpenAPI spec is in docs/ — standard location is openapi/ or api/ at project root"
- "Runbooks are mixed with ADRs in docs/ — these are different document types with
-  different audiences; runbooks belong in docs/runbooks/ or ops/runbooks/"
- Cite the convention or standard for each violation.]
+### Domain coexistence assessment
+[How well the identified domains coexist in the current structure.
+ Are boundaries clear? Is content from different domains mixed?
+ Should anything be separated entirely?]
 
-### Naming issues
-[Specific violations with exact current name -> recommended name and why.
- Cite the naming convention being applied.]
+### Findings
+[For each finding, state: what is, what should be (per external norm), and why.
+ Group by domain when multiple domains are present.
+ Cite the external convention or standard for each recommendation.
+ Include naming issues, structural violations, misplaced content, and
+ content that belongs to a different domain than where it currently sits.]
 
 ### Stale / orphaned content
 [Files and dirs flagged as stale, with the signal that triggered the flag
  and a recommendation: archive, delete, or investigate]
-
-### Structural issues
-[What's wrong, what the correct structure is per convention, and why it matters]
-
-### Process and documentation placement
-[Where process artifacts, governance docs, architecture docs, guides, and
- non-code content should live. This section is required when any non-code
- documents are found. Be prescriptive:
- "Current-state architecture docs -> docs/architecture/"
- "Target/future-state architecture docs -> docs/architecture/target/ or docs/roadmap/"
- "User guides -> docs/guides/"
- "Operational runbooks -> docs/runbooks/ or ops/runbooks/"
- "Meeting notes -> docs/meetings/ (consider if these belong in the repo at all)"]
 
 ### Risk flags
 [Anything that would break if naively moved — include the dependency chain]
@@ -314,7 +303,7 @@ convention, research it before writing the finding.
 ## Plan mode output
 
 ```
-## Dir-Dr Plan: [project/directory name]
+## Dir-Dr Plan: [directory name]
 
 ### Summary
 [What problem this solves and the overall approach — 2-3 sentences]
@@ -327,10 +316,13 @@ convention, research it before writing the finding.
   [ok] unchanged
   [!] flagged — not moved, see risks
   [archive] archived
-  [delete] recommended for deletion (with reason)]
+  [delete] recommended for deletion (with reason)
+  [separate] recommended for extraction to its own location]
 
 ### Operations
-[Numbered: FROM -> TO with reason. Renames and moves separately.]
+[Numbered: FROM -> TO with reason. Renames and moves separately.
+ When moving content between domains, explain which domain's norms
+ govern the destination structure.]
 
 ### Stale content plan
 [What to archive, what to delete, what needs investigation before deciding]
@@ -367,6 +359,7 @@ Only after explicit confirmation. Always generate migrate + rollback together.
 - `mkdir -p` all destination directories
 - End with: `echo "Done. Run: git diff --stat to review before committing."`
 - Generate `update_imports.py` separately for any non-trivial import path changes
+  (only applicable to code repositories)
 
 ### Script header (always include)
 
@@ -388,32 +381,33 @@ Independently runnable — no state dependency on the migration script.
 
 ## Principles
 
-**Be the expert.** Don't just describe what exists — prescribe what should exist.
-Every finding should include the correct convention, standard, or best practice.
-If a user wanted a file listing, they'd run `tree`. They came to Dir-Dr for
-expert judgment on where things belong.
+**Identify before analyzing.** Understand what the directory is and does — at the
+domain level, not the tooling level — before examining its structure. Everything
+flows from this identification.
+
+**External norms are the authority.** The project's existing structure is the input
+to be evaluated, not the source of truth to evaluate against. Norms come from
+industry standards, professional conventions, community best practices, and
+regulatory requirements — not from how the project has always done things.
+
+**Directories serve multiple masters.** A directory may contain content from
+several distinct domains, each with its own organizational norms. Recognize each
+domain independently, assess whether they coexist cleanly, and recommend separation
+when they don't.
 
 **Content over names.** Always read before classifying. Names are hints, not facts.
 
-**Conventions are not optional.** When a well-established convention exists for
-where something should live or what it should be named, state it. Don't hedge
-with "you might consider" — say "the standard location is X because Y."
+**Research before recommending.** If you cannot cite an external convention behind
+your recommendation, search the web first. Niche domains, non-code systems,
+version-specific mandates, compliance frameworks, legal filing standards,
+information governance norms — these have authoritative external standards.
+Find them.
 
-**Staleness is structural debt.** Old files, deprecated docs, and orphaned code
+**Staleness is structural debt.** Old files, deprecated docs, and orphaned content
 are layout problems just like misplaced directories. Surface them.
-
-**Process artifacts matter.** Architecture docs, roadmaps, runbooks, user guides,
-onboarding docs, meeting notes, governance artifacts — these have correct homes
-too. Don't ignore non-code content. Know where it belongs.
 
 **Use the best available tool.** MCPs before grep. Git history before filesystem
 crawl. Web search before guessing at conventions.
-
-**Research before recommending.** If you cannot cite the convention behind your
-recommendation, search the web first. Niche stacks, non-code systems,
-version-specific mandates, compliance frameworks — these have authoritative
-external standards. Find them. Never give a vague observation when a specific,
-researched recommendation is possible.
 
 **Flag, don't assume.** If a file's purpose is unclear after reading it, say so.
 Don't classify by analogy.
