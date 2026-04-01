@@ -9,5 +9,6 @@
   "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/dir-dr",
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
+  "commands": "./commands/",
   "skills": "./skills/"
 }
