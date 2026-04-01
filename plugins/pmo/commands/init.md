@@ -13,10 +13,10 @@ Set up the project's `CLAUDE.md` with architecture context so Claude sessions ar
 1. **Check for existing CLAUDE.md**: Look for `CLAUDE.md` in the project root.
 
 2. **If CLAUDE.md exists**:
-   - Read it and check whether it already contains references to `docs/adrs/` AND `docs/openspec/specs/`
+   - Read it and check whether it already contains references to `docs/adr/` AND `docs/openspec/specs/`
    - If BOTH references are present, report that the plugin is already configured and stop (see Output: Already Configured)
-   - **Check for path mismatches**: If the file contains an `## Architecture Context` section (or similar like `## Architecture`, `## Design Context`) but references different paths than `docs/adrs/` or `docs/openspec/specs/`, use `AskUserQuestion` to ask:
-     - "Your CLAUDE.md has architecture references with different paths. Should I update them to the design plugin's standard paths (`docs/adrs/` for ADRs, `docs/openspec/specs/` for specs)?"
+   - **Check for path mismatches**: If the file contains an `## Architecture Context` section (or similar like `## Architecture`, `## Design Context`) but references different paths than `docs/adr/` or `docs/openspec/specs/`, use `AskUserQuestion` to ask:
+     - "Your CLAUDE.md has architecture references with different paths. Should I update them to the design plugin's standard paths (`docs/adr/` for ADRs, `docs/openspec/specs/` for specs)?"
      - Options: "Yes, update paths" / "No, keep existing paths and add plugin section separately"
      - If the user says yes, update the existing paths in-place to match the plugin conventions
      - If the user says no, append the plugin's Architecture Context section below the existing one
@@ -35,10 +35,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/references/claude-md-template.md` (the plugin root's
 
 ## Idempotency Rules
 
-- Before adding content, ALWAYS check if `CLAUDE.md` already contains the string `docs/adrs/` AND `docs/openspec/specs/`
+- Before adding content, ALWAYS check if `CLAUDE.md` already contains the string `docs/adr/` AND `docs/openspec/specs/`
 - If both strings are present, do NOT modify the file -- report "already configured"
 - If the `## Architecture Context` heading exists but is missing one of the references, add the missing reference to the existing section rather than creating a new section
-- If the file contains architecture references with DIFFERENT paths (e.g., `docs/decisions/` instead of `docs/adrs/`, or `openspec/specs/` instead of `docs/openspec/specs/`), ask the user before modifying -- do NOT silently add conflicting paths
+- If the file contains architecture references with DIFFERENT paths (e.g., `docs/decisions/` instead of `docs/adr/`, or `openspec/specs/` instead of `docs/openspec/specs/`), ask the user before modifying -- do NOT silently add conflicting paths
 - NEVER append a duplicate `## Architecture Context` section
 - NEVER generate ad-hoc warnings or suggestions about path mismatches -- use `AskUserQuestion` to let the user decide
 
@@ -53,7 +53,7 @@ Created CLAUDE.md with architecture context.
 
 ### What was created:
 - New CLAUDE.md at project root
-- Reference to `docs/adrs/` (Architecture Decision Records)
+- Reference to `docs/adr/` (Architecture Decision Records)
 - Reference to `docs/openspec/specs/` (OpenSpec Specifications)
 - Design plugin usage hints
 
@@ -71,7 +71,7 @@ Created CLAUDE.md with architecture context.
 CLAUDE.md updated with architecture context.
 
 ### What was added:
-- Reference to `docs/adrs/` (Architecture Decision Records)
+- Reference to `docs/adr/` (Architecture Decision Records)
 - Reference to `docs/openspec/specs/` (OpenSpec Specifications)
 - Design plugin usage hints
 
@@ -98,4 +98,4 @@ CLAUDE.md already contains architecture context references. No changes made.
 - MUST NOT remove or modify any existing content in CLAUDE.md
 - MUST append the Architecture Context section after existing content, not prepend
 - If CLAUDE.md does not exist, create it -- this is the normal first-run case, not an error
-- Do NOT create `docs/adrs/` or `docs/openspec/specs/` directories -- those are created by `/pmo:adr` and `/pmo:spec` when needed
+- Do NOT create `docs/adr/` or `docs/openspec/specs/` directories -- those are created by `/pmo:adr` and `/pmo:spec` when needed

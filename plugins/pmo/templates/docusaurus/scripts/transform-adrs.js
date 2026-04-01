@@ -17,7 +17,7 @@ const {
   fixMarkdownLinks,
 } = require('./transform-utils');
 
-const ADRS_SOURCE = path.join(__dirname, '../../docs/adrs');
+const ADRS_SOURCE = path.join(__dirname, '../../docs/adr');
 const ADRS_DEST = path.join(__dirname, '../../docs-generated/decisions');
 
 // Read baseUrl from docusaurus.config.ts

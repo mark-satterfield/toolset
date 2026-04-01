@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ADRS_SOURCE = path.join(__dirname, '../../docs/adrs');
+const ADRS_SOURCE = path.join(__dirname, '../../docs/adr');
 const SPECS_SOURCE = path.join(__dirname, '../../docs/openspec/specs');
 const DOCS_DEST = path.join(__dirname, '../../docs-generated');
 

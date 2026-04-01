@@ -5,7 +5,7 @@
   "scripts": {
     "docusaurus": "docusaurus",
     "build-content": "node scripts/build-docs.js",
-    "watch-content": "chokidar '../docs/openspec/**/*' '../docs/adrs/**/*' -c 'npm run build-content' --initial",
+    "watch-content": "chokidar '../docs/openspec/**/*' '../docs/adr/**/*' -c 'npm run build-content' --initial",
     "start": "npm run build-content && docusaurus start",
     "dev": "concurrently --kill-others \"npm run watch-content\" \"docusaurus start\"",
     "build": "npm run build-content && docusaurus build",

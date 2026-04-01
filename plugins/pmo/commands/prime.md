@@ -10,7 +10,7 @@ Load existing ADRs and specs into the session so Claude can give architecture-aw
 
 ## Process
 
-1. **Check if init has been run**: Read `CLAUDE.md` at the project root and check if it contains references to `docs/adrs/` or `docs/openspec/specs/`. If CLAUDE.md does not exist or lacks design plugin references, output:
+1. **Check if init has been run**: Read `CLAUDE.md` at the project root and check if it contains references to `docs/adr/` or `docs/openspec/specs/`. If CLAUDE.md does not exist or lacks design plugin references, output:
 
    ```
    CLAUDE.md does not have design plugin references. Run `/pmo:init` first to set up your project, then re-run `/pmo:prime`.
@@ -18,7 +18,7 @@ Load existing ADRs and specs into the session so Claude can give architecture-aw
 
    Then stop. Do NOT proceed with scanning.
 
-2. **Scan for ADRs**: Glob for `docs/adrs/ADR-*.md` files. For each file:
+2. **Scan for ADRs**: Glob for `docs/adr/ADR-*.md` files. For each file:
    - Read the YAML frontmatter to extract `status` and `date`
    - Extract the title from the first `# ` heading
    - Read the `## Context and Problem Statement` section
@@ -45,7 +45,7 @@ Load existing ADRs and specs into the session so Claude can give architecture-aw
      ```
 
 5. **Handle edge cases**:
-   - If `docs/adrs/` does not exist: "The docs/adr/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
+   - If `docs/adr/` does not exist: "The docs/adr/ directory does not exist. Run `/pmo:adr [description]` to create your first ADR."
    - If `docs/openspec/specs/` does not exist: "The docs/openspec/specs/ directory does not exist. Run `/pmo:spec [capability]` to create your first spec."
    - If neither directory has any artifacts: "No design artifacts found. Create an ADR with `/pmo:adr` or a spec with `/pmo:spec` first."
    - If ADRs exist but no specs (or vice versa), present whichever exists and note the other is empty

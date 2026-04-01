@@ -154,7 +154,7 @@ The `.claude/settings.json` in this repo registers the local directory as a mark
 
 Creates ADRs using [MADR](https://adr.github.io/madr/) format:
 - Sequential numbering: `ADR-0001`, `ADR-0002`, etc.
-- Stored in `docs/adrs/`
+- Stored in `docs/adr/`
 - Mermaid architecture diagrams included by default
 - YAML frontmatter with status, date, decision-makers
 - Single-agent by default; add `--review` for team-based drafting with architect review
@@ -256,7 +256,7 @@ Reviews and merges PRs produced by `/pmo:work` using reviewer-responder agent pa
 
 Sets up your project's `CLAUDE.md` with architecture context:
 - Creates `CLAUDE.md` if it doesn't exist, or updates the existing one
-- Adds an `## Architecture Context` section with references to `docs/adrs/` and `docs/openspec/specs/`
+- Adds an `## Architecture Context` section with references to `docs/adr/` and `docs/openspec/specs/`
 - Includes a skills reference table and a note about `/pmo:prime`
 - Idempotent -- safe to re-run without duplicating content
 
@@ -418,11 +418,11 @@ For thorough team review on critical decisions, add `--review`:
 
 ## CLAUDE.md Integration
 
-Run `/pmo:init` to set up your project's CLAUDE.md with architecture context. This adds references to `docs/adrs/` and `docs/openspec/specs/`, a plugin skills table, and a note about `/pmo:prime`:
+Run `/pmo:init` to set up your project's CLAUDE.md with architecture context. This adds references to `docs/adr/` and `docs/openspec/specs/`, a plugin skills table, and a note about `/pmo:prime`:
 
 ```markdown
 ## Architecture Context
-- Architecture Decision Records are in `docs/adrs/`
+- Architecture Decision Records are in `docs/adr/`
 - Specifications are in `docs/openspec/specs/`
 ```
 

@@ -2,7 +2,7 @@
 
 This project uses the design pluginfor architecture governance.
 
-- Architecture Decision Records are in `docs/adrs/`
+- Architecture Decision Records are in `docs/adr/`
 - Specifications are in `docs/openspec/specs/`
 
 ### Design Plugin Skills

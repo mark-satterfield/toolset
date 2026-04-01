@@ -43,7 +43,7 @@ try {
 
 // ADR emoji and source path
 const ADR_EMOJI = '\ud83d\udcdd';
-const ADRS_SOURCE = path.join(__dirname, '../../docs/adrs');
+const ADRS_SOURCE = path.join(__dirname, '../../docs/adr');
 
 const ADR_MAPPING = buildAdrMapping(ADRS_SOURCE);
 

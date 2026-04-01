@@ -7,7 +7,7 @@ context: fork
 
 # Generate Docusaurus Documentation Site
 
-Transform ADRs from `docs/adrs/` and OpenSpec specs from `docs/openspec/specs/` into a polished documentation website with:
+Transform ADRs from `docs/adr/` and OpenSpec specs from `docs/openspec/specs/` into a polished documentation website with:
 
 - RFC 2119 keyword highlighting (MUST, SHALL, MAY, etc.)
 - ADR cross-reference linking (ADR-0001 becomes a clickable link)
@@ -27,7 +27,7 @@ Supports two modes:
 ### Step 1: Pre-flight Checks
 
 - Check if Node.js is installed. If not, tell the user: "Node.js is required to run the docs site. Please install it from https://nodejs.org/ and re-run this command." and stop.
-- Check if `docs/adrs/` has any ADR `.md` files
+- Check if `docs/adr/` has any ADR `.md` files
 - Check if `docs/openspec/specs/` has any spec directories (containing `spec.md`)
 - If NEITHER has content, tell the user: "No ADRs or specs found. Create some first with `/pmo:adr` or `/pmo:spec`, then re-run `/pmo:docs`." and stop.
 - If only one has content, proceed but note which is empty (e.g., "No specs found yet -- the docs site will only include ADRs for now.")
