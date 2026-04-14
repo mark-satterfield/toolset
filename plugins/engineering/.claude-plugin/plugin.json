@@ -10,5 +10,5 @@
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
   "keywords": ["engineering", "architecture", "agents", "rag", "mcp", "ci-cd", "observability"],
-  "skills": "./"
+  "skills": "./skills/"
 }

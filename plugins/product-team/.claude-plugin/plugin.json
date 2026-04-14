@@ -10,5 +10,5 @@
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
   "keywords": ["product", "product-management", "ux", "ui", "saas", "agile"],
-  "skills": "./"
+  "skills": "./skills/"
 }

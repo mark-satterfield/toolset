@@ -10,5 +10,5 @@
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
   "keywords": ["engineering", "frontend", "backend", "devops", "security", "ai-ml", "data-engineering"],
-  "skills": "./"
+  "skills": "./skills/"
 }

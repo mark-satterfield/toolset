@@ -6,8 +6,8 @@
     "name": "mark-satterfield",
     "url": "https://github.com/mark-satterfield/toolset"
   },
-  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/product-team/code-to-prd",
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/code-to-prd",
   "repository": "https://github.com/mark-satterfield/toolset",
   "license": "MIT",
-  "skills": "./"
+  "skills": "./skills/"
 }
