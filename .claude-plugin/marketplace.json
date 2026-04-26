@@ -159,6 +159,15 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/research-summarizer"
+    },
+    {
+      "name": "skills",
+      "description": "Catch-all bundle of frequently-used personal skills.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/skills"
     }
   ]
 }

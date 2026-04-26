@@ -1,0 +1,113 @@
+# Polyrepo Steward — Manifest Template
+#
+# This is the starting scaffold filled in by the setup workflow.
+# Replace every <PLACEHOLDER> with the actual value, or remove the
+# field if it does not apply. Mark unknowns explicitly with `unknown`
+# rather than leaving values blank — explicit unknowns survive review.
+#
+# See references/manifest-schema.md for the full schema and validation
+# rules.
+
+schema_version: 1
+
+project:
+  name: <project-name>
+  purpose: <one-sentence description of what this project does>
+  owners:
+    - <person-or-team>
+  created_at: <YYYY-MM-DD>
+  last_updated: <YYYY-MM-DD>
+
+topology:
+  kind: <siblings_only | meta_and_satellites | monorepo_plus_satellites | scattered | remote_only | hybrid | other>
+  description: >-
+    <the human's verbatim description of the project's shape — this is
+    the most important field; do not paraphrase>
+  layout_notes: >-
+    <how repos are arranged on disk; e.g., "all under ~/projects/foo,
+    plus one fork under ~/forks">
+  manifest_location: <absolute path to this file>
+
+repos:
+  - name: <repo-name>
+    purpose: <one-sentence purpose>
+    role: <service | library | infra | docs | orchestrator | meta | app | mobile-app | sdk | scripts | fork | other>
+    local_path: <absolute path or null>
+    remote_url: <url or null>
+    default_branch: <main | master | etc.>
+    owner: <person-or-team or unknown>
+    lifecycle: <active | maintenance | deprecated | archived | planned>
+    language: <primary language or unknown>
+    notes: <optional>
+
+# Repos closely related but not strictly part of this project.
+# Optional. Remove this section if not needed.
+adjacent_repos: []
+
+relationships:
+  dependencies:
+    # - from: consumer-repo
+    #   to: producer-repo
+    #   kind: build | runtime | type | contract | deployment | dev-tooling
+    #   notes: <optional>
+  shared_contracts:
+    # - name: user-events
+    #   kind: protobuf | openapi | jsonschema | graphql | typescript-types | other
+    #   source_repo: <repo-name>
+    #   consumer_repos: [<repo-name>, <repo-name>]
+    #   path: <path inside source_repo>
+  deployment_order: []
+  cycles: []
+
+conventions:
+  naming:
+    repos: <pattern or "none">
+    branches: <pattern or "none">
+    commits: <pattern or "none">
+    tags: <pattern or "none">
+    releases: <pattern or "none">
+  branching_model: <trunk-based | gitflow | custom — describe>
+  commit_format: <conventional-commits | freeform | issue-prefixed | etc.>
+  pr_rules: <description>
+  versioning: <per-repo-semver | lockstep | calver | etc.>
+  code_style:
+    tools: []
+    shared: <true | false>
+
+rules:
+  # - id: no-fe-to-db
+  #   category: architectural | security | compliance | deployment | convention | soft
+  #   statement: <the rule, declarative>
+  #   reason: <WHY this rule exists — non-negotiable>
+  #   applies_to: [<repo-name>] # or omit for project-wide
+  #   origin: <who introduced it>
+  #   recorded_at: <YYYY-MM-DD>
+
+documentation:
+  per_repo: <convention; e.g., "each repo has a /docs folder">
+  project_level: []
+  adrs: <where ADRs live, if any>
+  runbooks: []
+  onboarding: []
+
+search_recipes:
+  # - intent: <what the human is trying to find>
+  #   command: <the actual command>
+  #   scope: [<repo-name>]
+  #   notes: <optional>
+
+ownership:
+  contacts: {}
+  codeowners_files: []
+
+# Things the steward does not yet know. Filled in over time through
+# the learning flow.
+open_questions: []
+
+# Observations that the manifest may be stale. Resolved during refresh
+# passes. See references/learning-protocol.md.
+drift_log: []
+
+# Optional: tuning notes for the steward itself, e.g., things the
+# human has asked you to stop doing or always do for this project.
+steward_preferences: []
