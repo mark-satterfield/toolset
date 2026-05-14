@@ -1,6 +1,8 @@
 # Product Team Skills Collection
 
-**8 production-ready product skills** covering product management, agile delivery, strategy, UX research, design systems, competitive intelligence, landing pages, and SaaS scaffolding.
+**8 production-ready product skills** covering product management, agile
+delivery, strategy, UX research, design systems, competitive intelligence,
+landing pages, and SaaS scaffolding.
 
 ---
 
@@ -16,41 +18,49 @@
 ## Skills Catalog
 
 ### 1. Product Manager Toolkit
+
 **Python Tools:** `rice_prioritizer.py`, `customer_interview_analyzer.py`
 
 RICE prioritization with portfolio analysis, customer interview NLP analysis, PRD templates, and discovery frameworks.
 
 ### 2. Agile Product Owner
+
 **Python Tools:** `user_story_generator.py`
 
 INVEST-compliant user story generation, sprint planning with capacity allocation, epic breakdown, and acceptance criteria.
 
 ### 3. Product Strategist
+
 **Python Tools:** `okr_cascade_generator.py`
 
 OKR cascade generation (company to product to team), alignment scoring, and 5 strategy templates.
 
 ### 4. UX Researcher Designer
+
 **Python Tools:** `persona_generator.py`
 
 Data-driven persona generation, journey mapping frameworks, usability testing protocols, and empathy maps.
 
 ### 5. UI Design System
+
 **Python Tools:** `design_token_generator.py`
 
 Design token generation from brand color (CSS, JSON, SCSS), typography scales, spacing grids, and responsive breakpoints.
 
 ### 6. Competitive Teardown
+
 **Python Tools:** `competitive_matrix_builder.py`
 
 12-dimension competitive scoring, feature matrices, SWOT analysis, positioning maps, and stakeholder presentations.
 
 ### 7. Landing Page Generator
+
 **Python Tools:** `landing_page_scaffolder.py`
 
 Next.js/React TSX components with Tailwind CSS, 4 design styles, copy frameworks (PAS, AIDA, BAB), SEO optimization. Also supports HTML output.
 
 ### 8. SaaS Scaffolder
+
 **Python Tools:** `project_bootstrapper.py`
 
 Production SaaS boilerplate with Next.js, TypeScript, auth (NextAuth/Clerk/Supabase), payments (Stripe/Lemon Squeezy), and Docker.

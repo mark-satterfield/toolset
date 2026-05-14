@@ -6,3 +6,4 @@ dist/
 *.local
 .claude/worktrees/
 .remember
+.claude

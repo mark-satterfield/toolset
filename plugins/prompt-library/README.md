@@ -1,16 +1,8 @@
 # @mark-satterfield/plugin-prompt-library
 
-A Claude Code plugin for managing a full-featured prompt library. Create, search, run, compose, and orchestrate prompt templates with variable substitution, scope control, and semantic synthesis.
-
-## Installation
-
-Copy the plugin directory into `~/.claude/plugins/`:
-
-```bash
-cp -r plugins/prompt-library ~/.claude/plugins/prompt-library
-```
-
-Then enable the plugin in Claude Code settings under Plugins.
+A Claude Code plugin for managing a full-featured prompt library. Create,
+search, run, compose, and orchestrate prompt templates with variable
+substitution, scope control, and semantic synthesis.
 
 ## Commands
 

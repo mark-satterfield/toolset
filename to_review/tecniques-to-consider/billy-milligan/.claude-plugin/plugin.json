@@ -1,0 +1,33 @@
+{
+  "name": "billy-milligan",
+  "version": "1.5.0",
+  "description": "5 toxic senior engineers trapped in one plugin. Viktor draws boxes, Max ships, Dennis codes, Sasha breaks, Lena asks why. They argue, roast each other, and somehow deliver excellent technical decisions. Two memory systems: Billy Memory (local ~/.claude/, informal team chaos) + Project ADRs (formal docs/adr/, professional records for git). Team memory never leaks into ADRs. ADRs work without Billy.",
+  "author": {
+    "name": "Raman Navarych",
+    "email": "raman@navarych.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "team",
+    "agents",
+    "architect",
+    "tech-lead",
+    "fullstack",
+    "aqa",
+    "business-analyst",
+    "code-review",
+    "planning",
+    "debate",
+    "roast",
+    "billy-milligan",
+    "toxic-friends",
+    "agent-teams",
+    "memory",
+    "decisions",
+    "adr",
+    "knowledge-resolution",
+    "skill-gaps",
+    "fallback-chain"
+  ],
+  "hooks": "./hooks.json"
+}

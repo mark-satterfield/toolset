@@ -19,15 +19,6 @@ claude plugin add mark-satterfield/skills
 - **caveman** — Ultra-compressed communication mode. Cuts token usage
   ~75% by dropping filler, articles, and pleasantries while keeping
   full technical accuracy. (Source: mattpocock.)
-- **polyrepo-steward** — Reactive and proactive caretaker, curator, and
-  mentor for poly-repo projects. Knows the project's repos, their
-  purposes, owners, dependencies, conventions, search patterns, rules,
-  and documentation locations — and keeps that knowledge current as the
-  project changes. Topology-agnostic (siblings, meta+satellites,
-  monorepo+satellites, scattered, etc.) — discovers structure by
-  interviewing the human and maintains a project-side manifest.
-  Includes a companion read-only delegation agent
-  (`polyrepo-cartographer`) for context-light lookups.
 
 ## Adding More
 
