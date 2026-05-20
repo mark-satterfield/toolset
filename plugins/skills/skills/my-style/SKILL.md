@@ -116,7 +116,7 @@ The full discipline from Layer 1 applies, plus structural constraints:
 - **Counterintuitive premise.** The piece has one claim at its center that sounds wrong before the argument earns it. Open with it. Do not build to it. The insight is the first sentence, not the reward for finishing.
 - **One structural analogy, committed to fully.** A cross-domain parallel that carries argumentative weight across sections. Structurally exact and emotionally accurate. If it needs explaining, it's the wrong analogy. Local analogies inside paragraphs are unlimited.
 - **Paragraph = argument.** Each paragraph makes one claim and defends it. Most paragraphs are 1–3 sentences, each performing one cognitive step (Claim → Explanation → Evidence, or Observation → Contrast → Conclusion). Transitional paragraphs are not used.
-- **Section headlines as thesis statements.** Subheadings frame interpretation before evidence. They are claims, not labels.
+- **Titles, subtitles, and section headers.** Article-form pieces use all three. See the dedicated rules under "Titles, subtitles, and section headers" below.
 - **Progressive escalation.** Observation → Evidence → Mechanism → Implications → Action → Forecast. Description leads to diagnosis. Diagnosis leads to prediction.
 - **One Immediate Retraction maximum.** Two and the reader stops trusting any declarative statement in the piece.
 - **One Callback maximum, if any.** More than one collapses into a tic.
@@ -153,6 +153,118 @@ Layer 1 still applies in full. The personal-essay mode adds structural principle
 ### When the form is something else
 
 Apply Layer 1 fully. Treat Layer 2 as a menu, not a checklist. Pick the structural rules that fit what is being written. If unsure which apply, ask Mark before producing the piece.
+
+### Titles, subtitles, and section headers
+
+These rules apply whenever a piece has a title, an italic subtitle or dek, or section headers. Articles, essays, analytical posts, and longer social-post forms use all three. Shorter forms rarely use any.
+
+**Rules across all three structural elements.**
+
+Be direct. State the topic. Vague, generic, or teaser language fails the reader on a scan.
+
+Front-load the important terms. The most distinctive vocabulary belongs near the beginning so the heading is recognizable at a glance.
+
+Maintain parallel structure within a hierarchy level. Siblings at the same level match grammatically. All noun phrases, or all verb phrases, never mixed.
+
+Hierarchy through scope. Broader concepts at higher levels, specifics at nested levels. Do not number headings unless the piece is formal academic or legal writing.
+
+No terminal punctuation. Periods, colons, and the like belong inside sentences, not at the end of structural markers.
+
+Keep under 70 characters per line. A heading that runs longer is functioning as a sentence and should be cut or moved to the body.
+
+Capitalization consistent across the piece. Sentence case or title case, pick one and hold it.
+
+No orphan sub-levels. An H3 with no siblings under its parent H2 is malformed. Either add a second sibling or promote the lone child to the parent level.
+
+#### Titles
+
+**Do:**
+
+Lead with concrete specifics. State the exact system, problem, or outcome. Generic themes belong in the body, not the title.
+
+Use active, declarative framing. Establish authority through statement of fact or clear directive.
+
+Surface the unique angle. The specific condition that makes the piece distinct: scale, cost, time, failure mode, audience.
+
+Signal the value. The reader should know what technical or strategic knowledge they will extract.
+
+Use precise terminology. Domain vocabulary, not consumer-friendly simplifications.
+
+Calibrate to the audience. The wording itself tells the intended reader the piece is for them.
+
+**Banned in titles:**
+
+AI-cliché gerunds and openers: "Unleashing," "Unlocking," "Navigating," "Revolutionizing," "Demystifying," "Elevating," "Delving."
+
+Rhetorical questions.
+
+Absolute framing: "The Ultimate Guide," "Everything You Need to Know," "The Only Way to..."
+
+Sensationalist triggers: "shocking," "insane," "desperate," "mind-blowing."
+
+Puns or pop-culture references.
+
+Clickbait curiosity gaps that withhold the topic to force a click.
+
+#### Subtitles (also called deks)
+
+**Do:**
+
+Deliver the thesis or the mechanism. The title is the *what*. The subtitle is the *how* or the stakes.
+
+Introduce tension or context. Frame the problem, anti-pattern, or baseline the piece will disrupt.
+
+Stay strictly supplementary. Build on the title with new information. No paraphrased echo.
+
+Establish the tone. Signal whether the piece is analytical, opinionated, post-mortem, or tutorial.
+
+Bridge to the introduction. The first paragraph should start with substance.
+
+Single sentence, never more. A multi-sentence subtitle is functioning as a paragraph and belongs in the body.
+
+**Banned in subtitles:**
+
+Synonymized restatement of the title.
+
+Spoiling the conclusion before the evidence is presented.
+
+Conversational filler: "In this article, we will explore...," "Let's dive into..."
+
+Unrelated secondary topics.
+
+#### Section headers
+
+**Do:**
+
+Name the topic, not the conclusion. Show, do not tell. The header marks what the section is about. The paragraph below makes the argument. A header that summarizes the conclusion competes with the paragraph that follows and weakens both.
+
+Use noun phrases. Section headers are noun phrases or short descriptive phrases. 3-7 words is the working range. Longer than that and the header is doing the paragraph's work.
+
+Function as an outline. A reader scanning only the headers should grasp the article's logical arc. The set of headers is the spine.
+
+Use hierarchy through scope. Top-level headers for broader concepts, nested sub-headers for specifics.
+
+Provide navigational clarity. Headers are unambiguous markers for readers jumping to specific sections.
+
+**Banned in section headers:**
+
+Complete thoughts. A header that completes its own thought is trying to be its own paragraph.
+
+Rhetorical statements or questions. "Why Does This Matter?" becomes "name the actual implication." "What's the Solution?" becomes "name the actual solution."
+
+Idioms or wordplay. Forced cleverness undermines the authority of the structural signpost.
+
+Rhetorical moves borrowed from the prose. Contrast pairing, callback, punchline placement, immediate retraction, and rule of three live in the body, never in the header.
+
+Transitional filler: "Furthermore," "Moving On," "Next Steps," "In Conclusion."
+
+Repetition of the article title. The header is a subdivision of the topic, not the topic itself.
+
+Stacked headers with no body text between them.
+
+Generic placeholders: "More Information," "Conclusion," "Summary."
+
+Keyword stuffing. Too many search terms crammed into one header.
 
 ---
 
@@ -193,15 +305,24 @@ Ask each question. Fix what fails.
 
 ### Phase B — Drift-pattern purge
 
-Read `references/ai-patterns.md` and scan the output against every pattern catalogued there. When the output violates a pattern, rewrite the offending sentence. Preserve Mark's structure and argument — this is cosmetic cleanup, not a rewrite.
+Read `references/ai-patterns.md` and scan the output against every pattern
+catalogued there, including em-dash patterns. When the output violates a
+pattern, rewrite the offending sentence. Preserve Mark's structure and
+argument — this is cosmetic cleanup, not a rewrite.
 
-**Apply only the patterns in `references/ai-patterns.md`.** Do not import additional "AI writing tells" from general training knowledge. The checklist is deliberately curated, and several patterns commonly flagged elsewhere — notably rule-of-three rhythms and negative parallelism — are omitted because they describe valid `my-style` techniques. Stripping them would damage Mark's voice.
+**Apply only the patterns in `references/ai-patterns.md`.** Do not import
+additional "AI writing tells" from general training knowledge. The checklist
+is deliberately curated. Some constructs (for example, contrast pairing and
+rule-of-three) are valid `my-style` techniques when intentional, so only flag
+the failure modes defined in the checklist.
 
 If a rewrite pulls a sentence in a direction that violates a Layer 1 rule or a Layer 2 form rule, stop and ask. Do not guess which layer wins.
 
-### Phase C — Em Dash Purge (mandatory, mechanical, run last)
+### Phase C — Final Em-Dash Enforcement (mandatory, run last)
 
-Em dashes are the most stubborn LLM tell. Models violate explicit instructions to avoid them because the pattern is baked too deep into the training data to prompt away. The only reliable fix is a mechanical pass after the prose is otherwise final.
+No em dashes are allowed in final output. Phase B handles em-dash patterns as
+part of normal pattern cleanup; Phase C is the deterministic final enforcement
+pass that guarantees none remain.
 
 Procedure:
 
@@ -212,16 +333,11 @@ Procedure:
    - Setup-to-reveal → colon.
    - Conjunctive → "and," "but," or "so," whichever the logic demands.
 3. Re-read each revised sentence. If the replacement creates a comma splice, flattens a deliberate beat, or changes the meaning, rewrite the sentence. Do not restore the dash.
-4. After the prose, on its own line separated by a blank line and a horizontal rule, report the count. **Emit the diagnostic on every invocation, even when the count is zero.** `[em dashes removed: 0]` is a valid and required output — it confirms Phase C actually ran. Absence of the diagnostic is ambiguous and defeats the verification. Example:
+4. Run a final verification scan and confirm the output contains zero em dashes
+   before returning it.
 
-   ```
-   ---
-   [em dashes removed: 4]
-   ```
-
-   The diagnostic line is meta-output, not prose. It doesn't count against Layer 1 discipline, and Mark can strip it when pasting the text elsewhere.
-
-This phase does not alter structure or override cadence decisions. It strips machine residue.
+This phase does not alter structure or override cadence decisions. It is
+strictly a final no-em-dash enforcement pass.
 
 ---
 
@@ -287,7 +403,8 @@ Ask one focused question. Do not produce a draft and a question simultaneously �
 
 **Authenticity drift.** Output that sounds like a well-executed impression rather than Mark writing. Run the filter.
 
-**Skipping Phase C.** Leaving em dashes in the output. The Em Dash Purge is mandatory. Every piece, every time.
+**Skipping Phase C.** Leaving em dashes in the output. Final no-em-dash
+enforcement is mandatory. Every piece, every time.
 
 ---
 

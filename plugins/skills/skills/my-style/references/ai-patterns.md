@@ -4,7 +4,8 @@ Used by `my-style` Layer 4 Phase B. Read and apply before handing prose back.
 
 Each entry names a drift pattern, shows what to watch for, and shows a before/after correction. When the output matches a pattern, rewrite the offending sentence. Don't delete it wholesale unless the sentence exists only to perform the pattern — in that case, delete.
 
-This checklist does not handle em dashes. Em dash removal runs separately in SKILL.md Layer 4 Phase C as a mandatory mechanical pass.
+This checklist includes em-dash handling. Em dashes are an AI pattern and must
+be addressed in every pass. Final output should contain zero em dashes.
 
 ---
 
@@ -196,3 +197,138 @@ Use straight quotes (`"`, `'`), not curly ones (`"`, `"`, `'`, `'`), unless the 
 
 **After:**
 > The company plans to open two more locations next year.
+
+---
+
+## Additional Detection Patterns
+
+### 19. Em Dash Overuse
+
+**Watch for:** any em dash (`—`) in output. Repeated use is a strong AI signal,
+and final prose must contain zero em dashes.
+
+**Before:**
+> Your travel vlogs are genuinely captivating — I love how you bring every place to life.
+
+**After:**
+> Your travel vlogs are clear and specific. The market sequence in Osaka was especially strong.
+
+### 20. "Not Just X, It's Y" Parallelism
+
+**Watch for:** formulaic "It's not just X, it's Y" framing used to fake depth.
+
+**Before:**
+> It's not just about uploading in 4K, it's about making every shot count.
+
+**After:**
+> Upload quality matters less than shot selection and pacing.
+
+### 21. Mechanical Rule-of-Three Grouping
+
+**Watch for:** repeated triads where ideas are grouped in threes by habit, not necessity.
+
+**Before:**
+> The platform is fast, flexible, and powerful.
+
+**After:**
+> The platform reduced export time from 12 minutes to 4.
+
+### 22. Uncanny-Valley Diction
+
+**Watch for:** wording that is grammatically correct but subtly unnatural or context-misaligned.
+
+**Before:**
+> The neighborhood radiates a calibrated warmth that harmonizes with civic vitality.
+
+**After:**
+> The neighborhood feels active at night because restaurants and buses run late.
+
+### 23. Safe Corporate Vocabulary Overload
+
+**Watch for:** vague booster words and jargon such as *innovative*, *practical solutions*, *elevate*, *delve*.
+
+**Before:**
+> We deliver innovative, practical solutions that elevate your workflow.
+
+**After:**
+> We cut onboarding time from two weeks to three days.
+
+### 24. Exaggerated Empty Praise
+
+**Watch for:** performative flattery with high emotional tone but low specificity.
+
+**Before:**
+> Your work is genuinely captivating and exceptionally insightful in every way.
+
+**After:**
+> Your camera movement in the alley scene is steady and easier to follow than the previous cut.
+
+### 25. Strained Analogies and Similes
+
+**Watch for:** dramatic metaphors that sound clever but do not clarify meaning.
+
+**Before:**
+> The patch was a band-aid made of sandpaper.
+
+**After:**
+> The patch fixed one bug but introduced a slower query path.
+
+### 26. Redundant Restating and Preamble
+
+**Watch for:** unnecessary setup ("this has fascinated people for centuries") and repeated claims before the actual answer.
+
+**Before:**
+> The color of the sky is a phenomenon that has fascinated people for centuries. The sky appears blue for several reasons.
+
+**After:**
+> The sky looks blue because shorter wavelengths scatter more in the atmosphere.
+
+### 27. Missing First-Person Grounding
+
+**Watch for:** depersonalized tone where lived perspective would normally appear.
+
+**Before:**
+> The food options were adequate and broadly aligned with local expectations.
+
+**After:**
+> As a northerner, I found the food too sweet for my taste.
+
+### 28. Over-Linear Narrative (No Tangents)
+
+**Watch for:** perfectly straight A-to-B flow that avoids natural associative jumps.
+
+**Before:**
+> We arrived, evaluated the space, and left after collecting data.
+
+**After:**
+> We arrived to evaluate the space. I got distracted by a side room with old posters, then returned and finished the measurements.
+
+### 29. Generic Compliments Instead of Specificity
+
+**Watch for:** praise without concrete references.
+
+**Before:**
+> This is a fantastic and inspiring video.
+
+**After:**
+> The time-lapse at 1:12 is the strongest part of the video.
+
+### 30. Over-Polished Casual Voice
+
+**Watch for:** fully polished, comma-perfect prose in contexts that should feel informal (text messages, short social replies).
+
+**Before:**
+> I sincerely appreciate your thoughtful message and look forward to continuing this conversation.
+
+**After:**
+> Thanks for the note. Happy to keep talking.
+
+### 31. Red-Flag Cluster ("Vibe Check")
+
+**Watch for:** multiple signals in one passage: em dash overuse, mechanical triads, "not just X, it's Y" framing, and empty praise.
+
+**Before:**
+> Your work is incredible — it's not just informative, it's transformative, insightful, and empowering.
+
+**After:**
+> Your argument is clear. The section comparing 2022 and 2024 conversion data is the most convincing.
