@@ -1,0 +1,13 @@
+{
+  "name": "my-editor",
+  "version": "0.1.0",
+  "description": "Personal editing and writing-style toolkit with adhd-edit and my-style skills.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/my-editor",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "skills": "./skills/"
+}
