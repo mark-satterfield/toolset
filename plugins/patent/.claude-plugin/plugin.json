@@ -1,0 +1,21 @@
+{
+  "name": "patent",
+  "version": "0.1.0",
+  "description": "Personal patent prep toolkit — ideate, assess, draft, document, and triage ideas for handoff to a patent attorney. Free, public data only.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/patent",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "keywords": [
+    "patent",
+    "ip",
+    "patentability",
+    "alice",
+    "claims",
+    "prior-art",
+    "inventor"
+  ]
+}
