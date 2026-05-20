@@ -168,6 +168,24 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/skills"
+    },
+    {
+      "name": "my-editor",
+      "description": "Personal editing and writing-style toolkit with adhd-edit and my-style skills.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/my-editor"
+    },
+    {
+      "name": "patent",
+      "description": "Personal patent prep toolkit for inventors working with an attorney — router skill plus six sub-skills (ideation, patentability, claim drafting, enforceability, document generation, triage). Alice-safe framing, prior-art search across free public APIs, invention-disclosure and defensive-publication generation. Produces artifacts to hand to your lawyer; does not file with the USPTO. Uses only free, public data sources.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/patent"
     }
   ]
 }
