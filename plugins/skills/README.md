@@ -10,9 +10,6 @@ claude plugin add mark-satterfield/skills
 
 ## Bundled Skills
 
-- **my-style** — Encodes Mark's voice, language, humor, and writing
-  techniques. Apply on demand to any prose Mark is writing or has Claude
-  write on his behalf. Does not auto-invoke.
 - **grill-me** — Interview the user relentlessly about a plan or design
   until reaching shared understanding, resolving each branch of the
   decision tree. (Source: mattpocock.)
