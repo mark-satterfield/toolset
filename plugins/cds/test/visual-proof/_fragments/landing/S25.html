@@ -1,0 +1,230 @@
+<!-- S25 — Two-column prompt/artifact panel (serves T8 Interactive Demo) -->
+<!-- Left column = mock user prompt; right column = mock generated artifact. -->
+<!-- Theme: clarity (pure-white ground) — declared locally so the fragment renders in isolation. -->
+<section
+  data-theme="clarity"
+  style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-main) var(--container-margin);
+  "
+>
+  <div style="max-width: var(--container-medium); margin: 0 auto;">
+
+    <!-- Section intro -->
+    <div style="max-width: var(--reading-column); margin: 0 0 var(--sp-3);">
+      <p class="micro" style="color: var(--role-accent-primary); margin: 0 0 var(--sp-0-75);">
+        Interactive demo
+      </p>
+      <h2 class="h2" style="margin: 0 0 var(--sp-1);">
+        Describe the work. Get a finished draft.
+      </h2>
+      <p class="body-lg" style="color: var(--role-text-secondary); margin: 0;">
+        Type a plain-language request on the left. The Acme Platform turns it into a
+        structured, ready-to-ship artifact on the right — no template wrangling required.
+      </p>
+    </div>
+
+    <!-- Prompt / Artifact split -->
+    <div
+      style="
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+        gap: var(--sp-2-5);
+        align-items: stretch;
+      "
+    >
+
+      <!-- ============================ LEFT: USER PROMPT ============================ -->
+      <div
+        class="card"
+        style="
+          display: flex;
+          flex-direction: column;
+          gap: var(--sp-1-5);
+          background: var(--role-surface-secondary);
+        "
+      >
+        <div style="display: flex; align-items: center; gap: var(--sp-0-75);">
+          <span
+            aria-hidden="true"
+            style="
+              display: inline-flex; align-items: center; justify-content: center;
+              width: 28px; height: 28px; border-radius: var(--radius-xs);
+              background: var(--role-accent-primary); color: var(--color-neutral-050);
+              font-size: var(--type-caption); font-weight: var(--fw-700);
+            "
+          >YN</span>
+          <span class="body-3" style="color: var(--role-text-secondary);">You · Northwind ops</span>
+          <span class="caption" style="margin-left: auto; color: var(--role-text-tertiary);">Prompt</span>
+        </div>
+
+        <p class="body-3" style="color: var(--role-text-tertiary); margin: 0; text-transform: uppercase; letter-spacing: var(--track-0-05);">
+          Your request
+        </p>
+
+        <!-- The mock prompt itself -->
+        <p class="body-1" style="margin: 0; color: var(--role-text-primary);">
+          Write a launch announcement for our new <strong>Acme Platform analytics module</strong>.
+          Audience is existing Northwind customers. Keep it warm and concise, lead with the
+          time saved, include three feature bullets, and end with a single call to action to
+          book a walkthrough.
+        </p>
+
+        <!-- Attached-context chips -->
+        <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5);">
+          <span class="badge-outline">brand-voice.md</span>
+          <span class="badge-outline">q2-roadmap.pdf</span>
+          <span class="badge-outline">customer-list.csv</span>
+        </div>
+
+        <!-- Mock composer affordance -->
+        <div style="margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-0-75);">
+          <div
+            class="textarea"
+            aria-hidden="true"
+            style="
+              min-height: auto; display: flex; align-items: center;
+              justify-content: space-between; color: var(--role-text-tertiary);
+            "
+          >
+            <span>Refine the draft…</span>
+            <span class="caption">⏎</span>
+          </div>
+          <div style="display: flex; gap: var(--sp-0-75); align-items: center;">
+            <button type="button" class="button button-primary" style="flex: 1;">
+              Generate artifact
+            </button>
+            <button type="button" class="button button-tertiary">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================ RIGHT: GENERATED ARTIFACT ============================ -->
+      <div
+        class="card-floating"
+        style="
+          width: auto;
+          display: flex;
+          flex-direction: column;
+          gap: var(--sp-1-5);
+          padding: 0;
+          overflow: hidden;
+        "
+      >
+        <!-- Artifact window chrome -->
+        <div
+          style="
+            display: flex; align-items: center; gap: var(--sp-0-75);
+            padding: var(--sp-1) var(--sp-2);
+            border-bottom: 1px solid var(--role-border-subtle);
+            background: var(--role-surface-secondary);
+          "
+        >
+          <span aria-hidden="true" style="display: inline-flex; gap: 6px;">
+            <span style="width: 10px; height: 10px; border-radius: 9999px; background: var(--color-panel-coral);"></span>
+            <span style="width: 10px; height: 10px; border-radius: 9999px; background: var(--color-panel-oat);"></span>
+            <span style="width: 10px; height: 10px; border-radius: 9999px; background: var(--color-panel-cactus);"></span>
+          </span>
+          <span class="body-3" style="color: var(--role-text-secondary);">announcement.draft</span>
+          <span
+            class="caption"
+            style="
+              margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+              color: var(--role-text-tertiary);
+            "
+          >
+            <span style="width: 7px; height: 7px; border-radius: 9999px; background: var(--color-panel-mineral);"></span>
+            Generated in 1.8s
+          </span>
+        </div>
+
+        <!-- Artifact body -->
+        <div style="padding: 0 var(--sp-2) var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-1-5);">
+
+          <div>
+            <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-5);">
+              Email · Subject line
+            </p>
+            <p class="h4" style="margin: 0;">
+              You'll see your numbers before your coffee's cold
+            </p>
+          </div>
+
+          <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+            Hi there — we built the new analytics module so the report you used to
+            assemble by hand every Monday now lands in your inbox on its own. Most
+            Northwind teams are getting that morning back, about <strong style="color: var(--role-text-primary);">four hours a week</strong>.
+          </p>
+
+          <!-- Feature bullets rendered as hairline-divided rows -->
+          <div style="border-top: 1px solid var(--role-border-subtle);">
+            <div style="display: flex; gap: var(--sp-1); padding: var(--sp-1) 0; border-bottom: 1px solid var(--role-border-subtle);">
+              <span
+                aria-hidden="true"
+                style="
+                  flex: none; width: 24px; height: 24px; border-radius: var(--radius-xs);
+                  background: var(--color-panel-sky); display: grid; place-items: center;
+                  color: var(--color-neutral-950); font-size: var(--type-caption); font-weight: var(--fw-700);
+                "
+              >1</span>
+              <div>
+                <p class="body-2" style="margin: 0; font-weight: var(--fw-600); color: var(--role-text-primary);">Live dashboards</p>
+                <p class="body-3" style="margin: 0; color: var(--role-text-tertiary);">Pipeline, retention, and revenue in one always-current view.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--sp-1); padding: var(--sp-1) 0; border-bottom: 1px solid var(--role-border-subtle);">
+              <span
+                aria-hidden="true"
+                style="
+                  flex: none; width: 24px; height: 24px; border-radius: var(--radius-xs);
+                  background: var(--color-panel-peach); display: grid; place-items: center;
+                  color: var(--color-neutral-950); font-size: var(--type-caption); font-weight: var(--fw-700);
+                "
+              >2</span>
+              <div>
+                <p class="body-2" style="margin: 0; font-weight: var(--fw-600); color: var(--role-text-primary);">Scheduled digests</p>
+                <p class="body-3" style="margin: 0; color: var(--role-text-tertiary);">Send the right slice to the right team, automatically.</p>
+              </div>
+            </div>
+            <div style="display: flex; gap: var(--sp-1); padding: var(--sp-1) 0;">
+              <span
+                aria-hidden="true"
+                style="
+                  flex: none; width: 24px; height: 24px; border-radius: var(--radius-xs);
+                  background: var(--color-panel-heather); display: grid; place-items: center;
+                  color: var(--color-neutral-950); font-size: var(--type-caption); font-weight: var(--fw-700);
+                "
+              >3</span>
+              <div>
+                <p class="body-2" style="margin: 0; font-weight: var(--fw-600); color: var(--role-text-primary);">Anomaly alerts</p>
+                <p class="body-3" style="margin: 0; color: var(--role-text-tertiary);">A nudge the moment a metric drifts off its trend.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- CTA embedded inside the generated artifact -->
+          <div style="display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap;">
+            <button type="button" class="button button-brand">Book a 20-minute walkthrough</button>
+            <span class="body-3" style="color: var(--role-text-tertiary);">— the Acme Platform team</span>
+          </div>
+
+          <!-- Artifact action bar -->
+          <div
+            style="
+              display: flex; gap: var(--sp-0-75); align-items: center;
+              padding-top: var(--sp-1); border-top: 1px solid var(--role-border-subtle);
+            "
+          >
+            <button type="button" class="button button-secondary">Copy</button>
+            <button type="button" class="button button-tertiary">Regenerate</button>
+            <span class="caption mono" style="margin-left: auto; color: var(--role-text-tertiary);">
+              312 words · tone: warm
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>

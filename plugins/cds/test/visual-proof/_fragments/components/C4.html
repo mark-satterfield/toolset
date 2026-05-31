@@ -1,0 +1,234 @@
+<section class="vp-group" aria-labelledby="c4-title" style="padding: var(--sp-3) var(--container-margin); background: var(--role-surface-primary);">
+  <header style="max-width: var(--container-medium); margin: 0 auto var(--sp-2-5);">
+    <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-5);">Component gallery · Group C4</p>
+    <h2 id="c4-title" class="h3" style="margin: 0 0 var(--sp-0-75);">Badges &amp; pills</h2>
+    <p class="body-2" style="color: var(--role-text-secondary); max-width: 60ch; margin: 0;">
+      Small labelling primitives — categorical tags, emphasis counters, semantic status indicators, and a one-of-N segmented selector. Each family below shows its variants and interactive states laid out spec-sheet style.
+    </p>
+  </header>
+
+  <div style="max-width: var(--container-medium); margin: 0 auto; display: grid; gap: var(--sp-2-5);">
+
+    <!-- ================================================================= -->
+    <!-- C4.1 — Outline pill badge                                          -->
+    <!-- ================================================================= -->
+    <article class="card" aria-labelledby="c4-outline-title" style="background: var(--role-surface-raised);">
+      <header style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-1); flex-wrap: wrap; margin-bottom: var(--sp-1-5);">
+        <div>
+          <h3 id="c4-outline-title" class="h5" style="margin: 0 0 var(--sp-0-25);">Outline pill badge</h3>
+          <p class="body-3" style="color: var(--role-text-secondary); margin: 0; max-width: 56ch;">Lightweight tag with a hairline border for categorical or meta labels. Static <code class="mono">&lt;span&gt;</code> by default; promotes to a <code class="mono">&lt;button&gt;</code>/<code class="mono">&lt;a&gt;</code> when it acts as a filter chip or removable tag.</p>
+        </div>
+        <span class="badge-outline" aria-hidden="true">§14 · radius xs</span>
+      </header>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-1-5);">
+
+        <!-- Variants: as labels -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Static label · rest</p>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+            <span class="badge-outline">Documentation</span>
+            <span class="badge-outline">Beta</span>
+            <span class="badge-outline">Read time · 6 min</span>
+            <span class="badge-outline">Acme Platform</span>
+          </div>
+        </div>
+
+        <!-- Interactive: filter chip states -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Interactive filter chip</p>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+            <button type="button" class="badge-outline" style="cursor: pointer; background: var(--role-surface-secondary);">All teams</button>
+            <button type="button" class="badge-outline" style="cursor: pointer; border-color: var(--role-border-strong); color: var(--role-text-primary);" title="hover — border darkens toward --role-border-strong">Engineering</button>
+            <button type="button" class="badge-outline" style="cursor: pointer; outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);" title="focus-visible ring">Design</button>
+          </div>
+          <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-0-75) 0 0;">rest · hover (darkened border) · focus-visible (ring)</p>
+        </div>
+
+        <!-- Removable tag -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Removable tag</p>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+            <span class="badge-outline" style="gap: var(--sp-0-5);">
+              Northwind
+              <button type="button" aria-label="Remove Northwind" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 9999px; background: transparent; color: inherit; cursor: pointer;">
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>
+              </button>
+            </span>
+            <span class="badge-outline" style="gap: var(--sp-0-5);">
+              Globex
+              <button type="button" aria-label="Remove Globex" style="display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 9999px; background: transparent; color: inherit; cursor: pointer;">
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-1-5) 0 0;">Anatomy: <code class="mono">0.5rem 0.75rem</code> padding · 12px caption type · sentence-case · no uppercase · roles <code class="mono">--border-subtle</code> / <code class="mono">--surface-secondary</code> / <code class="mono">--text-tertiary</code>.</p>
+    </article>
+
+    <!-- ================================================================= -->
+    <!-- C4.2 — Inverted pill badge                                         -->
+    <!-- ================================================================= -->
+    <article class="card" aria-labelledby="c4-inverted-title" style="background: var(--role-surface-raised);">
+      <header style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-1); flex-wrap: wrap; margin-bottom: var(--sp-1-5);">
+        <div>
+          <h3 id="c4-inverted-title" class="h5" style="margin: 0 0 var(--sp-0-25);">Inverted pill badge</h3>
+          <p class="body-3" style="color: var(--role-text-secondary); margin: 0; max-width: 56ch;">A filled pill that inverts ink — text ground becomes the page surface. Used for emphasis labels and counters. <code class="mono">min-width: 4rem</code>, 8px radius, line-height 1.</p>
+        </div>
+        <span class="badge-outline" aria-hidden="true">§14 · radius sm</span>
+      </header>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-1-5);">
+
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Emphasis label</p>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+            <span class="badge-inverted">NEW</span>
+            <span class="badge-inverted">PRO</span>
+            <span class="badge-inverted">Featured</span>
+          </div>
+        </div>
+
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Counter</p>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+            <span class="badge-inverted">12</span>
+            <span class="badge-inverted">99+</span>
+            <span class="badge-inverted">3 new</span>
+          </div>
+        </div>
+
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Inline with heading</p>
+          <div style="display: flex; align-items: center; gap: var(--sp-0-75);">
+            <span class="h6" style="margin: 0;">Workspace activity</span>
+            <span class="badge-inverted" style="min-width: 0; padding: 0.25rem 0.5rem;">8</span>
+          </div>
+          <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-0-75) 0 0;">Host may override padding / min-width for tight counters.</p>
+        </div>
+      </div>
+
+      <!-- Side-by-side alignment proof with outline sibling -->
+      <div style="margin-top: var(--sp-1-5); padding-top: var(--sp-1-5); border-top: 1px solid var(--role-border-subtle);">
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Vertical alignment with outline sibling</p>
+        <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); align-items: center;">
+          <span class="badge-outline">Documentation</span>
+          <span class="badge-inverted">NEW</span>
+          <span class="badge-outline">Changelog</span>
+          <span class="badge-inverted">2</span>
+        </div>
+      </div>
+
+      <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-1-5) 0 0;">Anatomy: roles <code class="mono">--text-primary</code> as background, <code class="mono">--surface-primary</code> as ink. Shares the outline pill's padding/type so the two align side-by-side.</p>
+    </article>
+
+    <!-- ================================================================= -->
+    <!-- C4.3 — Status badge                                                -->
+    <!-- ================================================================= -->
+    <article class="card" aria-labelledby="c4-status-title" style="background: var(--role-surface-raised);">
+      <header style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-1); flex-wrap: wrap; margin-bottom: var(--sp-1-5);">
+        <div>
+          <h3 id="c4-status-title" class="h5" style="margin: 0 0 var(--sp-0-25);">Status badge</h3>
+          <p class="body-3" style="color: var(--role-text-secondary); margin: 0; max-width: 56ch;">Indicator badge keyed to a state. Lowercase in source, uppercase via CSS. The base class ships the coral example; the status&nbsp;&rarr;&nbsp;color mapping is a documented gap, so other states below bind <code class="mono">--color-panel-*</code> grounds inline.</p>
+        </div>
+        <span class="badge-outline" aria-hidden="true">§14 · uppercase</span>
+      </header>
+
+      <div>
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">State mapping (example — mapping is host-defined)</p>
+        <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-75); align-items: center;">
+          <!-- Base class example: coral "needs attention" -->
+          <span class="badge-status">needs attention</span>
+          <!-- ok / healthy — cool sage mineral -->
+          <span class="badge-status" style="background: var(--color-panel-mineral); color: var(--color-neutral-050);">operational</span>
+          <!-- info — sky -->
+          <span class="badge-status" style="background: var(--color-panel-sky); color: var(--color-neutral-950);">in review</span>
+          <!-- caution — peach -->
+          <span class="badge-status" style="background: var(--color-panel-peach); color: var(--color-neutral-950);">degraded</span>
+          <!-- error — state fill -->
+          <span class="badge-status" style="background: var(--color-state-error-fill); color: var(--color-neutral-050);">failed</span>
+          <!-- neutral / idle — oat -->
+          <span class="badge-status" style="background: var(--color-panel-oat); color: var(--color-neutral-950);">idle</span>
+        </div>
+      </div>
+
+      <!-- In-context rows -->
+      <div style="margin-top: var(--sp-1-5); padding-top: var(--sp-1-5); border-top: 1px solid var(--role-border-subtle);">
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">In context</p>
+        <ul style="list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-0-75);">
+          <li style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1);">
+            <span class="body-3">Northwind ingestion pipeline</span>
+            <span class="badge-status" style="background: var(--color-panel-mineral); color: var(--color-neutral-050);">operational</span>
+          </li>
+          <li style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1);">
+            <span class="body-3">Globex sync worker</span>
+            <span class="badge-status">needs attention</span>
+          </li>
+          <li style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1);">
+            <span class="body-3">Acme nightly export</span>
+            <span class="badge-status" style="background: var(--color-state-error-fill); color: var(--color-neutral-050);">failed</span>
+          </li>
+        </ul>
+      </div>
+
+      <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-1-5) 0 0;">Known gap: the status&nbsp;&rarr;&nbsp;color mapping is not declared in the spec — only the coral example ships in the base class. The grounds shown here are illustrative <code class="mono">--color-panel-*</code> / <code class="mono">--color-state-*</code> bindings.</p>
+    </article>
+
+    <!-- ================================================================= -->
+    <!-- C4.4 — Pill-tab strip                                              -->
+    <!-- ================================================================= -->
+    <article class="card" aria-labelledby="c4-pilltab-title" style="background: var(--role-surface-raised);">
+      <header style="display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-1); flex-wrap: wrap; margin-bottom: var(--sp-1-5);">
+        <div>
+          <h3 id="c4-pilltab-title" class="h5" style="margin: 0 0 var(--sp-0-25);">Pill-tab strip</h3>
+          <p class="body-3" style="color: var(--role-text-secondary); margin: 0; max-width: 56ch;">Segmented control — one option active at a time, painted as an inset pill inside an outer strip. Outer radius 16px, inner radius 12px, 4px inner padding. Active button paints with <code class="mono">currentColor</code> and the label inherits inverse ink.</p>
+        </div>
+        <span class="badge-outline" aria-hidden="true">§14 · seg control</span>
+      </header>
+
+      <div style="display: grid; gap: var(--sp-1-5);">
+
+        <!-- radiogroup pattern (filter / view) -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Radiogroup pattern · updates content in place</p>
+          <div class="pill-tab-strip" role="radiogroup" aria-label="Time range">
+            <button type="button" class="pill-tab" role="radio" aria-checked="true"><span>Day</span></button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="false">Week</button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="false">Month</button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="false">Quarter</button>
+          </div>
+          <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-0-75) 0 0;">Active = <code class="mono">aria-checked="true"</code> · selection moves with focus (automatic activation).</p>
+        </div>
+
+        <!-- tablist pattern (panel switch) -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Tablist pattern · switches distinct panels</p>
+          <div class="pill-tab-strip" role="tablist" aria-label="Account view">
+            <button type="button" class="pill-tab" role="tab" aria-selected="true" aria-controls="c4-tabpanel-overview"><span>Overview</span></button>
+            <button type="button" class="pill-tab" role="tab" aria-selected="false">Members</button>
+            <button type="button" class="pill-tab" role="tab" aria-selected="false">Billing</button>
+          </div>
+          <div id="c4-tabpanel-overview" role="tabpanel" style="margin-top: var(--sp-1); padding: var(--sp-1); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); color: var(--role-text-secondary);">
+            <p class="body-3" style="margin: 0;">Overview panel for the Acme workspace. Tabs that mount expensive content use manual activation — Space or Enter commits the selection.</p>
+          </div>
+        </div>
+
+        <!-- focus state demonstration -->
+        <div>
+          <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">Rest button · hover · focus-visible</p>
+          <div class="pill-tab-strip" role="radiogroup" aria-label="Density">
+            <button type="button" class="pill-tab" role="radio" aria-checked="false">Compact</button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="false" style="color: var(--role-text-primary);" title="hover — ink lifts toward --text-primary">Cozy</button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="false" style="outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);" title="focus-visible">Comfortable</button>
+            <button type="button" class="pill-tab" role="radio" aria-checked="true"><span>Spacious</span></button>
+          </div>
+        </div>
+      </div>
+
+      <p class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-1-5) 0 0;">Keyboard (both patterns): Tab focuses the group once · Arrow Left / Right move selection and wrap at the boundaries · Space / Enter activate when manual activation is required.</p>
+    </article>
+
+  </div>
+</section>

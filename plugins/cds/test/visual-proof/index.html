@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="default">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>cds — visual proof suite</title>
+  <link rel="stylesheet" href="styles/design-system.css">
+  <style>
+    /* ── Gallery scaffolding only. Deliberately neutral so it does not fight the design system. ── */
+    .gallery-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-1, 12px);
+      padding: var(--sp-0-75, 10px) var(--sp-1-5, 20px);
+      background: var(--role-surface-raised, #fff);
+      border-bottom: 1px solid var(--role-border-subtle, #e3e3e0);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .gallery-topbar__titlewrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      margin-right: auto;
+    }
+    .gallery-topbar__title {
+      margin: 0;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-body-1, 16px);
+      font-weight: var(--fw-600, 600);
+      color: var(--role-text-primary, #181818);
+      line-height: var(--lh-120, 1.2);
+    }
+    .gallery-topbar__blurb {
+      margin: 0;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-caption, 12px);
+      color: var(--role-text-tertiary, #6b6b6b);
+      line-height: var(--lh-130, 1.3);
+    }
+    .gallery-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-1, 12px);
+    }
+    .gallery-control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .gallery-control-group__label {
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-micro, 10px);
+      text-transform: uppercase;
+      letter-spacing: var(--track-0-05, 0.05em);
+      color: var(--role-text-tertiary, #6b6b6b);
+    }
+    .gallery-themeswitch {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .gallery-themeswitch__btn {
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-caption, 12px);
+      padding: 4px 9px;
+      border-radius: var(--radius-xs, 4px);
+      border: 1px solid var(--role-border-subtle, #d8d8d4);
+      background: var(--role-surface-primary, #fafaf8);
+      color: var(--role-text-secondary, #44443f);
+      cursor: pointer;
+      line-height: 1.2;
+    }
+    .gallery-themeswitch__btn:hover {
+      border-color: var(--role-text-tertiary, #9a9a94);
+    }
+    .gallery-themeswitch__btn[aria-pressed="true"] {
+      background: var(--role-accent-primary, #181818);
+      border-color: var(--role-accent-primary, #181818);
+      color: var(--color-neutral-050, #fafafa);
+    }
+
+    /* ── Page body ── */
+    .gallery-page {
+      padding: var(--sp-2, 28px) var(--sp-1-5, 20px) var(--sp-3, 40px);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2-5, 32px);
+      background: var(--role-surface-secondary, #f0f0ec);
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .index-shell {
+      width: 100%;
+      max-width: 920px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2-5, 32px);
+    }
+
+    .index-hero {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1, 12px);
+    }
+    .index-hero__eyebrow {
+      margin: 0;
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: var(--type-micro, 10px);
+      text-transform: uppercase;
+      letter-spacing: var(--track-0-1, 0.1em);
+      color: var(--role-text-tertiary, #6b6b6b);
+    }
+    .index-hero__title {
+      margin: 0;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-display-2, 34px);
+      font-weight: var(--fw-700, 700);
+      line-height: var(--lh-110, 1.1);
+      color: var(--role-text-primary, #181818);
+    }
+    .index-hero__lede {
+      margin: 0;
+      max-width: 64ch;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-body-1, 16px);
+      line-height: var(--lh-150, 1.5);
+      color: var(--role-text-secondary, #44443f);
+    }
+    .index-hero__lede code {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 0.9em;
+      padding: 1px 5px;
+      border-radius: var(--radius-xs, 4px);
+      background: var(--role-surface-raised, #fff);
+      border: 1px solid var(--role-border-subtle, #e3e3e0);
+      color: var(--role-text-primary, #181818);
+    }
+
+    .index-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1, 12px);
+    }
+    .index-section__heading {
+      margin: 0;
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-body-1, 16px);
+      font-weight: var(--fw-600, 600);
+      text-transform: uppercase;
+      letter-spacing: var(--track-0-05, 0.05em);
+      color: var(--role-text-tertiary, #6b6b6b);
+    }
+
+    .index-gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: var(--sp-1-5, 20px);
+    }
+    .gallery-link-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-0-75, 10px);
+      padding: var(--sp-1-5, 20px);
+      border: 1px solid var(--role-border-subtle, #e3e3e0);
+      border-radius: var(--radius-md, 10px);
+      background: var(--role-surface-raised, #fff);
+      text-decoration: none;
+      transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    }
+    .gallery-link-card:hover {
+      border-color: var(--role-accent-primary, #181818);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+    }
+    .gallery-link-card__count {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: var(--type-display-3, 26px);
+      font-weight: var(--fw-700, 700);
+      line-height: 1;
+      color: var(--role-accent-primary, #181818);
+    }
+    .gallery-link-card__count small {
+      font-size: 0.5em;
+      font-weight: var(--fw-600, 600);
+      color: var(--role-text-tertiary, #6b6b6b);
+    }
+    .gallery-link-card__name {
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-body-1, 16px);
+      font-weight: var(--fw-600, 600);
+      color: var(--role-text-primary, #181818);
+    }
+    .gallery-link-card__desc {
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-caption, 12px);
+      line-height: var(--lh-140, 1.4);
+      color: var(--role-text-secondary, #44443f);
+    }
+    .gallery-link-card__file {
+      margin-top: auto;
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: var(--type-micro, 10px);
+      color: var(--role-text-tertiary, #6b6b6b);
+    }
+
+    .index-theme-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-0-75, 10px);
+    }
+    .theme-token {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: var(--radius-pill, 999px);
+      border: 1px solid var(--role-border-subtle, #d8d8d4);
+      background: var(--role-surface-raised, #fff);
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: var(--type-caption, 12px);
+      color: var(--role-text-secondary, #44443f);
+    }
+    .theme-token--current {
+      border-color: var(--role-accent-primary, #181818);
+      color: var(--role-text-primary, #181818);
+      font-weight: var(--fw-600, 600);
+    }
+    .theme-token__dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--role-accent-primary, #181818);
+    }
+
+    .index-note {
+      padding: var(--sp-1-25, 16px) var(--sp-1-5, 20px);
+      border: 1px solid var(--role-border-subtle, #e3e3e0);
+      border-left: 3px solid var(--role-accent-primary, #181818);
+      border-radius: var(--radius-sm, 6px);
+      background: var(--role-surface-primary, #fafaf8);
+      font-family: var(--font-sans, system-ui, sans-serif);
+      font-size: var(--type-caption, 12px);
+      line-height: var(--lh-150, 1.5);
+      color: var(--role-text-secondary, #44443f);
+    }
+    .index-note code {
+      font-family: var(--font-mono, ui-monospace, monospace);
+      font-size: 0.9em;
+      color: var(--role-text-primary, #181818);
+    }
+  </style>
+</head>
+<body>
+  <header class="gallery-topbar">
+    <div class="gallery-topbar__titlewrap">
+      <h1 class="gallery-topbar__title">cds — visual proof suite</h1>
+      <p class="gallery-topbar__blurb">Smoke-test gallery for the cds plugin design system.</p>
+    </div>
+    <div class="gallery-controls">
+      <div class="gallery-control-group">
+        <span class="gallery-control-group__label">Theme</span>
+        <div class="gallery-themeswitch" id="theme-switch" role="group" aria-label="Theme switcher">
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="clarity">clarity</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="default">default</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="punctuation">punctuation</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="statement">statement</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="feature-dark">feature-dark</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="code">code</button>
+          <button type="button" class="gallery-themeswitch__btn" data-theme-key="deep">deep</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="gallery-page">
+    <div class="index-shell">
+
+      <section class="index-hero">
+        <p class="index-hero__eyebrow">cds plugin · visual proof</p>
+        <h1 class="index-hero__title">Visual proof suite</h1>
+        <p class="index-hero__lede">
+          This is a visual proof / smoke-test gallery for the <strong>cds</strong> plugin. Every
+          fragment on the linked pages was generated from the fixture design tokens in
+          <code>setup/customizable-design-elements.yaml</code> and rendered against the shared
+          <code>styles/design-system.css</code>. Flip the theme switcher above to confirm that
+          every shape, surface, and component re-skins coherently across all seven themes — the
+          theme contract is <code>data-theme="&lt;key&gt;"</code> on
+          <code>document.documentElement</code>.
+        </p>
+      </section>
+
+      <section class="index-section">
+        <h2 class="index-section__heading">Galleries</h2>
+        <div class="index-gallery-grid">
+          <a class="gallery-link-card" href="landing-kitchen-sink.html">
+            <span class="gallery-link-card__count">29<small> / 29</small></span>
+            <span class="gallery-link-card__name">Landing kitchen sink</span>
+            <span class="gallery-link-card__desc">
+              All 29 landing section shapes the landing-page composer can emit — heroes, feature
+              grids, pricing, CTAs, footers, and more. Generated fragments:
+              <code>_fragments/landing/</code>.
+            </span>
+            <span class="gallery-link-card__file">landing-kitchen-sink.html</span>
+          </a>
+          <a class="gallery-link-card" href="app-kitchen-sink.html">
+            <span class="gallery-link-card__count">20<small> / 20</small></span>
+            <span class="gallery-link-card__name">App kitchen sink</span>
+            <span class="gallery-link-card__desc">
+              All 20 application surfaces — app shells with side rails, page shapes, KPI rows, and
+              content stacks. Generated fragments: <code>_fragments/app/</code>.
+            </span>
+            <span class="gallery-link-card__file">app-kitchen-sink.html</span>
+          </a>
+          <a class="gallery-link-card" href="components-gallery.html">
+            <span class="gallery-link-card__count">7<small> / 7</small></span>
+            <span class="gallery-link-card__name">Components gallery</span>
+            <span class="gallery-link-card__desc">
+              All 7 component groups — buttons, cards, tabs, pills, and the rest of the reusable
+              building blocks from components.md. Generated fragments:
+              <code>_fragments/components/</code>.
+            </span>
+            <span class="gallery-link-card__file">components-gallery.html</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="index-section">
+        <h2 class="index-section__heading">Themes</h2>
+        <p class="index-hero__lede" style="font-size:var(--type-caption,12px);">
+          Seven theme keys are available. Set any of them via <code>data-theme="&lt;key&gt;"</code>
+          on the document root. Initial theme is <code>default</code>.
+        </p>
+        <div class="index-theme-list" id="theme-token-list">
+          <span class="theme-token" data-theme-key="clarity"><span class="theme-token__dot"></span>clarity</span>
+          <span class="theme-token" data-theme-key="default"><span class="theme-token__dot"></span>default</span>
+          <span class="theme-token" data-theme-key="punctuation"><span class="theme-token__dot"></span>punctuation</span>
+          <span class="theme-token" data-theme-key="statement"><span class="theme-token__dot"></span>statement</span>
+          <span class="theme-token" data-theme-key="feature-dark"><span class="theme-token__dot"></span>feature-dark</span>
+          <span class="theme-token" data-theme-key="code"><span class="theme-token__dot"></span>code</span>
+          <span class="theme-token" data-theme-key="deep"><span class="theme-token__dot"></span>deep</span>
+        </div>
+      </section>
+
+      <p class="index-note">
+        Offline by design. Open this file directly in a browser — no server, build step, or network
+        access required. Everything resolves through the relative
+        <code>styles/design-system.css</code> link. See <code>README.md</code> for what the suite
+        proves and how to regenerate it.
+      </p>
+
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var THEMES = ["clarity", "default", "punctuation", "statement", "feature-dark", "code", "deep"];
+      var buttons = document.querySelectorAll(".gallery-themeswitch__btn");
+      var tokens = document.querySelectorAll(".theme-token");
+
+      function apply(key) {
+        if (THEMES.indexOf(key) === -1) { return; }
+        root.dataset.theme = key;
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].dataset.themeKey === key ? "true" : "false");
+        }
+        for (var j = 0; j < tokens.length; j++) {
+          if (tokens[j].dataset.themeKey === key) {
+            tokens[j].classList.add("theme-token--current");
+          } else {
+            tokens[j].classList.remove("theme-token--current");
+          }
+        }
+      }
+
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].addEventListener("click", function (e) {
+          apply(e.currentTarget.dataset.themeKey);
+        });
+      }
+
+      apply(root.dataset.theme || "default");
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<section style="max-width: var(--container-medium); margin: 0 auto; padding: var(--sp-3) var(--container-margin); display: flex; flex-direction: column; gap: var(--sp-4);">
+
+  <!-- ===== Group header ============================================== -->
+  <header style="display: flex; flex-direction: column; gap: var(--sp-0-75); border-bottom: 1px solid var(--role-border-strong); padding-bottom: var(--sp-1-5);">
+    <span class="micro" style="color: var(--role-text-tertiary);">Component gallery · Group C7</span>
+    <h2 class="h2" style="margin: 0;">Content blocks</h2>
+    <p class="body-1" style="margin: 0; color: var(--role-text-secondary); max-width: 64ch;">
+      Long-form and editorial surfaces — code, article chrome, reading rails, share rows,
+      status tiles, and read-only identifiers. Each family is shown with its variants and
+      interactive states side by side in a spec-sheet layout.
+    </p>
+  </header>
+
+  <!-- ===== §14 Code block =========================================== -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Code block</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">Dark mode-invariant ground · language picker top-left · Copy / View Docs top-right · 12px radius</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr; gap: var(--sp-1-5);">
+
+      <!-- Full code block: picker + actions -->
+      <figure style="margin: 0; display: flex; flex-direction: column; gap: var(--sp-0-5);">
+        <figcaption class="micro" style="color: var(--role-text-tertiary);">Default — language picker + Copy + View Docs</figcaption>
+        <div class="code-block" style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: var(--sp-1);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1);">
+            <div class="pill-tab-strip" style="background: var(--color-neutral-800);">
+              <button type="button" class="pill-tab" aria-selected="true"><span>cURL</span></button>
+              <button type="button" class="pill-tab"><span style="color: var(--color-neutral-450);">Python</span></button>
+              <button type="button" class="pill-tab"><span style="color: var(--color-neutral-450);">Node</span></button>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--sp-0-25);">
+              <button type="button" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); background: transparent; border: 0; color: var(--color-neutral-300); font-family: var(--font-sans); font-size: var(--type-caption); padding: 6px 10px; border-radius: var(--radius-xs); cursor: pointer;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.6"/></svg>
+                Copy
+              </button>
+              <button type="button" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); background: transparent; border: 0; color: var(--color-neutral-300); font-family: var(--font-sans); font-size: var(--type-caption); padding: 6px 10px; border-radius: var(--radius-xs); cursor: pointer;">
+                View Docs
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+          <pre class="code-block__inner" style="margin: 0; padding: var(--sp-1); overflow-x: auto; font-family: var(--font-mono); font-size: var(--type-body-3); line-height: var(--lh-160);"><code><span style="color: var(--color-neutral-500);"># request an account summary</span>
+<span style="color: var(--color-accent-dark);">curl</span> https://api.northwind.example/v2/accounts <span style="color: var(--color-blue-450);">\</span>
+  <span style="color: var(--color-accent-dark);">-H</span> <span style="color: var(--color-green-450);">"Authorization: Bearer $TOKEN"</span> <span style="color: var(--color-blue-450);">\</span>
+  <span style="color: var(--color-accent-dark);">-d</span> <span style="color: var(--color-green-450);">'{"include":["balance","tier"]}'</span></code></pre>
+        </div>
+      </figure>
+
+      <!-- Copy success state (known-gap: rendered as inline confirmation) -->
+      <figure style="margin: 0; display: flex; flex-direction: column; gap: var(--sp-0-5);">
+        <figcaption class="micro" style="color: var(--role-text-tertiary);">State: Copy success — inline confirmation <span style="text-transform: none; letter-spacing: 0; color: var(--role-border-subtle);">(spec gap; one interpretation shown)</span></figcaption>
+        <div class="code-block" style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: var(--sp-1);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1);">
+            <span class="mono" style="color: var(--color-neutral-450); font-size: var(--type-caption);">config.yaml</span>
+            <button type="button" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); background: transparent; border: 0; color: var(--color-green-450); font-family: var(--font-sans); font-size: var(--type-caption); padding: 6px 10px; border-radius: var(--radius-xs); cursor: pointer;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Copied
+            </button>
+          </div>
+          <pre class="code-block__inner" style="margin: 0; padding: var(--sp-1); overflow-x: auto; font-family: var(--font-mono); font-size: var(--type-body-3); line-height: var(--lh-160);"><code><span style="color: var(--color-blue-450);">region</span>: <span style="color: var(--color-green-450);">eu-west-1</span>
+<span style="color: var(--color-blue-450);">retries</span>: <span style="color: var(--color-accent-dark);">3</span>
+<span style="color: var(--color-blue-450);">timeout</span>: <span style="color: var(--color-accent-dark);">30s</span>  <span style="color: var(--color-neutral-500);"># per attempt</span></code></pre>
+        </div>
+      </figure>
+
+    </div>
+  </article>
+
+  <!-- ===== §14 Article hero ========================================= -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Article hero</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">Eyebrow + Headline 1 + date row + 16:9 tinted illustration tile · centered · text-wrap: balance</span>
+    </div>
+
+    <div class="article-hero" style="display: flex; flex-direction: column; align-items: center; gap: var(--sp-1-5); padding: var(--sp-2) 0;">
+      <div style="display: flex; align-items: center; gap: var(--sp-0-5);">
+        <span class="badge-outline">Infrastructure</span>
+        <span class="badge-outline">Reliability</span>
+      </div>
+      <h2 class="article-hero__title" style="font-size: var(--type-h1); line-height: var(--lh-120); margin: 0; max-width: 22ch;">
+        Designing for graceful degradation under regional failover
+      </h2>
+      <p class="article-hero__date body-3" style="margin: 0;">
+        By Dana Okafor &middot; March 14, 2026 &middot; 9 min read
+      </p>
+      <div class="feature-tile feature-tile--sky" style="width: 100%; max-width: 880px; padding: clamp(48px, 8vw, 96px);">
+        <svg width="160" height="120" viewBox="0 0 160 120" fill="none" aria-hidden="true">
+          <rect x="14" y="22" width="58" height="44" rx="6" fill="var(--color-neutral-000)" opacity="0.85"/>
+          <rect x="88" y="22" width="58" height="44" rx="6" fill="var(--color-neutral-000)" opacity="0.5"/>
+          <rect x="51" y="74" width="58" height="30" rx="6" fill="var(--color-neutral-950)" opacity="0.8"/>
+          <path d="M72 44h16M80 66v8" stroke="var(--color-neutral-950)" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="43" cy="44" r="6" fill="var(--color-accent-primary)"/>
+        </svg>
+      </div>
+    </div>
+  </article>
+
+  <!-- ===== §14 Related-content rail ================================= -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Related-content rail</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">Heading H4 + 3-item grid · H6 title + Body-3 serif dek + "Read more" arrow · hover → text-secondary (200ms)</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+      <h4 class="h4" style="margin: 0;">Keep reading</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-1-5);">
+
+        <a href="#" class="related-rail__item" style="display: flex; flex-direction: column; gap: var(--sp-0-75);">
+          <span class="h6" style="font-family: var(--font-serif);">Quorum reads without the latency tax</span>
+          <span class="body-3 serif" style="color: var(--role-text-secondary);">A practical look at read-path tuning when consistency requirements vary per endpoint.</span>
+          <span class="body-3" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); color: var(--role-text-tertiary);">
+            Read more
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><path d="M9 15h12M16 9l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+
+        <!-- hover state shown statically -->
+        <a href="#" class="related-rail__item" style="display: flex; flex-direction: column; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+          <span class="h6" style="font-family: var(--font-serif);">Backpressure as a first-class signal <span class="micro" style="color: var(--role-text-tertiary);">— hover</span></span>
+          <span class="body-3 serif" style="color: var(--role-text-secondary);">Why surfacing queue depth to callers beats silent retries in saturated systems.</span>
+          <span class="body-3" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); color: var(--role-text-tertiary);">
+            Read more
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><path d="M9 15h12M16 9l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+
+        <a href="#" class="related-rail__item" style="display: flex; flex-direction: column; gap: var(--sp-0-75);">
+          <span class="h6" style="font-family: var(--font-serif);">The cost of a stale cache</span>
+          <span class="body-3 serif" style="color: var(--role-text-secondary);">Measuring invalidation lag across three eviction strategies in a multi-tenant fleet.</span>
+          <span class="body-3" style="display: inline-flex; align-items: center; gap: var(--sp-0-25); color: var(--role-text-tertiary);">
+            Read more
+            <svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><path d="M9 15h12M16 9l6 6-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </a>
+
+      </div>
+    </div>
+  </article>
+
+  <!-- ===== §14 Social-share row ===================================== -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Social-share row</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">Two icon links above a 1px --border-strong rule · 32×32 hit-area, 20×20 glyph · aria-label per service</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: var(--sp-1);">
+      <p class="body-2" style="margin: 0; max-width: var(--reading-column); color: var(--role-text-secondary);">
+        &hellip; and that is why we treat the failover boundary as a product surface, not an
+        operational afterthought. Share this piece with a colleague who owns an SLO.
+      </p>
+      <div class="social-share-row" style="margin-top: var(--sp-1-5); padding-top: var(--sp-1-5); align-items: center;">
+        <span class="caption" style="color: var(--role-text-tertiary); align-self: center;">Share</span>
+        <a href="#" class="social-share-row__icon" aria-label="Share on a professional network">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.6"/><path d="M7 10v7M7 7v.01M11 17v-4a2 2 0 0 1 4 0v4M11 17v-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </a>
+        <a href="#" class="social-share-row__icon" aria-label="Share via email">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="m4 7 8 6 8-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+    </div>
+  </article>
+
+  <!-- ===== §14 Stat tile ============================================ -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Stat tile</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">States: populated · empty · setup-required &nbsp;|&nbsp; layouts: large-horizontal (KPI) + small-vertical (status)</span>
+    </div>
+
+    <!-- large-horizontal / KPI row -->
+    <div style="display: flex; flex-direction: column; gap: var(--sp-0-75);">
+      <span class="micro" style="color: var(--role-text-tertiary);">Layout: large-horizontal — populated (KPI row)</span>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--sp-1);">
+
+        <div class="stat-card" style="display: inline-flex; flex-direction: row; align-items: center; gap: var(--sp-3); border-radius: var(--radius-xl); padding: var(--sp-1); flex: 1; min-width: 230px; max-width: 320px;">
+          <div style="display: flex; flex-direction: column; gap: var(--sp-0-25);">
+            <span class="stat-card__caption">Monthly active orgs</span>
+            <span class="stat-card__number">12,480</span>
+            <span class="caption" style="color: var(--color-green-600);">&#9650; 6.2% vs. last month</span>
+          </div>
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <circle cx="32" cy="32" r="26" stroke="var(--role-surface-tertiary)" stroke-width="8"/>
+            <circle cx="32" cy="32" r="26" stroke="var(--role-accent-primary)" stroke-width="8" stroke-linecap="round" stroke-dasharray="163" stroke-dashoffset="48" transform="rotate(-90 32 32)"/>
+          </svg>
+        </div>
+
+        <div class="stat-card" style="display: inline-flex; flex-direction: row; align-items: center; gap: var(--sp-3); border-radius: var(--radius-xl); padding: var(--sp-1); flex: 1; min-width: 230px; max-width: 320px;">
+          <div style="display: flex; flex-direction: column; gap: var(--sp-0-25);">
+            <span class="stat-card__caption">Requests this week</span>
+            <span class="stat-card__number">8.9M</span>
+            <span class="caption" style="color: var(--role-text-tertiary);">99.98% success</span>
+          </div>
+          <svg width="96" height="48" viewBox="0 0 96 48" fill="none" aria-hidden="true">
+            <path d="M2 38 16 30 30 34 44 18 58 24 72 10 94 6" stroke="var(--role-accent-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 38 16 30 30 34 44 18 58 24 72 10 94 6V46H2Z" fill="var(--role-accent-primary)" opacity="0.12"/>
+          </svg>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- small-vertical / status row -->
+    <div style="display: flex; flex-direction: column; gap: var(--sp-0-75);">
+      <span class="micro" style="color: var(--role-text-tertiary);">Layout: small-vertical — status / progress row</span>
+      <div style="display: flex; flex-wrap: wrap; gap: var(--sp-1);">
+
+        <!-- populated: filled donut -->
+        <div class="stat-card" style="display: inline-flex; flex-direction: column; gap: var(--sp-0-5); border-radius: var(--radius-xl); padding: var(--sp-1); min-width: 190px;">
+          <span class="stat-card__caption">Onboarding progress</span>
+          <div style="display: flex; align-items: center; gap: var(--sp-0-75);">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <circle cx="20" cy="20" r="15" stroke="var(--role-surface-tertiary)" stroke-width="5"/>
+              <circle cx="20" cy="20" r="15" stroke="var(--role-accent-primary)" stroke-width="5" stroke-linecap="round" stroke-dasharray="94" stroke-dashoffset="24" transform="rotate(-90 20 20)"/>
+            </svg>
+            <span class="h5" style="font-family: var(--font-sans); font-weight: var(--fw-600);">75%</span>
+          </div>
+        </div>
+
+        <!-- empty: dashed "No data" disc -->
+        <div class="stat-card" style="display: inline-flex; flex-direction: column; gap: var(--sp-0-5); border-radius: var(--radius-xl); padding: var(--sp-1); min-width: 190px;">
+          <span class="stat-card__caption">Usage this period</span>
+          <div style="display: flex; align-items: center; gap: var(--sp-0-75);">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+              <circle cx="20" cy="20" r="15" stroke="var(--role-border-subtle)" stroke-width="2" stroke-dasharray="4 4"/>
+            </svg>
+            <span class="body-2" style="color: var(--role-text-tertiary);">&mdash; No data</span>
+          </div>
+        </div>
+
+        <!-- setup-required: status pill + action -->
+        <div class="stat-card" style="display: inline-flex; flex-direction: column; gap: var(--sp-0-5); border-radius: var(--radius-xl); padding: var(--sp-1); min-width: 190px;">
+          <span class="stat-card__caption">Billing alerts</span>
+          <div style="display: flex; flex-direction: column; gap: var(--sp-0-5); align-items: flex-start;">
+            <span class="badge-status" style="background: var(--color-panel-oat);">Not enabled</span>
+            <a href="#" class="body-3" style="color: var(--role-accent-interactive); text-decoration: none; font-weight: var(--fw-500);">Set up &rarr;</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </article>
+
+  <!-- ===== §14 Read-only identifier row ============================= -->
+  <article style="display: flex; flex-direction: column; gap: var(--sp-1-5);">
+    <div style="display: flex; align-items: baseline; gap: var(--sp-1); flex-wrap: wrap; border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-0-75);">
+      <h3 class="h4" style="margin: 0;">§14 · Read-only identifier row</h3>
+      <span class="caption" style="color: var(--role-text-tertiary);">label + mono value + copy icon button (32×32) · states: rest / copied · long IDs truncate, copy carries full value</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: var(--sp-1); background: var(--role-surface-raised); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); padding: var(--sp-1-5);">
+
+      <!-- rest -->
+      <div style="display: flex; flex-direction: column; gap: var(--sp-0-25);">
+        <span class="micro" style="color: var(--role-text-tertiary);">State: rest</span>
+        <div style="display: inline-flex; align-items: center; gap: var(--sp-0-5);">
+          <span class="body-3" style="color: var(--role-text-secondary);">Organization ID</span>
+          <span class="mono" style="font-size: 14px; color: var(--role-text-primary); letter-spacing: 0;">org_8Qf3kP2aMv</span>
+          <button type="button" aria-label="Copy Organization ID" style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--role-text-tertiary); cursor: pointer;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.8"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- copied -->
+      <div style="display: flex; flex-direction: column; gap: var(--sp-0-25);">
+        <span class="micro" style="color: var(--role-text-tertiary);">State: copied (transient checkmark swap, 1.5s)</span>
+        <div style="display: inline-flex; align-items: center; gap: var(--sp-0-5);">
+          <span class="body-3" style="color: var(--role-text-secondary);">API key prefix</span>
+          <span class="mono" style="font-size: 14px; color: var(--role-text-primary); letter-spacing: 0;">sk_live_4Hd9&hellip;</span>
+          <button type="button" aria-label="Copy API key prefix" style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--color-green-600); cursor: pointer;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 13 4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);" aria-live="polite">Copied</span>
+        </div>
+      </div>
+
+      <!-- truncated long ID -->
+      <div style="display: flex; flex-direction: column; gap: var(--sp-0-25);">
+        <span class="micro" style="color: var(--role-text-tertiary);">Truncation rule: long ID (&gt;48 chars) — ellipsis, never wrap</span>
+        <div style="display: inline-flex; align-items: center; gap: var(--sp-0-5); max-width: 100%;">
+          <span class="body-3" style="color: var(--role-text-secondary); flex: none;">Deployment ARN</span>
+          <span class="mono" style="font-size: 14px; color: var(--role-text-primary); letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22rem;">arn:globex:deploy:eu-west-1:84217:rev/2026-03-14T09-22-51Z-b7f0c</span>
+          <button type="button" aria-label="Copy Deployment ARN" style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--role-text-tertiary); cursor: pointer; flex: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.8"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </article>
+
+</section>

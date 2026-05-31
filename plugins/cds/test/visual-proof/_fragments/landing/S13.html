@@ -1,0 +1,119 @@
+<!-- ==========================================================================
+     S13 — Single hero quote  (serves T3 Validation Block)
+     Variant demonstrated: WITH metric.
+     One large quote treated near-hero in scale; metric callout + attribution.
+     Theme: feature-dark (near-hero dominant block). Uses --role-* tokens only.
+     ========================================================================== -->
+<section
+  data-theme="feature-dark"
+  aria-labelledby="s13-quote"
+  style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-large) var(--container-margin);
+  ">
+  <div style="
+    max-width: var(--container-small);
+    margin-inline: auto;
+    display: grid;
+    gap: var(--sp-3);
+    text-align: center;
+    justify-items: center;
+  ">
+
+    <!-- eyebrow / kicker -->
+    <p class="micro" style="color: var(--role-text-tertiary); margin: 0;">
+      Why teams choose Acme Platform
+    </p>
+
+    <!-- the dominant quote — near-hero scale -->
+    <figure style="margin: 0; display: grid; gap: var(--sp-2-5); justify-items: center;">
+      <!-- oversized opening quote mark -->
+      <span
+        aria-hidden="true"
+        class="serif"
+        style="
+          font-size: clamp(64px, 10vw, 120px);
+          line-height: var(--lh-100);
+          color: var(--role-accent-primary);
+          height: 0.55em;
+          overflow: visible;
+        ">&ldquo;</span>
+
+      <blockquote
+        id="s13-quote"
+        class="display-2 serif"
+        style="
+          margin: 0;
+          max-width: 22ch;
+          font-weight: var(--fw-500);
+          text-wrap: balance;
+        ">
+        We replaced four disconnected tools with one. Northwind shipped its
+        platform migration a full quarter ahead of plan.
+      </blockquote>
+
+      <!-- inline metric callout — the 'big metric' variant -->
+      <div style="
+        display: inline-flex;
+        align-items: baseline;
+        gap: var(--sp-0-75);
+        padding: var(--sp-0-75) var(--sp-1-5);
+        border: 1px solid var(--role-border-subtle);
+        border-radius: var(--radius-2xl);
+        background: var(--role-surface-raised);
+      ">
+        <span class="serif" style="
+          font-size: clamp(32px, calc(32px + 8 * (100vw - 320px) / 1120), 44px);
+          font-weight: var(--fw-600);
+          line-height: var(--lh-100);
+          color: var(--role-accent-primary);
+        ">63%</span>
+        <span class="body-2" style="color: var(--role-text-secondary); text-align: left;">
+          faster release cycles
+        </span>
+      </div>
+
+      <!-- attribution -->
+      <figcaption style="display: grid; gap: var(--sp-1); justify-items: center; margin-top: var(--sp-1);">
+        <!-- avatar placeholder -->
+        <span aria-hidden="true" style="
+          display: inline-grid;
+          place-items: center;
+          width: 48px;
+          height: 48px;
+          border-radius: 9999px;
+          background: var(--color-panel-mineral);
+          color: var(--color-neutral-050);
+          font-family: var(--font-sans);
+          font-weight: var(--fw-600);
+          font-size: var(--type-body-2);
+        ">DK</span>
+
+        <div style="display: grid; gap: var(--sp-0-25); justify-items: center;">
+          <span class="body-1" style="font-weight: var(--fw-600); color: var(--role-text-primary);">
+            Dana Okonkwo
+          </span>
+          <span class="body-3" style="color: var(--role-text-tertiary);">
+            VP of Engineering, Northwind
+          </span>
+        </div>
+
+        <!-- inline wordmark logo (SVG, no network) -->
+        <svg
+          role="img"
+          aria-label="Northwind"
+          width="118" height="22" viewBox="0 0 118 22"
+          style="margin-top: var(--sp-0-5); color: var(--role-text-tertiary);">
+          <g fill="currentColor">
+            <rect x="0" y="3" width="16" height="16" rx="4" fill="var(--role-accent-primary)"/>
+            <rect x="4" y="7" width="8" height="8" rx="2" fill="var(--color-neutral-050)"/>
+            <text x="26" y="17" font-family="var(--font-sans)" font-size="17" font-weight="600"
+              letter-spacing="-0.01em" fill="currentColor">Northwind</text>
+          </g>
+        </svg>
+      </figcaption>
+    </figure>
+
+  </div>
+</section>

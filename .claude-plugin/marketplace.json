@@ -186,6 +186,24 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/patent"
+    },
+    {
+      "name": "obsidian",
+      "description": "Obsidian toolkit forked from kepano/obsidian-skills. Five Agent Skills — obsidian-cli (automate a running vault), obsidian-bases (v1.12+ database feature), obsidian-markdown (callouts, embeds, properties, wiki-links), json-canvas (.canvas authoring), and defuddle (web-to-Markdown). Adds platform + troubleshooting references to the CLI skill.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/obsidian"
+    },
+    {
+      "name": "cds",
+      "description": "Customizable Design System — a brand-neutral design-system plugin with skills that generate stylesheets, mocks, and framework-native component code for any host project.",
+      "version": "0.1.0",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/cds"
     }
   ]
 }

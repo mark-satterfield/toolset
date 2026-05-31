@@ -1,0 +1,575 @@
+<section class="c6-gallery" aria-label="C6 — Navigation and chrome" style="display:flex; flex-direction:column; gap:var(--sp-3); padding:var(--sp-2) var(--container-margin); max-width:var(--container-medium); margin-inline:auto;">
+
+  <header style="display:flex; flex-direction:column; gap:var(--sp-0-5); border-bottom:1px solid var(--role-border-subtle); padding-bottom:var(--sp-1-5);">
+    <span class="micro" style="color:var(--role-text-tertiary);">Component group C6</span>
+    <h2 class="h3" style="margin:0;">Navigation &amp; chrome</h2>
+    <p class="body-3" style="margin:0; color:var(--role-text-secondary); max-width:64ch;">
+      The persistent framing surfaces — the fixed topbar and its dropdown panels, the mobile drawer takeover,
+      the scroll-aware sticky header, the application-shell left rail and its workspace switcher and account row,
+      keyboard skip links, the multi-column footer, and the prev/next pagination strip. Fixed- and full-viewport
+      components are rendered <em>statically inside contained stages</em> so every variant and interactive state is
+      visible at once; in a live build they pin to the viewport, trap focus, and mount on demand.
+    </p>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- C6.1 — Topbar (§12.1)                                        -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-topbar-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.1 · §12.1</span>
+      <h3 id="c6-topbar-h" class="h5" style="margin:0;">Topbar</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Fixed-position desktop bar (84px), no border and no shadow — the nav blends into the page ground. Logo paints via
+        <code class="mono">currentColor</code>, primary-nav links right-aligned at 15px / weight 400, then 1–2 conversion CTAs
+        (a tertiary text link + a filled primary button). Drops to a 64px mobile-floor below 480px.
+      </p>
+    </div>
+
+    <!-- Variant: desktop 84px standalone -->
+    <div>
+      <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Variant — desktop, height 84px, standalone CTA</span>
+      <div style="position:relative; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle);">
+        <div style="position:relative; display:flex; align-items:center; gap:var(--sp-1-5); height:84px; padding:0 var(--sp-2); background:var(--role-surface-primary); color:var(--role-text-primary);">
+          <span class="topbar__logo" style="display:inline-flex; align-items:center;" aria-label="Acme home">
+            <svg width="84" height="20" viewBox="0 0 84 20" role="img" aria-label="Acme"><path d="M0 18L7 2h3l7 16h-3.4l-1.5-3.6H4.9L3.4 18H0zm5.9-6.2h4.2L8 6.4 5.9 11.8zM22 18c-3.6 0-6.2-2.9-6.2-7s2.6-7 6.2-7c2.9 0 5 1.7 5.6 4.4l-3.1.6c-.3-1.4-1.2-2.2-2.5-2.2-1.7 0-2.9 1.6-2.9 4.2s1.2 4.2 2.9 4.2c1.3 0 2.2-.8 2.5-2.2l3.1.6C27 16.3 24.9 18 22 18zM30 18V2h4l3.4 9.5L40.8 2h4v16h-3V8l-2.9 8h-2.4L33.6 8v10H30zM47 18V2h11v2.8h-7.7v3.5h6.9v2.7h-6.9v4.2H58V18H47z" fill="currentColor"/></svg>
+          </span>
+          <nav aria-label="primary" style="margin-left:auto; display:flex; align-items:center; gap:var(--sp-1-5);">
+            <a href="#" class="body-3" style="text-decoration:none; color:var(--role-text-primary);">Product</a>
+            <a href="#" class="body-3" style="text-decoration:none; color:var(--role-text-primary);">Solutions</a>
+            <a href="#" class="body-3" style="text-decoration:none; color:var(--role-text-primary);">Pricing</a>
+            <a href="#" class="body-3" style="text-decoration:none; color:var(--role-text-primary);">Docs</a>
+            <span style="display:inline-flex; align-items:center; gap:var(--sp-0-75); margin-left:var(--sp-0-5);">
+              <a href="#" class="body-3" style="text-decoration:none; color:var(--role-text-secondary);">Sign in</a>
+              <button class="button button-primary" style="min-height:36px; padding:8px 16px;">Start free</button>
+            </span>
+          </nav>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant: caret-flush + mobile-floor side by side -->
+    <div style="display:grid; grid-template-columns:1fr; gap:var(--sp-1);">
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Variant — cta-adjacency: caret-flush (asymmetric radius <code class="mono">8px 0 0 8px</code> against a dropdown caret)</span>
+        <div style="position:relative; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle);">
+          <div style="display:flex; align-items:center; gap:var(--sp-1-5); height:84px; padding:0 var(--sp-2); background:var(--role-surface-primary); color:var(--role-text-primary);">
+            <span class="topbar__logo" aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600); font-size:19px;">Northwind</span>
+            <nav aria-label="primary" style="margin-left:auto; display:flex; align-items:center; gap:var(--sp-1-5);">
+              <a href="#" class="body-3" style="text-decoration:none;">Platform</a>
+              <a href="#" class="body-3" style="text-decoration:none;">Customers</a>
+              <span style="display:inline-flex;">
+                <button class="button button-primary" style="min-height:36px; border-radius:8px 0 0 8px; padding:8px 14px;">Get a demo</button>
+                <button class="button button-primary" aria-label="More demo options" style="min-height:36px; border-radius:0 8px 8px 0; padding:8px 10px; box-shadow:inset 1px 0 0 color-mix(in srgb, var(--role-button-primary-text) 25%, transparent);">
+                  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+                </button>
+              </span>
+            </nav>
+          </div>
+        </div>
+      </div>
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Variant — height: mobile-floor (64px, &lt;480px viewport) — hamburger replaces nav</span>
+        <div style="position:relative; max-width:380px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle);">
+          <div style="display:flex; align-items:center; gap:var(--sp-1); height:64px; padding:0 var(--sp-1); background:var(--role-surface-primary); color:var(--role-text-primary);">
+            <span class="topbar__logo" aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600); font-size:17px;">Globex</span>
+            <button class="hamburger" aria-label="Open menu" aria-expanded="false" style="margin-left:auto; display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;">
+              <span aria-hidden="true" style="display:block; width:16px; height:1px; background:currentColor;"></span>
+              <span aria-hidden="true" style="display:block; width:8px; height:1px; background:currentColor;"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.2 — Dropdown panels (§12.2)                               -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-dd-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.2 · §12.2</span>
+      <h3 id="c6-dd-h" class="h5" style="margin:0;">Dropdown panels</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Three panel widths anchored below a topbar trigger. Flat (200px) and mega (656–864px) grow from zero row-height
+        over 600ms; lift-and-scale (256px) scales from 0.95 over 200ms. Items are 40px min-height, 8/12px padding, 4px radius;
+        hover paints <code class="mono">--surface-tertiary</code> over 100ms. Shown <strong>open</strong> here.
+      </p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:var(--sp-1-5); align-items:start;">
+
+      <!-- Flat menu -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Flat menu — 200px · open</span>
+        <div role="menu" aria-label="Resources" style="width:200px; background:var(--role-surface-raised); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); padding:4px;">
+          <a href="#" role="menuitem" class="dropdown-item">Documentation</a>
+          <a href="#" role="menuitem" class="dropdown-item" style="background:var(--role-surface-tertiary);">Guides &amp; tutorials <span class="caption" style="margin-left:auto; color:var(--role-text-tertiary);">hover</span></a>
+          <a href="#" role="menuitem" class="dropdown-item">Changelog</a>
+          <a href="#" role="menuitem" class="dropdown-item">API reference</a>
+        </div>
+      </div>
+
+      <!-- Lift-and-scale -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Lift-and-scale — 256px · open</span>
+        <div role="menu" aria-label="Account" style="width:256px; background:var(--role-surface-raised); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); padding:4px; box-shadow:0 8px 24px color-mix(in srgb, var(--color-common_colors-black) 12%, transparent);">
+          <a href="#" role="menuitem" class="dropdown-item" style="gap:var(--sp-0-75);">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="2.6" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M3 13c0-2.5 2.2-4 5-4s5 1.5 5 4" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+            Your profile
+          </a>
+          <a href="#" role="menuitem" class="dropdown-item" style="gap:var(--sp-0-75);">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2" stroke="currentColor" stroke-width="1.3"/></svg>
+            Settings
+          </a>
+          <div role="separator" style="height:1px; background:var(--role-border-subtle); margin:4px 8px;"></div>
+          <a href="#" role="menuitem" class="dropdown-item">Sign out</a>
+        </div>
+      </div>
+
+      <!-- Mega panel -->
+      <div style="grid-column:1 / -1;">
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Mega panel — multi-column grid · open</span>
+        <div role="menu" aria-label="Solutions" style="background:var(--role-surface-raised); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); padding:var(--sp-1-5); display:grid; grid-template-columns:repeat(3, 1fr); gap:var(--sp-1-5); box-shadow:0 12px 32px color-mix(in srgb, var(--color-common_colors-black) 10%, transparent);">
+          <div>
+            <span class="micro" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">By industry</span>
+            <a href="#" role="menuitem" class="dropdown-item">Financial services</a>
+            <a href="#" role="menuitem" class="dropdown-item">Healthcare</a>
+            <a href="#" role="menuitem" class="dropdown-item">Manufacturing</a>
+          </div>
+          <div>
+            <span class="micro" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">By team</span>
+            <a href="#" role="menuitem" class="dropdown-item">Engineering</a>
+            <a href="#" role="menuitem" class="dropdown-item">Operations</a>
+            <a href="#" role="menuitem" class="dropdown-item">Customer success</a>
+          </div>
+          <div>
+            <span class="micro" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">Featured</span>
+            <a href="#" role="menuitem" style="display:block; text-decoration:none; border-radius:var(--radius-sm); overflow:hidden; border:1px solid var(--role-border-subtle);">
+              <span class="feature-tile feature-tile--mineral" style="aspect-ratio:16/7; padding:var(--sp-1); place-items:start; display:grid; align-content:end;">
+                <span class="body-3" style="font-weight:var(--fw-600);">Migration playbook</span>
+              </span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.3 — Mobile drawer (§12.3)                                 -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-drawer-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.3 · §12.3</span>
+      <h3 id="c6-drawer-h" class="h5" style="margin:0;">Mobile drawer</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Full-viewport <code class="mono">role="dialog" aria-modal="true"</code> takeover that wipes down via
+        <code class="mono">clip-path</code> (800ms open / 400ms close). Items stagger in 80ms apart; content carries a
+        soft top/bottom mask as it scrolls. Two states shown side by side — closed (hamburger trigger) and open (drawer revealed).
+      </p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:var(--sp-1-5); align-items:start;">
+
+      <!-- State: closed -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — closed (aria-expanded="false")</span>
+        <div style="position:relative; height:420px; max-width:300px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-primary);">
+          <div style="display:flex; align-items:center; height:64px; padding:0 var(--sp-1); border-bottom:1px solid color-mix(in srgb, var(--role-border-subtle) 60%, transparent);">
+            <span aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600); font-size:17px;">Acme</span>
+            <button class="hamburger" aria-label="Open menu" aria-expanded="false" style="margin-left:auto; display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;">
+              <span aria-hidden="true" style="display:block; width:16px; height:1px; background:currentColor;"></span>
+              <span aria-hidden="true" style="display:block; width:8px; height:1px; background:currentColor;"></span>
+            </button>
+          </div>
+          <div style="padding:var(--sp-1); color:var(--role-text-tertiary);" class="body-3">Page content sits below the topbar at rest.</div>
+        </div>
+      </div>
+
+      <!-- State: open -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — open (clip-path inset(0 0 0%), items staggered)</span>
+        <div style="position:relative; height:420px; max-width:300px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-primary);">
+          <div role="dialog" aria-modal="true" aria-label="Site navigation" style="position:absolute; inset:0; background:var(--role-surface-primary); -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%); mask-image:linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);">
+            <div style="display:flex; align-items:center; height:64px; padding:0 var(--sp-1);">
+              <span aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600); font-size:17px;">Acme</span>
+              <button class="hamburger" aria-label="Close menu" aria-expanded="true" style="margin-left:auto; display:inline-flex; align-items:center; justify-content:center;">
+                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+              </button>
+            </div>
+            <nav aria-label="Site navigation" style="padding:var(--sp-1) var(--sp-1) 0; display:flex; flex-direction:column; gap:var(--sp-0-25);">
+              <a href="#" class="h6" style="font-family:var(--font-serif); text-decoration:none; padding:var(--sp-0-5) 0;">Product</a>
+              <a href="#" class="h6" style="font-family:var(--font-serif); text-decoration:none; padding:var(--sp-0-5) 0;">Solutions</a>
+              <a href="#" class="h6" style="font-family:var(--font-serif); text-decoration:none; padding:var(--sp-0-5) 0;">Pricing</a>
+              <a href="#" class="h6" style="font-family:var(--font-serif); text-decoration:none; padding:var(--sp-0-5) 0;">Docs</a>
+              <a href="#" class="h6" style="font-family:var(--font-serif); text-decoration:none; padding:var(--sp-0-5) 0;">Company</a>
+              <span style="display:flex; gap:var(--sp-0-75); margin-top:var(--sp-1);">
+                <button class="button button-primary" style="flex:1; min-height:44px;">Start free</button>
+              </span>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.4 — Sticky header (§12.4)                                 -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-sticky-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.4 · §12.4</span>
+      <h3 id="c6-sticky-h" class="h5" style="margin:0;">Sticky header</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Editorial-only header that hides on downward scroll and reappears on upward scroll via
+        <code class="mono">transform: translateY(-100%)</code> over 300ms. Inherits topbar dimensions. The hide is suppressed
+        while focus is inside the header (WCAG 2.4.11). Two states shown — at rest, and translated off-screen.
+      </p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:var(--sp-1-5); align-items:start;">
+      <!-- State: rest -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — rest (visible)</span>
+        <div style="position:relative; height:200px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-secondary);">
+          <header style="position:absolute; top:0; left:0; right:0; height:64px; display:flex; align-items:center; padding:0 var(--sp-1-5); background:var(--role-surface-primary); transform:translateY(0); transition:transform 300ms ease;">
+            <span aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600);">The Northwind Review</span>
+            <a href="#" class="body-3" style="margin-left:auto; text-decoration:none; color:var(--role-text-secondary);">Subscribe</a>
+          </header>
+          <div style="padding:80px var(--sp-1-5) 0; color:var(--role-text-tertiary);" class="body-3">Scrolling up reveals the header.</div>
+        </div>
+      </div>
+      <!-- State: hidden -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — is-hidden (translateY(-100%))</span>
+        <div style="position:relative; height:200px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-secondary);">
+          <header style="position:absolute; top:0; left:0; right:0; height:64px; display:flex; align-items:center; padding:0 var(--sp-1-5); background:var(--role-surface-primary); transform:translateY(-100%);">
+            <span aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600);">The Northwind Review</span>
+            <a href="#" class="body-3" style="margin-left:auto; text-decoration:none; color:var(--role-text-secondary);">Subscribe</a>
+          </header>
+          <div style="padding:var(--sp-1-5); color:var(--role-text-tertiary);" class="body-3">Scrolling down hides it off the top edge; article content fills the space.</div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.5 — App shell left rail (§12.5) + 12.5.1 + 12.5.2 + §14 three-pane -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-rail-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.5 · §12.5 / §14 Three-pane app shell</span>
+      <h3 id="c6-rail-h" class="h5" style="margin:0;">App shell left rail &amp; three-pane shell</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Application-shell chrome: a 256px fixed rail (12px padding, <code class="mono">--surface-secondary</code> ground,
+        hairline right border) carrying a workspace switcher, grouped 36px nav rows with a filled-pill active state, and a
+        bottom-anchored account row — assembled into the full three-pane topology (rail + list column + detail viewport).
+      </p>
+    </div>
+
+    <!-- Full three-pane shell stage -->
+    <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:0;">Composition — three-pane shell (icon rail + list column + detail viewport)</span>
+    <div style="position:relative; height:480px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); display:grid; grid-template-columns:256px 280px 1fr;">
+
+      <!-- Pane 1: the rail -->
+      <nav aria-label="Main navigation" style="position:relative; padding:var(--sp-0-75); background:var(--role-surface-secondary); border-right:1px solid var(--role-border-subtle); display:flex; flex-direction:column; gap:var(--sp-1);">
+
+        <!-- §12.5.1 Workspace switcher — full variant -->
+        <div style="width:100%; height:32px; display:flex; align-items:center; gap:2px; padding-right:5px; border:1px solid var(--role-border-subtle); border-radius:6px;">
+          <button type="button" role="combobox" aria-haspopup="dialog" aria-expanded="false" style="flex:1; align-self:stretch; min-width:0; display:flex; align-items:center; gap:4px; padding-left:8px; background:transparent; border:0; color:var(--role-text-primary); text-align:left; cursor:pointer;">
+            <span style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:3px; background:var(--color-panel-fig); flex:0 0 auto;" aria-hidden="true"></span>
+            <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:var(--fw-400);">Northwind Trading Co.</span>
+            <span aria-hidden="true" style="width:12px; height:12px; flex:0 0 auto; color:var(--role-text-tertiary); margin-right:3px; display:inline-flex;">
+              <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+            </span>
+          </button>
+        </div>
+
+        <!-- nav group -->
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <a href="#" class="app-rail__item is-active" aria-current="page">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto;"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+            Overview
+          </a>
+          <a href="#" class="app-rail__item">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto;"><path d="M2 12V8M6 12V4M10 12V6M14 12V3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            Analytics
+          </a>
+          <a href="#" class="app-rail__item">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto;"><rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.2"/></svg>
+            Records
+          </a>
+        </div>
+
+        <!-- section header + second group -->
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <span class="app-rail__section-header micro" style="padding:0 var(--sp-0-5); margin-bottom:var(--sp-0-25);">Workspace</span>
+          <a href="#" class="app-rail__item">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto;"><circle cx="6" cy="5" r="2.2" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M2 13c0-2.2 1.8-3.6 4-3.6s4 1.4 4 3.6" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+            Members
+          </a>
+          <a href="#" class="app-rail__item">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto;"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2" stroke="currentColor" stroke-width="1.2"/></svg>
+            Settings
+          </a>
+        </div>
+
+        <!-- §12.5.2 Account row — full variant, pinned bottom -->
+        <button aria-haspopup="menu" aria-expanded="false" aria-label="Account menu for Dana Reyes, Operations lead" style="margin-top:auto; display:flex; align-items:center; gap:var(--sp-0-75); width:100%; height:48px; padding:6px 8px; border-radius:var(--radius-sm); background:transparent; border:0; cursor:pointer; text-align:left; color:var(--role-text-primary);">
+          <span style="flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:6px; background:color-mix(in srgb, var(--role-surface-raised) 60%, transparent); border:1px solid var(--role-border-subtle); color:var(--role-text-secondary);" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3.5 17c0-3 2.9-4.8 6.5-4.8S16.5 14 16.5 17" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+          </span>
+          <span style="display:flex; flex-direction:column; align-items:flex-start; min-width:0; overflow:hidden; padding-right:16px; flex:1;">
+            <span style="font-size:14px; font-weight:var(--fw-500); line-height:var(--lh-120); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;">Dana Reyes</span>
+            <span style="font-size:12px; font-weight:var(--fw-400); color:var(--role-text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;">Operations lead</span>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto; color:var(--role-text-tertiary);"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+        </button>
+      </nav>
+
+      <!-- Pane 2: list column -->
+      <div style="border-right:1px solid var(--role-border-subtle); background:var(--role-surface-primary); display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:var(--sp-1) var(--sp-1) var(--sp-0-5); display:flex; align-items:center; gap:var(--sp-0-5);">
+          <span class="h6" style="margin:0; font-family:var(--font-sans); font-weight:var(--fw-600);">Records</span>
+          <span class="badge-outline" style="margin-left:auto; padding:2px 8px;">128</span>
+        </div>
+        <div style="overflow:hidden;">
+          <a href="#" style="display:block; padding:var(--sp-0-75) var(--sp-1); text-decoration:none; color:var(--role-text-primary); background:var(--role-surface-tertiary); border-left:2px solid var(--role-accent-primary);">
+            <span class="body-3" style="display:block; font-weight:var(--fw-500);">Acme Logistics — Q2 renewal</span>
+            <span class="caption" style="color:var(--role-text-tertiary);">Updated 2h ago · Open</span>
+          </a>
+          <a href="#" style="display:block; padding:var(--sp-0-75) var(--sp-1); text-decoration:none; color:var(--role-text-primary); border-bottom:1px solid color-mix(in srgb, var(--role-border-subtle) 50%, transparent);">
+            <span class="body-3" style="display:block;">Globex onboarding</span>
+            <span class="caption" style="color:var(--role-text-tertiary);">Updated yesterday · In review</span>
+          </a>
+          <a href="#" style="display:block; padding:var(--sp-0-75) var(--sp-1); text-decoration:none; color:var(--role-text-primary); border-bottom:1px solid color-mix(in srgb, var(--role-border-subtle) 50%, transparent);">
+            <span class="body-3" style="display:block;">Northwind expansion plan</span>
+            <span class="caption" style="color:var(--role-text-tertiary);">Updated 3d ago · Draft</span>
+          </a>
+          <a href="#" style="display:block; padding:var(--sp-0-75) var(--sp-1); text-decoration:none; color:var(--role-text-primary);">
+            <span class="body-3" style="display:block;">Initech support tier review</span>
+            <span class="caption" style="color:var(--role-text-tertiary);">Updated last week · Closed</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Pane 3: detail viewport -->
+      <div style="background:var(--role-surface-raised); padding:var(--sp-1-5); overflow:hidden;">
+        <span class="badge-status" style="margin-bottom:var(--sp-0-75);">Open</span>
+        <h4 class="h5" style="margin:var(--sp-0-5) 0 var(--sp-0-25);">Acme Logistics — Q2 renewal</h4>
+        <p class="body-3" style="margin:0 0 var(--sp-1); color:var(--role-text-secondary);">Annual contract renewal with a 14% seat expansion. Owner: Dana Reyes. Close target end of quarter.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-0-75); margin-bottom:var(--sp-1);">
+          <div class="stat-card"><span class="stat-card__caption">Contract value</span><span class="stat-card__number" style="font-size:24px;">$148k</span></div>
+          <div class="stat-card"><span class="stat-card__caption">Seats</span><span class="stat-card__number" style="font-size:24px;">240</span></div>
+        </div>
+        <div style="display:flex; gap:var(--sp-0-75);">
+          <button class="button button-primary">Mark won</button>
+          <button class="button button-tertiary">Add note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- §12.5.1 / §12.5.2 variant spec strip -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:var(--sp-1-5); align-items:start;">
+
+      <!-- Workspace switcher variants -->
+      <div style="display:flex; flex-direction:column; gap:var(--sp-0-5);">
+        <span class="caption" style="color:var(--role-text-tertiary);">§12.5.1 Workspace switcher — full vs compact</span>
+        <div style="background:var(--role-surface-secondary); border-radius:var(--radius-sm); padding:var(--sp-1); display:flex; flex-direction:column; gap:var(--sp-0-75);">
+          <span class="micro" style="color:var(--role-text-tertiary);">full · 232×32 · combobox + dialog popup</span>
+          <div style="width:232px; max-width:100%; height:32px; display:flex; align-items:center; gap:2px; padding-right:5px; border:1px solid var(--role-border-subtle); border-radius:6px;">
+            <button type="button" role="combobox" aria-haspopup="dialog" aria-expanded="false" style="flex:1; align-self:stretch; min-width:0; display:flex; align-items:center; gap:4px; padding-left:8px; background:transparent; border:0; color:var(--role-text-primary); text-align:left; cursor:pointer;">
+              <span style="width:14px; height:14px; border-radius:3px; background:var(--color-panel-sky); flex:0 0 auto;" aria-hidden="true"></span>
+              <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px;">Globex Industries</span>
+              <span aria-hidden="true" style="width:12px; height:12px; color:var(--role-text-tertiary); display:inline-flex; margin-right:3px;"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg></span>
+            </button>
+          </div>
+          <span class="micro" style="color:var(--role-text-tertiary);">compact · 32×32 · rail collapsed</span>
+          <button type="button" aria-label="Open workspace switcher" style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:6px; background:transparent; border:0; color:var(--role-text-tertiary); cursor:pointer;">
+            <span style="width:16px; height:16px; border-radius:4px; background:var(--color-panel-sky);" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Account row variants -->
+      <div style="display:flex; flex-direction:column; gap:var(--sp-0-5);">
+        <span class="caption" style="color:var(--role-text-tertiary);">§12.5.2 Account row — rest / hover / compact</span>
+        <div style="background:var(--role-surface-secondary); border-radius:var(--radius-sm); padding:var(--sp-1); display:flex; flex-direction:column; gap:var(--sp-0-5);">
+          <!-- rest -->
+          <button aria-haspopup="menu" aria-expanded="false" aria-label="Account menu for Lee Okafor, Admin" style="display:flex; align-items:center; gap:var(--sp-0-75); width:100%; height:48px; padding:6px 8px; border-radius:var(--radius-sm); background:transparent; border:0; cursor:pointer; text-align:left; color:var(--role-text-primary);">
+            <span style="flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:6px; background:color-mix(in srgb, var(--role-surface-raised) 60%, transparent); border:1px solid var(--role-border-subtle); color:var(--role-text-secondary);" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3.5 17c0-3 2.9-4.8 6.5-4.8S16.5 14 16.5 17" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></span>
+            <span style="display:flex; flex-direction:column; align-items:flex-start; min-width:0; overflow:hidden; padding-right:16px; flex:1;">
+              <span style="font-size:14px; font-weight:var(--fw-500); line-height:var(--lh-120);">Lee Okafor</span>
+              <span style="font-size:12px; color:var(--role-text-tertiary);">Admin</span>
+            </span>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto; color:var(--role-text-tertiary);"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+          </button>
+          <!-- hover / menu-open -->
+          <button aria-haspopup="menu" aria-expanded="true" aria-label="Account menu for Lee Okafor, Admin" style="display:flex; align-items:center; gap:var(--sp-0-75); width:100%; height:48px; padding:6px 8px; border-radius:var(--radius-sm); background:var(--role-surface-tertiary); border:0; cursor:pointer; text-align:left; color:var(--role-text-primary);">
+            <span style="flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:6px; background:color-mix(in srgb, var(--role-surface-raised) 60%, transparent); border:1px solid var(--role-border-subtle); color:var(--role-text-secondary);" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3.5 17c0-3 2.9-4.8 6.5-4.8S16.5 14 16.5 17" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></span>
+            <span style="display:flex; flex-direction:column; align-items:flex-start; min-width:0; overflow:hidden; padding-right:16px; flex:1;">
+              <span style="font-size:14px; font-weight:var(--fw-500); line-height:var(--lh-120);">Lee Okafor</span>
+              <span style="font-size:12px; color:var(--role-text-tertiary);">Admin</span>
+            </span>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="flex:0 0 auto; color:var(--role-text-tertiary); transform:rotate(90deg);"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+          </button>
+          <span class="micro" style="color:var(--role-text-tertiary);">hover / menu-open · ground fades to --surface-tertiary, caret rotates</span>
+          <!-- compact -->
+          <span class="micro" style="color:var(--role-text-tertiary); margin-top:var(--sp-0-25);">compact · avatar only</span>
+          <span style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:6px; background:color-mix(in srgb, var(--role-surface-raised) 60%, transparent); border:1px solid var(--role-border-subtle); color:var(--role-text-secondary);" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="7" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3.5 17c0-3 2.9-4.8 6.5-4.8S16.5 14 16.5 17" stroke="currentColor" stroke-width="1.4" fill="none"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.6 — Skip links (§12.6)                                    -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-skip-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.6 · §12.6</span>
+      <h3 id="c6-skip-h" class="h5" style="margin:0;">Skip links</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Keyboard jump targets parked at <code class="mono">top: -1000px</code> that snap to <code class="mono">top: 0</code> on
+        <code class="mono">:focus</code> (not focus-visible — the positional snap <em>is</em> the indicator). Bottom-rounded,
+        weight 700, <code class="mono">z-index: 101</code> so they clear the fixed topbar. Both states shown.
+      </p>
+    </div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:var(--sp-1-5); align-items:start;">
+      <!-- rest -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — rest (off-screen, clipped)</span>
+        <div style="position:relative; height:120px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-secondary);">
+          <div aria-hidden="true" style="position:absolute; top:-40px; left:50%; transform:translateX(-50%); padding:12px 24px; background:var(--role-surface-primary); color:var(--role-text-primary); border-radius:0 0 var(--radius-md) var(--radius-md); font-weight:var(--fw-700); opacity:0.4;">Skip to main content</div>
+          <div style="padding:var(--sp-1-5); color:var(--role-text-tertiary);" class="body-3">At rest the link is parked above the viewport; the first Tab reveals it.</div>
+        </div>
+      </div>
+      <!-- focus -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — :focus (snapped to top: 0, focus ring)</span>
+        <div style="position:relative; height:120px; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--role-border-subtle); background:var(--role-surface-secondary);">
+          <a href="#" style="position:absolute; top:0; left:50%; transform:translateX(-50%); z-index:2; padding:12px 24px; background:var(--role-surface-primary); color:var(--role-text-primary); border-radius:0 0 var(--radius-md) var(--radius-md); font-weight:var(--fw-700); text-decoration:none; outline:var(--focus-width) solid var(--role-focus-ring); outline-offset:var(--focus-offset-outer);">Skip to main content</a>
+          <a href="#" style="position:absolute; top:46px; left:50%; transform:translateX(-50%); padding:8px 24px; background:var(--role-surface-primary); color:var(--role-text-secondary); border-radius:0 0 var(--radius-md) var(--radius-md); font-weight:var(--fw-700); text-decoration:none; opacity:0.55;">Skip to footer</a>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.7 — Footer (§12.7)                                        -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-footer-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.7 · §12.7</span>
+      <h3 id="c6-footer-h" class="h5" style="margin:0;">Footer</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Multi-column footer with <code class="mono">&lt;h3&gt;</code> column headings (12–14px, weight 700, tertiary ink), a
+        social row, language selector, and a legal trigger. Links sit at <code class="mono">--footer-bg</code>'s paired
+        text role with no underline at rest; hover shifts toward primary over 100ms. Rendered in the <code class="mono">deep</code> theme ground.
+      </p>
+    </div>
+
+    <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:0;">Variant — marketing ground (binds the <code class="mono">deep</code> theme)</span>
+    <div data-theme="deep" style="border-radius:var(--radius-md); overflow:hidden;">
+      <footer style="background:var(--role-footer-bg); color:var(--role-footer-text); padding:var(--sp-2-5) var(--sp-2);">
+        <div style="display:flex; flex-wrap:wrap; gap:var(--sp-2-5) var(--sp-2); align-items:flex-start;">
+          <div style="flex:1; min-width:180px;">
+            <span aria-hidden="true" style="font-family:var(--font-serif); font-weight:var(--fw-600); font-size:22px; color:var(--role-text-primary);">Acme</span>
+            <p class="body-3" style="margin:var(--sp-0-75) 0 0; max-width:28ch;">Operations tooling for modern logistics teams.</p>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(4, minmax(120px,1fr)); gap:var(--sp-2); flex:2.4; min-width:480px;">
+            <div>
+              <h3 class="footer__column-heading" style="margin:0 0 var(--sp-1); font-size:12px; font-weight:var(--fw-700); color:var(--role-text-tertiary);">Product</h3>
+              <a href="#" class="footer__link">Overview</a>
+              <a href="#" class="footer__link">Integrations</a>
+              <a href="#" class="footer__link">Changelog</a>
+            </div>
+            <div>
+              <h3 class="footer__column-heading" style="margin:0 0 var(--sp-1); font-size:12px; font-weight:var(--fw-700); color:var(--role-text-tertiary);">Solutions</h3>
+              <a href="#" class="footer__link">Logistics</a>
+              <a href="#" class="footer__link">Operations</a>
+              <a href="#" class="footer__link">Enterprise</a>
+            </div>
+            <div>
+              <h3 class="footer__column-heading" style="margin:0 0 var(--sp-1); font-size:12px; font-weight:var(--fw-700); color:var(--role-text-tertiary);">Resources</h3>
+              <a href="#" class="footer__link">Docs</a>
+              <a href="#" class="footer__link">Guides</a>
+              <a href="#" class="footer__link">Support</a>
+            </div>
+            <div>
+              <h3 class="footer__column-heading" style="margin:0 0 var(--sp-1); font-size:12px; font-weight:var(--fw-700); color:var(--role-text-tertiary);">Company</h3>
+              <a href="#" class="footer__link">About</a>
+              <a href="#" class="footer__link">Careers</a>
+              <a href="#" class="footer__link">Contact</a>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-1); margin-top:var(--sp-2); padding-top:var(--sp-1-5); border-top:1px solid color-mix(in srgb, var(--role-footer-text) 30%, transparent);">
+          <span class="caption" style="color:var(--role-footer-text);">© 2026 Acme, Inc.</span>
+          <a href="#" class="footer__link" style="display:inline; padding:0;">Cookie Settings</a>
+          <span style="display:inline-flex; align-items:center; gap:var(--sp-0-25); margin-left:auto;">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style="color:var(--role-footer-text);"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M1 7h12M7 1c1.8 2 1.8 10 0 12M7 1c-1.8 2-1.8 10 0 12" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+            <label for="c6-lang" class="caption" style="color:var(--role-footer-text);">English</label>
+            <select id="c6-lang" aria-label="Language" style="background:transparent; color:var(--role-footer-text); border:1px solid color-mix(in srgb, var(--role-footer-text) 30%, transparent); border-radius:var(--radius-xs); padding:2px 6px; font-family:var(--font-sans); font-size:var(--type-caption);">
+              <option>English</option><option>Español</option><option>Deutsch</option>
+            </select>
+          </span>
+          <span style="display:inline-flex; gap:var(--sp-0-5);">
+            <a href="#" class="social-share-row__icon" aria-label="Social" style="width:28px; height:28px; color:var(--role-footer-text);"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="3" stroke="currentColor" stroke-width="1.2" fill="none"/><circle cx="8" cy="8" r="2.6" stroke="currentColor" stroke-width="1.2" fill="none"/></svg></a>
+            <a href="#" class="social-share-row__icon" aria-label="Social" style="width:28px; height:28px; color:var(--role-footer-text);"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 4.2c-.4.2-.9.3-1.4.4.5-.3.9-.8 1-1.4-.5.3-1 .5-1.6.6A2.4 2.4 0 0 0 6.4 6 6.9 6.9 0 0 1 2 3.6a2.4 2.4 0 0 0 .8 3.2c-.4 0-.8-.1-1.1-.3a2.4 2.4 0 0 0 2 2.4c-.4.1-.8.1-1.1 0a2.4 2.4 0 0 0 2.3 1.7A4.9 4.9 0 0 1 1 11.6 6.9 6.9 0 0 0 4.7 12.7c4.5 0 7-3.8 7-7v-.3c.5-.3.9-.8 1.3-1.2z" fill="currentColor"/></svg></a>
+          </span>
+        </div>
+      </footer>
+    </div>
+  </article>
+
+  <!-- ============================================================ -->
+  <!-- C6.8 — Pagination (§14)                                      -->
+  <!-- ============================================================ -->
+  <article aria-labelledby="c6-pag-h" style="display:flex; flex-direction:column; gap:var(--sp-1-5);">
+    <div style="display:flex; flex-direction:column; gap:var(--sp-0-25);">
+      <span class="micro" style="color:var(--role-text-tertiary);">C6.8 · §14 Pagination</span>
+      <h3 id="c6-pag-h" class="h5" style="margin:0;">Pagination</h3>
+      <p class="body-3" style="margin:0; color:var(--role-text-secondary);">
+        Indicator-plus-text-links — explicitly <strong>not</strong> numbered page buttons. A decorative
+        <code class="mono">"1 / 3"</code> indicator (<code class="mono">aria-hidden</code>) with a visually-hidden
+        "Page 1 of 3" for screen readers, flanked by Prev/Next links. Disabled ends render at 50% opacity with
+        <code class="mono">aria-disabled="true"</code>.
+      </p>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:var(--sp-1);">
+      <!-- middle page -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — middle page (both links active)</span>
+        <nav aria-label="Pagination" class="pagination" style="justify-content:center; padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised);">
+          <a href="#" class="pagination__link body-3" style="display:inline-flex; align-items:center; gap:var(--sp-0-25);">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 3L5 7l4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>Prev
+          </a>
+          <span aria-hidden="true" class="body-3" style="margin:0 var(--sp-0-75);">2 / 3</span>
+          <span style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);">Page 2 of 3</span>
+          <a href="#" class="pagination__link body-3" style="display:inline-flex; align-items:center; gap:var(--sp-0-25);">
+            Next<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+          </a>
+        </nav>
+      </div>
+      <!-- first page (prev disabled) -->
+      <div>
+        <span class="caption" style="display:block; color:var(--role-text-tertiary); margin-bottom:var(--sp-0-5);">State — first page (Prev disabled, aria-disabled="true")</span>
+        <nav aria-label="Pagination" class="pagination" style="justify-content:center; padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised);">
+          <a href="#" class="pagination__link body-3" aria-disabled="true" style="display:inline-flex; align-items:center; gap:var(--sp-0-25); opacity:0.5; pointer-events:none; cursor:not-allowed;">
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 3L5 7l4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>Prev
+          </a>
+          <span aria-hidden="true" class="body-3" style="margin:0 var(--sp-0-75);">1 / 3</span>
+          <span style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);">Page 1 of 3</span>
+          <a href="#" class="pagination__link body-3" style="display:inline-flex; align-items:center; gap:var(--sp-0-25);">
+            Next<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+          </a>
+        </nav>
+      </div>
+    </div>
+  </article>
+
+</section>

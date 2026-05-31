@@ -1,0 +1,277 @@
+<!-- ==========================================================================
+     Shape S8 — Horizontal carousel  (serves T4 Capability Showcase / T12 News)
+     Card row with prev/next arrows; more items than fit on screen.
+     Slots: N card items · prev/next arrow controls · pagination indicator.
+     Layout: single horizontal row of cards exceeding viewport width, with
+             scroll/paging affordances (peek of the next card + snap track).
+     ========================================================================== -->
+<section
+  aria-labelledby="s8-heading"
+  aria-roledescription="carousel"
+  style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-main) 0;
+    overflow: hidden;
+  "
+>
+  <!-- ---- Section header + arrow controls (share one baseline row) ---- -->
+  <div
+    style="
+      max-width: var(--container-marketing);
+      margin: 0 auto;
+      padding: 0 var(--container-margin);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: var(--sp-2);
+      flex-wrap: wrap;
+    "
+  >
+    <div style="max-width: 52ch;">
+      <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-1);">
+        Capabilities
+      </p>
+      <h2 id="s8-heading" class="h2" style="margin: 0 0 var(--sp-0-75);">
+        Everything the Acme Platform ships with
+      </h2>
+      <p class="body-1" style="color: var(--role-text-secondary); margin: 0;">
+        Twelve surfaces your team can adopt one at a time — scroll the row or use
+        the arrows to browse the full set.
+      </p>
+    </div>
+
+    <!-- prev / next arrow controls -->
+    <div
+      role="group"
+      aria-label="Carousel controls"
+      style="display: flex; gap: var(--sp-0-5); flex-shrink: 0;"
+    >
+      <button
+        type="button"
+        class="button button-tertiary"
+        aria-label="Previous capabilities"
+        aria-disabled="true"
+        style="width: 48px; height: 48px; min-height: 48px; padding: 0; border-radius: 9999px;"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="1.75"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="button button-primary"
+        aria-label="Next capabilities"
+        style="width: 48px; height: 48px; min-height: 48px; padding: 0; border-radius: 9999px;"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="1.75"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ---- The scroll track ----
+       Row of cards exceeding viewport width. Left padding aligns the first
+       card to the container; right padding lets the last card breathe. The
+       fixed card width + gap make later cards "peek" past the right edge. -->
+  <div
+    role="region"
+    aria-label="Capability cards"
+    tabindex="0"
+    style="
+      margin-top: var(--sp-2-5);
+      display: flex;
+      gap: var(--sp-1-5);
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-padding-left: var(--container-margin);
+      padding: var(--sp-0-5) var(--container-margin) var(--sp-1-5);
+      -webkit-overflow-scrolling: touch;
+    "
+  >
+    <!-- The leading spacer keeps cards centered under the marketing container
+         on very wide viewports without a JS layout pass. -->
+    <div
+      aria-hidden="true"
+      style="flex: 0 0 max(0px, calc((100vw - var(--container-marketing)) / 2)); width: 0;"
+    ></div>
+
+    <!-- Card 1 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="1 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--mineral" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="6" y="10" width="36" height="24" rx="3" stroke="currentColor" stroke-width="2"/>
+          <path d="M6 18h36M14 26h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">Workspaces</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">Shared workspaces</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        Organize every project, doc, and dataset into spaces your whole team can
+        see and search.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        Explore workspaces →
+      </a>
+    </article>
+
+    <!-- Card 2 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="2 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--sky" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path d="M24 6l16 9v18l-16 9-16-9V15z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M24 6v18m0 0l16-9m-16 9L8 15" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">Automation</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">Workflow automation</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        Trigger multi-step routines on any event — no glue code, no brittle cron
+        jobs to babysit.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        See automations →
+      </a>
+    </article>
+
+    <!-- Card 3 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="3 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--peach" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="8" y="8" width="32" height="32" rx="4" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 30l6-8 5 6 5-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">Insights</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">Live analytics</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        Dashboards that update as data lands. Slice by team, region, or any field
+        you track.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        View dashboards →
+      </a>
+    </article>
+
+    <!-- Card 4 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="4 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--plum" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <circle cx="24" cy="16" r="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M10 40c0-7 6-12 14-12s14 5 14 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">Access</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">Roles &amp; permissions</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        Granular access controls and audit trails that satisfy security review
+        without slowing anyone down.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        Manage access →
+      </a>
+    </article>
+
+    <!-- Card 5 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="5 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--cactus" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path d="M24 4v8M24 36v8M4 24h8M36 24h8M10 10l6 6M32 32l6 6M38 10l-6 6M16 32l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="24" cy="24" r="6" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">Connectors</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">200+ integrations</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        Connect Northwind, Globex, and the rest of your stack with native,
+        maintained connectors.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        Browse connectors →
+      </a>
+    </article>
+
+    <!-- Card 6 -->
+    <article
+      class="catalog-card"
+      aria-roledescription="slide"
+      aria-label="6 of 6"
+      style="flex: 0 0 clamp(280px, 30vw, 360px); scroll-snap-align: start; display: flex; flex-direction: column;"
+    >
+      <div class="feature-tile feature-tile--oat" style="aspect-ratio: 4 / 3; margin: calc(-1 * var(--sp-1-5)) calc(-1 * var(--sp-1-5)) var(--sp-1-5); border-radius: var(--radius-md) var(--radius-md) 0 0; padding: var(--sp-2);">
+        <svg width="64" height="64" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="8" y="6" width="32" height="36" rx="3" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 16h16M16 24h16M16 32h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="badge-outline" style="align-self: flex-start; margin-bottom: var(--sp-1);">API</span>
+      <h3 class="h5" style="margin: 0 0 var(--sp-0-75);">Developer API</h3>
+      <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); flex: 1;">
+        A typed REST and webhook API with SDKs, so anything not in the UI is one
+        call away.
+      </p>
+      <a href="#" class="body-3" style="color: var(--role-accent-interactive); font-weight: var(--fw-500); text-decoration: none;">
+        Read the docs →
+      </a>
+    </article>
+
+    <!-- trailing spacer to balance the leading one -->
+    <div
+      aria-hidden="true"
+      style="flex: 0 0 max(0px, calc((100vw - var(--container-marketing)) / 2)); width: 0;"
+    ></div>
+  </div>
+
+  <!-- ---- Pagination indicator (dots) ---- -->
+  <div
+    role="tablist"
+    aria-label="Carousel pagination"
+    style="
+      max-width: var(--container-marketing);
+      margin: var(--sp-1) auto 0;
+      padding: 0 var(--container-margin);
+      display: flex;
+      align-items: center;
+      gap: var(--sp-0-75);
+    "
+  >
+    <span role="tab" aria-selected="true" aria-label="Page 1"
+          style="width: 28px; height: 6px; border-radius: 9999px; background: var(--role-accent-interactive);"></span>
+    <span role="tab" aria-selected="false" aria-label="Page 2"
+          style="width: 6px; height: 6px; border-radius: 9999px; background: var(--role-border-subtle);"></span>
+    <span role="tab" aria-selected="false" aria-label="Page 3"
+          style="width: 6px; height: 6px; border-radius: 9999px; background: var(--role-border-subtle);"></span>
+
+    <span class="caption" style="margin-left: var(--sp-1); color: var(--role-text-tertiary);">
+      Showing 1–3 of 12 capabilities
+    </span>
+  </div>
+</section>

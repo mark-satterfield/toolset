@@ -1,0 +1,1232 @@
+# ============================================================
+# Customizable Design System — customizable elements
+# Validates against: ./customizable-design-elements.schema.json
+# ============================================================
+
+# yaml-language-server: $schema=./customizable-design-elements.schema.json
+
+$schema_version: "1.0.0"
+
+# ------------------------------------------------------------
+# Conventions
+# How a code generator turns paths in this file into CSS
+# variable names.  Single source of truth for naming.
+# ------------------------------------------------------------
+$conventions:
+  color_var_pattern:    "--color-{palette key}-{color key}"
+  typeface_var_pattern: "--typeface-{typeface key}"
+  font_var_pattern:     "--font-{font key}"
+  role_var_pattern:     "--role-{role key}"
+
+# ============================================================
+# COLOR CATALOG
+# Three tiers, in dependency order:
+#   1. PRIMITIVE palettes — raw color values (hex). Named for what
+#      the color IS (an adjective: neutral, blue, pastel, stronger),
+#      never for where it is used. Ramps or discrete sets.
+#   2. SEMANTIC palettes — every entry is an alias (Func { var: ... })
+#      pointing at a primitive. Named for USAGE (accent, panels,
+#      buttons, backgrounds, text). A semantic palette holds no hex.
+#   3. THEMES (below) bind roles only to SEMANTIC tokens — never to a
+#      primitive directly. Trail: theme -> role -> semantic -> primitive.
+# ============================================================
+color_catalog:
+
+  common_colors:
+    type: Discrete
+    description: "Foundational colors not part of any single ramp."
+    colors:
+      white:
+        name: "Pure White"
+        hex: "#FFFFFF"
+      black:
+        name: "Absolute Black"
+        hex: "#000000"
+
+  palettes:
+
+    # ////////////////////////////////////////////////////////////
+    # TIER 1 — PRIMITIVES · RAMPS (raw hex, ordered progressions)
+    # ////////////////////////////////////////////////////////////
+
+    # ------------------------------------------------------------
+    # NEUTRAL RAMP
+    # ------------------------------------------------------------
+    neutral:
+      type: Ramp
+      description: "Warm-toned neutral ramp."
+      colors:
+        "000": { name: "Pure white",      hex: "#FFFFFF" }
+        "050": { name: "Bone ivory",      hex: "#FAF9F5" }
+        "100": { name: "Ivory secondary", hex: "#F5F4ED" }
+        "150": { name: "Cream",           hex: "#F0EEE6" }
+        "200": { name: "Pale beige",      hex: "#E8E6DC" }
+        "250": { name: "Beige tier",      hex: "#DEDCD1" }
+        "300": { name: "Soft tan",        hex: "#D1CFC5" }
+        "350": { name: "Mid tan",         hex: "#C2C0B6" }
+        "400": { name: "Warm gray",       hex: "#B0AEA5" }
+        "450": { name: "Warm-mid gray",   hex: "#9C9A92" }
+        "500": { name: "Mid gray",        hex: "#87867F" }
+        "550": { name: "Dim gray",        hex: "#73726C" }
+        "600": { name: "Dim warm gray",   hex: "#5E5D59" }
+        "650": { name: "Deep gray",       hex: "#4D4C48" }
+        "700": { name: "Charcoal",        hex: "#3D3D3A" }
+        "750": { name: "Deep charcoal",   hex: "#30302E" }
+        "800": { name: "Dark warm",       hex: "#262624" }
+        "850": { name: "Deeper warm",     hex: "#1F1E1D" }
+        "900": { name: "Near-deep",       hex: "#1A1918" }
+        "950": { name: "Near-black",      hex: "#141413" }
+        "1000": { name: "Absolute black", hex: "#000000" }
+
+    # ------------------------------------------------------------
+    # BLUE RAMP
+    # ------------------------------------------------------------
+    blue:
+      type: Ramp
+      description: "Cool blue ramp."
+      colors:
+        "000": { name: "Pure white",      hex: "#FFFFFF" }
+        "050": { name: "Cloud",           hex: "#F8F9FC" }
+        "100": { name: "Frost blue",      hex: "#F1F4F9" }
+        "150": { name: "Pale sky",        hex: "#EAEEF5" }
+        "200": { name: "Light periwinkle", hex: "#E0E6F1" }
+        "250": { name: "Lavender mist",   hex: "#D4DCEB" }
+        "300": { name: "Pale denim",      hex: "#C4CFE4" }
+        "350": { name: "Soft blue",       hex: "#B2C1DB" }
+        "400": { name: "Powder blue",     hex: "#9CAFD0" }
+        "450": { name: "Cool blue",       hex: "#6A9BCC" }
+        "500": { name: "Cornflower",      hex: "#6B86B6" }
+        "550": { name: "Slate blue",      hex: "#5371A9" }
+        "600": { name: "Royal indigo",    hex: "#3D5C95" }
+        "650": { name: "Deep slate",      hex: "#3D4A6B" }
+        "700": { name: "Navy",            hex: "#2B3A6B" }
+        "750": { name: "Midnight navy",   hex: "#1D2F50" }
+        "800": { name: "Deep navy",       hex: "#162541" }
+        "850": { name: "Near-midnight",   hex: "#111E35" }
+        "900": { name: "Midnight",        hex: "#0D192E" }
+        "950": { name: "Inkwell",         hex: "#0A1426" }
+        "1000": { name: "Absolute black", hex: "#000000" }
+
+    # ------------------------------------------------------------
+    # GREEN RAMP
+    # ------------------------------------------------------------
+    green:
+      type: Ramp
+      description: "Cool green ramp."
+      colors:
+        "000": { hex: "#FFFFFF" }
+        "050": { name: "Frost",        hex: "#F7FAF9" }
+        "100": { name: "Pale mint",    hex: "#F1F5F3" }
+        "150": { name: "Mist green",   hex: "#E9F0ED" }
+        "200": { name: "Pale sage",    hex: "#DFE8E5" }
+        "250": { name: "Soft sage",    hex: "#D2DFDB" }
+        "300": { name: "Cactus",       hex: "#BCD1CA" }
+        "350": { name: "Sage",         hex: "#AFC6BE" }
+        "400": { name: "Soft moss",    hex: "#98B6AC" }
+        "450": { name: "Moss",         hex: "#7FA397" }
+        "500": { name: "Cool green",   hex: "#629987" }
+        "550": { name: "Forest",       hex: "#497E6E" }
+        "600": { name: "Deep forest",  hex: "#2F6959" }
+        "650": { name: "Pine",         hex: "#255649" }
+        "700": { name: "Dark pine",    hex: "#1D453A" }
+        "750": { name: "Spruce",       hex: "#15372E" }
+        "800": { name: "Deep spruce",  hex: "#102C24" }
+        "850": { name: "Evergreen",    hex: "#0B231D" }
+        "900": { name: "Near-evergreen", hex: "#081E18" }
+        "950": { name: "Near-black green", hex: "#061813" }
+        "1000": { hex: "#000000" }
+
+    # ------------------------------------------------------------
+    # RED RAMP
+    # ------------------------------------------------------------
+    red:
+      type: Ramp
+      description: "Warm red/rose ramp."
+      colors:
+        "000": { hex: "#FFFFFF" }
+        "050": { name: "Pale blush",      hex: "#FCF8F9" }
+        "100": { name: "Blush",           hex: "#F9F2F3" }
+        "150": { name: "Soft pink",       hex: "#F5EBED" }
+        "200": { name: "Pale rose",       hex: "#F0E1E4" }
+        "250": { name: "Rose mist",       hex: "#EAD6DA" }
+        "300": { name: "Pale dusty rose", hex: "#E2C7CC" }
+        "350": { name: "Dusty rose",      hex: "#D9B5BC" }
+        "400": { name: "Soft rose",       hex: "#CDA0AA" }
+        "450": { name: "Mauve",           hex: "#BF8895" }
+        "500": { name: "Dusty mauve",     hex: "#B17080" }
+        "550": { name: "Wine rose",       hex: "#A1586B" }
+        "600": { name: "Wine",            hex: "#8C4156" }
+        "650": { name: "Deep wine",       hex: "#743446" }
+        "700": { name: "Crimson",         hex: "#6B1F2A" }
+        "750": { name: "Burgundy",        hex: "#5A1F3D" }
+        "800": { name: "Deep burgundy",   hex: "#3D1823" }
+        "850": { name: "Near-black wine", hex: "#32121B" }
+        "900": { name: "Inky burgundy",   hex: "#2B0F17" }
+        "950": { name: "Near-black red",  hex: "#230B12" }
+        "1000": { hex: "#000000" }
+
+
+    # ////////////////////////////////////////////////////////////
+    # TIER 1 — PRIMITIVES · DISCRETE (raw hex, unordered named sets)
+    # Named for the color's CHARACTER, never its use.
+    # ////////////////////////////////////////////////////////////
+
+    # ------------------------------------------------------------
+    # BURNT-ORANGE  (was `accent`)
+    # ------------------------------------------------------------
+    burnt-orange:
+      type: Discrete
+      description: "Burnt-orange chromatic family."
+      colors:
+        primary:     { name: "Saturated burnt orange", hex: "#F46C5D" }
+        interactive: { name: "Darker burnt orange",    hex: "#E35849" }
+        hover:       { name: "Hover burnt orange",     hex: "#E05446" }
+        dark:        { name: "Dark-mode burnt orange", hex: "#DE5D4E" }
+
+    # ------------------------------------------------------------
+    # PASTEL  (was `panel`)
+    # ------------------------------------------------------------
+    pastel:
+      type: Discrete
+      description: "Soft, low-saturation tile grounds."
+      colors:
+        oat:      { name: "Warm tan",       hex: "#E3DACC" }
+        peach:    { name: "Pale peach",     hex: "#EBC9B7" }
+        coral:    { name: "Pink coral",     hex: "#EBCECE" }
+        fig:      { name: "Saturated pink", hex: "#C46686" }
+        olive:    { name: "Earthy green",   hex: "#788C5D" }
+        mineral:  { name: "Cool green",     hex: "#629987" }
+        cactus:   { name: "Pale sage",      hex: "#BCD1CA" }
+        sky:      { name: "Cool blue",      hex: "#6A9BCC" }
+        heather:  { name: "Pale violet",    hex: "#CBCADB" }
+        plum:     { name: "Cool violet",    hex: "#827DBD" }
+
+    # ------------------------------------------------------------
+    # STRONGER  (deep, saturated tile grounds — your 7 colors)
+    # ------------------------------------------------------------
+    stronger:
+      type: Discrete
+      description: "Deep, saturated tile grounds — high-presence panels."
+      colors:
+        indigo:   { name: "Deep indigo",    hex: "#2B3A6B" }
+        violet:   { name: "Royal violet",   hex: "#4B2E6B" }
+        crimson:  { name: "Deep crimson",   hex: "#6B1F2A" }
+        umber:    { name: "Burnt umber",    hex: "#7A4A28" }
+        wine:     { name: "Wine burgundy",  hex: "#5A1F3D" }
+        espresso: { name: "Espresso brown", hex: "#3E2418" }
+        slate:    { name: "Slate blue",     hex: "#3D4A6B" }
+
+    # ------------------------------------------------------------
+    # SATURATED  (was `state` — vivid signal colors)
+    # ------------------------------------------------------------
+    saturated:
+      type: Discrete
+      description: "Vivid, high-chroma signal colors."
+      colors:
+        error-light: { name: "Muted red",      hex: "#B53333" }
+        error-dark:  { name: "Light red",      hex: "#DF6666" }
+        error-fill:  { name: "Deep red",       hex: "#BF4D43" }
+        required:    { name: "Dark crimson",   hex: "#8A2424" }
+        focus-blue:  { name: "Chromatic blue", hex: "#2C84DB" }
+
+    # ////////////////////////////////////////////////////////////
+    # TIER 2 — SEMANTIC PALETTES (USAGE-named; every value is an
+    # alias to a PRIMITIVE above. No hex lives here. Themes bind
+    # roles to these tokens only.)
+    # ////////////////////////////////////////////////////////////
+
+    # ------------------------------------------------------------
+    # ACCENT — chromatic accent usage -> burnt-orange
+    # ------------------------------------------------------------
+    accent:
+      type: Discrete
+      description: "Accent usage. Aliases the burnt-orange primitive."
+      colors:
+        primary:     { var: "--color-burnt-orange-primary" }
+        interactive: { var: "--color-burnt-orange-interactive" }
+        hover:       { var: "--color-burnt-orange-hover" }
+        dark:        { var: "--color-burnt-orange-dark" }
+
+    # ------------------------------------------------------------
+    # PANELS — feature-tile grounds -> pastel + stronger
+    # ------------------------------------------------------------
+    panels:
+      type: Discrete
+      description: "Feature-tile grounds. Aliases pastel (soft) and stronger (deep)."
+      colors:
+        # soft (pastel)
+        oat:      { var: "--color-pastel-oat" }
+        peach:    { var: "--color-pastel-peach" }
+        coral:    { var: "--color-pastel-coral" }
+        fig:      { var: "--color-pastel-fig" }
+        olive:    { var: "--color-pastel-olive" }
+        mineral:  { var: "--color-pastel-mineral" }
+        cactus:   { var: "--color-pastel-cactus" }
+        sky:      { var: "--color-pastel-sky" }
+        heather:  { var: "--color-pastel-heather" }
+        plum:     { var: "--color-pastel-plum" }
+        # deep (stronger)
+        indigo:   { var: "--color-stronger-indigo" }
+        violet:   { var: "--color-stronger-violet" }
+        crimson:  { var: "--color-stronger-crimson" }
+        umber:    { var: "--color-stronger-umber" }
+        wine:     { var: "--color-stronger-wine" }
+        espresso: { var: "--color-stronger-espresso" }
+        slate:    { var: "--color-stronger-slate" }
+
+    # ------------------------------------------------------------
+    # BUTTONS — every distinct button fill/label/border the themes
+    # use, named by purpose + tone. Change one entry to restyle
+    # that button class across every theme that points at it.
+    # ------------------------------------------------------------
+    buttons:
+      type: Discrete
+      description: "Button fills, labels, and borders. Aliases blue / neutral / black."
+      colors:
+        primary-bg-brand:     { var: "--color-blue-750" }          # brand-dark fill
+        primary-bg-frost:     { var: "--color-blue-050" }          # inverted (dark mode)
+        primary-bg-ink:       { var: "--color-common_colors-black" } # max-contrast (statement)
+        primary-bg-light:     { var: "--color-neutral-050" }       # light fill on dark themes
+        primary-txt-frost:    { var: "--color-blue-050" }
+        primary-txt-brand-ink: { var: "--color-blue-950" }
+        primary-txt-light:    { var: "--color-neutral-050" }
+        primary-txt-ink:      { var: "--color-neutral-950" }
+        secondary-bg-pale:    { var: "--color-blue-150" }
+        secondary-bg-light:   { var: "--color-blue-200" }
+        secondary-bg-brand:   { var: "--color-blue-750" }
+        secondary-bg-slate:   { var: "--color-neutral-700" }
+        secondary-txt-slate:  { var: "--color-blue-650" }
+        secondary-txt-frost:  { var: "--color-blue-050" }
+        secondary-txt-light:  { var: "--color-neutral-050" }
+        tertiary-border:      { var: "--color-neutral-400" }
+
+    # ------------------------------------------------------------
+    # BACKGROUNDS — every surface/footer ground the themes use,
+    # named by tone (light -> dark). Warm grounds alias neutral;
+    # brand-* grounds alias the blue ramp.
+    # ------------------------------------------------------------
+    backgrounds:
+      type: Discrete
+      description: "Surface and footer grounds. Aliases neutral (warm) and blue (brand)."
+      colors:
+        pure:           { var: "--color-neutral-000" }
+        ivory:          { var: "--color-neutral-050" }
+        linen:          { var: "--color-neutral-100" }
+        cream:          { var: "--color-neutral-150" }
+        beige:          { var: "--color-neutral-200" }
+        sand:           { var: "--color-neutral-250" }
+        tan:            { var: "--color-neutral-300" }
+        charcoal:       { var: "--color-neutral-700" }
+        graphite:       { var: "--color-neutral-750" }
+        dark:           { var: "--color-neutral-800" }
+        deeper:         { var: "--color-neutral-850" }
+        near-black:     { var: "--color-neutral-900" }
+        ink:            { var: "--color-neutral-950" }
+        brand-navy:     { var: "--color-blue-750" }
+        brand-deep:     { var: "--color-blue-800" }
+        brand-midnight: { var: "--color-blue-850" }
+        brand-night:    { var: "--color-blue-900" }
+        brand-ink:      { var: "--color-blue-950" }
+        absolute-black: { var: "--color-neutral-1000" }
+
+    # ------------------------------------------------------------
+    # TEXT — every ink color the themes use, named by tone.
+    # ------------------------------------------------------------
+    text:
+      type: Discrete
+      description: "Ink colors for body, headings, captions, labels. Aliases neutral / blue / black."
+      colors:
+        ivory:      { var: "--color-neutral-050" }
+        tan:        { var: "--color-neutral-300" }
+        warm-gray:  { var: "--color-neutral-400" }
+        gray:       { var: "--color-neutral-450" }
+        dim:        { var: "--color-neutral-600" }
+        deep-gray:  { var: "--color-neutral-650" }
+        graphite:   { var: "--color-neutral-750" }
+        dark:       { var: "--color-neutral-800" }
+        ink:        { var: "--color-neutral-950" }
+        black:      { var: "--color-common_colors-black" }
+        frost:      { var: "--color-blue-050" }
+        powder:     { var: "--color-blue-400" }
+        cornflower: { var: "--color-blue-500" }
+        brand-ink:  { var: "--color-blue-950" }
+
+    # ------------------------------------------------------------
+    # BORDERS — hairlines, strong rules, focus rings, by tone.
+    # ------------------------------------------------------------
+    borders:
+      type: Discrete
+      description: "Border, divider, and focus-ring colors. Aliases neutral / blue."
+      colors:
+        soft:      { var: "--color-neutral-300" }
+        tan:       { var: "--color-neutral-350" }
+        warm-gray: { var: "--color-neutral-400" }
+        gray:      { var: "--color-neutral-450" }
+        mid:       { var: "--color-neutral-500" }
+        dim:       { var: "--color-neutral-550" }
+        deep:      { var: "--color-neutral-600" }
+        charcoal:  { var: "--color-neutral-700" }
+        dark:      { var: "--color-neutral-800" }
+        pale:      { var: "--color-blue-300" }
+        royal:     { var: "--color-blue-600" }
+        powder:    { var: "--color-blue-400" }
+
+    # ------------------------------------------------------------
+    # SIGNALS — state/feedback usage -> saturated.
+    # ------------------------------------------------------------
+    signals:
+      type: Discrete
+      description: "Focus, error, and required-field signals. Aliases the saturated primitive."
+      colors:
+        focus:           { var: "--color-saturated-focus-blue" }
+        error:           { var: "--color-saturated-error-fill" }
+        error-text:      { var: "--color-saturated-error-light" }
+        error-text-dark: { var: "--color-saturated-error-dark" }
+        required:        { var: "--color-saturated-required" }
+
+    # ------------------------------------------------------------
+    # STATUS — badge/pill grounds by meaning -> pastel + saturated.
+    # ------------------------------------------------------------
+    status:
+      type: Discrete
+      description: "Status-badge grounds. Aliases pastel (positive/caution) and saturated (critical)."
+      colors:
+        positive: { var: "--color-pastel-mineral" }
+        caution:  { var: "--color-pastel-peach" }
+        critical: { var: "--color-saturated-error-fill" }
+
+
+
+
+# ============================================================
+# TYPEFACES
+# ============================================================
+typefaces:
+
+  host-grotesk:
+    name: "Host Grotesk"
+    type: variable
+    weights: { min: 300, max: 900 }
+    italic: true
+
+  literata:
+    name: "Literata"
+    type: variable
+    weights:      { min: 300, max: 900 }
+    optical_size: { min: 7,   max: 72  }
+    italic: true
+
+  red-hat-mono:
+    name: "Red Hat Mono"
+    type: variable
+    weights: { min: 300, max: 700 }
+    italic: false
+
+# ============================================================
+# FONTS
+# ============================================================
+fonts:
+
+  sans:
+    typeface: { var: "--typeface-host-grotesk" }
+    fallback: "system-ui, sans-serif"
+
+  serif:
+    typeface: { var: "--typeface-literata" }
+    fallback: "Georgia, serif"
+
+  mono:
+    typeface: { var: "--typeface-red-hat-mono" }
+    fallback: "ui-monospace, monospace"
+
+# ============================================================
+# ROLES
+# Semantic and component role definitions.
+# Each role is a named placeholder filled by a theme.
+# ============================================================
+roles:
+
+  # ----- SURFACE family --------------------------------------
+  surface-primary:
+    type: color
+    scope: semantic
+    family: surface
+    from_palette: backgrounds
+    description: "Section ground. Default background of any section that doesn't override."
+    required: true
+    constraints:
+      - "AAA contrast against text-primary on every theme."
+
+  surface-secondary:
+    type: color
+    scope: semantic
+    family: surface
+    from_palette: backgrounds
+    description: "Inset blocks, secondary panel grounds within the section."
+    required: true
+
+  surface-tertiary:
+    type: color
+    scope: semantic
+    family: surface
+    from_palette: backgrounds
+    description: "Pill-tab strip ground, deepest stratification within the theme."
+    required: true
+
+  surface-raised:
+    type: color
+    scope: semantic
+    family: surface
+    from_palette: backgrounds
+    description: "Card fills that sit slightly above the page ground."
+    required: true
+
+  surface-muted:
+    type: color
+    scope: semantic
+    family: surface
+    from_palette: backgrounds
+    description: "Disabled inputs, dimmed states."
+    required: true
+
+  # ----- TEXT family ----------------------------------------
+  text-primary:
+    type: color
+    scope: semantic
+    family: text
+    from_palette: text
+    description: "Default body and heading ink."
+    required: true
+    constraints:
+      - "AAA contrast against surface-primary."
+
+  text-secondary:
+    type: color
+    scope: semantic
+    family: text
+    from_palette: text
+    description: "Lead-in paragraphs, sub-headings."
+    required: true
+
+  text-tertiary:
+    type: color
+    scope: semantic
+    family: text
+    from_palette: text
+    description: "Meta, captions, dates, placeholder text."
+    required: true
+    constraints:
+      - "AA contrast against surface-primary."
+
+  text-inverse:
+    type: color
+    scope: semantic
+    family: text
+    from_palette: text
+    description: "Text that paints against the inverse of the page ground (used on primary buttons)."
+    required: true
+
+  # ----- BORDER family -------------------------------------
+  border-subtle:
+    type: color
+    scope: semantic
+    family: border
+    from_palette: borders
+    description: "Hairlines, default form-field rest border, card outlines."
+    required: true
+
+  border-strong:
+    type: color
+    scope: semantic
+    family: border
+    from_palette: borders
+    description: "Active borders, divider rules between metadata and body."
+    required: true
+
+  # ----- ACCENT family -------------------------------------
+  accent-primary:
+    type: color
+    scope: semantic
+    family: accent
+    from_palette: accent
+    description: "Mascot, decorative glyphs, highlight rules."
+    required: true
+
+  accent-interactive:
+    type: color
+    scope: semantic
+    family: accent
+    from_palette: accent
+    description: "Brand-button rest-state fill."
+    required: true
+
+  accent-heroes:
+    type: color
+    scope: semantic
+    family: accent
+    from_palette: [accent, text]
+    description: "Foreground color for theme-bound decorative artwork (mascot, hero SVGs)."
+    required: true
+
+  # ----- SELECTION + FOCUS ---------------------------------
+  selection-bg:
+    type: color
+    scope: semantic
+    from_palette: accent
+    description: "Text-selection background tint. Global; derived from the accent family (50% mix)."
+    required: false
+    fallback:
+      color-mix: "(in srgb, var(--color-accent-primary) 50%, transparent)"
+
+  focus-ring:
+    type: color
+    scope: semantic
+    from_palette: borders
+    description: "Keyboard focus outline color (neutral default ring)."
+    required: true
+
+  input-focus-ring:
+    type: color
+    scope: component
+    component: input
+    from_palette: signals
+    description: "Chromatic focus ring for conversion inputs — distinct from the neutral default focus-ring."
+    required: false
+
+  # ----- NAV component -------------------------------------
+  nav-bg:
+    type: color
+    scope: component
+    component: topbar
+    family: nav
+    from_palette: backgrounds
+    description: "Topbar background."
+    required: false
+
+  nav-text:
+    type: color
+    scope: component
+    component: topbar
+    family: nav
+    from_palette: text
+    description: "Topbar foreground."
+    required: false
+
+  # ----- FOOTER component ----------------------------------
+  footer-bg:
+    type: color
+    scope: component
+    component: footer
+    family: footer
+    from_palette: backgrounds
+    description: "Footer background. Brand-dark ground (matches primary button)."
+    required: false
+
+  footer-text:
+    type: color
+    scope: component
+    component: footer
+    family: footer
+    from_palette: text
+    description: "Footer foreground body text."
+    required: false
+
+  # ----- HERO component ------------------------------------
+  hero-bg:
+    type: color
+    scope: component
+    component: hero
+    family: hero
+    from_palette: backgrounds
+    description: "Hero section background within the active theme."
+    required: false
+
+  hero-text:
+    type: color
+    scope: component
+    component: hero
+    family: hero
+    from_palette: text
+    description: "Hero foreground within the active theme."
+    required: false
+
+  # ----- BUTTON — PRIMARY component ------------------------
+  button-primary-bg:
+    type: color
+    scope: component
+    component: button-primary
+    family: button
+    from_palette: buttons
+    description: "Primary-action button fill (rest state). Inverts with mode."
+    required: true
+
+  button-primary-text:
+    type: color
+    scope: component
+    component: button-primary
+    family: button
+    from_palette: buttons
+    description: "Primary-action button label color."
+    required: true
+
+  # ----- BUTTON — SECONDARY component ----------------------
+  button-secondary-bg:
+    type: color
+    scope: component
+    component: button-secondary
+    family: button
+    from_palette: buttons
+    description: "Secondary-action button fill (rest state)."
+    required: true
+
+  button-secondary-text:
+    type: color
+    scope: component
+    component: button-secondary
+    family: button
+    from_palette: buttons
+    description: "Secondary-action button label color."
+    required: true
+
+  # ----- BUTTON — TERTIARY component -----------------------
+  button-tertiary-border:
+    type: color
+    scope: component
+    component: button-tertiary
+    family: button
+    from_palette: buttons
+    description: "Outline-only tertiary action border."
+    required: true
+
+  # ----- SWITCH component ---------------------------------
+  switch-active-bg:
+    type: color
+    scope: component
+    component: switch
+    from_palette: signals
+    description: "Toggle-switch ON-state fill. Chromatic blue, identical across every theme."
+    required: false
+
+  # ----- ERROR roles --------------------------------------
+  error-text:
+    type: color
+    scope: semantic
+    family: state
+    from_palette: signals
+    description: "Inline error message ink."
+    required: false
+
+  error-fill:
+    type: color
+    scope: semantic
+    family: state
+    from_palette: signals
+    description: "Destructive-action button background."
+    required: false
+
+  field-required:
+    type: color
+    scope: semantic
+    family: state
+    from_palette: signals
+    description: "Required-field asterisk ink."
+    required: false
+
+  # ----- FEATURE-TILE component ----------------------------
+  # Decorative editorial tile grounds. Variety is positional
+  # (1/2/3 + accent), NEVER color-named: the author picks a tile
+  # number, the theme chooses which constrained color fills it.
+  tile-ground-1:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: panels
+    description: "First editorial feature-tile ground."
+    required: false
+  tile-ink-1:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: text
+    description: "Ink paired with tile-ground-1 (legible on that ground)."
+    required: false
+
+  tile-ground-2:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: panels
+    description: "Second editorial feature-tile ground."
+    required: false
+  tile-ink-2:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: text
+    description: "Ink paired with tile-ground-2."
+    required: false
+
+  tile-ground-3:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: panels
+    description: "Third editorial feature-tile ground."
+    required: false
+  tile-ink-3:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: text
+    description: "Ink paired with tile-ground-3."
+    required: false
+
+  tile-ground-accent:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: accent
+    description: "Accent-splash feature-tile ground."
+    required: false
+  tile-ink-accent:
+    type: color
+    scope: component
+    component: feature-tile
+    family: tile
+    from_palette: text
+    description: "Ink paired with the accent-splash tile ground."
+    required: false
+
+  # ----- BADGE component (status pills) --------------------
+  status-positive-bg:
+    type: color
+    scope: component
+    component: badge
+    family: status
+    from_palette: status
+    description: "Positive/success badge ground."
+    required: false
+
+  status-caution-bg:
+    type: color
+    scope: component
+    component: badge
+    family: status
+    from_palette: status
+    description: "Warning/needs-attention badge ground."
+    required: false
+
+  status-critical-bg:
+    type: color
+    scope: component
+    component: badge
+    family: status
+    from_palette: status
+    description: "Error/failed badge ground."
+    required: false
+
+# ============================================================
+# THEMES
+# Named binding sets.  Each theme provides values for roles.
+# A theme is consumed by wrapping a DOM subtree with the
+# corresponding class (e.g., <section class="default">).
+# Class names are bare role-based identifiers; no methodology
+# prefix.  `editorial` is a CSS-level alias of `default`
+# (handled in the .css generator, not in this YAML).
+# ------------------------------------------------------------
+# ARCHITECTURE A: every theme defines both `light` and `dark`
+# mode bindings.  Themes that don't visually change with the
+# mode flip still declare identical bindings under both modes
+# so the data shape is uniform across the system.
+# ============================================================
+themes:
+
+  # ------------------------------------------------------------
+  # clarity — High-clarity light theme.  Pure-white ground.
+  # ------------------------------------------------------------
+  clarity:
+    description: "High-clarity light theme. Pure-white ground for pricing, card-heavy interior sections, dense content."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-pure" }
+          surface-secondary:     { var: "--color-backgrounds-ivory" }
+          surface-tertiary:      { var: "--color-backgrounds-linen" }
+          surface-raised:        { var: "--color-backgrounds-pure" }
+          surface-muted:         { var: "--color-backgrounds-linen" }
+          text-primary:          { var: "--color-text-ink" }
+          text-secondary:        { var: "--color-text-graphite" }
+          text-tertiary:         { var: "--color-text-dim" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-tan" }
+          border-strong:         { var: "--color-borders-charcoal" }
+          accent-primary:        { var: "--color-accent-primary" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-gray" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-pale" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-brand-midnight" }
+          surface-secondary:     { var: "--color-backgrounds-brand-deep" }
+          surface-tertiary:      { var: "--color-backgrounds-brand-deep" }
+          surface-raised:        { var: "--color-backgrounds-brand-midnight" }
+          surface-muted:         { var: "--color-backgrounds-brand-deep" }
+          text-primary:          { var: "--color-text-frost" }
+          text-secondary:        { var: "--color-text-powder" }
+          text-tertiary:         { var: "--color-text-cornflower" }
+          text-inverse:          { var: "--color-text-brand-ink" }
+          border-subtle:         { var: "--color-borders-royal" }
+          border-strong:         { var: "--color-borders-pale" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-frost" }
+          focus-ring:            { var: "--color-borders-powder" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-frost" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-brand-ink" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # default — Principal light theme.  Warm-ivory ground.
+  # `editorial` is currently a CSS alias of this theme (handled
+  # in the .css generator, not in the YAML).
+  # ------------------------------------------------------------
+  default:
+    description: "Principal light theme. Default warm-ivory page ground for marketing, editorial, conversion. `editorial` is a CSS alias of this theme."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-ivory" }
+          surface-secondary:     { var: "--color-backgrounds-linen" }
+          surface-tertiary:      { var: "--color-backgrounds-cream" }
+          surface-raised:        { var: "--color-backgrounds-pure" }
+          surface-muted:         { var: "--color-backgrounds-cream" }
+          text-primary:          { var: "--color-text-ink" }
+          text-secondary:        { var: "--color-text-graphite" }
+          text-tertiary:         { var: "--color-text-dim" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-warm-gray" }
+          border-strong:         { var: "--color-borders-charcoal" }
+          accent-primary:        { var: "--color-accent-primary" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-gray" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-light" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+          # editorial feature tiles — light grounds (pastel), paired ink
+          tile-ground-1:         { var: "--color-panels-oat" }
+          tile-ink-1:            { var: "--color-text-ink" }
+          tile-ground-2:         { var: "--color-panels-cactus" }
+          tile-ink-2:            { var: "--color-text-ink" }
+          tile-ground-3:         { var: "--color-panels-fig" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-primary" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          # status badges
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+          # required-field asterisk + chromatic input focus ring
+          field-required:        { var: "--color-signals-required" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-brand-ink" }
+          surface-secondary:     { var: "--color-backgrounds-brand-night" }
+          surface-tertiary:      { var: "--color-backgrounds-brand-deep" }
+          surface-raised:        { var: "--color-backgrounds-brand-midnight" }
+          surface-muted:         { var: "--color-backgrounds-brand-night" }
+          text-primary:          { var: "--color-text-frost" }
+          text-secondary:        { var: "--color-text-powder" }
+          text-tertiary:         { var: "--color-text-cornflower" }
+          text-inverse:          { var: "--color-text-brand-ink" }
+          border-subtle:         { var: "--color-borders-royal" }
+          border-strong:         { var: "--color-borders-pale" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-frost" }
+          focus-ring:            { var: "--color-borders-powder" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-frost" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-brand-ink" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-brand" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-frost" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+          # editorial feature tiles — deep grounds (stronger), light ink
+          tile-ground-1:         { var: "--color-panels-umber" }
+          tile-ink-1:            { var: "--color-text-ivory" }
+          tile-ground-2:         { var: "--color-panels-indigo" }
+          tile-ink-2:            { var: "--color-text-ivory" }
+          tile-ground-3:         { var: "--color-panels-wine" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-dark" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          # status badges
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+          # required-field asterisk + chromatic input focus ring
+          field-required:        { var: "--color-signals-required" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # punctuation — Light punctuation interjection.
+  # Dark mode mirrors light (no visual change on mode flip).
+  # ------------------------------------------------------------
+  punctuation:
+    description: "Light punctuation interjection. Sits between `default` and `deep` in scroll rhythm."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-cream" }
+          surface-secondary:     { var: "--color-backgrounds-beige" }
+          surface-tertiary:      { var: "--color-backgrounds-sand" }
+          surface-raised:        { var: "--color-backgrounds-ivory" }
+          surface-muted:         { var: "--color-backgrounds-beige" }
+          text-primary:          { var: "--color-text-ink" }
+          text-secondary:        { var: "--color-text-graphite" }
+          text-tertiary:         { var: "--color-text-dim" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-gray" }
+          border-strong:         { var: "--color-borders-charcoal" }
+          accent-primary:        { var: "--color-accent-primary" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-dim" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-cream" }
+          surface-secondary:     { var: "--color-backgrounds-beige" }
+          surface-tertiary:      { var: "--color-backgrounds-sand" }
+          surface-raised:        { var: "--color-backgrounds-ivory" }
+          surface-muted:         { var: "--color-backgrounds-beige" }
+          text-primary:          { var: "--color-text-ink" }
+          text-secondary:        { var: "--color-text-graphite" }
+          text-tertiary:         { var: "--color-text-dim" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-gray" }
+          border-strong:         { var: "--color-borders-charcoal" }
+          accent-primary:        { var: "--color-accent-primary" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-dim" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # statement — High-contrast neutral feature panel.
+  # Dark mode mirrors light (no visual change on mode flip).
+  # ------------------------------------------------------------
+  statement:
+    description: "High-contrast neutral feature panel. Pushes ink to absolute black for maximum statement contrast."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-beige" }
+          surface-secondary:     { var: "--color-backgrounds-sand" }
+          surface-tertiary:      { var: "--color-backgrounds-tan" }
+          surface-raised:        { var: "--color-backgrounds-ivory" }
+          surface-muted:         { var: "--color-backgrounds-sand" }
+          text-primary:          { var: "--color-text-black" }
+          text-secondary:        { var: "--color-text-dark" }
+          text-tertiary:         { var: "--color-text-deep-gray" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-mid" }
+          border-strong:         { var: "--color-borders-dark" }
+          accent-primary:        { var: "--color-accent-interactive" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-deep" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-ink" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-light" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-beige" }
+          surface-secondary:     { var: "--color-backgrounds-sand" }
+          surface-tertiary:      { var: "--color-backgrounds-tan" }
+          surface-raised:        { var: "--color-backgrounds-ivory" }
+          surface-muted:         { var: "--color-backgrounds-sand" }
+          text-primary:          { var: "--color-text-black" }
+          text-secondary:        { var: "--color-text-dark" }
+          text-tertiary:         { var: "--color-text-deep-gray" }
+          text-inverse:          { var: "--color-text-frost" }
+          border-subtle:         { var: "--color-borders-mid" }
+          border-strong:         { var: "--color-borders-dark" }
+          accent-primary:        { var: "--color-accent-interactive" }
+          accent-interactive:    { var: "--color-accent-interactive" }
+          accent-heroes:         { var: "--color-accent-primary" }
+          focus-ring:            { var: "--color-borders-deep" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-ink" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-light" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # feature-dark — Mid-dark feature panel.
+  # Dark mode mirrors light (no visual change on mode flip).
+  # ------------------------------------------------------------
+  feature-dark:
+    description: "Mid-dark feature panel. Used for dark interjections within an otherwise light page."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-dark" }
+          surface-secondary:     { var: "--color-backgrounds-graphite" }
+          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          surface-raised:        { var: "--color-backgrounds-dark" }
+          surface-muted:         { var: "--color-backgrounds-graphite" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-warm-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-mid" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-soft" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-dark" }
+          surface-secondary:     { var: "--color-backgrounds-graphite" }
+          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          surface-raised:        { var: "--color-backgrounds-dark" }
+          surface-muted:         { var: "--color-backgrounds-graphite" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-warm-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-mid" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-soft" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # code — Code-block / deeper-dark interjection.
+  # Dark mode mirrors light (no visual change on mode flip).
+  # ------------------------------------------------------------
+  code:
+    description: "Deeper-dark interjection, primarily for code blocks and second-tier dark feature panels."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-deeper" }
+          surface-secondary:     { var: "--color-backgrounds-dark" }
+          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          surface-raised:        { var: "--color-backgrounds-deeper" }
+          surface-muted:         { var: "--color-backgrounds-dark" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-dim" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-warm-gray" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-deeper" }
+          surface-secondary:     { var: "--color-backgrounds-dark" }
+          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          surface-raised:        { var: "--color-backgrounds-deeper" }
+          surface-muted:         { var: "--color-backgrounds-dark" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-dim" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-warm-gray" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+
+  # ------------------------------------------------------------
+  # deep — Deepest dark.  Footer + brand-dark surfaces.
+  # Footer-bg uses the BLUE ramp (matches primary button color)
+  # while surface-primary remains the warm neutral for any
+  # in-page dark interjection sections.
+  # Dark mode mirrors light (no visual change on mode flip).
+  # ------------------------------------------------------------
+  deep:
+    description: "Deepest dark theme. Hosts the footer (brand-dark blue) and dark page-end sections."
+    modes:
+      light:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-ink" }
+          surface-secondary:     { var: "--color-backgrounds-near-black" }
+          surface-tertiary:      { var: "--color-backgrounds-dark" }
+          surface-raised:        { var: "--color-backgrounds-deeper" }
+          surface-muted:         { var: "--color-backgrounds-near-black" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-deep" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-soft" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          switch-active-bg:      { var: "--color-signals-focus" }
+      dark:
+        bindings:
+          surface-primary:       { var: "--color-backgrounds-ink" }
+          surface-secondary:     { var: "--color-backgrounds-near-black" }
+          surface-tertiary:      { var: "--color-backgrounds-dark" }
+          surface-raised:        { var: "--color-backgrounds-deeper" }
+          surface-muted:         { var: "--color-backgrounds-near-black" }
+          text-primary:          { var: "--color-text-ivory" }
+          text-secondary:        { var: "--color-text-tan" }
+          text-tertiary:         { var: "--color-text-gray" }
+          text-inverse:          { var: "--color-text-ink" }
+          border-subtle:         { var: "--color-borders-deep" }
+          border-strong:         { var: "--color-borders-soft" }
+          accent-primary:        { var: "--color-accent-dark" }
+          accent-interactive:    { var: "--color-accent-hover" }
+          accent-heroes:         { var: "--color-text-ivory" }
+          focus-ring:            { var: "--color-borders-soft" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          switch-active-bg:      { var: "--color-signals-focus" }

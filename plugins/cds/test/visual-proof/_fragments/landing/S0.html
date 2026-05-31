@@ -1,0 +1,41 @@
+<!-- Shape S0 — Standalone heading strip (serves T18 Section Header / Eyebrow) -->
+<!-- Slots: one H2; optional eyebrow above the H2. Layout: single-row block, vertical stack. -->
+<!-- Variant demonstration: two instances — with eyebrow (centered) and without eyebrow (left-aligned). -->
+<section
+  data-theme="default"
+  aria-label="Section header / eyebrow shape proof"
+  style="background: var(--role-surface-primary); padding: var(--section-pad-main) var(--container-margin);"
+>
+  <div style="max-width: var(--container-marketing); margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-5);">
+
+    <!-- Variant A — with eyebrow, centered -->
+    <div style="display: flex; flex-direction: column; align-items: center; gap: var(--sp-0-75); text-align: center;">
+      <span class="micro" style="color: var(--role-accent-primary);">Why teams choose us</span>
+      <h2 class="h2" style="margin: 0; max-width: 22ch; color: var(--role-text-primary);">
+        Everything your team needs to ship with confidence
+      </h2>
+    </div>
+
+    <!-- Hairline divider between the two variant demonstrations -->
+    <hr style="width: 100%; height: 1px; border: 0; margin: 0; background: var(--role-border-subtle);" />
+
+    <!-- Variant B — without eyebrow, left-aligned -->
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-0-75);">
+      <h2 class="h2" style="margin: 0; max-width: 26ch; color: var(--role-text-primary);">
+        Built for the way Northwind already works
+      </h2>
+    </div>
+
+    <!-- Hairline divider -->
+    <hr style="width: 100%; height: 1px; border: 0; margin: 0; background: var(--role-border-subtle);" />
+
+    <!-- Variant A reprise — eyebrow + H2, left-aligned, to show alignment is a free dimension -->
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-0-5);">
+      <span class="micro" style="color: var(--role-text-tertiary);">Acme Platform / Overview</span>
+      <h2 class="h2" style="margin: 0; max-width: 24ch; color: var(--role-text-primary);">
+        A single workspace for every part of the launch
+      </h2>
+    </div>
+
+  </div>
+</section>

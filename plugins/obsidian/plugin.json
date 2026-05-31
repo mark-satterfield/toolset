@@ -1,0 +1,32 @@
+{
+  "name": "obsidian",
+  "version": "0.1.0",
+  "description": "Obsidian toolkit forked from kepano/obsidian-skills. Bundles five Agent Skills for Obsidian work — CLI automation of running vaults, Bases (database) authoring, JSON Canvas authoring, Obsidian-flavored Markdown editing, and Defuddle-powered web-to-Markdown conversion. The obsidian-cli skill additionally carries platform and troubleshooting references cherry-picked from the third-party Obsidian-CLI-skill project.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/obsidian",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "upstream": {
+    "name": "kepano/obsidian-skills",
+    "url": "https://github.com/kepano/obsidian-skills",
+    "author": "Steph Ango (@kepano)"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-cli",
+    "markdown",
+    "obsidian-markdown",
+    "bases",
+    "obsidian-bases",
+    "canvas",
+    "json-canvas",
+    "defuddle",
+    "pkm",
+    "notes",
+    "vault",
+    "agent-skills"
+  ]
+}

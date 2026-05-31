@@ -1,0 +1,536 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cds:schemas:customizable-design-elements:v1",
+  "title": "Customizable Design Elements",
+  "description": "Schema for the configurable portion of a design system: the color catalog, typeface and font definitions, semantic role definitions, and theme bindings. The active data file is referenced by the CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS environment variable. Static guidance, fixed foundations, and architectural prose are not represented here.",
+  "type": "object",
+  "required": [
+    "color_catalog",
+    "typefaces",
+    "fonts",
+    "roles",
+    "themes"
+  ],
+  "properties": {
+    "$schema_version": {
+      "type": "string",
+      "description": "Version of this schema the data file conforms to. Bumped when a breaking change is made.",
+      "examples": [
+        "1.0.0"
+      ]
+    },
+    "$conventions": {
+      "$ref": "#/$defs/Conventions"
+    },
+    "color_catalog": {
+      "$ref": "#/$defs/ColorCatalog"
+    },
+    "typefaces": {
+      "$ref": "#/$defs/Typefaces"
+    },
+    "fonts": {
+      "$ref": "#/$defs/Fonts"
+    },
+    "roles": {
+      "$ref": "#/$defs/Roles"
+    },
+    "themes": {
+      "$ref": "#/$defs/Themes"
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+
+    "Conventions": {
+      "type": "object",
+      "title": "Conventions",
+      "description": "Machine-readable naming patterns. A code generator reads these to produce CSS variable names from data paths.",
+      "properties": {
+        "color_var_pattern": {
+          "type": "string",
+          "description": "Pattern for color-token CSS variable names. {palette key} and {color key} are substituted from the data path.",
+          "examples": [
+            "--color-{palette key}-{color key}"
+          ]
+        },
+        "typeface_var_pattern": {
+          "type": "string",
+          "description": "Pattern for typeface CSS variable names. {typeface key} is the typeface identifier.",
+          "examples": [
+            "--typeface-{typeface key}"
+          ]
+        },
+        "font_var_pattern": {
+          "type": "string",
+          "description": "Pattern for semantic-font CSS variable names. {font key} is the font identifier (e.g., sans, serif, mono).",
+          "examples": [
+            "--font-{font key}"
+          ]
+        },
+        "role_var_pattern": {
+          "type": "string",
+          "description": "Pattern for role CSS variable names. {role key} is the role identifier.",
+          "examples": [
+            "--role-{role key}"
+          ]
+        }
+      },
+      "examples": [
+        {
+          "color_var_pattern": "--color-{palette key}-{color key}",
+          "typeface_var_pattern": "--typeface-{typeface key}",
+          "font_var_pattern": "--font-{font key}",
+          "role_var_pattern": "--role-{role key}"
+        }
+      ]
+    },
+
+    "Color": {
+      "type": "object",
+      "title": "Color",
+      "description": "A color value expressed in one or more color formats. At least one format is required.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Optional human-readable display name (e.g., 'Warm Ivory')."
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^#([A-Fa-f0-9]{3}|[A-Fa-f0-9]{6}|[A-Fa-f0-9]{8})$",
+          "description": "Hexadecimal RGB(A): 3, 6, or 8 hex digits."
+        },
+        "rgb": {
+          "type": "object",
+          "properties": {
+            "r": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "g": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "b": { "type": "integer", "minimum": 0, "maximum": 255 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["r", "g", "b"],
+          "additionalProperties": false
+        },
+        "hsl": {
+          "type": "object",
+          "properties": {
+            "h": { "type": "number", "minimum": 0, "maximum": 360 },
+            "s": { "type": "number", "minimum": 0, "maximum": 100 },
+            "l": { "type": "number", "minimum": 0, "maximum": 100 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["h", "s", "l"],
+          "additionalProperties": false
+        },
+        "oklch": {
+          "type": "object",
+          "description": "OKLCH color space — perceptually uniform. Reserved for future use; current data is hex-based.",
+          "properties": {
+            "l": { "type": "number", "minimum": 0, "maximum": 1 },
+            "c": { "type": "number", "minimum": 0 },
+            "h": { "type": "number", "minimum": 0, "maximum": 360 },
+            "a": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "required": ["l", "c", "h"],
+          "additionalProperties": false
+        }
+      },
+      "anyOf": [
+        { "required": ["hex"] },
+        { "required": ["rgb"] },
+        { "required": ["hsl"] },
+        { "required": ["oklch"] }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        { "hex": "#FAF9F5" },
+        { "name": "Warm Ivory", "hex": "#FAF9F5" },
+        { "rgb": { "r": 250, "g": 249, "b": 245 } }
+      ]
+    },
+
+    "Func": {
+      "type": "object",
+      "title": "Func",
+      "description": "A CSS function invocation. The object has exactly one property; its key is the function name (var, calc, clamp, color-mix, linear-gradient, etc.); its value is the function's argument expression as a string. Nested function calls are written inline inside the value string, not as nested objects. Property names cannot collide with Color's structural property names (hex, rgb, hsl, oklch, name) — that disambiguates Func from Color at validation time.",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "not": {
+          "enum": ["hex", "rgb", "hsl", "oklch", "name"]
+        }
+      },
+      "examples": [
+        { "var": "--color-neutral-050" },
+        { "calc": "(100% - 50px)" },
+        { "clamp": "(64px, calc(64px + 32 * (100vw - 320px) / 1120), 96px)" },
+        { "color-mix": "(in srgb, var(--color-accent-primary) 50%, transparent)" },
+        { "linear-gradient": "(to bottom, var(--color-neutral-050), var(--color-neutral-100))" }
+      ]
+    },
+
+    "ColorValue": {
+      "title": "ColorValue",
+      "description": "A color slot: either a literal Color or a Func reference (e.g., {var: '--color-blue-750'}).",
+      "oneOf": [
+        { "$ref": "#/$defs/Color" },
+        { "$ref": "#/$defs/Func" }
+      ]
+    },
+
+    "PaletteType": {
+      "type": "string",
+      "enum": ["Ramp", "Discrete"],
+      "description": "Ramp = ordered stepwise progression (typically numeric keys 050, 100, ... 950). Discrete = unordered named colors (e.g., oat, peach, fig). The tag is informational; downstream tooling decides what to do with it."
+    },
+
+    "Palette": {
+      "type": "object",
+      "title": "Palette",
+      "description": "A named group of colors. Keys in `colors` become path segments in the generated CSS variable name (see $conventions.colorVarPattern).",
+      "required": ["type", "colors"],
+      "properties": {
+        "type": { "$ref": "#/$defs/PaletteType" },
+        "description": {
+          "type": "string",
+          "description": "Optional explanation of the palette's purpose."
+        },
+        "colors": {
+          "type": "object",
+          "description": "Map of color identifier to color value. Identifier becomes the {color key} segment of the CSS variable name. For Ramp palettes, keys should be zero-padded numeric strings (050, 100, ..., 950); for Discrete palettes, kebab-case names.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/ColorValue"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "Ramp" } }
+          },
+          "then": {
+            "properties": {
+              "colors": {
+                "patternProperties": {
+                  "^[0-9]{3,4}$": { "$ref": "#/$defs/ColorValue" }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ],
+      "examples": [
+        {
+          "type": "Ramp",
+          "description": "Warm neutral ramp.",
+          "colors": {
+            "050": { "hex": "#FAF9F5" },
+            "500": { "hex": "#87867F" },
+            "950": { "hex": "#141413" }
+          }
+        },
+        {
+          "type": "Discrete",
+          "description": "Saturated panel grounds.",
+          "colors": {
+            "oat":   { "hex": "#E3DACC" },
+            "peach": { "hex": "#EBC9B7" }
+          }
+        },
+        {
+          "type": "Discrete",
+          "description": "Aliases — every value is a reference to another color.",
+          "colors": {
+            "primary": { "var": "--color-neutral-200" }
+          }
+        }
+      ]
+    },
+
+    "ColorCatalog": {
+      "type": "object",
+      "title": "ColorCatalog",
+      "description": "The complete set of raw color values. Primitives and aliases. Roles and themes reference values from here.",
+      "required": ["common_colors", "palettes"],
+      "properties": {
+        "common_colors": {
+          "$ref": "#/$defs/Palette",
+          "description": "Catalog-wide foundational colors that don't belong to any single palette (typically white and black)."
+        },
+        "palettes": {
+          "type": "object",
+          "description": "Map of palette identifier to palette. Palette identifier becomes the {palette key} segment of the generated CSS variable name.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/Palette"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "FontAxisRange": {
+      "type": "object",
+      "title": "FontAxisRange",
+      "description": "Continuous range for a variable-font axis (e.g., weight 300..900, optical-size 7..72).",
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "Typeface": {
+      "type": "object",
+      "title": "Typeface",
+      "description": "An individual typeface. Records the typeface's intrinsic attributes only (name and axes). Hosting paths, source URLs, and build-time configuration are not part of this object.",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name of the typeface (e.g., 'Host Grotesk')."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["static", "variable"],
+          "description": "Whether the typeface is a single-instance static face or a multi-axis variable font."
+        },
+        "weights": {
+          "description": "Available weight axis. Either an enumerated list (static face) or a min/max range (variable font weight axis).",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "minItems": 1
+            },
+            { "$ref": "#/$defs/FontAxisRange" }
+          ]
+        },
+        "optical_size": {
+          "$ref": "#/$defs/FontAxisRange",
+          "description": "Optical-size axis range (variable fonts only)."
+        },
+        "italic": {
+          "type": "boolean",
+          "description": "Whether the typeface provides an italic style or axis."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "name": "Host Grotesk",
+          "type": "variable",
+          "weights": { "min": 300, "max": 900 },
+          "italic": true
+        }
+      ]
+    },
+
+    "Typefaces": {
+      "type": "object",
+      "title": "Typefaces",
+      "description": "Map of typeface identifier to typeface definition. The identifier becomes the {typeface key} segment of the generated CSS variable name (see $conventions.typeface_var_pattern).",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Typeface"
+      }
+    },
+
+    "Font": {
+      "type": "object",
+      "title": "Font",
+      "description": "A semantic font entry. Assigns a typeface to a generic category and carries the category-specific fallback chain.",
+      "required": ["typeface", "fallback"],
+      "properties": {
+        "typeface": {
+          "$ref": "#/$defs/Func",
+          "description": "Reference to a typeface in the typefaces catalog (e.g., { var: '--typeface-host-grotesk' })."
+        },
+        "fallback": {
+          "type": "string",
+          "description": "CSS font-family fallback chain (comma-separated). Should end in the generic family (sans-serif, serif, monospace) appropriate to the category."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "typeface": { "var": "--typeface-host-grotesk" },
+          "fallback": "system-ui, sans-serif"
+        }
+      ]
+    },
+
+    "Fonts": {
+      "type": "object",
+      "title": "Fonts",
+      "description": "Map of font identifier to font definition. The identifier becomes the {font key} segment of the generated CSS variable name (see $conventions.font_var_pattern).",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Font"
+      }
+    },
+
+    "RoleType": {
+      "type": "string",
+      "enum": ["color", "dimension", "weight", "easing", "duration", "string"],
+      "description": "The kind of value that fills this role. Determines which ValueType is valid in theme bindings."
+    },
+
+    "RoleScope": {
+      "type": "string",
+      "enum": ["semantic", "component"],
+      "description": "semantic = general role any component may consume (e.g., --surface-primary). component = role tied to a specific component (e.g., --button-primary-bg)."
+    },
+
+    "Role": {
+      "type": "object",
+      "title": "Role",
+      "description": "A named placeholder in the semantic or component layer. Filled by a theme; consumed by a component via var().",
+      "required": ["type", "description"],
+      "properties": {
+        "type": { "$ref": "#/$defs/RoleType" },
+        "description": {
+          "type": "string",
+          "description": "One-sentence statement of what this role represents (what paints, where, why)."
+        },
+        "scope": {
+          "$ref": "#/$defs/RoleScope",
+          "default": "semantic"
+        },
+        "component": {
+          "type": "string",
+          "description": "If scope is 'component', the component this role belongs to (e.g., 'button-primary', 'switch'). Optional for semantic roles."
+        },
+        "family": {
+          "type": "string",
+          "description": "Optional grouping for related roles (e.g., 'surface', 'text', 'border'). Roles in the same family share lightness ranking or similar semantics."
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Must every theme bind this role? If false, the role only needs binding in themes that host the component it serves."
+        },
+        "from_palette": {
+          "description": "Palette constraint. Declares that any theme binding for this role MUST resolve — following the var() alias chain — into one of the named palettes in color_catalog.palettes. This is how a role says 'only choose a color from the panels palette.' A string names a single palette; an array names several (a binding satisfies the constraint if it lands in any one of them). The field is recorded here so it is a known, documented property; the resolve-and-check enforcement is performed by the elements linter, because JSON Schema cannot follow a var() reference to its target palette. Components never name a color — they consume this role, and this constraint bounds what the theme may put in it.",
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+          ],
+          "examples": ["panels", ["accent", "text"]]
+        },
+        "fallback": {
+          "$ref": "#/$defs/ColorValue",
+          "description": "Fallback value if no theme binds this role. Used when var() resolves to nothing. Most roles should have a fallback so an unwrapped section doesn't paint invisibly."
+        },
+        "constraints": {
+          "type": "array",
+          "description": "Free-form constraints not captured by the schema (e.g., 'must provide ≥7:1 contrast against text-primary'). Informational; not enforced.",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "type": "color",
+          "scope": "semantic",
+          "family": "surface",
+          "description": "Page ground. Default background of any section that doesn't override.",
+          "required": true,
+          "fallback": { "hex": "#FFFFFF" },
+          "constraints": ["AAA contrast against text-primary"]
+        },
+        {
+          "type": "color",
+          "scope": "component",
+          "component": "button-primary",
+          "family": "button",
+          "description": "Primary-action button fill. Inverts with mode.",
+          "required": false
+        }
+      ]
+    },
+
+    "Roles": {
+      "type": "object",
+      "title": "Roles",
+      "description": "Map of role identifier to role definition. The identifier becomes the {role key} segment of the generated CSS variable name (see $conventions.role_var_pattern).",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/Role"
+      }
+    },
+
+    "ThemeMode": {
+      "type": "object",
+      "title": "ThemeMode",
+      "description": "A theme's bindings for one mode (light or dark). Each binding maps a role identifier to either a literal value or a Func reference to a color token.",
+      "required": ["bindings"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Optional note describing this mode's character (e.g., 'Body text inverts to cool light against the blue ground')."
+        },
+        "bindings": {
+          "type": "object",
+          "description": "Map of role identifier to the value it resolves to in this (theme, mode) pair.",
+          "minProperties": 1,
+          "additionalProperties": {
+            "$ref": "#/$defs/ColorValue"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Theme": {
+      "type": "object",
+      "title": "Theme",
+      "description": "A named theme. Defines bindings for both 'light' and 'dark' modes (Architecture A — symmetric coverage). A theme that doesn't visually change with mode flip still declares identical bindings under both modes so the data shape is uniform across the system.",
+      "required": ["modes"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this theme is for, where it's used, what character it carries (e.g., 'Principal warm light theme — default page ground')."
+        },
+        "modes": {
+          "type": "object",
+          "description": "Map of mode name to ThemeMode. Standard modes are 'light' and 'dark'. The schema doesn't enforce which modes exist; a linter does.",
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": ["light", "dark"]
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/ThemeMode"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Themes": {
+      "type": "object",
+      "title": "Themes",
+      "description": "Map of theme class name (e.g., 'default', 'clarity', 'deep') to theme definition. Class names are bare role-based identifiers with no methodology prefix.",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Theme"
+      }
+    }
+  }
+}
