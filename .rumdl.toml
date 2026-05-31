@@ -1,0 +1,20 @@
+[global]
+# Ignore specific rules (MD013 disables line-length checks)
+disable = ["MD013"]
+
+# Directories and files to exclude from linting
+exclude = [
+    ".git",
+    ".github",
+    "node_modules",
+    "vendor",
+    "target",
+    "build",
+    "dist",
+    "venv",
+    ".venv",
+    "CHANGELOG.md"
+]
+
+# Ensure editor autocompletion and validation via JSON Schema
+# schema = "https://githubusercontent.com"

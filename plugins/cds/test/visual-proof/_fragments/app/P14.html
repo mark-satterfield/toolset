@@ -1,0 +1,293 @@
+<section data-theme="default" style="background: var(--role-surface-primary); color: var(--role-text-primary); min-height: 100vh; padding: var(--sp-2) var(--container-margin) var(--sp-5);">
+
+  <!-- ===== minimal app chrome: canvas tab strip ===== -->
+  <div style="max-width: var(--container-medium); margin: 0 auto;">
+    <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-1-5); flex-wrap: wrap; padding-bottom: var(--sp-1-5); border-bottom: 1px solid var(--role-border-subtle);">
+      <div>
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-5);">Workspace · Template gallery</p>
+        <h1 class="h3" style="margin: 0;">Examples</h1>
+      </div>
+      <div role="tablist" aria-label="Gallery views" class="pill-tab-strip">
+        <button role="tab" aria-selected="false" class="pill-tab"><span>Recent</span></button>
+        <button role="tab" aria-selected="false" class="pill-tab"><span>Your designs</span></button>
+        <button role="tab" aria-selected="true" class="pill-tab"><span>Examples</span></button>
+        <button role="tab" aria-selected="false" class="pill-tab"><span>Design systems</span></button>
+      </div>
+    </header>
+
+    <!-- ============================================================= -->
+    <!-- ENTRY 1 — Calculator Kit                                      -->
+    <!-- ============================================================= -->
+    <section class="template-entry" style="margin-top: var(--sp-2-5);">
+      <header style="margin-bottom: var(--sp-1-5);">
+        <span class="micro" style="color: var(--role-accent-primary); display: block; margin-bottom: var(--sp-0-25);">Construction / 13 dimensions</span>
+        <h2 class="h4" style="margin: 0;">Calculator Kit</h2>
+      </header>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.9fr); gap: var(--sp-1-5); align-items: start;">
+
+        <!-- LEFT: live preview canvas (styled calculator) -->
+        <div class="card" style="padding: var(--sp-1-5); background: var(--role-surface-secondary);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-1);">
+            <span class="caption" style="color: var(--role-text-tertiary);">Live preview</span>
+            <span class="badge-outline" style="padding: 4px 8px;">16:10</span>
+          </div>
+          <div style="background: var(--color-neutral-850); border-radius: var(--radius-md); padding: var(--sp-1-5); display: grid; gap: var(--sp-1);">
+            <!-- calculator display -->
+            <div style="background: var(--color-neutral-950); border-radius: var(--radius-sm); padding: var(--sp-1) var(--sp-1-5); text-align: right;">
+              <div style="font-family: var(--font-mono); font-size: var(--type-caption); color: var(--color-neutral-500);">1,204 × 18</div>
+              <div style="font-family: var(--font-mono); font-size: var(--type-h4); color: var(--color-neutral-050); line-height: var(--lh-110);">21,672</div>
+            </div>
+            <!-- keypad 4×5 -->
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-0-5);">
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-700); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-300);">C</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-700); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-300);">±</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-700); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-300);">%</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-accent-primary); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-050);">÷</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">7</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">8</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">9</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-accent-primary); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-050);">×</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">4</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">5</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">6</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-accent-primary); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-050);">−</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">1</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">2</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">3</div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--color-accent-interactive); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-050);">+</div>
+              <div style="grid-column: span 2; border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100); min-height: 44px;">0</div>
+              <div style="border-radius: var(--radius-sm); background: var(--color-neutral-650); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-100);">.</div>
+              <div style="border-radius: var(--radius-sm); background: var(--color-accent-primary); display: grid; place-items: center; font-family: var(--font-mono); font-size: var(--type-body-3); color: var(--color-neutral-050);">=</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MIDDLE: control panel — dimension descriptors -->
+        <div class="template-entry__control-panel" style="display: grid; gap: var(--sp-1-5);">
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Shell style</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Default</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Flat</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Brutal</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Soft</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Glass</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Key shape</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Sharp</button>
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Standard</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Round</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Pill</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Circle</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Layout</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Standard 4×4</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Scientific 5×6</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Compact 4×4</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Display</legend>
+            <div style="display: grid; gap: var(--sp-0-75);">
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Font</span>
+                <span class="badge-outline" style="padding: 4px 8px;">Red Hat Mono</span>
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Size</span>
+                <span style="flex: 1; max-width: 120px; height: 4px; border-radius: 9999px; background: var(--role-surface-tertiary); position: relative;"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 9999px; background: var(--role-accent-primary);"></span><span style="position: absolute; left: 62%; top: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; border-radius: 9999px; background: var(--role-surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--color-common_colors-black) 25%, transparent);"></span></span>
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Align</span>
+                <span class="pill-tab-strip" style="padding: 2px;">
+                  <span class="pill-tab" style="padding: 4px 10px;"><span>L</span></span>
+                  <span class="pill-tab" aria-selected="true" style="padding: 4px 10px;"><span>C</span></span>
+                  <span class="pill-tab" style="padding: 4px 10px;"><span>R</span></span>
+                </span>
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Show history</span>
+                <span class="switch" role="switch" aria-checked="true"><span class="switch__thumb"></span></span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Key labels</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25); margin-bottom: var(--sp-0-75);">
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Sans</button>
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Mono</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Serif</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Oxtech</button>
+            </div>
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75); margin-bottom: var(--sp-0-5);">
+              <span class="caption" style="color: var(--role-text-secondary);">Weight</span>
+              <span style="flex: 1; max-width: 120px; height: 4px; border-radius: 9999px; background: var(--role-surface-tertiary); position: relative;"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 48%; border-radius: 9999px; background: var(--role-accent-primary);"></span><span style="position: absolute; left: 48%; top: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; border-radius: 9999px; background: var(--role-surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--color-common_colors-black) 25%, transparent);"></span></span>
+            </label>
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+              <span class="caption" style="color: var(--role-text-secondary);">Size</span>
+              <span style="flex: 1; max-width: 120px; height: 4px; border-radius: 9999px; background: var(--role-surface-tertiary); position: relative;"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 70%; border-radius: 9999px; background: var(--role-accent-primary);"></span><span style="position: absolute; left: 70%; top: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; border-radius: 9999px; background: var(--role-surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--color-common_colors-black) 25%, transparent);"></span></span>
+            </label>
+          </fieldset>
+        </div>
+
+        <!-- FAR RIGHT: sticky CTA descriptor card -->
+        <aside style="position: sticky; top: var(--sp-1-5);">
+          <div class="card" style="padding: var(--sp-1-5);">
+            <span class="micro" style="color: var(--role-text-tertiary);">Template</span>
+            <h3 class="h6" style="font-family: var(--font-serif); margin: var(--sp-0-25) 0 var(--sp-1); font-size: var(--type-h6);">Calculator construction kit</h3>
+            <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); font-style: italic;">"Create a 'Calculator construction kit' — a simple calculator UI with a LOT of tweaks. Expose shell style, key shape, grid layout, display typography and label set as live dimensions."</p>
+            <button class="button button-brand" style="width: 100%;">Use this prompt</button>
+            <div style="display: flex; align-items: center; gap: var(--sp-0-5); margin-top: var(--sp-1); color: var(--role-text-tertiary);">
+              <span class="caption">13 dimensions</span>
+              <span aria-hidden="true">·</span>
+              <span class="caption">Free</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="template-entry__trailer" style="display: flex; align-items: center; gap: var(--sp-0-5); margin-top: var(--sp-1); padding-top: var(--sp-1); border-top: 1px solid var(--role-border-subtle); color: var(--role-text-tertiary);">
+        <span class="mono caption">calculator-kit / v1</span>
+        <span aria-hidden="true">—</span>
+        <span class="caption">hover: everything</span>
+        <span aria-hidden="true">▾</span>
+      </footer>
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- ENTRY 2 — App onboarding (phone-frame previews)               -->
+    <!-- ============================================================= -->
+    <section class="template-entry" style="margin-top: var(--sp-3);">
+      <header style="margin-bottom: var(--sp-1-5);">
+        <span class="micro" style="color: var(--role-accent-primary); display: block; margin-bottom: var(--sp-0-25);">Construction / 9 dimensions</span>
+        <h2 class="h4" style="margin: 0;">App onboarding</h2>
+      </header>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 0.9fr); gap: var(--sp-1-5); align-items: start;">
+
+        <!-- LEFT: phone-frame previews -->
+        <div class="card" style="padding: var(--sp-1-5); background: var(--role-surface-secondary);">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-1);">
+            <span class="caption" style="color: var(--role-text-tertiary);">Live preview</span>
+            <span class="badge-outline" style="padding: 4px 8px;">3 screens</span>
+          </div>
+          <div style="display: flex; gap: var(--sp-1); justify-content: center;">
+            <!-- phone 1 -->
+            <div style="flex: 1; max-width: 132px; aspect-ratio: 9/19; border-radius: var(--radius-lg); background: var(--color-panel-heather); border: 6px solid var(--color-neutral-850); padding: var(--sp-0-75); display: grid; gap: var(--sp-0-5); align-content: start;">
+              <div style="height: 6px; width: 28px; border-radius: 9999px; background: var(--color-neutral-850); margin: 0 auto var(--sp-0-25);"></div>
+              <div style="aspect-ratio: 1; border-radius: var(--radius-md); background: var(--color-panel-plum); display: grid; place-items: center;">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z" fill="#FAF9F5"/></svg>
+              </div>
+              <div style="height: 8px; border-radius: 9999px; background: color-mix(in srgb, var(--color-neutral-950) 40%, transparent); width: 80%;"></div>
+              <div style="height: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--color-neutral-950) 25%, transparent);"></div>
+              <div style="height: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--color-neutral-950) 25%, transparent); width: 60%;"></div>
+            </div>
+            <!-- phone 2 -->
+            <div style="flex: 1; max-width: 132px; aspect-ratio: 9/19; border-radius: var(--radius-lg); background: var(--color-panel-cactus); border: 6px solid var(--color-neutral-850); padding: var(--sp-0-75); display: grid; gap: var(--sp-0-5); align-content: start;">
+              <div style="height: 6px; width: 28px; border-radius: 9999px; background: var(--color-neutral-850); margin: 0 auto var(--sp-0-25);"></div>
+              <div style="display: grid; gap: var(--sp-0-25);">
+                <div style="height: 22px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--color-neutral-000) 70%, transparent);"></div>
+                <div style="height: 22px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--color-neutral-000) 70%, transparent);"></div>
+                <div style="height: 22px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--color-neutral-000) 70%, transparent);"></div>
+              </div>
+              <div style="margin-top: auto; height: 28px; border-radius: var(--radius-sm); background: var(--color-accent-primary);"></div>
+            </div>
+            <!-- phone 3 -->
+            <div style="flex: 1; max-width: 132px; aspect-ratio: 9/19; border-radius: var(--radius-lg); background: var(--color-panel-peach); border: 6px solid var(--color-neutral-850); padding: var(--sp-0-75); display: grid; gap: var(--sp-0-5); align-content: start;">
+              <div style="height: 6px; width: 28px; border-radius: 9999px; background: var(--color-neutral-850); margin: 0 auto var(--sp-0-25);"></div>
+              <div style="aspect-ratio: 1; border-radius: 9999px; background: var(--color-panel-fig); width: 48px; margin: var(--sp-0-5) auto; display: grid; place-items: center;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 13l4 4L19 7" stroke="#FAF9F5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div style="height: 8px; border-radius: 9999px; background: color-mix(in srgb, var(--color-neutral-950) 40%, transparent); width: 70%; margin: 0 auto;"></div>
+              <div style="height: 6px; border-radius: 9999px; background: color-mix(in srgb, var(--color-neutral-950) 25%, transparent); width: 90%; margin: 0 auto;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MIDDLE: control panel -->
+        <div class="template-entry__control-panel" style="display: grid; gap: var(--sp-1-5);">
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Flow length</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">2 steps</button>
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">3 steps</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">5 steps</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Progress style</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Dots</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Bar</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Numbered</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">None</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Illustration</legend>
+            <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-25);">
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Icon</button>
+              <button aria-pressed="true" style="border: 0; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: var(--role-button-primary-bg); color: var(--role-button-primary-text);">Spot</button>
+              <button aria-pressed="false" style="border: 1px solid var(--role-border-subtle); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); font-family: var(--font-sans); font-size: var(--type-caption); background: transparent; color: var(--role-text-secondary);">Hero</button>
+            </div>
+          </fieldset>
+
+          <fieldset style="border: 1px solid var(--role-border-subtle); border-radius: var(--radius-sm); padding: var(--sp-1); margin: 0;">
+            <legend class="micro" style="color: var(--role-text-tertiary); padding: 0 var(--sp-0-5);">Behaviour</legend>
+            <div style="display: grid; gap: var(--sp-0-75);">
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Skip allowed</span>
+                <span class="switch" role="switch" aria-checked="true"><span class="switch__thumb"></span></span>
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Auto-advance</span>
+                <span class="switch" role="switch" aria-checked="false"><span class="switch__thumb"></span></span>
+              </label>
+              <label style="display: flex; align-items: center; justify-content: space-between; gap: var(--sp-0-75);">
+                <span class="caption" style="color: var(--role-text-secondary);">Corner radius</span>
+                <span style="flex: 1; max-width: 120px; height: 4px; border-radius: 9999px; background: var(--role-surface-tertiary); position: relative;"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: 55%; border-radius: 9999px; background: var(--role-accent-primary);"></span><span style="position: absolute; left: 55%; top: 50%; transform: translate(-50%, -50%); width: 12px; height: 12px; border-radius: 9999px; background: var(--role-surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--color-common_colors-black) 25%, transparent);"></span></span>
+              </label>
+            </div>
+          </fieldset>
+        </div>
+
+        <!-- FAR RIGHT: sticky CTA descriptor card -->
+        <aside style="position: sticky; top: var(--sp-1-5);">
+          <div class="card" style="padding: var(--sp-1-5);">
+            <span class="micro" style="color: var(--role-text-tertiary);">Template</span>
+            <h3 class="h6" style="font-family: var(--font-serif); margin: var(--sp-0-25) 0 var(--sp-1); font-size: var(--type-h6);">App onboarding flow</h3>
+            <p class="body-3" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-1-5); font-style: italic;">"Build a mobile app onboarding flow with swipeable screens. Make flow length, progress indicator, illustration style and skip behaviour tunable dimensions."</p>
+            <button class="button button-brand" style="width: 100%;">Use this prompt</button>
+            <div style="display: flex; align-items: center; gap: var(--sp-0-5); margin-top: var(--sp-1); color: var(--role-text-tertiary);">
+              <span class="caption">9 dimensions</span>
+              <span aria-hidden="true">·</span>
+              <span class="caption">Free</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="template-entry__trailer" style="display: flex; align-items: center; gap: var(--sp-0-5); margin-top: var(--sp-1); padding-top: var(--sp-1); border-top: 1px solid var(--role-border-subtle); color: var(--role-text-tertiary);">
+        <span class="mono caption">app-onboarding / v1</span>
+        <span aria-hidden="true">—</span>
+        <span class="caption">hover: everything</span>
+        <span aria-hidden="true">▾</span>
+      </footer>
+    </section>
+
+  </div>
+</section>

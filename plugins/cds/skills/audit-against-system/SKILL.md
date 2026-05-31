@@ -1,0 +1,61 @@
+---
+name: audit-against-system
+description: Audits existing UI — files, pasted markup/CSS, or rendered URLs — against the design system and emits a structured violation report with rule citations, observed vs. expected values, file locations, and suggested fixes. Trigger on "audit this page", "is this on-system?", "check this against the design system", "find design violations", "compliance check this UI", "where does this drift from the design system?", "lint this against the design system", "review my component for design system issues", "run a design check", "are there token violations here?", "does this match the design system?". Must NOT trigger on generation requests like "build this page" or "create this component" (route to compose-page or compose-app-surface). Must NOT trigger on stylesheet regeneration requests (route to generate-stylesheets). Must NOT trigger on informational or explanatory queries that do not request a pass/fail report (route to apply-design-system). This skill IS the compliance gate.
+allowed-tools: Read, Write, Glob, Grep, WebFetch
+---
+
+## What this skill does
+
+Walks a target (file, set of files, rendered URL, or pasted markup/CSS) against the rule set in `compliance.md`, scoped by the target's rendering context, and emits a report listing each violation with its rule citation, the observed and expected values, the file path and line, and a suggested fix that points at the relevant reference section. The report never restates rules — every finding cites a reference file.
+
+## Inputs
+
+- **From caller (runtime):** the target (file path, set of paths, rendered URL, or pasted markup/CSS); the audit scope (tokens, implementation, full design rules, or all three); the desired output format (inline annotations or structured report); the rendering context (app-embedded or standalone — the caller declares this; the skill does not infer it from host-project inspection).
+- **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML — used to know the canonical token and role names.
+- **From shared reference (`../../reference/`):** `compliance.md`, `page-types.md`, plus any `foundations/*.md` file implicated by the audit scope.
+- **From sibling-skill reference trees** when relevant: `../compose-page/reference/landing-sections-shape-rules.md`, `../compose-app-surface/reference/app-shapes.md`, `../compose-app-surface/reference/missing-components.md`.
+
+This skill does **not** read host-project code beyond the audit target the caller hands it. The target's rendering context is declared by the caller, not derived from surrounding code.
+
+## Discovery checklist
+
+1. **What is being audited.** File path, set of paths, rendered URL, or pasted markup/CSS.
+2. **Surface kind.** Page, section, or component.
+3. **Rendering context.** App-embedded or standalone. Context controls rule scope — an in-app surface MUST NOT carry its own theme controller; a standalone MUST include one.
+4. **Page type.** Per `page-types.md` — needed for type-specific rules.
+5. **Audit scope.** Tokens, implementation, full design rules, or all three.
+6. **Output format.** Inline annotations on the target, or a structured report file.
+
+## Pipeline
+
+1. **Load the rule set.** Read `../../reference/compliance.md`, the relevant page-type H2 from `../../reference/page-types.md`, and any `foundations/*.md` file implicated by the requested scope. Filter rules by their `[scope: ...]` tag based on the declared rendering context.
+2. **Walk the target.** For each rule, check compliance against the target. Record every violation with: rule identifier, observed value, expected value, file path and line (or selector path / pasted-region offset), and a suggested fix that cites the relevant reference section. Adjust rule scope as you go — rules tagged `[scope: app-embedded]` do not apply to a standalone target and vice versa; rules tagged `[scope: both]` apply to either.
+3. **Handle undefined patterns.** If the target uses a pattern the reference does not define (an unrecognized component, an off-system token, a layout shape with no entry), flag it as `undefined-in-reference` — this is itself an audit finding, not a free pass.
+4. **Emit the report** in the chosen output format. Inline annotations attach each violation to its location in the target. Structured reports list violations grouped by file, with a header summarizing total counts by severity tier (from `compliance.md`).
+
+## Halt conditions
+
+- `MISSING_SPEC` — the reference is too thin to evaluate a category of rules the caller asked about (name the gap; do not silently skip).
+- `PRECONDITION_FAILED` — the target cannot be read or parsed (file unreadable, URL unreachable, pasted markup malformed past recovery).
+- `ELEMENTS_YAML_UNSET` — `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` not set; the skill cannot know the canonical token names.
+
+Halt surface format:
+
+```
+STOP: audit-against-system: {halt-code}: {one-line summary}
+
+Reference: {file:line or section pointer}
+Detail: {one paragraph explaining what is needed to proceed}
+```
+
+## Compliance gate
+
+N/A — this skill IS the compliance gate.
+
+## Boundary — does not
+
+- Does not modify the audited code, markup, or CSS. Suggested fixes are recommendations; the caller (or `compose-page` / `compose-app-surface`) applies them.
+- Does not certify compliance. Absence of violations in a scoped audit is not blanket certification — it only states that the rules in the chosen scope did not fail against the target as inspected.
+- Does not invent rules. Every finding cites a reference file; if a behavior is undefined in the reference, the finding is `undefined-in-reference`, not a fabricated violation.
+- Does not regenerate the stylesheet set (`generate-stylesheets`), generate new UI (`compose-page`, `compose-app-surface`), or surface reference into an author's context for proactive use (`apply-design-system`).
+- Does not infer rendering context from inspecting host-project code surrounding the target — the caller declares it.

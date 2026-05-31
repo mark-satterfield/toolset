@@ -1,0 +1,336 @@
+<section class="c3-gallery" aria-labelledby="c3-heading" style="padding: var(--sp-3) var(--container-margin); max-width: var(--container-medium); margin-inline: auto;">
+
+  <header style="margin-bottom: var(--sp-2-5); border-bottom: 1px solid var(--role-border-subtle); padding-bottom: var(--sp-1-5);">
+    <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-5);">Component gallery &middot; Group C3</p>
+    <h2 id="c3-heading" class="h3" style="margin: 0 0 var(--sp-0-75);">Inputs &amp; form controls</h2>
+    <p class="body-2" style="color: var(--role-text-secondary); max-width: 60ch; margin: 0;">
+      Eight input families from the §14 component contracts &mdash; standard text, search, textarea,
+      search field, toggle switch, stepper, period picker, and filter chip &mdash; each shown across
+      its normal, focus, filled, and disabled states. Spec-sheet layout: every state sits side-by-side
+      so the shape can be eyeballed at rest and under interaction.
+    </p>
+  </header>
+
+  <!-- Shared spec-block styling via inline tokens; sub-block scaffolding only -->
+  <div style="display: grid; gap: var(--sp-2-5);">
+
+    <!-- ===================================================================
+         C3.1 Standard text input  (§14 Standard text input)
+         =================================================================== -->
+    <article aria-labelledby="c3-input-h">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-input-h" class="h6" style="margin: 0;">Standard text input</h3>
+        <span class="badge-outline">44px &middot; r9.6 &middot; --surface-raised</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        Hairline border, light fill, label-via-placeholder. Border shifts to <code class="mono">--text-secondary</code> on hover; 2px ring on focus-visible only.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Normal</span>
+          <input class="input" type="text" placeholder="Workspace name" aria-label="Workspace name (normal)">
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Focus</span>
+          <input class="input" type="text" placeholder="Workspace name" aria-label="Workspace name (focus)"
+                 style="outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);">
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Filled</span>
+          <input class="input" type="text" value="Northwind production" aria-label="Workspace name (filled)">
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Disabled</span>
+          <input class="input" type="text" value="Acme legacy (locked)" disabled aria-label="Workspace name (disabled)">
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.2 Search input  (§14 Search input — leading magnifier)
+         =================================================================== -->
+    <article aria-labelledby="c3-search-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-search-h" class="h6" style="margin: 0;">Search input</h3>
+        <span class="badge-outline">44px &middot; pl-40 for glyph</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        <code class="mono">&lt;input type="search"&gt;</code> with a leading magnifier in the 40px left pad. Native clear control once a value is present.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Normal</span>
+          <div style="position: relative;">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color: var(--role-text-tertiary);">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input class="search-input" type="search" placeholder="Search documentation" aria-label="Search documentation (normal)">
+          </div>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Focus</span>
+          <div style="position: relative;">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color: var(--role-text-secondary);">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input class="search-input" type="search" placeholder="Search documentation" aria-label="Search documentation (focus)"
+                   style="outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer); border-color: var(--role-text-secondary);">
+          </div>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Filled</span>
+          <div style="position: relative;">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color: var(--role-text-tertiary);">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input class="search-input" type="search" value="onboarding flows" aria-label="Search documentation (filled)">
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.3 Search field  (command-palette search row — missing-components)
+         =================================================================== -->
+    <article aria-labelledby="c3-field-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-field-h" class="h6" style="margin: 0;">Search field</h3>
+        <span class="badge-outline">palette search-row</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        The composite search-row from the command-palette draft: leading glyph + input + trailing close. Drawn from
+        <code class="mono">missing-components.md</code> &mdash; no token-level spec yet, so geometry uses design tokens directly.
+      </p>
+      <div style="display: grid; grid-template-columns: 1fr; gap: var(--sp-1-5); max-width: 560px;">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Normal &mdash; empty</span>
+          <div role="search" style="display: flex; align-items: center; gap: var(--sp-0-75); height: 48px; padding: 0 var(--sp-0-75) 0 var(--sp-1); background: var(--role-surface-raised); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md);">
+            <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--role-text-tertiary); flex: none;">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input type="search" placeholder="Search chats and projects" aria-label="Search the application (empty)"
+                   style="flex: 1; min-width: 0; border: 0; background: transparent; color: var(--role-text-primary); font-family: var(--font-sans); font-size: 16px; outline: none;">
+          </div>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Focus &mdash; filled, with close</span>
+          <div role="search" style="display: flex; align-items: center; gap: var(--sp-0-75); height: 48px; padding: 0 var(--sp-0-75) 0 var(--sp-1); background: var(--role-surface-raised); border: 1px solid var(--role-text-secondary); border-radius: var(--radius-md); outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);">
+            <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--role-text-secondary); flex: none;">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input type="search" value="quarterly retro" aria-label="Search the application (filled)"
+                   style="flex: 1; min-width: 0; border: 0; background: transparent; color: var(--role-text-primary); font-family: var(--font-sans); font-size: 16px; outline: none;">
+            <button type="button" aria-label="Clear search" class="kebab-trigger" style="width: 28px; height: 28px;">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><line x1="3" y1="3" x2="11" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="11" y1="3" x2="3" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.4 Textarea  (§14 Textarea — multi-line)
+         =================================================================== -->
+    <article aria-labelledby="c3-ta-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-ta-h" class="h6" style="margin: 0;">Textarea</h3>
+        <span class="badge-outline">16px pad &middot; resize: vertical &middot; min 3 lines</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        Multi-line variant inheriting the standard input chrome. Grows downward via the resize affordance.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Normal</span>
+          <textarea class="textarea" placeholder="Describe what this agent should do&hellip;" aria-label="Agent description (normal)"></textarea>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Focus</span>
+          <textarea class="textarea" placeholder="Describe what this agent should do&hellip;" aria-label="Agent description (focus)"
+                    style="outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);"></textarea>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Filled</span>
+          <textarea class="textarea" aria-label="Agent description (filled)">Monitors the support inbox at Northwind, drafts replies in the brand voice, and escalates anything that mentions a refund to the on-call engineer.</textarea>
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.5 Toggle switch  (§14 Toggle switch + §14.3 active)
+         =================================================================== -->
+    <article aria-labelledby="c3-switch-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-switch-h" class="h6" style="margin: 0;">Toggle switch</h3>
+        <span class="badge-outline">36&times;20 &middot; role="switch" &middot; aria-checked</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        Boolean control. ON paints <code class="mono">--switch-active-bg</code> with the thumb right; OFF is the gray track with the thumb left.
+      </p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-1-5); align-items: start;">
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-5);">
+          <span class="micro" style="color: var(--role-text-tertiary);">Off (rest)</span>
+          <button class="switch" role="switch" aria-checked="false" aria-label="Email digests (off)"><span class="switch__thumb"></span></button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-5);">
+          <span class="micro" style="color: var(--role-text-tertiary);">On (active)</span>
+          <button class="switch" role="switch" aria-checked="true" aria-label="Email digests (on)"><span class="switch__thumb"></span></button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-5);">
+          <span class="micro" style="color: var(--role-text-tertiary);">On (focus)</span>
+          <button class="switch" role="switch" aria-checked="true" aria-label="Email digests (on, focus)"
+                  style="outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);"><span class="switch__thumb"></span></button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-5);">
+          <span class="micro" style="color: var(--role-text-tertiary);">On (disabled)</span>
+          <button class="switch" role="switch" aria-checked="true" disabled aria-label="Email digests (on, disabled)"><span class="switch__thumb"></span></button>
+        </div>
+      </div>
+      <!-- realistic in-context row -->
+      <div style="margin-top: var(--sp-1-5); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-1); max-width: 420px; padding: var(--sp-1); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); background: var(--role-surface-raised);">
+        <div>
+          <div class="body-3" style="font-weight: var(--fw-500);">Auto-archive resolved threads</div>
+          <div class="caption" style="color: var(--role-text-tertiary); max-width: none;">After 30 days of inactivity</div>
+        </div>
+        <button class="switch" role="switch" aria-checked="true" aria-label="Auto-archive resolved threads"><span class="switch__thumb"></span></button>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.6 Stepper  (§14 Stepper — progress dots + connectors)
+         =================================================================== -->
+    <article aria-labelledby="c3-step-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-step-h" class="h6" style="margin: 0;">Stepper</h3>
+        <span class="badge-outline">20px circles &middot; is-current ring</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        Numbered progress indicator. The current step carries a 1.5px primary-ink ring; the rest sit at tertiary ink behind hairline connectors.
+      </p>
+      <div style="display: grid; gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Step 1 of 3 (current at start)</span>
+          <nav class="stepper" aria-label="Setup progress">
+            <span class="stepper__circle is-current" aria-current="step">1</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle">2</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle">3</span>
+          </nav>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Step 2 of 3 (current mid-flow)</span>
+          <nav class="stepper" aria-label="Setup progress">
+            <span class="stepper__circle">1</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle is-current" aria-current="step">2</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle">3</span>
+          </nav>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Labeled steps</span>
+          <nav class="stepper" aria-label="Checkout progress">
+            <span class="stepper__circle">1</span>
+            <span class="body-3" style="color: var(--role-text-tertiary);">Details</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle is-current" aria-current="step">2</span>
+            <span class="body-3" style="color: var(--role-text-primary); font-weight: var(--fw-500);">Plan</span>
+            <span class="stepper__connector" aria-hidden="true"></span>
+            <span class="stepper__circle">3</span>
+            <span class="body-3" style="color: var(--role-text-tertiary);">Confirm</span>
+          </nav>
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.7 Period picker  (no token-level spec — built on input + seg tokens)
+         =================================================================== -->
+    <article aria-labelledby="c3-period-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-period-h" class="h6" style="margin: 0;">Period picker</h3>
+        <span class="badge-outline">composed &middot; preset pills + range field</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        No standalone spec in <code class="mono">components.md</code> &mdash; composed here from the pill-tab strip (presets) and the standard input chrome (custom range). Geometry uses design tokens directly.
+      </p>
+      <div style="display: grid; gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Preset row (90 days active)</span>
+          <div class="pill-tab-strip" role="radiogroup" aria-label="Reporting period">
+            <button class="pill-tab" role="radio" aria-checked="false"><span>7 days</span></button>
+            <button class="pill-tab" role="radio" aria-checked="false"><span>30 days</span></button>
+            <button class="pill-tab" role="radio" aria-checked="true"><span>90 days</span></button>
+            <button class="pill-tab" role="radio" aria-checked="false"><span>12 months</span></button>
+            <button class="pill-tab" role="radio" aria-checked="false"><span>Custom</span></button>
+          </div>
+        </div>
+        <div style="max-width: 480px;">
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Custom range field (filled)</span>
+          <div style="display: flex; align-items: center; gap: var(--sp-0-75); height: 44px; padding: 0 12px; background: var(--role-surface-raised); border: 1px solid var(--role-border-subtle); border-radius: 9.6px;">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="color: var(--role-text-tertiary); flex: none;">
+              <rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="2" y1="6" x2="14" y2="6" stroke="currentColor" stroke-width="1.3"/><line x1="5" y1="1.5" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="11" y1="1.5" x2="11" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <span class="body-3" style="color: var(--role-text-primary);">Mar 1, 2026</span>
+            <span class="body-3" style="color: var(--role-text-tertiary);">&rarr;</span>
+            <span class="body-3" style="color: var(--role-text-primary);">May 28, 2026</span>
+            <button type="button" aria-label="Edit date range" class="kebab-trigger" style="margin-left: auto; width: 28px; height: 28px;">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><polyline points="3,5 7,9 11,5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ===================================================================
+         C3.8 Filter chip  (Outline pill badge as interactive filter — §14 note)
+         =================================================================== -->
+    <article aria-labelledby="c3-chip-h" style="border-top: 1px solid var(--role-border-subtle); padding-top: var(--sp-2);">
+      <div style="display: flex; align-items: baseline; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <h3 id="c3-chip-h" class="h6" style="margin: 0;">Filter chip</h3>
+        <span class="badge-outline">badge-outline &rarr; &lt;button&gt; (interactive)</span>
+      </div>
+      <p class="caption" style="color: var(--role-text-tertiary); max-width: none; margin: 0 0 var(--sp-1);">
+        The Outline pill badge promoted to an interactive filter per the §14 note: a <code class="mono">&lt;button&gt;</code> with the focus ring; selected chips invert ink, removable chips add a trailing &times;.
+      </p>
+      <div style="display: grid; gap: var(--sp-1-5);">
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Normal / selected / removable / disabled</span>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-75); align-items: center;">
+            <!-- normal (unselected) -->
+            <button type="button" class="badge-outline" aria-pressed="false" style="cursor: pointer; gap: var(--sp-0-25);">Active</button>
+            <!-- selected — inverted ground -->
+            <button type="button" class="badge-inverted" aria-pressed="true" style="cursor: pointer; min-width: 0; gap: var(--sp-0-25);">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style="margin-right:4px;"><polyline points="2,6 5,9 10,3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Resolved
+            </button>
+            <!-- focus -->
+            <button type="button" class="badge-outline" aria-pressed="false" style="cursor: pointer; outline: var(--focus-width) solid var(--role-focus-ring); outline-offset: var(--focus-offset-outer);">Archived</button>
+            <!-- removable -->
+            <button type="button" class="badge-outline" style="cursor: pointer; gap: var(--sp-0-5); border-color: var(--role-border-strong);">
+              Owner: Acme
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" aria-label="Remove filter"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+            <!-- disabled -->
+            <button type="button" class="badge-outline" disabled aria-pressed="false" style="opacity: 0.5; cursor: not-allowed; pointer-events: none;">Spam</button>
+          </div>
+        </div>
+        <div>
+          <span class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">In context &mdash; filter bar above a list</span>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-0-75); padding: var(--sp-0-75); border: 1px solid var(--role-border-subtle); border-radius: var(--radius-md); background: var(--role-surface-raised);">
+            <span class="body-3" style="color: var(--role-text-tertiary); margin-right: var(--sp-0-25);">Filters</span>
+            <button type="button" class="badge-inverted" aria-pressed="true" style="cursor: pointer; min-width: 0;">Unread</button>
+            <button type="button" class="badge-outline" style="cursor: pointer; gap: var(--sp-0-5); border-color: var(--role-border-strong);">
+              Label: Northwind
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" aria-label="Remove filter"><line x1="2.5" y1="2.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><line x1="9.5" y1="2.5" x2="2.5" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </button>
+            <button type="button" class="badge-outline" aria-pressed="false" style="cursor: pointer;">Has attachment</button>
+            <button type="button" style="margin-left: auto; background: transparent; border: 0; color: var(--role-text-tertiary); font-family: var(--font-sans); font-size: var(--type-caption); cursor: pointer; text-decoration: underline; text-underline-offset: 2px;">Clear all</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>

@@ -1,0 +1,196 @@
+<!-- App page P3 — Multi-step breadcrumb + central empty state + template grid + bottom prompt -->
+<!-- Shell A3: single side rail + main + bottom prompt strip (inside left column).            -->
+<!-- All classes/tokens from styles/design-system.css. One-off layout uses inline var(--…).    -->
+<section class="app-shell app-shell--a3" style="display:flex; min-height:760px; background:var(--role-surface-primary);">
+
+  <!-- ─────────────────────────── Left navigation rail ─────────────────────────── -->
+  <nav class="app-rail" aria-label="primary" style="position:static; height:auto; min-height:760px; flex:0 0 256px; display:flex; flex-direction:column;">
+
+    <!-- Workspace switcher -->
+    <div style="display:flex; align-items:center; gap:var(--sp-0-75); padding:var(--sp-0-5); margin-bottom:var(--sp-1);">
+      <span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:var(--radius-sm); background:var(--role-accent-primary); color:var(--color-neutral-050); font-family:var(--font-sans); font-weight:var(--fw-600); font-size:var(--type-body-3);">A</span>
+      <span style="display:flex; flex-direction:column; min-width:0;">
+        <span style="font-family:var(--font-sans); font-size:14px; font-weight:var(--fw-500); color:var(--role-text-primary); line-height:var(--lh-120);">Acme Platform</span>
+        <span style="font-family:var(--font-sans); font-size:var(--type-micro); color:var(--role-text-tertiary); text-transform:uppercase; letter-spacing:var(--track-0-05);">Default workspace</span>
+      </span>
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" style="margin-left:auto; color:var(--role-text-tertiary);"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+
+    <ul class="app-rail__group" style="list-style:none; margin:0 0 var(--sp-1); padding:0; display:flex; flex-direction:column; gap:2px;">
+      <li class="app-rail__section-header" style="padding:var(--sp-0-75) var(--sp-0-5) var(--sp-0-25); text-transform:uppercase; letter-spacing:var(--track-0-05);">Build</li>
+      <li><a class="app-rail__item is-active" href="#" aria-current="page">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M2 3h12v3H2zM2 8h7v5H2zM11 8h3v5h-3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Quickstart</a></li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h7l3 3v9H3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Workbench</a></li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Files</a></li>
+    </ul>
+
+    <ul class="app-rail__group" style="list-style:none; margin:0 0 var(--sp-1); padding:0; display:flex; flex-direction:column; gap:2px;">
+      <li class="app-rail__section-header" style="padding:var(--sp-0-75) var(--sp-0-5) var(--sp-0-25); text-transform:uppercase; letter-spacing:var(--track-0-05);">Managed Agents</li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="6" r="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 14c0-2.8 2.2-5 5-5s5 2.2 5 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Agents</a></li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 8l2 2 3-3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Schedules</a></li>
+    </ul>
+
+    <ul class="app-rail__group" style="list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;">
+      <li class="app-rail__section-header" style="padding:var(--sp-0-75) var(--sp-0-5) var(--sp-0-25); text-transform:uppercase; letter-spacing:var(--track-0-05);">Manage</li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Settings</a></li>
+      <li><a class="app-rail__item" href="#">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5l5.5 2.5v4c0 3.2-2.3 5.6-5.5 6.5-3.2-.9-5.5-3.3-5.5-6.5v-4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Organization</a></li>
+    </ul>
+
+    <!-- Account block pinned to bottom -->
+    <div style="margin-top:auto; display:flex; align-items:center; gap:var(--sp-0-75); padding:var(--sp-0-5); border-top:1px solid var(--role-border-subtle); padding-top:var(--sp-1);">
+      <span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:9999px; background:var(--color-panel-mineral); color:var(--color-neutral-050); font-family:var(--font-sans); font-weight:var(--fw-600); font-size:var(--type-body-3);">J</span>
+      <span style="display:flex; flex-direction:column; min-width:0;">
+        <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary); line-height:var(--lh-120);">Jordan Reyes</span>
+        <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary);">jordan@northwind.example</span>
+      </span>
+    </div>
+  </nav>
+
+  <!-- ─────────────────────────── Main pane ─────────────────────────── -->
+  <main class="app-main app-main--with-bottom-strip" style="flex:1 1 auto; min-width:0; display:flex; flex-direction:column; padding:var(--sp-1-5) var(--sp-2) 0;">
+
+    <!-- 1. Step breadcrumb (Stepper §14) pinned at top of main -->
+    <ol class="stepper" aria-label="Agent setup progress" style="list-style:none; margin:0 0 var(--sp-2-5); padding:0;">
+      <li style="display:inline-flex; align-items:center; gap:var(--sp-0-75);">
+        <span class="stepper__circle is-current" aria-current="step">1</span>
+        <span style="font-family:var(--font-sans); font-size:14px; font-weight:var(--fw-500); color:var(--role-text-primary);">Describe</span>
+      </li>
+      <li class="stepper__connector" aria-hidden="true"></li>
+      <li style="display:inline-flex; align-items:center; gap:var(--sp-0-75);">
+        <span class="stepper__circle">2</span>
+        <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-tertiary);">Configure</span>
+      </li>
+      <li class="stepper__connector" aria-hidden="true"></li>
+      <li style="display:inline-flex; align-items:center; gap:var(--sp-0-75);">
+        <span class="stepper__circle">3</span>
+        <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-tertiary);">Test</span>
+      </li>
+      <li class="stepper__connector" aria-hidden="true"></li>
+      <li style="display:inline-flex; align-items:center; gap:var(--sp-0-75);">
+        <span class="stepper__circle">4</span>
+        <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-tertiary);">Deploy</span>
+      </li>
+    </ol>
+
+    <!-- 2. Two-column body: left empty-state + prompt, right templates panel -->
+    <div style="flex:1 1 auto; display:grid; grid-template-columns:minmax(280px, 1fr) minmax(0, 711px); gap:var(--sp-2); align-items:stretch; padding-bottom:var(--sp-2);">
+
+      <!-- ── Left column ── -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; min-width:0;">
+
+        <!-- Centered empty-state heading -->
+        <div style="margin:auto 0; text-align:center; max-width:42ch;">
+          <span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:56px; height:56px; margin-bottom:var(--sp-1); border-radius:var(--radius-lg); background:var(--role-surface-secondary); border:1px solid var(--role-border-subtle); color:var(--role-accent-primary);">
+            <svg width="26" height="26" viewBox="0 0 24 24"><path d="M12 3l2.4 6.1L21 11l-5.2 3.4L17 21l-5-3.6L7 21l1.2-6.6L3 11l6.6-1.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </span>
+          <h1 class="h3" style="margin:0 0 var(--sp-0-5);">What do you want to build?</h1>
+          <p class="body-2" style="margin:0; color:var(--role-text-tertiary);">Describe your agent in plain language, or start from one of the templates on the right.</p>
+        </div>
+
+        <!-- 3. Bottom prompt strip — pinned to bottom of the left column -->
+        <div role="region" aria-label="primary input" style="display:flex; align-items:flex-end; gap:var(--sp-0-5); padding:var(--sp-0-5) var(--sp-0-5) var(--sp-0-5) var(--sp-1); border:1px solid var(--role-border-subtle); border-radius:var(--radius-md); background:var(--role-surface-raised); box-shadow:0 1px 2px color-mix(in srgb, var(--role-text-primary) 6%, transparent), 0 4px 16px color-mix(in srgb, var(--role-text-primary) 4%, transparent);">
+          <label for="p3-prompt" class="sr-only" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);">Describe your agent</label>
+          <textarea id="p3-prompt" rows="2" placeholder="Describe your agent…" style="flex:1 1 auto; min-width:0; resize:none; border:none; outline:none; background:transparent; padding:var(--sp-0-25) 0; font-family:var(--font-sans); font-size:14px; line-height:var(--lh-150); color:var(--role-text-primary);"></textarea>
+          <button type="button" class="button button-primary" aria-label="Send" style="min-height:36px; width:36px; padding:0; flex:0 0 auto; border-radius:var(--radius-sm);">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M2.5 8h9M8 4.5l3.5 3.5L8 11.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <p class="caption" style="margin:var(--sp-0-5) 0 0; color:var(--role-text-tertiary); text-align:center;">Press Enter to send · Shift+Enter for a new line</p>
+      </div>
+
+      <!-- ── Right column: templates panel ── -->
+      <div style="display:flex; flex-direction:column; gap:var(--sp-1); min-width:0; padding:var(--sp-1); border:1px solid var(--role-border-subtle); border-radius:var(--radius-md); background:var(--role-surface-secondary); overflow:hidden;">
+
+        <div style="display:flex; align-items:baseline; justify-content:space-between; gap:var(--sp-1);">
+          <h2 class="h5" style="margin:0;">Browse templates</h2>
+          <span class="badge-outline" style="padding:2px 8px;">10 templates</span>
+        </div>
+
+        <!-- Search field -->
+        <div style="position:relative;">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--role-text-tertiary);"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <label for="p3-search" class="sr-only" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);">Search templates</label>
+          <input id="p3-search" type="search" class="search-input" placeholder="Search templates" style="min-height:38px;">
+        </div>
+
+        <!-- Template grid: 2 equal columns, 10 cards -->
+        <div role="list" aria-label="Agent templates" style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--sp-0-75); max-height:520px; overflow-y:auto; padding-right:2px;">
+
+          <!-- Card 1 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Blank agent config</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">A clean starting point — no tools, no system prompt.</span>
+          </a>
+
+          <!-- Card 2 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Customer support triage</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Classify inbound tickets and draft first-touch replies.</span>
+          </a>
+
+          <!-- Card 3 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Research summarizer</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Read long documents and return a structured brief.</span>
+          </a>
+
+          <!-- Card 4 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Code reviewer</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Comment on diffs for correctness and style.</span>
+          </a>
+
+          <!-- Card 5 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Data extraction</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Pull fields from invoices, forms, and receipts into JSON.</span>
+          </a>
+
+          <!-- Card 6 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Meeting note-taker</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Summarize transcripts and surface action items.</span>
+          </a>
+
+          <!-- Card 7 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">SQL analyst</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Translate questions into queries against your warehouse.</span>
+          </a>
+
+          <!-- Card 8 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Onboarding guide</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Answer new-hire questions from your internal docs.</span>
+          </a>
+
+          <!-- Card 9 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">Content drafter</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Generate posts and emails from a short brief.</span>
+          </a>
+
+          <!-- Card 10 -->
+          <a role="listitem" href="#" style="display:flex; flex-direction:column; gap:var(--sp-0-25); padding:var(--sp-0-75); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm); background:var(--role-surface-raised); text-decoration:none; cursor:pointer;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--role-text-primary);">QA test planner</span>
+            <span style="font-family:var(--font-sans); font-size:var(--type-caption); color:var(--role-text-tertiary); line-height:var(--lh-140);">Turn a feature spec into manual test cases.</span>
+          </a>
+
+        </div>
+      </div>
+    </div>
+  </main>
+</section>

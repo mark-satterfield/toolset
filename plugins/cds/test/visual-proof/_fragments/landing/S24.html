@@ -1,0 +1,200 @@
+<!-- ============================================================
+     SHAPE S24 — Resource grid with source tags
+     Serves: T13 Resource Directory (default; alt S5).
+     A card grid (S4-style) where each card carries a SOURCE-TYPE TAG
+     (Docs / Blog / Video / Guide / Changelog / Community) plus a title,
+     blurb, and optional thumbnail. The source tag is the load-bearing
+     differentiator vs. S5 — color-per-source, placed above the title.
+     Slots demonstrated per card: thumbnail, source tag, title, blurb, meta.
+     ============================================================ -->
+<section style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-main) var(--container-margin);">
+  <div style="max-width: var(--container-medium); margin: 0 auto;">
+
+    <!-- Section header + filter strip -->
+    <header style="
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: var(--sp-1-5);
+        margin-bottom: var(--sp-3);">
+      <div style="display: flex; flex-direction: column; gap: var(--sp-0-75); max-width: 52ch;">
+        <span class="micro" style="color: var(--role-accent-primary);">Resource library</span>
+        <h2 class="h2" style="margin: 0;">Everything you need to go deeper with Acme Platform</h2>
+        <p class="body-lg" style="margin: 0; color: var(--role-text-secondary); max-width: 48ch;">
+          Docs, walkthroughs, recorded sessions, and field notes — pulled from
+          across our team and the Northwind community, tagged by where they come from.
+        </p>
+      </div>
+      <!-- Source-type filter: mirrors the extensible tag set -->
+      <div class="pill-tab-strip" role="tablist" aria-label="Filter resources by source">
+        <button class="pill-tab" role="tab" aria-selected="true"><span>All</span></button>
+        <button class="pill-tab" role="tab" aria-selected="false">Docs</button>
+        <button class="pill-tab" role="tab" aria-selected="false">Blog</button>
+        <button class="pill-tab" role="tab" aria-selected="false">Video</button>
+        <button class="pill-tab" role="tab" aria-selected="false">Guide</button>
+      </div>
+    </header>
+
+    <!-- Resource grid: N cards, responsive M columns (unconstrained by catalog) -->
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(296px, 1fr));
+        gap: var(--sp-1-5);">
+
+      <!-- Card 1 — DOCS -->
+      <a href="#" class="link-card" style="
+          display: flex; flex-direction: column; gap: var(--sp-1); padding: 0; overflow: hidden;">
+        <!-- thumbnail: token-colored tile, no remote image -->
+        <div style="
+            aspect-ratio: 16 / 9; background: var(--color-panel-sky);
+            display: grid; place-items: center; color: var(--color-neutral-950);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M5 4h9l4 4v12H5z"/><path d="M14 4v4h4"/><path d="M8 12h7M8 15h7M8 18h4"/>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: 0 var(--sp-2) var(--sp-2);">
+          <!-- SOURCE TAG (color-per-source) -->
+          <span class="micro" style="
+              align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+              padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-sky);
+              color: var(--color-neutral-950);">
+            <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Docs
+          </span>
+          <h3 class="link-card__title" style="margin: 0;">Configuring single sign-on for your workspace</h3>
+          <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+            Wire up SAML or OIDC, map groups to roles, and roll SSO out to your
+            org without locking anyone out mid-migration.
+          </p>
+          <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Reference · 8 min read</span>
+        </div>
+      </a>
+
+      <!-- Card 2 — VIDEO -->
+      <a href="#" class="link-card" style="
+          display: flex; flex-direction: column; gap: var(--sp-1); padding: 0; overflow: hidden;">
+        <div style="
+            position: relative; aspect-ratio: 16 / 9; background: var(--color-panel-fig);
+            display: grid; place-items: center; color: var(--color-neutral-050);">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10 8.5l6 3.5-6 3.5z"/>
+          </svg>
+          <span class="micro" style="
+              position: absolute; right: var(--sp-0-75); bottom: var(--sp-0-75);
+              padding: 2px 6px; border-radius: var(--radius-xs);
+              background: color-mix(in srgb, var(--color-common_colors-black) 55%, transparent);
+              color: var(--color-neutral-050);">12:40</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: 0 var(--sp-2) var(--sp-2);">
+          <span class="micro" style="
+              align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+              padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-fig);
+              color: var(--color-neutral-050);">
+            <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Video
+          </span>
+          <h3 class="link-card__title" style="margin: 0;">Building your first automation in under 15 minutes</h3>
+          <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+            A recorded walkthrough that takes a blank workspace to a working,
+            scheduled pipeline — narrated end to end.
+          </p>
+          <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Recorded session · 12 min</span>
+        </div>
+      </a>
+
+      <!-- Card 3 — BLOG -->
+      <a href="#" class="link-card" style="
+          display: flex; flex-direction: column; gap: var(--sp-1); padding: 0; overflow: hidden;">
+        <div style="
+            aspect-ratio: 16 / 9; background: var(--color-panel-peach);
+            display: grid; place-items: center; color: var(--color-neutral-950);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M4 5h16v14H4z"/><path d="M7 9h10M7 12h10M7 15h6"/>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: 0 var(--sp-2) var(--sp-2);">
+          <span class="micro" style="
+              align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+              padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-peach);
+              color: var(--color-neutral-950);">
+            <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Blog
+          </span>
+          <h3 class="link-card__title" style="margin: 0;">What we learned shipping to 10,000 teams in a quarter</h3>
+          <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+            The rollout patterns that held up under scale, the ones that didn't,
+            and how we changed our release cadence because of it.
+          </p>
+          <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Engineering · 6 min read</span>
+        </div>
+      </a>
+
+      <!-- Card 4 — GUIDE -->
+      <a href="#" class="link-card" style="
+          display: flex; flex-direction: column; gap: var(--sp-1); padding: 0; overflow: hidden;">
+        <div style="
+            aspect-ratio: 16 / 9; background: var(--color-panel-mineral);
+            display: grid; place-items: center; color: var(--color-neutral-050);">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M12 3l8 4-8 4-8-4z"/><path d="M4 7v6l8 4 8-4V7"/>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: var(--sp-0-75); padding: 0 var(--sp-2) var(--sp-2);">
+          <span class="micro" style="
+              align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+              padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-mineral);
+              color: var(--color-neutral-050);">
+            <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Guide
+          </span>
+          <h3 class="link-card__title" style="margin: 0;">The migration playbook: moving off legacy tooling</h3>
+          <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+            A step-by-step plan with a rollback checkpoint at every stage, written
+            for teams who can't afford downtime.
+          </p>
+          <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Playbook · 22 min read</span>
+        </div>
+      </a>
+
+      <!-- Card 5 — CHANGELOG (no thumbnail — demonstrates optional thumbnail slot) -->
+      <a href="#" class="link-card" style="display: flex; flex-direction: column; gap: var(--sp-1);">
+        <span class="micro" style="
+            align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-heather);
+            color: var(--color-neutral-950);">
+          <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Changelog
+        </span>
+        <h3 class="link-card__title" style="margin: 0;">Release 4.2 — scoped API tokens and audit export</h3>
+        <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+          Fine-grained tokens, a redesigned audit log, and CSV export for
+          compliance reviews. Plus the usual round of fixes.
+        </p>
+        <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Product update · Updated this week</span>
+      </a>
+
+      <!-- Card 6 — COMMUNITY (no thumbnail) -->
+      <a href="#" class="link-card" style="display: flex; flex-direction: column; gap: var(--sp-1);">
+        <span class="micro" style="
+            align-self: flex-start; display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 9999px; background: var(--color-panel-olive);
+            color: var(--color-neutral-050);">
+          <span style="width: 6px; height: 6px; border-radius: 9999px; background: currentColor;"></span>Community
+        </span>
+        <h3 class="link-card__title" style="margin: 0;">How Northwind models multi-region approvals</h3>
+        <p class="body-3" style="margin: 0; color: var(--role-text-secondary);">
+          A community-contributed pattern for routing approvals across regions
+          without duplicating workflows — with the template attached.
+        </p>
+        <span class="caption" style="color: var(--role-text-tertiary); margin-top: var(--sp-0-25);">Forum thread · 34 replies</span>
+      </a>
+
+    </div>
+
+    <!-- Footer action -->
+    <div style="display: flex; justify-content: center; margin-top: var(--sp-3);">
+      <a href="#" class="button button-secondary">Browse the full library</a>
+    </div>
+
+  </div>
+</section>

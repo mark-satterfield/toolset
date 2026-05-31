@@ -1,0 +1,184 @@
+<!-- S20 — Path picker (2-card fork) — serves T7 Path Fork -->
+<!-- Exactly two large, equally-sized parallel cards = exclusive paths. -->
+<!-- Per-card: headline, blurb, CTA, and optional visual/illustration. -->
+<section
+  data-theme="default"
+  style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-main) var(--container-margin);
+  "
+>
+  <div style="max-width: var(--container-medium); margin: 0 auto;">
+    <!-- Section lead -->
+    <div style="max-width: 56ch; margin: 0 auto var(--sp-4); text-align: center;">
+      <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">
+        Two ways to start
+      </p>
+      <h2 class="h2" style="margin: 0 0 var(--sp-1);">
+        Pick the path that fits your team
+      </h2>
+      <p class="body-1" style="color: var(--role-text-secondary); margin: 0;">
+        Get the Acme Platform running on your own, or bring in a solutions
+        engineer to design the rollout with you. Either way, you keep full
+        control of your data and your timeline.
+      </p>
+    </div>
+
+    <!-- The fork: exactly two equal cards -->
+    <div
+      style="
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--sp-2-5);
+        align-items: stretch;
+      "
+    >
+      <!-- ================= PATH 1 — Self-serve ================= -->
+      <article
+        class="card"
+        style="
+          display: flex;
+          flex-direction: column;
+          padding: var(--sp-3);
+          border-radius: var(--radius-2xl);
+        "
+      >
+        <!-- Per-card visual / illustration -->
+        <div
+          class="feature-tile feature-tile--sky"
+          style="
+            aspect-ratio: 16 / 7;
+            padding: var(--sp-2);
+            margin-bottom: var(--sp-2);
+            place-items: stretch;
+          "
+        >
+          <svg viewBox="0 0 320 140" width="100%" height="100%" role="img" aria-label="Self-serve setup illustration" style="display:block;">
+            <rect x="0" y="0" width="320" height="140" rx="12" fill="var(--color-neutral-000)" opacity="0.55"/>
+            <rect x="20" y="22" width="120" height="10" rx="5" fill="var(--color-neutral-950)" opacity="0.55"/>
+            <rect x="20" y="44" width="200" height="8" rx="4" fill="var(--color-neutral-950)" opacity="0.28"/>
+            <rect x="20" y="62" width="170" height="8" rx="4" fill="var(--color-neutral-950)" opacity="0.28"/>
+            <rect x="20" y="92" width="92" height="28" rx="8" fill="var(--color-blue-750)"/>
+            <rect x="34" y="103" width="64" height="6" rx="3" fill="var(--color-blue-050)"/>
+            <circle cx="270" cy="60" r="34" fill="var(--color-neutral-000)" opacity="0.7"/>
+            <path d="M256 60 l10 10 l20 -22" fill="none" stroke="var(--color-accent-interactive)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">
+          Self-serve
+        </p>
+        <h3 class="h3" style="margin: 0 0 var(--sp-1);">
+          Start free, ship today
+        </h3>
+        <p class="body-2" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-2);">
+          Spin up a workspace in minutes, connect your first data source, and
+          invite your team. No sales call, no contract — upgrade whenever
+          you outgrow the free tier.
+        </p>
+
+        <!-- What you get -->
+        <ul style="list-style: none; margin: 0 0 var(--sp-2-5); padding: 0; display: grid; gap: var(--sp-0-75);">
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            Guided setup wizard and ready-made templates
+          </li>
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            Up to 5 seats and 3 connected sources, free
+          </li>
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            Community support and step-by-step docs
+          </li>
+        </ul>
+
+        <!-- CTA pinned to base for equal-height alignment -->
+        <div style="margin-top: auto;">
+          <a class="button button-primary" href="#" style="width: 100%;">
+            Create a free workspace
+          </a>
+          <p class="caption" style="color: var(--role-text-tertiary); text-align: center; margin: var(--sp-0-75) 0 0;">
+            No credit card required
+          </p>
+        </div>
+      </article>
+
+      <!-- ================= PATH 2 — Assisted ================= -->
+      <article
+        class="card"
+        style="
+          display: flex;
+          flex-direction: column;
+          padding: var(--sp-3);
+          border-radius: var(--radius-2xl);
+          border-color: var(--role-border-strong);
+        "
+      >
+        <!-- Per-card visual / illustration -->
+        <div
+          class="feature-tile feature-tile--fig"
+          style="
+            aspect-ratio: 16 / 7;
+            padding: var(--sp-2);
+            margin-bottom: var(--sp-2);
+            place-items: stretch;
+          "
+        >
+          <svg viewBox="0 0 320 140" width="100%" height="100%" role="img" aria-label="Assisted onboarding illustration" style="display:block;">
+            <rect x="0" y="0" width="320" height="140" rx="12" fill="var(--color-neutral-000)" opacity="0.18"/>
+            <circle cx="92" cy="58" r="24" fill="var(--color-neutral-000)" opacity="0.85"/>
+            <circle cx="92" cy="50" r="9" fill="var(--color-panel-fig)"/>
+            <path d="M76 70 q16 -16 32 0" fill="var(--color-panel-fig)"/>
+            <circle cx="150" cy="70" r="20" fill="var(--color-neutral-000)" opacity="0.6"/>
+            <circle cx="150" cy="63" r="7" fill="var(--color-panel-fig)"/>
+            <path d="M137 80 q13 -13 26 0" fill="var(--color-panel-fig)"/>
+            <rect x="196" y="34" width="100" height="12" rx="6" fill="var(--color-neutral-000)" opacity="0.85"/>
+            <rect x="196" y="56" width="84" height="8" rx="4" fill="var(--color-neutral-000)" opacity="0.5"/>
+            <rect x="196" y="74" width="92" height="8" rx="4" fill="var(--color-neutral-000)" opacity="0.5"/>
+            <rect x="196" y="100" width="100" height="20" rx="10" fill="var(--color-neutral-050)"/>
+          </svg>
+        </div>
+
+        <p class="micro" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75);">
+          Assisted
+        </p>
+        <h3 class="h3" style="margin: 0 0 var(--sp-1);">
+          Roll out with an expert
+        </h3>
+        <p class="body-2" style="color: var(--role-text-secondary); margin: 0 0 var(--sp-2);">
+          Bring in a Northwind solutions engineer to migrate your data, wire up
+          SSO, and tailor the platform to your workflows. Ideal for regulated
+          teams and complex environments.
+        </p>
+
+        <!-- What you get -->
+        <ul style="list-style: none; margin: 0 0 var(--sp-2-5); padding: 0; display: grid; gap: var(--sp-0-75);">
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            Dedicated onboarding engineer and migration plan
+          </li>
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            SSO, SCIM, audit logs and role-based access
+          </li>
+          <li class="body-3" style="display: flex; gap: var(--sp-0-75); color: var(--role-text-secondary);">
+            <span aria-hidden="true" style="color: var(--role-accent-interactive); font-weight: var(--fw-700);">→</span>
+            Priority support with a 4-hour response SLA
+          </li>
+        </ul>
+
+        <!-- CTA pinned to base for equal-height alignment -->
+        <div style="margin-top: auto;">
+          <a class="button button-secondary" href="#" style="width: 100%;">
+            Talk to a solutions engineer
+          </a>
+          <p class="caption" style="color: var(--role-text-tertiary); text-align: center; margin: var(--sp-0-75) 0 0;">
+            Typical reply within one business day
+          </p>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>

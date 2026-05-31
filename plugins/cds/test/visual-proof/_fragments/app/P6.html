@@ -1,0 +1,145 @@
+<section style="background: var(--role-surface-primary); color: var(--role-text-primary); min-height: 100%;">
+
+  <!-- minimal app chrome: top bar for context -->
+  <div style="display:flex; align-items:center; gap:var(--sp-1-5); height:60px; padding:0 var(--sp-2); background:var(--role-surface-secondary); border-bottom:1px solid var(--role-border-subtle);">
+    <span class="topbar__logo" aria-label="Acme" style="display:inline-flex; align-items:center;">
+      <svg width="78" height="20" viewBox="0 0 78 20" role="img" aria-label="Acme">
+        <path d="M6.2 2h3.4l5.5 16h-3.3l-1.1-3.5H5.1L4 18H.8L6.2 2Zm-.3 9.6h3.9L7.9 5.4 5.9 11.6ZM26.8 12.4c-.5 3.6-3 5.9-6.5 5.9-4 0-6.6-2.9-6.6-7.2 0-4.3 2.6-7.3 6.6-7.3 3.5 0 6 2.3 6.5 5.8h-3.1c-.4-1.8-1.6-3-3.4-3-2.1 0-3.4 1.8-3.4 4.5s1.3 4.4 3.4 4.4c1.8 0 3-1.1 3.4-3.1h3.1ZM30 4h4.3l3.1 9.9L40.5 4h4.3v14h-3V8.1L38.5 18h-2.2L33.1 8.1V18H30V4ZM48.4 4h10v2.7h-7v2.9h6.4v2.6H51.4v3.1h7.1V18h-10.1V4Z"/>
+      </svg>
+    </span>
+    <nav style="margin-left:auto; display:flex; align-items:center; gap:var(--sp-1-5);">
+      <span class="body-3" style="color:var(--role-text-secondary);">Workspace</span>
+      <span class="body-3" style="color:var(--role-text-primary); font-weight:var(--fw-500);">Settings</span>
+      <span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:9999px; background:var(--color-panel-fig); color:var(--color-neutral-050); font-size:var(--type-caption); font-weight:var(--fw-600);">MS</span>
+    </nav>
+  </div>
+
+  <!-- main content region -->
+  <div style="max-width:var(--container-small); margin:0 auto; padding:var(--sp-3) var(--container-margin) var(--sp-5);">
+
+    <!-- 1. Page heading -->
+    <header style="margin-bottom:var(--sp-2);">
+      <p class="micro" style="color:var(--role-text-tertiary); margin:0 0 var(--sp-0-5);">Account &middot; Settings</p>
+      <h1 class="h2" style="margin:0;">Organization</h1>
+    </header>
+
+    <!-- 2. Top metadata row (display-only) -->
+    <dl style="display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:var(--sp-1-5) var(--sp-2-5); margin:0 0 var(--sp-2-5); padding:var(--sp-1-5) 0; border-top:1px solid var(--role-border-subtle); border-bottom:1px solid var(--role-border-subtle);">
+      <div>
+        <dt class="caption" style="color:var(--role-text-tertiary); text-transform:uppercase; letter-spacing:var(--track-0-05); margin:0 0 var(--sp-0-25);">Organization name</dt>
+        <dd class="body-2" style="margin:0; font-weight:var(--fw-500); color:var(--role-text-primary);">Mark's Individual Org</dd>
+      </div>
+      <div>
+        <dt class="caption" style="color:var(--role-text-tertiary); text-transform:uppercase; letter-spacing:var(--track-0-05); margin:0 0 var(--sp-0-25);">Members</dt>
+        <dd class="body-2" style="margin:0; font-weight:var(--fw-500); color:var(--role-text-primary);">1</dd>
+      </div>
+    </dl>
+
+    <!-- 3 + 4. Form field groups -->
+    <form style="display:flex; flex-direction:column; gap:var(--sp-2-5);">
+
+      <!-- Address field group -->
+      <section>
+        <div style="margin-bottom:var(--sp-1);">
+          <h3 class="h6" style="font-family:var(--font-sans); font-weight:var(--fw-600); margin:0 0 var(--sp-0-25);">Primary business address</h3>
+          <p class="body-3" style="color:var(--role-text-tertiary); margin:0;">Used on invoices and tax documents.</p>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-1);">
+          <div>
+            <label for="p6-addr1" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">Address line 1</label>
+            <input id="p6-addr1" class="input" type="text" value="5988 Colby Hunt Ct.">
+          </div>
+          <div>
+            <label for="p6-addr2" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">Address line 2 <span style="color:var(--role-text-tertiary); font-weight:var(--fw-400);">(optional)</span></label>
+            <input id="p6-addr2" class="input" type="text" placeholder="Suite, unit, building, floor">
+          </div>
+        </div>
+      </section>
+
+      <!-- Country / State / City / Postal field group -->
+      <section>
+        <div style="display:grid; grid-template-columns:1.3fr 1fr 1fr 0.9fr; gap:var(--sp-1);">
+          <div>
+            <label for="p6-country" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">Country</label>
+            <select id="p6-country" class="input" style="appearance:none; background-image:linear-gradient(45deg, transparent 50%, var(--role-text-tertiary) 50%), linear-gradient(135deg, var(--role-text-tertiary) 50%, transparent 50%); background-position:calc(100% - 18px) 19px, calc(100% - 13px) 19px; background-size:5px 5px, 5px 5px; background-repeat:no-repeat;">
+              <option selected>United States</option>
+              <option>Canada</option>
+              <option>United Kingdom</option>
+              <option>Germany</option>
+            </select>
+          </div>
+          <div>
+            <label for="p6-state" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">State or province</label>
+            <input id="p6-state" class="input" type="text" value="VA">
+          </div>
+          <div>
+            <label for="p6-city" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">City</label>
+            <input id="p6-city" class="input" type="text" value="Haymarket">
+          </div>
+          <div>
+            <label for="p6-postal" class="body-3" style="display:block; font-weight:var(--fw-500); margin:0 0 var(--sp-0-5);">Postal code</label>
+            <input id="p6-postal" class="input" type="text" value="20169">
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Inline read-only identifier row -->
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:var(--sp-1); padding:var(--sp-0-75) var(--sp-1); background:var(--role-surface-secondary); border:1px solid var(--role-border-subtle); border-radius:var(--radius-sm);">
+        <span class="mono body-3" style="color:var(--role-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          <span style="color:var(--role-text-tertiary);">Organization ID:</span>&nbsp;7a6d6c1d-9f2b-4c84-b1e0-3d5a7e9c41af
+        </span>
+        <button type="button" aria-label="Copy organization ID" class="kebab-trigger" style="flex:0 0 auto;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <rect x="5" y="5" width="8" height="8" rx="1.5"/>
+            <path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- save bar for the editable form -->
+      <div style="display:flex; align-items:center; gap:var(--sp-0-75); padding-top:var(--sp-0-5);">
+        <button type="submit" class="button button-primary">Save changes</button>
+        <button type="button" class="button button-tertiary">Discard</button>
+        <span class="body-3" style="margin-left:auto; color:var(--role-text-tertiary);">Last updated 3 days ago</span>
+      </div>
+
+    </form>
+
+    <!-- 6. Destructive action zone -->
+    <section style="margin-top:var(--sp-3); padding:var(--sp-1-5); border:1px solid var(--role-error-fill); border-radius:var(--radius-md); background:color-mix(in srgb, var(--role-error-fill) 5%, var(--role-surface-primary));">
+      <div style="display:flex; align-items:flex-start; gap:var(--sp-1-5); flex-wrap:wrap;">
+        <div style="flex:1 1 320px; min-width:240px;">
+          <h3 class="h6" style="font-family:var(--font-sans); font-weight:var(--fw-600); color:var(--role-error-text); margin:0 0 var(--sp-0-25);">Delete organization</h3>
+          <p class="body-3" style="color:var(--role-text-secondary); margin:0; max-width:52ch;">Permanently remove this organization, its members, and all associated workspaces. This action cannot be undone.</p>
+        </div>
+        <button type="button" class="button button-destructive" style="flex:0 0 auto;">Delete organization</button>
+      </div>
+    </section>
+
+    <!-- 7. Info card -->
+    <aside class="card" style="margin-top:var(--sp-2); display:flex; align-items:center; gap:var(--sp-1-5); padding:var(--sp-1-5);">
+      <span aria-hidden="true" style="flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:var(--radius-md); background:var(--color-panel-cactus); color:var(--color-neutral-950);">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="9" cy="8" r="3.2"/>
+          <path d="M2.5 19c0-3.3 2.9-5.2 6.5-5.2s6.5 1.9 6.5 5.2"/>
+          <path d="M16.5 6.2a3 3 0 0 1 0 5.6"/>
+          <path d="M18 13.9c2.6.5 4.5 2.2 4.5 4.6"/>
+        </svg>
+      </span>
+      <p class="body-2" style="flex:1 1 auto; margin:0; color:var(--role-text-secondary);">Collaborate with friends and teammates by setting up an organization.</p>
+      <button type="button" class="button button-secondary" style="flex:0 0 auto;">Set up organization</button>
+    </aside>
+
+    <!-- 8. Standalone toggle row -->
+    <section style="margin-top:var(--sp-1); display:flex; align-items:flex-start; gap:var(--sp-1-5); padding:var(--sp-1-5) 0; border-top:1px solid var(--role-border-subtle);">
+      <div style="flex:1 1 auto;">
+        <h3 class="h6" style="font-family:var(--font-sans); font-weight:var(--fw-600); margin:0 0 var(--sp-0-25);">Allow creating new API keys in default workspace</h3>
+        <p class="body-3" style="color:var(--role-text-tertiary); margin:0; max-width:62ch;">Allow users to create new API keys in the default workspace. Disabling this setting does not affect existing API keys or disable Workbench usage.</p>
+      </div>
+      <button type="button" role="switch" aria-checked="true" aria-label="Allow creating new API keys in default workspace" class="switch" style="flex:0 0 auto; margin-top:var(--sp-0-25);">
+        <span class="switch__thumb"></span>
+      </button>
+    </section>
+
+  </div>
+</section>

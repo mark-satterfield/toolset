@@ -1,0 +1,84 @@
+<!-- Shape S17 — Banner strip  (serves section type T14 Cross-Promo) -->
+<!-- Narrow full-width horizontal strip: one headline + 1–2 CTAs, no visual. -->
+
+<section
+  aria-label="Cross-promo banner strip (S17)"
+  style="
+    background: var(--role-surface-secondary);
+    border-top: 1px solid var(--role-border-subtle);
+    border-bottom: 1px solid var(--role-border-subtle);
+  ">
+
+  <!-- Variant A — two CTAs, default theme inherited from page -->
+  <div
+    style="
+      max-width: var(--container-medium);
+      margin-inline: auto;
+      padding: var(--sp-2) var(--container-margin);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-1-5) var(--sp-2-5);
+      justify-content: space-between;
+    ">
+
+    <div style="display: flex; align-items: center; gap: var(--sp-1-5); min-width: 0;">
+      <span class="badge-status">New</span>
+      <p class="h5" style="margin: 0; max-width: 46ch;">
+        Northwind Analytics now connects to your Acme Platform workspace
+      </p>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: var(--sp-0-75); flex-shrink: 0;">
+      <a href="#" class="button button-primary">Explore the integration</a>
+      <a href="#" class="button button-tertiary">View changelog</a>
+    </div>
+  </div>
+
+  <!-- divider between the two demonstrated variants -->
+  <div style="height: 1px; background: var(--role-border-subtle); opacity: 0.6;"></div>
+
+  <!-- Variant B — single CTA, accent-tinted strip via inline tokens -->
+  <div
+    style="
+      max-width: var(--container-medium);
+      margin-inline: auto;
+      padding: var(--sp-2) var(--container-margin);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-1-5) var(--sp-2-5);
+      justify-content: space-between;
+    ">
+
+    <div style="display: flex; align-items: center; gap: var(--sp-1); min-width: 0;">
+      <!-- inline svg pictogram placeholder, token-colored, no network -->
+      <span
+        aria-hidden="true"
+        style="
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          flex-shrink: 0;
+          border-radius: var(--radius-md);
+          background: color-mix(in srgb, var(--role-accent-primary) 18%, transparent);
+          color: var(--role-accent-interactive);
+        ">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 2l2.6 6.4L21 9.3l-4.8 4.3L17.6 21 12 17.3 6.4 21l1.4-7.4L3 9.3l6.4-.9L12 2z"
+                fill="currentColor"/>
+        </svg>
+      </span>
+      <p class="body-1" style="margin: 0; max-width: 52ch; color: var(--role-text-primary);">
+        Going to <strong>Globex Summit</strong> this fall? Meet the team and see live demos at booth&nbsp;C14.
+      </p>
+    </div>
+
+    <div style="flex-shrink: 0;">
+      <a href="#" class="button button-brand">Reserve your seat</a>
+    </div>
+  </div>
+
+</section>

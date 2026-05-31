@@ -1,0 +1,421 @@
+<!-- ===========================================================================
+     S6 — Tabs with one panel per tab  (serves T4 Capability / T5 Workflow / T8 Demo)
+     Layout: horizontal tab strip above a single full-width panel that swaps on
+     selection; each tab gets a full visual plus accompanying copy.
+     No-JS tab swap via radio inputs + :checked sibling combinators (scoped).
+     All colors/space/type come from design-system.css tokens & classes.
+     ========================================================================== -->
+<section
+  data-theme="feature-dark"
+  aria-labelledby="s6-heading"
+  style="
+    background: var(--role-surface-primary);
+    color: var(--role-text-primary);
+    padding: var(--section-pad-main) var(--container-margin);
+  ">
+  <style>
+    /* ---- S6 scoped no-JS tab machinery (tokens only) -------------------- */
+    .s6 { max-width: var(--container-marketing); margin: 0 auto; }
+    .s6__radio { position: absolute; opacity: 0; pointer-events: none; }
+
+    .s6__tablist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-0-25);
+      padding: 4px;
+      margin: var(--sp-3) 0 0;
+      background: var(--role-surface-tertiary);
+      border-radius: var(--radius-lg);
+    }
+    .s6__tab {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-0-5);
+      flex: 1 1 auto;
+      justify-content: center;
+      border: 0;
+      border-radius: var(--radius-md);
+      padding: var(--sp-0-75) var(--sp-1-5);
+      background: transparent;
+      color: var(--role-text-tertiary);
+      font-family: var(--font-sans);
+      font-size: var(--type-body-3);
+      font-weight: var(--fw-500);
+      letter-spacing: var(--track-0-01);
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 200ms var(--ease-in-quart), color 100ms var(--ease-in-out);
+    }
+    .s6__tab:hover { color: var(--role-text-secondary); }
+    .s6__tab-index {
+      font-family: var(--font-mono);
+      font-size: var(--type-caption);
+      opacity: 0.7;
+    }
+
+    .s6__panels { position: relative; margin-top: var(--sp-2-5); }
+    .s6__panel { display: none; }
+
+    /* Selected-tab styling + matching panel reveal */
+    #s6-r1:checked ~ .s6__tablist [for="s6-r1"],
+    #s6-r2:checked ~ .s6__tablist [for="s6-r2"],
+    #s6-r3:checked ~ .s6__tablist [for="s6-r3"],
+    #s6-r4:checked ~ .s6__tablist [for="s6-r4"],
+    #s6-r5:checked ~ .s6__tablist [for="s6-r5"] {
+      background: var(--role-surface-raised);
+      color: var(--role-text-primary);
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--color-common_colors-black) 28%, transparent);
+    }
+    #s6-r1:checked ~ .s6__panels .s6__panel--1,
+    #s6-r2:checked ~ .s6__panels .s6__panel--2,
+    #s6-r3:checked ~ .s6__panels .s6__panel--3,
+    #s6-r4:checked ~ .s6__panels .s6__panel--4,
+    #s6-r5:checked ~ .s6__panels .s6__panel--5 { display: block; }
+
+    .s6__tab:focus-visible,
+    .s6__radio:focus-visible + .s6__tablist label { /* fallback when label not adjacent */ }
+    .s6__radio:focus-visible ~ .s6__tablist [for="s6-r1"],
+    .s6__radio:focus-visible ~ .s6__tablist [for="s6-r2"],
+    .s6__radio:focus-visible ~ .s6__tablist [for="s6-r3"],
+    .s6__radio:focus-visible ~ .s6__tablist [for="s6-r4"],
+    .s6__radio:focus-visible ~ .s6__tablist [for="s6-r5"] {
+      outline: var(--focus-width) solid var(--role-focus-ring);
+      outline-offset: var(--focus-offset-outer);
+    }
+
+    /* ---- Panel internals ----------------------------------------------- */
+    .s6__panel-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: var(--sp-4);
+      align-items: center;
+    }
+    .s6__copy { display: flex; flex-direction: column; gap: var(--sp-1-5); }
+    .s6__eyebrow { color: var(--role-accent-primary); }
+    .s6__bullets { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+    .s6__bullet {
+      display: grid;
+      grid-template-columns: 20px 1fr;
+      gap: var(--sp-0-75);
+      align-items: start;
+      color: var(--role-text-secondary);
+    }
+    .s6__check {
+      width: 20px; height: 20px; border-radius: 9999px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--role-accent-primary) 22%, transparent);
+      color: var(--role-accent-primary);
+      margin-top: 2px;
+    }
+
+    /* visual = product surface mock (full per-tab visual, S6 requirement) */
+    .s6__surface {
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--role-border-subtle);
+      background: var(--role-surface-secondary);
+      overflow: hidden;
+      box-shadow:
+        0 4px 24px color-mix(in srgb, var(--color-common_colors-black) 22%, transparent),
+        0 16px 48px color-mix(in srgb, var(--color-common_colors-black) 18%, transparent);
+    }
+    .s6__chrome {
+      display: flex; align-items: center; gap: var(--sp-0-5);
+      padding: var(--sp-0-75) var(--sp-1);
+      border-bottom: 1px solid var(--role-border-subtle);
+      background: var(--role-surface-tertiary);
+    }
+    .s6__dot { width: 10px; height: 10px; border-radius: 9999px; background: var(--role-border-subtle); }
+    .s6__chrome-label {
+      margin-left: var(--sp-0-5);
+      font-family: var(--font-mono);
+      font-size: var(--type-caption);
+      color: var(--role-text-tertiary);
+    }
+    .s6__viewport { padding: var(--sp-2); display: grid; gap: var(--sp-1); }
+
+    @media (max-width: 880px) {
+      .s6__panel-grid { grid-template-columns: 1fr; gap: var(--sp-2-5); }
+      .s6__tab { flex-basis: 100%; }
+    }
+  </style>
+
+  <div class="s6">
+    <!-- Header (T18-style label sits inside this T4/T5/T8 section) -->
+    <div style="max-width: 60ch; display: flex; flex-direction: column; gap: var(--sp-1);">
+      <span class="micro s6__eyebrow">One platform, every surface</span>
+      <h2 id="s6-heading" class="h2" style="margin: 0;">See the Acme Platform across each workspace</h2>
+      <p class="body-1" style="margin: 0; color: var(--role-text-secondary); max-width: 52ch;">
+        Switch between the surfaces your team works in. Each tab opens the same
+        Northwind project — planning board, code review, analytics, and the
+        deploy console — without leaving the page.
+      </p>
+    </div>
+
+    <!-- Radio state holders precede the tablist & panels so sibling combinators reach both -->
+    <input class="s6__radio" type="radio" name="s6-tabs" id="s6-r1" checked aria-hidden="true" tabindex="-1">
+    <input class="s6__radio" type="radio" name="s6-tabs" id="s6-r2" aria-hidden="true" tabindex="-1">
+    <input class="s6__radio" type="radio" name="s6-tabs" id="s6-r3" aria-hidden="true" tabindex="-1">
+    <input class="s6__radio" type="radio" name="s6-tabs" id="s6-r4" aria-hidden="true" tabindex="-1">
+    <input class="s6__radio" type="radio" name="s6-tabs" id="s6-r5" aria-hidden="true" tabindex="-1">
+
+    <!-- Tab strip -->
+    <div class="s6__tablist" role="tablist" aria-label="Acme Platform surfaces">
+      <label class="s6__tab" for="s6-r1"><span class="s6__tab-index">01</span>Planning</label>
+      <label class="s6__tab" for="s6-r2"><span class="s6__tab-index">02</span>Code review</label>
+      <label class="s6__tab" for="s6-r3"><span class="s6__tab-index">03</span>Analytics</label>
+      <label class="s6__tab" for="s6-r4"><span class="s6__tab-index">04</span>Automations</label>
+      <label class="s6__tab" for="s6-r5"><span class="s6__tab-index">05</span>Deploy</label>
+    </div>
+
+    <!-- Panels: one full visual + copy per tab -->
+    <div class="s6__panels">
+
+      <!-- Panel 1 — Planning -->
+      <div class="s6__panel s6__panel--1" role="tabpanel" aria-label="Planning">
+        <div class="s6__panel-grid">
+          <div class="s6__copy">
+            <span class="micro s6__eyebrow">Planning board</span>
+            <h3 class="h3" style="margin: 0;">Plan the sprint where the work already lives</h3>
+            <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+              Drag issues across columns, set milestones, and let dependencies
+              recalculate the timeline automatically. The board stays in sync
+              with every commit and review on the other tabs.
+            </p>
+            <ul class="s6__bullets">
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Auto-rollup of estimates into milestone burndown</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Swimlanes by team, label, or assignee</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Two-way sync with the Northwind repo</span></li>
+            </ul>
+            <div style="display: flex; gap: var(--sp-0-75); margin-top: var(--sp-0-5);">
+              <a class="button button-primary" href="#planning">Open the board</a>
+              <a class="button button-tertiary" href="#planning-tour">Take the tour</a>
+            </div>
+          </div>
+          <div class="s6__surface" role="img" aria-label="Screenshot of a planning board with four columns of issue cards">
+            <div class="s6__chrome">
+              <span class="s6__dot"></span><span class="s6__dot"></span><span class="s6__dot"></span>
+              <span class="s6__chrome-label">acme.app/northwind/board</span>
+            </div>
+            <div class="s6__viewport">
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-0-75);">
+                <!-- Backlog -->
+                <div style="display: grid; gap: var(--sp-0-5);">
+                  <span class="micro" style="color: var(--role-text-tertiary);">Backlog &middot; 6</span>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25);"><span class="micro" style="color: var(--role-accent-primary);">NW-214</span><span class="body-3">Rate-limit the import API</span></div>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25);"><span class="micro" style="color: var(--role-accent-primary);">NW-219</span><span class="body-3">Audit log retention policy</span></div>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25);"><span class="micro" style="color: var(--role-accent-primary);">NW-221</span><span class="body-3">SSO group mapping</span></div>
+                </div>
+                <!-- In progress -->
+                <div style="display: grid; gap: var(--sp-0-5);">
+                  <span class="micro" style="color: var(--role-text-tertiary);">In progress &middot; 3</span>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25); border-color: var(--role-accent-primary);"><span class="micro" style="color: var(--role-accent-primary);">NW-208</span><span class="body-3">Streaming exports</span></div>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25);"><span class="micro" style="color: var(--role-accent-primary);">NW-211</span><span class="body-3">Webhook retries</span></div>
+                </div>
+                <!-- Review -->
+                <div style="display: grid; gap: var(--sp-0-5);">
+                  <span class="micro" style="color: var(--role-text-tertiary);">In review &middot; 2</span>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25);"><span class="micro" style="color: var(--role-accent-primary);">NW-203</span><span class="body-3">Tighten OAuth scopes</span></div>
+                </div>
+                <!-- Done -->
+                <div style="display: grid; gap: var(--sp-0-5);">
+                  <span class="micro" style="color: var(--role-text-tertiary);">Done &middot; 9</span>
+                  <div class="catalog-card" style="padding: var(--sp-0-75); display: grid; gap: var(--sp-0-25); opacity: 0.7;"><span class="micro" style="color: var(--role-text-tertiary);">NW-197</span><span class="body-3">Project templates</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2 — Code review -->
+      <div class="s6__panel s6__panel--2" role="tabpanel" aria-label="Code review">
+        <div class="s6__panel-grid">
+          <div class="s6__copy">
+            <span class="micro s6__eyebrow">Code review</span>
+            <h3 class="h3" style="margin: 0;">Review with the full picture, inline</h3>
+            <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+              Threaded comments, suggested edits, and an AI summary of intent
+              sit beside the diff. Approvals flow straight back into the planning
+              board and trigger the deploy pipeline.
+            </p>
+            <ul class="s6__bullets">
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Risk score per file based on test coverage</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>One-click "apply suggestion" commits</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Required reviewers resolved automatically</span></li>
+            </ul>
+            <div style="display: flex; gap: var(--sp-0-75); margin-top: var(--sp-0-5);">
+              <a class="button button-primary" href="#review">Open a pull request</a>
+              <a class="button button-tertiary" href="#review-docs">Read the docs</a>
+            </div>
+          </div>
+          <div class="s6__surface" role="img" aria-label="Screenshot of a code review diff with inline comment">
+            <div class="s6__chrome">
+              <span class="s6__dot"></span><span class="s6__dot"></span><span class="s6__dot"></span>
+              <span class="s6__chrome-label">acme.app/northwind/pull/482</span>
+            </div>
+            <div class="s6__viewport">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span class="body-3" style="font-weight: var(--fw-600);">Streaming exports &middot; #482</span>
+                <span class="badge-status">Ready to merge</span>
+              </div>
+              <div class="code-block" style="display: grid; gap: 4px;">
+                <span style="color: var(--color-neutral-450);">apps/exporter/stream.ts</span>
+                <span style="color: var(--color-state-error-dark);">- const rows = await db.all(query)</span>
+                <span style="color: var(--color-green-450);">+ for await (const row of db.stream(query)) {</span>
+                <span style="color: var(--color-green-450);">+&nbsp;&nbsp;writer.push(serialize(row))</span>
+                <span style="color: var(--color-green-450);">+ }</span>
+              </div>
+              <div class="card" style="padding: var(--sp-1); border-radius: var(--radius-md); display: grid; gap: var(--sp-0-5);">
+                <span class="micro" style="color: var(--role-text-tertiary);">D. Okafor &middot; reviewer</span>
+                <span class="body-3">Streaming here keeps memory flat on the 2M-row export. Approving.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3 — Analytics -->
+      <div class="s6__panel s6__panel--3" role="tabpanel" aria-label="Analytics">
+        <div class="s6__panel-grid">
+          <div class="s6__copy">
+            <span class="micro s6__eyebrow">Analytics</span>
+            <h3 class="h3" style="margin: 0;">Watch delivery health in real time</h3>
+            <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+              Cycle time, throughput, and review latency update as work moves.
+              Drill from a chart straight into the issues behind the number.
+            </p>
+            <ul class="s6__bullets">
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>DORA metrics computed without a separate tool</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Per-team and per-repo breakdowns</span></li>
+            </ul>
+            <div style="display: flex; gap: var(--sp-0-75); margin-top: var(--sp-0-5);">
+              <a class="button button-primary" href="#analytics">Open dashboards</a>
+            </div>
+          </div>
+          <div class="s6__surface" role="img" aria-label="Screenshot of an analytics dashboard with stat cards and a bar chart">
+            <div class="s6__chrome">
+              <span class="s6__dot"></span><span class="s6__dot"></span><span class="s6__dot"></span>
+              <span class="s6__chrome-label">acme.app/northwind/insights</span>
+            </div>
+            <div class="s6__viewport">
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-0-75);">
+                <div class="stat-card"><span class="stat-card__caption">Cycle time</span><div class="stat-card__number" style="font-size: var(--type-h4);">2.4d</div></div>
+                <div class="stat-card"><span class="stat-card__caption">Deploys / wk</span><div class="stat-card__number" style="font-size: var(--type-h4);">38</div></div>
+                <div class="stat-card"><span class="stat-card__caption">Review lag</span><div class="stat-card__number" style="font-size: var(--type-h4);">5h</div></div>
+              </div>
+              <div class="card" style="padding: var(--sp-1); border-radius: var(--radius-md);">
+                <span class="micro" style="color: var(--role-text-tertiary);">Throughput, last 8 weeks</span>
+                <div style="display: flex; align-items: flex-end; gap: var(--sp-0-5); height: 96px; margin-top: var(--sp-0-75);">
+                  <div style="flex: 1; height: 40%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-sky);"></div>
+                  <div style="flex: 1; height: 58%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-sky);"></div>
+                  <div style="flex: 1; height: 50%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-sky);"></div>
+                  <div style="flex: 1; height: 72%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-mineral);"></div>
+                  <div style="flex: 1; height: 64%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-sky);"></div>
+                  <div style="flex: 1; height: 86%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-mineral);"></div>
+                  <div style="flex: 1; height: 78%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--color-panel-sky);"></div>
+                  <div style="flex: 1; height: 100%; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: var(--role-accent-primary);"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 4 — Automations -->
+      <div class="s6__panel s6__panel--4" role="tabpanel" aria-label="Automations">
+        <div class="s6__panel-grid">
+          <div class="s6__copy">
+            <span class="micro s6__eyebrow">Automations</span>
+            <h3 class="h3" style="margin: 0;">Wire the busywork once, never again</h3>
+            <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+              Build rules from plain triggers and actions. When a PR merges,
+              move the issue, notify the channel, and tag the release — no
+              scripts to maintain.
+            </p>
+            <ul class="s6__bullets">
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Visual rule builder with live preview</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Versioned and reviewable like code</span></li>
+            </ul>
+            <div style="display: flex; gap: var(--sp-0-75); margin-top: var(--sp-0-5);">
+              <a class="button button-primary" href="#automations">New automation</a>
+              <a class="button button-tertiary" href="#automation-library">Browse the library</a>
+            </div>
+          </div>
+          <div class="s6__surface" role="img" aria-label="Screenshot of an automation rule builder with trigger and action steps">
+            <div class="s6__chrome">
+              <span class="s6__dot"></span><span class="s6__dot"></span><span class="s6__dot"></span>
+              <span class="s6__chrome-label">acme.app/northwind/automations/new</span>
+            </div>
+            <div class="s6__viewport">
+              <div class="stepper" style="margin-bottom: var(--sp-0-5);">
+                <span class="stepper__circle is-current">1</span>
+                <span class="stepper__connector"></span>
+                <span class="stepper__circle">2</span>
+                <span class="stepper__connector"></span>
+                <span class="stepper__circle">3</span>
+              </div>
+              <div class="card" style="padding: var(--sp-1); border-radius: var(--radius-md); display: grid; gap: var(--sp-0-5);">
+                <span class="micro" style="color: var(--role-accent-primary);">When</span>
+                <span class="body-3">a pull request is <strong>merged</strong> into <span class="mono">main</span></span>
+              </div>
+              <div style="display: grid; gap: var(--sp-0-5); padding-left: var(--sp-1);">
+                <div class="catalog-card" style="padding: var(--sp-0-75);"><span class="micro" style="color: var(--role-text-tertiary);">Then</span> <span class="body-3">move linked issue to <strong>Done</strong></span></div>
+                <div class="catalog-card" style="padding: var(--sp-0-75);"><span class="micro" style="color: var(--role-text-tertiary);">Then</span> <span class="body-3">post to <span class="mono">#northwind-ship</span></span></div>
+                <div class="catalog-card" style="padding: var(--sp-0-75);"><span class="micro" style="color: var(--role-text-tertiary);">Then</span> <span class="body-3">trigger the deploy pipeline</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 5 — Deploy -->
+      <div class="s6__panel s6__panel--5" role="tabpanel" aria-label="Deploy">
+        <div class="s6__panel-grid">
+          <div class="s6__copy">
+            <span class="micro s6__eyebrow">Deploy console</span>
+            <h3 class="h3" style="margin: 0;">Ship and roll back from one console</h3>
+            <p class="body-2" style="margin: 0; color: var(--role-text-secondary);">
+              Watch each environment promote in sequence, gate on checks, and
+              roll back in a click. Every deploy links straight to the issues
+              and review that produced it.
+            </p>
+            <ul class="s6__bullets">
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Progressive rollout with automatic health gates</span></li>
+              <li class="s6__bullet"><span class="s6__check" aria-hidden="true">&#10003;</span><span>Instant rollback to any prior release</span></li>
+            </ul>
+            <div style="display: flex; gap: var(--sp-0-75); margin-top: var(--sp-0-5);">
+              <a class="button button-primary" href="#deploy">Open the console</a>
+            </div>
+          </div>
+          <div class="s6__surface" role="img" aria-label="Screenshot of a deploy console showing environment promotion stages">
+            <div class="s6__chrome">
+              <span class="s6__dot"></span><span class="s6__dot"></span><span class="s6__dot"></span>
+              <span class="s6__chrome-label">acme.app/northwind/deploy</span>
+            </div>
+            <div class="s6__viewport">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span class="body-3" style="font-weight: var(--fw-600);">Release <span class="mono">v3.18.0</span></span>
+                <span class="badge-status" style="background: var(--color-panel-mineral); color: var(--color-neutral-050);">Healthy</span>
+              </div>
+              <div style="display: grid; gap: var(--sp-0-5);">
+                <div class="card" style="padding: var(--sp-0-75); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between;">
+                  <span class="body-3">dev</span><span class="micro" style="color: var(--color-panel-mineral);">&#10003; promoted &middot; 2m</span>
+                </div>
+                <div class="card" style="padding: var(--sp-0-75); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between;">
+                  <span class="body-3">staging</span><span class="micro" style="color: var(--color-panel-mineral);">&#10003; promoted &middot; just now</span>
+                </div>
+                <div class="card" style="padding: var(--sp-0-75); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between; border-color: var(--role-accent-primary);">
+                  <span class="body-3">production</span><span class="micro" style="color: var(--role-accent-primary);">rolling out &middot; 41%</span>
+                </div>
+              </div>
+              <div style="height: 6px; border-radius: 9999px; background: var(--role-surface-tertiary); overflow: hidden;">
+                <div style="width: 41%; height: 100%; background: var(--role-accent-primary);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>

@@ -1,0 +1,123 @@
+<!-- Shape S3 — Centered text + embedded affordance (serves T1 Hero, live affordance) -->
+<!-- Top-of-page section: default page ground per §19.2. Vertical centered stack: -->
+<!-- eyebrow → headline → subhead → embedded chat-input affordance → prompt chips → install snippet. -->
+<section
+  data-theme="default"
+  aria-labelledby="s3-headline"
+  style="background: var(--role-surface-primary); color: var(--role-text-primary); padding: var(--section-pad-page-top) var(--container-margin) var(--section-pad-large);"
+>
+  <div style="max-width: var(--container-small); margin-inline: auto; display: flex; flex-direction: column; align-items: center; text-align: center;">
+
+    <!-- Eyebrow -->
+    <span class="badge-outline" style="border-radius: 9999px; margin-bottom: var(--sp-1-5);">
+      <span class="micro" style="color: var(--role-accent-primary);">Now in open beta</span>
+    </span>
+
+    <!-- Headline -->
+    <h1 id="s3-headline" class="display-1" style="margin: 0;">
+      Ship from a sentence, not a spec
+    </h1>
+
+    <!-- Subhead -->
+    <p class="body-lg" style="color: var(--role-text-secondary); max-width: 52ch; margin: var(--sp-1-5) 0 0;">
+      Acme Platform turns a plain-English request into production-ready scaffolding, tests, and a pull request — wired into your team’s repo from the first prompt.
+    </p>
+
+    <!-- ===================================================================== -->
+    <!-- EMBEDDED AFFORDANCE — live chat input (the S3 differentiator)         -->
+    <!-- Sits where a visual would. A floating conversion card wraps a prompt  -->
+    <!-- textarea, model/context controls, and a primary submit affordance.    -->
+    <!-- ===================================================================== -->
+    <div
+      class="card-floating"
+      role="group"
+      aria-label="Describe what you want to build"
+      style="width: min(680px, 100%); margin-top: var(--sp-3); text-align: left;"
+    >
+      <!-- Mini toolbar -->
+      <div style="display: flex; align-items: center; gap: var(--sp-0-75); margin-bottom: var(--sp-1);">
+        <span class="badge-outline" style="gap: var(--sp-0-5);">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="display:block;">
+            <path d="M8 1.5 9.8 6.2 14.5 8 9.8 9.8 8 14.5 6.2 9.8 1.5 8 6.2 6.2Z" fill="var(--role-accent-primary)"/>
+          </svg>
+          <span class="caption" style="color: var(--role-text-tertiary);">Northwind / web-app</span>
+        </span>
+        <span class="caption mono" style="color: var(--role-text-tertiary); margin-left: auto;">main · 2.4k files indexed</span>
+      </div>
+
+      <!-- The prompt input -->
+      <label for="s3-prompt" class="micro" style="display:block; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-5);">Your request</label>
+      <textarea
+        id="s3-prompt"
+        class="textarea"
+        rows="3"
+        style="min-height: auto; height: 92px;"
+        aria-describedby="s3-prompt-hint"
+      >Add a passwordless email login flow with a 6-digit code, rate-limited to 5 attempts, and write the integration tests.</textarea>
+
+      <!-- Controls row beneath the input -->
+      <div style="display: flex; align-items: center; gap: var(--sp-0-75); margin-top: var(--sp-1); flex-wrap: wrap;">
+        <span class="badge-outline" style="gap: var(--sp-0-5);">
+          <span class="switch" aria-checked="true" role="switch" aria-label="Open a pull request when done">
+            <span class="switch__thumb"></span>
+          </span>
+          <span class="caption" style="color: var(--role-text-secondary);">Open a PR</span>
+        </span>
+        <span class="badge-outline">
+          <span class="caption" style="color: var(--role-text-secondary);">Model: Standard</span>
+        </span>
+        <button type="button" class="button button-primary" style="margin-left: auto;">
+          Generate
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" style="display:block;">
+            <path d="M3 8h9M8.5 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <p id="s3-prompt-hint" class="caption" style="color: var(--role-text-tertiary); margin: var(--sp-0-75) 0 0;">
+        No credit card. Generated code lands as a branch — review before you merge.
+      </p>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- AFFORDANCE VARIANT — prompt chips (quick-fill suggestions)            -->
+    <!-- ===================================================================== -->
+    <div style="display: flex; flex-wrap: wrap; gap: var(--sp-0-5); justify-content: center; margin-top: var(--sp-1-5); max-width: 620px;">
+      <span class="caption" style="width: 100%; color: var(--role-text-tertiary); margin-bottom: var(--sp-0-25);">Try one of these</span>
+      <button type="button" class="button button-secondary" style="border-radius: 9999px; min-height: 36px; font-size: var(--type-body-3);">Scaffold a REST API</button>
+      <button type="button" class="button button-secondary" style="border-radius: 9999px; min-height: 36px; font-size: var(--type-body-3);">Add Stripe checkout</button>
+      <button type="button" class="button button-secondary" style="border-radius: 9999px; min-height: 36px; font-size: var(--type-body-3);">Migrate to Postgres</button>
+      <button type="button" class="button button-secondary" style="border-radius: 9999px; min-height: 36px; font-size: var(--type-body-3);">Write end-to-end tests</button>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- AFFORDANCE VARIANT — install snippet (prefer the CLI)                 -->
+    <!-- ===================================================================== -->
+    <div style="margin-top: var(--sp-3); width: min(440px, 100%);">
+      <p class="caption" style="color: var(--role-text-tertiary); margin: 0 0 var(--sp-0-75); text-align: center;">Or wire it into your terminal</p>
+      <div class="code-block" style="display: flex; align-items: center; gap: var(--sp-1); text-align: left;">
+        <span style="color: var(--color-neutral-450);" aria-hidden="true">$</span>
+        <code style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">npx acme-platform@latest init</code>
+        <button
+          type="button"
+          class="button-tertiary"
+          aria-label="Copy install command"
+          style="min-height: 32px; padding: 4px 10px; border-color: var(--color-neutral-600); color: var(--color-neutral-300);"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" style="display:block;">
+            <path d="M5.5 5.5V3.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M3.5 6.5h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="caption">Copy</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Trust line under everything -->
+    <div style="display: flex; align-items: center; gap: var(--sp-1-5); margin-top: var(--sp-3); flex-wrap: wrap; justify-content: center;">
+      <span class="caption" style="color: var(--role-text-tertiary);">Trusted by teams at</span>
+      <svg width="78" height="18" viewBox="0 0 78 18" role="img" aria-label="Acme"><text x="0" y="14" font-family="var(--font-sans)" font-size="15" font-weight="700" fill="var(--role-text-secondary)">Acme</text></svg>
+      <svg width="92" height="18" viewBox="0 0 92 18" role="img" aria-label="Northwind"><text x="0" y="14" font-family="var(--font-sans)" font-size="15" font-weight="700" fill="var(--role-text-secondary)">Northwind</text></svg>
+      <svg width="72" height="18" viewBox="0 0 72 18" role="img" aria-label="Globex"><text x="0" y="14" font-family="var(--font-sans)" font-size="15" font-weight="700" fill="var(--role-text-secondary)">Globex</text></svg>
+    </div>
+
+  </div>
+</section>

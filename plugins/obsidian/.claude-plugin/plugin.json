@@ -1,0 +1,24 @@
+{
+  "name": "obsidian",
+  "version": "0.1.0",
+  "description": "Obsidian toolkit — automate vaults from the CLI, author Bases databases, build JSON Canvas files, write Obsidian-flavored Markdown, and convert web pages to clean Markdown via Defuddle.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/obsidian",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "keywords": [
+    "obsidian",
+    "obsidian-cli",
+    "markdown",
+    "bases",
+    "canvas",
+    "json-canvas",
+    "defuddle",
+    "pkm",
+    "notes",
+    "vault"
+  ]
+}
