@@ -865,8 +865,8 @@ themes:
     modes:
       light:
         bindings:
-          surface-primary:       { var: "--color-backgrounds-pure" }
-          surface-secondary:     { var: "--color-backgrounds-ivory" }
+          surface-primary:       { var: "--color-backgrounds-ivory" }
+          surface-secondary:     { var: "--color-backgrounds-pure" }
           surface-tertiary:      { var: "--color-backgrounds-linen" }
           surface-raised:        { var: "--color-backgrounds-pure" }
           surface-muted:         { var: "--color-backgrounds-linen" }
@@ -889,7 +889,7 @@ themes:
           # --- uniform role coverage (every theme binds every role) ---
           selection-bg:          { var: "--color-accent-primary" }
           input-focus-ring:      { var: "--color-signals-focus" }
-          nav-bg:                { var: "--color-backgrounds-pure" }
+          nav-bg:                { var: "--color-backgrounds-ivory" }
           nav-text:              { var: "--color-text-ink" }
           footer-bg:             { var: "--color-backgrounds-brand-navy" }
           footer-text:           { var: "--color-text-powder" }
@@ -944,7 +944,7 @@ themes:
           error-text:            { var: "--color-signals-error-text" }
           error-fill:            { var: "--color-signals-error" }
           field-required:        { var: "--color-signals-required" }
-          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ground-1:         { var: "--color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
           tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
@@ -966,8 +966,8 @@ themes:
     modes:
       light:
         bindings:
-          surface-primary:       { var: "--color-backgrounds-ivory" }
-          surface-secondary:     { var: "--color-backgrounds-linen" }
+          surface-primary:       { var: "--color-backgrounds-linen" }
+          surface-secondary:     { var: "--color-backgrounds-ivory" }
           surface-tertiary:      { var: "--color-backgrounds-cream" }
           surface-raised:        { var: "--color-backgrounds-pure" }
           surface-muted:         { var: "--color-backgrounds-cream" }
@@ -1001,7 +1001,7 @@ themes:
           field-required:        { var: "--color-signals-required" }
           input-focus-ring:      { var: "--color-signals-focus" }
           selection-bg:          { var: "--color-accent-primary" }
-          nav-bg:                { var: "--color-backgrounds-ivory" }
+          nav-bg:                { var: "--color-backgrounds-linen" }
           nav-text:              { var: "--color-text-ink" }
           footer-bg:             { var: "--color-backgrounds-brand-navy" }
           footer-text:           { var: "--color-text-powder" }
@@ -1031,7 +1031,7 @@ themes:
           button-secondary-bg:   { var: "--color-buttons-secondary-bg-brand" }
           button-secondary-text: { var: "--color-buttons-secondary-txt-frost" }
           switch-active-bg:      { var: "--color-signals-focus" }
-          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ground-1:         { var: "--color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
           tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
@@ -1322,7 +1322,7 @@ themes:
           error-text:            { var: "--color-signals-error-text" }
           error-fill:            { var: "--color-signals-error" }
           field-required:        { var: "--color-signals-required" }
-          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ground-1:         { var: "--color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
           tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
@@ -1376,7 +1376,7 @@ themes:
           # error-text:            { var: "--color-signals-error-text" }
           # error-fill:            { var: "--color-signals-error" }
           # field-required:        { var: "--color-signals-required" }
-          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ground-1:         { var: "--color-panels-d" }
           # tile-ink-1:            { var: "--color-text-ivory" }
           # tile-ground-2:         { var: "--color-panels-a" }
           # tile-ink-2:            { var: "--color-text-ivory" }
@@ -1430,7 +1430,7 @@ themes:
           error-text:            { var: "--color-signals-error-text" }
           error-fill:            { var: "--color-signals-error" }
           field-required:        { var: "--color-signals-required" }
-          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ground-1:         { var: "--color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
           tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
@@ -1484,7 +1484,7 @@ themes:
           # error-text:            { var: "--color-signals-error-text" }
           # error-fill:            { var: "--color-signals-error" }
           # field-required:        { var: "--color-signals-required" }
-          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ground-1:         { var: "--color-panels-d" }
           # tile-ink-1:            { var: "--color-text-ivory" }
           # tile-ground-2:         { var: "--color-panels-a" }
           # tile-ink-2:            { var: "--color-text-ivory" }
@@ -1541,7 +1541,7 @@ themes:
           error-text:            { var: "--color-signals-error-text" }
           error-fill:            { var: "--color-signals-error" }
           field-required:        { var: "--color-signals-required" }
-          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ground-1:         { var: "--color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
           tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
@@ -1595,7 +1595,7 @@ themes:
           # error-text:            { var: "--color-signals-error-text" }
           # error-fill:            { var: "--color-signals-error" }
           # field-required:        { var: "--color-signals-required" }
-          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ground-1:         { var: "--color-panels-d" }
           # tile-ink-1:            { var: "--color-text-ivory" }
           # tile-ground-2:         { var: "--color-panels-a" }
           # tile-ink-2:            { var: "--color-text-ivory" }

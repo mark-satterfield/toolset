@@ -19,7 +19,7 @@ Component family specifications. Slot definitions, fixed sizing, behavior, and a
 
 **Fixed sizing/spacing.**
 - `position: fixed; top: 0; z-index: 100`.
-- Background = `--surface-primary` of the page's principal theme.
+- Background = `--nav-bg`, the topbar's dedicated navigation-ground role (a `from_palette: backgrounds` component role). It is bound per theme to the same ground as the section directly beneath it — the page ground, `--surface-primary` — so the nav blends seamlessly into the first section with no seam. The topbar has no standalone color of its own.
 - Height = `84px` at desktop widths. Reduce to `64px` below the 480px viewport via a discrete `@media` override (the topbar's only acceptable mobile-floor adjustment). Topbar height is a single value across every surface within a build.
 - No bottom border. No drop shadow. The nav blends into the page ground.
 - Nav-link type at the small-body sans size (15px), weight 400.

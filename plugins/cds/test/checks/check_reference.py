@@ -8,7 +8,7 @@ configuration must still pass. Every file is read fresh on each run.
 
 Checks (all config-agnostic):
 
-  1. SHAPE-HEADERS  — every shape header `## S<n>` in reference/shapes.md owns a
+  1. SHAPE-HEADERS  — every shape named in the Part A catalog of reference/shapes.md owns a
                       Slots bullet, a Layout bullet, and an Allowed-variants bullet.
   2. COMPONENTS     — reference/components.md enumerates at least one component
                       family header (the family list is enumerable, not empty).
@@ -63,8 +63,9 @@ _VALID_SCOPES = {"both", "standalone", "app-embedded"}
 
 # A role token reference: --role-<key> where <key> is lowercase-kebab.
 _ROLE_TOKEN_RE = re.compile(r"--role-([a-z0-9][a-z0-9-]*)")
-# A shape header: "## S<n> ..." (em dash or hyphen separator both fine).
-_SHAPE_HDR_RE = re.compile(r"^##\s+S(\d+)\b(.*)$", re.MULTILINE)
+# A shape name token (semantic, lowercase-kebab) as it appears in the Part A catalog
+# first column and in each shape's section header "## <name> — ...".
+_SHAPE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]+$")
 # Component family headers: "## <something>" excluding the catalog preamble row.
 _COMPONENT_HDR_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 # A scope tag: "[scope: <value>]".
@@ -78,33 +79,61 @@ def _section_body(text, start_match, all_starts, idx):
     return text[start:end]
 
 
+def _shape_catalog_names(text):
+    """Names from the Part A catalog (first column of each table row)."""
+    names = []
+    in_part_a = False
+    for line in text.splitlines():
+        if line.strip().startswith("## Part A"):
+            in_part_a = True
+            continue
+        if in_part_a:
+            if line.startswith("## ") and "Part A" not in line:
+                break
+            if line.startswith("|"):
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                if cells and _SHAPE_NAME_RE.match(cells[0]):
+                    names.append(cells[0])
+    return names
+
+
 def _check_shapes(repo_root, fails):
     path = _ref(repo_root, "shapes.md")
     if not os.path.isfile(path):
         fails.append(f"SHAPE-HEADERS: reference/shapes.md not found at {path}")
         return
     text = _read(path)
-    headers = list(_SHAPE_HDR_RE.finditer(text))
-    if not headers:
+    catalog = _shape_catalog_names(text)
+    if not catalog:
         fails.append(
-            "SHAPE-HEADERS: no shape headers (## S<n>) found in reference/shapes.md"
+            "SHAPE-HEADERS: no shape names found in the Part A catalog of reference/shapes.md"
         )
         return
-    for i, m in enumerate(headers):
-        sid = "S" + m.group(1)
-        body = _section_body(text, m, headers, i)
-        # Each shape must carry the three definitional bullets. Match the bold
-        # bullet labels case-insensitively; tolerate "Allowed variants" /
-        # "Allowed-variants" spelling.
+    catalog_set = set(catalog)
+    # Every H2 whose first word is a catalog name is that shape's section header.
+    all_h2 = list(_COMPONENT_HDR_RE.finditer(text))
+    shape_sections = []
+    for i, m in enumerate(all_h2):
+        words = m.group(1).split()
+        first = words[0] if words else ""
+        if first in catalog_set:
+            shape_sections.append((first, m, i))
+    documented = {name for name, _, _ in shape_sections}
+    for name in sorted(catalog_set - documented):
+        fails.append(f"SHAPE-HEADERS: catalog shape '{name}' has no '## {name} — ...' section")
+    # Each shape section must carry the three definitional bullets. Match the bold
+    # bullet labels case-insensitively; tolerate "Allowed variants" / "Allowed-variants".
+    for name, m, i in shape_sections:
+        body = _section_body(text, m, all_h2, i)
         if not re.search(r"^\s*[-*]\s+\*\*Slots:?\*\*", body, re.MULTILINE | re.IGNORECASE):
-            fails.append(f"SHAPE-HEADERS: {sid} is missing a **Slots** bullet")
+            fails.append(f"SHAPE-HEADERS: {name} is missing a **Slots** bullet")
         if not re.search(r"^\s*[-*]\s+\*\*Layout:?\*\*", body, re.MULTILINE | re.IGNORECASE):
-            fails.append(f"SHAPE-HEADERS: {sid} is missing a **Layout** bullet")
+            fails.append(f"SHAPE-HEADERS: {name} is missing a **Layout** bullet")
         if not re.search(
             r"^\s*[-*]\s+\*\*Allowed[ -]variants:?\*\*", body, re.MULTILINE | re.IGNORECASE
         ):
             fails.append(
-                f"SHAPE-HEADERS: {sid} is missing an **Allowed variants** bullet"
+                f"SHAPE-HEADERS: {name} is missing an **Allowed variants** bullet"
             )
 
 

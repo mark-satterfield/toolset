@@ -56,7 +56,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** None of the listed `content_meta` fields branch T1's shape pick directly; the branching signal is the visual type carried by the section (video / screenshot / code-or-install snippet / chat input or live affordance).
 
-**Default + alternate shapes.** Visual = video → S1 (alt S28); visual = screenshot → S2 (alt S1); visual = code/install snippet → S3 (alt S1); visual = chat input / live affordance → S3. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** Visual = video → centered-stack (alt sub-hero-split); visual = screenshot → split-text-media (alt centered-stack); visual = code/install snippet → centered-affordance (alt centered-stack); visual = chat input / live affordance → centered-affordance. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -66,7 +66,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count` (logos-only set: ≥ 10 vs. ≤ 8).
 
-**Default + alternate shapes.** items ≥ 10, logos only → S9 (alt S4); items ≤ 8, logos only → S4 (alt S9). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** items ≥ 10, logos only → logo-marquee (alt card-grid); items ≤ 8, logos only → card-grid (alt logo-marquee). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -76,7 +76,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count`; `has_metric_per_item`; presence of logos alongside metrics.
 
-**Default + alternate shapes.** count = 1, big metric → S13 (alt S11); count = 3, qualitative → S11; count ≥ 5, with metrics + logos → S12 (alt S11). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 1, big metric → feature-quote (alt stacked-quotes); count = 3, qualitative → stacked-quotes; count ≥ 5, with metrics + logos → quote-swiper (alt stacked-quotes). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -86,7 +86,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count`; `has_visual_per_item`; `copy_density_per_item`; `taxonomy_type` (categorical-pill case).
 
-**Default + alternate shapes.** count = 3, short blurbs, no big visual → S4 (alt S5); count = 4, distinct categories → S5 (alt S4); count = 2–4, substantial copy + substantial visual per item → S7 (alt S6); count = 5–6, distinct visual per item → S6 (alt S7); count ≥ 10 → S8 (alt S22); items are categorical pills, no visuals → S22 (alt S4). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 3, short blurbs, no big visual → card-grid (alt tagged-card-grid); count = 4, distinct categories → tagged-card-grid (alt card-grid); count = 2–4, substantial copy + substantial visual per item → alternating-rows (alt tabbed-panels); count = 5–6, distinct visual per item → tabbed-panels (alt alternating-rows); count ≥ 10 → card-carousel (alt tag-columns); items are categorical pills, no visuals → tag-columns (alt card-grid). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -96,7 +96,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Step count (mapped to `item_count`).
 
-**Default + alternate shapes.** step_count = 3 → S10; step_count ≠ 3 → S6 (alt = a vertical numbered list, or split into two T5 sections). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** step_count = 3 → numbered-steps; step_count ≠ 3 → tabbed-panels (alt = a vertical numbered list, or split into two T5 sections). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -106,7 +106,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count`; `taxonomy_type` (role / discipline); presence of sub-items per category.
 
-**Default + alternate shapes.** count = 3–4, role/discipline tagged → S5 (alt S4); count ≥ 5 categories with sub-items → S22. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 3–4, role/discipline tagged → tagged-card-grid (alt card-grid); count ≥ 5 categories with sub-items → tag-columns. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -116,7 +116,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count` (= 2 by definition for the binary fork).
 
-**Default + alternate shapes.** count = 2 → S20. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 2 → two-path-fork. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -126,7 +126,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Demo format (prompt → artifact, vs. multi-surface with one screenshot per surface).
 
-**Default + alternate shapes.** format = prompt → artifact → S25 (alt S6); format = multi-surface (one screenshot per surface) → S6 (alt S7). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** format = prompt → artifact → prompt-artifact (alt tabbed-panels); format = multi-surface (one screenshot per surface) → tabbed-panels (alt alternating-rows). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -136,7 +136,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Pricing model (subscription tiers vs. usage rates); `has_segment_toggle`.
 
-**Default + alternate shapes.** model = subscription tiers, segments present → S15; model = usage rates → S16 (alt S15). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** model = subscription tiers, segments present → pricing-tiers; model = usage rates → rate-table (alt pricing-tiers). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -146,7 +146,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Composite signal — multiple controls + visual.
 
-**Default + alternate shapes.** composite (multiple controls + visual) → S21 (alt S4). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** composite (multiple controls + visual) → pictogram-subcards (alt card-grid). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -156,7 +156,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** None; T11 always uses the accordion shape regardless of content properties.
 
-**Default + alternate shapes.** any → S14. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** any → accordion. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -166,7 +166,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count`; `has_emphasis_item` (one featured + secondary cards).
 
-**Default + alternate shapes.** count = 3 → S4 (alt S8); count ≥ 4 → S8 (alt S23); one featured + secondary cards → S23 (alt S8, with "3-card strip and carousel" as a tentative unbound alternate). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 3 → card-grid (alt card-carousel); count ≥ 4 → card-carousel (alt lead-plus-carousel); one featured + secondary cards → lead-plus-carousel (alt card-carousel, with "3-card strip and carousel" as a tentative unbound alternate). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -176,7 +176,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `has_source_tag_per_item`.
 
-**Default + alternate shapes.** items have source-type tags → S24 (alt S5). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** items have source-type tags → resource-grid (alt tagged-card-grid). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -186,7 +186,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Format (narrow banner vs. event/register card with thumbnail).
 
-**Default + alternate shapes.** format = narrow banner → S17; format = event/register card with thumbnail → embedded inside T10 (alt S17). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** format = narrow banner → banner-strip; format = event/register card with thumbnail → embedded inside T10 (alt banner-strip). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -196,7 +196,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** Composition signal — video + text + CTA.
 
-**Default + alternate shapes.** video + text + CTA → S28 (alt S1). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** video + text + CTA → sub-hero-split (alt centered-stack). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -206,7 +206,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `has_newsletter_capture` (bool) and `has_download_upgrade_path` (bool). These two T16-only booleans drive the shape pick. T16 may also be omitted entirely on browse-mode pages — see the decision table.
 
-**Default + alternate shapes.** `has_newsletter_capture = true` → S19 (alt S18 dark); `has_download_upgrade_path = true` → S18 light (alt S26); omitted on browse-mode page → none. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** `has_newsletter_capture = true` → cta-newsletter (alt cta-panel dark); `has_download_upgrade_path = true` → cta-panel light (alt install-buttons); omitted on browse-mode page → none. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -214,9 +214,9 @@ content_meta: {
 
 **Purpose.** Global navigation, legal, copyright.
 
-**`content_meta` fields consulted.** None; T17 always uses S27.
+**`content_meta` fields consulted.** None; T17 always uses footer-grid.
 
-**Default + alternate shapes.** always → S27. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** always → footer-grid. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -224,9 +224,9 @@ content_meta: {
 
 **Purpose.** Standalone label preceding another content unit.
 
-**`content_meta` fields consulted.** None; T18 always uses S0.
+**`content_meta` fields consulted.** None; T18 always uses heading-strip.
 
-**Default + alternate shapes.** always → S0. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** always → heading-strip. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 

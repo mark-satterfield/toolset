@@ -1,6 +1,6 @@
 # Page Types
 
-The framework recognizes six page types. Each page type carries an opinionated default for theme rotation, body family, container width, and motion register.
+The framework recognizes six page types. Each page type carries an opinionated default for theme treatment, body family, container width, and motion register.
 
 ## §10 Page-type index
 
@@ -8,7 +8,7 @@ The framework recognizes six page types. Each page type carries an opinionated d
 | Page Type                         | Section                | Theme Class                                                                                       | Purpose                                                                                         |
 | ----------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Primary Landing Page              | Hero                   | `default`                                                                                         | Set the mapped principal light ground.                                                          |
-| Primary Landing Page              | Feature blocks         | `default` → `editorial` → `deep` rotation                                                       | Use theme as section punctuation.                                                               |
+| Primary Landing Page              | Feature blocks         | `default` (principal theme; no rotation)                                                          | Stay on the principal theme; section grounds alternate `surface-primary`/`surface-secondary` per "Alternation of background colors" below. |
 | Primary Landing Page              | Pricing or comparison  | `clarity`                                                                                         | Push toward higher clarity on dense content.                                                    |
 | Primary Landing Page              | Footer                 | `deep`                                                                                            | Close on the mapped deepest dark theme.                                                         |
 | Editorial Detail Page             | Header (title block)   | `default`                                                                                         | Single-theme surface; no rotation.                                                              |
@@ -26,7 +26,7 @@ The framework recognizes six page types. Each page type carries an opinionated d
 | Application Shell Page            | All panes              | `default`                                                                                         | Single-theme surface across the app.                                                            |
 | Application Shell Page            | Code panels            | Local`code` wrapper                                                                               | Always-dark code surface.                                                                       |
 
-Within a page type, theme rotation is the principal visual rhythm. Marketing pages favor mid-section dark interjections to break up long light scrolls. Editorial pages stay on a single theme and let typography and the centered reading column carry the rhythm.
+Within a page type the principal theme stays **constant**; a landing page's visual rhythm comes from the deterministic background alternation (see "Alternation of background colors on landing pages" below), not from rotating themes. The only theme changes are the per-section overrides this index explicitly names (Pricing → `clarity`, Footer → `deep`). Editorial pages likewise stay on a single theme and let typography and the centered reading column carry the rhythm.
 
 ---
 
@@ -47,29 +47,31 @@ This is the page's identity. Across the page, vary the following dimensions sect
 
 | Dimension                       | Values to draw from                                          |
 | --------------------------------- | -------------------------------------------------------------- |
-| Theme state                     | any of the 8 themes (§4)                                    |
-| Surface treatment               | solid, or any of the 8 named textures (§22b)  Mix these up. |
-| Container vocabulary            | none, or any of §23–§39                                   |
-| Width                           | `u-container`, `u-container-small`, or `u-container-full`    |
-| Headline measure                | any`ch` token (§15)                                         |
-| Body measure                    | any`ch` token (§15), independent of the headline            |
-| Type role                       | any of the 17 styles (§7)                                   |
-| Alignment                       | any move from §41                                           |
+| Surface treatment               | solid or textured. Mix these up.                            |
+| Width                           | `u-container`, `u-container-small`, or `u-container-full` (`foundations/layout.md`) |
+| Headline measure                | any `ch` measure (`foundations/typography.md`)              |
+| Body measure                    | any `ch` measure (`foundations/typography.md`), independent of the headline |
+| Type role                       | any type role in `foundations/typography.md`                |
+| Alignment                       | any alignment register in `shapes.md` "Shape-set conventions" |
 | Density                         | sparse → packed                                             |
-| Structural pattern              | any pattern from §44                                        |
-| Section padding                 | `none`, `small`, `main`, `large`, or `page-top` (§13)       |
-| Radius (where containers round) | `none`, `small`, `main`, `large`, or `xlarge` (§17)         |
+| Structural pattern              | any shape in the `shapes.md` catalog                        |
+| Section padding                 | the `--section-pad-*` scale (`foundations/layout.md`)       |
+| Radius (where containers round) | the `--radius-*` scale (`foundations/layout.md`)            |
 
 **Combine freely.** Treat every section as a fresh composition decision. Do not pick one combination and repeat it across sections.
+
+**Theme and background are NOT variety dimensions.** The principal theme stays constant for the whole page — the only exceptions are the per-section theme islands named in §10 (Pricing → `clarity`, Footer → `deep`). Section grounds follow the deterministic `surface-primary`/`surface-secondary` schedule in "Alternation of background colors on landing pages" below. Never vary theme or background section-to-section for variety.
 
 Unless the shape of the section is intentionally centered, mix up alignment.  For example: If a shape had 2 columns, and one column  was text and the other was an image, then swaw this is on the left and which is on the right to add varienty between sections,
 
 ## Alternation of background colors on landing pages
 
-1. First section: surface-secondary
-2. Second section: surface-primary
-3. Alter back and forth either each new section
-4. Exception: Final CTA (T16) is always surface-secondary
+The alternation index starts at **1 on the first content section** in document order (the Hero) and increments by 1 for every following content section. The fixed topbar is not a section (it carries the page ground via `--nav-bg`, which equals `surface-primary`); the Footer is excluded (it uses its named theme island, §10). Every other full-width section in the page flow counts, including T18 heading strips.
+
+1. Odd-indexed sections (1, 3, 5, …): `surface-primary`.
+2. Even-indexed sections (2, 4, 6, …): `surface-secondary`.
+
+This is a strict, position-determined alternation: no shape, content type, or variety choice changes it, and there are **no exceptions**. A section that must read as a distinct theme (for example a dark Final CTA) is a **named theme island** in §10, applied on top of its scheduled `surface-primary`/`surface-secondary` ground — never a per-shape or one-off choice.
 
 ### Section sequence
 

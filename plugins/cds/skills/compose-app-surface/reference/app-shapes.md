@@ -1,6 +1,6 @@
 # App shapes
 
-App-shape catalog for `compose-app-surface` — whole-viewport partitionings (rails, main, side panels, bottom strips) plus the recurring intra-shell page compositions that fill the main area. Non-interchangeable with `reference/shapes.md` (S0–S28), which is scoped to vertically-scrolling landing/marketing pages. Use this catalog when the surface being built is an authenticated application screen rather than a landing-page section stack.
+App-shape catalog for `compose-app-surface` — whole-viewport partitionings (rails, main, side panels, bottom strips) plus the recurring intra-shell page compositions that fill the main area. Non-interchangeable with `reference/shapes.md` (the named-shape catalog), which is scoped to vertically-scrolling landing/marketing pages. Use this catalog when the surface being built is an authenticated application screen rather than a landing-page section stack.
 
 Disjoint naming scheme:
 
