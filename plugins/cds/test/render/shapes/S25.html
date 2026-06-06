@@ -1,0 +1,62 @@
+<section class="cds-shape" data-shape="S25" aria-labelledby="s25-heading" style="background:var(--role-surface-primary); padding-top:clamp(56px, calc(56px + 64 * (100vw - 320px) / 1120), 120px); padding-bottom:clamp(56px, calc(56px + 64 * (100vw - 320px) / 1120), 120px); padding-left:clamp(32px, calc(32px + 32 * (100vw - 320px) / 1120), 64px); padding-right:clamp(32px, calc(32px + 32 * (100vw - 320px) / 1120), 64px);">
+
+  <div style="max-width:1440px; margin:0 auto; display:flex; flex-direction:column; gap:clamp(32px, calc(32px + 16 * (100vw - 320px) / 1120), 48px);">
+
+    <header style="max-width:640px; display:flex; flex-direction:column; gap:12px;">
+      <h2 id="s25-heading" style="margin:0; font:600 clamp(28px, calc(28px + 12 * (100vw - 320px) / 1120), 40px)/1.15 var(--font-sans); letter-spacing:-0.01em; color:var(--role-text-primary); text-wrap:balance;">From a plain request to a working result</h2>
+      <p style="margin:0; font:400 17px/1.5 var(--font-sans); color:var(--role-text-secondary);">Describe what you need in everyday language. The generated output is ready to copy and run.</p>
+    </header>
+
+    <div style="display:flex; flex-wrap:wrap; align-items:stretch; gap:32px;">
+
+      <!-- Left column: mock user prompt (cause) -->
+      <div style="flex:1 1 360px; min-width:280px; display:flex; flex-direction:column; gap:12px;">
+        <p style="margin:0; font:600 13px/1 var(--font-sans); letter-spacing:0.06em; text-transform:uppercase; color:var(--role-text-tertiary);">Your prompt</p>
+        <figure style="margin:0; flex:1; display:flex; flex-direction:column; gap:16px; background:var(--role-surface-secondary); border:1px solid var(--role-border-subtle); border-radius:12px; padding:24px;">
+          <div style="display:inline-flex; align-items:center; gap:10px;">
+            <span aria-hidden="true" style="display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:9999px; background:var(--role-surface-tertiary); color:var(--role-text-secondary); font:600 13px/1 var(--font-sans);">You</span>
+            <span style="font:500 14px/1 var(--font-sans); color:var(--role-text-secondary);">Typed just now</span>
+          </div>
+          <blockquote style="margin:0; font:400 18px/1.55 var(--font-sans); color:var(--role-text-primary); text-wrap:pretty;">Write a small shell script that backs up the <code style="font-family:var(--font-mono); font-size:0.92em; color:var(--role-text-secondary);">reports</code> folder into a timestamped archive, and skip any file larger than 50&nbsp;MB.</blockquote>
+        </figure>
+      </div>
+
+      <!-- Right column: mock generated artifact (effect) — code variant via the real Code block component -->
+      <div style="flex:1 1 360px; min-width:280px; display:flex; flex-direction:column; gap:12px;">
+        <p style="margin:0; font:600 13px/1 var(--font-sans); letter-spacing:0.06em; text-transform:uppercase; color:var(--role-text-tertiary);">Generated artifact</p>
+        <figure class="code-block" data-docs-href="#" style="margin:0; flex:1; padding:24px; border:1px solid var(--role-border-subtle);">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;">
+            <div style="display:inline-flex; align-items:center; gap:8px;">
+              <label for="s25-artifact-lang" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;">Language</label>
+              <select id="s25-artifact-lang" class="standard-text-input" style="height:32px; padding:0 8px; border-radius:8px;">
+                <option selected>Shell</option>
+                <option>JavaScript</option>
+                <option>Python</option>
+              </select>
+            </div>
+            <button type="button" class="button-tertiary" style="min-height:32px; padding:4px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; font-size:14px; line-height:1;">
+              <span aria-hidden="true">&#x2398;</span> Copy
+            </button>
+          </div>
+
+          <pre style="margin:0; overflow-x:auto;"><code style="font-family:var(--font-mono); font-size:13px; line-height:1.6; color:var(--role-text-primary);"><span style="color:var(--role-text-tertiary);">#!/usr/bin/env bash</span>
+<span style="color:var(--role-text-tertiary);"># Back up ./reports, skipping files over 50 MB</span>
+<span style="color:var(--role-accent-primary);">set</span> -euo pipefail
+
+stamp=<span style="color:var(--role-accent-interactive);">"$(date +%Y%m%d-%H%M%S)"</span>
+archive=<span style="color:var(--role-accent-interactive);">"reports-backup-$stamp.tar.gz"</span>
+
+<span style="color:var(--role-accent-primary);">find</span> reports -type f -size -50M -print0 \
+  | <span style="color:var(--role-accent-primary);">tar</span> --null -czf <span style="color:var(--role-accent-interactive);">"$archive"</span> --files-from=-
+
+<span style="color:var(--role-accent-primary);">echo</span> <span style="color:var(--role-accent-interactive);">"Wrote $archive"</span></code></pre>
+
+          <span aria-live="polite" style="position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;"></span>
+        </figure>
+      </div>
+
+    </div>
+
+  </div>
+
+</section>

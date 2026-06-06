@@ -1,0 +1,49 @@
+<section class="cds-shape" data-shape="S6">
+  <div style="max-width:1192px; margin:0 auto; padding:80px 24px; display:flex; flex-direction:column; gap:40px;">
+
+    <div style="display:flex; flex-direction:column; gap:12px; max-width:720px;">
+      <p style="margin:0; font-size:13px; letter-spacing:0.04em; text-transform:uppercase; color:var(--role-text-tertiary);">Product tour</p>
+      <h2 style="margin:0; font-size:clamp(28px, 4vw, 40px); line-height:1.1; color:var(--role-text-primary);">One workspace for every stage of the work</h2>
+    </div>
+
+    <div class="pill-tab-strip" role="tablist" aria-label="Product capabilities" style="display:inline-flex; gap:4px; width:max-content; max-width:100%; overflow-x:auto;">
+      <button type="button" id="s6-tab-plan" class="pill-tab-strip__button active" role="tab" aria-selected="true" aria-controls="s6-panel-plan" style="padding:8px 16px; white-space:nowrap; background:var(--role-accent-primary);">Plan</button>
+      <button type="button" id="s6-tab-build" class="pill-tab-strip__button" role="tab" aria-selected="false" aria-controls="s6-panel-build" tabindex="-1" style="padding:8px 16px; white-space:nowrap;">Build</button>
+      <button type="button" id="s6-tab-review" class="pill-tab-strip__button" role="tab" aria-selected="false" aria-controls="s6-panel-review" tabindex="-1" style="padding:8px 16px; white-space:nowrap;">Review</button>
+      <button type="button" id="s6-tab-ship" class="pill-tab-strip__button" role="tab" aria-selected="false" aria-controls="s6-panel-ship" tabindex="-1" style="padding:8px 16px; white-space:nowrap;">Ship</button>
+    </div>
+
+    <div id="s6-panel-plan" role="tabpanel" aria-labelledby="s6-tab-plan" tabindex="0" style="display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:center;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <h3 style="margin:0; font-size:24px; line-height:1.2; color:var(--role-text-primary);">Map the work before you start</h3>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--role-text-secondary);">Turn scattered notes into a shared plan. Group tasks by milestone, assign owners, and surface dependencies so the whole team sees the same picture from day one.</p>
+      </div>
+      <div role="img" aria-label="Illustration of a planning board with grouped milestones" style="aspect-ratio:16/9; border-radius:var(--radius-xl); background:var(--role-tile-ground-1); color:var(--role-tile-ink-1); border:1px solid var(--role-border-subtle); display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font-size:14px;">Planning board</div>
+    </div>
+
+    <div id="s6-panel-build" role="tabpanel" aria-labelledby="s6-tab-build" tabindex="0" hidden style="display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:center;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <h3 style="margin:0; font-size:24px; line-height:1.2; color:var(--role-text-primary);">Keep momentum while you build</h3>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--role-text-secondary);">Track active work in a focused queue. Status, blockers, and recent changes stay in one place, so nobody has to chase an update across three tools.</p>
+      </div>
+      <div role="img" aria-label="Illustration of an active work queue with status indicators" style="aspect-ratio:16/9; border-radius:var(--radius-xl); background:var(--role-tile-ground-2); color:var(--role-tile-ink-2); border:1px solid var(--role-border-subtle); display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font-size:14px;">Active work queue</div>
+    </div>
+
+    <div id="s6-panel-review" role="tabpanel" aria-labelledby="s6-tab-review" tabindex="0" hidden style="display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:center;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <h3 style="margin:0; font-size:24px; line-height:1.2; color:var(--role-text-primary);">Review with full context</h3>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--role-text-secondary);">Comments, change history, and approvals live alongside the work itself. Reviewers see what changed and why, and sign off without leaving the page.</p>
+      </div>
+      <div role="img" aria-label="Illustration of a review panel with inline comments and an approval state" style="aspect-ratio:16/9; border-radius:var(--radius-xl); background:var(--role-tile-ground-3); color:var(--role-tile-ink-3); border:1px solid var(--role-border-subtle); display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font-size:14px;">Review panel</div>
+    </div>
+
+    <div id="s6-panel-ship" role="tabpanel" aria-labelledby="s6-tab-ship" tabindex="0" hidden style="display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:center;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        <h3 style="margin:0; font-size:24px; line-height:1.2; color:var(--role-text-primary);">Ship and close the loop</h3>
+        <p style="margin:0; font-size:16px; line-height:1.6; color:var(--role-text-secondary);">Mark work done, notify stakeholders, and roll the outcome back into the next plan. A clean handoff means the next cycle starts from a known state.</p>
+      </div>
+      <div role="img" aria-label="Illustration of a release summary with completed items and notifications" style="aspect-ratio:16/9; border-radius:var(--radius-xl); background:var(--role-tile-ground-accent); color:var(--role-tile-ink-accent); border:1px solid var(--role-border-subtle); display:flex; align-items:center; justify-content:center; padding:24px; text-align:center; font-size:14px;">Release summary</div>
+    </div>
+
+  </div>
+</section>

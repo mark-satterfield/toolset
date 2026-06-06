@@ -127,9 +127,9 @@ Worked example — `default`, built from light bindings + button bindings:
 }
 ```
 
-Repeat the same structure for every theme in the YAML (`clarity`, `editorial`, `punctuation`, `statement`, `feature-dark`, `code`, `deep`). Each class contains only the roles bound for that theme; roles not listed inherit from the ancestor theme.
+Repeat the same structure for every theme in the YAML (`clarity`, `editorial`, `punctuation`, `statement`, `feature-dark`, `code`, `deep`). Each theme binds every role explicitly in the YAML, so each generated class is self-contained — it lists a declaration for every role and never relies on inheriting an unlisted role from another theme.
 
-**Dark-mode override pattern.** Light-leaning themes must rebind their roles when the document root carries `data-mode="dark"`. Use the YAML's dark-mode binding rows for the override values.
+**Dark-mode override pattern.** A theme that changes between modes must rebind its roles when the document root carries `data-mode="dark"`. Only themes that declare a live `dark` mode in the YAML (`default`, `clarity`, and its alias `editorial`) emit an override block; use the YAML's dark-mode binding rows for the override values. A theme whose YAML has no live `dark` mode emits no override block — it renders its single (light) expression in both UI modes.
 
 Worked example — `default` dark-mode override:
 
@@ -155,7 +155,27 @@ Worked example — `default` dark-mode override:
 }
 ```
 
-Apply this pattern for every light-leaning theme listed in the YAML's dark-mode bindings (`default`, `clarity`, `editorial`). Dark themes (`feature-dark`, `code`, `deep`) do not need a dark-mode override — they are already dark.
+Apply this pattern for every theme that declares a live `dark` mode in the YAML (`default`, `clarity`; `editorial` inherits `default`'s via the alias mechanism below). Themes that do not change between modes (`punctuation`, `statement`) need no override — their `dark` mode is intentionally absent, carried only as a commented-out template in the YAML. Dark themes (`feature-dark`, `code`, `deep`) also need no override — they are already dark.
+
+**Alias-theme emission pattern.** An alias theme — declared in the YAML as `{ alias: <target> }` (e.g. `editorial: { alias: default }`) — has no bindings of its own. The generator emits it by adding the alias selector to **every** rule it generates for the target theme (the base class and each mode override) as a grouped selector. It never emits a standalone block for the alias and never re-derives values. **Resolution of the share-vs-declare question: an alias shares 100% of its target's rules in every mode — it does not declare its own override block.**
+
+Worked example — `editorial` aliasing `default`:
+
+```css
+.default,
+.editorial {
+  --surface-primary: var(--color-backgrounds-ivory);
+  /* ...every role the target binds, emitted once for both selectors... */
+}
+
+:root[data-mode="dark"] .default,
+:root[data-mode="dark"] .editorial {
+  --surface-primary: var(--color-backgrounds-brand-ink);
+  /* ...every dark-mode row the target declares... */
+}
+```
+
+Because the alias is grafted onto the target's selector list, it automatically tracks the target's mode behavior: if the target changes between modes, so does the alias; if the target does not, neither does the alias. The generator reads the `alias` field from data — it must not hardcode the alias map. Aliases do not chain (an alias must point at a concrete theme); the elements linter enforces this.
 
 **Drift rule:** if a theme binding changes, change it in `customizable-design-elements.yaml` and regenerate the relevant block here. Never edit role-to-swatch bindings directly inside this CSS pattern.
 
@@ -245,11 +265,11 @@ Themes are CSS classes that wrap a section. Each theme is the structural binding
 
 ### Why theme contracts exist
 
-The role-to-swatch binding is the load-bearing decoupling in the whole system. Components ask for `--text-primary`; the theme wrapper says what `--text-primary` resolves to in this section, in this mode. Without theme contracts, every component would have to know its surface — and the system would collapse into per-component color logic. The YAML's binding rows are exhaustive: every role slot a theme paints is listed explicitly. Roles a theme does not list are inherited from the ancestor theme, which means the cascade does the resolution work without redundant declarations.
+The role-to-swatch binding is the load-bearing decoupling in the whole system. Components ask for `--text-primary`; the theme wrapper says what `--text-primary` resolves to in this section, in this mode. Without theme contracts, every component would have to know its surface — and the system would collapse into per-component color logic. The YAML's binding rows are exhaustive: every theme lists every role explicitly, so each theme class is fully self-contained and resolves without depending on another theme's declarations.
 
 ### Light vs. dark theme binding narrative
 
-Light-leaning themes (`default`, `clarity`, `editorial`, `punctuation`, `statement`) bind their role slots to light-mode swatches in their default class declaration. When the document root carries `data-mode="dark"`, those same theme classes are rebound — every role slot the theme paints is reassigned to its dark-mode swatch under a `:root[data-mode="dark"] .{theme}` selector. The primary accent softens to its dark-mode variant; surfaces invert; ink flips. Dark themes (`feature-dark`, `code`, `deep`) require no dark-mode rebinding — they are already dark and continue to render dark in either mode. The literal swatch values for both the light bindings and the dark-mode overrides live in `customizable-design-elements.yaml`; this document does not duplicate them.
+Light themes come in two kinds. Themes that change between modes (`default`, `clarity`, and its alias `editorial`) bind their role slots to light-mode swatches in their default class declaration; when the document root carries `data-mode="dark"`, those same theme classes are rebound — every role slot the theme paints is reassigned to its dark-mode swatch under a `:root[data-mode="dark"] .{theme}` selector. The primary accent softens to its dark-mode variant; surfaces invert; ink flips. Themes that do not change between modes (`punctuation`, `statement`) declare no live `dark` mode — they render their single expression in both UI modes, and the YAML keeps their dark mapping as a commented-out template for a maintainer who later wants them to diverge. Dark themes (`feature-dark`, `code`, `deep`) likewise require no dark-mode rebinding — they are already dark and continue to render dark in either mode. The literal swatch values for the light bindings and any dark-mode overrides live in `customizable-design-elements.yaml`; this document does not duplicate them.
 
 There is one cross-mode invariant: the chromatic signal (`--color-signals-focus`, consumed via the `switch-active-bg` and `input-focus-ring` roles) used for the switch active-fill and the conversion-input focus ring stays constant across every theme and every mode. It is the only signal the system treats as mode-invariant.
 
@@ -263,7 +283,7 @@ The light-mode theme bindings (which color each role resolves to when the theme 
 
 ### §6.2 Dark-mode theme bindings
 
-The dark-mode bindings follow the same role-binding contract as §6.1 but supply different color values per role. Same source-of-truth principle: values live in the elements YAML's `dark` block per theme. Theme classes that have NO dark binding are taken at face value — they only have a light expression.
+The dark-mode bindings follow the same role-binding contract as §6.1 but supply different color values per role. Same source-of-truth principle: values live in the elements YAML's `dark` block per theme — present as a live block only for concrete themes that actually change between modes (`default`, `clarity`; `editorial` carries no block of its own — it is an alias that mirrors `default`). A theme with no live `dark` block is taken at face value: it has a single expression that renders in both UI modes. For a theme that does not change between modes, the YAML keeps the full dark mapping as a commented-out template (uncomment and edit to make it diverge), so the binding stays on record without emitting a redundant override.
 
 ### §6.3 Button slot bindings
 
@@ -289,7 +309,6 @@ Use a variable-axis weight family. If you map a non-variable font into the syste
 
 - §6.4's instruction to "document the substitution in the font mapping instructions (§13.2)" refers to `typography.md §13.2`; the cross-reference is carried as a behavioral expectation, and the §13.2 contract lives in the typography foundations.
 - §7's logo-color rule specifies `fill="currentColor"` on the inner path and `fill="none"` on the outer `<svg>` but does not specify behavior for multi-color logos or logos with multiple inner paths needing different roles.
-- §8.2 names `editorial` as a light-leaning theme requiring a dark-mode override block, but §6 elsewhere describes `editorial` as a direct alias of `default`. The override pattern does not explicitly address whether alias themes share the override block with their parent or declare their own.
 - §8.3's `.button-primary` example hard-codes `font-weight: 480` for light mode but does not show the dark-mode rebinding, even though §6.4 requires the weight to oscillate per mode. The implementation pattern for mode-driven weight oscillation is not given.
 - §8.3's `.button-primary` transition list (`color 0.1s, background-color 0.2s, box-shadow 0.2s`) gives literal duration/easing values that are not cross-referenced to the global motion tokens described in §2.
 - §9's inline initialization script defaults to `'system'` when no stored preference exists, but the surrounding §7 text describes the three-branch CSS as reading `data-mode="light"`, `data-mode="dark"`, or `data-mode="system"` — the default is consistent, but the behavior when `data-mode` is missing entirely (e.g., script fails to run) is not defined.

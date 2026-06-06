@@ -1,0 +1,35 @@
+<div class="cds-specimen" data-component="button-base">
+  <div style="display:flex; flex-direction:column; gap:20px;">
+
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:16px;">
+      <button type="button" class="button-base button-primary">Save changes</button>
+      <button type="button" class="button-base button-secondary">Discard</button>
+      <button type="button" class="button-base button-tertiary">
+        <span aria-hidden="true">&#8599;</span>
+        Learn more
+      </button>
+      <button type="button" class="button-base button-primary">Start free trial</button>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:16px;">
+      <button type="button" class="button-base button-primary" disabled>Save changes</button>
+      <button type="button" class="button-base button-secondary" disabled>Discard</button>
+      <button type="button" class="button-base button-tertiary" disabled>Learn more</button>
+      <button type="button" class="button-base button-primary" disabled>Start free trial</button>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:16px;">
+      <button type="button" class="button-base button-primary" aria-busy="true">
+        <span style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;">Saving</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M8 2 A6 6 0 1 1 2 8" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button type="button" class="button-base button-secondary" aria-label="Close" style="min-width:40px;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M4 4 L12 12 M12 4 L4 12" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>

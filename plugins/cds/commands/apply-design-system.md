@@ -20,4 +20,4 @@ Invoke the `apply-design-system` skill in this plugin. Load and execute `skills/
 - This command emits NO code. It surfaces reference content into the conversation as a structured markdown response.
 - The author writes the non-UI code (handlers, data fetching, state, glue) using the surfaced vocabulary; this command provides the contract their code must bind against.
 - Every value surfaced cites a reference file — no class name, token, event hook, or ARIA contract is invented.
-- Halt code: `MISSING_SPEC` if the reference does not cover the author's category; recommends adding the gap to `compose-app-surface/reference/missing-components.md` for triage.
+- Halt code: `MISSING_SPEC` if the reference does not cover the author's category; surfaces the gap explicitly.

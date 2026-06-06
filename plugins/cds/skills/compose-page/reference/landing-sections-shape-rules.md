@@ -128,7 +128,7 @@ returns: ordered Shape[]   # primary first, then valid alternates
 
 ## Known gaps
 
-- Composition rules for the five non-landing page types — Editorial Detail, Resource Index, Documentation, Conversion/Authentication, Application Shell — are not present in this file. These rules are landing-scoped; composition for those page types is open work.
+- This file carries composition rules for landing pages. Composition rules for other page types — Editorial Detail, Resource Index, Documentation, Conversion/Authentication, Application Shell — are not present here yet; add a page-type rules file (or extend this one) to enable them.
 - The function consults the Part C decision table. `content_meta` fields are the secondary signals that disambiguate when one section type has multiple valid shapes (the common case — most section types have 2-4 valid shapes).
 - T5 Workflow step_count ≠ 3 fallback: the "or split into two T5 sections" portion of the fallback is a composition instruction outside the Shape[] return type and needs a downstream decision (which shape is the canonical non-3 fallback).
 - T12 News "one featured + secondary cards" lists "3-card strip and carousel" as a tentative alternate that is not yet bound to a shape ID.

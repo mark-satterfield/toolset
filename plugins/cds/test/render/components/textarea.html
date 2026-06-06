@@ -1,0 +1,35 @@
+<div class="cds-specimen" data-component="textarea">
+  <form style="display: grid; gap: 24px; max-width: 480px;">
+    <div style="display: grid; gap: 4px;">
+      <textarea
+        class="textarea"
+        rows="3"
+        aria-label="Project summary"
+        placeholder="Describe what this project is for and who it serves…"
+        style="width: 100%; min-height: 84px;"></textarea>
+      <span style="font-size: 13px; font-weight: 400; color: var(--role-text-tertiary); margin-top: 4px;">Plain text only. Two to three sentences is plenty.</span>
+    </div>
+
+    <div style="display: grid; gap: 4px;">
+      <textarea
+        class="textarea"
+        rows="3"
+        aria-label="Release notes"
+        aria-invalid="true"
+        aria-describedby="textarea-error"
+        placeholder="What changed in this release?"
+        style="width: 100%; min-height: 84px;">Patched the export queue and trimmed cold-start time.</textarea>
+      <span id="textarea-error" aria-live="polite" style="font-size: 13px; font-weight: 400; color: var(--role-error-text); margin-top: 4px;">Release notes must mention the affected version.</span>
+    </div>
+
+    <div style="display: grid; gap: 4px;">
+      <textarea
+        class="textarea"
+        rows="3"
+        disabled
+        aria-label="Audit comment (read only)"
+        placeholder="Comments are locked once an audit is published."
+        style="width: 100%; min-height: 84px;">Reviewed and approved by the platform team on the prior cycle.</textarea>
+    </div>
+  </form>
+</div>

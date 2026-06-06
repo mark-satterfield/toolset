@@ -13,7 +13,7 @@ Loads the reference content the author needs to write non-UI code (handlers, dat
 - **From caller (runtime):** what is being built or changed (one sentence); which generated surface (page, section, or component) the author's code interacts with; rendering context (app-embedded or standalone); UI category (navigation, shell, modal, form, table, card grid, hero, footer, etc.); any motion or interaction requirements beyond defaults.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML — used to surface accurate token names back to the author.
 - **From shared reference (`../../reference/`):** always `page-types.md`, `foundations/overview.md`, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`; plus category-specific files (`components.md`, `foundations/motion.md`, `foundations/imagery.md`, `foundations/responsive.md`, the shared `shapes.md` catalog, and relevant shape-rules content from sibling skills' reference trees when needed).
-- **From `../compose-app-surface/reference/`:** `app-shapes.md` and `missing-components.md` for shell-surface and modal-context questions.
+- **From `../compose-app-surface/reference/`:** `app-shapes.md` for shell-surface and modal-context questions.
 
 This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that points at host-project code or stylesheets. It surfaces token names from `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`; it never emits CSS or HTML.
 
@@ -52,7 +52,7 @@ This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that 
 
 ## Halt conditions
 
-- `MISSING_SPEC` — the reference does not cover the author's category. Surface the gap explicitly; recommend that the missing piece be added to `../compose-app-surface/reference/missing-components.md` for triage. Do not direct the author at host-project code as a substitute for missing reference.
+- `MISSING_SPEC` — the reference does not cover the author's category. Surface the gap explicitly. Do not direct the author at host-project code as a substitute for missing reference.
 
 Halt surface format:
 

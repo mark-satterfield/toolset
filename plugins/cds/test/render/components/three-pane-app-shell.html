@@ -1,0 +1,43 @@
+<div class="cds-specimen" data-component="three-pane-app-shell">
+  <div class="three-pane-app-shell" style="display:flex; height:420px; border:1px solid var(--role-border-subtle); border-radius:8px; overflow:hidden;">
+
+    <nav aria-label="Workspace areas" style="width:64px; flex:0 0 64px; display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 0; background:var(--role-surface-secondary);">
+      <a href="#" aria-current="page" aria-label="Inbox"
+         style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:8px; background:var(--role-surface-tertiary); color:var(--role-text-primary);">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5 H17 V15 H3 Z M3 11 H7 A3 3 0 0 0 13 11 H17" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="#" aria-label="Projects"
+         style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:8px; color:var(--role-text-tertiary);">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6 H8 L9.5 8 H17 V15 H3 Z" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="#" aria-label="Settings"
+         style="display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:8px; color:var(--role-text-tertiary);">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="10" cy="10" r="3"/><path d="M10 2 V4 M10 16 V18 M2 10 H4 M16 10 H18 M4.3 4.3 L5.7 5.7 M14.3 14.3 L15.7 15.7 M15.7 4.3 L14.3 5.7 M5.7 14.3 L4.3 15.7" stroke-linecap="round"/></svg>
+      </a>
+    </nav>
+
+    <nav aria-label="Conversations" style="width:300px; flex:0 0 300px; display:flex; flex-direction:column; padding:12px; gap:4px; background:var(--role-surface-secondary); border-right:0.5px solid var(--role-border-subtle); overflow:hidden;">
+      <a href="#" class="three-pane-app-shell__row active" aria-current="page"
+         style="display:block; padding:10px 12px; border-radius:8px; text-decoration:none; color:var(--role-text-primary);">
+        <strong style="display:block;">Quarterly planning sync</strong>
+        <span style="color:var(--role-text-tertiary); font-size:14px;">Aria reassigned three tasks — 2m ago</span>
+      </a>
+      <a href="#" class="three-pane-app-shell__row"
+         style="display:block; padding:10px 12px; border-radius:8px; text-decoration:none; color:var(--role-text-primary);">
+        <strong style="display:block;">Onboarding feedback</strong>
+        <span style="color:var(--role-text-tertiary); font-size:14px;">New reply from Devon — 1h ago</span>
+      </a>
+      <a href="#" class="three-pane-app-shell__row"
+         style="display:block; padding:10px 12px; border-radius:8px; text-decoration:none; color:var(--role-text-primary);">
+        <strong style="display:block;">Billing migration</strong>
+        <span style="color:var(--role-text-tertiary); font-size:14px;">Draft saved — yesterday</span>
+      </a>
+    </nav>
+
+    <main style="flex:1 1 auto; padding:24px; overflow:auto;">
+      <h2>Quarterly planning sync</h2>
+      <p style="color:var(--role-text-secondary);">Thread between three participants about scope for the next cycle. The detail pane absorbs all remaining width and updates in place as a list row is selected.</p>
+      <p>We agreed to defer the analytics rework, pull the export flow forward, and revisit staffing once the roadmap is signed off.</p>
+    </main>
+  </div>
+</div>

@@ -1,0 +1,57 @@
+<div class="cds-specimen" data-component="setting-card">
+
+  <!-- Variant: control-kind = toggle, state = off -->
+  <article class="setting-card">
+    <div style="display:grid; grid-template-columns:1fr auto; column-gap:20px; width:100%;">
+      <div class="setting-card__title" id="setting-metrics-title" style="grid-column:1; grid-row:1; display:inline-flex; gap:8px; align-items:center;">
+        Anonymous usage analytics
+      </div>
+      <div style="grid-column:2; grid-row:1 / span 2; display:flex; align-items:center;">
+        <button type="button" role="switch" aria-checked="false" aria-labelledby="setting-metrics-title"
+                class="switch-active" style="position:relative; display:inline-flex; flex-shrink:0; padding:2px; border:0; border-radius:9999px; cursor:pointer;">
+          <span class="switch-active__track" style="position:absolute; inset:0; border-radius:9999px;"></span>
+          <span class="switch-active__thumb" style="position:relative; width:16px; height:16px; border-radius:9999px; transform:translateX(0);"></span>
+        </button>
+      </div>
+      <div class="setting-card__body" style="grid-column:1; grid-row:2;">
+        Share de-identified interaction data to help us prioritize the features your team uses most. No message content is ever collected. <a href="#">Read the data policy</a>.
+      </div>
+    </div>
+  </article>
+
+  <!-- Variant: control-kind = toggle, state = on, with optional pill beside title -->
+  <article class="setting-card">
+    <div style="display:grid; grid-template-columns:1fr auto; column-gap:20px; width:100%;">
+      <div class="setting-card__title" id="setting-digest-title" style="grid-column:1; grid-row:1; display:inline-flex; gap:8px; align-items:center;">
+        Weekly activity digest
+        <span class="outline-pill-badge" style="border-radius:9999px; line-height:1;">NEW</span>
+      </div>
+      <div style="grid-column:2; grid-row:1 / span 2; display:flex; align-items:center;">
+        <button type="button" role="switch" aria-checked="true" aria-labelledby="setting-digest-title"
+                class="switch-active" style="position:relative; display:inline-flex; flex-shrink:0; padding:2px; border:0; border-radius:9999px; cursor:pointer;">
+          <span class="switch-active__track on" style="position:absolute; inset:0; border-radius:9999px;"></span>
+          <span class="switch-active__thumb" style="position:relative; width:16px; height:16px; border-radius:9999px; transform:translateX(16px);"></span>
+        </button>
+      </div>
+      <div class="setting-card__body" style="grid-column:1; grid-row:2;">
+        Receive an email every Monday summarizing the previous week's project activity, open threads, and pending approvals across your workspace.
+      </div>
+    </div>
+  </article>
+
+  <!-- Variant: control-kind = primary-action -->
+  <article class="setting-card">
+    <div style="display:grid; grid-template-columns:1fr auto; column-gap:20px; width:100%;">
+      <div class="setting-card__title" style="grid-column:1; grid-row:1; display:inline-flex; gap:8px; align-items:center;">
+        Export account data
+      </div>
+      <div style="grid-column:2; grid-row:1 / span 2; display:flex; align-items:center;">
+        <button type="button" class="button-base button-primary">Request export</button>
+      </div>
+      <div class="setting-card__body" style="grid-column:1; grid-row:2;">
+        Generate a downloadable archive of your profile, projects, and activity history. The archive is prepared in the background and a download link is emailed to you when it is ready.
+      </div>
+    </div>
+  </article>
+
+</div>

@@ -1,0 +1,35 @@
+<div class="cds-specimen" data-component="video-dialog">
+  <div style="display:flex; flex-direction:column; gap:32px;">
+
+    <div style="position:relative; min-height:360px; border-radius:16px; overflow:hidden; display:grid; place-items:center;">
+      <div class="video-dialog__backdrop" aria-hidden="true" style="position:absolute; inset:0;"></div>
+
+      <div role="dialog" aria-modal="true" aria-label="Product walkthrough video" class="video-dialog" style="position:relative; width:80%; height:auto; max-height:90%;">
+        <button type="button" aria-label="Close" class="button-base button-tertiary" style="position:absolute; top:-12px; right:-12px; min-height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:9999px; background:var(--role-surface-raised); z-index:1;">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 3l10 10M13 3L3 13" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <video controls preload="metadata" style="display:block; width:100%; height:auto; border-radius:12px; background:var(--role-surface-primary);" poster="">
+          <source src="walkthrough.mp4" type="video/mp4">
+          <track kind="captions" srclang="en" label="English" default src="walkthrough.en.vtt">
+          Your browser does not support embedded video.
+        </video>
+      </div>
+    </div>
+
+    <div style="position:relative; min-height:360px; border-radius:16px; overflow:hidden; display:grid; place-items:center;">
+      <div class="video-dialog__backdrop" aria-hidden="true" style="position:absolute; inset:0;"></div>
+
+      <div role="dialog" aria-modal="true" aria-label="Expanded image: warehouse floor plan" class="video-dialog" style="position:relative; width:70%; height:auto; max-height:90%;">
+        <button type="button" aria-label="Close" class="button-base button-tertiary" style="position:absolute; top:-12px; right:-12px; min-height:36px; width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:9999px; background:var(--role-surface-raised); z-index:1;">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 3l10 10M13 3L3 13" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <img src="floor-plan.png" alt="Annotated floor plan of the distribution warehouse showing inbound docks, staging lanes, and the pick-and-pack zone" style="display:block; width:100%; height:auto; border-radius:12px;">
+      </div>
+    </div>
+
+  </div>
+</div>

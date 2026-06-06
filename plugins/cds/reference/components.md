@@ -325,23 +325,9 @@ The §14 source table provides one row per component family with four facets —
 
 ---
 
-## §14 Brand button
-
-**Purpose.** A button that does NOT invert with mode — paints the brand accent regardless of page theme.
-
-**Structure (slots).** Mapped accent fill + mapped inverse/light label.
-
-**Theme Roles Used.** `--button-brand-bg`, `--button-brand-text`.
-
-**Behavior.** Hover deepens fill one step (mapped accent-hover).
-
-**Sizing / notes.** Does not invert with mode. Inherits remaining base from §14.1. The "accent-hover" step resolves to `--button-brand-bg-hover`, one step deeper than `--button-brand-bg` on the brand-accent ramp (the role binding supplies the deepened value per theme).
-
----
-
 ## §14 Destructive button
 
-**Purpose.** A button variant reserved for destructive actions (delete, remove, revoke, irrevocable resets). Visually distinct from primary / secondary / brand via a destructive (red) fill.
+**Purpose.** A button variant reserved for destructive actions (delete, remove, revoke, irrevocable resets). Visually distinct from primary / secondary via a destructive (red) fill.
 
 **Structure (slots).** Fill + label. Optional leading-icon slot (a warning or trash glyph preceding the label).
 
@@ -468,7 +454,7 @@ The wrapper-zone pattern (hairline-divider section that hosts a Destructive butt
 
 **Behavior.** Whole-card opacity dims to 0.6 on hover over 200ms.
 
-**Sizing / notes.** Tile aspect-ratio 1:1 for side items, 16:9 for the lead item. SVG centered with `padding: 48–64px`. Title underline at 0.2em offset. Bottom border `0.5px solid --border-subtle`. Saturated panel ground binds to `--role-surface-accent` (the theme's tinted illustration ground).
+**Sizing / notes.** Tile aspect-ratio 1:1 for side items, 16:9 for the lead item. SVG centered with `padding: 48–64px`. Title underline at 0.2em offset. Bottom border `0.5px solid --border-subtle`. Saturated panel ground binds to a feature-tile ground role (`--role-tile-ground-1` / `--role-tile-ground-2` / `--role-tile-ground-3`, `from_palette: panels`) — pick a tile number per the page-type rules, never a color.
 
 **Lead-vs-side selection.** The first item in the collection renders as the `lead` (16:9 tile, larger title scale); every subsequent item renders as a `side` item (1:1 tile). When a section shows a single item, it always uses the `lead` treatment.
 
@@ -633,7 +619,7 @@ Two sizes share the same frame contract:
 
 **Structure (slots).** Mapped warm panel or status fill + label.
 
-**Theme Roles Used.** `--role-status-bg`, `--role-status-text`. The fill resolves per state from the status-color mapping below.
+**Theme Roles Used.** Ground and ink resolve per state from the status-color mapping below — grounds `--role-status-positive-bg` / `--role-status-caution-bg` / `--role-status-critical-bg` (neutral uses `--role-surface-secondary`); ink `--role-text-primary` / `--role-text-inverse` / `--role-text-tertiary`.
 
 **Behavior.** None at rest.
 
@@ -836,28 +822,28 @@ Each ground is a role, not a swatch — the `status-*-bg` roles are constrained 
 
 ## §14.1 Button base
 
-**Purpose.** The base specification applied across every button variant in the component table (Primary, Secondary, Tertiary, Brand, etc.).
+**Purpose.** The base specification applied across every button variant in the component table (Primary, Secondary, Tertiary, etc.).
 
 **Slot definitions.**
 - `leading-icon`: optional icon preceding the label.
 - `label`: required text content in Primary Sans.
 
-**Props / variants.** Variant set (Primary, Secondary, Tertiary, Brand, etc.) is enumerated in the component table at the top of §14. This section captures the shared base.
+**Props / variants.** Variant set (Primary, Secondary, Tertiary, etc.) is enumerated in the component table at the top of §14. This section captures the shared base.
 
 | Component | Structure | Theme Roles Used | Interaction Behavior | Notes |
 |---|---|---|---|---|
 | Primary button | Fill + label | `--button-primary-bg`, `--button-primary-text` | Hover paints a 1px outer shoulder ring in the fill color over 200ms. | 40px min-height, 8px radius. Inverts ground with page mode. |
 | Secondary button | Fill + label | `--button-secondary-bg`, `--button-secondary-text` | Hover shifts fill to `--surface-primary`. | 40px min-height. |
 | Tertiary button | Border + label | `--button-tertiary-border`, `--text-tertiary` | Hover shifts text to `--text-primary`; border unchanged. | Transparent fill, hairline border, link-glyph leading. |
-| Brand button | Mapped accent fill + mapped inverse/light label | `--button-brand-bg`, `--button-brand-text` | Hover deepens fill one step (mapped accent-hover). | Does not invert with mode. |
 
 State props: `rest` | `hover` | `disabled`.
 
 **Fixed sizing/spacing.**
 - `min-height: 40px` (2.5rem).
+- `display: inline-flex; align-items: center; justify-content: center;` — label and any leading icon centered on both axes; `gap: 8px` when a leading icon is present.
 - `padding: 8px 16px` (0.5rem 1rem) horizontal.
 - `border-radius: 8px` for body-2 size (17px font), `9.6px` for body-3 size (14–15px font).
-- Font: Primary Sans, Body 2 size (17px), weight per the type-weight scale in `foundations/type.md` §6.4.
+- Font: Primary Sans, Body 2 size (17px), weight per the type-weight scale in `foundations/implementation.md` §6.4.
 - `line-height: 1`.
 
 **Behavior.**
@@ -983,7 +969,7 @@ Two sizes share the same frame contract:
 
 **Glyph mapping.** The glyph slot renders one of: a filled donut for progress (arc length = percent complete), a dashed disc for "no data", a sparkline for trended values, a Status pill for state labels, or an em-dash placeholder for an absent value. The state → glyph mapping is: `populated` → donut/sparkline/value, `empty` → dashed disc or em-dash, `setup-required` → Status pill plus inline action.
 
-**Status-pill ground/ink.** When the glyph slot renders a status pill, it inherits the §14 Status pill status → color mapping (`--role-status-bg` / `--role-status-text`).
+**Status-pill ground/ink.** When the glyph slot renders a status pill, it inherits the §14 Status badge status → color mapping (the per-state status grounds and their paired ink roles).
 
 **Variant relationship.** `large-horizontal` and `small-vertical` are two `layout` props of a single component (not separate components); both share the frame contract above and differ only in flex-direction, gap, and padding.
 

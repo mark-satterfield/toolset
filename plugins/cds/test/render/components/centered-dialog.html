@@ -1,0 +1,27 @@
+<div class="cds-specimen" data-component="centered-dialog">
+  <div style="position:relative; min-height:420px; border-radius:16px; overflow:hidden; display:grid; place-items:center;">
+
+    <div class="centered-dialog__backdrop" aria-hidden="true" style="position:absolute; inset:0;"></div>
+
+    <div role="dialog" aria-modal="true" aria-labelledby="cd-title" class="centered-dialog" style="position:relative; max-width:100%; padding:32px;">
+
+      <button type="button" aria-label="Close" class="button-base button-tertiary" style="position:absolute; top:16px; right:16px; min-height:32px; width:32px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px;">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M3 3l10 10M13 3L3 13" stroke-linecap="round"/>
+        </svg>
+      </button>
+
+      <h2 id="cd-title" style="margin:0 0 8px; font:600 22px/1.25 var(--font-sans); color:var(--role-text-primary);">Discard unsaved changes?</h2>
+
+      <p style="margin:0 0 24px; font:400 15px/1.5 var(--font-sans); color:var(--role-text-secondary);">
+        You have edits in this draft that have not been saved. Closing now will permanently discard them. This cannot be undone.
+      </p>
+
+      <div style="display:flex; gap:12px; justify-content:flex-end;">
+        <button type="button" class="button-base button-secondary">Keep editing</button>
+        <button type="button" class="button-base button-primary">Discard changes</button>
+      </div>
+
+    </div>
+  </div>
+</div>

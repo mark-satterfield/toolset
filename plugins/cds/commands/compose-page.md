@@ -19,5 +19,5 @@ Invoke the `compose-page` skill in this plugin. Load and execute `skills/compose
 
 - Default surface kind is a full page. Section-in-isolation and component-in-isolation are wrapped in a minimal HTML container (1440px content width, 64px outer padding, light-mode default with a top-right toggle).
 - Iteration: if a state record exists at the resolved `output_path`, the skill loads the prior `brief_snapshot` and `sections` and treats the request as a modification. Matching uses strict `output_path` equality.
-- Beta-1 supports landing-page composition only. Non-landing page types halt with `SHAPE_RULES_PENDING:{page-type}`.
+- Page types whose shape rules are present in the reference compose; types without rules halt with `SHAPE_RULES_PENDING:{page-type}` (no guessing).
 - The emitted HTML inlines the stylesheet set; it does NOT contain agent-side metadata.

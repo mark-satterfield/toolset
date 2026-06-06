@@ -375,7 +375,7 @@ Spec values below are representative for a desktop viewport (~1347px wide).
 
 Section sequence inside main:
 
-1. **Step breadcrumb** — anchored at the top of main (`--sp-1-5`, 24px, from the top edge). Full spec in `missing-components.md` § "Stepper". Width adapts: ~200px at narrow viewports (icons only); grows to fit labels at viewport ≥ 1400px.
+1. **Step breadcrumb** — anchored at the top of main (`--sp-1-5`, 24px, from the top edge). Full spec in `components.md` §14 Stepper. Width adapts: ~200px at narrow viewports (icons only); grows to fit labels at viewport ≥ 1400px.
 2. **Two-column body** (NOT centered empty-state; the body splits into two columns side-by-side):
    - **Left column** (~328px wide): heading "What do you want to build?" + helper sentence "Describe your project or start with a template." + bottom prompt strip pinned at the bottom of this column.
    - **Right column** (711px wide): the templates panel — a self-contained card with 16px padding, 12px radius, 0.5px subtle border on `bg-bg-100` background. Contains: an H2 "Browse templates" + a `Search templates` input + a 2-column grid of 10 template cards.
@@ -385,7 +385,7 @@ Section sequence inside main:
 
 - Container: 711 × 762px, padding 16px, border `0.5px solid hsl(var(--border-300))`, border-radius 12px, background `hsl(var(--bg-100))`, vertical flex with 16px gap.
 - Header H2 "Browse templates": Primary Sans, 16px / weight 600.
-- Search input: full container width (678px), height 36px. Full spec in `missing-components.md` § "Search field".
+- Search input: full container width (678px), height 36px. Full spec in `components.md` §14 Search field.
 - Template grid: `display: grid`, `grid-template-columns: 1fr 1fr` (2 equal cols, ~333px each), `gap: 12px`, 10 cards, vertical scroll on overflow (`overflow-y-auto`, `auto-rows-min`).
 - Template card: ~333 × 79px, padding 12px, border `0.5px solid hsl(var(--border-300))`, border-radius 8px, transparent background, `cursor: pointer`, `role="button"`, `tabindex="0"`, hover background `hsl(var(--bg-300))`, `transition` on hover. Vertical flex layout: title 14px `hsl(var(--text-100))` weight 400 → 2px top-margin → description 12px `hsl(var(--text-500))`.
 
@@ -399,7 +399,7 @@ Section sequence inside main:
 
 ```html
 <!-- Top: stepper -->
-<ol class="flex min-w-0 items-center gap-3"><!-- see missing-components.md § Stepper --></ol>
+<ol class="flex min-w-0 items-center gap-3"><!-- see components.md §14 Stepper --></ol>
 
 <!-- Body: two-column flex/grid -->
 <section class="quickstart-body grid grid-cols-[1fr_711px] gap-6 h-full">
@@ -1143,7 +1143,7 @@ If a screen needs both modes (one for review, one for production), build it once
 
 ## Cross-context component compositions
 
-Compositions that arrange multiple Components for a purpose but are not full page shapes. Each H3 below documents one such composition. Components referenced live in `components.md` or in `missing-components.md`.
+Compositions that arrange multiple Components for a purpose but are not full page shapes. Each H3 below documents one such composition. Components referenced live in `components.md`.
 
 ### Modal dialog with form
 
@@ -1371,7 +1371,7 @@ Structural skeleton:
 
 **Purpose.** A composition that pairs a Setting card Component (with its inline toggle) with an inline destructive sub-row beneath the body — for example an "Allow product metrics logging" card with a "Delete all collected metrics data" sub-row for the associated irreversible action. The destructive sub-row keeps the irreversible action visibly attached to the preference it belongs to rather than dumped in a global destructive zone.
 
-**Component references.** `Setting card` (in `missing-components.md`), `§14.3 Switch active` (toggle), `§14 Destructive button` (the destructive button inside the sub-row).
+**Component references.** `Setting card`, `§14.3 Switch active` (toggle), `§14 Destructive button` (the destructive button inside the sub-row).
 
 **Slot composition.**
 
@@ -1405,7 +1405,7 @@ Structural skeleton (composition delta over the base Setting card):
 
 **Purpose.** A two-level permission editor where each group has a default policy (Always allow / Needs approval / Never allow) and each row inside the group can override the group's policy via per-row glyph buttons (allow / approve / deny). The canonical instance is a connector with a Read-only tools group ("Always allow" default, 8 tools) and a Write/delete tools group ("Needs approval" default, 9 tools), each row carrying per-row policy glyph buttons. The composition assembles collapsible groups around Segment-control Components.
 
-**Component references.** `Segment-control` Component (see `missing-components.md` — the three Read / Write / Don't allow segments are a Segment-control instance), count-badge primitive, filter-chip / dropdown-trigger Component for the default-policy chip.
+**Component references.** `Segment-control` Component (the three Read / Write / Don't allow segments are a Segment-control instance), count-badge primitive, filter-chip / dropdown-trigger Component for the default-policy chip.
 
 **Slot definitions.**
 
@@ -1468,6 +1468,6 @@ File-level notes that apply across the catalog:
 
 - Token values, widths, motion curves, focus-ring contracts, hover/active states, reduced-motion fallbacks, and breakpoint behavior are specified definitively per entry and resolve against the foundations (`reference/foundations/responsive.md`, `layout.md`, `accessibility.md`, `motion.md`).
 - This catalog is not exhaustive across all application surfaces. Other surfaces (chat conversation surface, file-tree explorer, multi-pane diff viewer, etc.) are not yet represented and will need their own entries in a later pass.
-- Cross-references to `components.md` are made by section number where the component already exists (e.g., A4 references §12.5). Components not yet promoted into `components.md` live in `missing-components.md` as draft contracts.
+- Cross-references to `components.md` are made by section number where the component already exists (e.g., A4 references §12.5).
 - The disjoint naming scheme (A1–A5 for shells, descriptive names for page shapes); if a later pass needs to expand beyond 26 shells, the scheme extends (A1…A26, then AA1, etc.).
 - Shell layouts A1–A5 may not be exhaustive for every host product. Future surfaces with novel partitioning (e.g., split-pane diff editor, multi-tab worktree) will need new letter codes.

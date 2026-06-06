@@ -1,6 +1,6 @@
 # CDS — Customizable Design System
 
-A brand-neutral design system you install in any project. CDS gives you a stylesheet set, a way to mock pages and components, a way to ship in-app surfaces, and an audit tool — all derived from one YAML file of design choices you supply.
+A brand-neutral design system you install in any project. CDS gives you a stylesheet set, a way to mock pages and components, a way to turn an approved mock into a deterministic, reference-anchored spec you attach to a story, a way to ship in-app surfaces, and an audit tool — all derived from one YAML file of design choices you supply.
 
 ---
 
@@ -134,6 +134,12 @@ The skill detects the prior run by `output_path` match, loads the prior brief fr
 
 `compose-page` wraps the component in a minimal HTML page (1440px viewport, 64px padding, light-mode default with toggle) so the browser can render it. Same skill, surface-kind=component.
 
+### Hand an approved mock to a story
+
+> "This mock is approved — give me the spec to attach to the ticket."
+
+Every `compose-page` run writes a deterministic **state record** next to the mock — the `brief_snapshot` plus the resolved `sections` (their shapes, themes, and components), via the shared state-record schema. Once a human is happy with a mock, that record is the **reference-anchored build spec** you attach to a story for future implementation work: it pins what the approved design resolved to, so whoever builds it later reproduces it deterministically, on-system, without re-deciding anything. The mock is the picture; the state record is the buildable instruction set that travels with the story.
+
 ### Build an in-app surface
 
 > "Build the settings page in the app."
@@ -151,7 +157,7 @@ The skill detects the prior run by `output_path` match, loads the prior brief fr
 - `## Event hooks` — DOM events you should listen for or emit
 - `## ARIA contracts` — accessibility patterns to honor
 - `## Reference pointers` — files to read for deeper context
-- `## Halt conditions` — situations where the design system does not cover what you need (add to `missing-components.md` instead of inventing)
+- `## Halt conditions` — situations where the design system does not cover what you need (surface the gap instead of inventing)
 
 No code is generated — your handler stays yours; CDS surfaces the contract you should bind to.
 
@@ -218,18 +224,25 @@ CDS recomputes the three CSS files and the manifest. Existing mocks become "stal
 - It will not read your host-project code to figure out conventions. Everything it does comes from the reference tree, your elements YAML, or runtime input you give it.
 - It will not emit theme controllers, mode resolvers, or routing code for in-app surfaces. Your host project owns those.
 - It will not embed metadata inside the deliverable. Mocks and emitted code are clean.
-- It will not fall back to "best guess" when the reference is missing something. It STOPs with a halt code and tells you what is missing. Halt codes include `SHAPE_RULES_PENDING:{page-type}` (composition rules for non-landing pages are explicitly deferred for beta-1), `MISSING_COMPONENT:{name}`, `STYLESHEETS_STALE`, `FRAMEWORK_UNSET`, and others.
+- It will not fall back to "best guess" when the reference is missing something. It STOPs with a halt code and tells you what is missing. Halt codes include `SHAPE_RULES_PENDING:{page-type}` (the reference does not yet carry composition rules for that page type), `MISSING_COMPONENT:{name}`, `STYLESHEETS_STALE`, `FRAMEWORK_UNSET`, and others.
 - It will not extend itself. Adding new components, role definitions, or themes is your work in the elements YAML and the reference tree.
 
 ---
 
-## Beta-1 limitations (explicit)
+## Testing
 
-- **Non-landing page composition is not supported** in beta-1. `compose-page` halts with `SHAPE_RULES_PENDING:{page-type}` on requests for Editorial Detail, Resource Index, Documentation, Conversion/Authentication, or Application Shell page types. Landing-page composition is fully supported.
-- **In-app section-level shape decisions are not supported**. `compose-app-surface` halts with `APP_SECTION_RULES_PENDING:{section-type}`. Shell-layout and page-shape composition from `app-shapes.md` IS supported.
-- **The shipped setup file (`setup/customizable-design-elements.yaml`) carries the in-house working values** as a worked example. Treat it as a starter template you copy and replace — your real working file lives at the path your `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` env var points to. Marketplace prep replaces these values with a generic placeholder.
-- **No plugin tests** in beta-1. Verification is by spot-check and live use.
-- **No hard enforcement** of design-system use. The sub-agents are the strong-default path; direct skill calls bypass the system-prompt mandates.
+CDS ships a test suite that proves the design system works for **whatever is configured** — see `test/README.md` for the full per-feature plan. Run it with:
+
+```bash
+plugins/cds/test/run-tests.sh                          # default elements YAML
+plugins/cds/test/run-tests.sh /path/to/elements.yaml   # any valid config
+```
+
+It runs the property-based linter (schema, integrity, aliases, from_palette, role coverage) over your live elements YAML, then generates a browsable visual gallery so you can see the system render and re-skin. Point it at any valid elements YAML to prove a different configuration the same way.
+
+## The shipped setup file
+
+`setup/customizable-design-elements.yaml` carries a complete worked example. Treat it as a starter template you copy and replace — your real working file lives at the path your `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` env var points to. (Marketplace builds replace these example values with a generic placeholder.)
 
 ---
 
@@ -237,9 +250,9 @@ CDS recomputes the three CSS files and the manifest. Existing mocks become "stal
 
 **"The skill says my stylesheets are stale."** Run `generate-stylesheets` — your elements YAML has changed since the last generation.
 
-**"The skill stopped with `SHAPE_RULES_PENDING:editorial-detail`."** Beta-1 only supports landing-page composition for new mocks. The editorial detail rules are deferred work.
+**"The skill stopped with `SHAPE_RULES_PENDING:editorial-detail`."** The reference does not yet carry composition rules for the editorial-detail page type. `compose-page` halts rather than guess; add those rules to the reference to enable that page type.
 
-**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The component you asked for is not in `components.md` yet. Check `skills/compose-app-surface/reference/missing-components.md` — it likely names what is needed; that file is the input to the work of authoring it.
+**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not defined in `components.md`. `compose-app-surface` halts rather than invent it — add the component to `components.md` to enable it.
 
 **"My sub-agent is generating UI code by hand instead of using `compose-page`."** The sub-agent's system prompt mandates use of the skills, but Claude can occasionally drift. Re-spawn the sub-agent, or explicitly remind it to invoke `compose-page` rather than emit markup directly.
 
@@ -255,13 +268,11 @@ CDS recomputes the three CSS files and the manifest. Existing mocks become "stal
 |---|---|
 | Your design choices (palettes, typefaces, themes) | `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` |
 | The schema for your design choices | `validation/customizable-design-elements.schema.json` |
-| Vocabulary — what counts as a Component vs. a Shape vs. a Use case | `reference/vocabulary.md` |
 | Fixed design rules (spacing, motion, type scales) | `reference/foundations/*.md` |
 | Component anatomy | `reference/components.md` |
 | Per-page-type composition rules | `reference/page-types.md` |
 | Landing-page section shape rules | `skills/compose-page/reference/landing-sections-shape-rules.md` |
 | App shell layouts + page shapes | `skills/compose-app-surface/reference/app-shapes.md` |
-| Components not yet covered | `skills/compose-app-surface/reference/missing-components.md` |
 | Compliance rules | `reference/compliance.md` |
 | Sub-agent system prompts | `agents/cds-ui-author.md`, `agents/cds-code-companion.md` |
 | Slash commands | `commands/{setup,generate-stylesheets,compose-page,compose-app-surface,apply-design-system,audit-against-system}.md` |

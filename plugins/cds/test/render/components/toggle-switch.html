@@ -1,0 +1,40 @@
+<div class="cds-specimen" data-component="toggle-switch">
+  <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
+
+    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+      <span style="font:14px/1.2 var(--font-sans); color:var(--role-text-secondary);">Off</span>
+      <button type="button" role="switch" aria-checked="false" aria-label="Email notifications" class="toggle-switch">
+        <span class="toggle-switch__thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+      <span style="font:14px/1.2 var(--font-sans); color:var(--role-text-secondary);">On</span>
+      <button type="button" role="switch" aria-checked="true" aria-label="Email notifications" class="toggle-switch on">
+        <span class="toggle-switch__thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+      <span style="font:14px/1.2 var(--font-sans); color:var(--role-text-secondary);">Disabled (off)</span>
+      <button type="button" role="switch" aria-checked="false" aria-label="Weekly digest" class="toggle-switch" disabled>
+        <span class="toggle-switch__thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:8px; align-items:center;">
+      <span style="font:14px/1.2 var(--font-sans); color:var(--role-text-secondary);">Disabled (on)</span>
+      <button type="button" role="switch" aria-checked="true" aria-label="Weekly digest" class="toggle-switch on" disabled>
+        <span class="toggle-switch__thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:12px;">
+      <button type="button" role="switch" aria-checked="true" id="sw-twofactor" class="toggle-switch on">
+        <span class="toggle-switch__thumb" aria-hidden="true"></span>
+      </button>
+      <label for="sw-twofactor" style="font:14px/1.2 var(--font-sans); color:var(--role-text-primary);">Two-factor authentication</label>
+    </div>
+
+  </div>
+</div>

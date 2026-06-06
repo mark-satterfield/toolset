@@ -496,9 +496,18 @@
     },
 
     "Theme": {
-      "type": "object",
       "title": "Theme",
-      "description": "A named theme. Defines bindings for both 'light' and 'dark' modes (Architecture A — symmetric coverage). A theme that doesn't visually change with mode flip still declares identical bindings under both modes so the data shape is uniform across the system.",
+      "description": "A named theme — either a concrete theme that declares its own role bindings (ConcreteTheme) or an alias that mirrors another concrete theme (AliasTheme). Exactly one of the two forms applies to any given theme entry.",
+      "oneOf": [
+        { "$ref": "#/$defs/ConcreteTheme" },
+        { "$ref": "#/$defs/AliasTheme" }
+      ]
+    },
+
+    "ConcreteTheme": {
+      "type": "object",
+      "title": "ConcreteTheme",
+      "description": "A named theme that declares its own role bindings. A theme that changes appearance on light/dark mode flip declares BOTH a 'light' and a 'dark' mode, each binding every role. A theme that does NOT change between modes declares only its active mode (its single 'light' mode — which for an inherently-dark theme still holds dark swatches); the redundant mode is retained in the source data file as a fully-commented-out template that a maintainer can uncomment and edit to make the theme diverge in that mode. An absent mode therefore means 'identical to the theme's active mode'.",
       "required": ["modes"],
       "properties": {
         "description": {
@@ -507,7 +516,7 @@
         },
         "modes": {
           "type": "object",
-          "description": "Map of mode name to ThemeMode. Standard modes are 'light' and 'dark'. The schema doesn't enforce which modes exist; a linter does.",
+          "description": "Map of mode name to ThemeMode. Standard modes are 'light' and 'dark'. The schema doesn't enforce which modes exist; a linter does. A theme that doesn't change between modes legitimately defines only its active mode here; the other mode is carried as a commented-out template in the source file and is therefore absent from the parsed data.",
           "minProperties": 1,
           "propertyNames": {
             "enum": ["light", "dark"]
@@ -520,10 +529,29 @@
       "additionalProperties": false
     },
 
+    "AliasTheme": {
+      "type": "object",
+      "title": "AliasTheme",
+      "description": "A theme with no bindings of its own; it mirrors a concrete theme. The generator emits the alias's selector grouped with the target theme's, so the alias shares 100% of the target's generated rules in every mode — base bindings plus any dark-mode override. The alias→target mapping lives here in data; the generator must not hardcode it.",
+      "required": ["alias"],
+      "properties": {
+        "alias": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Key of the concrete theme this alias mirrors. Must name a theme defined in this same `themes` map that is itself concrete — aliases do not chain. The target's existence and concreteness are enforced by the elements linter (JSON Schema cannot cross-reference sibling keys)."
+        },
+        "description": {
+          "type": "string",
+          "description": "What this alias is for (e.g., 'Editorial and legal pages — a semantic name for the default warm-light ground')."
+        }
+      },
+      "additionalProperties": false
+    },
+
     "Themes": {
       "type": "object",
       "title": "Themes",
-      "description": "Map of theme class name (e.g., 'default', 'clarity', 'deep') to theme definition. Class names are bare role-based identifiers with no methodology prefix.",
+      "description": "Map of theme class name (e.g., 'default', 'clarity', 'deep') to theme definition. Class names are bare role-based identifiers with no methodology prefix. A value is either a concrete theme (declares `modes`) or an alias (declares `alias`).",
       "minProperties": 1,
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9-]*$"

@@ -20,5 +20,5 @@ Invoke the `compose-app-surface` skill in this plugin. Load and execute `skills/
 - Trigger condition: the user must explicitly signal app-embedding (`in the app`, `to the app`, `in-app`, or a live route name). Standalone-mock requests route to `/cds:compose-page` instead.
 - The emitted code LINKS to the stylesheet set; it does NOT inline CSS (inlining is mock-only).
 - The skill does NOT emit theme controllers, mode resolvers, or routing — those are host-owned.
-- Beta-1: section-level shape decisions inside an app surface halt with `APP_SECTION_RULES_PENDING:{section-type}`. Shell-layout and page-shape composition from `app-shapes.md` IS supported.
+- Section-level shape decisions inside an app surface halt with `APP_SECTION_RULES_PENDING:{section-type}` until those rules are present in the reference. Shell-layout and page-shape composition from `app-shapes.md` is supported.
 - Halt codes the user may see: `FRAMEWORK_UNSET`, `STYLESHEETS_MISSING`, `STYLESHEETS_STALE`, `MISSING_COMPONENT`, `APP_SECTION_RULES_PENDING`, `MISSING_SPEC`, `OUTPUT_PATH_UNRESOLVABLE`, `PRECONDITION_FAILED`, `ELEMENTS_YAML_UNSET`.

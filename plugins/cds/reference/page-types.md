@@ -4,26 +4,27 @@ The framework recognizes six page types. Each page type carries an opinionated d
 
 ## §10 Page-type index
 
-| Page Type | Section | Theme Class | Purpose |
-|---|---|---|---|
-| Primary Landing Page | Hero | `default` | Set the mapped principal light ground. |
-| Primary Landing Page | Feature blocks | `default` → `editorial` → `deep` rotation | Use theme as section punctuation. |
-| Primary Landing Page | Pricing or comparison | `clarity` | Push toward higher clarity on dense content. |
-| Primary Landing Page | Footer | `deep` | Close on the mapped deepest dark theme. |
-| Editorial Detail Page | Header (title block) | `default` | Single-theme surface; no rotation. |
-| Editorial Detail Page | Hero illustration tile | Feature-tile ground role (`--tile-ground-1/2/3`, theme-bound, `from_palette: panels`) | Reserve one tile per article; pick a tile number, never a color. |
-| Editorial Detail Page | Body | `default` | Editorial Serif body type on the mapped light ground. |
-| Editorial Detail Page | Footer | `deep` | Force the deep ground for the footer wrapper. |
-| Resource Index Page | Hero | `default` | Set the mapped principal light ground. |
-| Resource Index Page | Card grid | `default` with saturated illustration tiles inside each card | The card body is on the principal light ground; the illustration block is saturated. |
-| Resource Index Page | Footer | `deep` | Same as editorial. |
-| Documentation Page | All sections | `default` | Single-theme surface. |
-| Documentation Page | Footer | `deep` | Same as editorial. |
-| Conversion or Authentication Page | Surround | `default` | The mapped principal light ground behind the card. |
-| Conversion or Authentication Page | Card | `clarity` (or transparent within `default`) | Card sits on the page ground without a wrapper recolor. |
-| Conversion or Authentication Page | Footer | Local `data-mode="dark"` wrapper with `--surface-primary: var(--color-backgrounds-absolute-black)` | Absolute-black ground via the `backgrounds` semantic palette; the only place this token is used. |
-| Application Shell Page | All panes | `default` | Single-theme surface across the app. |
-| Application Shell Page | Code panels | Local `code` wrapper | Always-dark code surface. |
+
+| Page Type                         | Section                | Theme Class                                                                                       | Purpose                                                                                         |
+| ----------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Primary Landing Page              | Hero                   | `default`                                                                                         | Set the mapped principal light ground.                                                          |
+| Primary Landing Page              | Feature blocks         | `default` → `editorial` → `deep` rotation                                                       | Use theme as section punctuation.                                                               |
+| Primary Landing Page              | Pricing or comparison  | `clarity`                                                                                         | Push toward higher clarity on dense content.                                                    |
+| Primary Landing Page              | Footer                 | `deep`                                                                                            | Close on the mapped deepest dark theme.                                                         |
+| Editorial Detail Page             | Header (title block)   | `default`                                                                                         | Single-theme surface; no rotation.                                                              |
+| Editorial Detail Page             | Hero illustration tile | Feature-tile ground role (`--tile-ground-1/2/3`, theme-bound, `from_palette: panels`)             | Reserve one tile per article; pick a tile number, never a color.                                |
+| Editorial Detail Page             | Body                   | `default`                                                                                         | Editorial Serif body type on the mapped light ground.                                           |
+| Editorial Detail Page             | Footer                 | `deep`                                                                                            | Force the deep ground for the footer wrapper.                                                   |
+| Resource Index Page               | Hero                   | `default`                                                                                         | Set the mapped principal light ground.                                                          |
+| Resource Index Page               | Card grid              | `default` with saturated illustration tiles inside each card                                      | The card body is on the principal light ground; the illustration block is saturated.            |
+| Resource Index Page               | Footer                 | `deep`                                                                                            | Same as editorial.                                                                              |
+| Documentation Page                | All sections           | `default`                                                                                         | Single-theme surface.                                                                           |
+| Documentation Page                | Footer                 | `deep`                                                                                            | Same as editorial.                                                                              |
+| Conversion or Authentication Page | Surround               | `default`                                                                                         | The mapped principal light ground behind the card.                                              |
+| Conversion or Authentication Page | Card                   | `clarity` (or transparent within `default`)                                                       | Card sits on the page ground without a wrapper recolor.                                         |
+| Conversion or Authentication Page | Footer                 | Local`data-mode="dark"` wrapper with `--surface-primary: var(--color-backgrounds-absolute-black)` | Absolute-black ground via the`backgrounds` semantic palette; the only place this token is used. |
+| Application Shell Page            | All panes              | `default`                                                                                         | Single-theme surface across the app.                                                            |
+| Application Shell Page            | Code panels            | Local`code` wrapper                                                                               | Always-dark code surface.                                                                       |
 
 Within a page type, theme rotation is the principal visual rhythm. Marketing pages favor mid-section dark interjections to break up long light scrolls. Editorial pages stay on a single theme and let typography and the centered reading column carry the rhythm.
 
@@ -43,14 +44,15 @@ The longest page type in the system. Composes through multiple sections to intro
 
 This is the page's identity. Across the page, vary the following dimensions section-to-section:
 
-| Dimension                       | Values to draw from                                         |
-| ------------------------------- | ----------------------------------------------------------- |
+
+| Dimension                       | Values to draw from                                          |
+| --------------------------------- | -------------------------------------------------------------- |
 | Theme state                     | any of the 8 themes (§4)                                    |
 | Surface treatment               | solid, or any of the 8 named textures (§22b)  Mix these up. |
-| Container vocabulary            | none, or any of §23–§39                                     |
-| Width                           | `u-container`, `u-container-small`, or `u-container-full`   |
-| Headline measure                | any `ch` token (§15)                                        |
-| Body measure                    | any `ch` token (§15), independent of the headline           |
+| Container vocabulary            | none, or any of §23–§39                                   |
+| Width                           | `u-container`, `u-container-small`, or `u-container-full`    |
+| Headline measure                | any`ch` token (§15)                                         |
+| Body measure                    | any`ch` token (§15), independent of the headline            |
 | Type role                       | any of the 17 styles (§7)                                   |
 | Alignment                       | any move from §41                                           |
 | Density                         | sparse → packed                                             |
@@ -64,38 +66,36 @@ Unless the shape of the section is intentionally centered, mix up alignment.  Fo
 
 ## Alternation of background colors on landing pages
 
-1. First section: surface-secondary 
-
+1. First section: surface-secondary
 2. Second section: surface-primary
-
 3. Alter back and forth either each new section
-
 4. Exception: Final CTA (T16) is always surface-secondary
 
 ### Section sequence
 
 Not all landing pages will have these sections, and not not all sections will be in this list, and while there is no fixed sequence, this is the typical order of the sections when these sections are present:
 
-| #    | Section type             | Purpose                                                      |
-| ---- | ------------------------ | ------------------------------------------------------------ |
-| T1   | Hero                     | Primary value prop + first CTA                               |
-| T2   | Trust Strip              | Validation via customer/brand logos (no quotes)              |
-| T3   | Validation Block         | Validation via customer quotes (with or without logos)       |
-| T4   | Capability Showcase      | What the product can do (features, surfaces, tools)          |
-| T5   | Workflow / Process       | How the product is used, step by step                        |
-| T6   | Use-Case Routing         | Which audience/role/job this is for                          |
-| T7   | Path Fork                | Binary fork in the funnel (self-serve vs assisted)           |
-| T8   | Interactive Demo         | Let the visitor see/try the product output                   |
-| T9   | Pricing                  | Investment tiers or usage rates                              |
-| T10  | Trust Detail             | Security, governance, deployment, controls                   |
-| T11  | FAQ                      | Anticipated operational/technical questions                  |
-| T12  | News / Updates           | Recent releases, changelog, announcements                    |
-| T13  | Resource Directory       | Docs, blog posts, guides — content surface to deepen engagement |
-| T14  | Cross-Promo              | Surface another product or feature inline                    |
-| T15  | Sub-Hero                 | Mid-page restatement of value prop + secondary CTA           |
-| T16  | Final CTA                | Closing conversion attempt                                   |
-| T17  | Footer                   | Global navigation, legal, copyright                          |
-| T18  | Section Header / Eyebrow | Standalone label preceding another content unit              |
+
+| #   | Section type             | Purpose                                                          |
+| ----- | -------------------------- | ------------------------------------------------------------------ |
+| T1  | Hero                     | Primary value prop + first CTA                                   |
+| T2  | Trust Strip              | Validation via customer/brand logos (no quotes)                  |
+| T3  | Validation Block         | Validation via customer quotes (with or without logos)           |
+| T4  | Capability Showcase      | What the product can do (features, surfaces, tools)              |
+| T5  | Workflow / Process       | How the product is used, step by step                            |
+| T6  | Use-Case Routing         | Which audience/role/job this is for                              |
+| T7  | Path Fork                | Binary fork in the funnel (self-serve vs assisted)               |
+| T8  | Interactive Demo         | Let the visitor see/try the product output                       |
+| T9  | Pricing                  | Investment tiers or usage rates                                  |
+| T10 | Trust Detail             | Security, governance, deployment, controls                       |
+| T11 | FAQ                      | Anticipated operational/technical questions                      |
+| T12 | News / Updates           | Recent releases, changelog, announcements                        |
+| T13 | Resource Directory       | Docs, blog posts, guides — content surface to deepen engagement |
+| T14 | Cross-Promo              | Surface another product or feature inline                        |
+| T15 | Sub-Hero                 | Mid-page restatement of value prop + secondary CTA               |
+| T16 | Final CTA                | Closing conversion attempt                                       |
+| T17 | Footer                   | Global navigation, legal, copyright                              |
+| T18 | Section Header / Eyebrow | Standalone label preceding another content unit                  |
 
 ### Layout Rules
 
@@ -120,8 +120,8 @@ Not all landing pages will have these sections, and not not all sections will be
 - Pill-tab strips for in-section navigation.
 - Feature cards with left or top hairline anchors.
 - Full promo cards with 1px outer border and transparent inner fill.
-- Brand-button (mapped accent-interactive) for the principal conversion CTA.
-- Primary button (mapped near-black fill) for secondary conversion CTAs.
+- Primary button for the principal conversion CTA (the loud action).
+- Secondary button for secondary conversion CTAs (the quiet alternative).
 
 ### Motion Rules
 
@@ -525,7 +525,7 @@ Three columns persist across routes. The detail viewport is the only column that
 ### Do Not
 
 - Do not introduce a topbar at the top of the detail viewport.
-- Do not use the brand-button (mapped accent-interactive) for primary actions in the shell — reserve it for marketing surfaces.
+- Do not use loud conversion-style emphasis for primary actions in the shell — reserve the loudest CTA emphasis for marketing surfaces.
 - Do not paint code panels in light mode.
 
 ---

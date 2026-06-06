@@ -111,10 +111,32 @@ def main():
         if kinds == {"var", "hex"}:
             warns.append(f"TIERS palette '{pk}' mixes hex and aliases (not cleanly primitive or semantic)")
 
-    # 3. FROM_PALETTE
+    # 0. ALIASES — an alias theme mirrors a concrete theme; it has no modes
+    #    of its own. Validate every alias target resolves to a defined,
+    #    concrete (non-alias) theme. No chaining, no self-reference.
+    theme_defs = data["themes"]
+    alias_fail = []
+    for tn, t in theme_defs.items():
+        if "alias" not in t:
+            continue
+        tgt = t["alias"]
+        if tgt == tn:
+            alias_fail.append(f"{tn}: alias points at itself")
+        elif tgt not in theme_defs:
+            alias_fail.append(f"{tn}: alias target '{tgt}' is not a defined theme")
+        elif "alias" in theme_defs[tgt]:
+            alias_fail.append(f"{tn}: alias target '{tgt}' is itself an alias (aliases do not chain)")
+        elif "modes" not in theme_defs[tgt]:
+            alias_fail.append(f"{tn}: alias target '{tgt}' has no modes")
+    print(f"0. ALIASES .......... {'PASS' if not alias_fail else 'FAIL'}")
+    fails += [f"ALIAS {a}" for a in alias_fail]
+
+    # 3. FROM_PALETTE  (alias themes carry no bindings — skip them)
     roles = data["roles"]
     checked = 0
     for tn, t in data["themes"].items():
+        if "modes" not in t:
+            continue
         for mode, mb in t["modes"].items():
             for role, val in mb["bindings"].items():
                 fp = roles.get(role, {}).get("from_palette")
@@ -127,17 +149,27 @@ def main():
                     fails.append(f"FROM_PALETTE {tn}.{mode}.{role}: binds {val['var']} (palette '{p}') not in {allowed}")
     print(f"3. FROM_PALETTE ...... {'PASS' if not any(f.startswith('FROM_PALETTE') for f in fails) else 'FAIL'} ({checked} constrained bindings)")
 
-    # required coverage (warning only)
+    # 5. COVERAGE (hard) — every concrete theme, in every mode it declares,
+    #    must bind every required role, or it would render an empty role. This
+    #    is config-agnostic: it asserts a property, not any specific value.
     req = [r for r, d in roles.items() if d.get("required", True)]
+    cov_fail = []
     for tn, t in data["themes"].items():
+        if "modes" not in t:
+            continue
         for mode, mb in t["modes"].items():
             for r in req:
                 if r not in mb["bindings"]:
-                    warns.append(f"COVERAGE required role '{r}' unbound in {tn}.{mode}")
+                    cov_fail.append(f"required role '{r}' unbound in {tn}.{mode}")
+    print(f"5. COVERAGE .......... {'PASS' if not cov_fail else 'FAIL'} ({len(req)} required roles)")
+    fails += [f"COVERAGE {c}" for c in cov_fail]
 
     if trace:
         print("\n--- theme -> resolved hex ---")
         for tn, t in data["themes"].items():
+            if "modes" not in t:
+                print(f"  {tn:22} (alias -> {t['alias']})")
+                continue
             for mode, mb in t["modes"].items():
                 for role, val in mb["bindings"].items():
                     if "var" in val:

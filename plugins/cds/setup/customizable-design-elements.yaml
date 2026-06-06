@@ -255,24 +255,27 @@ color_catalog:
       description: "Feature-tile grounds. Aliases pastel (soft) and stronger (deep)."
       colors:
         # soft (pastel)
-        oat:      { var: "--color-pastel-oat" }
-        peach:    { var: "--color-pastel-peach" }
-        coral:    { var: "--color-pastel-coral" }
-        fig:      { var: "--color-pastel-fig" }
-        olive:    { var: "--color-pastel-olive" }
-        mineral:  { var: "--color-pastel-mineral" }
-        cactus:   { var: "--color-pastel-cactus" }
-        sky:      { var: "--color-pastel-sky" }
-        heather:  { var: "--color-pastel-heather" }
-        plum:     { var: "--color-pastel-plum" }
+
+        # a:      { var: "--color-pastel-oat" }
+        # b:    { var: "--color-pastel-peach" }
+        # c:    { var: "--color-pastel-coral" }
+        # d:      { var: "--color-pastel-fig" }
+        # e:    { var: "--color-pastel-olive" }
+        # f:  { var: "--color-pastel-mineral" }
+        # g:   { var: "--color-pastel-cactus" }
+        # h:      { var: "--color-pastel-sky" }
+        # i:  { var: "--color-pastel-heather" }
+        # j:     { var: "--color-pastel-plum" }
+
         # deep (stronger)
-        indigo:   { var: "--color-stronger-indigo" }
-        violet:   { var: "--color-stronger-violet" }
-        crimson:  { var: "--color-stronger-crimson" }
-        umber:    { var: "--color-stronger-umber" }
-        wine:     { var: "--color-stronger-wine" }
-        espresso: { var: "--color-stronger-espresso" }
-        slate:    { var: "--color-stronger-slate" }
+        
+        a:   { var: "--color-stronger-indigo" }
+        b:   { var: "--color-stronger-violet" }
+        c:  { var: "--color-stronger-crimson" }
+        d:    { var: "--color-stronger-umber" }
+        e:     { var: "--color-stronger-wine" }
+        f: { var: "--color-stronger-espresso" }
+        g:    { var: "--color-stronger-slate" }
 
     # ------------------------------------------------------------
     # BUTTONS — every distinct button fill/label/border the themes
@@ -574,7 +577,7 @@ roles:
     scope: semantic
     from_palette: accent
     description: "Text-selection background tint. Global; derived from the accent family (50% mix)."
-    required: false
+    required: true
     fallback:
       color-mix: "(in srgb, var(--color-accent-primary) 50%, transparent)"
 
@@ -591,7 +594,7 @@ roles:
     component: input
     from_palette: signals
     description: "Chromatic focus ring for conversion inputs — distinct from the neutral default focus-ring."
-    required: false
+    required: true
 
   # ----- NAV component -------------------------------------
   nav-bg:
@@ -601,7 +604,7 @@ roles:
     family: nav
     from_palette: backgrounds
     description: "Topbar background."
-    required: false
+    required: true
 
   nav-text:
     type: color
@@ -610,7 +613,7 @@ roles:
     family: nav
     from_palette: text
     description: "Topbar foreground."
-    required: false
+    required: true
 
   # ----- FOOTER component ----------------------------------
   footer-bg:
@@ -620,7 +623,7 @@ roles:
     family: footer
     from_palette: backgrounds
     description: "Footer background. Brand-dark ground (matches primary button)."
-    required: false
+    required: true
 
   footer-text:
     type: color
@@ -629,7 +632,7 @@ roles:
     family: footer
     from_palette: text
     description: "Footer foreground body text."
-    required: false
+    required: true
 
   # ----- HERO component ------------------------------------
   hero-bg:
@@ -639,7 +642,7 @@ roles:
     family: hero
     from_palette: backgrounds
     description: "Hero section background within the active theme."
-    required: false
+    required: true
 
   hero-text:
     type: color
@@ -648,7 +651,7 @@ roles:
     family: hero
     from_palette: text
     description: "Hero foreground within the active theme."
-    required: false
+    required: true
 
   # ----- BUTTON — PRIMARY component ------------------------
   button-primary-bg:
@@ -705,7 +708,7 @@ roles:
     component: switch
     from_palette: signals
     description: "Toggle-switch ON-state fill. Chromatic blue, identical across every theme."
-    required: false
+    required: true
 
   # ----- ERROR roles --------------------------------------
   error-text:
@@ -714,7 +717,7 @@ roles:
     family: state
     from_palette: signals
     description: "Inline error message ink."
-    required: false
+    required: true
 
   error-fill:
     type: color
@@ -722,7 +725,7 @@ roles:
     family: state
     from_palette: signals
     description: "Destructive-action button background."
-    required: false
+    required: true
 
   field-required:
     type: color
@@ -730,7 +733,7 @@ roles:
     family: state
     from_palette: signals
     description: "Required-field asterisk ink."
-    required: false
+    required: true
 
   # ----- FEATURE-TILE component ----------------------------
   # Decorative editorial tile grounds. Variety is positional
@@ -743,7 +746,7 @@ roles:
     family: tile
     from_palette: panels
     description: "First editorial feature-tile ground."
-    required: false
+    required: true
   tile-ink-1:
     type: color
     scope: component
@@ -751,7 +754,7 @@ roles:
     family: tile
     from_palette: text
     description: "Ink paired with tile-ground-1 (legible on that ground)."
-    required: false
+    required: true
 
   tile-ground-2:
     type: color
@@ -760,7 +763,7 @@ roles:
     family: tile
     from_palette: panels
     description: "Second editorial feature-tile ground."
-    required: false
+    required: true
   tile-ink-2:
     type: color
     scope: component
@@ -768,7 +771,7 @@ roles:
     family: tile
     from_palette: text
     description: "Ink paired with tile-ground-2."
-    required: false
+    required: true
 
   tile-ground-3:
     type: color
@@ -777,7 +780,7 @@ roles:
     family: tile
     from_palette: panels
     description: "Third editorial feature-tile ground."
-    required: false
+    required: true
   tile-ink-3:
     type: color
     scope: component
@@ -785,7 +788,7 @@ roles:
     family: tile
     from_palette: text
     description: "Ink paired with tile-ground-3."
-    required: false
+    required: true
 
   tile-ground-accent:
     type: color
@@ -794,7 +797,7 @@ roles:
     family: tile
     from_palette: accent
     description: "Accent-splash feature-tile ground."
-    required: false
+    required: true
   tile-ink-accent:
     type: color
     scope: component
@@ -802,7 +805,7 @@ roles:
     family: tile
     from_palette: text
     description: "Ink paired with the accent-splash tile ground."
-    required: false
+    required: true
 
   # ----- BADGE component (status pills) --------------------
   status-positive-bg:
@@ -812,7 +815,7 @@ roles:
     family: status
     from_palette: status
     description: "Positive/success badge ground."
-    required: false
+    required: true
 
   status-caution-bg:
     type: color
@@ -821,7 +824,7 @@ roles:
     family: status
     from_palette: status
     description: "Warning/needs-attention badge ground."
-    required: false
+    required: true
 
   status-critical-bg:
     type: color
@@ -830,7 +833,7 @@ roles:
     family: status
     from_palette: status
     description: "Error/failed badge ground."
-    required: false
+    required: true
 
 # ============================================================
 # THEMES
@@ -838,13 +841,19 @@ roles:
 # A theme is consumed by wrapping a DOM subtree with the
 # corresponding class (e.g., <section class="default">).
 # Class names are bare role-based identifiers; no methodology
-# prefix.  `editorial` is a CSS-level alias of `default`
-# (handled in the .css generator, not in this YAML).
+# prefix.  An alias theme (e.g. `editorial`) names a concrete
+# theme via `alias:`; the generator emits it sharing 100% of
+# the target's rules in every mode (see `editorial` below).
 # ------------------------------------------------------------
-# ARCHITECTURE A: every theme defines both `light` and `dark`
-# mode bindings.  Themes that don't visually change with the
-# mode flip still declare identical bindings under both modes
-# so the data shape is uniform across the system.
+# MODE COVERAGE: every theme binds every role.  A theme that
+# changes appearance on the light/dark flip declares BOTH a
+# `light` and a `dark` mode, each listing all roles.  A theme
+# that does NOT change between modes declares only its active
+# (`light`) mode; the redundant mode is retained directly
+# below it as a fully commented-out template.  Uncomment that
+# block and edit it to make the theme diverge in that mode.
+# An absent (commented) mode means "identical to the active
+# mode."
 # ============================================================
 themes:
 
@@ -877,6 +886,29 @@ themes:
           button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
           button-tertiary-border: { var: "--color-buttons-tertiary-border" }
           switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-primary" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-pure" }
+          nav-text:              { var: "--color-text-ink" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-pure" }
+          hero-text:             { var: "--color-text-ink" }
+          error-text:            { var: "--color-signals-error-text-dark" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "--color-panels-a" }
+          tile-ink-1:            { var: "--color-text-ink" }
+          tile-ground-2:         { var: "--color-panels-g" }
+          tile-ink-2:            { var: "--color-text-ink" }
+          tile-ground-3:         { var: "--color-panels-d" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-primary" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
       dark:
         bindings:
           surface-primary:       { var: "--color-backgrounds-brand-midnight" }
@@ -897,14 +929,40 @@ themes:
           button-primary-bg:     { var: "--color-buttons-primary-bg-frost" }
           button-primary-text:   { var: "--color-buttons-primary-txt-brand-ink" }
           switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-dark" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-brand-midnight" }
+          nav-text:              { var: "--color-text-frost" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-brand-midnight" }
+          hero-text:             { var: "--color-text-frost" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-brand" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-frost" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ink-1:            { var: "--color-text-ivory" }
+          tile-ground-2:         { var: "--color-panels-a" }
+          tile-ink-2:            { var: "--color-text-ivory" }
+          tile-ground-3:         { var: "--color-panels-e" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-dark" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
 
   # ------------------------------------------------------------
   # default — Principal light theme.  Warm-ivory ground.
-  # `editorial` is currently a CSS alias of this theme (handled
-  # in the .css generator, not in the YAML).
+  # `editorial` is a data-declared alias of this theme (see the
+  # `editorial` entry immediately below the default block).
   # ------------------------------------------------------------
   default:
-    description: "Principal light theme. Default warm-ivory page ground for marketing, editorial, conversion. `editorial` is a CSS alias of this theme."
+    description: "Principal light theme. Default warm-ivory page ground for marketing, editorial, conversion. `editorial` is a data-declared alias of this theme (mirrors it in every mode)."
     modes:
       light:
         bindings:
@@ -929,22 +987,28 @@ themes:
           button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
           button-tertiary-border: { var: "--color-buttons-tertiary-border" }
           switch-active-bg:      { var: "--color-signals-focus" }
-          # editorial feature tiles — light grounds (pastel), paired ink
-          tile-ground-1:         { var: "--color-panels-oat" }
+          tile-ground-1:         { var: "--color-panels-a" }
           tile-ink-1:            { var: "--color-text-ink" }
-          tile-ground-2:         { var: "--color-panels-cactus" }
+          tile-ground-2:         { var: "--color-panels-g" }
           tile-ink-2:            { var: "--color-text-ink" }
-          tile-ground-3:         { var: "--color-panels-fig" }
+          tile-ground-3:         { var: "--color-panels-d" }
           tile-ink-3:            { var: "--color-text-ivory" }
           tile-ground-accent:    { var: "--color-accent-primary" }
           tile-ink-accent:       { var: "--color-text-ivory" }
-          # status badges
           status-positive-bg:    { var: "--color-status-positive" }
           status-caution-bg:     { var: "--color-status-caution" }
           status-critical-bg:    { var: "--color-status-critical" }
-          # required-field asterisk + chromatic input focus ring
           field-required:        { var: "--color-signals-required" }
           input-focus-ring:      { var: "--color-signals-focus" }
+          selection-bg:          { var: "--color-accent-primary" }
+          nav-bg:                { var: "--color-backgrounds-ivory" }
+          nav-text:              { var: "--color-text-ink" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-ivory" }
+          hero-text:             { var: "--color-text-ink" }
+          error-text:            { var: "--color-signals-error-text-dark" }
+          error-fill:            { var: "--color-signals-error" }
       dark:
         bindings:
           surface-primary:       { var: "--color-backgrounds-brand-ink" }
@@ -967,22 +1031,39 @@ themes:
           button-secondary-bg:   { var: "--color-buttons-secondary-bg-brand" }
           button-secondary-text: { var: "--color-buttons-secondary-txt-frost" }
           switch-active-bg:      { var: "--color-signals-focus" }
-          # editorial feature tiles — deep grounds (stronger), light ink
-          tile-ground-1:         { var: "--color-panels-umber" }
+          tile-ground-1:         { var: "---color-panels-d" }
           tile-ink-1:            { var: "--color-text-ivory" }
-          tile-ground-2:         { var: "--color-panels-indigo" }
+          tile-ground-2:         { var: "--color-panels-a" }
           tile-ink-2:            { var: "--color-text-ivory" }
-          tile-ground-3:         { var: "--color-panels-wine" }
+          tile-ground-3:         { var: "--color-panels-e" }
           tile-ink-3:            { var: "--color-text-ivory" }
           tile-ground-accent:    { var: "--color-accent-dark" }
           tile-ink-accent:       { var: "--color-text-ivory" }
-          # status badges
           status-positive-bg:    { var: "--color-status-positive" }
           status-caution-bg:     { var: "--color-status-caution" }
           status-critical-bg:    { var: "--color-status-critical" }
-          # required-field asterisk + chromatic input focus ring
           field-required:        { var: "--color-signals-required" }
           input-focus-ring:      { var: "--color-signals-focus" }
+          selection-bg:          { var: "--color-accent-dark" }
+          nav-bg:                { var: "--color-backgrounds-brand-ink" }
+          nav-text:              { var: "--color-text-frost" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-brand-ink" }
+          hero-text:             { var: "--color-text-frost" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text" }
+          error-fill:            { var: "--color-signals-error" }
+
+  # ------------------------------------------------------------
+  # editorial — Alias of `default`.  Editorial and legal pages
+  # use this name; it mirrors `default` in every mode (the
+  # generator emits its selector grouped with default's).
+  # An alias declares no bindings of its own.
+  # ------------------------------------------------------------
+  editorial:
+    alias: default
+    description: "Editorial and legal pages — a semantic name for the `default` warm-light ground. Mirrors `default` in every mode."
 
   # ------------------------------------------------------------
   # punctuation — Light punctuation interjection.
@@ -1011,26 +1092,85 @@ themes:
           button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
           button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
           switch-active-bg:      { var: "--color-signals-focus" }
-      dark:
-        bindings:
-          surface-primary:       { var: "--color-backgrounds-cream" }
-          surface-secondary:     { var: "--color-backgrounds-beige" }
-          surface-tertiary:      { var: "--color-backgrounds-sand" }
-          surface-raised:        { var: "--color-backgrounds-ivory" }
-          surface-muted:         { var: "--color-backgrounds-beige" }
-          text-primary:          { var: "--color-text-ink" }
-          text-secondary:        { var: "--color-text-graphite" }
-          text-tertiary:         { var: "--color-text-dim" }
-          text-inverse:          { var: "--color-text-frost" }
-          border-subtle:         { var: "--color-borders-gray" }
-          border-strong:         { var: "--color-borders-charcoal" }
-          accent-primary:        { var: "--color-accent-primary" }
-          accent-interactive:    { var: "--color-accent-interactive" }
-          accent-heroes:         { var: "--color-accent-primary" }
-          focus-ring:            { var: "--color-borders-dim" }
-          button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
-          button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
-          switch-active-bg:      { var: "--color-signals-focus" }
+          selection-bg:          { var: "--color-accent-primary" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-cream" }
+          nav-text:              { var: "--color-text-ink" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-cream" }
+          hero-text:             { var: "--color-text-ink" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-light" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text-dark" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "--color-panels-a" }
+          tile-ink-1:            { var: "--color-text-ink" }
+          tile-ground-2:         { var: "--color-panels-g" }
+          tile-ink-2:            { var: "--color-text-ink" }
+          tile-ground-3:         { var: "--color-panels-d" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-primary" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+      # ----------------------------------------------------------------
+      # dark — mirrors light; this theme does not change on mode flip.
+      # The complete dark mapping is retained below, commented out, so
+      # every role's value stays on record. To make this theme diverge
+      # in dark mode, uncomment this block and edit the bindings you
+      # want to change. An absent (commented) dark mode renders as the
+      # light mode in both UI modes.
+      # ----------------------------------------------------------------
+      # dark:
+        # bindings:
+          # surface-primary:       { var: "--color-backgrounds-cream" }
+          # surface-secondary:     { var: "--color-backgrounds-beige" }
+          # surface-tertiary:      { var: "--color-backgrounds-sand" }
+          # surface-raised:        { var: "--color-backgrounds-ivory" }
+          # surface-muted:         { var: "--color-backgrounds-beige" }
+          # text-primary:          { var: "--color-text-ink" }
+          # text-secondary:        { var: "--color-text-graphite" }
+          # text-tertiary:         { var: "--color-text-dim" }
+          # text-inverse:          { var: "--color-text-frost" }
+          # border-subtle:         { var: "--color-borders-gray" }
+          # border-strong:         { var: "--color-borders-charcoal" }
+          # accent-primary:        { var: "--color-accent-primary" }
+          # accent-interactive:    { var: "--color-accent-interactive" }
+          # accent-heroes:         { var: "--color-accent-primary" }
+          # focus-ring:            { var: "--color-borders-dim" }
+          # button-primary-bg:     { var: "--color-buttons-primary-bg-brand" }
+          # button-primary-text:   { var: "--color-buttons-primary-txt-frost" }
+          # switch-active-bg:      { var: "--color-signals-focus" }
+          # # --- uniform role coverage (every theme binds every role) ---
+          # selection-bg:          { var: "--color-accent-primary" }
+          # input-focus-ring:      { var: "--color-signals-focus" }
+          # nav-bg:                { var: "--color-backgrounds-cream" }
+          # nav-text:              { var: "--color-text-ink" }
+          # footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          # footer-text:           { var: "--color-text-powder" }
+          # hero-bg:               { var: "--color-backgrounds-cream" }
+          # hero-text:             { var: "--color-text-ink" }
+          # button-secondary-bg:   { var: "--color-buttons-secondary-bg-light" }
+          # button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          # button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          # error-text:            { var: "--color-signals-error-text-dark" }
+          # error-fill:            { var: "--color-signals-error" }
+          # field-required:        { var: "--color-signals-required" }
+          # tile-ground-1:         { var: "--color-panels-a" }
+          # tile-ink-1:            { var: "--color-text-ink" }
+          # tile-ground-2:         { var: "--color-panels-g" }
+          # tile-ink-2:            { var: "--color-text-ink" }
+          # tile-ground-3:         { var: "--color-panels-d" }
+          # tile-ink-3:            { var: "--color-text-ivory" }
+          # tile-ground-accent:    { var: "--color-accent-primary" }
+          # tile-ink-accent:       { var: "--color-text-ivory" }
+          # status-positive-bg:    { var: "--color-status-positive" }
+          # status-caution-bg:     { var: "--color-status-caution" }
+          # status-critical-bg:    { var: "--color-status-critical" }
 
   # ------------------------------------------------------------
   # statement — High-contrast neutral feature panel.
@@ -1059,26 +1199,86 @@ themes:
           button-primary-bg:     { var: "--color-buttons-primary-bg-ink" }
           button-primary-text:   { var: "--color-buttons-primary-txt-light" }
           switch-active-bg:      { var: "--color-signals-focus" }
-      dark:
-        bindings:
-          surface-primary:       { var: "--color-backgrounds-beige" }
-          surface-secondary:     { var: "--color-backgrounds-sand" }
-          surface-tertiary:      { var: "--color-backgrounds-tan" }
-          surface-raised:        { var: "--color-backgrounds-ivory" }
-          surface-muted:         { var: "--color-backgrounds-sand" }
-          text-primary:          { var: "--color-text-black" }
-          text-secondary:        { var: "--color-text-dark" }
-          text-tertiary:         { var: "--color-text-deep-gray" }
-          text-inverse:          { var: "--color-text-frost" }
-          border-subtle:         { var: "--color-borders-mid" }
-          border-strong:         { var: "--color-borders-dark" }
-          accent-primary:        { var: "--color-accent-interactive" }
-          accent-interactive:    { var: "--color-accent-interactive" }
-          accent-heroes:         { var: "--color-accent-primary" }
-          focus-ring:            { var: "--color-borders-deep" }
-          button-primary-bg:     { var: "--color-buttons-primary-bg-ink" }
-          button-primary-text:   { var: "--color-buttons-primary-txt-light" }
-          switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-interactive" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-beige" }
+          nav-text:              { var: "--color-text-black" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-beige" }
+          hero-text:             { var: "--color-text-black" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-light" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text-dark" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "--color-panels-a" }
+          tile-ink-1:            { var: "--color-text-ink" }
+          tile-ground-2:         { var: "--color-panels-g" }
+          tile-ink-2:            { var: "--color-text-ink" }
+          tile-ground-3:         { var: "--color-panels-d" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-primary" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+      # ----------------------------------------------------------------
+      # dark — mirrors light; this theme does not change on mode flip.
+      # The complete dark mapping is retained below, commented out, so
+      # every role's value stays on record. To make this theme diverge
+      # in dark mode, uncomment this block and edit the bindings you
+      # want to change. An absent (commented) dark mode renders as the
+      # light mode in both UI modes.
+      # ----------------------------------------------------------------
+      # dark:
+        # bindings:
+          # surface-primary:       { var: "--color-backgrounds-beige" }
+          # surface-secondary:     { var: "--color-backgrounds-sand" }
+          # surface-tertiary:      { var: "--color-backgrounds-tan" }
+          # surface-raised:        { var: "--color-backgrounds-ivory" }
+          # surface-muted:         { var: "--color-backgrounds-sand" }
+          # text-primary:          { var: "--color-text-black" }
+          # text-secondary:        { var: "--color-text-dark" }
+          # text-tertiary:         { var: "--color-text-deep-gray" }
+          # text-inverse:          { var: "--color-text-frost" }
+          # border-subtle:         { var: "--color-borders-mid" }
+          # border-strong:         { var: "--color-borders-dark" }
+          # accent-primary:        { var: "--color-accent-interactive" }
+          # accent-interactive:    { var: "--color-accent-interactive" }
+          # accent-heroes:         { var: "--color-accent-primary" }
+          # focus-ring:            { var: "--color-borders-deep" }
+          # button-primary-bg:     { var: "--color-buttons-primary-bg-ink" }
+          # button-primary-text:   { var: "--color-buttons-primary-txt-light" }
+          # switch-active-bg:      { var: "--color-signals-focus" }
+          # # --- uniform role coverage (every theme binds every role) ---
+          # selection-bg:          { var: "--color-accent-interactive" }
+          # input-focus-ring:      { var: "--color-signals-focus" }
+          # nav-bg:                { var: "--color-backgrounds-beige" }
+          # nav-text:              { var: "--color-text-black" }
+          # footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          # footer-text:           { var: "--color-text-powder" }
+          # hero-bg:               { var: "--color-backgrounds-beige" }
+          # hero-text:             { var: "--color-text-black" }
+          # button-secondary-bg:   { var: "--color-buttons-secondary-bg-light" }
+          # button-secondary-text: { var: "--color-buttons-secondary-txt-slate" }
+          # button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          # error-text:            { var: "--color-signals-error-text-dark" }
+          # error-fill:            { var: "--color-signals-error" }
+          # field-required:        { var: "--color-signals-required" }
+          # tile-ground-1:         { var: "--color-panels-a" }
+          # tile-ink-1:            { var: "--color-text-ink" }
+          # tile-ground-2:         { var: "--color-panels-g" }
+          # tile-ink-2:            { var: "--color-text-ink" }
+          # tile-ground-3:         { var: "--color-panels-d" }
+          # tile-ink-3:            { var: "--color-text-ivory" }
+          # tile-ground-accent:    { var: "--color-accent-primary" }
+          # tile-ink-accent:       { var: "--color-text-ivory" }
+          # status-positive-bg:    { var: "--color-status-positive" }
+          # status-caution-bg:     { var: "--color-status-caution" }
+          # status-critical-bg:    { var: "--color-status-critical" }
 
   # ------------------------------------------------------------
   # feature-dark — Mid-dark feature panel.
@@ -1109,28 +1309,84 @@ themes:
           button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
           button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
           switch-active-bg:      { var: "--color-signals-focus" }
-      dark:
-        bindings:
-          surface-primary:       { var: "--color-backgrounds-dark" }
-          surface-secondary:     { var: "--color-backgrounds-graphite" }
-          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
-          surface-raised:        { var: "--color-backgrounds-dark" }
-          surface-muted:         { var: "--color-backgrounds-graphite" }
-          text-primary:          { var: "--color-text-ivory" }
-          text-secondary:        { var: "--color-text-tan" }
-          text-tertiary:         { var: "--color-text-warm-gray" }
-          text-inverse:          { var: "--color-text-ink" }
-          border-subtle:         { var: "--color-borders-mid" }
-          border-strong:         { var: "--color-borders-soft" }
-          accent-primary:        { var: "--color-accent-dark" }
-          accent-interactive:    { var: "--color-accent-hover" }
-          accent-heroes:         { var: "--color-text-ivory" }
-          focus-ring:            { var: "--color-borders-soft" }
-          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
-          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
-          button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
-          button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
-          switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-dark" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-dark" }
+          nav-text:              { var: "--color-text-ivory" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-dark" }
+          hero-text:             { var: "--color-text-ivory" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ink-1:            { var: "--color-text-ivory" }
+          tile-ground-2:         { var: "--color-panels-a" }
+          tile-ink-2:            { var: "--color-text-ivory" }
+          tile-ground-3:         { var: "--color-panels-e" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-dark" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+      # ----------------------------------------------------------------
+      # dark — mirrors light; this theme does not change on mode flip.
+      # The complete dark mapping is retained below, commented out, so
+      # every role's value stays on record. To make this theme diverge
+      # in dark mode, uncomment this block and edit the bindings you
+      # want to change. An absent (commented) dark mode renders as the
+      # light mode in both UI modes.
+      # ----------------------------------------------------------------
+      # dark:
+        # bindings:
+          # surface-primary:       { var: "--color-backgrounds-dark" }
+          # surface-secondary:     { var: "--color-backgrounds-graphite" }
+          # surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          # surface-raised:        { var: "--color-backgrounds-dark" }
+          # surface-muted:         { var: "--color-backgrounds-graphite" }
+          # text-primary:          { var: "--color-text-ivory" }
+          # text-secondary:        { var: "--color-text-tan" }
+          # text-tertiary:         { var: "--color-text-warm-gray" }
+          # text-inverse:          { var: "--color-text-ink" }
+          # border-subtle:         { var: "--color-borders-mid" }
+          # border-strong:         { var: "--color-borders-soft" }
+          # accent-primary:        { var: "--color-accent-dark" }
+          # accent-interactive:    { var: "--color-accent-hover" }
+          # accent-heroes:         { var: "--color-text-ivory" }
+          # focus-ring:            { var: "--color-borders-soft" }
+          # button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          # button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          # button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          # button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          # switch-active-bg:      { var: "--color-signals-focus" }
+          # # --- uniform role coverage (every theme binds every role) ---
+          # selection-bg:          { var: "--color-accent-dark" }
+          # input-focus-ring:      { var: "--color-signals-focus" }
+          # nav-bg:                { var: "--color-backgrounds-dark" }
+          # nav-text:              { var: "--color-text-ivory" }
+          # footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          # footer-text:           { var: "--color-text-powder" }
+          # hero-bg:               { var: "--color-backgrounds-dark" }
+          # hero-text:             { var: "--color-text-ivory" }
+          # button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          # error-text:            { var: "--color-signals-error-text" }
+          # error-fill:            { var: "--color-signals-error" }
+          # field-required:        { var: "--color-signals-required" }
+          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ink-1:            { var: "--color-text-ivory" }
+          # tile-ground-2:         { var: "--color-panels-a" }
+          # tile-ink-2:            { var: "--color-text-ivory" }
+          # tile-ground-3:         { var: "--color-panels-e" }
+          # tile-ink-3:            { var: "--color-text-ivory" }
+          # tile-ground-accent:    { var: "--color-accent-dark" }
+          # tile-ink-accent:       { var: "--color-text-ivory" }
+          # status-positive-bg:    { var: "--color-status-positive" }
+          # status-caution-bg:     { var: "--color-status-caution" }
+          # status-critical-bg:    { var: "--color-status-critical" }
 
   # ------------------------------------------------------------
   # code — Code-block / deeper-dark interjection.
@@ -1157,24 +1413,88 @@ themes:
           accent-heroes:         { var: "--color-text-ivory" }
           focus-ring:            { var: "--color-borders-warm-gray" }
           switch-active-bg:      { var: "--color-signals-focus" }
-      dark:
-        bindings:
-          surface-primary:       { var: "--color-backgrounds-deeper" }
-          surface-secondary:     { var: "--color-backgrounds-dark" }
-          surface-tertiary:      { var: "--color-backgrounds-charcoal" }
-          surface-raised:        { var: "--color-backgrounds-deeper" }
-          surface-muted:         { var: "--color-backgrounds-dark" }
-          text-primary:          { var: "--color-text-ivory" }
-          text-secondary:        { var: "--color-text-tan" }
-          text-tertiary:         { var: "--color-text-gray" }
-          text-inverse:          { var: "--color-text-ink" }
-          border-subtle:         { var: "--color-borders-dim" }
-          border-strong:         { var: "--color-borders-soft" }
-          accent-primary:        { var: "--color-accent-dark" }
-          accent-interactive:    { var: "--color-accent-hover" }
-          accent-heroes:         { var: "--color-text-ivory" }
-          focus-ring:            { var: "--color-borders-warm-gray" }
-          switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-dark" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-deeper" }
+          nav-text:              { var: "--color-text-ivory" }
+          footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          footer-text:           { var: "--color-text-powder" }
+          hero-bg:               { var: "--color-backgrounds-deeper" }
+          hero-text:             { var: "--color-text-ivory" }
+          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ink-1:            { var: "--color-text-ivory" }
+          tile-ground-2:         { var: "--color-panels-a" }
+          tile-ink-2:            { var: "--color-text-ivory" }
+          tile-ground-3:         { var: "--color-panels-e" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-dark" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+      # ----------------------------------------------------------------
+      # dark — mirrors light; this theme does not change on mode flip.
+      # The complete dark mapping is retained below, commented out, so
+      # every role's value stays on record. To make this theme diverge
+      # in dark mode, uncomment this block and edit the bindings you
+      # want to change. An absent (commented) dark mode renders as the
+      # light mode in both UI modes.
+      # ----------------------------------------------------------------
+      # dark:
+        # bindings:
+          # surface-primary:       { var: "--color-backgrounds-deeper" }
+          # surface-secondary:     { var: "--color-backgrounds-dark" }
+          # surface-tertiary:      { var: "--color-backgrounds-charcoal" }
+          # surface-raised:        { var: "--color-backgrounds-deeper" }
+          # surface-muted:         { var: "--color-backgrounds-dark" }
+          # text-primary:          { var: "--color-text-ivory" }
+          # text-secondary:        { var: "--color-text-tan" }
+          # text-tertiary:         { var: "--color-text-gray" }
+          # text-inverse:          { var: "--color-text-ink" }
+          # border-subtle:         { var: "--color-borders-dim" }
+          # border-strong:         { var: "--color-borders-soft" }
+          # accent-primary:        { var: "--color-accent-dark" }
+          # accent-interactive:    { var: "--color-accent-hover" }
+          # accent-heroes:         { var: "--color-text-ivory" }
+          # focus-ring:            { var: "--color-borders-warm-gray" }
+          # switch-active-bg:      { var: "--color-signals-focus" }
+          # # --- uniform role coverage (every theme binds every role) ---
+          # selection-bg:          { var: "--color-accent-dark" }
+          # input-focus-ring:      { var: "--color-signals-focus" }
+          # nav-bg:                { var: "--color-backgrounds-deeper" }
+          # nav-text:              { var: "--color-text-ivory" }
+          # footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          # footer-text:           { var: "--color-text-powder" }
+          # hero-bg:               { var: "--color-backgrounds-deeper" }
+          # hero-text:             { var: "--color-text-ivory" }
+          # button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          # button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          # button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          # button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          # button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          # error-text:            { var: "--color-signals-error-text" }
+          # error-fill:            { var: "--color-signals-error" }
+          # field-required:        { var: "--color-signals-required" }
+          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ink-1:            { var: "--color-text-ivory" }
+          # tile-ground-2:         { var: "--color-panels-a" }
+          # tile-ink-2:            { var: "--color-text-ivory" }
+          # tile-ground-3:         { var: "--color-panels-e" }
+          # tile-ink-3:            { var: "--color-text-ivory" }
+          # tile-ground-accent:    { var: "--color-accent-dark" }
+          # tile-ink-accent:       { var: "--color-text-ivory" }
+          # status-positive-bg:    { var: "--color-status-positive" }
+          # status-caution-bg:     { var: "--color-status-caution" }
+          # status-critical-bg:    { var: "--color-status-critical" }
 
   # ------------------------------------------------------------
   # deep — Deepest dark.  Footer + brand-dark surfaces.
@@ -1208,25 +1528,81 @@ themes:
           button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
           button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
           switch-active-bg:      { var: "--color-signals-focus" }
-      dark:
-        bindings:
-          surface-primary:       { var: "--color-backgrounds-ink" }
-          surface-secondary:     { var: "--color-backgrounds-near-black" }
-          surface-tertiary:      { var: "--color-backgrounds-dark" }
-          surface-raised:        { var: "--color-backgrounds-deeper" }
-          surface-muted:         { var: "--color-backgrounds-near-black" }
-          text-primary:          { var: "--color-text-ivory" }
-          text-secondary:        { var: "--color-text-tan" }
-          text-tertiary:         { var: "--color-text-gray" }
-          text-inverse:          { var: "--color-text-ink" }
-          border-subtle:         { var: "--color-borders-deep" }
-          border-strong:         { var: "--color-borders-soft" }
-          accent-primary:        { var: "--color-accent-dark" }
-          accent-interactive:    { var: "--color-accent-hover" }
-          accent-heroes:         { var: "--color-text-ivory" }
-          focus-ring:            { var: "--color-borders-soft" }
-          footer-bg:             { var: "--color-backgrounds-brand-navy" }
-          footer-text:           { var: "--color-text-powder" }
-          button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
-          button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
-          switch-active-bg:      { var: "--color-signals-focus" }
+          # --- uniform role coverage (every theme binds every role) ---
+          selection-bg:          { var: "--color-accent-dark" }
+          input-focus-ring:      { var: "--color-signals-focus" }
+          nav-bg:                { var: "--color-backgrounds-ink" }
+          nav-text:              { var: "--color-text-ivory" }
+          hero-bg:               { var: "--color-backgrounds-ink" }
+          hero-text:             { var: "--color-text-ivory" }
+          button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          error-text:            { var: "--color-signals-error-text" }
+          error-fill:            { var: "--color-signals-error" }
+          field-required:        { var: "--color-signals-required" }
+          tile-ground-1:         { var: "---color-panels-d" }
+          tile-ink-1:            { var: "--color-text-ivory" }
+          tile-ground-2:         { var: "--color-panels-a" }
+          tile-ink-2:            { var: "--color-text-ivory" }
+          tile-ground-3:         { var: "--color-panels-e" }
+          tile-ink-3:            { var: "--color-text-ivory" }
+          tile-ground-accent:    { var: "--color-accent-dark" }
+          tile-ink-accent:       { var: "--color-text-ivory" }
+          status-positive-bg:    { var: "--color-status-positive" }
+          status-caution-bg:     { var: "--color-status-caution" }
+          status-critical-bg:    { var: "--color-status-critical" }
+      # ----------------------------------------------------------------
+      # dark — mirrors light; this theme does not change on mode flip.
+      # The complete dark mapping is retained below, commented out, so
+      # every role's value stays on record. To make this theme diverge
+      # in dark mode, uncomment this block and edit the bindings you
+      # want to change. An absent (commented) dark mode renders as the
+      # light mode in both UI modes.
+      # ----------------------------------------------------------------
+      # dark:
+        # bindings:
+          # surface-primary:       { var: "--color-backgrounds-ink" }
+          # surface-secondary:     { var: "--color-backgrounds-near-black" }
+          # surface-tertiary:      { var: "--color-backgrounds-dark" }
+          # surface-raised:        { var: "--color-backgrounds-deeper" }
+          # surface-muted:         { var: "--color-backgrounds-near-black" }
+          # text-primary:          { var: "--color-text-ivory" }
+          # text-secondary:        { var: "--color-text-tan" }
+          # text-tertiary:         { var: "--color-text-gray" }
+          # text-inverse:          { var: "--color-text-ink" }
+          # border-subtle:         { var: "--color-borders-deep" }
+          # border-strong:         { var: "--color-borders-soft" }
+          # accent-primary:        { var: "--color-accent-dark" }
+          # accent-interactive:    { var: "--color-accent-hover" }
+          # accent-heroes:         { var: "--color-text-ivory" }
+          # focus-ring:            { var: "--color-borders-soft" }
+          # footer-bg:             { var: "--color-backgrounds-brand-navy" }
+          # footer-text:           { var: "--color-text-powder" }
+          # button-primary-bg:     { var: "--color-buttons-primary-bg-light" }
+          # button-primary-text:   { var: "--color-buttons-primary-txt-ink" }
+          # switch-active-bg:      { var: "--color-signals-focus" }
+          # # --- uniform role coverage (every theme binds every role) ---
+          # selection-bg:          { var: "--color-accent-dark" }
+          # input-focus-ring:      { var: "--color-signals-focus" }
+          # nav-bg:                { var: "--color-backgrounds-ink" }
+          # nav-text:              { var: "--color-text-ivory" }
+          # hero-bg:               { var: "--color-backgrounds-ink" }
+          # hero-text:             { var: "--color-text-ivory" }
+          # button-secondary-bg:   { var: "--color-buttons-secondary-bg-slate" }
+          # button-secondary-text: { var: "--color-buttons-secondary-txt-light" }
+          # button-tertiary-border: { var: "--color-buttons-tertiary-border" }
+          # error-text:            { var: "--color-signals-error-text" }
+          # error-fill:            { var: "--color-signals-error" }
+          # field-required:        { var: "--color-signals-required" }
+          # tile-ground-1:         { var: "---color-panels-d" }
+          # tile-ink-1:            { var: "--color-text-ivory" }
+          # tile-ground-2:         { var: "--color-panels-a" }
+          # tile-ink-2:            { var: "--color-text-ivory" }
+          # tile-ground-3:         { var: "--color-panels-e" }
+          # tile-ink-3:            { var: "--color-text-ivory" }
+          # tile-ground-accent:    { var: "--color-accent-dark" }
+          # tile-ink-accent:       { var: "--color-text-ivory" }
+          # status-positive-bg:    { var: "--color-status-positive" }
+          # status-caution-bg:     { var: "--color-status-caution" }
+          # status-critical-bg:    { var: "--color-status-critical" }

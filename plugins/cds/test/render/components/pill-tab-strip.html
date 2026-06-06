@@ -1,0 +1,24 @@
+<div class="cds-specimen" data-component="pill-tab-strip">
+  <div style="display:flex; flex-direction:column; gap:24px;">
+
+    <div class="pill-tab-strip" role="radiogroup" aria-label="Billing period" style="display:inline-flex; gap:4px; width:max-content;">
+      <button type="button" class="pill-tab-strip__button active" role="radio" aria-checked="true" style="padding:8px 16px;">Monthly</button>
+      <button type="button" class="pill-tab-strip__button" role="radio" aria-checked="false" style="padding:8px 16px;">Annual</button>
+      <button type="button" class="pill-tab-strip__button" role="radio" aria-checked="false" style="padding:8px 16px;">Lifetime</button>
+    </div>
+
+    <div>
+      <div class="pill-tab-strip" role="tablist" aria-label="Account views" style="display:inline-flex; gap:4px; width:max-content;">
+        <button type="button" id="tab-overview" class="pill-tab-strip__button active" role="tab" aria-selected="true" aria-controls="panel-overview" style="padding:8px 16px;">Overview</button>
+        <button type="button" id="tab-usage" class="pill-tab-strip__button" role="tab" aria-selected="false" aria-controls="panel-usage" tabindex="-1" style="padding:8px 16px;">Usage</button>
+        <button type="button" id="tab-members" class="pill-tab-strip__button" role="tab" aria-selected="false" aria-controls="panel-members" tabindex="-1" style="padding:8px 16px;">Members</button>
+      </div>
+      <div id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" style="padding-top:16px;">
+        <p style="margin:0; color:var(--role-text-secondary);">Current cycle summary and recent activity for your account.</p>
+      </div>
+      <div id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden></div>
+      <div id="panel-members" role="tabpanel" aria-labelledby="tab-members" hidden></div>
+    </div>
+
+  </div>
+</div>

@@ -14,7 +14,7 @@ Resolves the requested surface — shell layout, page shape, components, navigat
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML, used indirectly through the generated stylesheet set.
 - **From the generated stylesheet set** (at `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`): `tokens.css`, `components.css`, `themes.css`, `manifest.json` for stale detection.
 - **From shared reference (`../../reference/`):** `page-types.md` (Application Shell rules), `section-types.md`, `components.md`, `compliance.md`, and the foundations files — `foundations/overview.md`, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`, `foundations/motion.md`, `foundations/imagery.md`, `foundations/responsive.md`, `foundations/implementation.md`.
-- **From skill-local reference (`./reference/`):** `app-shapes.md` (shell layouts + page shapes for in-app surfaces); `missing-components.md` (registry of components the reference does not yet define — consulted before any `MISSING_COMPONENT` halt).
+- **From skill-local reference (`./reference/`):** `app-shapes.md` (shell layouts + page shapes for in-app surfaces).
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`:** the target framework (e.g., `react`, `vue`, `svelte`, `solid`). If unset → STOP `FRAMEWORK_UNSET`.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR`:** default output directory inside the host project for emitted surfaces; otherwise asked at call time.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE`:** decides whether state records go to `~/.claude/customizable-design-system/state/compose-app-surface/` (global) or `<project-root>/.claude/customizable-design-system/state/compose-app-surface/` (project).
@@ -27,7 +27,7 @@ Resolves the requested surface — shell layout, page shape, components, navigat
 4. **Kind of surface.** Page, section inside an existing in-app page, or component (modal / drawer / side panel) bound for the live app.
 5. **Where it lives.** Resolve via `$CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR` if set; otherwise ask for an absolute output directory inside the host project.
 6. **How it is reached.** Route path, nav entry, side rail entry, parent component invocation — whatever the wiring diff must express.
-7. **Shell / page shape / components.** Map every part of the requested surface to a deterministic reference entry: shell layout → `./reference/app-shapes.md`; page shape → `./reference/app-shapes.md`; component → `../../reference/components.md` (check `./reference/missing-components.md` if not found).
+7. **Shell / page shape / components.** Map every part of the requested surface to a deterministic reference entry: shell layout → `./reference/app-shapes.md`; page shape → `./reference/app-shapes.md`; component → `../../reference/components.md`.
 8. **Inputs and state.** Runtime data dependencies — independent of any supplied static content.
 9. **Framework target.** Read `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`. If absent, ask once. If still unset → STOP `FRAMEWORK_UNSET`.
 10. **Stylesheet staleness.** Compute SHA-256 of the current `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. Compare to `manifest.json`'s `elements_yaml_sha256`. Mismatched or missing → ask the caller to run `generate-stylesheets`; STOP `STYLESHEETS_MISSING` or `STYLESHEETS_STALE`.
@@ -35,7 +35,7 @@ Resolves the requested surface — shell layout, page shape, components, navigat
 ## Pipeline
 
 1. **Confirm host context.** Validate the request against `../../reference/page-types.md` Application Shell rules — the request must describe a surface that fits inside the host application's shell.
-2. **Resolve every part to the reference.** Shell layout and page shape resolve against `./reference/app-shapes.md`. Each component resolves against `../../reference/components.md`; any component not present there must appear in `./reference/missing-components.md` — if listed there as deferred, STOP `MISSING_COMPONENT:{name}`; if not listed at all, STOP `MISSING_COMPONENT:{name}` and instruct the caller to add it to `missing-components.md` for triage. **For section-level shape decisions inside an app surface (which section type sits where on the page, which shape it takes): STOP `APP_SECTION_RULES_PENDING:{section-type}` and surface the gap.** Beta-1 covers shell layouts and page shapes from `app-shapes.md`; section-level shape rules for in-app sections are deferred.
+2. **Resolve every part to the reference.** Shell layout and page shape resolve against `./reference/app-shapes.md`. Each component resolves against `../../reference/components.md`; any component not defined there → STOP `MISSING_COMPONENT:{name}` and name the gap (do not invent it). **For section-level shape decisions inside an app surface (which section type sits where on the page, which shape it takes): STOP `APP_SECTION_RULES_PENDING:{section-type}` and surface the gap.** Shell layouts and page shapes resolve from `app-shapes.md`; section-level shape rules for in-app sections are not present in the reference yet.
 3. **Load foundations and components.** Read `../../reference/foundations/layout.md`, `typography.md`, `accessibility.md`, `motion.md` plus every component family relevant to the resolved surface from `../../reference/components.md`.
 4. **Generate framework-native code.** Per `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`, emit component code that implements the resolved spec exactly. The emitted code **links to or imports** the generated stylesheet set from `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`; it does NOT inline that CSS. Class names match the kebab-case identifiers in `components.css`. ARIA contracts, keyboard semantics, and focus rules come from `foundations/accessibility.md` and the component entries — they are not invented.
 5. **Generate the wiring diff.** Produce the unified diff for the navigation entry, side rail entry, route table change, or parent component update needed to make the new surface reachable. Each diff cites the file it modifies and the existing pattern it follows from the reference (not from inspected host code).
@@ -46,8 +46,8 @@ Resolves the requested surface — shell layout, page shape, components, navigat
 - `FRAMEWORK_UNSET` — `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK` not set and not supplied.
 - `STYLESHEETS_MISSING` — `manifest.json` not found at `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`.
 - `STYLESHEETS_STALE` — elements-YAML SHA differs from `manifest.json`'s `elements_yaml_sha256`.
-- `MISSING_COMPONENT:{name}` — component not in `../../reference/components.md`; listed in `./reference/missing-components.md` as deferred, or not listed anywhere.
-- `APP_SECTION_RULES_PENDING:{section-type}` — section-level shape rules for in-app sections are deferred past Beta-1.
+- `MISSING_COMPONENT:{name}` — component not defined in `../../reference/components.md`.
+- `APP_SECTION_RULES_PENDING:{section-type}` — section-level shape rules for in-app sections are not present in the reference.
 - `MISSING_SPEC` — any required reference is too thin to emit code (name the gap).
 - `OUTPUT_PATH_UNRESOLVABLE` — no host-project output directory provided and none discoverable.
 - `PRECONDITION_FAILED` — request does not fit Application Shell rules from `page-types.md`.

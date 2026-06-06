@@ -1,0 +1,29 @@
+<div class="cds-specimen" data-component="standard-text-input">
+  <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start;">
+
+    <div style="display: flex; flex-direction: column;">
+      <label for="sti-default" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Full name</label>
+      <input id="sti-default" class="standard-text-input" type="text" placeholder="Full name">
+      <span style="color: var(--role-text-tertiary); font-size: 13px; font-weight: 400; margin-top: 4px;">Default — helper text below the field.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <label for="sti-filled" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Workspace name</label>
+      <input id="sti-filled" class="standard-text-input" type="text" value="Atlas Operations" placeholder="Workspace name">
+      <span style="color: var(--role-text-tertiary); font-size: 13px; font-weight: 400; margin-top: 4px;">Filled value.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <label for="sti-error" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Email address</label>
+      <input id="sti-error" class="standard-text-input" type="email" value="not-an-email" placeholder="Email address" aria-invalid="true" aria-describedby="sti-error-msg">
+      <span id="sti-error-msg" aria-live="polite" style="color: var(--role-error-text); font-size: 13px; font-weight: 400; margin-top: 4px;">Enter a valid email address.</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <label for="sti-disabled" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Account ID</label>
+      <input id="sti-disabled" class="standard-text-input" type="text" value="acct-4821" placeholder="Account ID" disabled>
+      <span style="color: var(--role-text-tertiary); font-size: 13px; font-weight: 400; margin-top: 4px;">Disabled.</span>
+    </div>
+
+  </div>
+</div>

@@ -13,7 +13,7 @@ Walks a target (file, set of files, rendered URL, or pasted markup/CSS) against 
 - **From caller (runtime):** the target (file path, set of paths, rendered URL, or pasted markup/CSS); the audit scope (tokens, implementation, full design rules, or all three); the desired output format (inline annotations or structured report); the rendering context (app-embedded or standalone — the caller declares this; the skill does not infer it from host-project inspection).
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML — used to know the canonical token and role names.
 - **From shared reference (`../../reference/`):** `compliance.md`, `page-types.md`, plus any `foundations/*.md` file implicated by the audit scope.
-- **From sibling-skill reference trees** when relevant: `../compose-page/reference/landing-sections-shape-rules.md`, `../compose-app-surface/reference/app-shapes.md`, `../compose-app-surface/reference/missing-components.md`.
+- **From sibling-skill reference trees** when relevant: `../compose-page/reference/landing-sections-shape-rules.md`, `../compose-app-surface/reference/app-shapes.md`.
 
 This skill does **not** read host-project code beyond the audit target the caller hands it. The target's rendering context is declared by the caller, not derived from surrounding code.
 

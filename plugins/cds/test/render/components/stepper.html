@@ -1,0 +1,46 @@
+<div class="cds-specimen" data-component="stepper">
+  <ol class="stepper" style="list-style:none; margin:0; padding:0; min-width:0; flex-wrap:wrap;">
+
+    <!-- complete step: filled circle + checkmark, default-weight label -->
+    <li style="display:contents;">
+      <div style="display:flex; min-width:0; align-items:center; gap:8px;">
+        <span class="stepper__circle" style="display:inline-flex; align-items:center; justify-content:center; background:var(--role-status-positive-bg); color:var(--role-text-primary);" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M2.5 6.2 5 8.6 9.6 3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="stepper__label">Create project</span>
+        <span class="stepper__meta">POST /v1/projects</span>
+      </div>
+    </li>
+
+    <!-- current step: high-contrast outline circle, emphasized label, inline meta -->
+    <li style="display:contents;">
+      <span class="stepper__connector" aria-hidden="true" style="display:inline-block;"></span>
+      <div aria-current="step" style="display:flex; min-width:0; align-items:center; gap:8px;">
+        <span class="stepper__circle current" style="display:inline-flex; align-items:center; justify-content:center;">2</span>
+        <span class="stepper__label" style="font-weight:500;">Configure environment</span>
+        <span class="stepper__meta">PATCH /v1/projects/:id/env</span>
+      </div>
+    </li>
+
+    <!-- pending step: dim border circle, muted label -->
+    <li style="display:contents;">
+      <span class="stepper__connector" aria-hidden="true" style="display:inline-block;"></span>
+      <div style="display:flex; min-width:0; align-items:center; gap:8px;">
+        <span class="stepper__circle pending" style="display:inline-flex; align-items:center; justify-content:center;">3</span>
+        <span class="stepper__label" style="color:var(--role-text-tertiary);">Invite teammates</span>
+      </div>
+    </li>
+
+    <!-- pending step with interactive back-navigation circle -->
+    <li style="display:contents;">
+      <span class="stepper__connector" aria-hidden="true" style="display:inline-block;"></span>
+      <div style="display:flex; min-width:0; align-items:center; gap:8px;">
+        <button type="button" class="stepper__circle pending" style="display:inline-flex; align-items:center; justify-content:center; background:transparent; cursor:pointer;" aria-label="Review settings">4</button>
+        <span class="stepper__label" style="color:var(--role-text-tertiary);">Review settings</span>
+      </div>
+    </li>
+
+  </ol>
+</div>

@@ -6,3 +6,5 @@ dist/
 *.local
 .claude/worktrees/
 .remember
+# CDS test output (regenerated on demand, never committed)
+plugins/cds/test/visual-proof-out/

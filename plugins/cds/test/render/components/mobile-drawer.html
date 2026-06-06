@@ -1,0 +1,29 @@
+<div class="cds-specimen" data-component="mobile-drawer">
+  <p style="margin: 0 0 8px; font-size: 13px; color: var(--role-text-tertiary);">Hamburger trigger &middot; closed (aria-expanded="false")</p>
+  <button class="mobile-drawer__hamburger" type="button" aria-label="Open menu" aria-controls="drawer-demo" aria-expanded="false" style="display: inline-flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; background: transparent; border: 0; border-radius: 6px; cursor: pointer;">
+    <span style="display: block; width: 16px; height: 1px; background: currentColor;"></span>
+    <span style="display: block; width: 8px; height: 1px; background: currentColor;"></span>
+  </button>
+
+  <p style="margin: 24px 0 8px; font-size: 13px; color: var(--role-text-tertiary);">Drawer &middot; open (full-viewport takeover, shown in a framed preview)</p>
+  <div style="position: relative; width: 360px; max-width: 100%; height: 520px; border: 1px solid var(--role-border-subtle); border-radius: 12px; overflow: hidden;">
+    <div class="mobile-drawer" id="drawer-demo" role="dialog" aria-modal="true" aria-label="Site navigation" style="position: absolute;">
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 20px;">
+        <span style="font-size: 15px; font-weight: 500; color: var(--role-text-primary);">Menu</span>
+        <button class="mobile-drawer__hamburger" type="button" aria-label="Close menu" aria-controls="drawer-demo" aria-expanded="true" style="display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 6px; cursor: pointer;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"></path></svg>
+        </button>
+      </div>
+      <nav aria-label="Site navigation" style="padding: 8px 12px;">
+        <a class="dropdown-panel__item" href="#" style="display: flex; align-items: center; font-size: 18px; color: var(--role-text-primary); text-decoration: none; min-height: 48px;">Product</a>
+        <a class="dropdown-panel__item" href="#" style="display: flex; align-items: center; font-size: 18px; color: var(--role-text-primary); text-decoration: none; min-height: 48px;">Solutions</a>
+        <a class="dropdown-panel__item" href="#" style="display: flex; align-items: center; font-size: 18px; color: var(--role-text-primary); text-decoration: none; min-height: 48px;">Pricing</a>
+        <a class="dropdown-panel__item" href="#" style="display: flex; align-items: center; font-size: 18px; color: var(--role-text-primary); text-decoration: none; min-height: 48px;">Resources</a>
+        <a class="dropdown-panel__item" href="#" style="display: flex; align-items: center; font-size: 18px; color: var(--role-text-primary); text-decoration: none; min-height: 48px;">Sign in</a>
+      </nav>
+      <div style="padding: 16px 20px;">
+        <button class="button-primary" type="button" style="width: 100%; height: 44px;">Start free trial</button>
+      </div>
+    </div>
+  </div>
+</div>
