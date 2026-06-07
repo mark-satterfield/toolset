@@ -14,7 +14,7 @@ whatever elements YAML is supplied — nothing is hardcoded.
 ```
 
 1. **`check-plugin.py`** discovers and runs every `checks/check_*.py`
-   (schema, structure, links, reference, consistency, shape alignment, token coverage).
+   (schema, structure, links, reference, consistency, shape alignment, token coverage, topbar nav alignment).
 2. **`../validation/lint-elements.py`** asserts properties: schema validity, every
    `var()` chain resolves, aliases target concrete themes, `from_palette` bindings
    land in allowed palettes, every required role is covered in every mode.

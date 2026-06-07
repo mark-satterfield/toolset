@@ -22,6 +22,7 @@ Component family specifications. Slot definitions, fixed sizing, behavior, and a
 - Background = `--nav-bg`, the topbar's dedicated navigation-ground role (a `from_palette: backgrounds` component role). It is bound per theme to the same ground as the section directly beneath it — the page ground, `--surface-primary` — so the nav blends seamlessly into the first section with no seam. The topbar has no standalone color of its own.
 - Height = `84px` at desktop widths. Reduce to `64px` below the 480px viewport via a discrete `@media` override (the topbar's only acceptable mobile-floor adjustment). Topbar height is a single value across every surface within a build.
 - No bottom border. No drop shadow. The nav blends into the page ground.
+- **Layout — logo left, nav + CTA right.** The bar is a single flex row: the `logo` sits alone at the start (left); the `primary-nav` cluster and the `conversion-cta` are grouped together at the end (right) — e.g. `margin-inline-start: auto` on the nav group (or `justify-content: flex-end` after the logo). The nav links are **never centered**, and the row must **NOT** use `justify-content: space-between` — that strands the nav in the middle, which is the recurring bug this rule exists to prevent.
 - Nav-link type at the small-body sans size (15px), weight 400.
 - Primary-action button: 36px height, mapped primary fill, mapped inverse text, 8–10px radius.
 - Caret-flush deviation: asymmetric radius `8px 0 0 8px` (left-rounded only) so the right edge meets the caret cleanly.
