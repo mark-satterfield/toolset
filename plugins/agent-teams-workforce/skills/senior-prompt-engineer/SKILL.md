@@ -54,7 +54,7 @@ python scripts/prompt_optimizer.py prompt.txt --analyze
 
 # Output:
 # Token count: 847
-# Estimated cost: $0.0025 (GPT-4)
+# Estimated cost: $0.0042 (claude-opus-4-8)
 # Clarity score: 72/100
 # Issues found:
 #   - Ambiguous instruction at line 3
@@ -69,7 +69,7 @@ python scripts/prompt_optimizer.py prompt.txt --analyze
 python scripts/prompt_optimizer.py prompt.txt --optimize --output optimized.txt
 
 # Count tokens for cost estimation
-python scripts/prompt_optimizer.py prompt.txt --tokens --model gpt-4
+python scripts/prompt_optimizer.py prompt.txt --tokens --model claude-opus-4-8
 
 # Extract and manage few-shot examples
 python scripts/prompt_optimizer.py prompt.txt --extract-examples --output examples.json

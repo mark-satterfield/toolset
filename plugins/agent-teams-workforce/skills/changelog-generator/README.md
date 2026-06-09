@@ -34,15 +34,3 @@ python3 scripts/commit_linter.py --from-ref origin/main --to-ref HEAD --strict -
 ```bash
 cp -R engineering/changelog-generator ~/.claude/skills/changelog-generator
 ```
-
-### OpenAI Codex
-
-```bash
-cp -R engineering/changelog-generator ~/.codex/skills/changelog-generator
-```
-
-### OpenClaw
-
-```bash
-cp -R engineering/changelog-generator ~/.openclaw/skills/changelog-generator
-```

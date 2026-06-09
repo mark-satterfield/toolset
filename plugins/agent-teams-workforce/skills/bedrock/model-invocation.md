@@ -116,52 +116,28 @@ def batch_embeddings(texts, dimensions=1024):
     return embeddings
 ```
 
-### Llama (Meta)
+### Claude Haiku (Anthropic)
+
+Fast, cost-efficient text generation for simple, high-volume tasks.
 
 ```python
-def invoke_llama(prompt, max_tokens=512, temperature=0.7):
+def invoke_claude_haiku(prompt, max_tokens=512, temperature=0.7):
     response = bedrock.invoke_model(
-        modelId='meta.llama3-70b-instruct-v1:0',
+        modelId='anthropic.claude-haiku-4-5-20251001-v1:0',
         contentType='application/json',
         accept='application/json',
         body=json.dumps({
-            'prompt': prompt,
-            'max_gen_len': max_tokens,
-            'temperature': temperature,
-            'top_p': 0.9
-        })
-    )
-
-    result = json.loads(response['body'].read())
-    return result['generation']
-
-# Format for instruction following
-prompt = """<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-You are a helpful assistant.<|eot_id|>
-<|start_header_id|>user<|end_header_id|>
-What is Amazon S3?<|eot_id|>
-<|start_header_id|>assistant<|end_header_id|>
-"""
-```
-
-### Mistral
-
-```python
-def invoke_mistral(prompt, max_tokens=512, temperature=0.7):
-    response = bedrock.invoke_model(
-        modelId='mistral.mistral-large-2402-v1:0',
-        contentType='application/json',
-        accept='application/json',
-        body=json.dumps({
-            'prompt': f'<s>[INST] {prompt} [/INST]',
+            'anthropic_version': 'bedrock-2023-05-31',
             'max_tokens': max_tokens,
             'temperature': temperature,
-            'top_p': 0.9
+            'messages': [
+                {'role': 'user', 'content': prompt}
+            ]
         })
     )
 
     result = json.loads(response['body'].read())
-    return result['outputs'][0]['text']
+    return result['content'][0]['text']
 ```
 
 ### Stable Diffusion (Image Generation)

@@ -21,7 +21,7 @@ Credential management is a cross-cutting concern across all AgentCore services. 
 
 **Gateway Options** ([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-inbound-auth.html)):
 - **IAM Identity**: Uses AWS IAM credentials for authorization
-- **JWT**: Tokens from identity providers (Cognito, Microsoft Entra ID, etc.)
+- **JWT**: Tokens from identity providers (Amazon Cognito or any OIDC-compatible provider)
 - **No Authorization**: Open access - only for production with proper security controls
 
 **Runtime Options** ([docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-oauth.html)):

@@ -304,7 +304,7 @@ Default authentication method. Works automatically with AWS CLI and SDKs.
 
 ### JWT (OAuth 2.0)
 
-Supports Amazon Cognito, Okta, Azure AD, or any OIDC-compatible provider. Configure during registry creation. **Authorization type cannot be changed after creation.**
+Supports Amazon Cognito, Okta, or any OIDC-compatible provider. Configure during registry creation. **Authorization type cannot be changed after creation.**
 
 ```bash
 aws bedrock-agentcore-control create-registry \

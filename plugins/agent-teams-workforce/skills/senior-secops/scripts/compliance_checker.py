@@ -434,7 +434,7 @@ class ComplianceChecker:
             '.gitlab-ci.yml',
             'Jenkinsfile',
             '.circleci/config.yml',
-            'azure-pipelines.yml'
+            'buildspec.yml'
         ]
 
         for config in ci_configs:

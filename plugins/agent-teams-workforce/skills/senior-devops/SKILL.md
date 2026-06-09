@@ -1,6 +1,6 @@
 ---
 name: "senior-devops"
-description: Comprehensive DevOps skill for CI/CD, infrastructure automation, containerization, and cloud platforms (AWS, GCP, Azure). Includes pipeline setup, infrastructure as code, deployment automation, and monitoring. Use when setting up pipelines, deploying applications, managing infrastructure, implementing monitoring, or optimizing deployment processes.
+description: Comprehensive DevOps skill for CI/CD, infrastructure automation, containerization, and AWS. Includes pipeline setup, infrastructure as code, deployment automation, and monitoring. Use when setting up pipelines, deploying applications, managing infrastructure, implementing monitoring, or optimizing deployment processes.
 ---
 
 # Senior Devops
@@ -17,7 +17,7 @@ This skill provides three core capabilities through automated scripts:
 # Script 1: Pipeline Generator — scaffolds CI/CD pipelines for GitHub Actions or CircleCI
 python scripts/pipeline_generator.py ./app --platform=github --stages=build,test,deploy
 
-# Script 2: Terraform Scaffolder — generates and validates IaC modules for AWS/GCP/Azure
+# Script 2: Terraform Scaffolder — generates and validates IaC modules for AWS
 python scripts/terraform_scaffolder.py ./infra --provider=aws --module=ecs-service --verbose
 
 # Script 3: Deployment Manager — orchestrates container deployments with rollback support
@@ -142,7 +142,7 @@ resource "aws_ecs_service" "app" {
 
 **Usage:**
 ```bash
-python scripts/terraform_scaffolder.py <target-path> --provider=aws|gcp|azure --module=ecs-service|gke-deployment|aks-service [--verbose]
+python scripts/terraform_scaffolder.py <target-path> --provider=aws --module=ecs-service|eks-deployment|lambda-function [--verbose]
 ```
 
 ### 3. Deployment Manager

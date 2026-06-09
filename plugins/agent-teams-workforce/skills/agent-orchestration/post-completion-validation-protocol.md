@@ -1,7 +1,6 @@
 ---
 title: Post-Completion Validation Protocol
 purpose: Orchestrator guidance for verifying sub-agent task completion by commit type
-source: Synthesized from am-i-complete.md and is-it-done.md
 version: 1.0.0
 last_updated: '2025-11-15'
 ---
@@ -61,8 +60,6 @@ REQUIRED_EVIDENCE:
 - Full test suite results demonstrating no regressions
 - Edge case test results
 
-SOURCE: am-i-complete.md lines 28-121, is-it-done.md lines 39-47
-
 ### feat: Feature Addition Verification
 
 TRIGGER: Sub-agent claims feature implementation complete
@@ -95,8 +92,6 @@ REQUIRED_EVIDENCE:
 - Test results covering unit, integration, and E2E levels
 - Edge case and error handling demonstrations
 - Proof all acceptance criteria met
-
-SOURCE: am-i-complete.md lines 125-217, is-it-done.md lines 49-56
 
 ### refactor: Code Restructuring Verification
 
@@ -132,8 +127,6 @@ REQUIRED_EVIDENCE:
 - Proof all tests still pass
 - Performance metrics if applicable
 
-SOURCE: am-i-complete.md lines 220-274, is-it-done.md lines 58-64
-
 ### docs: Documentation Change Verification
 
 TRIGGER: Sub-agent claims documentation complete
@@ -168,8 +161,6 @@ REQUIRED_EVIDENCE:
 - Link validation results
 - Proof documentation workflow is complete and accurate
 
-SOURCE: is-it-done.md lines 66-71
-
 ### test: Test Addition/Modification Verification
 
 TRIGGER: Sub-agent claims test suite changes complete
@@ -203,8 +194,6 @@ REQUIRED_EVIDENCE:
 - Test results showing appropriate pass/fail scenarios
 - Coverage metrics if applicable
 - File structure showing correct test placement
-
-SOURCE: am-i-complete.md lines 311-320, is-it-done.md lines 83-91
 
 ### chore: Maintenance Task Verification
 
@@ -242,8 +231,6 @@ REQUIRED_EVIDENCE:
 - Configuration validation if applicable
 - Reference check results if cleanup performed
 
-SOURCE: is-it-done.md lines 80-91
-
 ### perf: Performance Improvement Verification
 
 TRIGGER: Sub-agent claims performance optimization complete
@@ -276,8 +263,6 @@ REQUIRED_EVIDENCE:
 - Post-optimization performance metrics
 - Quantified improvement (percentage, time saved, etc.)
 - Test suite results proving functionality intact
-
-SOURCE: is-it-done.md lines 109-120
 
 ### ci: CI/CD Pipeline Change Verification
 
@@ -312,8 +297,6 @@ REQUIRED_EVIDENCE:
 - Failure case handling demonstration
 - Integration with existing workflow proof
 
-SOURCE: is-it-done.md lines 74-79
-
 ### build: Build System Change Verification
 
 TRIGGER: Sub-agent claims build system changes complete
@@ -346,8 +329,6 @@ REQUIRED_EVIDENCE:
 - Artifact validation results
 - Clean build results
 - All build targets execution proof
-
-SOURCE: is-it-done.md lines 74-79
 
 ### style: Code Formatting/Style Verification
 
@@ -382,8 +363,6 @@ REQUIRED_EVIDENCE:
 - Test suite results
 - Diff showing only style changes
 
-SOURCE: is-it-done.md lines 83-91
-
 ### revert: Revert Previous Commit Verification
 
 TRIGGER: Sub-agent claims revert complete
@@ -417,8 +396,6 @@ REQUIRED_EVIDENCE:
 - Test results proving state restored
 - Clean working state confirmation
 
-SOURCE: is-it-done.md lines 156-164
-
 ## General Verification Protocol
 
 TRIGGER: Sub-agent reports completion for any task type
@@ -446,8 +423,6 @@ ACCEPTANCE_CRITERIA:
 - All test scenarios covered
 - No unintended side effects observed
 
-SOURCE: is-it-done.md lines 93-147
-
 ## Red Flags - Automatic Rejection Triggers
 
 TRIGGER: Sub-agent response contains these phrases
@@ -463,8 +438,6 @@ REJECT_IF_CONTAINS:
 - "All changes committed" (Without verification proof)
 
 CORRECT_RESPONSE: "I need to see actual execution evidence. Please provide terminal output showing [specific behavior] working in practice, not compilation/linting success."
-
-SOURCE: is-it-done.md lines 149-155
 
 ## Proper Verification Workflow
 
@@ -483,8 +456,6 @@ REJECTION_PATTERN: IF agent_skips_any_step THEN
 - REQUEST missing step execution
 - AWAIT evidence before acceptance
 
-SOURCE: is-it-done.md lines 156-164
-
 ## Quality Gates Assessment
 
 MINIMUM_VERIFICATION_GATES:
@@ -498,8 +469,6 @@ MINIMUM_VERIFICATION_GATES:
 - [ ] Evidence collected and provided
 
 The orchestrator must verify ALL gates passed, not just subset.
-
-SOURCE: is-it-done.md lines 80-91
 
 ## Evidence Collection Standards
 
@@ -522,8 +491,6 @@ UNACCEPTABLE_EVIDENCE:
 - Agent's assertion without proof
 
 The orchestrator must request acceptable evidence when unacceptable evidence provided.
-
-SOURCE: is-it-done.md lines 93-102
 
 ## Orchestrator Response Templates
 

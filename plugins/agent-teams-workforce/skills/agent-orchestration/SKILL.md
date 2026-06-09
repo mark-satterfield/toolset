@@ -606,7 +606,7 @@ Orchestrators route context, agents do work.
 - If data does not exist yet → delegate with task + success criteria + available resources
 - Let agents gather data, analyze, research, and implement
 
-**Reason**: Pre-gathering causes context rot (source: <https://research.trychroma.com/context-rot>). Orchestrator context should coordinate work, not duplicate specialist tasks.
+**Reason**: Pre-gathering causes context rot. Orchestrator context should coordinate work, not duplicate specialist tasks.
 
 ## Examples — Effective Delegation Patterns
 
@@ -767,5 +767,3 @@ flowchart TD
 For complete TeamCreate mechanics, step-by-step dispatch pattern, and example prompts, activate the dispatch or delegation skill available in the host project.
 
 When no project-specific dispatch skill is installed, use the roster in `../../references/sdlc-agent-roster.csv` to select independent agents and launch them in parallel according to the host agent runtime.
-
-SOURCE: Lines 10-39 of agent-teams.md (accessed 2026-02-06)

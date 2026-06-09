@@ -56,7 +56,7 @@ aws bedrock-agentcore-control get-gateway-target \
 
 ### Inbound (Who Can Invoke Tools)
 - **IAM**: AWS IAM credentials
-- **JWT**: Tokens from identity providers (Cognito, Entra ID)
+- **JWT**: Tokens from identity providers (Amazon Cognito or any OIDC-compatible provider)
 - **No Auth**: Open access (use with caution)
 
 ## Documentation

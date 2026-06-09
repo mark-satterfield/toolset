@@ -149,12 +149,11 @@ def call_llm_with_retry(provider: LLMProvider, prompt: str) -> str:
 
 ### Cost Management
 
-| Provider | Input Cost | Output Cost |
-|----------|------------|-------------|
-| GPT-4 | $0.03/1K | $0.06/1K |
-| GPT-3.5 | $0.0005/1K | $0.0015/1K |
-| Claude 3 Opus | $0.015/1K | $0.075/1K |
-| Claude 3 Haiku | $0.00025/1K | $0.00125/1K |
+| Model | Input Cost | Output Cost |
+|-------|------------|-------------|
+| Claude Opus 4.8 | $5.00/1M | $25.00/1M |
+| Claude Sonnet 4.6 | $3.00/1M | $15.00/1M |
+| Claude Haiku 4.5 | $1.00/1M | $5.00/1M |
 
 ---
 
@@ -249,7 +248,7 @@ def detect_drift(reference, current, threshold=0.05):
 - Provider abstraction layer pattern
 - Retry and fallback strategies with tenacity
 - Prompt engineering templates (few-shot, CoT)
-- Token optimization with tiktoken
+- Token counting with the Anthropic count-tokens API
 - Cost calculation and tracking
 
 ### RAG System Architecture
@@ -301,4 +300,4 @@ Sets up drift detection, alerting, and performance dashboards.
 | MLOps | MLflow, Weights & Biases, Kubeflow |
 | Data | Spark, Airflow, dbt, Kafka |
 | Deployment | Docker, Kubernetes, Triton |
-| Databases | PostgreSQL, BigQuery, Pinecone, Redis |
+| Databases | PostgreSQL, Redshift, Pinecone, Redis |

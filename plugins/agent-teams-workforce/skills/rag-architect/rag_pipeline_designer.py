@@ -200,20 +200,20 @@ class RAGPipelineDesigner:
         
         if "code" in doc_types:
             if high_accuracy and not cost_sensitive:
-                model = "openai-code-search-ada-002"
-                cost_per_1k_tokens = 0.0001
-                dimensions = 1536
+                model = "amazon.titan-embed-text-v2:0"
+                cost_per_1k_tokens = 0.00002
+                dimensions = 1024
             else:
                 model = "sentence-transformers/code-bert-base"
                 cost_per_1k_tokens = 0.0  # Self-hosted
                 dimensions = 768
         elif "scientific" in doc_types:
             if high_accuracy:
-                model = "openai-text-embedding-ada-002"
-                cost_per_1k_tokens = 0.0001
-                dimensions = 1536
+                model = "amazon.titan-embed-text-v2:0"
+                cost_per_1k_tokens = 0.00002
+                dimensions = 1024
             else:
-                model = "sentence-transformers/scibert-nli" 
+                model = "sentence-transformers/scibert-nli"
                 cost_per_1k_tokens = 0.0
                 dimensions = 768
         else:
@@ -222,9 +222,9 @@ class RAGPipelineDesigner:
                 cost_per_1k_tokens = 0.0
                 dimensions = 384
             elif high_accuracy:
-                model = "openai-text-embedding-ada-002"
-                cost_per_1k_tokens = 0.0001  
-                dimensions = 1536
+                model = "amazon.titan-embed-text-v2:0"
+                cost_per_1k_tokens = 0.00002
+                dimensions = 1024
             else:
                 model = "sentence-transformers/all-mpnet-base-v2"
                 cost_per_1k_tokens = 0.0
@@ -443,9 +443,9 @@ graph TB
     def _load_embedding_models(self) -> Dict[str, Dict[str, Any]]:
         """Load embedding model specifications."""
         return {
-            "openai-text-embedding-ada-002": {
-                "dimensions": 1536,
-                "cost_per_1k_tokens": 0.0001,
+            "amazon.titan-embed-text-v2:0": {
+                "dimensions": 1024,
+                "cost_per_1k_tokens": 0.00002,
                 "quality": "high",
                 "speed": "medium"
             },
@@ -492,7 +492,7 @@ graph TB
         
         if db == "pinecone":
             base_config.update({
-                "environment": "us-east1-gcp",
+                "environment": "us-east-1-aws",
                 "replicas": 1 if scale == Scale.SMALL else 2,
                 "shards": 1 if scale != Scale.LARGE else 3
             })
@@ -529,8 +529,8 @@ graph TB
     
     def _get_embedding_pros(self, model: str) -> List[str]:
         """Get pros for embedding model."""
-        if "openai" in model:
-            return ["High quality", "Regular updates", "Good performance"]
+        if "amazon.titan" in model:
+            return ["High quality", "Fully managed via Amazon Bedrock", "Good performance"]
         elif "all-mpnet" in model:
             return ["High quality", "Free to use", "Good balance"]
         elif "MiniLM" in model:
@@ -540,8 +540,8 @@ graph TB
     
     def _get_embedding_cons(self, model: str) -> List[str]:
         """Get cons for embedding model."""
-        if "openai" in model:
-            return ["API costs", "Vendor lock-in", "Rate limits"]
+        if "amazon.titan" in model:
+            return ["API costs", "AWS account required", "Rate limits"]
         elif "sentence-transformers" in model:
             return ["Self-hosting required", "Model updates needed", "GPU beneficial"]
         else:

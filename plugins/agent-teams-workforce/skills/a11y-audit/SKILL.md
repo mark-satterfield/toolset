@@ -50,7 +50,7 @@ This skill goes beyond detection. For every violation it finds, it provides the 
 - Framework-aware fix patterns (not generic HTML advice)
 - Color contrast analysis with accessible alternative suggestions
 - WCAG 2.2 coverage including the newest success criteria (Focus Appearance, Dragging Movements, Target Size)
-- CI/CD pipeline integration with GitHub Actions, GitLab CI, and Azure DevOps
+- CI/CD pipeline integration with GitHub Actions, GitLab CI, and AWS CodeBuild
 - Slash command support via `/a11y-audit`
 
 ## Features
@@ -66,7 +66,7 @@ This skill goes beyond detection. For every violation it finds, it provides the 
 | **Color Contrast Checker** | Validates foreground/background pairs against AA and AAA ratios |
 | **Accessible Alternatives** | Suggests replacement colors that meet contrast requirements |
 | **Compliance Reporting** | Generates stakeholder reports with pass/fail summaries |
-| **CI/CD Integration** | GitHub Actions, GitLab CI, Azure DevOps pipeline configs |
+| **CI/CD Integration** | GitHub Actions, GitLab CI, AWS CodeBuild pipeline configs |
 | **Keyboard Navigation Audit** | Detects missing focus management and tab order issues |
 | **ARIA Validation** | Checks for incorrect, redundant, or missing ARIA attributes |
 | **Live Region Detection** | Identifies dynamic content lacking `aria-live` announcements |
@@ -1037,22 +1037,30 @@ a11y-audit:
         - "src/**/*.{tsx,vue,html,svelte}"
 ```
 
-### Azure DevOps
+### AWS CodeBuild
 
 ```yaml
-# azure-pipelines.yml
-- task: PythonScript@0
-  displayName: 'Run A11y Audit'
-  inputs:
-    scriptSource: 'filePath'
-    scriptPath: 'scripts/a11y_scanner.py'
-    arguments: './src --json --output $(Build.ArtifactStagingDirectory)/a11y-results.json'
+# buildspec.yml
+version: 0.2
 
-- task: PublishBuildArtifacts@1
-  condition: always()
-  inputs:
-    PathtoPublish: '$(Build.ArtifactStagingDirectory)/a11y-results.json'
-    ArtifactName: 'a11y-audit-report'
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+  build:
+    commands:
+      - python scripts/a11y_scanner.py ./src --json > a11y-results.json
+      - |
+        python -c "
+        import json, sys
+        data = json.load(open('a11y-results.json'))
+        critical = [v for v in data.get('violations', []) if v['severity'] == 'critical']
+        sys.exit(1) if critical else print('A11y audit passed')
+        "
+
+artifacts:
+  files:
+    - a11y-results.json
 ```
 
 ### Pre-Commit Hook

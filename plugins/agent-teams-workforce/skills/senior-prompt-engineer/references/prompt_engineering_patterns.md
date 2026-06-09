@@ -436,7 +436,7 @@ Approach 1: Horizontal scaling with load balancer
 Evaluation: Simple, proven pattern. May have Redis as bottleneck.
 
 Approach 2: Serverless with edge computing
-- AWS Lambda@Edge or Cloudflare Workers
+- AWS Lambda@Edge or CloudFront Functions
 - Session state in DynamoDB Global Tables
 Evaluation: Auto-scales, but cold starts may impact latency.
 
@@ -511,7 +511,7 @@ available at $399. The standard model has a 12-hour battery life.
 You are a prompt engineering expert.
 
 Task: [description of what the prompt should do]
-Target model: [GPT-4/Claude/etc.]
+Target model: [Claude model, e.g. claude-opus-4-8 or claude-sonnet-4-6]
 Constraints: [length limits, format requirements]
 
 Generate an optimized prompt for this task.
@@ -524,7 +524,7 @@ Input:
 You are a prompt engineering expert.
 
 Task: Create a prompt that extracts action items from meeting notes
-Target model: GPT-4
+Target model: claude-opus-4-8
 Constraints:
 - Output must be valid JSON
 - Each action item needs: task, owner, due_date

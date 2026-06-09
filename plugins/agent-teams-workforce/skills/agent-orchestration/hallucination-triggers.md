@@ -586,18 +586,11 @@ When reviewing agent output for hallucinations:
    - Add: priorities, dependencies, acceptance criteria, sync checkpoints
    - Verify: Does this work with 1 agent sequentially? 50 agents in parallel?
 
-## References
+## Core Rules
 
-This guide distills insights from reasoning failure analysis in AI-to-AI delegation contexts. Triggers are designed to catch pattern-matching from training data rather than domain-appropriate reasoning.
+Triggers are designed to catch pattern-matching from training data rather than domain-appropriate reasoning.
 
-**Related Documentation**:
-
-- `~/.claude/CLAUDE.md` - Global rules including timeline prohibition, verification protocol
-- `./CLAUDE.md` - Skill creation verification requirements
 - Self-verification principles: Hypothesis → Prediction → Experimentation → Verification → Conclusion
-
-**Core Rules Referenced**:
-
 - "The model must never state timelines or estimates for task completion - this is a red-flag for hallucination"
 - "The model must distinguish verified information from reasonable assumptions"
 - "The model must forbid unverified technical details, cargo-cult patterns, and hidden uncertainty"

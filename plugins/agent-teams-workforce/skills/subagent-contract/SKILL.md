@@ -6,8 +6,6 @@ user-invocable: false
 
 # Subagent Contract
 
-SOURCE: Adapted from `/Users/msat1971/projects/miscellaneous/3rd-party/Jamie-BitFlight/claude_skills/plugins/development-harness/skills/subagent-contract/SKILL.md`.
-
 This contract governs specialist agents in the agent-teams-workforce plugin. It keeps delegated work bounded, auditable, and easy for leads or orchestrators to compose.
 
 ## Role Contract

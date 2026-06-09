@@ -6,8 +6,6 @@ user-invocable: true
 
 # Validation Protocol
 
-SOURCE: Adapted from `/Users/msat1971/projects/miscellaneous/3rd-party/Jamie-BitFlight/claude_skills/plugins/development-harness/skills/validation-protocol/SKILL.md`.
-
 Use this protocol whenever an agent is about to claim that a change, document, plan, or investigation is complete.
 
 ## Core Principle

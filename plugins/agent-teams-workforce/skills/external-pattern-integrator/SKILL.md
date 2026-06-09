@@ -194,7 +194,6 @@ If enhancements affect multiple files in a workflow:
 Edit local files with:
 
 - Clear section markers for new content
-- Source attribution: `SOURCE: Adapted from {external source URL/path}`
 - Preserved existing functionality (additive changes preferred)
 
 ## Phase 3: Validation
@@ -281,5 +280,5 @@ Sources:
 ## Example Usage
 
 ```text
-User: /external-pattern-integrator https://github.com/glittercowboy/get-shit-done/blob/main/agents/gsd-codebase-mapper.md
+User: /external-pattern-integrator https://example.com/external-framework/agents/codebase-mapper.md
 ```

@@ -74,22 +74,22 @@ SECRET_PATTERNS = [
         recommendation="Use IAM roles or AWS Secrets Manager instead of hardcoded secrets"
     ),
     SecretPattern(
-        pattern_id="GCP001",
-        name="Google Cloud API Key",
-        description="Google Cloud Platform API key",
-        regex=r'AIza[0-9A-Za-z\-_]{35}',
+        pattern_id="AWS003",
+        name="AWS Session Token",
+        description="AWS temporary session token",
+        regex=r'(?:aws_session_token|AWS_SESSION_TOKEN)\s*[:=]\s*["\']?[A-Za-z0-9/+=]{100,}["\']?',
         severity=Severity.CRITICAL,
         file_extensions=[".py", ".js", ".ts", ".java", ".go", ".rb", ".php", ".env", ".yml", ".yaml", ".json"],
-        recommendation="Use service accounts or Google Secret Manager"
+        recommendation="Issue short-lived credentials via IAM roles or AWS STS at runtime"
     ),
     SecretPattern(
-        pattern_id="AZURE001",
-        name="Azure Storage Key",
-        description="Azure storage account key",
-        regex=r'(?:AccountKey|account_key)\s*[:=]\s*["\']?[A-Za-z0-9+/=]{88}["\']?',
+        pattern_id="ANTHROPIC001",
+        name="Anthropic API Key",
+        description="Anthropic Claude API key",
+        regex=r'sk-ant-[A-Za-z0-9\-_]{32,}',
         severity=Severity.CRITICAL,
-        file_extensions=[".py", ".js", ".ts", ".java", ".go", ".cs", ".env", ".yml", ".yaml", ".json"],
-        recommendation="Use Azure Key Vault or managed identities"
+        file_extensions=[".py", ".js", ".ts", ".java", ".go", ".rb", ".php", ".env", ".yml", ".yaml", ".json"],
+        recommendation="Load API keys from environment variables or AWS Secrets Manager"
     ),
 
     # Authentication Tokens

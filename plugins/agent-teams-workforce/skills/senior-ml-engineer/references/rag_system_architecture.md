@@ -229,22 +229,23 @@ def semantic_chunk(
 
 | Model | Dimensions | Quality | Speed | Cost |
 |-------|------------|---------|-------|------|
-| text-embedding-3-large | 3072 | Excellent | Medium | $0.13/1M |
-| text-embedding-3-small | 1536 | Good | Fast | $0.02/1M |
+| Amazon Titan Text Embeddings V2 | 1024 | Excellent | Fast | $0.02/1M |
+| Amazon Titan Embeddings G1 - Text | 1536 | Good | Medium | $0.10/1M |
 | BGE-large | 1024 | Excellent | Medium | Free |
 | all-MiniLM-L6-v2 | 384 | Good | Very Fast | Free |
-| Cohere embed-v3 | 1024 | Excellent | Medium | $0.10/1M |
 
 ### Embedding with Caching
 
 ```python
 import hashlib
-from functools import lru_cache
+import json
+
+import boto3
 
 class CachedEmbedder:
-    def __init__(self, model_name: str = "text-embedding-3-small"):
-        self.client = OpenAI()
-        self.model = model_name
+    def __init__(self, model_id: str = "amazon.titan-embed-text-v2:0"):
+        self.client = boto3.client("bedrock-runtime")
+        self.model_id = model_id
         self._cache = {}
 
     def embed(self, text: str) -> List[float]:
@@ -254,24 +255,19 @@ class CachedEmbedder:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        response = self.client.embeddings.create(
-            model=self.model,
-            input=text
+        response = self.client.invoke_model(
+            modelId=self.model_id,
+            body=json.dumps({"inputText": text}),
         )
 
-        embedding = response.data[0].embedding
+        embedding = json.loads(response["body"].read())["embedding"]
         self._cache[cache_key] = embedding
 
         return embedding
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        """Embed multiple texts efficiently."""
-        response = self.client.embeddings.create(
-            model=self.model,
-            input=texts
-        )
-
-        return [item.embedding for item in response.data]
+        """Embed multiple texts (Titan embeds one input per call; cache dedupes)."""
+        return [self.embed(text) for text in texts]
 ```
 
 ---

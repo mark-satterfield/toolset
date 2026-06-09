@@ -255,7 +255,7 @@ See `references/tech_stack_guide.md` for detailed comparison.
 - Database selection (PostgreSQL, MongoDB, Redis)
 - ORMs (Prisma, Drizzle, SQLAlchemy)
 - Authentication solutions (Auth.js, Clerk, custom JWT)
-- Deployment platforms (Vercel, Railway, AWS)
+- Deployment on AWS (Amplify Hosting, App Runner, ECS, Lambda)
 - Stack recommendations by use case (MVP, SaaS, Enterprise)
 
 ---

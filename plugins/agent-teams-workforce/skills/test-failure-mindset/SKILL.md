@@ -6,8 +6,6 @@ user-invocable: true
 
 # Test Failure Mindset
 
-SOURCE: Adapted from `/Users/msat1971/projects/miscellaneous/3rd-party/Jamie-BitFlight/claude_skills/plugins/development-harness/skills/test-failure-mindset/SKILL.md`.
-
 Tests are executable specifications. A failing test is a diagnostic signal, not an automatic instruction to change either code or test.
 
 ## Dual Hypothesis

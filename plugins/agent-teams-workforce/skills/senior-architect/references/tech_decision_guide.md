@@ -9,7 +9,7 @@ Decision frameworks and comparison matrices for common technology choices.
 3. [Message Queue Selection](#3-message-queue-selection)
 4. [Authentication Strategy](#4-authentication-strategy)
 5. [Frontend Framework Selection](#5-frontend-framework-selection)
-6. [Cloud Provider Selection](#6-cloud-provider-selection)
+6. [Cloud Service Selection (AWS)](#6-cloud-service-selection-aws)
 7. [API Style Selection](#7-api-style-selection)
 
 ---
@@ -105,7 +105,7 @@ Start
 |------------|----------|-------------|
 | Redis | General purpose, data structures | Memory cost |
 | Memcached | Simple key-value, high throughput | No persistence |
-| CDN (CloudFront, Fastly) | Static assets, edge caching | Dynamic content |
+| CDN (CloudFront) | Static assets, edge caching | Dynamic content |
 | Application cache | Per-instance, small data | Not distributed |
 
 ### Cache Patterns
@@ -289,54 +289,53 @@ Read:
 
 ---
 
-## 6. Cloud Provider Selection
+## 6. Cloud Service Selection (AWS)
 
-### Provider Comparison
+### Platform Strengths
 
-| Factor | AWS | GCP | Azure |
-|--------|-----|-----|-------|
-| Market share | Largest | Growing | Enterprise strong |
-| Service breadth | Most comprehensive | Strong ML/data | Best Microsoft integration |
-| Pricing | Complex, volume discounts | Simpler, sustained use | EA discounts |
-| Kubernetes | EKS | GKE (best managed) | AKS |
-| Serverless | Lambda (mature) | Cloud Functions | Azure Functions |
-| Database | RDS, DynamoDB | Cloud SQL, Spanner | SQL, Cosmos |
+| Factor | AWS |
+|--------|-----|
+| Market share | Largest |
+| Service breadth | Most comprehensive |
+| Pricing | Pay-as-you-go, Savings Plans, volume discounts |
+| Kubernetes | EKS |
+| Serverless | Lambda (mature) |
+| Database | RDS, Aurora, DynamoDB |
 
 ### Decision Factors
 
 | If You Need | Consider |
 |-------------|----------|
-| Microsoft ecosystem | Azure |
-| Best Kubernetes experience | GCP |
-| Widest service selection | AWS |
-| Machine learning focus | GCP or AWS |
-| Government compliance | AWS GovCloud or Azure Gov |
-| Startup credits | All offer programs |
+| Managed Kubernetes | EKS |
+| Serverless compute | Lambda, Fargate |
+| Machine learning focus | Bedrock, SageMaker |
+| Government compliance | AWS GovCloud |
+| Startup credits | AWS Activate |
 
-### Multi-Cloud Considerations
+### Multi-Region Considerations
 
-**Go multi-cloud when:**
-- Regulatory requirements mandate it
-- Specific service (e.g., GCP BigQuery) is best-in-class
-- Negotiating leverage with vendors
+**Go multi-region when:**
+- Regulatory requirements mandate data residency
+- Global users need low latency
+- Disaster recovery objectives require regional isolation
 
-**Stay single-cloud when:**
+**Stay single-region when:**
 - Team is small
 - Want to minimize complexity
-- Deep integration needed
+- Users are geographically concentrated
 
 ### Service Mapping
 
-| Need | AWS | GCP | Azure |
-|------|-----|-----|-------|
-| Compute | EC2 | Compute Engine | Virtual Machines |
-| Containers | ECS, EKS | GKE, Cloud Run | AKS, Container Apps |
-| Serverless | Lambda | Cloud Functions | Azure Functions |
-| Object Storage | S3 | Cloud Storage | Blob Storage |
-| SQL Database | RDS | Cloud SQL | Azure SQL |
-| NoSQL | DynamoDB | Firestore | Cosmos DB |
-| CDN | CloudFront | Cloud CDN | Azure CDN |
-| DNS | Route 53 | Cloud DNS | Azure DNS |
+| Need | AWS Service |
+|------|-------------|
+| Compute | EC2 |
+| Containers | ECS, EKS, Fargate |
+| Serverless | Lambda |
+| Object Storage | S3 |
+| SQL Database | RDS, Aurora |
+| NoSQL | DynamoDB |
+| CDN | CloudFront |
+| DNS | Route 53 |
 
 ---
 
@@ -408,5 +407,5 @@ Read:
 | Queue | SQS (AWS) / RabbitMQ | Event streaming → Kafka |
 | Auth | JWT + Refresh | Traditional web → Sessions |
 | Frontend | React + Next.js | Simplicity → Vue, Performance → Svelte |
-| Cloud | AWS | Microsoft shop → Azure, ML-first → GCP |
+| Cloud | AWS | Compliance needs → AWS GovCloud |
 | API | REST | Mobile flexibility → GraphQL, Internal → gRPC |

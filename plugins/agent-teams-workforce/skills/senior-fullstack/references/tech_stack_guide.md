@@ -25,7 +25,7 @@ Technology selection guide with trade-offs, use cases, and integration patterns 
 | Pros | Cons |
 |------|------|
 | Server components, streaming | Learning curve for advanced features |
-| Built-in routing, API routes | Vercel lock-in concerns |
+| Built-in routing, API routes | Self-hosting needs adapter setup |
 | Excellent DX and performance | Bundle size can grow |
 | Strong TypeScript support | Complex mental model (client/server) |
 
@@ -241,7 +241,7 @@ WHERE to_tsvector('english', email || ' ' || profile->>'name')
 | JSON support | Excellent |
 | Full-text search | Good |
 | Horizontal scaling | Requires setup |
-| Managed options | Many (RDS, Supabase, Neon) |
+| Managed options | RDS, Aurora, Aurora Serverless |
 
 ### MongoDB
 
@@ -476,28 +476,27 @@ function authenticate(req, res, next) {
 
 ## Deployment Platforms
 
-### Vercel
+### AWS Amplify Hosting
 
 **Best for:** Next.js, frontend-focused teams
 
 | Pros | Cons |
 |------|------|
-| Zero-config Next.js | Expensive at scale |
-| Edge functions | Vendor lock-in |
-| Preview deployments | Limited backend options |
-| Global CDN | Cold starts |
+| Zero-config Next.js SSR | Less control than raw infrastructure |
+| CloudFront global CDN | Build minutes billed |
+| Preview deployments per branch | Cold starts on SSR functions |
 
-### Railway
+### AWS App Runner
 
-**Best for:** Full-stack apps, databases included
+**Best for:** Full-stack container apps, pairs with managed databases
 
 | Pros | Cons |
 |------|------|
-| Simple deployment | Smaller community |
-| Built-in databases | Limited regions |
-| Good pricing | Fewer integrations |
+| Simple container deployment | Less mature than ECS |
+| Built-in autoscaling | Limited regions |
+| Connects to RDS/Aurora via VPC | Fewer configuration knobs |
 
-### AWS (ECS/Lambda)
+### AWS ECS/Lambda
 
 **Best for:** Enterprise, complex requirements
 
@@ -511,11 +510,11 @@ function authenticate(req, res, next) {
 
 | Requirement | Platform |
 |-------------|----------|
-| Next.js simplicity | Vercel |
-| Full-stack + DB | Railway, Render |
-| Enterprise scale | AWS, GCP |
-| Container control | Fly.io, Railway |
-| Budget startup | Railway, Render |
+| Next.js simplicity | Amplify Hosting |
+| Full-stack + DB | App Runner + RDS |
+| Enterprise scale | ECS or EKS |
+| Container control | ECS Fargate, EKS |
+| Budget startup | Lambda + API Gateway (pay-per-use) |
 
 ---
 
@@ -526,10 +525,10 @@ function authenticate(req, res, next) {
 ```
 Frontend: Next.js 14 (App Router)
 Backend:  Next.js API Routes
-Database: PostgreSQL (Neon/Supabase)
-Auth:     Auth.js or Clerk
-Deploy:   Vercel
-Cache:    Vercel KV or Upstash Redis
+Database: PostgreSQL (Aurora Serverless or RDS)
+Auth:     Auth.js or Amazon Cognito
+Deploy:   AWS Amplify Hosting
+Cache:    Amazon ElastiCache for Redis (serverless)
 ```
 
 **Why:** Fastest time to market, single deployment, good scaling path.
@@ -541,7 +540,7 @@ Frontend: Next.js 14
 Backend:  Separate API (FastAPI or NestJS)
 Database: PostgreSQL (RDS)
 Auth:     Custom JWT + Auth.js
-Deploy:   Vercel (frontend) + AWS ECS (backend)
+Deploy:   Amplify Hosting (frontend) + AWS ECS (backend)
 Cache:    Redis (ElastiCache)
 Queue:    SQS or BullMQ
 ```
@@ -555,7 +554,7 @@ Frontend: Next.js or React + Vite
 Backend:  NestJS or Go
 Database: PostgreSQL (Aurora)
 Auth:     Keycloak or Auth0
-Deploy:   Kubernetes (EKS/GKE)
+Deploy:   Kubernetes (EKS)
 Cache:    Redis Cluster
 Queue:    Kafka or RabbitMQ
 Observability: Datadog or Grafana Stack
@@ -586,5 +585,5 @@ Deploy:   Docker on internal infrastructure
 | Team knows Python? | FastAPI | Node.js |
 | Need real-time? | Add WebSockets | REST is fine |
 | Enterprise compliance? | Self-hosted | Managed services |
-| Budget constrained? | Railway/Render | Vercel/AWS |
+| Budget constrained? | Lambda + pay-per-use services | Provisioned ECS/EKS |
 | Schema changes often? | MongoDB | PostgreSQL |

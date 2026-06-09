@@ -14,11 +14,12 @@ This plugin packages agents, skills, commands, and supporting assets for an SDLC
 
 ## Source Roster
 
-The initial roster is copied to `references/sdlc-agent-roster.csv`.
+The roster lives at `references/sdlc-agent-roster.csv`.
 
 Current roster scope:
 
-- 73 agents
-- 11 teams
-- Command agents: `ss-master-orchestrator`, `ss-iteration-supervisor`, `ss-beads-coordinator`, `ss-repository-manager`, `ss-patrol-agent`
+- 161 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
+- 1 standalone specialist: `polyrepo-cartographer`
+
+Workforce rules live in `rules/separation-of-duties.md`.
 

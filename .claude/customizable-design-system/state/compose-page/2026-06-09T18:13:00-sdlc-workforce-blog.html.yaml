@@ -1,0 +1,27 @@
+skill: compose-page
+output_path: /Users/msat1971/projects/mark-satterfield/toolset/plugins/agent-teams-workforce/sdlc-workforce-blog.html
+created: 2026-06-09T18:13:00-04:00
+page_type: editorial-detail
+surface_kind: page
+content_mode: supplied
+content_sources:
+  - plugins/agent-teams-workforce/references/sdlc-agent-roster.csv
+  - plugins/agent-teams-workforce/agents/ (frontmatter: skills, tools)
+stylesheets_dir: plugins/cds/test/visual-proof-out/styles
+elements_yaml_sha256: 84a79bd5f8b351955d0f687cd9171b74799425723b17dab54caccce50171566c
+brief_snapshot: >-
+  Blog entry presenting the agentic SDLC workforce: governance authorities,
+  PRD creation phase 0, PRD-to-Spec pipeline, Spec-to-Deployment pipeline with
+  TDD cycle, cross-cutting documentation; Roles / Character Types / Team Types
+  taxonomy tables; per-team listing of all 161 agents (role, character types,
+  team, team type); full detail table with responsibilities, skills, tools,
+  and an MCP-inheritance note.
+sections:
+  - article-header (eyebrow / title / date)
+  - illustration-tile (tile-ground-1, 16:9)
+  - reading-column (intro, workflows, taxonomy tables, per-team tables)
+  - roster-band (wide detail table, 161 rows)
+  - social-share-row (copy-link + web-share)
+  - related-content-rail (doctrine, separation-of-duties, roster CSV)
+  - footer (deep; language selector, cookie settings, mode controls)
+theme: editorial (footer deep)

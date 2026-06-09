@@ -51,8 +51,8 @@ Amazon Bedrock AgentCore is an **Agent hosting platform** provided by AWS. Its c
 
 Key features:
 
-- **Framework agnostic** — Supports Strands, LangGraph, CrewAI, LlamaIndex, OpenAI Agents SDK, and others
-- **Model agnostic** — Bedrock (Claude, Nova, Llama), OpenAI, Gemini, and more
+- **Framework agnostic** — Supports Strands, LangGraph, CrewAI, Claude Agent SDK, and others
+- **Model agnostic** — Bedrock (Claude Opus 4.8, Claude Sonnet 4.6, Claude Haiku 4.5, Amazon Nova), the Claude API, and more
 - **Serverless** — Automatic scaling, no infrastructure management required
 - **Session isolation** — Each Session gets a dedicated MicroVM (isolated CPU/memory/filesystem)
 

@@ -49,7 +49,7 @@
 | Security essentials | [Section 8](#8-security-essentials) |
 | End-to-end practical code (CDK + Container + Lambda) | [Appendix A](#appendix-a-end-to-end-practical-exampleagentcore-runtime--gateway-mcp--lambda) |
 
-> This document is based on the AgentCore API and SDK as of mid-2025. API parameters and SDK import paths may change with version updates. Please refer to the [official documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html) as the authoritative source.
+> API parameters and SDK import paths may change with version updates. Please refer to the [official documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/agentcore.html) as the authoritative source.
 
 ---
 
@@ -656,7 +656,7 @@ AgentCore Identity supports 25+ OAuth 2.0 providers:
 
 | Category | Providers |
 |----------|-----------|
-| **Enterprise** | Cognito, Okta, Auth0, Azure AD, Ping Identity |
+| **Enterprise** | Cognito, Okta, Auth0, Ping Identity |
 | **Social** | Google, GitHub, Facebook, Apple, X (Twitter) |
 | **SaaS** | Salesforce, Slack, Jira, Asana, Zendesk, HubSpot, Shopify, Zoom, Dropbox, Box, Twitch, Spotify, LinkedIn |
 | **Custom** | Any OAuth 2.0 / OIDC-compatible provider |
@@ -1043,7 +1043,3 @@ agent = Agent(
     tools=[*local_tools, mcp_client],
 )
 ```
-
----
-
-*This document is based on AWS official documentation (AgentCore Identity, Gateway, Runtime), mid-2025 AgentCore API and SDK. API parameters, SDK import paths may change with version updates.*

@@ -1,6 +1,6 @@
 # AgentCore Runtime Protocol Reference: HTTP, MCP, A2A, AG-UI
 
-> AgentCore Runtime supports four communication protocols, each targeting a different interaction pattern. This document, based on AWS official documentation, provides a detailed explanation of each protocol's container contract, endpoint specification, request/response format, and applicable scenarios.
+> AgentCore Runtime supports four communication protocols, each targeting a different interaction pattern. This document provides a detailed explanation of each protocol's container contract, endpoint specification, request/response format, and applicable scenarios.
 
 ---
 
@@ -313,7 +313,7 @@ Agent -> AgentCore Gateway -> MCP Server (hosted on AgentCore Runtime)
 ### 3.7 Applicable Scenarios
 
 - Exposing tool and data capabilities in a standardized way to AI applications
-- Need to be invoked by multiple different AI clients (Claude, ChatGPT, VS Code, etc.)
+- Need to be invoked by multiple different AI clients (Claude, VS Code, Cursor, etc.)
 - Providing tool services with OAuth credential injection via AgentCore Gateway
 - Already have an MCP Server and want to host it on AgentCore for session isolation and auto-scaling
 
@@ -660,7 +660,7 @@ React Frontend (CopilotKit Components)
   <-> AG-UI Event Stream
 AgentCore Runtime (AG-UI Protocol)
   <-> LLM Invocation
-Bedrock / OpenAI / ...
+Bedrock / Claude API / ...
 ```
 
 Advanced UI capabilities supported by AG-UI include: streaming chat, generative UI, shared state synchronization, thinking steps visualization, human-in-the-loop interruption, sub-agent composition, and more.
@@ -687,7 +687,7 @@ Advanced UI capabilities supported by AG-UI include: streaming chat, generative 
 | **Interaction Target** | Human -> Agent | AI App -> Tools/Data | Agent -> Agent | Agent -> Frontend UI |
 | **Request Body Format** | Fully custom | Standard MCP RPC | Standard A2A RPC | AG-UI RunAgentInput |
 | **Event Types** | Custom | MCP standard | A2A standard | 16+ AG-UI events |
-| **Clients/Frameworks** | Any | MCP clients: Claude, ChatGPT, VS Code, Cursor, etc. | Agent frameworks: Strands, LangGraph, CrewAI, etc. | Frontend frameworks: CopilotKit; Agent frameworks: Strands, LangGraph, CrewAI, etc. |
+| **Clients/Frameworks** | Any | MCP clients: Claude, VS Code, Cursor, etc. | Agent frameworks: Strands, LangGraph, CrewAI, etc. | Frontend frameworks: CopilotKit; Agent frameworks: Strands, LangGraph, CrewAI, etc. |
 | **Protocol Origin** | — | Anthropic | Google (Linux Foundation) | CopilotKit + LangGraph + CrewAI |
 
 ### Complementary Relationship of the Three Protocols
@@ -738,7 +738,7 @@ What are you building?
 |----------|---------------------|-----------|
 | Strands/LangGraph Agent + custom frontend | HTTP | Most flexible, format freedom |
 | Already have an MCP Server, need cloud hosting | MCP | Native compatibility |
-| Building a tool service for Claude/ChatGPT | MCP | Standard protocol, widely supported |
+| Building a tool service for Claude | MCP | Standard protocol, widely supported |
 | Multiple specialized agents collaborating on complex tasks | A2A | Standard inter-agent communication |
 | Building AI collaborative apps with CopilotKit | AG-UI | Native event protocol |
 | Simple chatbot | HTTP | Simplest and most straightforward |
@@ -771,7 +771,3 @@ Clients can discover OAuth endpoints via the `resource_metadata` URL for automat
 - Invoked via `boto3.client('bedrock-agentcore').invoke_agent_runtime()`
 
 > **Note**: OAuth and SigV4 are mutually exclusive; they cannot be used together. After enabling OAuth, you cannot use the boto3 SDK (SigV4) to invoke; you must send HTTPS requests directly with a Bearer Token.
-
----
-
-*This document is based on AWS official documentation (AgentCore Runtime Protocol Contracts), MCP official documentation (modelcontextprotocol.io), A2A official documentation (Google/A2A), and AG-UI official documentation (ag-ui.com). Protocol versions: MCP 2025-06-18, A2A 0.3.0.*

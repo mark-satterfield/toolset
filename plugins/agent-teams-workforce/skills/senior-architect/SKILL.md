@@ -206,7 +206,7 @@ Use when choosing a database for a new project or migrating existing data.
 **Step 2: Evaluate scale requirements**
 - <1M records, single region → PostgreSQL or MySQL
 - 1M-100M records, read-heavy → PostgreSQL with read replicas
-- >100M records, global distribution → CockroachDB, Spanner, or DynamoDB
+- >100M records, global distribution → CockroachDB, Aurora Global Database, or DynamoDB global tables
 - High write throughput (>10K/sec) → Cassandra or ScyllaDB
 
 **Step 3: Check consistency requirements**
@@ -299,7 +299,7 @@ Load these files for detailed information:
 |------|----------|--------------------------|
 | `references/architecture_patterns.md` | 9 architecture patterns with trade-offs, code examples, and when to use | "which pattern?", "microservices vs monolith", "event-driven", "CQRS" |
 | `references/system_design_workflows.md` | 6 step-by-step workflows for system design tasks | "how to design?", "capacity planning", "API design", "migration" |
-| `references/tech_decision_guide.md` | Decision matrices for technology choices | "which database?", "which framework?", "which cloud?", "which cache?" |
+| `references/tech_decision_guide.md` | Decision matrices for technology choices | "which database?", "which framework?", "which AWS services?", "which cache?" |
 
 ---
 
@@ -309,7 +309,7 @@ Load these files for detailed information:
 **Frontend:** React, Next.js, Vue, Angular, React Native, Flutter
 **Backend:** Node.js, Express, FastAPI, Go, GraphQL, REST
 **Databases:** PostgreSQL, MySQL, MongoDB, Redis, DynamoDB, Cassandra
-**Infrastructure:** Docker, Kubernetes, Terraform, AWS, GCP, Azure
+**Infrastructure:** Docker, Kubernetes, Terraform, AWS
 **CI/CD:** GitHub Actions, GitLab CI, CircleCI, Jenkins
 
 ---

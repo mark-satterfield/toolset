@@ -97,7 +97,7 @@ spec:
 
 | Component | Purpose | Tools |
 |-----------|---------|-------|
-| Offline Store | Training data, batch features | BigQuery, Snowflake, S3 |
+| Offline Store | Training data, batch features | Redshift, Snowflake, S3 |
 | Online Store | Low-latency serving | Redis, DynamoDB, Feast |
 | Feature Registry | Metadata, lineage | Feast, Tecton, Hopsworks |
 | Transformation | Feature engineering | Spark, Flink, dbt |

@@ -76,8 +76,8 @@ class SecurityScanner:
          'AWS Secret Key', 'Hardcoded AWS secret access key detected'),
         (r'ghp_[a-zA-Z0-9]{36}',
          'GitHub Token', 'GitHub personal access token detected'),
-        (r'sk-[a-zA-Z0-9]{48}',
-         'OpenAI API Key', 'OpenAI API key detected'),
+        (r'sk-ant-[a-zA-Z0-9\-_]{32,}',
+         'Anthropic API Key', 'Anthropic API key detected'),
         (r'-----BEGIN\s+(RSA|DSA|EC|OPENSSH)?\s*PRIVATE KEY-----',
          'Private Key', 'Private key detected in source code'),
     ]

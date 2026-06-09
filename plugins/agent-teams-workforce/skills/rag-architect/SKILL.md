@@ -72,7 +72,7 @@ The RAG (Retrieval-Augmented Generation) Architect skill provides comprehensive 
 #### Speed vs Quality Tradeoffs
 - **Fast models**: sentence-transformers/all-MiniLM-L6-v2 (384 dim, ~14k tokens/sec)
 - **Balanced models**: sentence-transformers/all-mpnet-base-v2 (768 dim, ~2.8k tokens/sec)
-- **Quality models**: text-embedding-ada-002 (1536 dim, OpenAI API)
+- **Quality models**: amazon.titan-embed-text-v2:0 (1024 dim, Amazon Bedrock API)
 - **Specialized models**: Domain-specific fine-tuned models
 
 #### Model Categories

@@ -6,10 +6,10 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 
 ## Models Evaluated
 
-### OpenAI Models
-- **text-embedding-ada-002** (1536 dim) - Latest general-purpose model
-- **text-embedding-3-small** (1536 dim) - Optimized for speed/cost
-- **text-embedding-3-large** (3072 dim) - Maximum quality
+### Amazon Bedrock Models
+- **amazon.titan-embed-text-v1** (1536 dim) - General-purpose model
+- **amazon.titan-embed-text-v2 (512 dim)** - Optimized for speed/cost
+- **amazon.titan-embed-text-v2 (1024 dim)** - Maximum quality
 
 ### Sentence Transformers (Open Source)
 - **all-mpnet-base-v2** (768 dim) - High-quality general purpose
@@ -72,14 +72,14 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 
 | Rank | Model | NDCG@10 | MRR@10 | Recall@100 | Overall Score |
 |------|-------|---------|--------|------------|---------------|
-| 1 | text-embedding-3-large | 0.594 | 0.431 | 0.892 | 0.639 |
+| 1 | titan-embed-text-v2 (1024 dim) | 0.594 | 0.431 | 0.892 | 0.639 |
 | 2 | BAAI/bge-large-en-v1.5 | 0.588 | 0.425 | 0.885 | 0.633 |
 | 3 | intfloat/e5-large-v2 | 0.582 | 0.419 | 0.878 | 0.626 |
-| 4 | text-embedding-ada-002 | 0.578 | 0.415 | 0.871 | 0.621 |
+| 4 | titan-embed-text-v1 | 0.578 | 0.415 | 0.871 | 0.621 |
 | 5 | thenlper/gte-large | 0.571 | 0.408 | 0.865 | 0.615 |
 | 6 | all-mpnet-base-v2 | 0.543 | 0.385 | 0.824 | 0.584 |
 | 7 | multi-qa-mpnet-base-dot-v1 | 0.538 | 0.381 | 0.818 | 0.579 |
-| 8 | text-embedding-3-small | 0.535 | 0.378 | 0.815 | 0.576 |
+| 8 | titan-embed-text-v2 (512 dim) | 0.535 | 0.378 | 0.815 | 0.576 |
 | 9 | msmarco-distilbert-base-v4 | 0.529 | 0.372 | 0.805 | 0.569 |
 | 10 | all-MiniLM-L12-v2 | 0.498 | 0.348 | 0.765 | 0.537 |
 | 11 | all-MiniLM-L6-v2 | 0.476 | 0.331 | 0.738 | 0.515 |
@@ -91,16 +91,16 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 |-------|---------------------------|---------------------------|--------------|
 | all-MiniLM-L6-v2 | 14,200 | 2,850 | 0.35 |
 | all-MiniLM-L12-v2 | 8,950 | 1,790 | 0.56 |
-| text-embedding-3-small | 8,500* | 1,700* | 0.59* |
+| titan-embed-text-v2 (512 dim) | 8,500* | 1,700* | 0.59* |
 | msmarco-distilbert-base-v4 | 6,800 | 1,360 | 0.74 |
 | all-mpnet-base-v2 | 2,840 | 568 | 1.76 |
 | multi-qa-mpnet-base-dot-v1 | 2,760 | 552 | 1.81 |
-| text-embedding-ada-002 | 2,500* | 500* | 2.00* |
+| titan-embed-text-v1 | 2,500* | 500* | 2.00* |
 | paraphrase-multilingual-mpnet | 2,650 | 530 | 1.89 |
 | thenlper/gte-large | 1,420 | 284 | 3.52 |
 | intfloat/e5-large-v2 | 1,380 | 276 | 3.62 |
 | BAAI/bge-large-en-v1.5 | 1,350 | 270 | 3.70 |
-| text-embedding-3-large | 1,200* | 240* | 4.17* |
+| titan-embed-text-v2 (1024 dim) | 1,200* | 240* | 4.17* |
 
 *API-based models - speeds include network latency
 
@@ -117,15 +117,15 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 | thenlper/gte-large | 670 | 4.8 | 8.6 |
 | intfloat/e5-large-v2 | 670 | 4.8 | 8.6 |
 | BAAI/bge-large-en-v1.5 | 670 | 4.8 | 8.6 |
-| OpenAI Models | N/A | 0.1 | 0.0 |
+| Amazon Bedrock Models | N/A | 0.1 | 0.0 |
 
 ### Cost Analysis (1M tokens processed)
 
 | Model | Type | Cost per 1M tokens | Monthly Cost (10M tokens) |
 |-------|------|--------------------|---------------------------|
-| text-embedding-3-small | API | $0.02 | $0.20 |
-| text-embedding-ada-002 | API | $0.10 | $1.00 |
-| text-embedding-3-large | API | $1.30 | $13.00 |
+| titan-embed-text-v2 (512 dim) | API | $0.02 | $0.20 |
+| titan-embed-text-v1 | API | $0.10 | $1.00 |
+| titan-embed-text-v2 (1024 dim) | API | $0.02 | $0.20 |
 | all-MiniLM-L6-v2 | Self-hosted | $0.05 | $0.50 |
 | all-MiniLM-L12-v2 | Self-hosted | $0.08 | $0.80 |
 | all-mpnet-base-v2 | Self-hosted | $0.15 | $1.50 |
@@ -140,13 +140,13 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 ### Quality vs Speed Trade-offs
 
 **High Performance Tier** (NDCG@10 > 0.57):
-- text-embedding-3-large: Best quality, expensive, slow
+- titan-embed-text-v2 (1024 dim): Best quality, low API cost, slower
 - BAAI/bge-large-en-v1.5: Excellent quality, free, moderate speed
 - intfloat/e5-large-v2: Great quality, free, moderate speed
 
 **Balanced Tier** (NDCG@10 = 0.54-0.57):
 - all-mpnet-base-v2: Good quality-speed balance, widely adopted
-- text-embedding-ada-002: Good quality, reasonable API cost
+- titan-embed-text-v1: Good quality, reasonable API cost
 - multi-qa-mpnet-base-dot-v1: Q&A optimized, good for RAG
 
 **Speed Tier** (NDCG@10 = 0.47-0.54):
@@ -157,16 +157,16 @@ This comprehensive benchmark evaluates 15 popular embedding models across multip
 
 #### Scientific/Technical Documents (TREC-COVID)
 1. **allenai/scibert**: 0.612 NDCG@10 (+15% vs general models)
-2. **text-embedding-3-large**: 0.589 NDCG@10
+2. **titan-embed-text-v2 (1024 dim)**: 0.589 NDCG@10
 3. **BAAI/bge-large-en-v1.5**: 0.581 NDCG@10
 
 #### Code Search (Custom CodeSearchNet evaluation)
 1. **microsoft/codebert-base**: 0.547 NDCG@10 (+22% vs general models)
-2. **text-embedding-ada-002**: 0.492 NDCG@10
+2. **titan-embed-text-v1**: 0.492 NDCG@10
 3. **all-mpnet-base-v2**: 0.478 NDCG@10
 
 #### Financial Domain (FiQA-2018)
-1. **text-embedding-3-large**: 0.573 NDCG@10
+1. **titan-embed-text-v2 (1024 dim)**: 0.573 NDCG@10
 2. **intfloat/e5-large-v2**: 0.567 NDCG@10
 3. **BAAI/bge-large-en-v1.5**: 0.561 NDCG@10
 
@@ -177,8 +177,8 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 | Model | English NDCG@10 | Multilingual Avg | Degradation |
 |-------|-----------------|------------------|-------------|
 | paraphrase-multilingual-mpnet | 0.465 | 0.448 | 3.7% |
-| text-embedding-3-large | 0.594 | 0.521 | 12.3% |
-| text-embedding-ada-002 | 0.578 | 0.495 | 14.4% |
+| titan-embed-text-v2 (1024 dim) | 0.594 | 0.521 | 12.3% |
+| titan-embed-text-v1 | 0.578 | 0.495 | 14.4% |
 | intfloat/e5-large-v2 | 0.582 | 0.483 | 17.0% |
 
 ## Recommendations by Use Case
@@ -200,15 +200,15 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 - Fastest processing
 - Acceptable quality for many use cases
 
-**Secondary**: text-embedding-3-small
+**Secondary**: amazon.titan-embed-text-v2 (512 dim)
 - Better quality than MiniLM
 - Competitive API pricing
 - No infrastructure overhead
 
 ### Maximum Quality Requirements
-**Primary**: text-embedding-3-large
+**Primary**: amazon.titan-embed-text-v2 (1024 dim)
 - Best overall quality
-- Latest OpenAI technology
+- Latest Amazon Bedrock embedding technology
 - Worth the cost for critical applications
 
 **Secondary**: BAAI/bge-large-en-v1.5
@@ -222,7 +222,7 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 - Small memory footprint
 - Easy to scale horizontally
 
-**Alternative**: text-embedding-3-small (if API latency acceptable)
+**Alternative**: amazon.titan-embed-text-v2 (512 dim) (if API latency acceptable)
 - Better quality than MiniLM
 - Reasonable API speed
 - No infrastructure management
@@ -231,17 +231,17 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 
 **Scientific/Research**: 
 1. Domain-specific model (SciBERT, BioBERT) if available
-2. text-embedding-3-large for general scientific content
+2. amazon.titan-embed-text-v2 (1024 dim) for general scientific content
 3. intfloat/e5-large-v2 as open-source alternative
 
 **Code/Technical**: 
 1. microsoft/codebert-base for code search
-2. text-embedding-ada-002 for mixed code/text
+2. amazon.titan-embed-text-v1 for mixed code/text
 3. all-mpnet-base-v2 for technical documentation
 
 **Multilingual**:
 1. paraphrase-multilingual-mpnet-base-v2 for balanced multilingual
-2. text-embedding-3-large with translation pipeline
+2. amazon.titan-embed-text-v2 (1024 dim) with translation pipeline
 3. Language-specific models when available
 
 ## Implementation Guidelines
@@ -315,7 +315,7 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 
 ### Model Evolution Tracking
 
-**OpenAI**: Regular model updates, expect 2-3 new releases per year
+**Amazon Bedrock**: Regular model updates, expect 2-3 new releases per year
 **Open Source**: Rapid innovation, new SOTA models every 3-6 months
 **Specialized Models**: Domain-specific models becoming more common
 
@@ -330,8 +330,8 @@ Tested on translated versions of Natural Questions (Spanish, French, German):
 
 The embedding model landscape offers excellent options across all use cases:
 
-- **Quality Leaders**: text-embedding-3-large, bge-large-en-v1.5, e5-large-v2
-- **Speed Champions**: all-MiniLM-L6-v2, text-embedding-3-small
+- **Quality Leaders**: titan-embed-text-v2 (1024 dim), bge-large-en-v1.5, e5-large-v2
+- **Speed Champions**: all-MiniLM-L6-v2, titan-embed-text-v2 (512 dim)
 - **Cost Optimized**: Open source models (bge, e5, mpnet series)
 - **Specialized**: Domain-specific models when available
 

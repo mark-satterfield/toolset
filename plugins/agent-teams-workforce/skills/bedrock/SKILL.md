@@ -23,10 +23,8 @@ Amazon Bedrock provides access to foundation models (FMs) from AI companies thro
 ### Foundation Models
 
 Pre-trained models available through Bedrock:
-- **Claude** (Anthropic): Text generation, analysis, coding
+- **Claude** (Anthropic): Text generation, analysis, coding — Opus 4.8 for frontier reasoning, Sonnet 4.6 for balanced workloads, Haiku 4.5 for fast, low-cost tasks
 - **Titan** (Amazon): Text, embeddings, image generation
-- **Llama** (Meta): Open-weight text generation
-- **Mistral**: Efficient text generation
 - **Stable Diffusion** (Stability AI): Image generation
 
 ### Model Access

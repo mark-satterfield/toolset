@@ -214,11 +214,11 @@ Creates comprehensive dashboard specifications:
 
 ## Advanced Patterns
 
-### Multi-Cloud Observability
-- **Cross-Cloud Metrics:** Unified metrics across AWS, GCP, Azure
-- **Network Observability:** Inter-cloud connectivity monitoring
-- **Cost Attribution:** Cloud resource cost tracking and optimization
-- **Compliance Monitoring:** Security and compliance posture tracking
+### Multi-Account AWS Observability
+- **Cross-Account Metrics:** Unified metrics across AWS accounts and Regions with CloudWatch cross-account observability
+- **Network Observability:** VPC Flow Logs, Transit Gateway, and inter-Region connectivity monitoring
+- **Cost Attribution:** AWS resource cost tracking and optimization with Cost Explorer and cost allocation tags
+- **Compliance Monitoring:** Security and compliance posture tracking with AWS Config and Security Hub
 
 ### Microservices Observability
 - **Service Mesh Integration:** Istio/Linkerd observability configuration

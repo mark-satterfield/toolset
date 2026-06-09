@@ -55,7 +55,7 @@ class AgentConfig:
     max_iterations: int = 10
     system_prompt: str = ""
     temperature: float = 0.7
-    model: str = "gpt-4"
+    model: str = "claude-opus-4-8"
 
 
 @dataclass
@@ -177,7 +177,7 @@ def load_config(path: Path) -> AgentConfig:
         max_iterations=int(data.get('max_iterations', 10)),
         system_prompt=data.get('system_prompt', ''),
         temperature=float(data.get('temperature', 0.7)),
-        model=data.get('model', 'gpt-4')
+        model=data.get('model', 'claude-opus-4-8')
     )
 
 
@@ -376,14 +376,12 @@ def estimate_cost(config: AgentConfig, runs: int = 100) -> Dict[str, Any]:
 
     # Cost per 1K tokens
     costs = {
-        'gpt-4': {'input': 0.03, 'output': 0.06},
-        'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
-        'gpt-3.5-turbo': {'input': 0.0005, 'output': 0.0015},
-        'claude-3-opus': {'input': 0.015, 'output': 0.075},
-        'claude-3-sonnet': {'input': 0.003, 'output': 0.015},
+        'claude-opus-4-8': {'input': 0.005, 'output': 0.025},
+        'claude-sonnet-4-6': {'input': 0.003, 'output': 0.015},
+        'claude-haiku-4-5-20251001': {'input': 0.001, 'output': 0.005},
     }
 
-    model_cost = costs.get(config.model, costs['gpt-4'])
+    model_cost = costs.get(config.model, costs['claude-opus-4-8'])
 
     # Assume 60% input, 40% output
     input_tokens = min_tokens * 0.6
@@ -475,7 +473,7 @@ Agent config format (YAML):
 
 name: research_assistant
 pattern: react
-model: gpt-4
+model: claude-opus-4-8
 max_iterations: 10
 tools:
   - name: web_search

@@ -7,7 +7,7 @@ The Runtime service provides a secure, serverless hosting environment for deploy
 | Feature | Description |
 |---------|-------------|
 | **Framework Agnostic** | Works with LangGraph, Strands, CrewAI, or custom agents |
-| **Model Flexibility** | Supports any LLM (Bedrock, Claude, Gemini, OpenAI) |
+| **Model Flexibility** | Supports any LLM (Claude Opus 4.8, Sonnet 4.6, and Haiku 4.5 via Bedrock or the Claude API; Amazon Nova) |
 | **Protocol Support** | HTTP, MCP, A2A, and AG-UI — one protocol per Runtime |
 | **Session Isolation** | Dedicated microVM per session with isolated CPU, memory, filesystem |
 | **Extended Execution** | Up to 8 hours for long-running workloads (15-min idle timeout) |

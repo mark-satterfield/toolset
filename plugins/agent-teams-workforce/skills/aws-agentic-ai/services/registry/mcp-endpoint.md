@@ -166,7 +166,7 @@ MCP client config (no `oauth` needed — uses DCR):
 https://bedrock-agentcore.<region>.amazonaws.com/.well-known/oauth-protected-resource/registry/<registryId>/mcp
 ```
 
-Supported identity providers: Amazon Cognito, Okta, Azure AD (Microsoft Entra ID), Auth0, or any OIDC-compatible provider.
+Supported identity providers: Amazon Cognito, Okta, Auth0, or any OIDC-compatible provider.
 
 ## Kiro Integration
 

@@ -57,10 +57,15 @@ HEAVY_PACKAGES = {
         "alternative": "None - use dynamic import for 3D features",
         "reason": "Very large, should be lazy-loaded"
     },
-    "firebase": {
+    "aws-amplify": {
         "size": "400KB+",
-        "alternative": "Import specific modules (firebase/auth, firebase/firestore)",
+        "alternative": "Import specific categories (aws-amplify/auth, aws-amplify/storage)",
         "reason": "Modular imports significantly reduce size"
+    },
+    "aws-sdk": {
+        "size": "2MB+",
+        "alternative": "AWS SDK v3 modular clients (@aws-sdk/client-s3, @aws-sdk/client-dynamodb)",
+        "reason": "v2 bundles every service client; v3 is tree-shakeable per service"
     },
     "material-ui": {
         "size": "Large",

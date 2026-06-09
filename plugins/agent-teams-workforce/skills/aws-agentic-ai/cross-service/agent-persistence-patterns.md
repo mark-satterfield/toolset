@@ -9,7 +9,7 @@ Modern agent frameworks discover capabilities by reading configuration files fro
 | Framework | Key Config Files | Discovery Mechanism |
 |-----------|-----------------|---------------------|
 | **Claude Agent SDK** | `CLAUDE.md`, `.claude/skills/*/SKILL.md`, `.claude/commands/*.md`, `.claude/output-styles/*.md` | `cwd` + `setting_sources=["project"]` |
-| **OpenClaw** | `.openclaw/`, `.agents/`, `skills/`, `.codex`, `.env` | Gateway working directory |
+| **OpenClaw** | `.openclaw/`, `.agents/`, `skills/`, `.env` | Gateway working directory |
 | **Strands Agents** | Agent code, `requirements.txt`, tool definitions | Python module loading |
 
 Modify a `SKILL.md` → agent gains new capabilities. Update `CLAUDE.md` → agent follows new guidelines. No redeployment.
