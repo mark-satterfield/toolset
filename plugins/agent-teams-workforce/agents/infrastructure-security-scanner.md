@@ -1,14 +1,14 @@
 ---
 name: infrastructure-security-scanner
 description: >-
-  Scans this project's own IaC and deployed test infrastructure in designated test
-  environments for security misconfigurations — public exposure, over-broad IAM, missing
-  encryption, open security groups, and unsafe defaults — and reports each confirmed
-  misconfiguration with a minimal reproduction. Use for Adversarial Validation phase work
-  requiring IaC security scanning, CDK and cloud-config review, and misconfiguration reporting.
+  Scans project IaC and deployed test infrastructure, designated test
+  environments only, for public exposure, over-broad IAM, missing encryption,
+  and open security groups, reporting each with a minimal reproduction. Use
+  for Adversarial Validation phase work requiring IaC security scanning, CDK
+  and cloud-config review, and misconfiguration reporting.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:aws-cdk-development]

@@ -1,10 +1,10 @@
 ---
 name: spec-decider
 description: >-
-  Receives competing spec approaches, maker-checker deadlocks, and checker conflict reports
-  routed by spec-authoring-lead, then rules from the collected evidence and records the
-  rationale — generating no spec content and no analysis. Use for Spec Authoring (workflow 1,
-  phase 3) work requiring decision adjudication, deadlock resolution, and rationale recording.
+  Rules on competing spec approaches, maker-checker deadlocks, and checker
+  conflicts routed by spec-authoring-lead; generates no spec content or
+  analysis. Use for Spec Authoring (workflow 1, phase 3) work requiring
+  decision adjudication, deadlock resolution, and rationale recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

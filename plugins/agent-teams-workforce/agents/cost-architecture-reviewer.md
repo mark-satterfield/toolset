@@ -1,12 +1,13 @@
 ---
 name: cost-architecture-reviewer
 description: >-
-  Estimates cost per architecture option, identifies cost cliffs, and returns a cost analysis without choosing
-  an option. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring AWS cost estimation, cost-cliff
-  identification, and per-option cost comparison.
+  Estimates cost per architecture option and identifies cost cliffs; never
+  chooses an option. Use for Architecture Analysis (PRD-to-Spec phase 2)
+  work requiring AWS cost estimation, cost-cliff identification, and
+  per-option comparison.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations]

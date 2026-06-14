@@ -1,10 +1,10 @@
 ---
 name: deployment-strategy-decider
 description: >-
-  Receives deployment analyses — wave order options, rollout strategies, risk assessments, FinOps
-  recommendations — and decides the deployment strategy with recorded rationale, generating no
-  analysis of its own. Use for Deployment team (workflow 2, phase 7) work requiring decision
-  adjudication, evidence weighing, and rationale recording.
+  Decides deployment strategy from received analyses — wave order, rollout,
+  risk, FinOps — with recorded rationale; generates no analysis. Use for
+  Deployment team (workflow 2, phase 7) work requiring decision adjudication,
+  evidence weighing, and rationale recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

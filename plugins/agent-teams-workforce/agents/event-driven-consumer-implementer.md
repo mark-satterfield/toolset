@@ -1,17 +1,17 @@
 ---
 name: event-driven-consumer-implementer
 description: >-
-  Implements event consumers that receive from SQS via the EventBridge-rule-to-SQS-to-Lambda
-  chain, since Lambdas never consume directly from EventBridge. Use for Implementation
-  (TDD Green) work requiring SQS consumer logic, batch processing, and event envelope
-  deserialization.
+  Implements event consumers on the EventBridge-rule-to-SQS-to-Lambda chain;
+  Lambdas never consume directly from EventBridge. Use for Implementation
+  (TDD Green) work requiring SQS consumer logic, batch processing, and event
+  envelope deserialization.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:sqs, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sns]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

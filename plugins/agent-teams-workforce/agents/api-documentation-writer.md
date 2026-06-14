@@ -1,10 +1,10 @@
 ---
 name: api-documentation-writer
 description: >-
-  Generates human-readable API documentation from OpenAPI and GraphQL specs — endpoint
-  guides, request and response examples, and SDK snippets — for APIs that have shipped.
-  Use for cross-cutting Documentation team work requiring API reference writing, example
-  generation, and SDK snippet authoring.
+  Writes human-readable API docs from OpenAPI and GraphQL specs for shipped
+  APIs — guides, examples, SDK snippets. Use for cross-cutting Documentation
+  team work requiring API reference writing, example generation, and SDK
+  snippet authoring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

@@ -1,16 +1,17 @@
 ---
 name: persistence-architecture-specialist
 description: >-
-  Analyzes DynamoDB schema options, GSI/LSI strategies, and single vs. multi-table designs, returning options
-  with tradeoffs and never a decision. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring
-  DynamoDB data modeling, access pattern analysis, and index strategy tradeoffs.
+  Analyzes DynamoDB schema, GSI/LSI strategy, and single vs. multi-table
+  options — returns tradeoffs, never a decision. Use for Architecture
+  Analysis (PRD-to-Spec phase 2) work requiring DynamoDB data modeling,
+  access pattern analysis, and index strategy tradeoffs.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer, agent-teams-workforce:rds]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

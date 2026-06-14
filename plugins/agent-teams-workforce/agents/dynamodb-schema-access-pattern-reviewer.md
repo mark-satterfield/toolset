@@ -1,13 +1,13 @@
 ---
 name: dynamodb-schema-access-pattern-reviewer
 description: >-
-  Validates that the DynamoDB access patterns specified in the feature spec are
-  implementable and performant given the key design, indexes, and capacity estimates.
-  Use for Spec Authoring (workflow 1, phase 3) work requiring access-pattern validation,
-  key and index review, and performance risk detection.
+  Validates DynamoDB access patterns in the spec are implementable and
+  performant given key design, indexes, and capacity estimates. Use for Spec
+  Authoring (workflow 1, phase 3) work requiring access-pattern validation,
+  key/index review, and performance risk detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb]

@@ -1,13 +1,13 @@
 ---
 name: event-contract-author
 description: >-
-  Writes event schemas within the event API envelope format, specifying publishing
-  conditions, consumers, and retry and DLQ behavior for each event. Use for Spec
-  Authoring (workflow 1, phase 3) work requiring event contract elaboration,
-  envelope conformance, and asynchronous failure semantics.
+  Writes event schemas in the event API envelope format with publishing
+  conditions, consumers, and retry/DLQ behavior. Use for Spec Authoring
+  (workflow 1, phase 3) work requiring contract elaboration, envelope
+  conformance, and async failure semantics.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:sqs]

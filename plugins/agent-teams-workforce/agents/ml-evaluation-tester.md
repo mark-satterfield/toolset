@@ -1,18 +1,17 @@
 ---
 name: ml-evaluation-tester
 description: >-
-  Writes and runs evaluation suites for ML components — matching quality,
-  recommendation relevance, embedding drift, and regression thresholds —
-  confirming each evaluation fails before the component exists. Use for Test
-  Design (TDD Red) work requiring ML evaluation design, metric and threshold
-  encoding, evaluation dataset construction, and drift detection.
+  Writes and runs ML evaluation suites — matching quality, recommendation
+  relevance, embedding drift — confirming each fails before the component
+  exists. Use for Test Design (TDD Red) work requiring ML evaluation design,
+  metric/threshold encoding, dataset construction, and drift detection.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:senior-data-scientist]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

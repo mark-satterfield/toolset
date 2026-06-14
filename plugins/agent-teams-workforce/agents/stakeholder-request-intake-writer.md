@@ -1,9 +1,10 @@
 ---
 name: stakeholder-request-intake-writer
 description: >-
-  Converts raw stakeholder requests into a structured intake brief capturing requestor, problem,
-  desired outcome, constraints, and urgency. Use for PRD Creation (workflow 1, phase 0) work
-  requiring request structuring, problem framing, constraint capture, and urgency classification.
+  Converts raw stakeholder requests into a structured intake brief: requestor,
+  problem, desired outcome, constraints, urgency. Use for PRD Creation
+  (workflow 1, phase 0) work requiring request structuring, problem framing,
+  and urgency classification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

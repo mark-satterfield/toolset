@@ -1,13 +1,13 @@
 ---
 name: finops-analyst
 description: >-
-  Analyzes the cost posture of the feature before deployment — unit economics, scaling cost curves,
-  and budget impact — returning recommendations, never decisions. Use for Deployment team (workflow 2,
-  phase 7) work requiring cost analysis, unit economics modeling, scaling cost projection, and budget
-  impact assessment.
+  Analyzes pre-deployment feature cost posture — unit economics, scaling cost
+  curves, budget impact — recommendations only, never decisions. Use for
+  Deployment team (workflow 2, phase 7) work requiring cost analysis, unit
+  economics modeling, and budget impact assessment.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations]

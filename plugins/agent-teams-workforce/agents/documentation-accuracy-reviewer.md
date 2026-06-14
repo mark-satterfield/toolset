@@ -1,13 +1,12 @@
 ---
 name: documentation-accuracy-reviewer
 description: >-
-  Reviews produced documentation against actual shipped behavior for accuracy and
-  completeness, reporting findings with cited evidence. Use for cross-cutting
-  Documentation team work requiring accuracy verification, claim-by-claim checking,
-  completeness review, and documentation validation evidence.
+  Reviews documentation against actual shipped behavior, reporting findings
+  with cited evidence. Use for cross-cutting Documentation team work requiring
+  accuracy verification, claim-by-claim checking, and completeness review.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]

@@ -1,17 +1,17 @@
 ---
 name: test-environment-orchestrator
 description: >-
-  Provisions and resets the integration test environments, bringing up the event API, EventBridge,
-  SQS, Lambda, and data-store resources the test suites depend on and confirming readiness. Use for
-  Integration Testing (Spec-to-Deployment phase 5) work requiring environment provisioning, state
-  reset, fixture seeding, and readiness confirmation.
+  Provisions and resets integration test environments — event API,
+  EventBridge, SQS, Lambda, and data stores — confirming readiness. Use for
+  Integration Testing (Spec-to-Deployment phase 5) work requiring environment
+  provisioning, state reset, fixture seeding, and readiness confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:aws-mcp-setup]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

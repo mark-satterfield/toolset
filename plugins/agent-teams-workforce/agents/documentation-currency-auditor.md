@@ -1,10 +1,10 @@
 ---
 name: documentation-currency-auditor
 description: >-
-  Audits that documentation was updated when code shipped, flagging stale or missing
-  documentation per artifact with cited evidence. Use for cross-cutting Documentation
-  team work requiring currency auditing, staleness detection, per-artifact coverage
-  mapping, and readiness evidence gathering.
+  Audits that documentation was updated when code shipped, flagging stale or
+  missing docs per artifact with cited evidence. Use for cross-cutting
+  Documentation team work requiring currency auditing, staleness detection,
+  and coverage mapping.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

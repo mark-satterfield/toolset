@@ -1,9 +1,10 @@
 ---
 name: okr-writer
 description: >-
-  Derives the OKR cascade from strategy documents and the intake brief, producing objectives,
-  measurable key results, and leading versus lagging indicators. Use for PRD Creation (workflow 1,
-  phase 0) work requiring goal cascading, key-result quantification, and indicator classification.
+  Derives the OKR cascade from strategy docs and the intake brief —
+  objectives, key results, leading vs. lagging indicators. Use for PRD
+  Creation (workflow 1, phase 0) work requiring goal cascading, key-result
+  quantification, and indicator classification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

@@ -1,17 +1,17 @@
 ---
 name: architecture-fitness-function-author
 description: >-
-  Defines testable assertions from architecture decisions — such as "all events publish through the event API"
-  and "all Lambdas extend the chassis" — so the decided architecture stays enforceable. Use for Architecture
-  Analysis (PRD-to-Spec phase 2) work requiring fitness function authoring, constraint formalization, and
-  architecture conformance criteria.
+  Defines testable assertions from architecture decisions, e.g. "all events
+  publish through the event API", "all Lambdas extend the chassis". Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring fitness function
+  authoring, constraint formalization, and conformance criteria.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

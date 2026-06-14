@@ -1,14 +1,13 @@
 ---
 name: graphql-schema-reviewer
 description: >-
-  Validates that GraphQL schemas in authored specifications match the architecture decisions
-  and the established AppSync contract patterns, including types, operations, resolver
-  mappings, and authorization directives. Use for Spec Authoring (workflow 1, phase 3) work
-  requiring GraphQL schema conformance review, AppSync pattern checking, and decision-drift
-  detection.
+  Validates GraphQL schemas in specs against architecture decisions and
+  AppSync contract patterns — resolver mappings, authorization directives. Use
+  for Spec Authoring (workflow 1, phase 3) work requiring GraphQL conformance
+  review, AppSync pattern checking, and decision-drift detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]

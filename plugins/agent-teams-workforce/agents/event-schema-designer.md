@@ -1,16 +1,17 @@
 ---
 name: event-schema-designer
 description: >-
-  Designs event schemas within the central event API envelope format and returns proposed schemas as concrete
-  drafts. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring event schema authoring, envelope
-  conformance, and event payload versioning.
+  Designs event schemas as concrete drafts within the central event API
+  envelope format. Use for Architecture Analysis (PRD-to-Spec phase 2) work
+  requiring event schema authoring, envelope conformance, and payload
+  versioning.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:eventbridge, agent-teams-workforce:sns]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

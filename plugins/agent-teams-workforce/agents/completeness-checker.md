@@ -1,16 +1,16 @@
 ---
 name: completeness-checker
 description: >-
-  Validates that each PRD requirement has an actor, an action, an observable outcome, and acceptance
-  criteria, and returns a per-requirement completeness report. Use for PRD Validation (workflow 1,
-  phase 1) work requiring requirement structure checks, acceptance-criteria presence audits, and
-  completeness scoring.
+  Validates each PRD requirement has an actor, action, observable outcome,
+  and acceptance criteria. Use for PRD Validation (workflow 1, phase 1)
+  work requiring requirement structure checks, acceptance-criteria audits,
+  and completeness scoring.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
 effort: medium
 isolation: worktree
 color: blue

@@ -1,18 +1,17 @@
 ---
 name: espresso-test-writer
 description: >-
-  Writes failing Espresso test suites for Android features from spec
-  acceptance criteria before any implementation exists, confirming each test
-  fails for the intended behavioral reason. Use for Test Design (TDD Red)
-  work requiring Espresso authoring, Android UI flow coverage, Compose
-  semantics matchers, and Red confirmation.
+  Writes failing Espresso suites for Android features from spec acceptance
+  criteria, confirming each test fails for the intended reason. Use for Test
+  Design (TDD Red) work requiring Espresso authoring, Android UI coverage,
+  Compose semantics matchers, and Red confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:tdd-guide]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

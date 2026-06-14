@@ -1,17 +1,17 @@
 ---
 name: architecture-decider
 description: >-
-  Receives all analyses, challenges, and cost data, then produces the unified architecture decision with a
-  rationale for each choice — generating no analysis of its own, only deciding from collected evidence. Use
-  for Architecture Analysis (PRD-to-Spec phase 2) work requiring decision adjudication, evidence weighing,
-  and rationale recording.
+  Turns collected analyses, challenges, and cost data into the unified
+  architecture decision with per-choice rationale — decides only, never
+  analyzes. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring
+  decision adjudication, evidence weighing, and rationale recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 30
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

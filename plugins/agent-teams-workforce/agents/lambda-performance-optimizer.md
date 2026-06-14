@@ -2,16 +2,16 @@
 name: lambda-performance-optimizer
 description: >-
   Optimizes Lambda cold start, memory sizing, and hot paths in green-tested
-  code without breaking tests or changing behavior. Use for Code Quality (TDD
-  Refactor) work requiring cold-start reduction, memory tuning, hot-path
-  optimization, and Lambda configuration hygiene.
+  code without breaking tests or behavior. Use for Code Quality (TDD Refactor)
+  work requiring cold-start reduction, memory tuning, and hot-path
+  optimization.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

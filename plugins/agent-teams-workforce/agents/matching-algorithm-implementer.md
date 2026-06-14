@@ -1,17 +1,17 @@
 ---
 name: matching-algorithm-implementer
 description: >-
-  Implements matching and recommendation algorithm components for ML features, writing the
-  minimum code needed to make failing unit tests pass. Use for Implementation (TDD Green)
-  work requiring matching logic, scoring and ranking functions, and recommendation
-  pipeline components.
+  Implements matching and recommendation algorithms for ML features; writes
+  minimum code to pass failing unit tests. Use for Implementation (TDD Green)
+  work requiring matching logic, scoring and ranking functions, and
+  recommendation pipelines.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

@@ -1,10 +1,10 @@
 ---
 name: implementation-lead
 description: >-
-  Routes Beads tasks to the implementer sub-teams a feature requires, enforces hard
-  architectural constraints before any file is written, and reports Green status to Gate 2b.
-  Use for Implementation (TDD Green) work requiring task routing, sub-team staffing,
-  constraint enforcement, and gate reporting.
+  Routes Beads tasks to implementer sub-teams, enforces hard architectural
+  constraints before files are written, and reports Green status to
+  Gate 2b. Use for Implementation (TDD Green) work requiring task routing,
+  sub-team staffing, and constraint enforcement.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

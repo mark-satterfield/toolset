@@ -1,12 +1,10 @@
 ---
 name: test-strategy-decider
 description: >-
-  Receives test strategy analyses and reviewer findings routed by
-  test-design-lead and decides the test strategy for the feature — pyramid
-  shape, environment matrix, coverage thresholds — recording the rationale
-  while generating no analysis of its own. Use for Test Design (TDD Red)
-  work requiring strategy adjudication, evidence weighing, and rationale
-  recording.
+  Decides the feature's test strategy — pyramid shape, environment matrix,
+  coverage thresholds — from analyses routed by test-design-lead; generates
+  no analysis of its own. Use for Test Design (TDD Red) work requiring
+  strategy adjudication, evidence weighing, and rationale recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

@@ -1,10 +1,10 @@
 ---
 name: wsjf-scorer
 description: >-
-  Scores every decomposed task using WSJF — (value + time criticality + risk reduction) divided by
-  size — so the task set can be sequenced by economic priority. Use for Task Decomposition
-  (PRD-to-Spec phase 4) work requiring WSJF scoring, prioritization rationale, and consistent
-  scoring scales.
+  Scores decomposed tasks with WSJF — (value + time criticality + risk
+  reduction) / size — for economic sequencing. Use for Task Decomposition
+  (PRD-to-Spec phase 4) work requiring WSJF scoring, prioritization rationale,
+  and consistent scales.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

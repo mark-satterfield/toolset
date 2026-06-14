@@ -2,16 +2,16 @@
 name: security-test-case-designer
 description: >-
   Designs failing security test cases from the threat model: abuse cases,
-  negative paths, and authorization matrices. Use for Test Design (TDD Red)
-  work requiring threat-model-driven test design, abuse case coverage,
-  negative path testing, and authorization matrix verification.
+  negative paths, authorization matrices. Use for Test Design (TDD Red) work
+  requiring threat-model-driven test design, abuse case coverage, and
+  authorization matrix verification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-security]
-effort: high
+effort: xhigh
 isolation: worktree
 color: red
 ---

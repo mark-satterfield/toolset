@@ -1,10 +1,10 @@
 ---
 name: aws-integration-test-runner
 description: >-
-  Runs the AWS integration test suites against the provisioned test environment and reports
-  structured pass/fail, coverage, and flakiness results. Use for Integration Testing
-  (Spec-to-Deployment phase 5) work requiring integration suite execution, coverage measurement,
-  flakiness detection, and structured result reporting.
+  Runs AWS integration test suites against the provisioned test environment,
+  reporting structured pass/fail, coverage, and flakiness results. Use for
+  Integration Testing (Spec-to-Deployment phase 5) work requiring suite
+  execution, coverage measurement, and flakiness detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

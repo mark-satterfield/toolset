@@ -1,17 +1,16 @@
 ---
 name: dynamodb-cost-optimizer
 description: >-
-  Optimizes DynamoDB capacity, access patterns, and cost in green-tested code
-  without changing behavior or breaking tests. Use for Code Quality (TDD
-  Refactor) work requiring capacity-mode tuning, query efficiency, index cost
-  reduction, and read/write unit optimization.
+  Optimizes DynamoDB capacity, access patterns, and cost without changing
+  behavior or breaking tests. Use for Code Quality (TDD Refactor) work
+  requiring capacity-mode tuning, query efficiency, and index cost reduction.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:aws-cost-operations]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

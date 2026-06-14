@@ -1,17 +1,17 @@
 ---
 name: llm-observability-implementer
 description: >-
-  Implements LLM observability — prompt and response logging, token and cost metrics,
-  quality signals, and drift alerts — writing the minimum code needed to make failing
-  tests pass. Use for Implementation (TDD Green) work requiring LLM telemetry
-  instrumentation, cost metric emission, quality-signal capture, and drift alerting.
+  Implements LLM observability — prompt/response logging, token and cost
+  metrics, drift alerts — writing minimum code to pass failing tests. Use for
+  Implementation (TDD Green) work requiring LLM telemetry instrumentation,
+  quality-signal capture, and drift alerting.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:observability-designer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

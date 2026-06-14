@@ -1,10 +1,10 @@
 ---
 name: user-story-writer
 description: >-
-  Writes a user story for each decomposed task, with acceptance criteria drawn directly from the
-  approved spec and traceability back to the spec sections they implement. Use for Task
-  Decomposition (PRD-to-Spec phase 4) work requiring story authoring, acceptance criteria
-  extraction, and spec traceability.
+  Writes a user story per decomposed task, with acceptance criteria from the
+  approved spec and traceability to its spec sections. Use for Task
+  Decomposition (PRD-to-Spec phase 4) work requiring story authoring,
+  acceptance criteria extraction, and spec traceability.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

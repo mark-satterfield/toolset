@@ -1,17 +1,17 @@
 ---
 name: appsync-cdk-implementer
 description: >-
-  Implements AppSync GraphQL APIs in CDK Python — schema wiring, resolvers, data
-  sources, and authorization configuration. Use for Implementation (TDD Green) work
-  requiring AppSync API construction, resolver and data source wiring, and GraphQL
-  authorization setup in CDK.
+  Implements AppSync GraphQL APIs in CDK Python: schema wiring, resolvers,
+  data sources, authorization. Use for Implementation (TDD Green) work
+  requiring AppSync API construction, resolver and data source wiring, and
+  authorization setup.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

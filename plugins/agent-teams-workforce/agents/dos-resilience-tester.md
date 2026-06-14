@@ -1,14 +1,14 @@
 ---
 name: dos-resilience-tester
 description: >-
-  Evaluates this project's resilience to load and resource-exhaustion patterns within
-  designated test environments only, reporting where throttling, backpressure, or quotas
-  fail to hold. Findings are competitive — they play advantage rather than hard-stopping the
-  gate. Use for Adversarial Validation phase work requiring load and exhaustion probing,
-  resilience evaluation, and competitive-finding reporting.
+  Probes load and resource-exhaustion resilience in designated test
+  environments only, reporting where throttling, backpressure, or quotas fail;
+  findings are competitive, not gate-stopping. Use for Adversarial Validation
+  phase work requiring exhaustion probing, resilience evaluation, and
+  competitive-finding reporting.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]

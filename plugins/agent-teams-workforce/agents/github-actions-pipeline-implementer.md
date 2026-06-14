@@ -1,16 +1,17 @@
 ---
 name: github-actions-pipeline-implementer
 description: >-
-  Implements GitHub Actions workflows for the feature's repository: OIDC authentication, caching,
-  build, test, and deploy stages. Use for Deployment team (workflow 2, phase 7) work requiring
-  CI/CD pipeline implementation, OIDC auth wiring, workflow caching, and deploy stage configuration.
+  Implements GitHub Actions workflows: OIDC authentication, caching, build,
+  test, and deploy stages. Use for Deployment team (workflow 2, phase 7) work
+  requiring CI/CD pipeline implementation, OIDC auth wiring, and deploy
+  configuration.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: pink
 ---

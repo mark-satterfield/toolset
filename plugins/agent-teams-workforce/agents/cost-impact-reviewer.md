@@ -1,12 +1,13 @@
 ---
 name: cost-impact-reviewer
 description: >-
-  Stress-tests cost estimates at 10x, 100x, and 1000x scale and identifies the bottleneck components where
-  each architecture option breaks first. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring
-  adversarial cost modeling, scale stress-testing, and bottleneck identification.
+  Stress-tests cost estimates at 10x, 100x, and 1000x scale to find where each
+  option breaks first. Use for Architecture Analysis (PRD-to-Spec phase 2)
+  work requiring adversarial cost modeling, scale stress-testing, and
+  bottleneck identification.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cost-operations]

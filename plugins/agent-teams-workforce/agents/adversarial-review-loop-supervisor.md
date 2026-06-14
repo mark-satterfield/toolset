@@ -1,11 +1,11 @@
 ---
 name: adversarial-review-loop-supervisor
 description: >-
-  Sequences the adversarial validation loop: testers attack the project's own code in
-  designated test environments, the Adversarial Critique Adjudicator rules on each finding,
-  and valid findings route back to implementation until the Adjudicator passes or the loop
-  limit triggers escalation. Use for Adversarial Validation phase work requiring attack-wave
-  orchestration, finding routing, loop-limit enforcement, and gate-feed coordination.
+  Sequences the adversarial validation loop: testers attack project code in
+  designated test environments only; the Adversarial Critique Adjudicator
+  rules on findings, which route back until pass or loop-limit escalation.
+  Use for Adversarial Validation phase work requiring attack-wave
+  orchestration, finding routing, and loop-limit enforcement.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

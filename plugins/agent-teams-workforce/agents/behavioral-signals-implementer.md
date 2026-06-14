@@ -1,17 +1,17 @@
 ---
 name: behavioral-signals-implementer
 description: >-
-  Implements behavioral signal capture and the feature pipelines that feed matching and
-  recommendation models, writing the minimum code needed to make failing tests pass. Use
-  for Implementation (TDD Green) work requiring event signal capture, feature engineering
-  pipelines, and feature delivery to ML components.
+  Implements behavioral signal capture and feature pipelines feeding matching
+  and recommendation models; minimum code to pass failing tests. Use for
+  Implementation (TDD Green) work requiring event signal capture, feature
+  engineering, and ML feature delivery.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:senior-data-scientist, agent-teams-workforce:product-analytics]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

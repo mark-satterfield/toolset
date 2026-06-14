@@ -1,17 +1,17 @@
 ---
 name: recommendation-engine-implementer
 description: >-
-  Implements recommendation engine components for ML features, writing the minimum code
-  needed to make failing unit tests pass. Use for Implementation (TDD Green) work requiring
-  recommendation pipeline assembly, candidate sourcing, re-ranking stages, and serving-layer
-  composition.
+  Implements recommendation engine components for ML features; writes
+  minimum code to pass failing unit tests. Use for Implementation
+  (TDD Green) work requiring recommendation pipeline assembly, candidate
+  sourcing, re-ranking, and serving-layer composition.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

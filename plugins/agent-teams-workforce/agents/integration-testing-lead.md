@@ -1,10 +1,10 @@
 ---
 name: integration-testing-lead
 description: >-
-  Routes integration, E2E, and contract test runs across the Integration Testing team, aggregates
-  structured results into the Gate 3 packet, and routes escalations to the target the Root Cause
-  Analyst identifies. Use for Integration Testing (Spec-to-Deployment phase 5) work requiring
-  test-run orchestration, result aggregation, gate reporting, and escalation routing.
+  Routes integration, E2E, and contract test runs, aggregates results into the
+  Gate 3 packet, and escalates to the target the Root Cause Analyst names. Use
+  for Integration Testing (Spec-to-Deployment phase 5) work requiring test-run
+  orchestration, result aggregation, and escalation routing.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

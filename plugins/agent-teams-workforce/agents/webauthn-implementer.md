@@ -1,18 +1,18 @@
 ---
 name: webauthn-implementer
 description: >-
-  Implements WebAuthn passkey flows across web clients and the Cognito-backed auth
-  stack — credential registration and authentication ceremonies, client-side ceremony
-  handling, and Cognito passkey integration. Use for Implementation (TDD Green) work
-  requiring WebAuthn ceremony wiring, passkey credential lifecycle handling, and
-  Cognito auth-stack integration.
+  Implements WebAuthn passkey flows across web clients and the
+  Cognito-backed auth stack: registration and authentication ceremonies with
+  client-side handling. Use for Implementation (TDD Green) work requiring
+  WebAuthn ceremony wiring, passkey credential lifecycle, and Cognito
+  integration.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend, agent-teams-workforce:cognito]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

@@ -1,14 +1,14 @@
 ---
 name: permission-escalation-tester
 description: >-
-  Attempts privilege and permission escalation within this project's own IAM and
-  authorization model in designated test environments — horizontal and vertical escalation,
-  over-broad roles, and missing authorization checks — and reports each confirmed escalation
-  with a minimal reproduction. Use for Adversarial Validation phase work requiring
-  authorization attack, IAM-model probing, and minimal-reproduction reporting.
+  Attempts horizontal and vertical privilege escalation against this project's
+  own IAM and authorization model in designated test environments only,
+  reporting each confirmed escalation with a minimal reproduction. Use for
+  Adversarial Validation phase work requiring authorization attack and
+  IAM-model probing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:iam]

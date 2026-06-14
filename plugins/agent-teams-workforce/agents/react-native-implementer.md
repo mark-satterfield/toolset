@@ -1,17 +1,17 @@
 ---
 name: react-native-implementer
 description: >-
-  Implements React Native features for cross-platform mobile flows, writing the minimum
-  code needed to make failing Detox and Maestro tests pass. Use for Implementation
-  (TDD Green) work requiring React Native component construction, cross-platform
-  navigation and state wiring, and native module integration.
+  Implements React Native cross-platform mobile features; writes minimum code
+  to pass failing Detox and Maestro tests. Use for Implementation (TDD Green)
+  work requiring React Native components, navigation and state wiring, and
+  native module integration.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

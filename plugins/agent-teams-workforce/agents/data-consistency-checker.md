@@ -1,13 +1,13 @@
 ---
 name: data-consistency-checker
 description: >-
-  Verifies data consistency across services and stores after integration and event-flow test runs,
-  detecting partial writes, orphaned records, and divergent state. Use for Integration Testing
-  (Spec-to-Deployment phase 5) work requiring cross-store state verification, DynamoDB assertion
-  checks, eventual-consistency validation, and structured result reporting.
+  Verifies data consistency across services and stores after integration and
+  event-flow runs — partial writes, orphaned records, divergent state. Use for
+  Integration Testing (Spec-to-Deployment phase 5) work requiring cross-store
+  verification, DynamoDB assertions, and eventual-consistency validation.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb]

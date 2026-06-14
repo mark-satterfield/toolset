@@ -1,16 +1,17 @@
 ---
 name: security-architecture-designer
 description: >-
-  Analyzes security approaches — IAM, Cognito flows, encryption, and the threat model — and returns options
-  with tradeoffs, never a decision. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring threat
-  modeling, IAM least-privilege design, authentication flow analysis, and encryption strategy.
+  Analyzes security approaches — IAM, Cognito flows, encryption, threat
+  model — returning options with tradeoffs, never a decision. Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring threat
+  modeling, IAM least-privilege design, and encryption strategy.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-security, agent-teams-workforce:iam, agent-teams-workforce:secrets-manager]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

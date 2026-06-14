@@ -1,12 +1,13 @@
 ---
 name: ambiguity-detector
 description: >-
-  Scans the raw PRD for vague quantifiers, missing boundary conditions, and unstated assumptions, and
-  returns severity-rated findings without fixing them. Use for PRD Validation (workflow 1, phase 1)
-  work requiring systematic ambiguity scanning, boundary-condition checks, and severity rating.
+  Scans the raw PRD for vague quantifiers, missing boundary conditions, and
+  unstated assumptions; reports findings, never fixes. Use for PRD Validation
+  (workflow 1, phase 1) work requiring ambiguity scanning, boundary-condition
+  checks, and severity rating.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]

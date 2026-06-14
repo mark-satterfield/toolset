@@ -1,10 +1,10 @@
 ---
 name: prd-creation-lead
 description: >-
-  Routes stakeholder requests through intake, persona, OKR, and PRD drafting work, then hands the
-  draft PRD package to prd-validation-lead while making no product decisions. Use for PRD Creation
-  (workflow 1, phase 0) work requiring sequenced delegation, artifact tracking, conflict surfacing,
-  and validation handoff.
+  Routes stakeholder requests through intake, persona, OKR, and PRD drafting,
+  then hands off to prd-validation-lead — makes no product decisions. Use for
+  PRD Creation (workflow 1, phase 0) work requiring sequenced delegation,
+  artifact tracking, and validation handoff.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

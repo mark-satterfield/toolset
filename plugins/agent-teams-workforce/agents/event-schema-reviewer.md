@@ -1,13 +1,13 @@
 ---
 name: event-schema-reviewer
 description: >-
-  Validates that authored event schemas conform to the event API envelope format,
-  including publishing conditions, consumer obligations, and retry/DLQ behavior. Use for
-  Spec Authoring (workflow 1, phase 3) work requiring envelope conformance review,
-  event contract validation, and asynchronous failure-semantics checking.
+  Validates event schemas against the event API envelope format — publishing
+  conditions, consumer obligations, retry/DLQ behavior. Use for Spec Authoring
+  (workflow 1, phase 3) work requiring envelope conformance, event contract
+  validation, and failure-semantics checks.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]

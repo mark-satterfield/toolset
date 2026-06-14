@@ -1,9 +1,10 @@
 ---
 name: persona-profile-writer
 description: >-
-  Generates data-driven persona profiles from research inputs, covering behavioral segments,
-  jobs-to-be-done, and empathy maps. Use for PRD Creation (workflow 1, phase 0) work requiring
-  behavioral segmentation, jobs-to-be-done framing, and empathy mapping grounded in evidence.
+  Generates data-driven persona profiles from research — behavioral segments,
+  jobs-to-be-done, empathy maps. Use for PRD Creation (workflow 1, phase 0)
+  work requiring behavioral segmentation, jobs-to-be-done framing, and empathy
+  mapping.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

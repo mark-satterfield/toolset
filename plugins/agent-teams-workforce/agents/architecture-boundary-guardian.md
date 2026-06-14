@@ -1,12 +1,13 @@
 ---
 name: architecture-boundary-guardian
 description: >-
-  Validates that no architecture proposal introduces cross-context coupling, checking every artifact against
-  the context map and the platform's integration constraints. Use for Architecture Analysis (PRD-to-Spec
-  phase 2) work requiring boundary validation, coupling detection, and context-map conformance checks.
+  Validates architecture proposals against the context map and integration
+  constraints to catch cross-context coupling. Use for Architecture Analysis
+  (PRD-to-Spec phase 2) work requiring boundary validation, coupling
+  detection, and context-map conformance.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]

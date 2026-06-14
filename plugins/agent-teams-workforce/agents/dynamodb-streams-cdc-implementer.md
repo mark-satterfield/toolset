@@ -1,18 +1,17 @@
 ---
 name: dynamodb-streams-cdc-implementer
 description: >-
-  Implements change data capture from DynamoDB Streams — stream record processing,
-  change event transformation, and ordering and replay handling — with the minimum
-  code needed to make the failing data-pipeline test suites pass. Use for
-  Implementation (TDD Green) work requiring stream record processing, change event
+  Implements change data capture from DynamoDB Streams; writes minimum code
+  to pass failing data-pipeline test suites. Use for Implementation
+  (TDD Green) work requiring stream record processing, change event
   transformation, and exactly-once-effect handling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:dynamodb]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

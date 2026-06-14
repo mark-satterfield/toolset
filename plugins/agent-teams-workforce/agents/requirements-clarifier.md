@@ -1,12 +1,13 @@
 ---
 name: requirements-clarifier
 description: >-
-  Identifies ambiguous, incomplete, or conflicting requirements in a raw PRD and returns structured
-  clarification requests without resolving them. Use for PRD Validation (workflow 1, phase 1) work
-  requiring requirements analysis, ambiguity framing, and clarification-request drafting.
+  Identifies ambiguous, incomplete, or conflicting PRD requirements,
+  returning structured clarification requests without resolving them. Use
+  for PRD Validation (workflow 1, phase 1) work requiring requirements
+  analysis and clarification drafting.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:product-discovery]

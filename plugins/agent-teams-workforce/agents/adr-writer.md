@@ -1,12 +1,13 @@
 ---
 name: adr-writer
 description: >-
-  Produces ADR drafts from the Architecture Decider's decisions — context, decision, consequences, status —
-  including superseding drafts where a decision replaces an existing ADR. Use for Architecture Analysis
-  (PRD-to-Spec phase 2) work requiring ADR drafting, decision recording, and supersession documentation.
+  Drafts ADRs from the Architecture Decider's decisions, including
+  superseding drafts. Use for Architecture Analysis (PRD-to-Spec phase 2)
+  work requiring ADR drafting, decision recording, and supersession
+  documentation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]

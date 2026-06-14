@@ -1,16 +1,17 @@
 ---
 name: smoke-test-author
 description: >-
-  Writes post-deployment smoke tests that verify the deployed feature's critical paths against live
-  endpoints. Use for Deployment team (workflow 2, phase 7) work requiring smoke test authoring,
-  post-deployment verification, critical-path coverage, and test evidence for the gate.
+  Writes post-deployment smoke tests verifying the feature's critical paths
+  against live endpoints. Use for Deployment team (workflow 2, phase 7) work
+  requiring smoke test authoring, post-deployment verification, and
+  critical-path coverage.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: pink
 ---

@@ -1,13 +1,13 @@
 ---
 name: adr-currency-checker
 description: >-
-  Checks that every ADR the spec relies on is still current, accepted, and
-  unsuperseded before implementation begins. Use for Spec Freshness phase work
-  requiring ADR status verification, supersession tracing, decision-conflict
-  detection, and architectural staleness reporting.
+  Checks every ADR the spec relies on is still current, accepted, and
+  unsuperseded before implementation. Use for Spec Freshness phase work
+  requiring ADR status verification, supersession tracing, and
+  decision-conflict detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]

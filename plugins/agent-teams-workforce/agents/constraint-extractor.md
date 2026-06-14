@@ -1,9 +1,10 @@
 ---
 name: constraint-extractor
 description: >-
-  Extracts every technical constraint from the raw PRD and produces the constraint manifest consumed
-  by downstream architecture and spec phases. Use for PRD Validation (workflow 1, phase 1) work
-  requiring constraint identification, manifest authoring, and source-cited constraint classification.
+  Extracts technical constraints from the raw PRD into the constraint manifest
+  consumed by downstream phases. Use for PRD Validation (workflow 1, phase 1)
+  work requiring constraint identification, manifest authoring, and
+  source-cited classification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

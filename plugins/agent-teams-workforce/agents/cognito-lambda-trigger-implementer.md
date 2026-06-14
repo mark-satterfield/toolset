@@ -1,17 +1,17 @@
 ---
 name: cognito-lambda-trigger-implementer
 description: >-
-  Implements Cognito Lambda triggers for authentication flows — sign-up, confirmation,
-  token customization, and custom auth challenges — as chassis superclass extensions.
-  Use for Implementation (TDD Green) work requiring Cognito trigger logic, authentication
-  flow handling, and user pool event processing.
+  Implements Cognito Lambda triggers — sign-up, confirmation, token
+  customization, custom auth challenges — as chassis superclass extensions.
+  Use for Implementation (TDD Green) work requiring Cognito trigger logic,
+  auth flows, and user pool event processing.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:cognito, agent-teams-workforce:lambda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

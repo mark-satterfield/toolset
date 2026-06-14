@@ -1,13 +1,13 @@
 ---
 name: test-plan-strategy-reviewer
 description: >-
-  Reviews the Test Design team's test plan strategy for pyramid balance, risk
-  coverage, and environment needs, and reports structured findings. Use for
-  Test Design (TDD Red) work requiring test strategy review, pyramid balance
-  assessment, and risk coverage validation.
+  Reviews the test plan strategy for pyramid balance, risk coverage, and
+  environment needs; reports findings only. Use for Test Design (TDD Red) work
+  requiring strategy review, pyramid balance assessment, and risk coverage
+  validation.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]

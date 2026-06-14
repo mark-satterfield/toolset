@@ -1,10 +1,9 @@
 ---
 name: test-design-lead
 description: >-
-  Routes spec acceptance criteria to the right test writers, confirms Red
-  (every new test fails), and reports readiness to Gate 2a. Use for Test
-  Design (TDD Red) work requiring delegation, criterion-to-test routing,
-  Red confirmation, and gate reporting.
+  Routes spec acceptance criteria to test writers, confirms Red (every new
+  test fails), and reports to Gate 2a. Use for Test Design (TDD Red) work
+  requiring delegation, criterion-to-test routing, and gate reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

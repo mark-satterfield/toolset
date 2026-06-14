@@ -1,18 +1,18 @@
 ---
 name: payments-integration-implementer
 description: >-
-  Implements payment features against Stripe: checkout sessions, webhook handlers,
-  subscription lifecycle, refunds, and idempotent payment operations, with keys and signing
-  secrets in Secrets Manager and webhook handlers extending the chassis. Use for
-  Implementation (TDD Green) work requiring Stripe integration, payment webhook handling,
-  subscription lifecycle management, and idempotent payment operations.
+  Implements Stripe payment features: checkout sessions, webhook handlers
+  extending the chassis, subscription lifecycle, refunds, and idempotent
+  operations, with secrets in Secrets Manager. Use for Implementation (TDD
+  Green) work requiring Stripe integration, payment webhook handling, and
+  subscription lifecycle management.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:stripe-integration-expert, agent-teams-workforce:secrets-manager]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

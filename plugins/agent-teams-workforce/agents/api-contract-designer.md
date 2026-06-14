@@ -1,16 +1,16 @@
 ---
 name: api-contract-designer
 description: >-
-  Produces OpenAPI and GraphQL schema proposals and returns contract drafts for review. Use for Architecture
-  Analysis (PRD-to-Spec phase 2) work requiring OpenAPI authoring, GraphQL schema drafting, and API contract
-  consistency.
+  Produces OpenAPI and GraphQL contract drafts for review. Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring OpenAPI
+  authoring, GraphQL schema drafting, and API contract consistency.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

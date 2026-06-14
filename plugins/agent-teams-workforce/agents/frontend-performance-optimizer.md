@@ -1,17 +1,16 @@
 ---
 name: frontend-performance-optimizer
 description: >-
-  Optimizes frontend performance in green-tested code without breaking tests:
-  bundle size, rendering paths, and Core Web Vitals. Use for Code Quality (TDD
-  Refactor) work requiring bundle trimming, render-path optimization, Core Web
-  Vitals improvement, and asset-loading hygiene.
+  Optimizes frontend performance in green-tested code without breaking
+  tests. Use for Code Quality (TDD Refactor) work requiring bundle trimming,
+  render-path optimization, and Core Web Vitals improvement.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

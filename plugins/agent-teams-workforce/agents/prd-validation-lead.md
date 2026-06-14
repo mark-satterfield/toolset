@@ -1,16 +1,16 @@
 ---
 name: prd-validation-lead
 description: >-
-  Routes the raw PRD to all PRD Validation analysts concurrently, aggregates their findings into the
-  validated PRD package, and reports the result to Gate 1 while making no solution decisions. Use for
-  PRD Validation (workflow 1, phase 1) work requiring concurrent fan-out delegation, finding
-  aggregation, conflict surfacing, and gate reporting.
+  Routes the raw PRD to all validation analysts, aggregates findings into
+  the validated PRD package, and reports to Gate 1; makes no solution
+  decisions. Use for PRD Validation (workflow 1, phase 1) work requiring
+  concurrent fan-out delegation, finding aggregation, and gate reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 75
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:how-to-delegate, agent-teams-workforce:delegate, agent-teams-workforce:orchestrator-discipline, agent-teams-workforce:product-discovery, agent-teams-workforce:polyrepo-steward]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:how-to-delegate, agent-teams-workforce:delegate, agent-teams-workforce:orchestrator-discipline, agent-teams-workforce:product-discovery, agent-teams-workforce:polyrepo-steward, agent-teams-workforce:prd-writer]
 effort: medium
 isolation: worktree
 color: blue

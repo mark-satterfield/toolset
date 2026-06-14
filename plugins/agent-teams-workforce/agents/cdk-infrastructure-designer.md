@@ -1,16 +1,17 @@
 ---
 name: cdk-infrastructure-designer
 description: >-
-  Analyzes CDK construct options, Lambda boundaries within the common chassis, and layer packaging, returning
-  options with tradeoffs and never a decision. Use for Architecture Analysis (PRD-to-Spec phase 2) work
-  requiring AWS CDK construct analysis, Lambda packaging strategy, and infrastructure topology tradeoffs.
+  Analyzes CDK construct options, Lambda boundaries within the common chassis,
+  and layer packaging; returns tradeoffs, never a decision. Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring CDK construct
+  analysis, Lambda packaging strategy, and topology tradeoffs.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:aws-solution-architect]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

@@ -1,10 +1,10 @@
 ---
 name: readme-writer
 description: >-
-  Writes and maintains README files for repositories and directories — setup
-  instructions, usage, and onboarding flows — derived from shipped code and pipelines.
-  Use for cross-cutting Documentation team work requiring README authoring, setup
-  documentation, and onboarding flow writing.
+  Writes and maintains README files — setup, usage, onboarding — derived from
+  shipped code and pipelines. Use for cross-cutting Documentation team work
+  requiring README authoring, setup documentation, and onboarding flow
+  writing.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

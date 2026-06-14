@@ -1,17 +1,17 @@
 ---
 name: vector-search-embeddings-implementer
 description: >-
-  Implements vector search and embeddings components for ML features — embedding generation
-  calls, index read/write paths, and similarity query construction. Use for Implementation
-  (TDD Green) work requiring embedding pipelines, vector index access, and similarity
-  search queries.
+  Implements vector search and embeddings for ML features — embedding
+  generation, index read/write, similarity queries. Use for Implementation
+  (TDD Green) work requiring embedding pipelines, vector index access, and
+  similarity queries.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:rag-architect]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

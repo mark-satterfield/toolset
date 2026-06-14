@@ -1,9 +1,9 @@
 ---
 name: spec-freshness-lead
 description: >-
-  Routes spec freshness checks to the team's validators and aggregates their findings
-  into a single gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work
-  requiring delegation, validation routing, result aggregation, and gate packet assembly.
+  Routes spec freshness checks to validators and aggregates findings into a
+  gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work
+  requiring delegation, validation routing, and gate packet assembly.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

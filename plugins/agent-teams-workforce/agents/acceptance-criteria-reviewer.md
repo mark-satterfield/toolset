@@ -1,13 +1,13 @@
 ---
 name: acceptance-criteria-reviewer
 description: >-
-  Validates that acceptance criteria are testable, complete, and unambiguous — precise
-  enough for test agents to derive tests without interpretation. Use for Spec Authoring
-  (workflow 1, phase 3) work requiring testability review, ambiguity detection, and
-  criteria completeness checking.
+  Validates acceptance criteria are testable, complete, and unambiguous —
+  derivable into tests without interpretation. Use for Spec Authoring
+  (workflow 1, phase 3) work requiring testability review, ambiguity
+  detection, and completeness checking.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]

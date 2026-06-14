@@ -1,13 +1,13 @@
 ---
 name: test-coverage-gap-reviewer
 description: >-
-  Reviews planned and authored tests against spec acceptance criteria and
-  flags coverage gaps with structured findings. Use for Test Design (TDD Red)
-  work requiring traceability auditing, coverage gap detection, and
-  acceptance-criterion verification.
+  Reviews tests against spec acceptance criteria, flagging coverage gaps as
+  structured findings. Use for Test Design (TDD Red) work requiring
+  traceability auditing, coverage gap detection, and acceptance-criterion
+  verification.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]

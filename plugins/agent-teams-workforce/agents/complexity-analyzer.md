@@ -1,17 +1,17 @@
 ---
 name: complexity-analyzer
 description: >-
-  Analyzes complexity and duplication in green-tested code and returns a
-  prioritized refactor recommendation list without performing any refactoring.
-  Use for Code Quality (TDD Refactor) work requiring complexity scoring,
-  duplication detection, debt prioritization, and refactor planning.
+  Analyzes complexity and duplication in green-tested code, returning
+  prioritized refactor recommendations; performs no refactoring. Use for
+  Code Quality (TDD Refactor) work requiring complexity scoring, duplication
+  detection, and refactor planning.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:tech-debt-tracker]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

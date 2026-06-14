@@ -1,18 +1,17 @@
 ---
 name: athena-redshift-analytics-implementer
 description: >-
-  Implements Athena queries and Redshift analytics models over the data lake — table
-  definitions, views, and analytics SQL — with the minimum code needed to make the
-  failing data-pipeline test suites pass. Use for Implementation (TDD Green) work
-  requiring analytics SQL authoring, external table definition, and warehouse model
-  construction.
+  Implements Athena queries and Redshift analytics models over the data lake —
+  tables, views, SQL — writing minimum code to pass failing data-pipeline
+  tests. Use for Implementation (TDD Green) work requiring analytics SQL
+  authoring, external table definition, and warehouse modeling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

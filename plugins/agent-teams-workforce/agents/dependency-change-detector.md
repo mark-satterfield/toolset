@@ -1,11 +1,10 @@
 ---
 name: dependency-change-detector
 description: >-
-  Detects dependency version or contract changes that occurred after the spec was
-  written, classifying each as unchanged, changed-and-reconciled, or requiring
-  reconciliation. Use for Spec Freshness phase work requiring manifest and lockfile
-  diffing, upstream contract comparison, breaking-change detection, and dependency
-  risk reporting.
+  Detects dependency version or contract changes since the spec was written,
+  classifying each as unchanged, reconciled, or needing reconciliation. Use
+  for Spec Freshness phase work requiring manifest and lockfile diffing,
+  upstream contract comparison, and breaking-change detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

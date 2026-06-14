@@ -1,13 +1,13 @@
 ---
 name: error-handling-specification-author
 description: >-
-  Specifies error handling per failure mode for the feature specification, marking which
-  behavior the service chassis already handles and which must be custom-built. Use for
-  Spec Authoring (workflow 1, phase 3) work requiring failure-mode enumeration, error
-  semantics, and chassis-versus-custom boundary definition.
+  Specifies error handling per failure mode, marking what the service chassis
+  already handles versus custom-built. Use for Spec Authoring (workflow 1,
+  phase 3) work requiring failure-mode enumeration, error semantics, and
+  chassis-versus-custom boundaries.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-backend]

@@ -1,10 +1,10 @@
 ---
 name: changelog-writer
 description: >-
-  Generates changelog entries from merged work — parsing conventional commits and
-  producing semantic version notes that record what shipped. Use for cross-cutting
-  Documentation team work requiring conventional commit parsing, changelog drafting,
-  and semantic version note generation.
+  Generates changelog entries from merged work, parsing conventional commits
+  into semantic version notes. Use for cross-cutting Documentation team work
+  requiring conventional commit parsing, changelog drafting, and version note
+  generation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

@@ -1,16 +1,17 @@
 ---
 name: bounded-context-mapper
 description: >-
-  Maps domain boundaries, identifies context relationships, and returns the context map for the architecture
-  decision. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring domain-driven design, bounded
-  context identification, and context relationship mapping.
+  Maps domain boundaries and context relationships, returning the context
+  map for the architecture decision. Use for Architecture Analysis
+  (PRD-to-Spec phase 2) work requiring domain-driven design,
+  bounded-context identification, and relationship mapping.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

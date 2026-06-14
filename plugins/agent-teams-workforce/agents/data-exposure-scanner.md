@@ -1,14 +1,14 @@
 ---
 name: data-exposure-scanner
 description: >-
-  Scans this project's own responses, logs, and storage in designated test environments for
-  unintended data exposure — leaked secrets, PII in logs, over-returned fields, and
-  unencrypted or world-readable storage — and reports each confirmed exposure with a minimal
-  reproduction. Use for Adversarial Validation phase work requiring data-leak scanning, secret
-  and PII detection, and minimal-reproduction reporting.
+  Scans the project's responses, logs, and storage in designated test
+  environments only for data exposure — leaked secrets, PII, over-returned
+  fields, unencrypted storage — reporting each confirmed exposure. Use for
+  Adversarial Validation phase work requiring data-leak scanning,
+  secret/PII detection, and minimal-reproduction reporting.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]

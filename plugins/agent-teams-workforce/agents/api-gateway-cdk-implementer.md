@@ -1,17 +1,17 @@
 ---
 name: api-gateway-cdk-implementer
 description: >-
-  Implements API Gateway resources, methods, and authorizers in CDK Python, writing the
-  minimum infrastructure code needed to make failing unit tests pass. Use for Implementation
-  (TDD Green) work requiring API Gateway constructs, CDK Python infrastructure, and
-  authorizer wiring.
+  Implements API Gateway resources, methods, and authorizers in CDK Python;
+  writes minimum code to pass failing unit tests. Use for Implementation
+  (TDD Green) work requiring API Gateway constructs, CDK Python
+  infrastructure, and authorizer wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-gateway, agent-teams-workforce:aws-cdk-development]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

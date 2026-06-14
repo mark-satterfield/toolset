@@ -1,10 +1,11 @@
 ---
 name: event-flow-tester
 description: >-
-  Tests event flows end-to-end through the event API to EventBridge to SQS to Lambda chain,
-  verifying delivery, routing, retry, and dead-letter behavior at every hop. Use for Integration
-  Testing (Spec-to-Deployment phase 5) work requiring event-driven flow validation, EventBridge
-  rule verification, queue and consumer behavior checks, and structured result reporting.
+  Tests event flows end-to-end through the EventBridge-SQS-Lambda chain,
+  verifying delivery, routing, retry, and dead-letter behavior per hop. Use
+  for Integration Testing (Spec-to-Deployment phase 5) work requiring
+  event-driven flow validation, EventBridge rule verification, and
+  queue/consumer checks.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

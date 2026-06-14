@@ -1,10 +1,10 @@
 ---
 name: documentation-lead
 description: >-
-  Routes documentation work triggered by shipped changes, tracks which shipped artifacts
-  lack current documentation, and reports documentation currency to the production
-  readiness review. Use for cross-cutting Documentation team work requiring delegation,
-  currency tracking, validation enforcement, and readiness reporting.
+  Routes documentation work for shipped changes, tracks artifacts lacking
+  current docs, and reports doc currency to the production readiness review.
+  Use for cross-cutting Documentation team work requiring delegation, currency
+  tracking, and readiness reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

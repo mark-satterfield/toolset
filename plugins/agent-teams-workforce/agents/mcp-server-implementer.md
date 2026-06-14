@@ -1,18 +1,17 @@
 ---
 name: mcp-server-implementer
 description: >-
-  Implements MCP servers hosted on AWS, including AgentCore Gateway-fronted deployments:
-  tool definitions and schemas, authorization, transport configuration, and the Python CDK
-  wiring to deploy them. Use for Implementation (TDD Green) work requiring MCP tool
-  definitions, gateway-fronted server deployments, transport and authorization
-  configuration, and CDK wiring.
+  Implements MCP servers on AWS, including AgentCore Gateway-fronted
+  deployments — tool definitions and schemas, authorization, transport config,
+  Python CDK deployment wiring. Use for Implementation (TDD Green) work
+  requiring MCP tool definitions, gateway-fronted deployments, and CDK wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

@@ -1,17 +1,17 @@
 ---
 name: tdd-unit-test-generator
 description: >-
-  Writes failing unit tests derived from spec acceptance criteria before any
-  implementation exists, confirming each test fails for the intended reason.
-  Use for Test Design (TDD Red) work requiring unit test authoring,
-  criterion-to-test translation, fixture and mock design, and Red confirmation.
+  Writes failing unit tests from spec acceptance criteria before
+  implementation exists, confirming each fails for the intended reason. Use
+  for Test Design (TDD Red) work requiring unit test authoring,
+  criterion-to-test translation, fixture/mock design, and Red confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

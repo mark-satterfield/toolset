@@ -1,16 +1,16 @@
 ---
 name: task-dependency-mapper
 description: >-
-  Identifies inter-task dependencies across the decomposed task set and produces the dependency DAG
-  that sequences implementation. Use for Task Decomposition (PRD-to-Spec phase 4) work requiring
-  dependency analysis, DAG construction, and cycle detection.
+  Maps inter-task dependencies and produces the DAG that sequences
+  implementation. Use for Task Decomposition (PRD-to-Spec phase 4) work
+  requiring dependency analysis, DAG construction, and cycle detection.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: yellow
 ---

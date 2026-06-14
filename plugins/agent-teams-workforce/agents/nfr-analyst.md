@@ -1,12 +1,13 @@
 ---
 name: nfr-analyst
 description: >-
-  Extracts non-functional requirements from the raw PRD and flags implied NFRs that are not stated,
-  without resolving or quantifying them on the product's behalf. Use for PRD Validation (workflow 1,
-  phase 1) work requiring NFR extraction, implied-NFR detection, and quality-attribute analysis.
+  Extracts non-functional requirements from the raw PRD and flags unstated
+  implied NFRs; never resolves or quantifies them. Use for PRD Validation
+  (workflow 1, phase 1) work requiring NFR extraction, implied-NFR detection,
+  and quality-attribute analysis.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:product-discovery]

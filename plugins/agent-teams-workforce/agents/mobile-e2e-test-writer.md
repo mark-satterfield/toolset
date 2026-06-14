@@ -1,18 +1,17 @@
 ---
 name: mobile-e2e-test-writer
 description: >-
-  Writes failing Detox and Maestro end-to-end tests for React Native and
-  cross-platform mobile flows before any implementation exists, confirming
-  each flow fails for the intended behavioral reason. Use for Test Design
-  (TDD Red) work requiring mobile E2E flow authoring, Detox and Maestro
-  scripting, cross-platform journey coverage, and Red confirmation.
+  Writes failing Detox and Maestro E2E tests for React Native and
+  cross-platform mobile flows before implementation, confirming each fails
+  for the intended reason. Use for Test Design (TDD Red) work requiring
+  mobile E2E authoring, Detox and Maestro scripting, and Red confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

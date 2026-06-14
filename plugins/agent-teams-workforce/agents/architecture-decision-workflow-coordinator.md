@@ -1,10 +1,11 @@
 ---
 name: architecture-decision-workflow-coordinator
 description: >-
-  Routes analysis tasks to the proposals sub-team, routes proposals to the challenge sub-team, collects all
-  outputs, and routes them to the Architecture Decider — process only, with no evaluation authority. Use for
-  Architecture Analysis (PRD-to-Spec phase 2) work requiring fan-out/fan-in coordination, task routing,
-  artifact tracking, and decision-packet assembly.
+  Routes analysis to the proposals sub-team, proposals to the challenge
+  sub-team, and outputs to the Architecture Decider; process only, no
+  evaluation authority. Use for Architecture Analysis (PRD-to-Spec phase 2)
+  work requiring fan-out/fan-in coordination, task routing, and
+  decision-packet assembly.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

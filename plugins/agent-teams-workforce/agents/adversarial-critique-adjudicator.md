@@ -1,11 +1,11 @@
 ---
 name: adversarial-critique-adjudicator
 description: >-
-  Decides the severity of each adversarial finding and whether it is constitutive (a hard
-  stop) or competitive (plays advantage), serving as the Referee at Gate 4. Implementation
-  agents cannot downgrade its rulings, and it prevents the adversarial loop from blocking
-  arbitrarily. Use for Adversarial Validation phase work requiring finding adjudication,
-  constitutive-versus-competitive classification, and Gate 4 refereeing.
+  Rules on each adversarial finding's severity and whether it is
+  constitutive (hard stop) or competitive (plays advantage); Gate 4 Referee
+  whose rulings implementers cannot downgrade. Use for Adversarial
+  Validation phase work requiring finding adjudication and
+  constitutive-vs-competitive classification.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

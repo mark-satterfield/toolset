@@ -1,17 +1,17 @@
 ---
 name: event-api-client-implementer
 description: >-
-  Implements clients that publish events through the central event API endpoint using the
-  standardized envelope, so no service ever talks to EventBridge directly. Use for
-  Implementation (TDD Green) work requiring event publishing clients, envelope construction,
-  and event contract conformance.
+  Implements clients publishing events via the central event API's standard
+  envelope — no service talks to EventBridge directly. Use for
+  Implementation (TDD Green) work requiring publishing clients, envelope
+  construction, and event contract conformance.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

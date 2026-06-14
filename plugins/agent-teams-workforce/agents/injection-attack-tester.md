@@ -1,13 +1,13 @@
 ---
 name: injection-attack-tester
 description: >-
-  Probes this project's own endpoints in designated test environments for injection paths —
-  SQL, NoSQL, command, and template injection — and reports each confirmed path with the
-  minimal reproduction needed to verify it. Use for Adversarial Validation phase work
-  requiring injection probing, input-boundary attack, and minimal-reproduction reporting.
+  Probes this project's endpoints in designated test environments only for
+  SQL, NoSQL, command, and template injection; reports each confirmed path
+  with a minimal reproduction. Use for Adversarial Validation phase work
+  requiring injection probing and input-boundary attack.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]

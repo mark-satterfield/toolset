@@ -1,12 +1,13 @@
 ---
 name: domain-boundary-validator
 description: >-
-  Confirms the raw PRD stays within a single bounded context and flags cross-domain scope creep as
-  structured findings. Use for PRD Validation (workflow 1, phase 1) work requiring bounded-context
-  verification, domain ownership checks, and scope-creep detection.
+  Confirms the raw PRD stays within one bounded context, flagging
+  cross-domain scope creep as findings. Use for PRD Validation (workflow 1,
+  phase 1) work requiring bounded-context verification, domain ownership
+  checks, and scope-creep detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]

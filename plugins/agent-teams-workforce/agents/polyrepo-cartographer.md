@@ -1,13 +1,12 @@
 ---
 name: polyrepo-cartographer
+model: sonnet
 description: >-
-  Read-only specialist that answers focused questions about a poly-repo
-  project's structure by consulting the polyrepo-steward's manifest. Use
-  when the session agent needs structural information about repos —
-  names, purposes, owners, dependencies, conventions, rules, search
-  recipes, documentation pointers — and loading the full manifest into
-  the session's context would waste space. The cartographer reads the
-  manifest in its own context and returns a focused answer.
+  Read-only specialist answering focused questions about a poly-repo project's
+  structure from the polyrepo-steward's manifest, read in its own context. Use
+  when the session agent needs repo names, purposes, owners, dependencies,
+  conventions, rules, search recipes, or documentation pointers without
+  loading the full manifest into session context.
 allowed-tools: [Read, Glob, Grep, Bash]
 ---
 

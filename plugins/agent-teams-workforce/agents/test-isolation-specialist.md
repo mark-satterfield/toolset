@@ -1,14 +1,13 @@
 ---
 name: test-isolation-specialist
 description: >-
-  Validates test independence across the authored suites — no shared mutable
-  state, order-independent execution, isolated fixtures — reporting isolation
-  defects without fixing them, because flaky tests undermine the TDD cycle.
-  Use for Test Design (TDD Red) work requiring isolation validation,
-  order-dependence detection, fixture audit, and flakiness prevention.
+  Validates test independence — no shared mutable state, isolated fixtures —
+  reporting isolation defects without fixing them. Use for Test Design
+  (TDD Red) work requiring isolation validation, order-dependence detection,
+  fixture audit, and flakiness prevention.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:tdd-guide, agent-teams-workforce:test-failure-mindset]

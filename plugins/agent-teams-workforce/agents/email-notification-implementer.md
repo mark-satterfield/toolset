@@ -1,17 +1,17 @@
 ---
 name: email-notification-implementer
 description: >-
-  Implements transactional and notification email features: responsive email templates,
-  rendering pipelines, delivery via AWS messaging services, and bounce and complaint
-  handling. Use for Implementation (TDD Green) work requiring email template construction,
-  rendering pipelines, delivery wiring, and bounce and complaint handling.
+  Implements transactional and notification email features: responsive
+  templates, rendering pipelines, delivery via AWS messaging, and
+  bounce/complaint handling. Use for Implementation (TDD Green) work
+  requiring email template construction and delivery wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:email-template-builder, agent-teams-workforce:sns]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

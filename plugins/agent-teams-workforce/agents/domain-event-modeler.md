@@ -1,16 +1,16 @@
 ---
 name: domain-event-modeler
 description: >-
-  Models domain events, event flows, and event contracts, returning the event model as a concrete artifact.
-  Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring domain event modeling, event flow
-  mapping, and event contract definition.
+  Models domain events, flows, and contracts as a concrete artifact. Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring domain event
+  modeling, event flow mapping, and event contract definition.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

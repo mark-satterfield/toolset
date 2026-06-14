@@ -1,12 +1,13 @@
 ---
 name: incident-response-runbook-designer
 description: >-
-  Produces operational runbooks for the deployed feature: incident response procedures, rollback
-  steps, and disaster recovery. Use for Deployment team (workflow 2, phase 7) work requiring runbook
-  authoring, incident response design, rollback documentation, and disaster recovery procedures.
+  Produces operational runbooks: incident response procedures, rollback
+  steps, and disaster recovery. Use for Deployment team (workflow 2, phase
+  7) work requiring runbook authoring, incident response design, and
+  rollback documentation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:observability-designer]

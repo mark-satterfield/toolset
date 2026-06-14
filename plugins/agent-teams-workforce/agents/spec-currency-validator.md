@@ -1,13 +1,13 @@
 ---
 name: spec-currency-validator
 description: >-
-  Validates that the spec still matches current project reality before implementation
-  begins, flagging drift introduced during the gap between spec authoring and delivery.
-  Use for Spec Freshness phase work requiring spec-to-codebase comparison, drift
-  detection, reference resolution, and currency evidence gathering.
+  Validates the spec still matches project reality before implementation
+  begins, flagging drift since authoring. Use for Spec Freshness phase work
+  requiring spec-to-codebase comparison, drift detection, and currency
+  evidence gathering.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]

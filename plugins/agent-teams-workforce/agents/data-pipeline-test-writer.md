@@ -1,18 +1,17 @@
 ---
 name: data-pipeline-test-writer
 description: >-
-  Writes failing tests for data pipelines — ETL correctness, CDC ordering,
-  data quality assertions, and replay safety — before any pipeline code
-  exists, confirming each test fails for the intended behavioral reason. Use
+  Writes failing data pipeline tests — ETL correctness, CDC ordering, data
+  quality, replay safety — confirming each fails for the intended reason. Use
   for Test Design (TDD Red) work requiring pipeline test authoring, data
-  quality assertion design, CDC ordering coverage, and replay-safety checks.
+  quality assertions, and replay-safety checks.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

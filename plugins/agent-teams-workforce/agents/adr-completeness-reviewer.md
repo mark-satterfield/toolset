@@ -1,12 +1,13 @@
 ---
 name: adr-completeness-reviewer
 description: >-
-  Cross-references architecture proposals against the existing ADR inventory and flags every contradiction,
-  ensuring no ADR is violated without a superseding draft. Use for Architecture Analysis (PRD-to-Spec phase 2)
-  work requiring ADR conformance checking, decision traceability, and contradiction detection.
+  Flags architecture proposals contradicting the ADR inventory without a
+  superseding draft. Use for Architecture Analysis (PRD-to-Spec phase 2) work
+  requiring ADR conformance checking, decision traceability, and contradiction
+  detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]

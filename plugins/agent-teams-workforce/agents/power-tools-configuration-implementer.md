@@ -1,17 +1,17 @@
 ---
 name: power-tools-configuration-implementer
 description: >-
-  Configures Lambda Power Tools — structured logging, tracing, metrics, idempotency, and
-  validation — on chassis-extending Lambdas, configuring these capabilities rather than ever
-  rebuilding them. Use for Implementation (TDD Green) work requiring Power Tools
-  configuration, idempotency setup, and observability wiring.
+  Configures Lambda Power Tools — structured logging, tracing, metrics,
+  idempotency — on chassis-extending Lambdas; configures, never rebuilds. Use
+  for Implementation (TDD Green) work requiring Power Tools configuration,
+  idempotency setup, and observability wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:secrets-manager]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

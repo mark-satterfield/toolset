@@ -1,16 +1,16 @@
 ---
 name: prd-writer
 description: >-
-  Produces the full draft PRD from the intake brief, persona profiles, and OKR cascade, covering
-  feature scope, requirements, success metrics, and competitive context. Use for PRD Creation
-  (workflow 1, phase 0) work requiring requirement drafting, scope articulation, success-metric
-  derivation, and competitive framing.
+  Drafts the full PRD from the intake brief, persona profiles, and OKR
+  cascade: scope, requirements, success metrics, competitive context. Use
+  for PRD Creation (workflow 1, phase 0) work requiring requirement
+  drafting, scope articulation, and success-metric derivation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
 effort: medium
 isolation: worktree
 color: blue

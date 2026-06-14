@@ -1,17 +1,17 @@
 ---
 name: data-model-specification-author
 description: >-
-  Writes DynamoDB table specifications for the feature spec: key design, GSI/LSI
-  definitions, enumerated access patterns, and capacity estimates. Use for Spec Authoring
-  (workflow 1, phase 3) work requiring DynamoDB data modeling, access-pattern
-  specification, and capacity estimation.
+  Writes DynamoDB table specifications: key design, GSI/LSI definitions,
+  access patterns, and capacity estimates. Use for Spec Authoring (workflow
+  1, phase 3) work requiring DynamoDB data modeling and access-pattern
+  specification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:database-schema-designer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

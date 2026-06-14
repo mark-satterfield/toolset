@@ -1,17 +1,17 @@
 ---
 name: failure-mode-analyst
 description: >-
-  Proactively models failure modes for each architecture proposal — DynamoDB throttling, duplicate event
-  delivery, downstream unavailability, partial-batch failures, poison messages — and returns a failure mode
-  analysis per proposal. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring failure mode
+  Models failure modes per architecture proposal — DynamoDB throttling,
+  duplicate delivery, downstream unavailability, poison messages. Use
+  for Architecture Analysis (PRD-to-Spec phase 2) work requiring failure mode
   modeling, blast radius analysis, and resilience risk characterization.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:observability-designer]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

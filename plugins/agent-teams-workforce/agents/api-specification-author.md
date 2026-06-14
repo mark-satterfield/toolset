@@ -1,13 +1,13 @@
 ---
 name: api-specification-author
 description: >-
-  Produces detailed API specifications from the contract drafts decided in architecture
-  analysis: request/response schemas, error codes, rate limits, and worked examples. Use
-  for Spec Authoring (workflow 1, phase 3) work requiring API contract elaboration,
-  schema definition, and error-code completeness.
+  Writes API specifications from architecture contract drafts:
+  request/response schemas, error codes, rate limits, and examples. Use for
+  Spec Authoring (workflow 1, phase 3) work requiring API contract
+  elaboration, schema definition, and error-code completeness.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]

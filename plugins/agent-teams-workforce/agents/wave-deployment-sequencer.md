@@ -1,12 +1,13 @@
 ---
 name: wave-deployment-sequencer
 description: >-
-  Executes wave-based deployments in the approved cross-repo order, running precondition checks
-  before each wave. Use for Deployment team (workflow 2, phase 7) work requiring deployment
-  execution, wave sequencing, precondition verification, and rollback-aware operations.
+  Executes wave-based deployments in approved cross-repo order, checking
+  preconditions before each wave. Use for Deployment team (workflow 2,
+  phase 7) work requiring deployment execution, wave sequencing, and
+  rollback-aware operations.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:polyrepo-steward]

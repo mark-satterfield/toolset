@@ -1,13 +1,13 @@
 ---
 name: definition-of-done-enforcer
 description: >-
-  Writes the Definition of Done for the feature specification as independently verifiable
-  statements rather than checklists, so each statement can be confirmed true or false by a
-  later agent. Use for Spec Authoring (workflow 1, phase 3) work requiring DoD authoring,
-  verifiability discipline, and completion semantics.
+  Writes the feature spec's Definition of Done as independently verifiable
+  true/false statements rather than checklists. Use for Spec Authoring
+  (workflow 1, phase 3) work requiring DoD authoring, verifiability
+  discipline, and completion semantics.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]

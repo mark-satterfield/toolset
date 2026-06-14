@@ -1,13 +1,14 @@
 ---
 name: root-cause-analyst
 description: >-
-  Determines whether an integration test failure is caused by code, test, environment, or
-  architecture — and therefore which team the finding escalates to. Analyzes evidence only; never
-  fixes anything. Use for Integration Testing (Spec-to-Deployment phase 5) work requiring failure
-  classification, evidence-chain analysis, and escalation-target recommendation.
+  Determines whether an integration test failure stems from code, test,
+  environment, or architecture, and which team it escalates to; analyzes
+  evidence only, never fixes. Use for Integration Testing (Spec-to-Deployment
+  phase 5) work requiring failure classification, evidence-chain analysis, and
+  escalation routing.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset]

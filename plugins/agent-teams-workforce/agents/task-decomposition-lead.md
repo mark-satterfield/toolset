@@ -1,10 +1,10 @@
 ---
 name: task-decomposition-lead
 description: >-
-  Routes the task decomposition pipeline — decompose, size, map dependencies, sequence, score,
-  validate — and assembles the resulting Beads task set, WSJF scores, and dependency DAG for Gate 4.
-  Use for Task Decomposition (PRD-to-Spec phase 4) work requiring delegation, pipeline sequencing,
-  review enforcement, and gate reporting.
+  Routes the task decomposition pipeline — decompose, size, sequence, score,
+  validate — assembling the Beads task set, WSJF scores, and dependency DAG
+  for Gate 4. Use for Task Decomposition (PRD-to-Spec phase 4) work requiring
+  delegation, pipeline sequencing, and gate reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

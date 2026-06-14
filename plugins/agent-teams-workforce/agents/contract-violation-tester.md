@@ -1,14 +1,14 @@
 ---
 name: contract-violation-tester
 description: >-
-  Sends contract-violating inputs across this project's own service boundaries in designated
-  test environments — malformed payloads, type and range violations, missing and extra
-  fields, schema-version mismatches — and reports each mishandled case with a minimal
-  reproduction. Use for Adversarial Validation phase work requiring contract-boundary attack,
-  API and event schema probing, and minimal-reproduction reporting.
+  Sends contract-violating inputs — malformed payloads, type/range
+  violations, schema mismatches — across the project's service boundaries
+  in designated test environments only. Use for Adversarial Validation
+  phase work requiring contract-boundary attack, API/event schema probing,
+  and minimal-reproduction reporting.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder]

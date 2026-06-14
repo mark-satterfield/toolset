@@ -1,18 +1,17 @@
 ---
 name: kinesis-stream-implementer
 description: >-
-  Implements Kinesis stream producers and consumers for streaming data — record
-  serialization, partition key construction, and consumer checkpointing — with the
-  minimum code needed to make the failing data-pipeline test suites pass. Use for
-  Implementation (TDD Green) work requiring stream producer authoring, consumer
-  processing logic, and event contract adherence.
+  Implements Kinesis stream producers and consumers — record serialization,
+  partition keys, checkpointing — writing minimum code to pass failing
+  data-pipeline tests. Use for Implementation (TDD Green) work requiring
+  stream producer authoring, consumer logic, and event contract adherence.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:aws-serverless-eda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

@@ -1,17 +1,16 @@
 ---
 name: performance-benchmark-writer
 description: >-
-  Writes failing performance benchmarks with explicit budgets derived from the
-  spec's non-functional requirements. Use for Test Design (TDD Red) work
-  requiring benchmark authoring, NFR-to-budget translation, load profile
-  design, and Red confirmation.
+  Writes failing performance benchmarks with budgets from the spec's
+  non-functional requirements. Use for Test Design (TDD Red) work requiring
+  benchmark authoring, NFR-to-budget translation, and Red confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

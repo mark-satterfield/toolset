@@ -1,16 +1,17 @@
 ---
 name: architecture-pattern-challenger
 description: >-
-  Generates a structurally different alternative for each architecture proposal to force non-obvious paths,
-  attacking proposals without ever proposing the final design. Use for Architecture Analysis (PRD-to-Spec
-  phase 2) work requiring adversarial design review, alternative generation, and assumption stress-testing.
+  Counters each architecture proposal with a structurally different
+  alternative; never proposes the final design. Use for Architecture Analysis
+  (PRD-to-Spec phase 2) work requiring adversarial design review, alternative
+  generation, and assumption stress-testing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

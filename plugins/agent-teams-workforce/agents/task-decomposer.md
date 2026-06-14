@@ -1,17 +1,17 @@
 ---
 name: task-decomposer
 description: >-
-  Breaks the approved spec into atomic implementation tasks — one chassis extension, one endpoint,
-  or one event handler per task — each sized at or under 300 LOC and traced to its spec section.
-  Use for Task Decomposition (PRD-to-Spec phase 4) work requiring spec decomposition, task sizing,
-  and spec traceability.
+  Breaks the approved spec into atomic tasks — one chassis extension,
+  endpoint, or event handler each — sized under 300 LOC and traced to spec
+  sections. Use for Task Decomposition (PRD-to-Spec phase 4) work requiring
+  spec decomposition, task sizing, and traceability.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: yellow
 ---

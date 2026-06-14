@@ -1,12 +1,13 @@
 ---
 name: requirements-conflict-detector
 description: >-
-  Identifies PRD requirements that contradict each other or the BRD and returns a structured conflict
-  report without resolving any conflict. Use for PRD Validation (workflow 1, phase 1) work requiring
-  cross-requirement contradiction analysis, BRD consistency checks, and conflict classification.
+  Identifies PRD requirements that contradict each other or the BRD, returning
+  a structured conflict report; never resolves. Use for PRD Validation
+  (workflow 1, phase 1) work requiring contradiction analysis, BRD consistency
+  checks, and conflict classification.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]

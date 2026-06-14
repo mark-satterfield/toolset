@@ -1,14 +1,13 @@
 ---
 name: code-correctness-reviewer
 description: >-
-  Reviews refactored and optimized code for correctness regressions and
-  behavioral drift, verifying the test suite is green and behavior is
-  preserved. Use for Code Quality (TDD Refactor) work requiring independent
-  change-set review, regression detection, behavior-preservation verification,
-  and green-test confirmation.
+  Reviews refactored code for correctness regressions and behavioral drift,
+  verifying the test suite stays green. Use for Code Quality (TDD Refactor)
+  work requiring independent change-set review, regression detection, and
+  behavior-preservation verification.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer]

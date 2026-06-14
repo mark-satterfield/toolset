@@ -1,12 +1,12 @@
 ---
 name: slo-error-budget-designer
 description: >-
-  Designs SLOs and error budgets for the deployed feature, recommending SLIs, targets, burn-rate
-  alerts, and budget policies. Use for Deployment team (workflow 2, phase 7) work requiring SLO
-  design, error budget policy, SLI selection, and CloudWatch-based alerting design.
+  Designs SLOs and error budgets: SLIs, targets, burn-rate alerts, budget
+  policies. Use for Deployment team (workflow 2, phase 7) work requiring SLO
+  design, error budget policy, SLI selection, and CloudWatch alerting design.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:observability-designer, agent-teams-workforce:cloudwatch]

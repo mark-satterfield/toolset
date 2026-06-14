@@ -1,17 +1,17 @@
 ---
 name: bedrock-integration-implementer
 description: >-
-  Implements Bedrock foundation-model integrations — model invocation, prompt assembly, and
-  embeddings generation — writing the minimum code needed to make failing unit tests pass.
-  Use for Implementation (TDD Green) work requiring foundation-model invocation clients,
-  prompt assembly, embeddings generation, and inference error handling.
+  Implements Bedrock foundation-model integrations; writes minimum code to
+  pass failing unit tests. Use for Implementation (TDD Green) work requiring
+  model invocation clients, prompt assembly, embeddings generation, and
+  inference error handling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:bedrock, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

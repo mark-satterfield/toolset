@@ -1,17 +1,17 @@
 ---
 name: android-compose-implementer
 description: >-
-  Implements Android features in Kotlin and Jetpack Compose — including ML Kit
-  integration — writing the minimum code needed to make failing Espresso suites pass.
-  Use for Implementation (TDD Green) work requiring Compose UI construction, Kotlin
-  state and navigation wiring, and on-device ML Kit integration.
+  Implements Android features in Kotlin and Jetpack Compose; writes minimum
+  code to pass failing Espresso suites. Use for Implementation (TDD Green)
+  work requiring Compose UI, Kotlin state and navigation wiring, and on-device
+  ML Kit integration.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

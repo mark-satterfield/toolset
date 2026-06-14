@@ -1,11 +1,11 @@
 ---
 name: cross-repo-integration-test-coordinator
 description: >-
-  Coordinates integration testing across repository boundaries: sequences cross-repo test runs over
-  the event chain, aligns environment state between repos, and routes results back to
-  integration-testing-lead. Coordinates only — runs no tests itself. Use for Integration Testing
-  (Spec-to-Deployment phase 5) work requiring cross-repo run sequencing, environment alignment, and
-  result routing.
+  Sequences cross-repo integration test runs over the event chain, aligns
+  environment state between repos, and routes results to
+  integration-testing-lead. Coordinates only — runs no tests. Use for
+  Integration Testing (Spec-to-Deployment phase 5) work requiring cross-repo
+  sequencing, environment alignment, and result routing.
 tools: Read, Glob, Grep, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash, Agent
 model: sonnet

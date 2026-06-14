@@ -1,9 +1,10 @@
 ---
 name: dependency-graph-extractor
 description: >-
-  Produces the dependency manifest from the raw PRD — services, APIs, events, and data contracts —
-  and flags dependencies that do not exist. Use for PRD Validation (workflow 1, phase 1) work
-  requiring dependency identification, existence verification, and manifest authoring.
+  Produces the dependency manifest from the raw PRD — services, APIs,
+  events, data contracts — flagging nonexistent dependencies. Use for PRD
+  Validation (workflow 1, phase 1) work requiring dependency identification,
+  existence verification, and manifest authoring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

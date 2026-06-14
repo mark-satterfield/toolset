@@ -1,17 +1,17 @@
 ---
 name: consumer-driven-contract-test-writer
 description: >-
-  Writes failing consumer-driven contract tests that pin the expectations API
-  consumers hold against providers, derived from the spec's API and event
-  contracts. Use for Test Design (TDD Red) work requiring contract test
-  authoring, consumer expectation modeling, and provider verification setup.
+  Writes failing consumer-driven contract tests from the spec's API and
+  event contracts. Use for Test Design (TDD Red) work requiring contract
+  test authoring, consumer expectation modeling, and provider verification
+  setup.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

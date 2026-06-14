@@ -1,9 +1,10 @@
 ---
 name: ubiquitous-language-writer
 description: >-
-  Captures the ubiquitous language for each bounded context — terms, definitions, and usage rules shared by
-  the domain model and the code — as a maintained glossary artifact. Use for Architecture Analysis (PRD-to-Spec
-  phase 2) work requiring domain glossary authoring, terminology consistency, and language-to-code alignment.
+  Captures each bounded context's ubiquitous language — terms, definitions,
+  usage rules — as a maintained glossary. Use for Architecture Analysis
+  (PRD-to-Spec phase 2) work requiring domain glossary authoring,
+  terminology consistency, and language-to-code alignment.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

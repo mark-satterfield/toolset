@@ -1,17 +1,17 @@
 ---
 name: glue-etl-implementer
 description: >-
-  Implements Glue ETL jobs for batch data processing — transformation scripts, job
-  parameters, and catalog interactions — with the minimum code needed to make the
-  failing data-pipeline test suites pass. Use for Implementation (TDD Green) work
-  requiring Glue job authoring, PySpark transformations, and batch pipeline construction.
+  Implements Glue ETL jobs for batch data processing; writes minimum code to
+  pass failing data-pipeline suites. Use for Implementation (TDD Green) work
+  requiring Glue job authoring, PySpark transformations, and batch pipeline
+  construction.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

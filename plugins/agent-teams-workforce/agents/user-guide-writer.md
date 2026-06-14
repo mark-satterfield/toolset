@@ -1,10 +1,9 @@
 ---
 name: user-guide-writer
 description: >-
-  Writes user-facing feature documentation and guides from specs and shipped behavior,
-  so end users learn what the feature actually does. Use for cross-cutting Documentation
-  team work requiring feature guide writing, task-oriented walkthroughs, and
-  audience-appropriate explanation.
+  Writes user-facing feature guides from specs and shipped behavior. Use for
+  cross-cutting Documentation team work requiring feature guide writing,
+  task-oriented walkthroughs, and audience-appropriate explanation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

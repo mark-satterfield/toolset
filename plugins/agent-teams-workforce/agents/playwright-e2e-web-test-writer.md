@@ -1,17 +1,16 @@
 ---
 name: playwright-e2e-web-test-writer
 description: >-
-  Writes failing Playwright end-to-end web tests for UI and API flows derived
-  from spec acceptance criteria. Use for Test Design (TDD Red) work requiring
-  E2E test authoring, user journey coverage, resilient selector design, and
-  Red confirmation.
+  Writes failing Playwright E2E web tests for UI and API flows from spec
+  acceptance criteria. Use for Test Design (TDD Red) work requiring E2E test
+  authoring, user journey coverage, and Red confirmation.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:a11y-audit]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

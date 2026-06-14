@@ -1,15 +1,14 @@
 ---
 name: context-curator
 description: >-
-  Owns context integrity across the workforce: assembles role-specific context
-  packets under the least-context principle and guarantees constitutive
-  constraints survive every context compaction verbatim — never summarized away
-  — maintaining the constraint manifests as durable artifacts. Use for
-  Governance work requiring context-packet assembly, compaction-safe constraint
-  preservation, and constraint-manifest maintenance.
+  Owns context integrity: assembles role-specific context packets under the
+  least-context principle and guarantees constitutive constraints survive
+  every compaction verbatim, never summarized away. Use for Governance work
+  requiring context-packet assembly, compaction-safe constraint preservation,
+  and manifest maintenance.
 tools: Read, Write, Edit, Glob, Grep
 disallowedTools: AskUserQuestion, Bash, Agent, NotebookEdit
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]

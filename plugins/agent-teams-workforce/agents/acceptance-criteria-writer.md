@@ -1,13 +1,13 @@
 ---
 name: acceptance-criteria-writer
 description: >-
-  Writes testable given/when/then acceptance criteria for every PRD requirement, specific
-  enough for test agents to derive tests from without interpretation. Use for Spec
-  Authoring (workflow 1, phase 3) work requiring acceptance criteria authoring,
-  requirement-to-behavior translation, and testability discipline.
+  Writes testable given/when/then acceptance criteria for each PRD
+  requirement, derivable into tests without interpretation. Use for Spec
+  Authoring (workflow 1, phase 3) work requiring acceptance-criteria
+  authoring, requirement-to-behavior translation, and testability.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa]

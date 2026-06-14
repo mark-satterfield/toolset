@@ -1,16 +1,17 @@
 ---
 name: cdk-stack-author
 description: >-
-  Authors AWS CDK stacks in Python for the feature's infrastructure, matching the approved
-  architecture and infrastructure design. Use for Deployment team (workflow 2, phase 7) work
-  requiring CDK stack authoring, construct composition, synth validation, and infrastructure as code.
+  Authors AWS CDK stacks in Python matching the approved architecture. Use
+  for Deployment team (workflow 2, phase 7) work requiring CDK stack
+  authoring, construct composition, synth validation, and infrastructure
+  as code.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: pink
 ---

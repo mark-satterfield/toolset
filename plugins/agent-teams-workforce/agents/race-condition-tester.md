@@ -1,14 +1,14 @@
 ---
 name: race-condition-tester
 description: >-
-  Probes this project's own concurrent flows in designated test environments for race
-  conditions and idempotency gaps — time-of-check-to-time-of-use, double-spend, lost
-  updates, and replay-driven duplication — and reports each confirmed defect with a minimal
-  reproduction. Use for Adversarial Validation phase work requiring concurrency attack,
-  idempotency probing, and minimal-reproduction reporting.
+  Probes this project's concurrent flows in designated test environments only
+  for race conditions and idempotency gaps — TOCTOU, double-spend, lost
+  updates, replay duplication — reporting each defect with a minimal
+  reproduction. Use for Adversarial Validation phase work requiring
+  concurrency attack and idempotency probing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]

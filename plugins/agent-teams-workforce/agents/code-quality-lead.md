@@ -1,10 +1,10 @@
 ---
 name: code-quality-lead
 description: >-
-  Routes TDD Refactor work across the Code Quality team, verifies tests stay
-  green after every change, and reports results to Gate 2c. Use for Code
-  Quality (TDD Refactor) work requiring delegation, refactor sequencing,
-  green-test verification, and gate reporting.
+  Routes refactor work to specialists, verifies tests stay green after every
+  change, and reports to Gate 2c. Use for Code Quality (TDD Refactor) work
+  requiring delegation, refactor sequencing, green-test verification, and gate
+  reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

@@ -1,11 +1,11 @@
 ---
 name: spec-authoring-lead
 description: >-
-  Routes spec maker output to checkers and checker findings back to makers until checkers
-  pass, then routes the feature specification to Gate 3; never evaluates spec quality,
-  only whether checker output indicates pass or rework. Use for Spec Authoring (workflow 1,
-  phase 3) work requiring maker-checker loop coordination, delegation, and read-only
-  process orchestration.
+  Routes maker output to checkers and findings back to makers until checkers
+  pass, then routes the spec to Gate 3; never evaluates spec quality, only
+  pass/rework signals. Use for Spec Authoring (workflow 1, phase 3) work
+  requiring maker-checker loop coordination, delegation, and read-only
+  orchestration.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

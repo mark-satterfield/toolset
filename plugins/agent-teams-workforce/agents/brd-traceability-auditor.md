@@ -1,9 +1,10 @@
 ---
 name: brd-traceability-auditor
 description: >-
-  Validates that every PRD requirement traces to a BRD objective and returns a traceability matrix
-  flagging orphans and unimplemented objectives. Use for PRD Validation (workflow 1, phase 1) work
-  requiring requirement-to-objective tracing, coverage auditing, and traceability matrix construction.
+  Validates every PRD requirement traces to a BRD objective, returning a
+  traceability matrix flagging orphans and unimplemented objectives. Use for
+  PRD Validation (workflow 1, phase 1) work requiring requirement-to-objective
+  tracing and coverage auditing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

@@ -1,17 +1,17 @@
 ---
 name: chassis-extension-implementer
 description: >-
-  Implements Lambda handlers as chassis superclass extensions for API endpoints and event
-  consumers, writing the minimum code needed to make failing unit tests pass. Use for
-  Implementation (TDD Green) work requiring Lambda handler implementation, chassis superclass
-  extension, and endpoint or consumer business logic.
+  Implements Lambda handlers as chassis superclass extensions for API
+  endpoints and event consumers; writes minimum code to pass failing unit
+  tests. Use for Implementation (TDD Green) work requiring Lambda handlers,
+  chassis extension, and endpoint/consumer business logic.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:lambda, agent-teams-workforce:aws-serverless-eda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

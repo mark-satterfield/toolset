@@ -1,16 +1,17 @@
 ---
 name: graphql-schema-designer
 description: >-
-  Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track,
-  and returns schema drafts for review. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring
-  GraphQL SDL authoring, AppSync subscription design, and graph interface consistency.
+  Designs GraphQL schema drafts for the AppSync track, parallel to the
+  REST/API Gateway track. Use for Architecture Analysis (PRD-to-Spec phase 2)
+  work requiring GraphQL SDL authoring, AppSync subscription design, and
+  graph interface consistency.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

@@ -1,10 +1,10 @@
 ---
 name: beads-format-validator
 description: >-
-  Validates that every Beads issue in the task set is structurally complete — title, acceptance
-  criteria, definition of done, WSJF score, dependencies, and spec link — reporting defects without
-  fixing them. Use for Task Decomposition (PRD-to-Spec phase 4) work requiring Beads format
-  validation, field completeness checks, and traceability verification.
+  Validates every Beads issue is structurally complete (title, acceptance
+  criteria, DoD, WSJF score, dependencies, spec link); reports defects, never
+  fixes. Use for Task Decomposition (PRD-to-Spec phase 4) work requiring Beads
+  format validation, field completeness, and traceability checks.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: haiku

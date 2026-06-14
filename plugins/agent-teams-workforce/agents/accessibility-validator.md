@@ -1,16 +1,14 @@
 ---
 name: accessibility-validator
 description: >-
-  Validates UI changes against WCAG 2.2 Level A and AA using automated scans
-  plus heuristics for contrast, keyboard navigation, ARIA semantics, focus
-  management, and screen-reader flows, reporting violations as findings with
-  locations and suggested remediations — never fixing. Use for Code Quality
-  (TDD Refactor) work requiring WCAG conformance validation, accessibility
-  regression detection, ARIA and focus-order review, and screen-reader flow
-  verification.
+  Validates UI changes against WCAG 2.2 A/AA — contrast, keyboard navigation,
+  ARIA, focus management, screen-reader flows — reporting violations with
+  locations and remediations; never fixes. Use for Code Quality (TDD
+  Refactor) work requiring WCAG validation, accessibility regression
+  detection, and focus-order review.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:a11y-audit, agent-teams-workforce:senior-frontend]

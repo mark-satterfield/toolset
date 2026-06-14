@@ -1,17 +1,17 @@
 ---
 name: code-refactoring-specialist
 description: >-
-  Restructures existing code for clarity and cohesion without changing
-  behavior, keeping the test suite green after every change. Use for Code
-  Quality (TDD Refactor) work requiring behavior-preserving restructuring,
-  duplication removal, complexity reduction, and cohesion improvement.
+  Restructures code for clarity and cohesion without changing behavior,
+  keeping tests green after every change. Use for Code Quality (TDD Refactor)
+  work requiring behavior-preserving restructuring, duplication removal, and
+  complexity reduction.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

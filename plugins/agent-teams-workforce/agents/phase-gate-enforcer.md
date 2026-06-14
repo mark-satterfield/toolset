@@ -1,13 +1,11 @@
 ---
 name: phase-gate-enforcer
 description: >-
-  Referee for every phase gate in both SDLC pipelines: checks constitutive
-  constraints as hard stops, adjudicates conflicts between competing outputs,
-  applies the advantage principle to competitive objectives, and returns
-  pass/loop/escalate with structured feedback naming what failed, why, and which
-  agent's output. Use for Governance work requiring gate adjudication,
-  constitutive-constraint enforcement, conflict classification, and structured
-  gate feedback.
+  Referee for every phase gate in both SDLC pipelines: enforces
+  constitutive constraints as hard stops, applies the advantage principle
+  to competitive conflicts, and returns pass/loop/escalate with structured
+  feedback. Use for Governance work requiring gate adjudication,
+  constitutive-constraint enforcement, and conflict classification.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

@@ -1,17 +1,17 @@
 ---
 name: appsync-client-subscription-implementer
 description: >-
-  Implements AppSync client subscriptions for real-time web features — subscription
-  documents, connection lifecycle handling, and client-side data merge logic. Use for
-  Implementation (TDD Green) work requiring GraphQL subscription wiring, real-time client
-  state updates, and reconnection handling.
+  Implements AppSync client subscriptions for real-time web features. Use for
+  Implementation (TDD Green) work requiring GraphQL subscription wiring,
+  connection lifecycle handling, real-time state updates, and reconnection
+  handling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-frontend]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

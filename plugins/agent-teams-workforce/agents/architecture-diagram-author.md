@@ -1,9 +1,10 @@
 ---
 name: architecture-diagram-author
 description: >-
-  Produces architecture diagrams from the decided design in the project's standard diagram format, making the
-  decision visually traceable. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring architecture
-  diagramming, event flow visualization, and context map rendering.
+  Produces architecture diagrams of the decided design in the project's
+  standard diagram format. Use for Architecture Analysis (PRD-to-Spec phase
+  2) work requiring architecture diagramming, event flow visualization, and
+  context map rendering.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet

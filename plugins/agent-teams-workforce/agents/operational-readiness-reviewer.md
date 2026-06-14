@@ -1,12 +1,13 @@
 ---
 name: operational-readiness-reviewer
 description: >-
-  Evaluates the operational burden of each architecture proposal — monitoring, alerting, runbook complexity,
-  and on-call implications — and reports readiness findings. Use for Architecture Analysis (PRD-to-Spec
-  phase 2) work requiring observability assessment, operability validation, and on-call burden analysis.
+  Evaluates each architecture proposal's operational burden — monitoring,
+  alerting, runbooks, on-call — reporting readiness findings. Use for
+  Architecture Analysis (PRD-to-Spec phase 2) work requiring observability
+  assessment and on-call burden analysis.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:observability-designer]

@@ -1,12 +1,11 @@
 ---
 name: constitutional-agent
 description: >-
-  Appeals court for novel conflicts the Phase Gate Enforcer cannot resolve from
-  existing rules: resolves conflicts between constitutive constraints by
-  consulting the constitutional layer — the BRD objectives and the spirit of the
-  system — and records each resolution so it can be cached and reused. Use for
-  Governance work requiring constitutional interpretation, constitutive-conflict
-  resolution, precedent recording, and escalation adjudication.
+  Appeals court for novel constitutive-constraint conflicts the Phase Gate
+  Enforcer cannot resolve: rules via the constitutional layer (BRD objectives,
+  spirit of the system) and records rulings as reusable precedent. Use for
+  Governance work requiring constitutional interpretation, conflict
+  resolution, and precedent recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

@@ -1,14 +1,14 @@
 ---
 name: auth-bypass-tester
 description: >-
-  Attempts authentication bypass against this project's own auth flows in designated test
-  environments — token forgery, session fixation, flow skipping, and credential-check
-  weaknesses — and reports each confirmed bypass with a minimal reproduction. Use for
-  Adversarial Validation phase work requiring auth-flow attack, Cognito probing, and
+  Attempts auth bypass — token forgery, session fixation, flow skipping —
+  against the project's auth flows in designated test environments only,
+  reporting each confirmed bypass. Use for Adversarial Validation phase
+  work requiring auth-flow attack, Cognito probing, and
   minimal-reproduction reporting.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops, agent-teams-workforce:cognito]

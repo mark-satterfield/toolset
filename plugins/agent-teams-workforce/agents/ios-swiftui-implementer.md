@@ -1,17 +1,17 @@
 ---
 name: ios-swiftui-implementer
 description: >-
-  Implements iOS features in SwiftUI — including StoreKit, CoreML, and WebAuthn
-  integration — writing the minimum code needed to make failing XCUITest suites pass.
-  Use for Implementation (TDD Green) work requiring SwiftUI view construction, StoreKit
-  purchase flows, on-device CoreML integration, and passkey/WebAuthn client wiring.
+  Implements iOS features in SwiftUI; writes minimum code to pass failing
+  XCUITest suites. Use for Implementation (TDD Green) work requiring SwiftUI
+  views, StoreKit purchase flows, on-device CoreML integration, and
+  passkey/WebAuthn client wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

@@ -1,12 +1,13 @@
 ---
 name: user-story-reviewer
 description: >-
-  Validates that every user story in the task set is complete, testable, and properly scoped to its
-  single task, reporting findings without fixing them. Use for Task Decomposition (PRD-to-Spec
-  phase 4) work requiring story validation, testability auditing, and scope challenge.
+  Validates every user story is complete, testable, and scoped to its single
+  task; reports findings, never fixes. Use for Task Decomposition (PRD-to-Spec
+  phase 4) work requiring story validation, testability auditing, and scope
+  challenge.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]

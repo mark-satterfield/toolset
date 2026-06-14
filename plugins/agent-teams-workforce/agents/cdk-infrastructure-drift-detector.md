@@ -1,12 +1,12 @@
 ---
 name: cdk-infrastructure-drift-detector
 description: >-
-  Detects drift between deployed infrastructure and the CDK stacks that define it, reporting every
-  divergence with evidence. Use for Deployment team (workflow 2, phase 7) work requiring CDK
-  validation, drift detection, template diffing, and deployed-state verification.
+  Detects drift between deployed infrastructure and its CDK stacks, reporting
+  divergences with evidence. Use for Deployment team (workflow 2, phase 7)
+  work requiring CDK validation, drift detection, and template diffing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation]

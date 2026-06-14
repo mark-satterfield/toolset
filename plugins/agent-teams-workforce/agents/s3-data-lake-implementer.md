@@ -1,18 +1,17 @@
 ---
 name: s3-data-lake-implementer
 description: >-
-  Implements S3 data lake layout, partitioning, and lifecycle policies — object key
-  construction, partition schemes, file formats, and tiering definitions — with the
-  minimum code needed to make the failing data-pipeline test suites pass. Use for
-  Implementation (TDD Green) work requiring lake layout implementation, partition key
+  Implements S3 data lake layout, partitioning, and lifecycle policies;
+  writes minimum code to pass failing data-pipeline tests. Use for
+  Implementation (TDD Green) work requiring lake layout, partition key
   construction, and lifecycle policy definition.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-data-engineer, agent-teams-workforce:s3]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

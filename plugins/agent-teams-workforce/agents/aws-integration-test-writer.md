@@ -1,17 +1,17 @@
 ---
 name: aws-integration-test-writer
 description: >-
-  Writes failing integration tests against AWS infrastructure covering the
-  event API to EventBridge to SQS to Lambda chain. Use for Test Design (TDD
-  Red) work requiring AWS integration test authoring, event-driven flow
-  assertions, and serverless test harness design.
+  Writes failing integration tests covering the event API to EventBridge to
+  SQS to Lambda chain. Use for Test Design (TDD Red) work requiring AWS
+  integration test authoring, event-driven flow assertions, and test harness
+  design.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: red
 ---

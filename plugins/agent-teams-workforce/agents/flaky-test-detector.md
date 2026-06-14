@@ -1,14 +1,14 @@
 ---
 name: flaky-test-detector
 description: >-
-  Identifies intermittent test failures, verifies flakiness through repeated controlled reruns, and
-  pinpoints the root cause of the intermittency. Reports verified-flaky tests as findings for
-  quarantine and repair — never edits or disables tests itself. Use for Integration Testing
-  (Spec-to-Deployment phase 5) work requiring flakiness verification, rerun-based reproduction, and
-  intermittency root-cause findings.
+  Verifies intermittent test failures via repeated controlled reruns;
+  reports verified-flaky tests as findings only — never edits or disables
+  tests. Use for Integration Testing (Spec-to-Deployment phase 5) work
+  requiring flakiness verification, rerun-based reproduction, and
+  root-cause findings.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:test-failure-mindset, agent-teams-workforce:find-cause]

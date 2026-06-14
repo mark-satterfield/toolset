@@ -1,17 +1,17 @@
 ---
 name: dynamodb-access-layer-implementer
 description: >-
-  Implements DynamoDB access patterns from the data model specification — single-table
-  patterns, GSI queries, and conditional writes — with the minimum code needed to make
-  failing tests pass. Use for Implementation (TDD Green) work requiring single-table design,
-  GSI query construction, and conditional write semantics.
+  Implements DynamoDB access patterns from the data model spec; writes minimum
+  code to pass failing tests. Use for Implementation (TDD Green) work
+  requiring single-table design, GSI query construction, and conditional write
+  semantics.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: green
 ---

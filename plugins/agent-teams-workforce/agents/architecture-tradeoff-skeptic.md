@@ -1,16 +1,17 @@
 ---
 name: architecture-tradeoff-skeptic
 description: >-
-  Attacks the trade-off ratings inside architecture proposals, hunting hidden assumptions, optimistic
-  estimates, and unconsidered failure modes. Use for Architecture Analysis (PRD-to-Spec phase 2) work
-  requiring adversarial trade-off review, assumption auditing, and failure mode discovery.
+  Attacks trade-off ratings in architecture proposals, hunting hidden
+  assumptions and optimistic estimates. Use for Architecture Analysis
+  (PRD-to-Spec phase 2) work requiring adversarial trade-off review,
+  assumption auditing, and failure mode discovery.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---

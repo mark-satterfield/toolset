@@ -2,11 +2,10 @@
 name: advantage-evaluator
 description: >-
   Evaluates competitive, non-constitutive conflicts via speculative execution
-  with rollback: lets the pipeline proceed under a flag, observes the downstream
-  outcome, then commits or reverts — holding the whistle without halting the
-  pipeline for findings that do not invalidate the output. Use for Governance
-  work requiring advantage-principle evaluation, speculative-execution oversight,
-  commit-or-revert verdicts, and competitive-conflict resolution.
+  with rollback: proceed under a flag, observe the outcome, commit or revert —
+  never halts the pipeline for non-invalidating findings. Use for Governance
+  work requiring advantage-principle evaluation, speculative-execution
+  oversight, and commit-or-revert verdicts.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

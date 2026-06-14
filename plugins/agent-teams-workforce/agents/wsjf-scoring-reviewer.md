@@ -1,12 +1,13 @@
 ---
 name: wsjf-scoring-reviewer
 description: >-
-  Validates that WSJF scores across the task set are internally consistent, evidence-backed, and
-  defensible, reporting findings without fixing them. Use for Task Decomposition (PRD-to-Spec
-  phase 4) work requiring scoring validation, consistency auditing, and prioritization challenge.
+  Validates WSJF scores are internally consistent, evidence-backed, and
+  defensible; reports findings, never fixes. Use for Task Decomposition
+  (PRD-to-Spec phase 4) work requiring scoring validation, consistency
+  auditing, and prioritization challenge.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-strategist]

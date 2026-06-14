@@ -1,9 +1,9 @@
 ---
 name: deployment-lead
 description: >-
-  Routes the deployment sequence for the feature, validates preconditions at each step, and reports
-  evidence to Gate 5. Use for Deployment team (workflow 2, phase 7) work requiring delegation,
-  sequencing discipline, precondition validation, and gate reporting.
+  Routes the feature deployment sequence, validates preconditions per step,
+  and reports evidence to Gate 5. Use for Deployment team (workflow 2, phase
+  7) work requiring delegation, sequencing discipline, and gate reporting.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

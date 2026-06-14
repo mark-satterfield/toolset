@@ -1,10 +1,11 @@
 ---
 name: cross-service-contract-tester
 description: >-
-  Runs contract tests across service and repository boundaries, verifying that providers and
-  consumers still honor the approved API and event contracts. Use for Integration Testing
-  (Spec-to-Deployment phase 5) work requiring consumer-driven contract verification, schema
-  compatibility checks, cross-repo boundary testing, and structured result reporting.
+  Runs contract tests across service and repo boundaries, verifying providers
+  and consumers honor approved API and event contracts. Use for
+  Integration Testing (Spec-to-Deployment phase 5) work requiring
+  consumer-driven contract verification, schema compatibility checks, and
+  cross-repo boundary testing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

@@ -1,16 +1,16 @@
 ---
 name: prd-alignment-verifier
 description: >-
-  Verifies traceability from every PRD requirement to a spec section to acceptance
-  criteria, flagging missing coverage and unauthorized scope additions. Use for Spec
-  Authoring (workflow 1, phase 3) work requiring traceability auditing, coverage gap
-  detection, and scope-creep detection.
+  Verifies traceability from each PRD requirement to spec section to
+  acceptance criteria, flagging missing coverage and scope creep. Use for
+  Spec Authoring (workflow 1, phase 3) work requiring traceability auditing
+  and coverage gap detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
 effort: medium
 isolation: worktree
 color: purple

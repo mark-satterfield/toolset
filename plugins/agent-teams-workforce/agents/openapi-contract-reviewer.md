@@ -1,13 +1,13 @@
 ---
 name: openapi-contract-reviewer
 description: >-
-  Validates that authored API specifications match the architecture decisions and the
-  established contract patterns, including schemas, error codes, and rate limits. Use for
-  Spec Authoring (workflow 1, phase 3) work requiring API contract conformance review,
-  pattern consistency checking, and decision-drift detection.
+  Validates authored API specs against architecture decisions and contract
+  patterns — schemas, error codes, rate limits. Use for Spec Authoring
+  (workflow 1, phase 3) work requiring contract conformance review, pattern
+  consistency, and decision-drift detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: sonnet
+model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-design-reviewer]

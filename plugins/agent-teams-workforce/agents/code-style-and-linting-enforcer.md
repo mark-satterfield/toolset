@@ -1,17 +1,16 @@
 ---
 name: code-style-and-linting-enforcer
 description: >-
-  Runs the project's linters and applies formatting and style fixes while
-  keeping the test suite green. Use for Code Quality (TDD Refactor) work
-  requiring lint execution, formatting cleanup, style-convention enforcement,
-  and mechanical consistency fixes.
+  Runs project linters and applies formatting and style fixes while keeping
+  tests green. Use for Code Quality (TDD Refactor) work requiring lint
+  execution, formatting cleanup, and style-convention enforcement.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: sonnet
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:code-reviewer]
-effort: medium
+effort: xhigh
 isolation: worktree
 color: purple
 ---

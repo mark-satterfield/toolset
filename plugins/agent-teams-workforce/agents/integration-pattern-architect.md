@@ -1,16 +1,17 @@
 ---
 name: integration-pattern-architect
 description: >-
-  Analyzes integration options — event API patterns, API Gateway routes, sync vs. async — and returns options
-  with tradeoffs, never a decision. Use for Architecture Analysis (PRD-to-Spec phase 2) work requiring
-  integration pattern analysis, event-driven design, and API routing tradeoffs.
+  Analyzes integration options — event API patterns, API Gateway routes,
+  sync vs. async — returns tradeoffs, never a decision. Use for Architecture
+  Analysis (PRD-to-Spec phase 2) work requiring pattern analysis,
+  event-driven design, and routing tradeoffs.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:step-functions, agent-teams-workforce:aws-solution-architect]
-effort: high
+effort: xhigh
 isolation: worktree
 color: cyan
 ---
