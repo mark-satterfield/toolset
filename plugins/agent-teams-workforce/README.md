@@ -14,7 +14,7 @@ This plugin packages agents, skills, commands, and supporting assets for an SDLC
 
 ## Source Roster
 
-The roster lives at `references/sdlc-agent-roster.csv`.
+The roster is defined by the agent files in `agents/`.
 
 Current roster scope:
 

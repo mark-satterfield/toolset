@@ -766,4 +766,4 @@ flowchart TD
 
 For complete TeamCreate mechanics, step-by-step dispatch pattern, and example prompts, activate the dispatch or delegation skill available in the host project.
 
-When no project-specific dispatch skill is installed, use the roster in `../../references/sdlc-agent-roster.csv` to select independent agents and launch them in parallel according to the host agent runtime.
+When no project-specific dispatch skill is installed, use the agent definitions in `../../agents/` to select independent agents and launch them in parallel according to the host agent runtime.
