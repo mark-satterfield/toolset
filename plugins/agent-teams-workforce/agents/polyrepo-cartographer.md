@@ -57,14 +57,31 @@ question shapes:
 - **"Who owns X?"** — return owner from the repo entry, or
   `ownership.contacts` if more specific.
 - **"What depends on X?"** — return all `relationships.dependencies`
-  entries where `to == X`. Include `kind` so the caller knows whether
-  it's build, runtime, type, etc.
+  entries where `to == X`. `X` may be a repo or a `group:<name>`. An
+  endpoint written `group:<name>` means every member of that group:
+  resolve it through the top-level `groups` section and report the
+  concrete repo-level consequences as well as the group-level edge.
+  Include `kind` so the caller knows whether it's build, runtime, type,
+  etc.
 - **"What does X depend on?"** — return all
-  `relationships.dependencies` entries where `from == X`.
-- **"What are the rules?"** — return rules from `rules`, scoped to
-  the repos involved if the caller asked about a specific repo.
-- **"What's the deployment order?"** — return
-  `relationships.deployment_order`.
+  `relationships.dependencies` entries where `from == X`, resolving
+  group endpoints on both sides the same way.
+- **"What repos are in group X?"** — return the `groups` entry's
+  `members`. For "what groups is repo Z in?", scan `groups[].members`
+  for Z and list the matching group names.
+- **"What are the rules?" / "Which rules apply to repo Z?"** — return
+  rules from `rules`. A rule applies to repo Z if Z appears directly in
+  its `applies_to`, **or** if `applies_to` names a `group:<name>` whose
+  members include Z, **or** if `applies_to` is omitted (project-wide).
+  Resolve group-scoped rules through `groups` membership — do not report
+  only the literal repo entries, or you will miss rules that reach Z via
+  its groups.
+- **"What's the deploy order?" / "What's in stage X?"** — return
+  `relationships.deploy_waves` as ordered stages: stage order is list
+  order (first stage deploys first), and repos within a stage deploy in
+  parallel. For a single stage, list its repos with any `gate` or
+  `deploy_task` override. Name the gated repos explicitly — a gate is a
+  precondition the caller needs before deploying.
 - **"How do I find X across repos?"** — return matching entries from
   `search_recipes`, or fall back to suggesting a sensible default
   search if no recipe matches.

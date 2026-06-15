@@ -34,8 +34,22 @@ exhaustive — when in doubt, capture it.
 - A removed dependency.
 - A new shared contract (proto, openapi, schema, types) crossed
   multiple repos.
-- A change in deployment order.
+- A change in deploy ordering (see *Group and deploy-wave changes*).
 - A newly observed circular dependency, or one that was resolved.
+
+### Group and deploy-wave changes
+
+- A new group was defined, or an existing one removed.
+- A repo joined or left a group's `members`.
+- A new deploy wave (stage) was added, or one removed or reordered.
+- A repo joined or left a wave, or a wave repo's `gate` or `deploy_task`
+  changed.
+- A rule or dependency's scope changed because it was retargeted to (or
+  away from) a `group:<name>`.
+
+Each of these updates the manifest (`groups`, `relationships.deploy_waves`,
+or the affected dependency/rule) **and** appends a changelog entry, like
+any other learning event.
 
 ### Convention or rule changes
 

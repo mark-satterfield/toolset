@@ -171,6 +171,26 @@ production code:
 - Never silently drop information. If a repo is being archived, record
   *that it was archived and when*; do not delete its entry.
 
+The manifest also models repos as *classes*, not just individuals, and
+deploys as *tiers*, not a flat list:
+
+- **Reason at the group level.** A `group` is a named set of repos (a
+  class like "backend services" or "mobile clients"). Wherever a
+  dependency endpoint or a rule's scope would otherwise force a
+  hand-listed wall of repos, name the group instead: a dependency's
+  `from`/`to` and a rule's `applies_to` may each be a repo name or a
+  `group:<name>`. When a fact is true of a *kind* of repo — "backend
+  services depend on shared-types", "mobile clients follow the
+  release-train rule" — record it once against the group and let
+  membership expand it. Adding or removing a group, or a group member,
+  is a learning event.
+- **Deploy in waves, not a flat order.** `relationships.deploy_waves` is
+  a tiered model: ordered stages, repos within a stage deploying in
+  parallel, and per-repo gates (preconditions like `vpc_enabled=true`).
+  When you surface deploy guidance, give the stage order *and* any
+  gates — a gate the caller misses is a failed deploy. Changing a wave,
+  a wave member, or a gate is a learning event.
+
 ## Reference index
 
 | File | Read when |

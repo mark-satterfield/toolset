@@ -80,6 +80,13 @@ is the full set of things you must end up knowing — order is flexible.
 - Are there repos that are not strictly part of this project but are
   closely related? (e.g., shared design system, shared CI templates,
   vendor forks) — capture them as `adjacent` if so.
+- Do the repos fall into natural *groups* or classes — sets you would
+  refer to collectively, like "the backend services", "the mobile
+  clients", "the infra repos"? Capture each as a named group with its
+  members. Groups matter because dependencies and rules often apply to a
+  whole class rather than to named individuals (see Phase 3 and Phase 5).
+  A repo can belong to a group and still deploy in its own wave — group
+  membership is about *kind*, not deploy timing.
 - How are the repos arranged on the human's filesystem?
   - All siblings under one parent directory?
   - Scattered across multiple parents?
@@ -115,12 +122,22 @@ tree and the optional scan commands.
 ### Phase 3: relationships
 
 - Which repos depend on which? (build-time, runtime, type-only,
-  data-contract, deployment-order)
+  data-contract, deployment-order) — and does any dependency hold for a
+  whole *group* rather than a single repo? "Every backend service
+  depends on shared-types" is one group-level edge (`group:backend-services
+  → shared-types`), not one edge per service that rots when a service is
+  added.
 - Are there any circular dependencies? (record them — do not silently
   flag them as problems unless the human says so)
 - Are there shared contracts (proto files, OpenAPI specs, JSON schemas,
   shared types) that multiple repos consume? Where do they live?
-- Is there a deployment order that must be honored?
+- Is there a deploy order that must be honored? Capture it as *waves*
+  (stages), not a flat list: which repos deploy first, which deploy
+  together in parallel within a stage, and the order across stages. For
+  each repo in a wave, is there a *gate* — a precondition that must hold
+  before it ships (e.g., "the VPC must exist", "shared-types must be
+  released")? Capture gates explicitly; they are exactly what a flat
+  ordering silently loses.
 - Are there infrastructure dependencies (databases, message brokers,
   third-party APIs) that span multiple repos? Where are they declared?
 
@@ -144,6 +161,13 @@ tree and the optional scan commands.
   consumers", "infra changes require a 24h soak")
 - Soft rules and conventions the human relies on but has not written
   down anywhere
+
+For each rule, ask **who it applies to**: a single repo, a whole group
+(a class captured in Phase 2, e.g. "all backend services"), or the
+project as a whole. A rule that governs a class is scoped to that group
+(`applies_to: [group:backend-services]`), which stays correct as repos
+join or leave the class — far better than a hand-listed wall of repos or
+a rule wrongly widened to the whole project.
 
 These are gold. They are the things agents most often violate because
 they are tribal knowledge. Capture them carefully and include the

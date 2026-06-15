@@ -8,7 +8,7 @@
 # See references/manifest-schema.md for the full schema and validation
 # rules.
 
-schema_version: 1
+schema_version: 2
 
 project:
   name: <project-name>
@@ -44,10 +44,22 @@ repos:
 # Optional. Remove this section if not needed.
 adjacent_repos: []
 
+# Named sets of repos — a class like "backend-services" or
+# "mobile-clients". Used as dependency endpoints (group:<name>) and as
+# rule-scope targets. Optional: add a group only when a dependency or
+# rule targets a whole class of repos. Every member must be a real repo
+# name listed above.
+groups:
+  # - name: backend-services
+  #   description: <one sentence — what unites these repos>
+  #   members: [<repo-name>, <repo-name>]
+
 relationships:
   dependencies:
-    # - from: consumer-repo
-    #   to: producer-repo
+    # from/to may EACH be a repo name or a group:<name> defined above.
+    # A group endpoint means "every member of that group".
+    # - from: consumer-repo            # or group:<name>
+    #   to: producer-repo              # or group:<name>
     #   kind: build | runtime | type | contract | deployment | dev-tooling
     #   notes: <optional>
   shared_contracts:
@@ -56,7 +68,17 @@ relationships:
     #   source_repo: <repo-name>
     #   consumer_repos: [<repo-name>, <repo-name>]
     #   path: <path inside source_repo>
-  deployment_order: []
+  # Tiered deploy stages (replaces the v1 flat deployment_order). Stages
+  # deploy in list order; repos within a stage deploy in parallel. Each
+  # repo may carry a gate (a precondition) and a deploy_task override.
+  deploy_waves:
+    # - name: foundation
+    #   description: <one sentence — what this stage lands>
+    #   repos:
+    #     - name: <repo-name>
+    #       gate: <condition, e.g. "vpc_enabled=true"; omit for no gate>
+    #       deploy_task: <override, or omit for the repo's default>
+    #     - name: <repo-name>          # no gate, no override
   cycles: []
 
 conventions:
@@ -79,7 +101,7 @@ rules:
   #   category: architectural | security | compliance | deployment | convention | soft
   #   statement: <the rule, declarative>
   #   reason: <WHY this rule exists — non-negotiable>
-  #   applies_to: [<repo-name>] # or omit for project-wide
+  #   applies_to: [<repo-name>, group:<name>] # repos and/or groups; omit for project-wide
   #   origin: <who introduced it>
   #   recorded_at: <YYYY-MM-DD>
 
