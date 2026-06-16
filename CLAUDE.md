@@ -11,13 +11,7 @@ A personal Claude Code plugin and skill monorepo. It publishes reusable extensio
 
 ## Commands
 
-```bash
-npm run list                          # List all plugins and skills
-npm run install:plugin <name>         # Install a plugin locally
-npm run install:skill <name>          # Install a skill locally
-```
-
-No build step. Plugins and skills are Markdown/YAML — no compilation required.
+No build step and no npm scripts. Plugins and skills are plain Markdown/YAML — no compilation required. They are distributed via the marketplace manifest (`.claude-plugin/marketplace.json`); install one by copying or symlinking its `plugins/<name>/` (or `skills/<name>/`) directory into your Claude config.
 
 ## Plugin Architecture
 
@@ -60,16 +54,17 @@ argument-hint: "[optional-arg]"
 ---
 ```
 
-## Design Plugin
+## Primary Plugin: agent-teams-workforce
 
-The primary plugin under active development. It provides architecture governance: ADRs, specs, drift detection, issue planning, parallel implementation, and Docusaurus doc generation.
+The plugin under active development and the center of gravity for agentic SDLC work. It packages bounded-specialist agents, skills, and commands that run a phase-gated SDLC pipeline under a maker-checker, no-self-approval doctrine.
 
-- Commands: `plugins/pmo/commands/` — 16 commands (`adr`, `spec`, `init`, `plan`, `work`, `review`, `check`, `audit`, `discover`, `docs`, `list`, `status`, `prime`, `organize`, `enrich`, `discover-more`)
-- Skills: `plugins/pmo/skills/` — one SKILL.md per command
-- References: `plugins/pmo/references/` — shared templates (`claude-md-template.md`, `shared-patterns.md`)
-- Templates: `plugins/pmo/templates/docusaurus/` — full Docusaurus site scaffold; `templates/integration/` — plugin for existing Docusaurus sites
+- Agents: `plugins/agent-teams-workforce/agents/` — bounded specialists (one task category each), auto-discovered; adding `agents/<name>.md` needs no central roster edit.
+- Skills: `plugins/agent-teams-workforce/skills/` — reusable playbooks, including the `arc42` router + sub-skills (`arc42-author` / `-maintain` / `-extract` / `-verify`) and `c4-diagramming` / `uml-diagramming` (Mermaid-first; keep mermaid fences in `references/`, never in a `SKILL.md` body).
+- Commands: `plugins/agent-teams-workforce/commands/`.
+- Pipeline (workflow 1): PRD Creation → PRD Validation → Architecture Analysis (Gate 2) → **TRD Authoring (Phase 2.5 / Gate 2b)** → Spec Authoring (Gate 3) → Task Decomposition → … → Deployment. A living **arc42 SAD**, consolidated by `sad-maintainer` at the tail of Phase 2, is the architecture source of truth; its §2/§4/§8/§9 source-extract feeds the TRD and the Specs.
+- Governance: `Project Delivery Agentic Workforce Doctrine.md` and `rules/separation-of-duties.md` — bounded authority, no self-approval (every maker has a distinct checker), read-only coordination for leads, decider ≠ analyst.
 
-Design plugin configuration per project is stored in `.claude-plugin-pmo.json` at the project root (tracker type, branch conventions, PR settings, worktree config).
+Skill quality is gated by `plugins/qa/scripts/validate_skill.py` (REQUIRED: frontmatter present, description ≥ 50 chars, body ≥ 200 chars, no `last updated/modified` text, no mermaid code fence in the body).
 
 ## Marketplace Registration
 

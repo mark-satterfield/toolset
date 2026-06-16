@@ -7,11 +7,7 @@
     "plugins/*",
     "skills/**/*"
   ],
-  "scripts": {
-    "install:plugin": "node scripts/install-plugin.js",
-    "install:skill": "node scripts/install-skill.js",
-    "list": "node scripts/list.js"
-  },
+  "scripts": {},
   "repository": {
     "type": "git",
     "url": "https://github.com/mark-satterfield/toolset"

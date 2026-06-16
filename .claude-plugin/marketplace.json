@@ -8,15 +8,6 @@
   },
   "plugins": [
     {
-      "name": "pmo",
-      "description": "Project Management Office — ADRs, specs, drift detection, issue planning, implementation workflows, and documentation generation.",
-      "version": "1.0.0",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/pmo"
-    },
-    {
       "name": "prompt",
       "description": "Full-featured prompt management — create, search, run, compose, and orchestrate prompt templates with variable substitution.",
       "version": "0.1.0",
@@ -33,24 +24,6 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/qa"
-    },
-    {
-      "name": "engineering-advanced-skills",
-      "description": "25 advanced engineering agent skills and plugins for Claude Code, Codex, Gemini CLI, Cursor, OpenClaw. Agent design, RAG, MCP servers, CI/CD, database design, observability, security auditing, release management, platform ops.",
-      "version": "1.1.0",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/engineering"
-    },
-    {
-      "name": "engineering-skills",
-      "description": "23 engineering agent skills and plugins for Claude Code, Codex, Gemini CLI, Cursor, OpenClaw, and 6 more tools. Architecture, frontend, backend, QA, DevOps, security, AI/ML, data engineering, Playwright, Stripe, AWS, MS365. 30+ Python tools (stdlib-only).",
-      "version": "1.1.0",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/engineering-team"
     },
     {
       "name": "product-skills",
@@ -100,7 +73,7 @@
     {
       "name": "agent-teams-workforce",
       "description": "Parallel execution framework — calling agent spawns workers of its own type, workers cross-review each other, peer consensus required before done.",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "author": {
         "name": "mark-satterfield"
       },
@@ -116,24 +89,6 @@
       "source": "./plugins/award-web-builder"
     },
     {
-      "name": "agenthub",
-      "description": "Multi-agent collaboration plugin — spawn N parallel subagents that compete on the same task via git worktree isolation, evaluate by metric or LLM judge, merge the winner.",
-      "version": "2.1.2",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/agenthub"
-    },
-    {
-      "name": "playwright-pro",
-      "description": "Production-grade Playwright testing toolkit. Generate tests from specs, fix flaky failures, migrate from Cypress/Selenium, sync with TestRail, run on BrowserStack.",
-      "version": "1.0.0",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/playwright-pro"
-    },
-    {
       "name": "self-improving-agent",
       "description": "Curate auto-memory, promote learnings to CLAUDE.md and rules, extract proven patterns into reusable skills.",
       "version": "1.0.0",
@@ -141,15 +96,6 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/self-improving-agent"
-    },
-    {
-      "name": "code-to-prd",
-      "description": "Reverse-engineer any codebase into a complete Product Requirements Document (PRD). Analyzes routes, components, models, APIs, and interactions.",
-      "version": "2.1.2",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/code-to-prd"
     },
     {
       "name": "research-summarizer",

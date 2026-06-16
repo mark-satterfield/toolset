@@ -52,7 +52,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Phase/Team: Phase 2 — Architecture Analysis; proposals sub-team, running concurrently with the challenge sub-team before fan-in to architecture-decider.
 - Gate this work feeds: Gate 2 (constitutional) — no ADR violations without a superseding draft; no bounded-context breaches; security threat model present; failure modes identified.
 - Receives from: architecture-decision-workflow-coordinator (task assignment with PRD and context map).
-- Hands off to: architecture-decision-workflow-coordinator, which routes the glossary to the rest of the team and to architecture-decider.
+- Hands off to: architecture-decision-workflow-coordinator, which routes the glossary to the rest of the team and to architecture-decider; downstream, the glossary feeds sad-maintainer, which draws on it for arc42 SAD sections 8 and 12.
 - Loop and escalation behavior: gate outcomes are pass / loop with structured feedback (validator findings return as input to your next iteration) / escalate upstream via architecture-decision-workflow-coordinator when the defect is contradictory vocabulary in the PRD itself.
 
 ## Operating Rules

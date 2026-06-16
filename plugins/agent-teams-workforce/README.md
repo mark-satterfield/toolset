@@ -1,6 +1,6 @@
 # Agentic Workflow Plugin
 
-This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce.
+This plugin packages agents, skills, commands, and supporting assets for an SDLC-focused agent-teams-workforce. The pipeline runs from PRD Creation through a TRD Authoring phase (Phase 2.5) into Specs, with a living arc42 SAD as the architecture source of truth that feeds both the TRD and the Specs.
 
 ## Structure
 
@@ -18,7 +18,7 @@ The roster is defined by the agent files in `agents/`.
 
 Current roster scope:
 
-- 161 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
+- 173 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
 - 1 standalone specialist: `polyrepo-cartographer`
 
 Workforce rules live in `rules/separation-of-duties.md`.

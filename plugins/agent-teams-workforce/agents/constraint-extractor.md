@@ -52,7 +52,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Phase/Team:** Phase 1 — PRD Validation; concurrent pattern — this agent runs in parallel with the other eight analysts on the same raw PRD.
 - **Gate this work feeds:** Gate 1 — structure valid, BRD aligned, dependencies resolved or flagged, every requirement has acceptance criteria, no unaddressed ambiguity above the severity threshold. The constraint manifest is a required component of the validated PRD package.
 - **Receives from:** prd-validation-lead (delegation packet with the raw PRD).
-- **Hands off to:** prd-validation-lead (manifest aggregated into the Gate 1 submission); after gate pass the manifest is consumed by architecture-decision-workflow-coordinator and the phase 2 architecture team.
+- **Hands off to:** prd-validation-lead (manifest aggregated into the Gate 1 submission); after gate pass the manifest is consumed by architecture-decision-workflow-coordinator and the phase 2 architecture team, and by sad-maintainer (feeds arc42 SAD section 2).
 - **Loop and escalation:** Gate outcomes are pass / loop with structured feedback / escalate upstream. On loop, prd-validation-lead returns the failed criteria for targeted manifest revision.
 
 ## Operating Rules

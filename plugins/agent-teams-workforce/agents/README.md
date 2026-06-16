@@ -62,8 +62,23 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | adr-writer | execute | Produces ADR drafts from the Decider's decisions: context, decision, consequences, status. |
 | architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
+| c4-diagram-author | execute | Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2 Container, Level 3 Component) for the SAD. |
+| uml-diagram-author | execute | Renders the decided behaviours and structures as UML Mermaid diagrams (sequence, class, state) for the SAD. |
+| sad-maintainer | execute | Consolidates the decided constraints, solution strategy, cross-cutting concepts, and accepted ADRs into the single living arc42 Software Architecture Document, updating current state in place. |
+| sad-source-extractor | execute | Extracts the SAD's section-2/4/8/9 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet for TRD and spec authoring. |
+| sad-conformance-reviewer | test | Verifies the living SAD against the arc42 section model and reports conformance findings without fixing them. |
 | graphql-schema-designer | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track |
 | failure-mode-analyst | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages |
+
+## TRD Authoring (Phase 2.5)
+
+| Agent | Category | Purpose |
+| --- | --- | --- |
+| trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet |
+| trd-author | execute | Authors the Technical Requirements Document that translates the source PRD into technical requirements, NFR derivations, and interface and data obligations bounded by the SAD extract. |
+| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture. |
+| prd-trd-traceability-verifier | test | Builds and checks the PRD-to-TRD traceability matrix proving a 1:1 relation, flagging orphans on either side and scope drift. |
+| trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead |
 
 ## Spec Authoring
 

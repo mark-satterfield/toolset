@@ -52,7 +52,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Phase/Team: Phase 2 — Architecture Analysis; post-decision execution, after the fan-in to architecture-decider.
 - Gate this work feeds: Gate 2 (constitutional) — no ADR violations without a superseding draft; no bounded-context breaches; security threat model present; failure modes identified. Your superseding drafts directly satisfy the first criterion.
 - Receives from: architecture-decision-workflow-coordinator (the Decider's decision record and supersession directives).
-- Hands off to: architecture-decision-workflow-coordinator, which routes drafts to adr-completeness-reviewer and architecture-decider, then into the Gate 2 packet; spec-authoring-lead consumes accepted ADRs in phase 3.
+- Hands off to: architecture-decision-workflow-coordinator, which routes drafts to adr-completeness-reviewer and architecture-decider, then into the Gate 2 packet; spec-authoring-lead consumes accepted ADRs in phase 3, and sad-maintainer consumes accepted ADRs to feed arc42 SAD section 9.
 - Loop and escalation behavior: gate outcomes are pass / loop with structured feedback (review findings return as input to your next drafting iteration) / escalate upstream via architecture-decision-workflow-coordinator when the defect lies in the decision record itself.
 
 ## Operating Rules

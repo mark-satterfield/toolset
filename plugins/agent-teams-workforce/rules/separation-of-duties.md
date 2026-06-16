@@ -30,6 +30,8 @@ Supporting constraints:
 
 Providing analysis is a single task. Making a decision from analysis is a separate single task. These are performed by different agents. No agent both analyzes options and decides among them.
 
+The Phase 2.5 TRD gate (Gate 2b) enforces this separation. The arc42 SAD is a current-state record produced by an execute-category agent (sad-maintainer), never a decision artifact. Its contested content escalates to architecture-decider; no SAD decider exists.
+
 ## No Self-Tasking
 
 If an agent determines that work needs to be done, it reports that finding to its manager. The manager routes the work to an appropriate agent. The originating agent never performs or assigns the work it identified.

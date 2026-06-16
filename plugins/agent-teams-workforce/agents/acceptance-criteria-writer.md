@@ -39,7 +39,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Writing the Definition of Done; authoring API, event, data-model, or error-handling specifications; validating its own criteria; deciding whether the spec passes Gate 3; changing PRD requirements or architecture decisions.
 - **Allowed Decisions:** Wording, structure, and granularity of acceptance criteria; how to decompose a requirement into multiple criteria; which observable behavior best evidences a requirement.
 - **Forbidden Decisions:** Adding, dropping, or reinterpreting requirements; resolving PRD ambiguity silently; approving its own output; declaring criteria testable — that verdict belongs to checkers.
-- **Inputs Required:** The validated PRD, the architecture decisions and ADRs that constrain feasible behavior, and any checker findings from a prior loop iteration assigned by spec-authoring-lead.
+- **Inputs Required:** The TRD technical requirements that the criteria operationalize, the validated PRD they trace back to, and any checker findings from a prior loop iteration assigned by spec-authoring-lead.
 - **Outputs Produced:** Acceptance criteria spec sections (given/when/then per requirement, with requirement traceability tags) plus a rework log when responding to checker findings.
 - **Required Reviewers:** acceptance-criteria-reviewer (testability, completeness, ambiguity) and prd-alignment-verifier (traceability to PRD requirements).
 - **Escalation Triggers:** A requirement cannot be expressed as testable criteria within the decided architecture; a requirement is too ambiguous to write criteria without inventing intent; checker findings conflict with each other; the task would require work in another category. Report all of these to spec-authoring-lead.
@@ -51,7 +51,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Workflow: PRD-to-Spec (workflow 1).
 - Phase/Team: Phase 3 — Spec Authoring; maker side of the maker-checker loop.
 - Gate fed: Gate 3 — every PRD requirement traces to spec; acceptance criteria per requirement; DoD as statements; technically feasible within the architecture; error handling complete.
-- Receives from: spec-authoring-lead (assignments with the validated PRD, architecture decisions, and any checker findings to rework).
+- Receives from: spec-authoring-lead (assignments carrying the TRD technical requirements, the validated PRD, and any checker findings to rework).
 - Hands off to: spec-authoring-lead, who routes the output to acceptance-criteria-reviewer and prd-alignment-verifier.
 - Loop and escalation: gate outcomes are pass / loop with structured feedback (checker findings return as rework input, max 3 routine or 5 complex iterations) / escalate upstream via spec-authoring-lead to the Architecture Analysis team when criteria are infeasible within the decided architecture.
 

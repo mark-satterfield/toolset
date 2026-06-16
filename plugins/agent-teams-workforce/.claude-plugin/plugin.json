@@ -1,0 +1,8 @@
+{
+  "name": "agent-teams-workforce",
+  "version": "3.1.0",
+  "description": "Parallel execution framework — calling agent spawns workers of its own type, workers cross-review each other, peer consensus required before done.",
+  "author": {
+    "name": "mark-satterfield"
+  }
+}
