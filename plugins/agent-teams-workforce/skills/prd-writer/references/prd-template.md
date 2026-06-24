@@ -20,7 +20,6 @@ Names should sort and group naturally when listed alphabetically.
 ## Document Hierarchy
 
 <!--
-  BRD > PRD > Spec > Epic > Issue > PR
   This document is a PRD. It defines WHAT a feature does, not HOW.
   Specs (one per repo) are derived from this document.
   Issues and PRs are derived from Specs.
