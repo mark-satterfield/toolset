@@ -49,8 +49,8 @@ The seven layers, in resolution order:
 
 Adjacent layers:
 
-- **Motion behavior** is bound to interaction state (rest, hover, focus, active, in-viewport) and respects the user's `prefers-reduced-motion` preference. It does not consume role variables; it consumes motion tokens (durations and easing curves) defined globally.
-- **Responsive behavior** scales typographic size, container width, section padding, and grid column count by viewport range. Role variables do not change at breakpoints.
+- **Motion behavior** is bound to interaction state (rest, hover, focus, active, in-viewport) and respects the user's `prefers-reduced-motion` preference. It does not consume role variables; it consumes **motion tokens** (durations, easing curves, and entrance-pattern parameters) — a configurable element set defined in the elements YAML `motion:` block and emitted globally, peer to color and geometry.
+- **Responsive behavior** scales typographic size, container width, section padding, and grid column count by viewport range. These are **geometry tokens** — a configurable element set defined in the elements YAML `geometry:` block (spacing, radius, section padding, container widths, and component sizing), emitted globally. Role variables do not change at breakpoints; geometry tokens interpolate with the viewport (`foundations/layout.md` §11.1).
 
 ### How one element gets painted
 
@@ -94,6 +94,10 @@ The YAML file enumerates a fixed set of input areas. Each row is a single mappin
 - **Primary Sans** — used for UI, nav, body sans, and application surfaces.
 - **Editorial Serif** — used for editorial prose and expressive headings.
 - **System Mono** — used for code and technical labels.
+- **Geometry** — the `geometry:` block: spacing scale, radius scale, section-padding scale, container widths per surface, and component-level sizing (e.g. topbar bar/logo height). Each entry maps a length/clamp/keyword to a system token the components consume.
+- **Motion** — the `motion:` block: easing curves, durations, and entrance-pattern parameters (reveal, card stagger, fade). Each entry maps a curve/time/parameter to a system token; the entrance patterns are emitted as keyframes + classes (`foundations/motion.md`).
+
+Geometry and motion are **first-class configurable element sets**, peers to color and type. They are emitted as global tokens (not theme-bound roles — they do not change on the light/dark flip), so a component reads `var(--topbar-height)` or `var(--ease-in-out)` the same way it reads a role, and the design system — never a page — owns those values.
 
 Optional compatibility aliases for brand-specific naming (e.g., `--p-burnt-orange` aliased to `--color-accent-primary`) may be kept in YAML if existing component code references them. These aliases are pure conveniences. Components consume **roles** (e.g., `--accent-primary`); themes bind those roles to the `accent` semantic palette; the `accent` palette aliases the `burnt-orange` primitive. Components never name a swatch.
 

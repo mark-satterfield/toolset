@@ -181,29 +181,68 @@ Because the alias is grafted onto the target's selector list, it automatically t
 
 ### §8.3 Component class pattern
 
-Components consume role variables only. Raw palette hexes never appear inside a component class. Brand-specific palette names never appear inside a component class.
+Components consume **role variables** (for color) and **geometry / motion tokens** (for sizing, spacing, radius, easing, duration) only. Raw palette hexes, raw lengths a scale already names, and brand-specific palette names never appear inside a component class. Sizing a component is the design system's job, not a page's: a component class reads `var(--sp-*)`, `var(--radius-*)`, `var(--section-pad-*)`, `var(--container-*)`, and component-level tokens like `var(--topbar-height)` — it does not bake in a literal a scale token already carries, and a page never re-declares those tokens to resize a component (see `compliance.md` §23).
 
 ```css
 .card {
   background: var(--surface-raised);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  padding: 32px;
+  border-radius: var(--radius-lg);
+  padding: var(--sp-2-5);
 }
 
 .button-primary {
   background: var(--button-primary-bg);
   color: var(--button-primary-text);
-  border-radius: 8px;
-  font-weight: 480;
-  transition: color 0.1s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  border-radius: var(--radius-sm);
+  font-weight: var(--fw-480);
+  transition: color var(--duration-100) var(--ease-in-out),
+              background-color var(--duration-200) var(--ease-in-out),
+              box-shadow var(--duration-200) var(--ease-in-out);
 }
 
 .button-primary:hover {
   box-shadow: 0 0 0 1px var(--button-primary-bg);
 }
 ```
+
+Component-level geometry resolves the same way — the topbar bar and its logo both read system tokens, so the logo scales with the bar and no page hardcodes a height:
+
+```css
+.topbar { height: var(--topbar-height); }
+.topbar-logo,
+.topbar-logo img,
+.topbar-logo svg { height: var(--topbar-logo-height); width: auto; }
+```
+
+---
+
+### §8.4 Geometry and motion token emission
+
+Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the YAML rows are the source of truth (`foundations/layout.md` documents the geometry meanings, `foundations/motion.md` the motion meanings). The generator must not hardcode token lists — it walks the YAML blocks and emits per the `$conventions` patterns.
+
+**Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
+
+```css
+:root {
+  --sp-2: clamp(28px, calc(28px + 4 * (100vw - 320px) / 1120), 32px);
+  --radius-lg: 16px;
+  --section-pad-main: clamp(96px, calc(96px + 32 * (100vw - 320px) / 1120), 128px);
+  --container-marketing-medium: 1192px;
+  --topbar-height: 84px;
+  --topbar-logo-height: 40px;
+}
+@media (max-width: 480px) {
+  :root { --section-pad-main: 56px; --topbar-height: 64px; }  /* from each token's mobile_floor */
+}
+```
+
+**Motion tokens.** For every entry under `motion.easing` and `motion.duration`, emit one `:root` property (`--ease-{key}`, `--duration-{key}`). For every `motion.patterns.<pattern>.<property>`, emit `--{pattern}-{property}` (e.g. `--reveal-stagger`, `--card-duration`, `--fade-delay`).
+
+**Motion pattern classes + keyframes.** Emit the entrance-pattern `@keyframes` and classes exactly as `foundations/motion.md` §15.4 specifies — parameterized by the `--{pattern}-*` tokens, animating in the base rule, resetting to the visible final state only inside `@media (prefers-reduced-motion: reduce)` — plus the global reduced-motion gate (§15.5). Entrance motion is **never** wrapped in `@media (prefers-reduced-motion: no-preference)`.
+
+**Drift rule:** if a geometry or motion value changes, change it in `customizable-design-elements.yaml` and regenerate this block. Never edit a length, duration, or curve directly inside the generated CSS, and never re-declare a system token in a page's style block to resize a component.
 
 ---
 

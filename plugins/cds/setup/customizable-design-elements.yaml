@@ -5,7 +5,7 @@
 
 # yaml-language-server: $schema=./customizable-design-elements.schema.json
 
-$schema_version: "1.0.0"
+$schema_version: "1.1.0"
 
 # ------------------------------------------------------------
 # Conventions
@@ -17,6 +17,16 @@ $conventions:
   typeface_var_pattern: "--typeface-{typeface key}"
   font_var_pattern:     "--font-{font key}"
   role_var_pattern:     "--role-{role key}"
+  # geometry (configurable sizing / geometry / spacing — see `geometry:` below)
+  spacing_var_pattern:         "--sp-{key}"
+  radius_var_pattern:          "--radius-{key}"
+  section_padding_var_pattern: "--section-pad-{key}"
+  container_var_pattern:       "--container-{key}"
+  component_size_var_pattern:  "--{component}-{property}"
+  # motion (configurable easing / duration / entrance patterns — see `motion:` below)
+  ease_var_pattern:            "--ease-{key}"
+  duration_var_pattern:        "--duration-{key}"
+  motion_pattern_var_pattern:  "--{pattern}-{property}"
 
 # ============================================================
 # COLOR CATALOG
@@ -1606,3 +1616,141 @@ themes:
           # status-positive-bg:    { var: "--color-status-positive" }
           # status-caution-bg:     { var: "--color-status-caution" }
           # status-critical-bg:    { var: "--color-status-critical" }
+
+# ============================================================
+# GEOMETRY
+# Configurable page-, surface-, and component-level sizing,
+# spacing, and geometry. A first-class element set, peer to
+# color and motion. generate-stylesheets emits each entry as a
+# CSS custom property in tokens.css; the component classes in
+# components.css consume them, so the DESIGN SYSTEM owns
+# component sizing and a page never re-invents it in a <style>
+# block. Token names follow the $conventions geometry patterns.
+# The clamp() form is the §11.1 anchor interpolation
+# (320 -> 1440, span 1120). A `mobile_floor` re-declares the
+# token at :root inside @media (max-width: <max_width>).
+# ============================================================
+geometry:
+
+  # ----- spacing scale -> --sp-{key} (foundations/layout.md §11.4)
+  spacing:
+    "0-25": { value: "4px",  description: "Hairline gaps, icon-to-label spacing." }
+    "0-5":  { value: "8px",  description: "Inline icon spacing, badge padding-x." }
+    "0-75": { value: "12px", description: "Compact card padding, list-item gap." }
+    "1":    { value: "16px", description: "Paragraph margin-block, default gap." }
+    "1-5":  { value: "24px", description: "Card inner gap, marginalia row padding-top." }
+    "2":    { value: "clamp(28px, calc(28px + 4 * (100vw - 320px) / 1120), 32px)",  description: "Card padding default." }
+    "2-5":  { value: "clamp(32px, calc(32px + 8 * (100vw - 320px) / 1120), 40px)",  description: "Section-internal gap." }
+    "3":    { value: "clamp(40px, calc(40px + 8 * (100vw - 320px) / 1120), 48px)",  description: "Heading-to-body gap on major headings." }
+    "4":    { value: "clamp(52px, calc(52px + 12 * (100vw - 320px) / 1120), 64px)", description: "Marginalia row gap, hero header-to-tile gap." }
+    "5":    { value: "clamp(64px, calc(64px + 16 * (100vw - 320px) / 1120), 80px)", description: "Hero-to-first-section gap." }
+    "6":    { value: "clamp(72px, calc(72px + 24 * (100vw - 320px) / 1120), 96px)", description: "Cross-section breathing room." }
+
+  # ----- border-radius scale -> --radius-{key} (foundations/layout.md §11.7)
+  radius:
+    xs:  { value: "4px",  description: "Tags, badge corners, dropdown-item highlight." }
+    sm:  { value: "8px",  description: "Buttons, small inputs, hairline-pill tags." }
+    md:  { value: "12px", description: "Pill-tab inner button, card-illustration tiles, modal cards." }
+    lg:  { value: "16px", description: "Pill-tab outer strip, card outer, editorial illustration tile." }
+    xl:  { value: "clamp(16px, calc(16px + 8 * (100vw - 320px) / 1120), 24px)",  description: "Major card outer; primary card promo." }
+    "2xl": { value: "clamp(16px, calc(16px + 16 * (100vw - 320px) / 1120), 32px)", description: "Largest hero panels, conversion card (reserve top of clamp for conversion card)." }
+
+  # ----- section-padding scale -> --section-pad-{key} (foundations/layout.md §11.3)
+  section_padding:
+    small:    { value: "clamp(64px, calc(64px + 32 * (100vw - 320px) / 1120), 96px)",   description: "Compact interior sections, marginalia rails." }
+    main:     { value: "clamp(96px, calc(96px + 32 * (100vw - 320px) / 1120), 128px)",  description: "Default desktop section padding.", mobile_floor: { max_width: "480px", value: "56px" } }
+    large:    { value: "clamp(128px, calc(128px + 72 * (100vw - 320px) / 1120), 200px)", description: "Feature heroes, page-end conversion sections." }
+    page-top: { value: "clamp(192px, calc(192px + 48 * (100vw - 320px) / 1120), 240px)", description: "Above-the-fold hero only." }
+
+  # ----- container widths per surface class -> --container-{key} (foundations/layout.md §11.2)
+  # A surface chooses a container width from the system instead of hardcoding a
+  # max-width in the page's style block.
+  containers:
+    marketing-primary: { value: "1440px", description: "Marketing primary container max width." }
+    marketing-medium:  { value: "1192px", description: "Marketing medium container max width." }
+    marketing-small:   { value: "960px",  description: "Marketing small container max width." }
+    editorial:         { value: "1400px", description: "Editorial container max width." }
+    editorial-reading: { value: "640px",  description: "Long-form reading column width (centered)." }
+    conversion-card:   { value: "448px",  description: "Conversion card width." }
+
+  # ----- component-level sizing -> --{component}-{property}
+  # The system owns component dimensions; composers consume these tokens and
+  # MUST NOT re-declare them in a page's <style> block (audit-against-system
+  # flags page-block overrides of system-defined sizing).
+  components:
+    # §12.1 Topbar. Logo glyph height tracks the bar height; the bar height
+    # carries its own narrow-viewport floor (the §23 "consistent topbar height"
+    # rule means one value per build, never per-section).
+    topbar:
+      height:        { value: "84px", description: "Bar height at desktop widths.", mobile_floor: { max_width: "480px", value: "64px" } }
+      logo-height:   { value: "40px", description: "Logo glyph rendered height, vertically centered in the bar. Sized by the system so a page never hardcodes it." }
+      action-height: { value: "36px", description: "Primary-action button height inside the bar." }
+    # §12.5 App shell left rail.
+    app-shell-rail:
+      width: { value: "256px", description: "Collapsed icon-rail + list-column width." }
+
+# ============================================================
+# MOTION
+# Configurable easing curves, durations, and entrance-pattern
+# parameters. A first-class element set, peer to color and
+# geometry. generate-stylesheets emits the tokens into
+# tokens.css AND emits the reveal/stagger/fade @keyframes and
+# pattern classes into components.css — animating in the base
+# rule and disabling ONLY inside
+# @media (prefers-reduced-motion: reduce). Composers apply the
+# pattern classes; they never author entrance keyframes per page
+# and never gate entrance motion behind
+# @media (prefers-reduced-motion: no-preference).
+# ============================================================
+motion:
+
+  # ----- easing curves -> --ease-{key} (foundations/motion.md §15.1)
+  easing:
+    snap:         { value: "cubic-bezier(0.165, 0.85, 0.45, 1)",   description: "Authentication CTA transforms." }
+    in-out:       { value: "cubic-bezier(0.4, 0, 0.2, 1)",         description: "General-purpose color and border-color transitions." }
+    out-quart:    { value: "cubic-bezier(0.165, 0.84, 0.44, 1)",   description: "Scroll-into-view settles." }
+    in-quart:     { value: "cubic-bezier(0.895, 0.03, 0.685, 0.22)", description: "'Read more' CTA color shifts; tab background transitions." }
+    in-out-quart: { value: "cubic-bezier(0.77, 0, 0.175, 1)",      description: "Inline link color cross-fades; opacity fades." }
+    in-out-expo:  { value: "cubic-bezier(1, 0, 0, 1)",             description: "Max-height and dropdown opacity over longer durations." }
+    out-power2:   { value: "cubic-bezier(0.165, 0.84, 0.44, 1)",   description: "Stagger animations on cards and panels." }
+
+  # ----- durations -> --duration-{key} (foundations/motion.md §15.2)
+  duration:
+    "100": { value: "100ms", description: "Pill-tab color shift; auth secondary button transition." }
+    "150": { value: "150ms", description: "Inline link color cross-fade; auth primary button transform." }
+    "200": { value: "200ms", description: "Pill-tab background; button ring; hover dim; footer link color." }
+    "300": { value: "300ms", description: "Button leading-icon color; scroll-into-view delay; sticky header hide." }
+    "400": { value: "400ms", description: "Scroll-into-view opacity/transform settle (lower)." }
+    "500": { value: "500ms", description: "Scroll-into-view opacity/transform settle (upper)." }
+    "600": { value: "600ms", description: "Dropdown panel grow." }
+
+  # ----- entrance patterns -> --{pattern}-{property} (foundations/motion.md §15.4)
+  # Each pattern's parameters are emitted as tokens; generate-stylesheets emits
+  # the matching @keyframes + class:
+  #   reveal  -> .reveal-word   (hero word-by-word, JS sets --reveal-index)
+  #   card    -> .card-stagger  (card grid entry,   JS sets --card-index)
+  #   fade    -> .content-fade        (scroll-into-view opacity, JS adds .is-inview)
+  #   fade-up -> .content-fade-up     (scroll-into-view opacity + translateY)
+  patterns:
+    reveal:
+      index:    { value: "0",     description: "Per-word index; system default 0, JS overrides per word at runtime." }
+      duration: { value: "0.75s", description: "Per-word reveal duration." }
+      stagger:  { value: "60ms",  description: "Delay step between words (× --reveal-index)." }
+      delay:    { value: "0s",    description: "Base delay before the first word." }
+      y:        { value: "0.5em", description: "Initial downward offset per word." }
+      easing:   { value: "var(--ease-out-quart)", description: "Reveal easing curve." }
+    card:
+      index:    { value: "0",     description: "Per-card index; system default 0, JS overrides per card at runtime." }
+      duration: { value: "0.4s",  description: "Per-card raise duration." }
+      stagger:  { value: "80ms",  description: "Delay step between cards (× --card-index)." }
+      y:        { value: "16px",  description: "Initial downward offset per card." }
+      easing:   { value: "var(--ease-out-power2)", description: "Card-raise easing curve." }
+    fade:
+      duration: { value: "0.4s",  description: "Opacity fade-in duration on viewport entry." }
+      delay:    { value: "0.3s",  description: "Delay before the fade begins." }
+      easing:   { value: "var(--ease-in-out-quart)", description: "Fade easing curve." }
+    fade-up:
+      duration: { value: "0.5s",  description: "Opacity + translateY settle duration on viewport entry." }
+      delay:    { value: "0.3s",  description: "Delay before the settle begins." }
+      y:        { value: "32px",  description: "Initial downward offset." }
+      easing:   { value: "var(--ease-out-quart)", description: "Settle easing curve." }

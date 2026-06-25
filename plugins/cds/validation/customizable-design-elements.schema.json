@@ -36,6 +36,12 @@
     },
     "themes": {
       "$ref": "#/$defs/Themes"
+    },
+    "geometry": {
+      "$ref": "#/$defs/Geometry"
+    },
+    "motion": {
+      "$ref": "#/$defs/Motion"
     }
   },
   "additionalProperties": false,
@@ -74,6 +80,46 @@
           "examples": [
             "--role-{role key}"
           ]
+        },
+        "spacing_var_pattern": {
+          "type": "string",
+          "description": "Pattern for spacing-scale CSS variable names. {key} is the geometry.spacing identifier (e.g. 1, 2-5).",
+          "examples": ["--sp-{key}"]
+        },
+        "radius_var_pattern": {
+          "type": "string",
+          "description": "Pattern for border-radius-scale CSS variable names. {key} is the geometry.radius identifier (e.g. sm, xl).",
+          "examples": ["--radius-{key}"]
+        },
+        "section_padding_var_pattern": {
+          "type": "string",
+          "description": "Pattern for section-padding CSS variable names. {key} is the geometry.section_padding identifier (e.g. main, large).",
+          "examples": ["--section-pad-{key}"]
+        },
+        "container_var_pattern": {
+          "type": "string",
+          "description": "Pattern for container-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-medium, editorial).",
+          "examples": ["--container-{key}"]
+        },
+        "component_size_var_pattern": {
+          "type": "string",
+          "description": "Pattern for component-level geometry CSS variable names. {component} is the geometry.components key; {property} is the size/geometry property under it (e.g. topbar + logo-height -> --topbar-logo-height).",
+          "examples": ["--{component}-{property}"]
+        },
+        "ease_var_pattern": {
+          "type": "string",
+          "description": "Pattern for easing-curve CSS variable names. {key} is the motion.easing identifier (e.g. snap, in-out).",
+          "examples": ["--ease-{key}"]
+        },
+        "duration_var_pattern": {
+          "type": "string",
+          "description": "Pattern for duration CSS variable names. {key} is the motion.duration identifier (e.g. 200, 600).",
+          "examples": ["--duration-{key}"]
+        },
+        "motion_pattern_var_pattern": {
+          "type": "string",
+          "description": "Pattern for entrance-motion pattern parameter CSS variable names. {pattern} is the motion.patterns key; {property} is the parameter under it (e.g. reveal + stagger -> --reveal-stagger).",
+          "examples": ["--{pattern}-{property}"]
         }
       },
       "examples": [
@@ -81,7 +127,15 @@
           "color_var_pattern": "--color-{palette key}-{color key}",
           "typeface_var_pattern": "--typeface-{typeface key}",
           "font_var_pattern": "--font-{font key}",
-          "role_var_pattern": "--role-{role key}"
+          "role_var_pattern": "--role-{role key}",
+          "spacing_var_pattern": "--sp-{key}",
+          "radius_var_pattern": "--radius-{key}",
+          "section_padding_var_pattern": "--section-pad-{key}",
+          "container_var_pattern": "--container-{key}",
+          "component_size_var_pattern": "--{component}-{property}",
+          "ease_var_pattern": "--ease-{key}",
+          "duration_var_pattern": "--duration-{key}",
+          "motion_pattern_var_pattern": "--{pattern}-{property}"
         }
       ]
     },
@@ -559,6 +613,148 @@
       "additionalProperties": {
         "$ref": "#/$defs/Theme"
       }
+    },
+
+    "GeometryToken": {
+      "type": "object",
+      "title": "GeometryToken",
+      "description": "A single configurable geometry value emitted as one CSS custom property. `value` is the CSS the generator emits verbatim — a literal length ('84px'), a clamp() interpolation, a keyword, or a var() reference to another geometry token ('var(--topbar-height)'). The generator wraps the value in the §11.1 clamp form only when the data already expresses it; it does not invent interpolation.",
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The CSS value emitted for this token (literal, clamp(), keyword, or var() reference)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional human-readable note on what this geometry value is for."
+        },
+        "mobile_floor": {
+          "type": "object",
+          "title": "MobileFloor",
+          "description": "Optional narrow-viewport override. The generator re-declares this token at :root inside `@media (max-width: <max_width>)` so every consumer of the token picks up the floor without per-component media queries (mirrors the §11.3 --section-pad-main pattern).",
+          "required": ["max_width", "value"],
+          "properties": {
+            "max_width": { "type": "string", "description": "The max-width breakpoint (e.g. '480px')." },
+            "value": { "type": "string", "description": "The token value at and below the breakpoint (e.g. '56px')." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        { "value": "84px", "description": "Topbar bar height.", "mobile_floor": { "max_width": "480px", "value": "64px" } },
+        { "value": "var(--topbar-height)", "description": "Logo glyph height — tracks the bar." }
+      ]
+    },
+
+    "GeometryScale": {
+      "type": "object",
+      "title": "GeometryScale",
+      "description": "A named scale: map of scale-step key to GeometryToken. The key becomes the {key} segment of the scale's var pattern (e.g. spacing key '2-5' -> --sp-2-5).",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/GeometryToken" }
+    },
+
+    "GeometryComponent": {
+      "type": "object",
+      "title": "GeometryComponent",
+      "description": "Per-component sizing/geometry: map of property name to GeometryToken. {property} becomes the second segment of component_size_var_pattern (e.g. topbar + logo-height -> --topbar-logo-height). This is how the DESIGN SYSTEM, not the page, owns a component's dimensions.",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/GeometryToken" }
+    },
+
+    "Geometry": {
+      "type": "object",
+      "title": "Geometry",
+      "description": "The configurable geometry element set — page-, surface-, and component-level sizing, spacing, and geometry. A first-class peer to color and motion. The generator emits each entry as a CSS custom property in tokens.css and the component classes in components.css consume them, so component sizing lives in the design system and never has to be re-invented in a page's style block.",
+      "properties": {
+        "spacing": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "The shared spacing scale (emitted via spacing_var_pattern, default --sp-{key})."
+        },
+        "radius": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "The border-radius scale (emitted via radius_var_pattern, default --radius-{key})."
+        },
+        "section_padding": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "The section-padding scale (emitted via section_padding_var_pattern, default --section-pad-{key})."
+        },
+        "containers": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "Container/reading-column widths per surface class (emitted via container_var_pattern, default --container-{key}). Lets a surface choose a container width from the system instead of hardcoding a max-width in the page."
+        },
+        "components": {
+          "type": "object",
+          "title": "GeometryComponents",
+          "description": "Map of component key (matching a components.md family, e.g. 'topbar') to its GeometryComponent sizing block.",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/GeometryComponent" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "MotionToken": {
+      "type": "object",
+      "title": "MotionToken",
+      "description": "A single configurable motion value emitted as one CSS custom property: an easing curve ('cubic-bezier(...)'), a duration ('200ms', '0.75s'), or an entrance-pattern parameter (a length, time, or var() reference such as 'var(--ease-out-quart)').",
+      "required": ["value"],
+      "properties": {
+        "value": { "type": "string", "description": "The CSS value emitted for this token." },
+        "description": { "type": "string", "description": "Optional note on what this motion value drives." }
+      },
+      "additionalProperties": false,
+      "examples": [
+        { "value": "cubic-bezier(0.165, 0.85, 0.45, 1)", "description": "Authentication CTA transforms." },
+        { "value": "200ms" },
+        { "value": "60ms", "description": "Per-word reveal stagger." }
+      ]
+    },
+
+    "MotionTokenSet": {
+      "type": "object",
+      "title": "MotionTokenSet",
+      "description": "A named set of motion tokens: map of key to MotionToken (e.g. easing key 'in-out' -> --ease-in-out, duration key '200' -> --duration-200).",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/MotionToken" }
+    },
+
+    "MotionPattern": {
+      "type": "object",
+      "title": "MotionPattern",
+      "description": "Parameters for one entrance-motion pattern (reveal, card-stagger, fade, fade-up): map of parameter name to MotionToken. {property} becomes the second segment of motion_pattern_var_pattern (e.g. reveal + stagger -> --reveal-stagger). The generator emits these parameters as tokens AND emits the matching @keyframes + pattern class that consumes them — animating in the base rule and disabling only inside @media (prefers-reduced-motion: reduce).",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/MotionToken" }
+    },
+
+    "Motion": {
+      "type": "object",
+      "title": "Motion",
+      "description": "The configurable motion element set — easing curves, durations, and entrance-pattern parameters. A first-class peer to color and geometry. The generator emits the tokens into tokens.css AND emits the reveal/stagger/fade keyframes and pattern classes into the generated CSS so motion lives in the design system; composers apply the pattern classes with reduced-motion gating instead of authoring entrance keyframes per page.",
+      "properties": {
+        "easing": {
+          "$ref": "#/$defs/MotionTokenSet",
+          "description": "Named easing curves (emitted via ease_var_pattern, default --ease-{key})."
+        },
+        "duration": {
+          "$ref": "#/$defs/MotionTokenSet",
+          "description": "Named durations (emitted via duration_var_pattern, default --duration-{key})."
+        },
+        "patterns": {
+          "type": "object",
+          "title": "MotionPatterns",
+          "description": "Map of entrance-pattern name (reveal, card-stagger, content-fade, content-fade-up) to its MotionPattern parameter block.",
+          "minProperties": 1,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+          "additionalProperties": { "$ref": "#/$defs/MotionPattern" }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

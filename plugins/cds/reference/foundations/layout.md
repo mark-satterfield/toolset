@@ -1,6 +1,8 @@
 # Layout
 
-The values in this file are authoritative and fixed. They are not configurable per project. Every surface — marketing, editorial, application, conversion, documentation — resolves layout against the same scaling rules, container widths, spacing scale, grid, radii, shadows, and border weights defined below.
+Geometry — the spacing scale, radius scale, section-padding scale, and container widths — is a **configurable element set**, defined in the elements YAML's `geometry:` block (a first-class peer to `color_catalog` and `motion`, resolved at `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`). The values below are the **canonical defaults the shipped YAML encodes**, plus the scaling rules and rationale that govern them. `generate-stylesheets` sources every geometry token from the YAML `geometry:` block — not from this prose — and emits each as a CSS custom property in `tokens.css`; component classes in `components.css` consume those tokens, so the design system (not any page) owns sizing. This file is the source of *meaning* (what each scale step is for, the interpolation law); the YAML is the source of *value*.
+
+What is **structurally fixed** (not a per-project value, but the law the values obey): the §11.1 linear-interpolation form, the two viewport anchors (320 / 1440), the grid column model (§11.6), and the role-not-color discipline. Every surface — marketing, editorial, application, conversion, documentation — resolves layout against the same scales; a surface chooses *which* container/padding token it uses, it does not invent a one-off value in a page style block (see `compliance.md` §23 — page-block overrides of system-defined geometry are an audit violation).
 
 ## §11.1 Viewport scaling
 
@@ -20,17 +22,19 @@ Do not hand-pick `vw` middle terms. Do not author per-breakpoint values for spac
 
 ## §11.2 Container widths
 
-| Surface Class | Max Width | Inner Reading Column | Side Gutter |
-|---|---:|---:|---:|
-| Marketing primary container | 1440px | full container | 32–64px clamp |
-| Marketing medium container | 1192px | full container | 32–64px clamp |
-| Marketing small container | 960px | full container | 32–64px clamp |
-| Editorial container | 1400px | **640px**, centered within | 32 / 48 / 64px responsive |
-| Documentation or long-form container | viewport minus 316px each side at wide viewports | **640px**, centered | 316px outer offset at the widest breakpoint |
-| Conversion card | 448px | n/a | n/a |
-| Application shell pane | three-pane: 64px icon rail, 280–320px list column, fluid detail viewport | n/a | 24–32px inner card padding |
+Each surface-class width is a configurable token in the YAML `geometry.containers` block, emitted as `--container-{key}` (`container_var_pattern`). A surface **chooses a container token**; it does not hardcode a `max-width` in a page style block.
 
-Use the 640px reading column for any long-form body type. Body sans on marketing pages may exceed this width if it remains under the full container.
+| Surface Class | Token | Max Width | Inner Reading Column | Side Gutter |
+|---|---|---:|---:|---:|
+| Marketing primary container | `--container-marketing-primary` | 1440px | full container | 32–64px clamp |
+| Marketing medium container | `--container-marketing-medium` | 1192px | full container | 32–64px clamp |
+| Marketing small container | `--container-marketing-small` | 960px | full container | 32–64px clamp |
+| Editorial container | `--container-editorial` | 1400px | **`--container-editorial-reading` (640px)**, centered within | 32 / 48 / 64px responsive |
+| Documentation or long-form container | `--container-editorial` | viewport minus 316px each side at wide viewports | **640px**, centered | 316px outer offset at the widest breakpoint |
+| Conversion card | `--container-conversion-card` | 448px | n/a | n/a |
+| Application shell pane | (rail width `--app-shell-rail-width`) | three-pane: 64px icon rail, 280–320px list column, fluid detail viewport | n/a | 24–32px inner card padding |
+
+Use the `--container-editorial-reading` (640px) reading column for any long-form body type. Body sans on marketing pages may exceed this width if it remains under the full container. The application-shell rail width is a component-level geometry token (`--app-shell-rail-width`, `geometry.components.app-shell-rail.width`), not a container.
 
 ## §11.3 Section padding scale
 
@@ -55,6 +59,8 @@ The Min and Max columns above are the values at the 320px and 1440px viewport an
 ```
 
 Apply the same `clamp()` pattern (per §11) to `--section-pad-small`, `--section-pad-large`, and `--section-pad-page-top`. Use the mobile-floor `@media` override only on major section-padding tokens, and only when the 320px-anchor floor is too generous for the narrow-mobile content density.
+
+The mobile floor is declared in the YAML as the token's `mobile_floor` (e.g. `geometry.section_padding.main.mobile_floor: { max_width: "480px", value: "56px" }`). `generate-stylesheets` emits it by re-declaring the token at `:root` inside `@media (max-width: <max_width>)`, so every consumer of `var(--section-pad-main)` inherits the floor with no per-component media query. Any geometry token may carry a `mobile_floor` the same way (e.g. the topbar bar height, §components).
 
 ## §11.4 Spacing scale
 

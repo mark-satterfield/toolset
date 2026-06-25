@@ -9,22 +9,23 @@ Component family specifications. Slot definitions, fixed sizing, behavior, and a
 **Purpose.** A fixed-position desktop topbar that anchors global navigation and conversion CTAs without painting a visible boundary.
 
 **Slot definitions.**
-- `logo`: required SVG glyph at the height of the bar; paints via `fill="currentColor"` and inherits `--text-primary`.
+- `logo`: required SVG glyph rendered at `--topbar-logo-height` (a system geometry token, `geometry.components.topbar.logo-height`, shipped default 40px), vertically centered in the bar; paints via `fill="currentColor"` and inherits `--text-primary`. The **design system owns the logo height** — a composed page never hardcodes it.
 - `primary-nav`: required cluster of nav links, right-aligned.
 - `conversion-cta`: 1–2 right-aligned conversion actions — typically a tertiary text link followed by a filled primary button.
 
 **Props / variants.**
-- `height`: `desktop` (default, 84px) | `mobile-floor` (64px, below 480px viewport).
+- `height`: bound to `--topbar-height` (`geometry.components.topbar.height`, shipped default 84px desktop), with a 64px narrow-viewport floor below 480px declared as the token's `mobile_floor`.
 - `cta-adjacency`: `standalone` (default) | `caret-flush` (asymmetric radius when CTA sits flush against an adjacent dropdown caret).
 
-**Fixed sizing/spacing.**
+**Sizing/spacing (system-owned geometry tokens).**
 - `position: fixed; top: 0; z-index: 100`.
 - Background = `--nav-bg`, the topbar's dedicated navigation-ground role (a `from_palette: backgrounds` component role). It is bound per theme to the same ground as the section directly beneath it — the page ground, `--surface-primary` — so the nav blends seamlessly into the first section with no seam. The topbar has no standalone color of its own.
-- Height = `84px` at desktop widths. Reduce to `64px` below the 480px viewport via a discrete `@media` override (the topbar's only acceptable mobile-floor adjustment). Topbar height is a single value across every surface within a build.
+- Height = `var(--topbar-height)` (shipped default 84px). The narrow-viewport floor (64px below 480px) is the token's `mobile_floor`, emitted by re-declaring `--topbar-height` at `:root` inside `@media (max-width: 480px)`; `.topbar { height: var(--topbar-height) }` inherits it. Topbar height is a single value across every surface within a build (`compliance.md` §23 #16).
+- **Logo sizing.** `.topbar-logo` (and its `img` / inline `svg`) renders at `height: var(--topbar-logo-height); width: auto`, vertically centered. Because both the bar and the logo resolve from system tokens, the logo scales with the bar and **a page-block `<style>` must not re-declare the logo height** — that contradiction (reference says one thing, the page hardcodes another) is exactly what `audit-against-system` now flags (`compliance.md` §23).
 - No bottom border. No drop shadow. The nav blends into the page ground.
 - **Layout — logo left, nav + CTA right.** The bar is a single flex row: the `logo` sits alone at the start (left); the `primary-nav` cluster and the `conversion-cta` are grouped together at the end (right) — e.g. `margin-inline-start: auto` on the nav group (or `justify-content: flex-end` after the logo). The nav links are **never centered**, and the row must **NOT** use `justify-content: space-between` — that strands the nav in the middle, which is the recurring bug this rule exists to prevent.
 - Nav-link type at the small-body sans size (15px), weight 400.
-- Primary-action button: 36px height, mapped primary fill, mapped inverse text, 8–10px radius.
+- Primary-action button: `var(--topbar-action-height)` height (shipped default 36px), mapped primary fill, mapped inverse text, 8–10px radius.
 - Caret-flush deviation: asymmetric radius `8px 0 0 8px` (left-rounded only) so the right edge meets the caret cleanly.
 
 **Behavior.** Static at rest. The primary-action button uses the same primary button vocabulary as anywhere else on the page (see §14.1).

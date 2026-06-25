@@ -50,6 +50,8 @@ Use this checklist to verify any new page or component before merging.
 18. Reading columns on long-form pages are exactly 640px wide. [scope: both]
 19. Card padding clamps between 24px and 48px. [scope: both]
 20. Section padding clamps between 64px and 200px depending on the section role. [scope: both]
+21. Component sizing, spacing, radius, and container width resolve from generated geometry tokens; no page-block `<style>` re-declares a system token or hardcodes a dimension the system already owns (§23 #18). [scope: both]
+22. Entrance motion (reveal/stagger/fade) animates in the base rule and is disabled only inside `@media (prefers-reduced-motion: reduce)` — never gated behind `@media (prefers-reduced-motion: no-preference)` (§23 #19). [scope: both]
 
 ---
 
@@ -74,6 +76,8 @@ These rules are non-negotiable. Treat any violation as a build-blocking error.
 15. **Logos, icons, and mascot art are never authored as separate light-mode and dark-mode assets.** [scope: both]
 16. **Topbar height is consistent across a page type. Do not vary it per section.** [scope: both]
 17. **A theme wrapper is the only mechanism that repaints a section. Do not introduce ad-hoc `background-color` rules on sections.** [scope: both]
+18. **No page-block override of system-defined geometry.** Component sizing, spacing, radius, section padding, and container width are owned by the design system and emitted as tokens in the generated stylesheet set (`--{component}-{property}`, `--sp-*`, `--radius-*`, `--section-pad-*`, `--container-*`; see `foundations/layout.md` §11 and `foundations/implementation.md` §8.4). A page-block `<style>` (or inline style) must NOT re-declare one of those tokens, nor hardcode a literal value to resize a component the system already sizes — e.g. setting `.topbar-logo img { height: 26px }` when `--topbar-logo-height` exists (`components.md` §12.1). Consume the token instead; if the system lacks a needed dimension, add it to the YAML `geometry:` block, do not override it per page. [scope: both]
+19. **Entrance motion animates by default and is disabled only under reduced motion.** Reveal, stagger, and fade entrance patterns (`foundations/motion.md` §15.4) must animate in the base rule and reset to their visible final state only inside `@media (prefers-reduced-motion: reduce)`. Wrapping entrance motion in `@media (prefers-reduced-motion: no-preference)` is a violation: it silently removes the entrance for every reduce-motion user and can strand `opacity: 0` content invisible. (`no-preference` remains valid only for continuous/ambient enhancement whose static state is the no-animation baseline — e.g. a looping marquee — not for first-paint or scroll-entry reveals.) [scope: both]
 
 ---
 
@@ -90,4 +94,4 @@ These rules are non-negotiable. Treat any violation as a build-blocking error.
 - §21–§23 contain no brand identifiers. If these sections are extended later, re-audit for brand references in both prose and any added code blocks.
 - §21–§23 contain no fenced code blocks.
 - CSS variable references use the `--role-*` and `--color-*` convention throughout: role tokens (`--role-text-primary`, `--role-surface-primary`, etc.) carry the `--role-` prefix; palette swatches (`--color-accent-primary`, `--color-accent-dark`, etc.) carry the `--color-` prefix. Font-family references (`--font-sans`, `--font-serif`, `--font-mono` in §23 #2) follow the YAML's `font_var_pattern: "--font-{font key}"` convention and match `foundations/typography.md §13.1` — no `--role-` prefix.
-- Section cross-references (§4, §6, §8.1, §8.2, §13.2, §18.2) resolve to specific files: §4 → `foundations/overview.md`; §6, §8.1, §8.2 → `foundations/implementation.md`; §13.2 → `foundations/typography.md`; §18.2 → `foundations/accessibility.md`. Any further additions to §21–§23 should follow the same `<file>.md §N.M` form.
+- Section cross-references (§4, §6, §8.1, §8.2, §8.4, §11, §12, §13.2, §15, §18.2) resolve to specific files: §4 → `foundations/overview.md`; §6, §8.1, §8.2, §8.4 → `foundations/implementation.md`; §11 → `foundations/layout.md`; §12 → `components.md`; §13.2 → `foundations/typography.md`; §15 → `foundations/motion.md`; §18.2 → `foundations/accessibility.md`. Any further additions to §21–§23 should follow the same `<file>.md §N.M` form.
