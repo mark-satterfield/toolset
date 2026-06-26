@@ -220,7 +220,7 @@ Component-level geometry resolves the same way — the topbar bar and its logo b
 
 ### §8.4 Geometry and motion token emission
 
-Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the YAML rows are the source of truth (`foundations/layout.md` documents the geometry meanings, `foundations/motion.md` the motion meanings). The generator must not hardcode token lists — it walks the YAML blocks and emits per the `$conventions` patterns.
+Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `components.md §12.1` for component geometry such as the 84px topbar and 40px logo height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
 
 **Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
 
