@@ -54,7 +54,7 @@ Suits: operational dashboards, analytics views, settings screens, list/empty sta
 Interaction contracts:
 
 - Rail rows follow `components.md` §12.5: rest is transparent ground with `text-200` ink; hover paints `bg-400` ground and `text-100` ink over a 150ms `--ease-in-out` color transition (suppressed under `prefers-reduced-motion: reduce`); the active row paints a filled pill at radius `8px` and carries `aria-current="page"`.
-- Focus: rows expose the host project's global `:focus-visible` ring per accessibility.md §18.2 (`outline: 2px solid var(--role-focus-ring); outline-offset: 1px`).
+- Focus: rows expose the host project's global `:focus-visible` ring per accessibility.md §18.2 (`outline: 2px solid var(--focus-ring); outline-offset: 1px`).
 - Keyboard: rows are `<a>` anchors inside a `<nav>` landmark — standard sequential Tab order, Enter activates; no arrow-key composite-widget semantics.
 
 ---
@@ -1265,7 +1265,7 @@ Interaction contracts: the parent checkbox renders the indeterminate (dash) glyp
 - **2-col row container:** `display: flex`, `max-width: 32rem` (512px), `column-gap: 12px`, `row-gap: 12px`. Tailwind utility chain: `flex max-w-lg gap-3`. Each child cell measures 208px wide × 72px tall (input 44px + label-above + 8px vertical rhythm).
 - **4-col row container:** `display: flex`, `flex-wrap: wrap`, `column-gap: 12px`, `row-gap: 24px`, `width: 100%`, `align-items: flex-end`. Tailwind utility chain: `flex w-full flex-wrap items-end gap-x-3 gap-y-6`. Cells share width via natural flex sizing (no fixed basis); each cell measures 208px × 72px. At narrower viewports the 4-col row wraps to 2-up because `flex-wrap` is engaged and `flex-basis` is `auto`.
 - **Field cell:** flex column carrying the label above the input. Total cell height 72px; input height 44px; the remaining 28px holds the label and an 8–10px gap to the input.
-- **Input itself:** 44px tall, padding `0 12px`, `border: 1px solid var(--role-border-subtle)` (a hairline at ~15% alpha against the dark surface), `border-radius: 9.6px` (Tailwind `rounded-[0.6rem]`), `background: var(--role-surface-raised)` (elevated dark surface), `font-size: 16px`, `font-family: var(--typeface-sans)`.
+- **Input itself:** 44px tall, padding `0 12px`, `border: 1px solid var(--border-subtle)` (a hairline at ~15% alpha against the dark surface), `border-radius: 9.6px` (Tailwind `rounded-[0.6rem]`), `background: var(--surface-raised)` (elevated dark surface), `font-size: 16px`, `font-family: var(--typeface-sans)`.
 - **Select / combobox trigger** (rendered as `<button role="combobox">`): 42px tall, padding `0 0 0 12px` (right padding handled by an internal chevron), transparent background, no visible border by default.
 
 **Role-token bindings.**
@@ -1467,7 +1467,5 @@ Interaction contracts: the three per-row glyphs map to allow (call runs without 
 File-level notes that apply across the catalog:
 
 - Token values, widths, motion curves, focus-ring contracts, hover/active states, reduced-motion fallbacks, and breakpoint behavior are specified definitively per entry and resolve against the foundations (`reference/foundations/responsive.md`, `layout.md`, `accessibility.md`, `motion.md`).
-- This catalog is not exhaustive across all application surfaces. Other surfaces (chat conversation surface, file-tree explorer, multi-pane diff viewer, etc.) are not yet represented and will need their own entries in a later pass.
 - Cross-references to `components.md` are made by section number where the component already exists (e.g., A4 references §12.5).
-- The disjoint naming scheme (A1–A5 for shells, descriptive names for page shapes); if a later pass needs to expand beyond 26 shells, the scheme extends (A1…A26, then AA1, etc.).
-- Shell layouts A1–A5 may not be exhaustive for every host product. Future surfaces with novel partitioning (e.g., split-pane diff editor, multi-tab worktree) will need new letter codes.
+- The naming scheme is A1–A5 for shells and descriptive names for page shapes; it extends as A6…A26, then AA1, etc., and novel partitioning takes a new letter code.

@@ -38,11 +38,14 @@ For every editorial featured card, place a centered SVG illustration on a satura
   place-items: center;
   padding: clamp(48px, 8vw, 128px);
 }
-/* Tile variants are POSITIONAL, never color-named. Ground and ink come from
-   the active theme's feature-tile roles — `tile-ground-*` (constrained to the
-   `panels` palette) and `tile-ink-*` (constrained to `text`) in the elements
-   YAML. The author picks a tile number; the theme, not this CSS, decides the
-   color. No `--color-*` swatch ever appears here. */
+/* Variant classes are emitted DATA-DRIVENLY — generate-stylesheets emits one
+   `.feature-tile--N` (and one shape-agnostic `.ground--N`) per `tile-ground-N`
+   role declared in the YAML, so the variant set's size follows the data, not
+   this file. Ground and ink come from the theme's `tile-ground-*` (constrained
+   to `panels`) and `tile-ink-*` (constrained to `text`) roles; the author picks
+   a ground number, the theme decides the color. No `--color-*` swatch appears
+   here. The shipped YAML declares 1/2/3/accent (shown below as illustration);
+   adding `tile-ground-4` yields `.feature-tile--4` / `.ground--4` automatically. */
 .feature-tile--1 { background: var(--tile-ground-1); color: var(--tile-ink-1); }
 .feature-tile--2 { background: var(--tile-ground-2); color: var(--tile-ink-2); }
 .feature-tile--3 { background: var(--tile-ground-3); color: var(--tile-ink-3); }
@@ -50,9 +53,3 @@ For every editorial featured card, place a centered SVG illustration on a satura
 ```
 
 The SVG inside picks up the tile's `color` value, so a single mark can recolor cleanly per tile. Because the grounds are theme-bound, a light theme can fill them from soft `pastel` colors while a dark theme fills the same roles from deep `stronger` colors — without the tile markup changing.
-
-## Known gaps
-
-- §16.2 references `--accent-heroes` — a role token defined in the palette/role foundations, not in this file. The mascot art itself is supplied by the host project's brand-assets directory.
-- §16.4 feature-tiles consume **roles only** (`--tile-ground-1..3`, `--tile-ground-accent`, and their paired `--tile-ink-*`). They name no color and no swatch. The tile-ground roles are constrained (`from_palette: panels`) and bound per theme in the elements YAML, so the palette of grounds is a data decision, not a CSS decision. Variant classes are positional (`.feature-tile--1/2/3/accent`), never color-named.
-- §16.3 srcset breakpoint values (`500w / 800w / 1080w / native`) are stated as a generic recommendation; which page types or surfaces invoke them is not specified.

@@ -16,12 +16,13 @@ $conventions:
   color_var_pattern:    "--color-{palette key}-{color key}"
   typeface_var_pattern: "--typeface-{typeface key}"
   font_var_pattern:     "--font-{font key}"
-  role_var_pattern:     "--role-{role key}"
+  role_var_pattern:     "--{role key}"
   # geometry (configurable sizing / geometry / spacing — see `geometry:` below)
   spacing_var_pattern:         "--sp-{key}"
   radius_var_pattern:          "--radius-{key}"
   section_padding_var_pattern: "--section-pad-{key}"
   container_var_pattern:       "--container-{key}"
+  column_var_pattern:          "--column-{key}"
   component_size_var_pattern:  "--{component}-{property}"
   # motion (configurable easing / duration / entrance patterns — see `motion:` below)
   ease_var_pattern:            "--ease-{key}"
@@ -182,7 +183,7 @@ color_catalog:
     # ////////////////////////////////////////////////////////////
 
     # ------------------------------------------------------------
-    # BURNT-ORANGE  (was `accent`)
+    # BURNT-ORANGE
     # ------------------------------------------------------------
     burnt-orange:
       type: Discrete
@@ -194,11 +195,11 @@ color_catalog:
         dark:        { name: "Dark-mode burnt orange", hex: "#DE5D4E" }
 
     # ------------------------------------------------------------
-    # PASTEL  (was `panel`)
+    # PASTEL
     # ------------------------------------------------------------
     pastel:
       type: Discrete
-      description: "Soft, low-saturation tile grounds."
+      description: "Soft, low-saturation chromatic family."
       colors:
         oat:      { name: "Warm tan",       hex: "#E3DACC" }
         peach:    { name: "Pale peach",     hex: "#EBC9B7" }
@@ -212,11 +213,11 @@ color_catalog:
         plum:     { name: "Cool violet",    hex: "#827DBD" }
 
     # ------------------------------------------------------------
-    # STRONGER  (deep, saturated tile grounds — your 7 colors)
+    # STRONGER
     # ------------------------------------------------------------
     stronger:
       type: Discrete
-      description: "Deep, saturated tile grounds — high-presence panels."
+      description: "Deep, saturated chromatic family."
       colors:
         indigo:   { name: "Deep indigo",    hex: "#2B3A6B" }
         violet:   { name: "Royal violet",   hex: "#4B2E6B" }
@@ -227,11 +228,11 @@ color_catalog:
         slate:    { name: "Slate blue",     hex: "#3D4A6B" }
 
     # ------------------------------------------------------------
-    # SATURATED  (was `state` — vivid signal colors)
+    # SATURATED
     # ------------------------------------------------------------
     saturated:
       type: Discrete
-      description: "Vivid, high-chroma signal colors."
+      description: "Vivid, high-chroma colors."
       colors:
         error-light: { name: "Muted red",      hex: "#B53333" }
         error-dark:  { name: "Light red",      hex: "#DF6666" }
@@ -246,11 +247,11 @@ color_catalog:
     # ////////////////////////////////////////////////////////////
 
     # ------------------------------------------------------------
-    # ACCENT — chromatic accent usage -> burnt-orange
+    # ACCENT
     # ------------------------------------------------------------
     accent:
       type: Discrete
-      description: "Accent usage. Aliases the burnt-orange primitive."
+      description: "Chromatic accent."
       colors:
         primary:     { var: "--color-burnt-orange-primary" }
         interactive: { var: "--color-burnt-orange-interactive" }
@@ -258,11 +259,11 @@ color_catalog:
         dark:        { var: "--color-burnt-orange-dark" }
 
     # ------------------------------------------------------------
-    # PANELS — feature-tile grounds -> pastel + stronger
+    # PANELS
     # ------------------------------------------------------------
     panels:
       type: Discrete
-      description: "Feature-tile grounds. Aliases pastel (soft) and stronger (deep)."
+      description: "Saturated card and tile grounds."
       colors:
         # soft (pastel)
 
@@ -288,13 +289,11 @@ color_catalog:
         g:    { var: "--color-stronger-slate" }
 
     # ------------------------------------------------------------
-    # BUTTONS — every distinct button fill/label/border the themes
-    # use, named by purpose + tone. Change one entry to restyle
-    # that button class across every theme that points at it.
+    # BUTTONS — button fills, labels, and borders, named by purpose + tone.
     # ------------------------------------------------------------
     buttons:
       type: Discrete
-      description: "Button fills, labels, and borders. Aliases blue / neutral / black."
+      description: "Button fills, labels, and borders."
       colors:
         primary-bg-brand:     { var: "--color-blue-750" }          # brand-dark fill
         primary-bg-frost:     { var: "--color-blue-050" }          # inverted (dark mode)
@@ -314,13 +313,11 @@ color_catalog:
         tertiary-border:      { var: "--color-neutral-400" }
 
     # ------------------------------------------------------------
-    # BACKGROUNDS — every surface/footer ground the themes use,
-    # named by tone (light -> dark). Warm grounds alias neutral;
-    # brand-* grounds alias the blue ramp.
+    # BACKGROUNDS — surface and footer grounds, named by tone.
     # ------------------------------------------------------------
     backgrounds:
       type: Discrete
-      description: "Surface and footer grounds. Aliases neutral (warm) and blue (brand)."
+      description: "Surface and footer grounds."
       colors:
         pure:           { var: "--color-neutral-000" }
         ivory:          { var: "--color-neutral-050" }
@@ -343,11 +340,11 @@ color_catalog:
         absolute-black: { var: "--color-neutral-1000" }
 
     # ------------------------------------------------------------
-    # TEXT — every ink color the themes use, named by tone.
+    # TEXT — ink colors, named by tone.
     # ------------------------------------------------------------
     text:
       type: Discrete
-      description: "Ink colors for body, headings, captions, labels. Aliases neutral / blue / black."
+      description: "Ink colors for body, headings, captions, labels."
       colors:
         ivory:      { var: "--color-neutral-050" }
         tan:        { var: "--color-neutral-300" }
@@ -369,7 +366,7 @@ color_catalog:
     # ------------------------------------------------------------
     borders:
       type: Discrete
-      description: "Border, divider, and focus-ring colors. Aliases neutral / blue."
+      description: "Border, divider, and focus-ring colors."
       colors:
         soft:      { var: "--color-neutral-300" }
         tan:       { var: "--color-neutral-350" }
@@ -385,11 +382,11 @@ color_catalog:
         powder:    { var: "--color-blue-400" }
 
     # ------------------------------------------------------------
-    # SIGNALS — state/feedback usage -> saturated.
+    # SIGNALS
     # ------------------------------------------------------------
     signals:
       type: Discrete
-      description: "Focus, error, and required-field signals. Aliases the saturated primitive."
+      description: "Focus, error, and required-field signals."
       colors:
         focus:           { var: "--color-saturated-focus-blue" }
         error:           { var: "--color-saturated-error-fill" }
@@ -398,11 +395,11 @@ color_catalog:
         required:        { var: "--color-saturated-required" }
 
     # ------------------------------------------------------------
-    # STATUS — badge/pill grounds by meaning -> pastel + saturated.
+    # STATUS
     # ------------------------------------------------------------
     status:
       type: Discrete
-      description: "Status-badge grounds. Aliases pastel (positive/caution) and saturated (critical)."
+      description: "Status-badge grounds."
       colors:
         positive: { var: "--color-pastel-mineral" }
         caution:  { var: "--color-pastel-peach" }
@@ -745,76 +742,70 @@ roles:
     description: "Required-field asterisk ink."
     required: true
 
-  # ----- FEATURE-TILE component ----------------------------
-  # Decorative editorial tile grounds. Variety is positional
-  # (1/2/3 + accent), NEVER color-named: the author picks a tile
-  # number, the theme chooses which constrained color fills it.
+  # ----- GROUND roles (shared, data-driven) ----------------
+  # Saturated grounds. The generator emits one `.feature-tile--N`
+  # and one `.ground--N` per `tile-ground-N` role declared here, so
+  # the variant set follows the data. Variety is positional
+  # (1/2/3 + accent), never color-named: declare more
+  # `tile-ground-N` / `tile-ink-N` pairs to add grounds.
   tile-ground-1:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: panels
-    description: "First editorial feature-tile ground."
+    description: "Saturated ground 1."
     required: true
   tile-ink-1:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: text
-    description: "Ink paired with tile-ground-1 (legible on that ground)."
+    description: "Ink paired with ground 1."
     required: true
 
   tile-ground-2:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: panels
-    description: "Second editorial feature-tile ground."
+    description: "Saturated ground 2."
     required: true
   tile-ink-2:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: text
-    description: "Ink paired with tile-ground-2."
+    description: "Ink paired with ground 2."
     required: true
 
   tile-ground-3:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: panels
-    description: "Third editorial feature-tile ground."
+    description: "Saturated ground 3."
     required: true
   tile-ink-3:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: text
-    description: "Ink paired with tile-ground-3."
+    description: "Ink paired with ground 3."
     required: true
 
   tile-ground-accent:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: accent
-    description: "Accent-splash feature-tile ground."
+    description: "Accent ground."
     required: true
   tile-ink-accent:
     type: color
-    scope: component
-    component: feature-tile
-    family: tile
+    scope: semantic
+    family: ground
     from_palette: text
-    description: "Ink paired with the accent-splash tile ground."
+    description: "Ink paired with the accent ground."
     required: true
 
   # ----- BADGE component (status pills) --------------------
@@ -972,7 +963,7 @@ themes:
   # `editorial` entry immediately below the default block).
   # ------------------------------------------------------------
   default:
-    description: "Principal light theme. Default warm-ivory page ground for marketing, editorial, conversion. `editorial` is a data-declared alias of this theme (mirrors it in every mode)."
+    description: "Principal light theme. Default warm-ivory page ground for marketing, editorial, conversion."
     modes:
       light:
         bindings:
@@ -1662,16 +1653,22 @@ geometry:
     large:    { value: "clamp(128px, calc(128px + 72 * (100vw - 320px) / 1120), 200px)", description: "Feature heroes, page-end conversion sections." }
     page-top: { value: "clamp(192px, calc(192px + 48 * (100vw - 320px) / 1120), 240px)", description: "Above-the-fold hero only." }
 
-  # ----- container widths per surface class -> --container-{key} (foundations/layout.md §11.2)
-  # A surface chooses a container width from the system instead of hardcoding a
-  # max-width in the page's style block.
+  # ----- section-wrapper widths -> --container-{key} (foundations/layout.md §11.2)
+  # A section wrapper is the screen-wide block ground; its width is >= the page
+  # width, never below it. A surface chooses a container token instead of
+  # hardcoding a max-width in the page's style block.
   containers:
-    marketing-primary: { value: "1440px", description: "Marketing primary container max width." }
-    marketing-medium:  { value: "1192px", description: "Marketing medium container max width." }
-    marketing-small:   { value: "960px",  description: "Marketing small container max width." }
-    editorial:         { value: "1400px", description: "Editorial container max width." }
-    editorial-reading: { value: "640px",  description: "Long-form reading column width (centered)." }
-    conversion-card:   { value: "448px",  description: "Conversion card width." }
+    marketing-primary: { value: "1440px", description: "Marketing section-wrapper width (the page width)." }
+    editorial:         { value: "1400px", description: "Editorial / long-form section-wrapper width." }
+    conversion-card:   { value: "448px",  description: "Conversion card element width." }
+
+  # ----- inner reading-column widths -> --column-{key} (foundations/layout.md §11.2)
+  # A reading column caps a SINGLE text block or one card inside a page-width
+  # section. It is never the section wrapper.
+  columns:
+    wide:    { value: "1192px", description: "Widest single-block reading column." }
+    medium:  { value: "960px",  description: "Centered single-column / quote-block measure." }
+    reading: { value: "640px",  description: "Long-form body reading column." }
 
   # ----- component-level sizing -> --{component}-{property}
   # The system owns component dimensions; composers consume these tokens and
@@ -1754,3 +1751,19 @@ motion:
       delay:    { value: "0.3s",  description: "Delay before the settle begins." }
       y:        { value: "32px",  description: "Initial downward offset." }
       easing:   { value: "var(--ease-out-quart)", description: "Settle easing curve." }
+
+# ============================================================
+# ASSETS
+# Brand-asset rendering. The logo defaults to a single
+# currentColor glyph that inherits --text-primary and recolors
+# with the theme. A multi-color brand mark may instead ship a
+# light/dark image pair (the one supported exception, compliance §23 #15).
+# ============================================================
+assets:
+  logo:
+    mode: currentColor
+    # To use a multi-color brand mark, replace the line above with:
+    # mode: asset-pair
+    # light: "<path or URL shown on light grounds>"
+    # dark:  "<path or URL shown on dark grounds>"
+    # alt:   "Brand"

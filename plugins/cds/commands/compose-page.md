@@ -19,5 +19,7 @@ Invoke the `compose-page` skill in this plugin. Load and execute `skills/compose
 
 - Default surface kind is a full page. Section-in-isolation and component-in-isolation are wrapped in a minimal HTML container (1440px content width, 64px outer padding, light-mode default with a top-right toggle).
 - Iteration: if a state record exists at the resolved `output_path`, the skill loads the prior `brief_snapshot` and `sections` and treats the request as a modification. Matching uses strict `output_path` equality.
-- Page types whose shape rules are present in the reference compose; types without rules halt with `SHAPE_RULES_PENDING:{page-type}` (no guessing).
-- The emitted HTML inlines the stylesheet set; it does NOT contain agent-side metadata.
+- Page types whose shape rules are present in the plugin reference OR the project extensions dir compose; a type defined in neither halts with `SHAPE_RULES_PENDING:{page-type}` (no guessing). A project grows the catalog via `*.md` files under `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/{shapes,page-types,section-types}/`, which override the plugin reference by name.
+- Stylesheet freshness is automatic: if the YAML / reference / extensions have moved, the skill regenerates the stylesheet set itself and proceeds (a comment- or description-only YAML edit does not trigger a regeneration).
+- Beside the HTML the skill writes two sidecars — `<mock>.wireframe.txt` and `<mock>.decisions.md`. The emitted HTML inlines the stylesheet set and stays metadata-free.
+- Update mode: supply an existing HTML file (or a Figma reference) to apply the change to it as a region-scoped edit instead of regenerating from scratch.

@@ -6,8 +6,8 @@ A brand-neutral design system you install in any project. CDS gives you a styles
 
 ## What's in the box
 
-- **6 slash commands** for direct invocation: `/cds:setup`, `/cds:generate-stylesheets`, `/cds:compose-page`, `/cds:compose-app-surface`, `/cds:apply-design-system`, `/cds:audit-against-system`.
-- **6 skills** the commands invoke. Five also auto-route from natural-language phrasing (the model recognizes "build me a landing page", "audit this UI", "regenerate the CSS", etc.). The `setup` skill is gated by `disable-model-invocation: true` and fires only from `/cds:setup`.
+- **7 slash commands** for direct invocation: `/cds:setup`, `/cds:generate-stylesheets`, `/cds:compose-page`, `/cds:compose-app-surface`, `/cds:apply-design-system`, `/cds:audit-against-system`, `/cds:package-change`.
+- **7 skills** the commands invoke. Six also auto-route from natural-language phrasing (the model recognizes "build me a landing page", "audit this UI", "regenerate the CSS", "package this change", etc.). The `setup` skill is gated by `disable-model-invocation: true` and fires only from `/cds:setup`.
 - **2 sub-agents** that bundle the right skills with an identity: `cds-ui-author` (for UI work), `cds-code-companion` (for non-UI code that touches UI).
 - **A reference tree** of every fixed design decision — spacing, motion, type scales, component anatomy, accessibility rules — that the skills consult deterministically.
 - **A schema** for the one file you customize (`customizable-design-elements.yaml`).
@@ -41,6 +41,8 @@ Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-va
 | `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` | Optional | Default output directory for HTML mocks | `compose-page` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR` | Optional | Default output directory for framework-native component code | `compose-app-surface` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK` | Required for `compose-app-surface` | Framework target (e.g., `react-tsx`, `vue-sfc`, `plain-html`) | `compose-app-surface` |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` | Optional | Project extensions dir (`shapes/`, `page-types/`, `section-types/`) read alongside — and overriding by name — the plugin reference | `compose-page`, `compose-app-surface` |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` | Optional | Default output root for `package-change` hand-off bundles | `package-change` |
 
 When a variable is unset, the relevant skill asks for the value at call time. If the user does not provide one, the skill halts with the appropriate `STOP:` code (e.g., `ELEMENTS_YAML_UNSET`, `FRAMEWORK_UNSET`, `OUTPUT_PATH_UNRESOLVABLE`).
 
@@ -108,7 +110,7 @@ When you edit `customizable-design-elements.yaml` (or when CDS itself updates):
 
 > "Regenerate the design-system CSS."
 
-`generate-stylesheets` reads your YAML + the reference, writes three files (`tokens.css`, `components.css`, `themes.css`) to your stylesheets output directory, plus a `manifest.json` with SHA-256 fingerprints. Other CDS skills detect stale stylesheets by comparing the YAML's hash to the manifest.
+`generate-stylesheets` reads your YAML + the reference, writes three files (`tokens.css`, `components.css`, `themes.css`) to your stylesheets output directory, plus a `manifest.json` with SHA-256 fingerprints. You rarely need to run this by hand: the composers detect a stale set (by comparing the **semantic** hashes of your YAML, the reference, and any project extensions against the manifest) and **regenerate it themselves** before composing. The hash is semantic — a comment- or `description:`-only YAML edit does **not** trigger a regeneration.
 
 ### Mock a page
 
@@ -138,7 +140,23 @@ The skill detects the prior run by `output_path` match, loads the prior brief fr
 
 > "This mock is approved — give me the spec to attach to the ticket."
 
-Every `compose-page` run writes a deterministic **state record** next to the mock — the `brief_snapshot` plus the resolved `sections` (their shapes, themes, and components), via the shared state-record schema. Once a human is happy with a mock, that record is the **reference-anchored build spec** you attach to a story for future implementation work: it pins what the approved design resolved to, so whoever builds it later reproduces it deterministically, on-system, without re-deciding anything. The mock is the picture; the state record is the buildable instruction set that travels with the story.
+Every `compose-page` run writes a deterministic **state record** next to the mock — the `brief_snapshot` plus the resolved `sections` (their shapes, themes, and components), via the shared state-record schema. It also writes two sidecars beside the metadata-free HTML: `<mock>.wireframe.txt` (a labeled ASCII layout map) and `<mock>.decisions.md` (the composition reasoning). Once a human is happy with a mock, that record is the **reference-anchored build spec**; whoever builds it later reproduces it deterministically, on-system, without re-deciding anything.
+
+### Package an approved change for the app repo
+
+> "This mock is approved — package it for the app repo."
+
+`/cds:package-change` bundles everything the change needs to cross the boundary into one directory: the generated stylesheet set (regenerated first if stale), the mock HTML (or the framework surface + wiring diffs), a derived `build-spec.md`, the wireframe and decision-log sidecars, and any ancillary assets. For a brownfield (update-mode) change it also carries the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in cds" to "built in the app repo".
+
+### Update an existing page or surface (brownfield)
+
+> "Update the hero on this existing page: src/pages/landing.html"
+
+Supply an existing file (from your repo or a Figma reference) and `compose-page` / `compose-app-surface` apply the requested change to the targeted region only, leaving the rest of the markup intact — `compose-page` rewrites the standalone HTML; `compose-app-surface` emits a region-scoped diff.
+
+### Extend the catalog without forking
+
+Drop `*.md` definitions into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/{shapes,page-types,section-types}/` (same shape as the plugin reference entries). The composers read them **alongside** the plugin reference and let a project definition **override** a plugin one by name — so a project grows the catalog without waiting on a plugin release, and a previously-halting page type or shape composes once you supply it.
 
 ### Build an in-app surface
 
@@ -224,8 +242,8 @@ CDS recomputes the three CSS files and the manifest. Existing mocks become "stal
 - It will not read your host-project code to figure out conventions. Everything it does comes from the reference tree, your elements YAML, or runtime input you give it.
 - It will not emit theme controllers, mode resolvers, or routing code for in-app surfaces. Your host project owns those.
 - It will not embed metadata inside the deliverable. Mocks and emitted code are clean.
-- It will not fall back to "best guess" when the reference is missing something. It STOPs with a halt code and tells you what is missing. Halt codes include `SHAPE_RULES_PENDING:{page-type}` (the reference does not yet carry composition rules for that page type), `MISSING_COMPONENT:{name}`, `STYLESHEETS_STALE`, `FRAMEWORK_UNSET`, and others.
-- It will not extend itself. Adding new components, role definitions, or themes is your work in the elements YAML and the reference tree.
+- It will not fall back to "best guess" when the reference is missing something. It STOPs with a halt code and tells you what is missing. Halt codes include `SHAPE_RULES_PENDING:{page-type}` (neither the reference nor your project extensions carry composition rules for that page type), `MISSING_COMPONENT:{name}`, `STYLESHEETS_REGEN_FAILED` (an auto-regeneration of a stale set itself failed), `FRAMEWORK_UNSET`, and others.
+- It will not silently invent catalog entries. New colors, role definitions, or themes are your work in the elements YAML; new shapes, page-types, or section-types can be added in your project's extensions dir (read alongside, and overriding, the plugin reference) without forking the plugin.
 
 ---
 
@@ -248,9 +266,9 @@ It runs the property-based linter (schema, integrity, aliases, from_palette, rol
 
 ## Troubleshooting
 
-**"The skill says my stylesheets are stale."** Run `generate-stylesheets` — your elements YAML has changed since the last generation.
+**"The skill said it regenerated my stylesheets."** Expected — when your YAML, reference, or extensions change, the composers regenerate the set themselves before composing. A comment- or `description:`-only YAML edit does not trigger one (the hash is semantic). If an auto-regeneration fails you'll see `STYLESHEETS_REGEN_FAILED` with the inner cause.
 
-**"The skill stopped with `SHAPE_RULES_PENDING:editorial-detail`."** The reference does not yet carry composition rules for the editorial-detail page type. `compose-page` halts rather than guess; add those rules to the reference to enable that page type.
+**"The skill stopped with `SHAPE_RULES_PENDING:editorial-detail`."** Neither the plugin reference nor your project extensions carry composition rules for the editorial-detail page type. `compose-page` halts rather than guess; add those rules to the reference — or to your project's `extensions/page-types/` (and `extensions/shapes/`) — to enable that page type.
 
 **"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not defined in `components.md`. `compose-app-surface` halts rather than invent it — add the component to `components.md` to enable it.
 

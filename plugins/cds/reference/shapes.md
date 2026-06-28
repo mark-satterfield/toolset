@@ -49,7 +49,7 @@ Just an H2 (and optional eyebrow) acting as a section label, no content beneath.
 - **Allowed variants:** with eyebrow / without eyebrow.
 
 **Determinations**
-- The strip spans the marketing medium container (1192px max) and is left-aligned, matching the reading-axis of the sections it labels.
+- The strip spans the page-width section wrapper (`.u-container`) and is left-aligned, matching the reading-axis of the sections it labels.
 - Vertical padding uses `--section-pad-small` (64–96px clamp); the eyebrow-to-H2 gap is `--sp-0-75` (12px).
 
 ---
@@ -94,7 +94,7 @@ Centered headline; interactive element (chat input, install snippet, prompt chip
 
 **Determinations**
 - Exactly one affordance per shape. When more than one affordance is needed, repeat the shape as separate sections rather than stacking affordances.
-- CTAs, when present, sit below the affordance (the affordance is the section's primary action). The affordance is centered, capped at the marketing small container (960px), with `--sp-3` (40–48px clamp) between the heading block and the affordance.
+- CTAs, when present, sit below the affordance (the affordance is the section's primary action). The affordance is centered in a `--column-medium` (960px) reading column inside the page-width section, with `--sp-3` (40–48px clamp) between the heading block and the affordance.
 
 ---
 
@@ -104,11 +104,12 @@ N cards in M columns, identical card structure (icon/title/blurb/optional CTA).
 
 - **Slots:** N cards, each with icon, title, blurb, and optional CTA.
 - **Layout:** grid of M columns by ⌈N/M⌉ rows; uniform cell structure.
-- **Allowed variants:** with or without per-card CTA; with or without icon.
+- **Allowed variants:** with or without per-card CTA; with or without icon; default fill (transparent on `--surface-primary`) or **colored** (each card takes a saturated `.ground--N`).
 
 **Determinations**
 - Default column count is 3 (M = 3) on desktop, dropping to 2 columns below the 700px breakpoint and 1 column below 480px. N is content-driven; the last row left-aligns any remainder.
 - Grid gap is the 32px grid gutter on both axes. Cards use the Full promo card or Feature card spec from `components.md` (`--radius-xl` outer, 32px inner padding).
+- A colored card-grid is a first-class variant: each card may take a saturated `.ground--N` — the shared `tile-ground-*` role set (`from_palette: panels`), emitted one `.ground--N` per declared ground. Pick a ground number per the section, never a color; grounds are theme-bound. A colored grid uses `.ground--N`, not ad-hoc `panel-N` roles.
 - Cards animate in with the `--card-index` stagger (motion.md §15.4), suppressed under `prefers-reduced-motion: reduce`.
 
 ---
@@ -213,7 +214,7 @@ Three quote blocks stacked vertically, no card framing, attribution under each.
 
 **Determinations**
 - Three is the default; the shape accepts 2–4 quotes using the same stacked treatment if a section needs a different count.
-- Quotes are centered within the marketing small container (960px) with `--sp-5` (64–80px clamp) between blocks. Attribution sits directly beneath each quote in tertiary ink.
+- Quotes are centered in a `--column-medium` (960px) reading column inside the page-width section, with `--sp-5` (64–80px clamp) between blocks. Attribution sits directly beneath each quote in tertiary ink.
 
 ---
 
@@ -240,7 +241,7 @@ One large quote, often with metric, treated as a near-hero element.
 - **Allowed variants:** with or without metric.
 
 **Determinations**
-- The quote is capped at the marketing small container (960px) with `text-wrap: balance` and runs no longer than ~240 characters; longer testimonials use stacked-quotes instead.
+- The quote is capped at a `--column-medium` (960px) reading column inside the page-width section with `text-wrap: balance` and runs no longer than ~240 characters; longer testimonials use stacked-quotes instead.
 - When present, the metric sits above the quote as an oversized display number (Primary Sans, weight 600–700), with attribution below the quote. Vertical padding uses `--section-pad-large` (128–200px clamp) to give the block its near-hero scale.
 
 ---
@@ -255,7 +256,7 @@ Collapsible items, each header expands to reveal answer; vertical stack.
 
 **Determinations**
 - Default behavior is multi-open (each item toggles independently) with all items closed at load. Item count is content-driven, 2 or more.
-- Items are separated by a 1px hairline (`--border-subtle`) rather than card framing; the stack is capped at the marketing small container (960px). Headers carry `aria-expanded` and `aria-controls` per accessibility.md §18.3, and the expand/collapse uses a max-height transition gated by reduced motion.
+- Items are separated by a 1px hairline (`--border-subtle`) rather than card framing; the stack is capped at a `--column-medium` (960px) reading column inside the page-width section. Headers carry `aria-expanded` and `aria-controls` per accessibility.md §18.3, and the expand/collapse uses a max-height transition gated by reduced motion.
 
 ---
 
@@ -268,6 +269,7 @@ Horizontal row of 2-4 tier cards; segment toggle above swaps tier set.
 - **Allowed variants:** tier count 2, 3, or 4; toggle segment count.
 
 **Determinations**
+- The section spans the full page-width wrapper (`.u-container`), never a narrower reading column; the tier cards lay out across the 12-column grid within it, so a 3–4-tier row never cramps into a narrow column.
 - The segment toggle is centered above the row and uses the Pill-tab strip component as a `role="radiogroup"` (it filters the tier set in place rather than swapping distinct panels).
 - One tier may be marked featured: it paints a 1px accent border and a "featured" pill at its top, and sits in the visual center of the row. Tier cards use the Pricing card spec from `components.md`.
 - Below the 700px breakpoint the tier row stacks to a single column with the featured tier first.
@@ -299,7 +301,7 @@ Narrow full-width strip: one headline + 1-2 CTAs, no visual.
 
 **Determinations**
 - The strip takes its section's scheduled ground from the background-alternation schedule (page-types.md) like every other shape; it does not choose its own ground. Its distinctness comes from its narrow `--section-pad-small` height and single full-width row, not from a self-chosen surface.
-- Headline and CTAs sit on one row, headline left and CTAs right, within the marketing medium container; vertical padding uses `--section-pad-small` (64–96px clamp). Below 700px the CTAs wrap beneath the headline.
+- Headline and CTAs sit on one row, headline left and CTAs right, spanning the page-width section wrapper (`.u-container`); vertical padding uses `--section-pad-small` (64–96px clamp). Below 700px the CTAs wrap beneath the headline.
 
 ---
 
@@ -309,7 +311,7 @@ Tall full-width band: headline + subhead + CTAs.
 
 - **Slots:** headline; subhead; one or more CTAs.
 - **Layout:** tall full-width band; vertically centered content block.
-- **Allowed variants:** CTA count = 1 or 2. (The panel takes its section's scheduled ground; a dark CTA band is a named theme island in page-types.md §10, not a shape variant.)
+- **Allowed variants:** CTA count = 1 or 2. (The panel takes its section's scheduled ground; a dark CTA band is a named theme island declared in the page type's Theme / mode notes in `page-types.md`, not a shape variant.)
 
 **Determinations**
 - CTA count is 1–2 (a primary button plus an optional tertiary peer). Content is centered both horizontally and vertically.
@@ -453,6 +455,7 @@ Mid-page hero-like restatement: video on one side, headline + CTA on the other.
 - **Allowed variants:** video-left/text-right and the mirror.
 
 **Determinations**
+- The section spans the full page-width wrapper (`.u-container`), never a narrower reading column; the two columns lay out across the 12-column grid within it.
 - The CTA pair is exactly two CTAs (a primary button plus a tertiary peer); when only one action is needed, use split-text-media instead.
 - Columns are 50/50 on the 12-column grid with the 32px gutter; the video sits at a fixed 16:9 aspect ratio capped at its column width. Below the 700px breakpoint the columns stack with the video above the text/CTA column, and the CTA pair stacks full-width.
 
@@ -461,7 +464,7 @@ Mid-page hero-like restatement: video on one side, headline + CTA on the other.
 ## Shape-set conventions
 
 - Per-shape slot and layout detail is definitive at the level stated above. Column counts, padding, theme constraints, responsive collapse, and per-shape bounds resolve against `foundations/` (the `--section-pad-*` and `--sp-*` scales, the 12-column grid, the 480 / 700 / 1024 / 1440 breakpoints) and the component specs in `components.md`.
-- No shape sets its own theme or section ground. Every shape inherits the surrounding section's theme and takes the section's scheduled `surface-primary`/`surface-secondary` ground from the background-alternation schedule in page-types.md. A section that must read as a distinct theme (e.g. a dark band) is a named theme island in the page-type index (§10), not a shape-level choice.
+- No shape sets its own theme or section ground. Every shape inherits the surrounding section's theme and takes the section's scheduled `surface-primary`/`surface-secondary` ground from the background-alternation schedule in page-types.md. A section that must read as a distinct theme (e.g. a dark band) is a named theme island declared in the page type's Theme / mode notes in `page-types.md`, not a shape-level choice.
 - **Interactive and animated shapes are self-contained.** Shape-level behavior — the logo-marquee scroll, card-carousel paging/prev-next, quote-swiper rotation, tabbed-panels tab switching, accordion expand/collapse — is NOT provided by the generated component stylesheet or any shared script. Each such shape's fragment carries its own scoped `<style>` and, where the behavior cannot be achieved in pure CSS, a scoped `<script>` written as an IIFE that scopes itself to its own instance(s) so multiple copies on one page never collide. That script implements the ARIA keyboard contract for the pattern from `foundations/accessibility.md` (e.g. tablist arrow-key navigation, accordion `aria-expanded` toggling), and any motion is gated behind `@media (prefers-reduced-motion: no-preference)` with a static fallback. A fragment whose behavior is defined nowhere is broken — it must work standalone.
 - "Card grid" shapes (card-grid, tagged-card-grid, resource-grid) share one column policy: 3 columns at desktop, 2 below the 700px breakpoint, 1 below 480px, with the 32px grid gutter on both axes and the `--card-index` stagger on entry.
 - numbered-steps step rows wrap onto additional grid rows when the step count exceeds 3 and stack to a single column below the 700px breakpoint, as stated in the numbered-steps determinations.

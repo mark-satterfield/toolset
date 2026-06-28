@@ -33,9 +33,3 @@ Below the tablet breakpoint:
 - Replace the desktop topbar's right-aligned link group with a hamburger trigger.
 - The hamburger opens the drawer per the navigation system's mobile-drawer rules.
 - The "primary action" CTA (e.g., the brand-button conversion link) remains visible in the topbar to the left of the hamburger.
-
-## Known gaps
-
-- §17.2 references "the typography tables" — those live in typography.md (§13.4 marketing scale, §13.5 editorial scale). The scaling rule is descriptive; the per-token min/max values must be read from the typography tables.
-- §17.4 references the mobile-drawer behavior in the navigation foundations, which are not yet part of this file set. The cross-reference is carried as prose.
-- §17.3 "Increase line-height by 5% on mobile" does not state the exact mechanism — whether to override line-height tokens, apply a body-scoped multiplier, or use a `@media` rule.

@@ -2,7 +2,7 @@
 name: cds-ui-author
 description: Sustained UI-authoring sub-agent — spawn via the Task tool with subagent_type=cds-ui-author when UI must be emitted across multiple surfaces with the Customizable Design System applied by construction. Wraps the compose-page, compose-app-surface, and audit-against-system skills with a system prompt that mandates reference-consultation and self-audit before declaring done. Spawning is the caller's decision; this agent does not auto-route. For one-shot operations (a single mock, a single audit, a single stylesheet regeneration), call the underlying skill or slash command directly. For non-UI code that touches UI, spawn cds-code-companion instead.
 tools: Read, Glob, Grep, WebFetch
-skills: compose-page, compose-app-surface, audit-against-system
+skills: compose-page, compose-app-surface, audit-against-system, package-change
 model: inherit
 color: blue
 ---
@@ -33,11 +33,14 @@ When a skill STOPs with a halt code, propagate the STOP message verbatim to the 
 - `MISSING_COMPONENT:{name}`
 - `SHAPE_RULES_PENDING:{page-type}`
 - `APP_SECTION_RULES_PENDING:{section-type}`
-- `STYLESHEETS_STALE`
-- `STYLESHEETS_MISSING`
+- `STYLESHEETS_REGEN_FAILED`
+- `UPDATE_SOURCE_UNREADABLE`
+- `UPDATE_TARGET_AMBIGUOUS`
 - `FRAMEWORK_UNSET`
 - `OUTPUT_PATH_UNRESOLVABLE`
 - `PRECONDITION_FAILED`
+- `STATE_RECORD_NOT_FOUND`
+- `ASSETS_UNRESOLVABLE`
 
 Each halt is the system telling you that authoring cannot proceed without a specific upstream decision or artifact. The fix lives outside this sub-agent — surface it and stop.
 

@@ -166,7 +166,7 @@ content_meta: {
 
 **`content_meta` fields consulted.** `item_count`; `has_emphasis_item` (one featured + secondary cards).
 
-**Default + alternate shapes.** count = 3 → card-grid (alt card-carousel); count ≥ 4 → card-carousel (alt lead-plus-carousel); one featured + secondary cards → lead-plus-carousel (alt card-carousel, with "3-card strip and carousel" as a tentative unbound alternate). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
+**Default + alternate shapes.** count = 3 → card-grid (alt card-carousel); count ≥ 4 → card-carousel (alt lead-plus-carousel); one featured + secondary cards → lead-plus-carousel (alt card-carousel). See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
 
@@ -229,10 +229,3 @@ content_meta: {
 **Default + alternate shapes.** always → heading-strip. See `../skills/compose-page/reference/landing-sections-shape-rules.md`.
 
 ---
-
-## Known gaps
-
-- Which `content_meta` fields branch each section type is expressed indirectly via the Part C decision table. Per-type field requirements (which fields are required vs. optional vs. ignored) are not declared explicitly — the listings above are derived from the decision-table rows.
-- T8 demo "format" and T9 pricing "model" are dimensions used in the decision rows but are not part of the `content_meta` schema; they need their own field definitions in a future revision.
-- T1 hero "visual = …" categories (video / screenshot / code-or-install / chat-input) are likewise outside the `content_meta` schema.
-- T14 cross-promo's alternate "embedded inside T10" is not a shape — it is a composition note. Carry forward in landing-sections-shape-rules.md.

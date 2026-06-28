@@ -20,21 +20,45 @@ clamp(M, calc(M + (X - M) * (100vw - 320px) / 1120), X)
 
 Do not hand-pick `vw` middle terms. Do not author per-breakpoint values for spacing or type. Fixed-value tokens (the small steps of the spacing scale, the fixed body-font sizes, the small radius values) declare their value directly without `clamp()`. Discrete `@media` overrides exist only for the explicit mobile-floor cases called out in this section (see §11.3).
 
-## §11.2 Container widths
+## §11.2 Container widths and reading columns
 
-Each surface-class width is a configurable token in the YAML `geometry.containers` block, emitted as `--container-{key}` (`container_var_pattern`). A surface **chooses a container token**; it does not hardcode a `max-width` in a page style block.
+A surface's width comes from one of two distinct token families, and conflating them is what makes a section render narrower than the page:
 
-| Surface Class | Token | Max Width | Inner Reading Column | Side Gutter |
-|---|---|---:|---:|---:|
-| Marketing primary container | `--container-marketing-primary` | 1440px | full container | 32–64px clamp |
-| Marketing medium container | `--container-marketing-medium` | 1192px | full container | 32–64px clamp |
-| Marketing small container | `--container-marketing-small` | 960px | full container | 32–64px clamp |
-| Editorial container | `--container-editorial` | 1400px | **`--container-editorial-reading` (640px)**, centered within | 32 / 48 / 64px responsive |
-| Documentation or long-form container | `--container-editorial` | viewport minus 316px each side at wide viewports | **640px**, centered | 316px outer offset at the widest breakpoint |
-| Conversion card | `--container-conversion-card` | 448px | n/a | n/a |
-| Application shell pane | (rail width `--app-shell-rail-width`) | three-pane: 64px icon rail, 280–320px list column, fluid detail viewport | n/a | 24–32px inner card padding |
+- **Section wrappers** (`geometry.containers`, emitted `--container-{key}`) are the screen-wide block ground. A section wrapper's `max-width` is **≥ the page width — never below it**: a section either matches the page width or goes full-bleed.
+- **Inner reading columns** (`geometry.columns`, emitted `--column-{key}`) cap a **single** content block — one text column, one card — *inside* a page-width section. A reading column is applied to a child element, **never to the section wrapper**.
 
-Use the `--container-editorial-reading` (640px) reading column for any long-form body type. Body sans on marketing pages may exceed this width if it remains under the full container. The application-shell rail width is a component-level geometry token (`--app-shell-rail-width`, `geometry.components.app-shell-rail.width`), not a container.
+A surface **chooses a container token** for its wrapper; it does not hardcode a `max-width` in a page style block. Fixed widths belong to individual elements, not to screen-wide containers.
+
+**Section wrappers** (`--container-{key}`)
+
+| Surface class | Token | Width |
+|---|---|---:|
+| Marketing | `--container-marketing-primary` | 1440px — the page width; the default `.u-container` |
+| Editorial / long-form | `--container-editorial` | 1400px |
+| Full-bleed | `.u-container-full` | `max-width: none` (≥ page width) |
+
+**Inner reading columns** (`--column-{key}`, applied to one block inside a page-width section — never to the wrapper)
+
+| Token | Width | Use for |
+|---|---:|---|
+| `--column-wide` | 1192px | the widest single content block |
+| `--column-medium` | 960px | a centered single column or quote block |
+| `--column-reading` | 640px | long-form body type (the `.u-reading` column) |
+
+**Element widths** (a fixed component, not a container): `--container-conversion-card` (448px) is the conversion card element itself. The application-shell rail width is a component-level geometry token (`--app-shell-rail-width`, `geometry.components.app-shell-rail.width`), not a container.
+
+**Utility classes** (emitted into `components.css`):
+
+```css
+/* Section wrapper. Default is page width; a wrapper is never narrower. */
+.u-container      { max-width: var(--container-marketing-primary); margin-inline: auto;
+                    padding-inline: clamp(32px, 4vw, 64px); }
+.u-container-full { max-width: none; }                 /* full-bleed, ≥ page width */
+/* Inner reading column — lives on a child, never on the section wrapper. */
+.u-reading        { max-width: var(--column-reading); margin-inline: auto; }
+```
+
+**The law:** a section-level container's `max-width` is **≥** the page width. `--column-*` measures apply to a single inner content block, never to a section wrapper.
 
 ## §11.3 Section padding scale
 
@@ -128,18 +152,18 @@ Use shadows sparingly. The default state of every card is `box-shadow: none` wit
 |---|---|---|
 | Soft floating card | 4-layer low-opacity stack | Conversion card on principal light ground. |
 | Hover "shoulder" ring | `0 0 0 1px <button-bg>` on hover only | Button hover state. |
-| Faint elevation | `0 1px 2px color-mix(in srgb, var(--role-text-primary) 4%, transparent), 0 1px 1px color-mix(in srgb, var(--role-text-primary) 2%, transparent)` | Application-shell stat cards. |
-| Modal lift | `0 12px 24px color-mix(in srgb, var(--role-text-primary) 15%, transparent)` | Centered dialog. |
+| Faint elevation | `0 1px 2px color-mix(in srgb, var(--text-primary) 4%, transparent), 0 1px 1px color-mix(in srgb, var(--text-primary) 2%, transparent)` | Application-shell stat cards. |
+| Modal lift | `0 12px 24px color-mix(in srgb, var(--text-primary) 15%, transparent)` | Centered dialog. |
 
 The conversion-card 4-layer stack:
 
 ```css
 .card-floating {
   box-shadow:
-    0 4px  24px 0 color-mix(in srgb, var(--role-text-primary) 1.57%, transparent),
-    0 4px  32px 0 color-mix(in srgb, var(--role-text-primary) 1.57%, transparent),
-    0 2px  64px 0 color-mix(in srgb, var(--role-text-primary) 1.18%, transparent),
-    0 16px 32px 0 color-mix(in srgb, var(--role-text-primary) 1.18%, transparent);
+    0 4px  24px 0 color-mix(in srgb, var(--text-primary) 1.57%, transparent),
+    0 4px  32px 0 color-mix(in srgb, var(--text-primary) 1.57%, transparent),
+    0 2px  64px 0 color-mix(in srgb, var(--text-primary) 1.18%, transparent),
+    0 16px 32px 0 color-mix(in srgb, var(--text-primary) 1.18%, transparent);
 }
 ```
 
@@ -153,10 +177,3 @@ Long-form pages use no shadows. Editorial and documentation surfaces rely on a s
 | `1px` | Default card hairline; list-row separator; metadata-to-body hard rule; form-field border. |
 
 Use the 0.5px weight via `1px solid rgba(<ink>, 0.15–0.3)` rather than `0.5px solid`. Browsers paint the alpha-thinned 1px more consistently than a literal subpixel border.
-
-## Known gaps
-
-- §11.3 mobile-floor `@media` override is illustrated only for `--section-pad-main` (56px at `max-width: 480px`). The mobile floor for `--section-pad-small`, `--section-pad-large`, and `--section-pad-page-top` is not specified — apply the same `clamp()` pattern, but explicit floor values for those tokens are undefined.
-- §11.4 spacing tokens `--sp-2` through `--sp-6` are listed with clamped ranges (e.g., "28–32px clamp") but the viewport anchors for those clamps are not specified; readers should apply the §11.1 320 → 1440 anchors by default.
-- §11.8 shadow patterns reference `<button-bg>` and `<ink>` as placeholders not pinned to specific role tokens. The mapping to `--button-primary-bg` / `--text-primary` (or equivalents) is implied but not stated.
-- §11.9 alpha range "0.15–0.3" leaves the exact alpha unstated per use case.

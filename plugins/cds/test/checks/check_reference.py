@@ -12,10 +12,12 @@ Checks (all config-agnostic):
                       Slots bullet, a Layout bullet, and an Allowed-variants bullet.
   2. COMPONENTS     — reference/components.md enumerates at least one component
                       family header (the family list is enumerable, not empty).
-  3. ROLE-TOKENS    — every `--role-<key>` referenced as a role binding in the
-                      reference tree names a role defined in the elements YAML
-                      roles map. (Template emit-pattern declarations of the form
-                      `--role-<x>: var(...)` are placeholders, not references.)
+  3. ROLE-PREFIX    — no `--role-` token survives in the reference tree or the
+                      generated stylesheet set. Roles are emitted BARE
+                      (`--surface-primary`) per $conventions.role_var_pattern
+                      `--{role key}`; a `--role-` prefix is a regression of the
+                      bare-role reconcile. (Bare role tokens are resolution-
+                      checked by check_token_coverage on the generated CSS.)
   4. FROM_PALETTE   — every `from_palette` value declared on a role in the YAML
                       names a palette present in color_catalog.palettes.
   5. SCOPE-TAGS     — every `[scope: ...]` tag in reference/compliance.md is one
@@ -61,8 +63,9 @@ def _read(path):
 # --- valid scope tokens are a closed set defined by the compliance contract ----
 _VALID_SCOPES = {"both", "standalone", "app-embedded"}
 
-# A role token reference: --role-<key> where <key> is lowercase-kebab.
-_ROLE_TOKEN_RE = re.compile(r"--role-([a-z0-9][a-z0-9-]*)")
+# A forbidden role-token prefix. Roles are emitted bare; any `--role-` is a
+# regression of the bare-role reconcile (#4).
+_ROLE_PREFIX_RE = re.compile(r"--role-")
 # A shape name token (semantic, lowercase-kebab) as it appears in the Part A catalog
 # first column and in each shape's section header "## <name> — ...".
 _SHAPE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]+$")
@@ -155,50 +158,33 @@ def _check_components(repo_root, fails):
         )
 
 
-def _collect_referenced_roles(repo_root):
-    """
-    Gather every --role-<key> that is REFERENCED (not template-defined) across
-    the reference tree, with the file it came from.
-
-    A token is a template-definition placeholder (not a reference) when it
-    appears as the left side of a CSS custom-property assignment in an emit
-    pattern: `--role-<key>: var(...)`. Those are documentation of the emit
-    shape, not bindings to a concrete role.
-    """
+def _check_role_prefix(repo_root, fails):
+    """Fail if any `--role-` token survives in the reference tree or the
+    generated stylesheet set. Roles are emitted bare (`--<key>`); a surviving
+    prefix is a regression of the bare-role reconcile (#4). Resolution of the
+    bare tokens themselves is enforced by check_token_coverage on the CSS."""
     ref_dir = _ref(repo_root)
-    referenced = {}  # key -> set(relative file paths)
+    targets = []
     for dirpath, _dirs, files in os.walk(ref_dir):
         for fn in files:
-            if not fn.endswith(".md"):
-                continue
-            full = os.path.join(dirpath, fn)
+            if fn.endswith(".md"):
+                targets.append(os.path.join(dirpath, fn))
+    styles = os.path.join(
+        _plugin_root(repo_root), "test", "visual-proof-out", "styles"
+    )
+    if os.path.isdir(styles):
+        for fn in os.listdir(styles):
+            if fn.endswith(".css"):
+                targets.append(os.path.join(styles, fn))
+    for full in sorted(targets):
+        text = _read(full)
+        if _ROLE_PREFIX_RE.search(text):
             rel = os.path.relpath(full, _plugin_root(repo_root))
-            text = _read(full)
-            for m in _ROLE_TOKEN_RE.finditer(text):
-                key = m.group(1)
-                tail = text[m.end():]
-                # Template emit-pattern: `--role-<key>: var(...)` — placeholder.
-                if re.match(r"\s*:\s*var\(", tail):
-                    continue
-                referenced.setdefault(key, set()).add(rel)
-    return referenced
-
-
-def _check_role_tokens(repo_root, data, fails):
-    if data is None:
-        return
-    roles = data.get("roles")
-    if not isinstance(roles, dict):
-        fails.append("ROLE-TOKENS: elements YAML has no `roles` map")
-        return
-    defined = set(roles.keys())
-    referenced = _collect_referenced_roles(repo_root)
-    for key in sorted(referenced):
-        if key not in defined:
-            where = ", ".join(sorted(referenced[key]))
+            n = len(_ROLE_PREFIX_RE.findall(text))
             fails.append(
-                f"ROLE-TOKENS: --role-{key} is referenced ({where}) but names no "
-                f"role in the elements YAML roles map"
+                f"ROLE-PREFIX: {rel} contains {n} `--role-` token(s); roles are "
+                f"emitted bare (--<key>) per $conventions.role_var_pattern "
+                f'"--{{role key}}"'
             )
 
 
@@ -268,7 +254,7 @@ def run(repo_root):
 
     _check_shapes(repo_root, fails)
     _check_components(repo_root, fails)
-    _check_role_tokens(repo_root, data, fails)
+    _check_role_prefix(repo_root, fails)
     _check_from_palette(repo_root, data, fails)
     _check_scope_tags(repo_root, fails)
 

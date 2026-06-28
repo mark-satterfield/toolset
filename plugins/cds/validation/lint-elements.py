@@ -22,12 +22,36 @@ Usage:
     python3 lint-elements.py --trace            # also print theme -> hex resolution
 Exit code 0 = clean, 1 = one or more hard failures.
 """
-import json, sys, os
+import json, sys, os, re
 
 try:
     import yaml
 except ImportError:
     sys.exit("PyYAML required: pip install pyyaml")
+
+# DESCRIPTIONS rule (#2 description discipline). A description states what a
+# thing IS / is for — never its current contents, consumers, or history (those
+# belong in the commit message). Config-agnostic: it asserts the SHAPE of the
+# string, hardcoding no palette or role names.
+#   FAIL markers: an "aliases X" enumeration, a "(was `Y`)" history note, or an
+#                 inventory count like "your 7 colors".
+#   WARN markers: a "-> / →" mapping arrow inside a description value.
+_DESC_FAIL = re.compile(r"(?i)\baliases?\b|\(was\b|\byour\s+\d+\s+colou?rs?\b")
+_DESC_WARN = re.compile(r"->|→")
+
+
+def _walk_descriptions(node, path=""):
+    """Yield (path, text) for every `description` string at any depth."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "description" and isinstance(v, str):
+                yield (path or "<root>", v)
+            else:
+                child = f"{path}.{k}" if path else str(k)
+                yield from _walk_descriptions(v, child)
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from _walk_descriptions(v, f"{path}[{i}]")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCHEMA = os.path.join(HERE, "customizable-design-elements.schema.json")
@@ -163,6 +187,21 @@ def main():
                     cov_fail.append(f"required role '{r}' unbound in {tn}.{mode}")
     print(f"5. COVERAGE .......... {'PASS' if not cov_fail else 'FAIL'} ({len(req)} required roles)")
     fails += [f"COVERAGE {c}" for c in cov_fail]
+
+    # 6. DESCRIPTIONS (hard) — a description states what a thing IS / is for,
+    #    never its current contents, consumers, or history. Config-agnostic:
+    #    asserts the SHAPE of every `description` string, hardcoding no names.
+    desc_fail = []
+    for p, txt in _walk_descriptions(data):
+        if _DESC_FAIL.search(txt):
+            desc_fail.append(
+                f"{p}: description enumerates contents/consumer/history: {txt!r}")
+        elif _DESC_WARN.search(txt):
+            warns.append(
+                f"DESCRIPTIONS {p}: description contains a mapping arrow: {txt!r}")
+    print(f"6. DESCRIPTIONS ...... {'PASS' if not desc_fail else 'FAIL'} "
+          f"({sum(1 for _ in _walk_descriptions(data))} descriptions)")
+    fails += [f"DESCRIPTIONS {d}" for d in desc_fail]
 
     if trace:
         print("\n--- theme -> resolved hex ---")

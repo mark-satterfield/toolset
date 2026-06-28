@@ -20,7 +20,7 @@ Declare the CSS `color-scheme` property on the root so that native form controls
 
 Surfaces that intentionally do not invert (long-form editorial, legal, public authentication card) carry an explicit local `data-mode="light"` on a wrapping element that overrides the root. Surfaces that intentionally stay dark (the deepest footer, code blocks) carry an explicit `data-mode="dark"` on the local wrapper.
 
-Logos and inline SVGs use `fill="currentColor"` on the inner path and `fill="none"` on the outer `<svg>` so they recolor automatically when the surrounding theme's `--text-primary` flips. Do not author separate light-mode and dark-mode logo assets.
+Logos and inline SVGs use `fill="currentColor"` on the inner path and `fill="none"` on the outer `<svg>` so they recolor automatically when the surrounding theme's `--text-primary` flips. Single-glyph marks, icons, and mascot art are never authored as separate light/dark assets. The one exception: a multi-color brand logo MAY declare an `assets.logo` light/dark pair (`compliance.md` §23 #15), selected by mode in CSS.
 
 Code blocks declare their fixed dark hex values directly. They render dark in light mode and continue dark in dark mode.
 
@@ -105,7 +105,7 @@ Mode declarations on the root (global; not derived from the palette):
 
 The theme bindings (light, dark, and button slot) live in `customizable-design-elements.yaml`. §8.2 holds only the **pattern** for emitting them as CSS — the (Theme, Role Slot, Palette Swatch) tuples in the YAML are the source of truth.
 
-**Light-mode pattern.** For each theme listed in the YAML's light-mode bindings, emit a class selector containing one `--role-slot: var(--palette-swatch);` declaration per row bound to that theme.
+**Light-mode pattern.** For each theme listed in the YAML's light-mode bindings, emit a class selector containing one `--<role>: var(--<semantic-token>);` declaration per row bound to that theme.
 
 Worked example — `default`, built from light bindings + button bindings:
 
@@ -222,14 +222,14 @@ Component-level geometry resolves the same way — the topbar bar and its logo b
 
 Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `components.md §12.1` for component geometry such as the 84px topbar and 40px logo height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
 
-**Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
+**Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers` / `columns`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`, `--column-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
 
 ```css
 :root {
   --sp-2: clamp(28px, calc(28px + 4 * (100vw - 320px) / 1120), 32px);
   --radius-lg: 16px;
   --section-pad-main: clamp(96px, calc(96px + 32 * (100vw - 320px) / 1120), 128px);
-  --container-marketing-medium: 1192px;
+  --column-wide: 1192px;
   --topbar-height: 84px;
   --topbar-logo-height: 40px;
 }
@@ -343,11 +343,3 @@ The pattern: the primary button reads dark-on-light in light mode (label = light
 Use a variable-axis weight family. If you map a non-variable font into the system, approximate `480` to `500` and document the substitution in the font mapping instructions.
 
 ---
-
-## Known gaps
-
-- §6.4's instruction to "document the substitution in the font mapping instructions (§13.2)" refers to `typography.md §13.2`; the cross-reference is carried as a behavioral expectation, and the §13.2 contract lives in the typography foundations.
-- §7's logo-color rule specifies `fill="currentColor"` on the inner path and `fill="none"` on the outer `<svg>` but does not specify behavior for multi-color logos or logos with multiple inner paths needing different roles.
-- §8.3's `.button-primary` example hard-codes `font-weight: 480` for light mode but does not show the dark-mode rebinding, even though §6.4 requires the weight to oscillate per mode. The implementation pattern for mode-driven weight oscillation is not given.
-- §8.3's `.button-primary` transition list (`color 0.1s, background-color 0.2s, box-shadow 0.2s`) gives literal duration/easing values that are not cross-referenced to the global motion tokens described in §2.
-- §9's inline initialization script defaults to `'system'` when no stored preference exists, but the surrounding §7 text describes the three-branch CSS as reading `data-mode="light"`, `data-mode="dark"`, or `data-mode="system"` — the default is consistent, but the behavior when `data-mode` is missing entirely (e.g., script fails to run) is not defined.

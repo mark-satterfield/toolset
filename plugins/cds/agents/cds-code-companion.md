@@ -32,8 +32,7 @@ When a skill STOPs with a halt code, propagate the STOP message verbatim to the 
 - `MISSING_COMPONENT:{name}`
 - `SHAPE_RULES_PENDING:{page-type}`
 - `APP_SECTION_RULES_PENDING:{section-type}`
-- `STYLESHEETS_STALE`
-- `STYLESHEETS_MISSING`
+- `STYLESHEETS_REGEN_FAILED`
 - `FRAMEWORK_UNSET`
 - `OUTPUT_PATH_UNRESOLVABLE`
 - `PRECONDITION_FAILED`

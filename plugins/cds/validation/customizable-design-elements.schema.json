@@ -42,6 +42,9 @@
     },
     "motion": {
       "$ref": "#/$defs/Motion"
+    },
+    "assets": {
+      "$ref": "#/$defs/Assets"
     }
   },
   "additionalProperties": false,
@@ -78,7 +81,7 @@
           "type": "string",
           "description": "Pattern for role CSS variable names. {role key} is the role identifier.",
           "examples": [
-            "--role-{role key}"
+            "--{role key}"
           ]
         },
         "spacing_var_pattern": {
@@ -98,8 +101,13 @@
         },
         "container_var_pattern": {
           "type": "string",
-          "description": "Pattern for container-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-medium, editorial).",
+          "description": "Pattern for section-wrapper-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-primary, editorial). A container is a section wrapper; its width is >= the page width.",
           "examples": ["--container-{key}"]
+        },
+        "column_var_pattern": {
+          "type": "string",
+          "description": "Pattern for inner reading-column CSS variable names. {key} is the geometry.columns identifier (e.g. wide, reading). A reading column caps a single text block inside a page-width section; it is never a section wrapper.",
+          "examples": ["--column-{key}"]
         },
         "component_size_var_pattern": {
           "type": "string",
@@ -127,11 +135,12 @@
           "color_var_pattern": "--color-{palette key}-{color key}",
           "typeface_var_pattern": "--typeface-{typeface key}",
           "font_var_pattern": "--font-{font key}",
-          "role_var_pattern": "--role-{role key}",
+          "role_var_pattern": "--{role key}",
           "spacing_var_pattern": "--sp-{key}",
           "radius_var_pattern": "--radius-{key}",
           "section_padding_var_pattern": "--section-pad-{key}",
           "container_var_pattern": "--container-{key}",
+          "column_var_pattern": "--column-{key}",
           "component_size_var_pattern": "--{component}-{property}",
           "ease_var_pattern": "--ease-{key}",
           "duration_var_pattern": "--duration-{key}",
@@ -250,7 +259,7 @@
         "type": { "$ref": "#/$defs/PaletteType" },
         "description": {
           "type": "string",
-          "description": "Optional explanation of the palette's purpose."
+          "description": "Optional one-sentence statement of what the palette IS / is for — never its contents, consumers, or history. Enforced by lint-elements.py DESCRIPTIONS."
         },
         "colors": {
           "type": "object",
@@ -458,7 +467,7 @@
         "type": { "$ref": "#/$defs/RoleType" },
         "description": {
           "type": "string",
-          "description": "One-sentence statement of what this role represents (what paints, where, why)."
+          "description": "One sentence stating what this role IS / is for (what paints, where, why) — never its current contents, consumers, or history. Enforced by lint-elements.py DESCRIPTIONS."
         },
         "scope": {
           "$ref": "#/$defs/RoleScope",
@@ -684,7 +693,11 @@
         },
         "containers": {
           "$ref": "#/$defs/GeometryScale",
-          "description": "Container/reading-column widths per surface class (emitted via container_var_pattern, default --container-{key}). Lets a surface choose a container width from the system instead of hardcoding a max-width in the page."
+          "description": "Section-wrapper widths per surface class (emitted via container_var_pattern, default --container-{key}). A section wrapper's width is >= the page width; a surface chooses a container token instead of hardcoding a max-width in the page. Inner reading columns live in `columns`, not here."
+        },
+        "columns": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "Inner reading-column widths (emitted via column_var_pattern, default --column-{key}). A reading column caps a SINGLE text block or one card inside a page-width section; it is never used as the section wrapper. Distinct from `containers` (section-wrapper widths, >= page width)."
         },
         "components": {
           "type": "object",
@@ -752,6 +765,37 @@
           "minProperties": 1,
           "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
           "additionalProperties": { "$ref": "#/$defs/MotionPattern" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Assets": {
+      "type": "object",
+      "title": "Assets",
+      "description": "Optional brand-asset declarations. Currently carries the logo rendering mode.",
+      "properties": {
+        "logo": {
+          "title": "LogoAsset",
+          "description": "How the brand logo is rendered. Default: a single currentColor glyph that inherits --text-primary and recolors with the theme. A multi-color brand mark MAY instead declare a light/dark image pair — the one supported exception to the single-glyph rule (compliance.md \u00a723 #15).",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": { "mode": { "const": "currentColor" } },
+              "required": ["mode"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": { "const": "asset-pair" },
+                "light": { "type": "string", "description": "Path or URL to the logo asset shown on light grounds." },
+                "dark": { "type": "string", "description": "Path or URL to the logo asset shown on dark grounds." },
+                "alt": { "type": "string", "description": "Accessible alt text for the logo image." }
+              },
+              "required": ["mode", "light", "dark"],
+              "additionalProperties": false
+            }
+          ]
         }
       },
       "additionalProperties": false

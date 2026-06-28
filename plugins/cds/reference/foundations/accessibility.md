@@ -13,7 +13,7 @@ Provide three distinct focus-ring styles. Use `:focus-visible` so that mouse-cli
 
 | Surface | Focus Style |
 |---|---|
-| Default | `outline: 2px solid var(--role-focus-ring); outline-offset: 1px;` Ring color resolves to a mid-neutral on light themes via the active theme's `focus-ring` binding. |
+| Default | `outline: 2px solid var(--focus-ring); outline-offset: 1px;` Ring color resolves to a mid-neutral on light themes via the active theme's `focus-ring` binding. |
 | Inside a button or item with a 4px or smaller radius | `outline-offset: -2px` (ring sits inside the element edge). |
 | Conversion input | `outline: 2px solid var(--input-focus-ring); outline-offset: 2px;` Chromatic ring; the `input-focus-ring` role is constrained `from_palette: signals`. |
 
@@ -54,10 +54,3 @@ Decorative glyphs are exempt. Body, caption, meta, and form labels are not.
 ## §18.6 Form validation
 
 Prefer browser-native validation for required fields and email format. Render error messages in `--error-text` below the input, with `aria-live="polite"` on the message container.
-
-## Known gaps
-
-- §18.2 references the `focus-ring` and `input-focus-ring` roles — both defined and constrained (`from_palette: borders` / `signals`) in the elements YAML; this file does not pin their values and names no swatch.
-- §18.2 tokens (`--focus-width`, `--focus-offset-inner`, `--focus-offset-outer`) are declared but the focus-style table uses literal values (`outline-offset: 1px`, `-2px`, `2px`) that do not all map cleanly to the declared tokens — notably the default 1px offset and conversion 2px offset are not represented in the token set.
-- §18.3 skip-link rule cross-references the navigation foundations, which are not yet part of this file set.
-- §18.6 references `--error-text` without value definition; that token resolves in the palette/role foundations.

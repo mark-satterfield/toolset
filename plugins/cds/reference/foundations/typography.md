@@ -157,7 +157,7 @@ Use this scale on conversion or authentication card surfaces. The weight values 
 | Legal blurb | Sans | 14px | 400 | 21px | Underlined inline link at 40% opacity at rest. |
 | Top-nav link | Sans | 14px | 500 | — | Ink at `--text-tertiary`. |
 | Top-nav primary button | Sans | 14px | 500 | 19.6px | |
-| Footer column heading | Sans | 12px | 400 | 16.8px | Ink at `var(--role-text-tertiary)` (low-contrast cool gray when resolved through the footer's theme). |
+| Footer column heading | Sans | 12px | 400 | 16.8px | Ink at `var(--text-tertiary)` (low-contrast cool gray when resolved through the footer's theme). |
 | Footer link | Sans | 14px | 400 | 21px | No underline. |
 
 ## §13.7 Inline rules
@@ -172,10 +172,3 @@ Use this scale on conversion or authentication card surfaces. The weight values 
 | Code (inline) | Mono family at 0.9em of surrounding size; subtle `--surface-tertiary` background; 4px radius; 2px horizontal padding. |
 | Footnote | Color at `--text-tertiary`. |
 | All-caps legal disclaimers | Set characters as upper-case in the source; do not apply `text-transform`. Render at the same body scale as surrounding prose. |
-
-## Known gaps
-
-- §13.2 references "the button-weight compensation rules in §6.4" and "the button-weight oscillation effect (§6.4)"; §6.4 lives in the implementation foundations (`implementation.md §6.4`). The cross-reference is carried as prose without a hyperlink.
-- §13.6 references role tokens `--field-required`, `--text-secondary`, `--text-tertiary`. Values for these roles are bound per theme in the elements YAML, not in this file.
-- §13.7 references `--text-secondary`, `--text-tertiary`, `--border-strong`, `--surface-tertiary` without inline definitions; these are role/palette tokens defined elsewhere.
-- §13.5 table contains brand-neutral surface labels ("Marketing-home hero h1", "Brand mission h1", "Long-form legal page h1"); no specific brand identifiers appear in the table.

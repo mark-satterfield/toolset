@@ -46,7 +46,7 @@ This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that 
    ## Halt conditions
    ```
 
-   Class names are the kebab-case identifiers from `components.css` (`.button-primary`, `.surface-secondary`, `.text-tertiary`, etc.). Token names are the CSS custom properties from `tokens.css` (`--color-{palette}-{shade}`, `--role-{key}`, etc.). Event hooks and ARIA contracts come verbatim from `components.md` and `foundations/accessibility.md`. Reference pointers are file-and-section citations so the author can read deeper.
+   Class names are the kebab-case identifiers from `components.css` (`.button-primary`, `.surface-secondary`, `.text-tertiary`, etc.). Token names are the CSS custom properties from `tokens.css` (`--color-{palette}-{shade}`, `--{key}`, etc.). Event hooks and ARIA contracts come verbatim from `components.md` and `foundations/accessibility.md`. Reference pointers are file-and-section citations so the author can read deeper.
 
 5. **Point the author at `../../reference/compliance.md`** for their completion gate — that is where they verify their non-UI code keeps the surface on-system.
 

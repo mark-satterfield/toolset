@@ -18,6 +18,10 @@ Pattern key → emitted token prefix → emitted class:
 
 **Gating law (non-negotiable).** Entrance motion (reveal, stagger, fade, fade-up) animates in the **base rule** and is disabled **only** inside `@media (prefers-reduced-motion: reduce)`. Never gate entrance motion behind `@media (prefers-reduced-motion: no-preference)`: that silently removes the entrance for every reduce-motion user and, when the base rule starts at `opacity: 0`, can strand content invisible. `no-preference` is reserved for *continuous/ambient* enhancement whose static baseline is the no-animation state (e.g. a looping logo marquee, an optional expand transition) — not for first-paint or scroll-entry reveals. `audit-against-system` fails the `no-preference`-gated-entrance-motion pattern (`compliance.md` §23).
 
+## §15.0 Page-load orchestration (landing & marketing)
+
+On landing and marketing surfaces, treat motion as **one orchestrated page-load**, not scattered micro-interactions. Sequence the first-paint reveals with staggered `animation-delay` (the `--reveal-*` / `--card-*` parameters), let scroll position trigger the subsequent section entrances (`.content-fade` / `.content-fade-up`, with an `IntersectionObserver` adding `.is-inview`), and reserve **one high-impact moment** — a single surprising hover or entrance — rather than animating everything. A page reads as deliberate when a few elements move with intent and noisy when many move a little. All of this obeys the §15 gating law: entrance motion animates in the base rule and is disabled only under `@media (prefers-reduced-motion: reduce)`.
+
 ## §15.1 Easing curves
 
 Define these tokens at the root and use them by name everywhere. Values come from `motion.easing` in the elements YAML; the table is the shipped default.
@@ -141,9 +145,3 @@ Then opt back in only for transitions that carry essential information (focus ri
 
 - Text-selection background is the `selection-bg` role, applied globally: `::selection { background-color: var(--selection-bg); }`. The actual tint (a 50% accent mix) lives in that role's fallback in the elements YAML — the CSS names no swatch.
 - The `--accent-heroes` slot recolors decorative mascot or hero SVG art per theme. The artwork inherits the slot via `currentColor`. Do not author per-theme artwork.
-
-## Known gaps
-
-- §15.2 lists a "750–1000ms" range for hero word-by-word reveal stagger without prescribing how to choose a value inside the range.
-- §15.3 references CSS classes (`.contentFade`, `.contentFadeUp`) and CSS custom properties (`--reveal-index`, `--card-index`, etc.) whose authoring contracts live in §15.4; the surface-by-surface register is descriptive prose, not enumerated tokens.
-- §15.6 references the `selection-bg` and `accent-heroes` roles — defined and bound in the elements YAML, not in this file. No swatch is named here.

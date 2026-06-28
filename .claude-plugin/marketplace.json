@@ -145,7 +145,7 @@
     {
       "name": "cds",
       "description": "Customizable Design System — a brand-neutral design-system plugin with skills that generate stylesheets, mocks, and framework-native component code for any host project.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "mark-satterfield"
       },

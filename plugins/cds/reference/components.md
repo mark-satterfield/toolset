@@ -9,8 +9,8 @@ Component family specifications. Slot definitions, fixed sizing, behavior, and a
 **Purpose.** A fixed-position desktop topbar that anchors global navigation and conversion CTAs without painting a visible boundary.
 
 **Slot definitions.**
-- `logo`: required SVG glyph rendered at `--topbar-logo-height` (a system geometry token, `geometry.components.topbar.logo-height`, shipped default 40px), vertically centered in the bar; paints via `fill="currentColor"` and inherits `--text-primary`. The **design system owns the logo height** — a composed page never hardcodes it.
-- `primary-nav`: required cluster of nav links, right-aligned.
+- `logo`: by default a single SVG glyph rendered at `--topbar-logo-height` (a system geometry token, `geometry.components.topbar.logo-height`, shipped default 40px), vertically centered in the bar, painting via `fill="currentColor"` so it inherits `--text-primary` and recolors with the theme. A multi-color brand mark MAY instead declare an `assets.logo` light/dark image pair (`mode: asset-pair`): the topbar then emits both images and the active one is selected by mode in CSS (no JS), each still rendered at `--topbar-logo-height`. Either way the **design system owns the logo height** — a composed page never hardcodes it.
+- `primary-nav`: required cluster of nav items, right-aligned. Each item is **either** a plain nav link **or** a dropdown trigger that opens a §12.2 dropdown panel — a trigger carries `aria-haspopup="menu"` and `aria-expanded`, and its panel carries `role="menu"`. A nav item with children renders as a §12.2 trigger + panel (flat / mega / lift-and-scale), not a bare link. See §12.2 for the panel structure, variants, and keyboard contract.
 - `conversion-cta`: 1–2 right-aligned conversion actions — typically a tertiary text link followed by a filled primary button.
 
 **Props / variants.**
@@ -165,8 +165,8 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 **Fixed sizing/spacing.**
 - Rail outer container: `position: fixed; left: 0; top: 0`; `width: 256px`; `height: 100vh` (`h-screen`).
 - Rail padding: `12px` on all sides (`px-3 py-3`).
-- Rail background: `var(--role-surface-secondary)` (dark elevated rail ground).
-- Rail border-right: `0.5px solid var(--role-border-subtle)` (a hairline at low alpha against the dark surface — alpha is encoded in the role binding for dark themes).
+- Rail background: `var(--surface-secondary)` (dark elevated rail ground).
+- Rail border-right: `0.5px solid var(--border-subtle)` (a hairline at low alpha against the dark surface — alpha is encoded in the role binding for dark themes).
 - Rail box-shadow: `inset -4px 0px 6px -4px hsl(var(--always-black) / 4%)` at `lg` and above (`lg:shadow-[inset_-4px_0px_6px_-4px_...]`); a plain `shadow-lg` below `lg`.
 - Rail `overflow: hidden`.
 - Nav-row height: `36px` (`h-9`).
@@ -174,7 +174,7 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 - Nav-row gap between icon and label: `12px` (`gap-3`).
 - Nav-row border-radius: `8px` (`rounded-lg`).
 - Nav-row font: `font-ui`, `font-size: 14px` (`text-sm`), `font-weight: 400`.
-- Active-row pill spec: paints the full row at radius `8px` with background `var(--role-surface-tertiary)` (deepest stratification within the theme) and ink `var(--role-text-primary)`. The active row carries `aria-current="page"`.
+- Active-row pill spec: paints the full row at radius `8px` with background `var(--surface-tertiary)` (deepest stratification within the theme) and ink `var(--text-primary)`. The active row carries `aria-current="page"`.
 - Inactive-row rest: transparent ground, ink `hsl(var(--text-200))` (`text-text-200`).
 - Inactive-row hover: background `hsl(var(--bg-400))` (`hover:bg-bg-400`), ink `hsl(var(--text-100))` (`hover:text-text-100`).
 - Transition on hover (inactive): `transition-colors` — composite of `color`, `background-color`, `border-color`, `text-decoration-color`, `fill`, `stroke` over `150ms cubic-bezier(0.4, 0, 0.2, 1)`.
@@ -188,7 +188,7 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 - Rail outer is wrapped in `<nav aria-label="Main navigation">`. The nav element carries the landmark; the rail `<div>` it wraps does NOT redeclare a role.
 - Active row carries `aria-current="page"`.
 - Section headers are visually distinct via tertiary ink (`text-text-300`).
-- Focus contract: nav rows expose focus via the foundation focus ring on `:focus-visible` — `outline: 2px solid var(--role-focus-ring); outline-offset: 2px` (foundations/accessibility.md §18.2). The ring paints only for keyboard focus.
+- Focus contract: nav rows expose focus via the foundation focus ring on `:focus-visible` — `outline: 2px solid var(--focus-ring); outline-offset: 2px` (foundations/accessibility.md §18.2). The ring paints only for keyboard focus.
 
 **Keyboard.** Rows are `<a>` anchors inside a `<nav>` landmark, not a `role="menu"` — so the contract is standard sequential Tab order, NOT arrow-key navigation. Tab moves to the next focusable row; Shift+Tab to the previous; Enter activates. (WAI-ARIA APG: navigation landmarks do not use arrow-key composite-widget semantics — that pattern is reserved for `role="menu"`, `role="tablist"`, `role="listbox"`, etc.)
 
@@ -244,7 +244,7 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 - Hidden off-screen at rest; snaps to `top: 0` on focus so the first Tab from the document reveals it.
 - Uses semantic `<a>` elements with in-page hash anchors.
 - **Stacking:** focused skip links use `z-index: 101`, one step above the fixed topbar's `z-index: 100` (§12.1), so the link is never visually occluded when it snaps into view. (WCAG 2.4.1 — Bypass Blocks.)
-- **Focus styling:** the skip-link state change is `:focus` (not `:focus-visible`) because keyboard users are the sole population that surfaces this control — the positional snap IS the focus indicator, and it must paint for every focus event regardless of input modality. Pair with the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`) so the focused link is visually distinct against any page ground. (WCAG 2.4.7, 2.4.11, 2.4.13.)
+- **Focus styling:** the skip-link state change is `:focus` (not `:focus-visible`) because keyboard users are the sole population that surfaces this control — the positional snap IS the focus indicator, and it must paint for every focus event regardless of input modality. Pair with the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`) so the focused link is visually distinct against any page ground. (WCAG 2.4.7, 2.4.11, 2.4.13.)
 
 ---
 
@@ -261,12 +261,12 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 - `legal-trigger`: optional (e.g., "Cookie Settings"), placed inside a footer column list. Not placed in the topbar.
 
 **Props / variants.**
-- `ground`: `editorial` (default — `--role-footer-bg` resolved through the editorial theme: a near-black neutral) | `marketing` (binds to the `deep` theme; deepest dark neutral with mid-tone links) | `authentication` (explicit `data-mode="dark"` wrapper that resolves `--role-surface-primary` to absolute black; used only on the conversion page's footer).
+- `ground`: `editorial` (default — `--footer-bg` resolved through the editorial theme: a near-black neutral) | `marketing` (binds to the `deep` theme; deepest dark neutral with mid-tone links) | `authentication` (explicit `data-mode="dark"` wrapper that resolves `--surface-primary` to absolute black; used only on the conversion page's footer).
 
 **Fixed sizing/spacing.**
-- Footer link color = `var(--role-footer-text)`. The two ground variants resolve this role to a brighter neutral on the absolute-black variant and a step deeper on the standard dark variant.
+- Footer link color = `var(--footer-text)`. The two ground variants resolve this role to a brighter neutral on the absolute-black variant and a step deeper on the standard dark variant.
 - No underline at rest.
-- Footer column heading: smallest body-sans size (12–14px), weight 700, ink at `var(--role-text-tertiary)` (low-contrast cool gray). Semantically `<h3>`; do not nest deeper.
+- Footer column heading: smallest body-sans size (12–14px), weight 700, ink at `var(--text-tertiary)` (low-contrast cool gray). Semantically `<h3>`; do not nest deeper.
 
 **Behavior.** Hover on a footer link shifts color toward `--text-primary` over 100ms.
 
@@ -274,8 +274,8 @@ The `is-hidden` class is added via JavaScript on downward scroll past the header
 - Column headings are `<h3>`-level; do not nest deeper.
 - **Landmark:** the footer host element is `<footer role="contentinfo">` — `<footer>` only resolves to the `contentinfo` landmark when it is a direct child of `<body>`; if the footer is nested inside another sectioning element, the explicit `role="contentinfo"` is required. (WAI-ARIA landmark guidance.)
 - **Social icon accessible names:** each social icon link carries an `aria-label` naming the destination service (e.g., `aria-label="{Brand} on LinkedIn"` — host project supplies the brand name). The SVG glyph itself carries `aria-hidden="true"` because the link's accessible name carries the semantic. (WAI-ARIA APG link pattern.)
-- **Focus styling:** footer links use the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`) on `:focus-visible`. Hover-only-style affordances do not satisfy WCAG 2.4.7. (WCAG 2.4.7, 2.4.11.)
-- **Social-icon hover:** the icon's `currentColor` glyph shifts from `--role-text-tertiary` toward `--role-text-primary` over 100ms — matching the footer-link hover treatment so the row reads as one consistent hover vocabulary.
+- **Focus styling:** footer links use the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`) on `:focus-visible`. Hover-only-style affordances do not satisfy WCAG 2.4.7. (WCAG 2.4.7, 2.4.11.)
+- **Social-icon hover:** the icon's `currentColor` glyph shifts from `--text-tertiary` toward `--text-primary` over 100ms — matching the footer-link hover treatment so the row reads as one consistent hover vocabulary.
 
 ---
 
@@ -333,11 +333,11 @@ The §14 source table provides one row per component family with four facets —
 
 **Structure (slots).** Fill + label. Optional leading-icon slot (a warning or trash glyph preceding the label).
 
-**Theme Roles Used.** `--button-destructive-bg` (binds to `--danger-100`), `--button-destructive-text` (binds to `--role-text-inverse`).
+**Theme Roles Used.** `--button-destructive-bg` (binds to `--danger-100`), `--button-destructive-text` (binds to `--text-inverse`).
 
 **Behavior.** Hover scales the button (subtle `scale-y-[1.015]` paired with a matching `scale-x` factor) rather than re-coloring the fill. Wrapped in a `transition` (default ≈150ms ease). Suppress the scale transform under `prefers-reduced-motion: reduce`.
 
-**Sizing / notes.** `36px` height; width is content-driven via `inline-flex`. Padding `8px 16px`. Border `0` (visual is fill-based). Border-radius `8px`. Font-size `14px`, font-weight `460` (a custom weight via the variable-axis sans face — NOT 500/600), font-family `var(--typeface-sans)`. Label color `var(--role-text-inverse)`. Display `inline-flex` with `items-center justify-center`. Position `relative`, `isolate` (creates a stacking context for the fill layer). Inherits remaining base from §14.1.
+**Sizing / notes.** `36px` height; width is content-driven via `inline-flex`. Padding `8px 16px`. Border `0` (visual is fill-based). Border-radius `8px`. Font-size `14px`, font-weight `460` (a custom weight via the variable-axis sans face — NOT 500/600), font-family `var(--typeface-sans)`. Label color `var(--text-inverse)`. Display `inline-flex` with `items-center justify-center`. Position `relative`, `isolate` (creates a stacking context for the fill layer). Inherits remaining base from §14.1.
 
 **Variant set.**
 
@@ -394,7 +394,7 @@ The wrapper-zone pattern (hairline-divider section that hosts a Destructive butt
 
 **Sizing / notes.** Radius `--radius-xl` (resolved in `foundations/layout.md` §11.7), inner padding 32px.
 
-**Behavior / accessibility.** The card is a non-interactive container — focus and hover live on the controls inside (CTA buttons, links). If a host implementation makes the entire card a single interactive surface, wrap the contents in a single `<a>` or `<button>` and apply the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`) to the wrapping interactive element on `:focus-visible`. (WCAG 2.4.7, 2.4.11.)
+**Behavior / accessibility.** The card is a non-interactive container — focus and hover live on the controls inside (CTA buttons, links). If a host implementation makes the entire card a single interactive surface, wrap the contents in a single `<a>` or `<button>` and apply the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`) to the wrapping interactive element on `:focus-visible`. (WCAG 2.4.7, 2.4.11.)
 
 ---
 
@@ -410,7 +410,7 @@ The wrapper-zone pattern (hairline-divider section that hosts a Destructive butt
 
 **Sizing / notes.** Title in Editorial Serif at H6 scale.
 
-**Accessibility.** The entire card wraps in a single `<a>` so the focus ring lights the full card, not a sub-element. On `:focus-visible`, paint the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`). Hover transitions the title text from `--role-text-primary` toward `--role-text-secondary` over 300ms (matches the spec's existing 300ms transition; secondary is the conventional next-step ink for the hover target).
+**Accessibility.** The entire card wraps in a single `<a>` so the focus ring lights the full card, not a sub-element. On `:focus-visible`, paint the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`). Hover transitions the title text from `--text-primary` toward `--text-secondary` over 300ms (matches the spec's existing 300ms transition; secondary is the conventional next-step ink for the hover target).
 
 ---
 
@@ -456,7 +456,7 @@ The wrapper-zone pattern (hairline-divider section that hosts a Destructive butt
 
 **Behavior.** Whole-card opacity dims to 0.6 on hover over 200ms.
 
-**Sizing / notes.** Tile aspect-ratio 1:1 for side items, 16:9 for the lead item. SVG centered with `padding: 48–64px`. Title underline at 0.2em offset. Bottom border `0.5px solid --border-subtle`. Saturated panel ground binds to a feature-tile ground role (`--role-tile-ground-1` / `--role-tile-ground-2` / `--role-tile-ground-3`, `from_palette: panels`) — pick a tile number per the page-type rules, never a color.
+**Sizing / notes.** Tile aspect-ratio 1:1 for side items, 16:9 for the lead item. SVG centered with `padding: 48–64px`. Title underline at 0.2em offset. Bottom border `0.5px solid --border-subtle`. Saturated panel ground binds to a feature-tile ground role (`--tile-ground-1` / `--tile-ground-2` / `--tile-ground-3`, `from_palette: panels`) — pick a ground number per the page-type rules, never a color. The number space is open: `tile-ground-1..N` are valid as declared in the YAML, emitted as `.feature-tile--N`.
 
 **Lead-vs-side selection.** The first item in the collection renders as the `lead` (16:9 tile, larger title scale); every subsequent item renders as a `side` item (1:1 tile). When a section shows a single item, it always uses the `lead` treatment.
 
@@ -481,7 +481,7 @@ Two sizes share the same frame contract:
 - **Larger variant**: 254×176px (or 242×176 when peer tile widths shrink to fit the row). `display: inline-flex`; `flex-direction: row`; `align-items: center`; `gap: 48px` (`gap-12`); `padding: 16px` (`p-4`); `border: 0`; `border-radius: 12px` (`rounded-xl`); `box-shadow: none`. Classes: `bg-bg-300 inline-flex flex-row rounded-xl p-4 items-center gap-12 flex-1 max-w-[500px]`.
 - **Smaller variant**: 210×144px. `display: inline-flex`; `flex-direction: column`; `gap: 8px` (`gap-2`); `padding: 16px 0` (`p-4 px-0` — vertical-only); `border: 0`; `border-radius: 12px`; `box-shadow: none`. Classes: `bg-bg-300 inline-flex flex-col rounded-xl p-4 min-w-30 grow gap-2 px-0`.
 - **Row container**: peer tiles sit in `display: flex; gap: 16px` (`flex gap-4`); each tile uses `flex-1` to grow up to a `max-w-[500px]` cap.
-- **Background → `var(--role-surface-raised)`** — theme-context dependent. In a dark sub-section the role resolves to a near-black surface; on a light page main the same role resolves to a light surface. There is NO separate `deep` wrapper attribute around these tiles; the dark rendering is the natural resolution of `--role-surface-raised` at this nesting depth in the active theme context.
+- **Background → `var(--surface-raised)`** — theme-context dependent. In a dark sub-section the role resolves to a near-black surface; on a light page main the same role resolves to a light surface. There is NO separate `deep` wrapper attribute around these tiles; the dark rendering is the natural resolution of `--surface-raised` at this nesting depth in the active theme context.
 
 **Inline-action slot.** The optional inline action is a Tertiary button (§14.1) — the quietest affordance, so it sits beside the display number without competing with it for emphasis. When the action is a per-tile overflow menu, use the §14 Kebab menu instead.
 
@@ -547,7 +547,7 @@ Two sizes share the same frame contract:
 
 **Disabled state.** `opacity: 0.5; cursor: not-allowed; pointer-events: none`. The input also carries the HTML `disabled` attribute so it is excluded from form submission and tab order. (Common DS convention.)
 
-**Focus-visible ring.** `outline: 2px solid var(--role-focus-ring); outline-offset: 2px` per the foundation focus-ring contract. (WCAG 2.4.7, 2.4.11.)
+**Focus-visible ring.** `outline: 2px solid var(--focus-ring); outline-offset: 2px` per the foundation focus-ring contract. (WCAG 2.4.7, 2.4.11.)
 
 **Error state.** The border shifts to `--error-text`; the input carries `aria-invalid="true"`. A leading or trailing warning glyph in `--error-text` is optional. The error message renders below the input in `--error-text` inside an `aria-live="polite"` container (foundations/accessibility.md §18.6).
 
@@ -597,7 +597,7 @@ Two sizes share the same frame contract:
 
 **Sizing / notes.** `0.5rem 0.75rem` padding, sentence-case label, 12px caption type. No uppercase.
 
-**Interactive vs static.** The default badge is a non-interactive `<span>` — it labels content, it doesn't act. When the host needs the badge to behave as a filter chip or removable tag, wrap or replace the `<span>` with a `<button>` (or `<a>` if it navigates); apply the foundation focus ring on `:focus-visible` and hover-darken the border one role-step toward `--role-border-strong`. (Common DS convention; HTML spec for semantic distinction.)
+**Interactive vs static.** The default badge is a non-interactive `<span>` — it labels content, it doesn't act. When the host needs the badge to behave as a filter chip or removable tag, wrap or replace the `<span>` with a `<button>` (or `<a>` if it navigates); apply the foundation focus ring on `:focus-visible` and hover-darken the border one role-step toward `--border-strong`. (Common DS convention; HTML spec for semantic distinction.)
 
 ---
 
@@ -621,7 +621,7 @@ Two sizes share the same frame contract:
 
 **Structure (slots).** Mapped warm panel or status fill + label.
 
-**Theme Roles Used.** Ground and ink resolve per state from the status-color mapping below — grounds `--role-status-positive-bg` / `--role-status-caution-bg` / `--role-status-critical-bg` (neutral uses `--role-surface-secondary`); ink `--role-text-primary` / `--role-text-inverse` / `--role-text-tertiary`.
+**Theme Roles Used.** Ground and ink resolve per state from the status-color mapping below — grounds `--status-positive-bg` / `--status-caution-bg` / `--status-critical-bg` (neutral uses `--surface-secondary`); ink `--text-primary` / `--text-inverse` / `--text-tertiary`.
 
 **Behavior.** None at rest.
 
@@ -646,7 +646,7 @@ Each ground is a role, not a swatch — the `status-*-bg` roles are constrained 
 
 **Structure (slots).** Mono text body + optional language-picker (top-left) + Copy + View Docs (top-right).
 
-**Theme Roles Used.** `--role-surface-primary` (resolved through the `code` theme to a fixed dark neutral, with `--role-surface-secondary` as the inner stratification); `--role-text-primary` (resolved through the `code` theme to a light text neutral). The `code` theme is mode-invariant — it stays dark in both light and dark mode.
+**Theme Roles Used.** `--surface-primary` (resolved through the `code` theme to a fixed dark neutral, with `--surface-secondary` as the inner stratification); `--text-primary` (resolved through the `code` theme to a light text neutral). The `code` theme is mode-invariant — it stays dark in both light and dark mode.
 
 **Behavior.** None at rest.
 
@@ -670,7 +670,7 @@ Each ground is a role, not a swatch — the `status-*-bg` roles are constrained 
 
 **Sizing / notes.** ~32×18px to 36×20px. ON state: chromatic blue fill, thumb right. OFF state: gray fill, thumb left.
 
-**Accessibility.** Switch is a `<button role="switch">` carrying `aria-checked="true|false"` reflecting the ON/OFF state. Space and Enter both toggle the switch (WAI-ARIA APG switch pattern + HTML default for `<button>`). Tab focuses the switch as a single control. Focus ring on `:focus-visible` follows the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`). When disabled, the switch carries the HTML `disabled` attribute, `opacity: 0.5`, `cursor: not-allowed`, and `pointer-events: none`; `aria-checked` continues to reflect the current state. Honor `prefers-reduced-motion: reduce` by suppressing the 200ms thumb-slide transition; thumb snaps to the new position instead. (WCAG 2.3.3.) See also §14.3 for the switch-active swatch reservation.
+**Accessibility.** Switch is a `<button role="switch">` carrying `aria-checked="true|false"` reflecting the ON/OFF state. Space and Enter both toggle the switch (WAI-ARIA APG switch pattern + HTML default for `<button>`). Tab focuses the switch as a single control. Focus ring on `:focus-visible` follows the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`). When disabled, the switch carries the HTML `disabled` attribute, `opacity: 0.5`, `cursor: not-allowed`, and `pointer-events: none`; `aria-checked` continues to reflect the current state. Honor `prefers-reduced-motion: reduce` by suppressing the 200ms thumb-slide transition; thumb snaps to the new position instead. (WCAG 2.3.3.) See also §14.3 for the switch-active swatch reservation.
 
 ---
 
@@ -780,7 +780,7 @@ Each ground is a role, not a swatch — the `status-*-bg` roles are constrained 
 
 **Sizing / notes.** `margin-top` and `padding-top` both `--sp-3` (resolved in `foundations/layout.md` §11.4). Icon links inherit the product family's icon-button base — `32×32px` touch hit-area with a `20×20` SVG glyph centered. Host-project implementations targeting WCAG 2.5.5 AAA should ship at `≥44×44px` to clear WCAG 2.5.5 (AAA) target size.
 
-**Accessibility.** Each icon link is an `<a>` with an `aria-label` naming the destination service (e.g., `aria-label="Share on LinkedIn"`); the SVG glyph carries `aria-hidden="true"`. Focus paints the foundation focus ring on `:focus-visible` (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`). (WCAG 2.4.7, 2.4.11.)
+**Accessibility.** Each icon link is an `<a>` with an `aria-label` naming the destination service (e.g., `aria-label="Share on LinkedIn"`); the SVG glyph carries `aria-hidden="true"`. Focus paints the foundation focus ring on `:focus-visible` (`outline: 2px solid var(--focus-ring); outline-offset: 2px`). (WCAG 2.4.7, 2.4.11.)
 
 **Default service pair.** The row ships a "copy link" action and a generic "share" action (the platform Web Share API where available, falling back to copy-link) as its default pair, so the row carries no brand-network dependency. Host projects may substitute named-network icons by replacing the two slots.
 
@@ -855,7 +855,7 @@ State props: `rest` | `hover` | `disabled`.
 
 **Accessibility.**
 - **Disabled-state attribute choice.** Default to the HTML `disabled` attribute on `<button>` so the control is excluded from tab order, form submission, and pointer events at the browser level. Use `aria-disabled="true"` (plus visual styling + a JS click-guard) only when the control must remain focusable so screen reader users can still discover it (e.g., a form-submit button whose disabled state explains *why* on focus). The two forms are mutually exclusive — never set both. (WAI-ARIA + HTML spec.)
-- **Focus-visible ring.** `outline: 2px solid var(--role-focus-ring); outline-offset: 2px` per the foundation focus-ring contract — only paints on `:focus-visible` so pointer-input focus does not light the ring. (WCAG 2.4.7, 2.4.11.)
+- **Focus-visible ring.** `outline: 2px solid var(--focus-ring); outline-offset: 2px` per the foundation focus-ring contract — only paints on `:focus-visible` so pointer-input focus does not light the ring. (WCAG 2.4.7, 2.4.11.)
 - **Loading / pending state.** Preserve the button's rest-state width and height (avoid layout shift); replace the label with a centered spinner inheriting `currentColor`; set `aria-busy="true"` on the button; click events are ignored while loading. The `disabled` attribute is NOT set during loading so screen readers continue to announce the button. (Common DS convention; Polaris / Material / Carbon.)
 - **Icon-only variant.** A button with no visible label MUST carry an `aria-label` describing the action (e.g., `aria-label="Close"`). Icon-only buttons render at the larger of (a) `min-height` 40px and (b) `min-width` 40px so the icon's hit area meets the same target floor as labelled buttons. (WAI-ARIA + WCAG 2.5.5.)
 - **Tap target.** 40px min-height meets WCAG 2.5.8 (AA, 24×24). To clear 2.5.5 (AAA, 44×44), variants intended for high-pointer-error contexts (mobile, forms) should ship at `min-height: 44px` — see §14.2 for the conversion-CTA variant at 44px. The 40px base assumes desktop placement with adequate inline spacing satisfying 2.5.8's spacing clause.
@@ -887,7 +887,7 @@ State props: `rest` | `hover` | `disabled`.
 - No box-shadow, no outline ring.
 
 **Accessibility.** Inherits primary button keyboard semantics (see §14.1).
-- **Focus-visible.** Since the variant suppresses the outline ring at rest, the focus indicator paints on `:focus-visible` ONLY as the foundation focus ring (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`). The bloom hover is decorative — it must not double as the focus indicator. (WCAG 2.4.7, 2.4.11.)
+- **Focus-visible.** Since the variant suppresses the outline ring at rest, the focus indicator paints on `:focus-visible` ONLY as the foundation focus ring (`outline: 2px solid var(--focus-ring); outline-offset: 2px`). The bloom hover is decorative — it must not double as the focus indicator. (WCAG 2.4.7, 2.4.11.)
 - **Reduced motion.** Honor `prefers-reduced-motion: reduce` by suppressing both the `transform: scale(...)` transition and the `::after` opacity fade; the button paints its rest state on hover instead. (WCAG 2.3.3.)
 - **Disabled state.** Inherits the §14.1 button-base disabled contract: HTML `disabled` attribute, `opacity: 0.5`, `cursor: not-allowed`, `pointer-events: none`. The bloom transform and `::after` highlight do not paint while disabled.
 
@@ -917,7 +917,7 @@ State props: `rest` | `hover` | `disabled`.
 **Accessibility.** The `--switch-active-bg` role resolves to the same chromatic signal the focus ring uses on conversion inputs; the switch's ON-state ground must therefore meet contrast against the thumb fill `--surface-raised` to remain perceivable.
 - **ARIA contract.** The switch is a `<button role="switch">` carrying `aria-checked="true|false"`. The visual ON/OFF state and the `aria-checked` value are always synchronized. (WAI-ARIA APG switch pattern.)
 - **Keyboard.** Space and Enter both toggle the switch (WAI-ARIA APG + HTML default for `<button>`). Tab focuses the switch as a single control.
-- **Focus-visible ring.** `outline: 2px solid var(--role-focus-ring); outline-offset: 2px` paints on `:focus-visible` per the foundation focus-ring contract. (WCAG 2.4.7, 2.4.11.)
+- **Focus-visible ring.** `outline: 2px solid var(--focus-ring); outline-offset: 2px` paints on `:focus-visible` per the foundation focus-ring contract. (WCAG 2.4.7, 2.4.11.)
 - **Reduced motion.** Honor `prefers-reduced-motion: reduce` by suppressing the 200ms thumb-slide transition; thumb snaps to the new position. (WCAG 2.3.3.)
 - **Disabled state.** HTML `disabled` attribute on the `<button>`, plus `opacity: 0.5`, `cursor: not-allowed`, `pointer-events: none`. `aria-checked` continues to reflect the current state.
 
@@ -1187,7 +1187,7 @@ Two sizes share the same frame contract:
 
 **Complete-state visual.** A completed step paints a filled circle in `--success-100` containing a centered white checkmark glyph (replacing the step number). The circle border drops in favor of the fill; the label shifts to default weight (400) at `--text-100`, matching pending labels but with the filled circle marking completion.
 
-**Interactive back-navigation.** When a host enables back-navigation, the complete/pending circle's `<span>` is replaced with a `<button>` carrying an `aria-label` of the step name; it paints the foundation focus ring on `:focus-visible` (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`, foundations/accessibility.md §18.2). The current step is never a button (you cannot navigate to where you already are).
+**Interactive back-navigation.** When a host enables back-navigation, the complete/pending circle's `<span>` is replaced with a `<button>` carrying an `aria-label` of the step name; it paints the foundation focus ring on `:focus-visible` (`outline: 2px solid var(--focus-ring); outline-offset: 2px`, foundations/accessibility.md §18.2). The current step is never a button (you cannot navigate to where you already are).
 
 ---
 
@@ -1467,7 +1467,7 @@ The composition that adds a destructive sub-row beneath the body is documented i
 - `state`: `closed` | `open`.
 
 **Fixed sizing/spacing (full variant).**
-- Wrapper: width `232px`; height `32px` (`h-8`); padding `0px 5px 0px 0px` (`pr-[5px]`); border `1px solid var(--role-border-subtle)` (hairline at low alpha against the dark rail surface); border-radius `6px` (`rounded-md`); background transparent (rail's `--role-surface-secondary` shows through); layout `display: flex; gap: 2px; align-items: center`.
+- Wrapper: width `232px`; height `32px` (`h-8`); padding `0px 5px 0px 0px` (`pr-[5px]`); border `1px solid var(--border-subtle)` (hairline at low alpha against the dark rail surface); border-radius `6px` (`rounded-md`); background transparent (rail's `--surface-secondary` shows through); layout `display: flex; gap: 2px; align-items: center`.
 - Trigger: width `225px`; height `30px`; padding `0 0 0 8px` (`pl-2`); gap `4px` (`gap-1`).
 - Trigger children:
   - `name` SPAN: `flex-1 min-w-0 truncate`; `font-size: 12px` (`text-xs`); weight 400; color `--text-100`.
@@ -1589,7 +1589,7 @@ The composition that adds a destructive sub-row beneath the body is documented i
 
 The following foundation contracts are referenced by components throughout this file; their authoritative values live in `foundations/`:
 
-- **Focus-visible ring.** Every interactive component paints the focus ring on `:focus-visible` per `foundations/accessibility.md` §18.2 (`outline: 2px solid var(--role-focus-ring); outline-offset: 2px`, with the inset `-2px` offset variant for elements with a ≤4px radius). The skip-link snap and the hamburger inset ring are specializations of this contract.
+- **Focus-visible ring.** Every interactive component paints the focus ring on `:focus-visible` per `foundations/accessibility.md` §18.2 (`outline: 2px solid var(--focus-ring); outline-offset: 2px`, with the inset `-2px` offset variant for elements with a ≤4px radius). The skip-link snap and the hamburger inset ring are specializations of this contract.
 - **Reduced motion.** Reduced-motion fallbacks are specified per-component for the mobile drawer (§12.3), sticky header (§12.4), dropdowns (§12.2), authentication primary CTA bloom (§14.2), toggle switch (§14 Toggle switch + §14.3 Switch active), and kebab menu (§14 Kebab menu), all governed by the global `prefers-reduced-motion: reduce` gate in `foundations/motion.md` §15.5.
 - **`--container-margin`** (referenced by the mobile drawer mask, §12.3) resolves in `foundations/layout.md` as the side-gutter clamp (32–64px, §11.2).
 - **`--ease-in-out-power3`** (referenced by the mobile drawer open animation, §12.3) resolves to the `--ease-in-out-expo` curve in `foundations/motion.md` §15.1 (`cubic-bezier(1, 0, 0, 1)`), the curve reserved for max-height and panel reveals over longer durations.

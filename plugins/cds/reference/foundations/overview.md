@@ -183,11 +183,3 @@ The shipped role inventory (defined in `customizable-design-elements.yaml`) cove
 Every component requests these role slots by `var(--name)` only. **Never reference a `--p-*` palette swatch directly inside a component class.** The palette is for themes; roles are for components. The contract is one-directional: palette → role → component. Breaking it (by reading the palette from a component) collapses the indirection that makes the rest of the system work.
 
 ---
-
-## Known gaps
-
-- §3 narrates the input categories that live in YAML but does not enumerate the YAML's literal schema (key names, nesting, expected types). Implementers building tooling against the YAML must consult `customizable-design-elements.yaml` directly for the schema.
-- §3 references `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` as the path resolver but does not specify the resolution algorithm (search order, fallback, error behavior when unset). The resolver contract is undefined.
-- §4.5's selection tint consumes the `selection-bg` role (`var(--selection-bg)`); the accent-mix value lives in that role's fallback in the YAML. No palette swatch appears in the CSS — the global selection rule is now role-based like everything else.
-- §4 narrative does not specify how to choose the colored-ramp hue families when an implementer wants to substitute different ramps (e.g., teal/amber/violet instead of blue/green/red), only that three colored ramps should exist.
-- §5 narrative refers to a "shipped role inventory" enumerated in the YAML; the full role-slot table lives in the YAML, so the prose count of slots here is not independently verifiable from this document alone.
