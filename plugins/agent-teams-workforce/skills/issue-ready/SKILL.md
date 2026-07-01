@@ -1,108 +1,218 @@
 ---
 name: issue-ready
-description: Orchestrates the full 3-skill readiness pipeline for any issue. Runs /issue-review then /wsjf in sequence, posting an incremental comment at each step. Builds a full audit trail on the ticket. Triggers on /issue-ready or when user says "is this ready to implement", "run the pipeline", "prepare this issue".
+description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review status and WSJF score when fresh, reruns review then scoring only when missing or stale, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
 ---
 
-# Issue Ready — Pipeline Orchestrator
+# Issue Ready — Readiness Gate
 
-Orchestrate /issue-review and /wsjf in sequence for any work item. Post an incremental
-comment to the ticket after each step. Every run adds to the audit trail — never
-overwrites prior comments.
+Decide whether one issue is ready to implement, and persist that decision on the issue
+so the next run is cheap. The source of truth for an issue's state is **Beads** (primary)
+or **GitHub** (backup). Throughout this skill, "the tracker" means whichever one resolved
+the issue. Anything that applies to Beads applies to GitHub too, **except** storing
+attributes on the issue — GitHub has no custom fields, so it uses the marker-comment
+fallback described below.
 
-Never ask clarifying questions. Run with what you have.
+This skill does two things the old version did not: it returns a hard `Ready` boolean,
+and it **only does work when work is needed** — when the review or score is missing or
+stale. When the stored values are current, it reuses them and reruns nothing.
 
-## Input Handling
+## Output contract — emit this and nothing else
 
-- Beads issue ID (ssbd-xxxx) — run `bd show <id> --json`
-- GitHub issue number — run `gh issue view <n>`
-- Inline text — assess directly (no comment posted; output to chat only)
-- No argument — ask once: "Paste the issue ID or describe the work item."
-
-## Pipeline Execution
-
-### Step 1 — Run /issue-review
-
-Execute the /issue-review command against the issue. Capture the full structured output.
-
-**Post comment to ticket:**
-```
-## Issue Review — [ISO 8601 timestamp]
-
-[Full /issue-review output]
-```
-
-If result is INCOMPLETE:
-- Post the comment with all findings
-- Stop. Do not proceed to /wsjf.
-- Respond to chat with the findings and recommended next actions
-
-If result is COMPLETE (all dimensions ✅):
-- Post the comment and continue to Step 2
-
-### Step 2 — Run /wsjf
-
-Execute the /wsjf command against the issue content. Capture the full structured output.
-
-**Post comment to ticket:**
-```
-## WSJF Score — [ISO 8601 timestamp]
-
-[Full /wsjf output]
-```
-
-### Step 3 — Ready Declaration
-
-**Post final comment to ticket:**
-```
-## Ready for Implementation — [ISO 8601 timestamp]
-
-This issue passed completeness review and has been scored.
-
-WSJF: [score]
-Cost of Delay: [CoD]
-Job Size: [size]
-
-Cleared for implementation.
-```
-
-### Step 4 — Store WSJF Score as Machine-Readable Metadata
-
-Run the following to make the issue pipeline-eligible:
+Every invocation, for every outcome, responds to chat with **exactly** this block. Never
+add narrative, commentary, or explanation before or after it. A human usually never reads
+this; it is a machine contract. The single exception: for a **closed** issue, append one
+trailing line — `Issue <id> was closed on <date>.` — as chat-only context. It is never
+posted to the tracker, and `Comments posted` stays `0`.
 
 ```
-bd update <id> --notes "wsjf_score: <score>"
-```
-
-- `<id>` is the beads issue ID (e.g. `bd-42`)
-- `<score>` is the numeric WSJF score from Step 2 (e.g. `8.75`)
-- The pipeline reads this `wsjf_score` note to confirm an issue has been scored and to
-  order ready issues by WSJF (highest first) when selecting the next bead to work —
-  ordering is by WSJF score, never by P0–P4 priority labels
-- If the issue already has notes, append `wsjf_score: <score>` on a new line rather
-  than replacing existing content
-
-Respond to chat with the WSJF score and confirmation.
-
-## Audit Trail Rules
-
-- Every run of /issue-ready appends new comments — never edits or deletes prior comments
-- All comments include ISO 8601 timestamps
-- If /issue-ready is run again after gaps are addressed, a new full review cycle begins
-- The ticket's comment history is the canonical record of all review iterations
-
-## Comment Posting
-
-For Beads issues: `bd comment add <id> --body "..."`
-For GitHub issues: `gh issue comment <n> --body "..."`
-
-## Output Format (to chat)
-
-After pipeline completes, respond with:
-
-```
-Pipeline result: [READY / INCOMPLETE]
+Ready: [TRUE / FALSE]
+Pipeline result: [READY / INCOMPLETE / MISSING / ERROR]
 Issue: [id or title]
-Review: [COMPLETE / INCOMPLETE — n dimensions need attention]
-WSJF: [score or "not scored — incomplete"]
+Review: [COMPLETE / INCOMPLETE — n dimensions need attention / n/a]
+WSJF: [score / "not scored — incomplete" / n/a]
 Comments posted: [n]
 ```
+
+- **`Ready`** is `TRUE` only when **both** hold: `Pipeline result` is `READY` **and** the
+  tracker reports the issue in a *ready* state — for Beads that is `bd ready` membership
+  (status `open`, no active blockers, not deferred/hooked), for GitHub that is state
+  `OPEN`. Status `open` alone is not enough; a blocked or closed issue is never `Ready`.
+  In all other cases `Ready` is `FALSE`.
+- **`Pipeline result`** describes the review+score verdict only (it does not fold in
+  blocker or closed state):
+  - `READY` — review COMPLETE and a WSJF score exists.
+  - `INCOMPLETE` — review found gaps; not scored.
+  - `MISSING` — no such issue in the tracker.
+  - `ERROR` — a `bd`/`gh` call failed or the input could not be resolved.
+- A **closed** issue is never recomputed: it reports the verdict already stored on it
+  (e.g. a stored `READY` stays `READY`) with `Ready: FALSE`. See Algorithm step 2.
+- For `MISSING` / `ERROR`, fill `Review` and `WSJF` with `n/a` and `Comments posted: 0`.
+  Never switch to a different response shape.
+
+## Be quiet
+
+No preamble, no "let me…", no summary. Post to the tracker only when a step actually ran
+(see Audit Trail). Resolve everything you can yourself — never ask clarifying questions.
+The only exception is an empty invocation: with no argument, ask once, in one line —
+"Provide an issue ID, number, or description." — then stop.
+
+## What gets stored on the issue
+
+The skill persists current-state attributes so a later run can skip work. On **Beads**,
+these are first-class metadata (set with `--set-metadata`, read from `bd show --json`):
+
+| Key | Meaning |
+| --- | --- |
+| `review_status` | `COMPLETE` or `INCOMPLETE` from the last review |
+| `reviewed_at` | ISO 8601 timestamp of the last review |
+| `wsjf` | numeric WSJF score (absent until review is COMPLETE) |
+| `wsjf_calculated_at` | ISO 8601 timestamp of the last scoring |
+| `ready_content_hash` | fingerprint of the issue's content at the last run — the staleness watermark |
+
+Metadata is overwritten each real run (it is current state, not history). WSJF lives here
+now, **not** as a note — nothing else consumes the old `wsjf_score` note.
+
+On **GitHub** (no custom fields) the same keys are written into one machine-readable
+marker comment instead:
+
+```
+<!-- issue-ready:state
+review_status=COMPLETE
+reviewed_at=2026-06-30T12:00:00Z
+wsjf=8.75
+wsjf_calculated_at=2026-06-30T12:00:00Z
+ready_content_hash=ab12cd34ef56a7b8
+-->
+```
+
+Read state from the most recent such marker; write a fresh marker each real run.
+
+## Staleness — the reason work is skipped
+
+The concept: **only run review and scoring when missing or stale; otherwise return the
+values already on the issue.** Freshness is decided by a content fingerprint, not by the
+tracker's `updated_at` (which the skill's own writes would bump, falsely invalidating the
+cache). The fingerprint covers only substantive content (title, description, acceptance,
+design, type, priority, labels, dependencies) — never metadata, timestamps, status, or
+comments. See Recipes for the exact hashing command.
+
+- **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
+  stored verdict; rerun nothing; post nothing.
+- **Stale or missing** — no stored hash, or it differs → rerun (review, then score if the
+  review is COMPLETE), overwrite the stored attributes, post the comments.
+
+## Algorithm
+
+1. **Resolve the issue.** Beads ID (e.g. `tst-123`) → `bd show <id> --json`. GitHub number
+   → `gh issue view <n> --json ...`. Inline text → assess directly, store nothing, post
+   nothing (chat-only result). If the lookup returns "not found" → `Pipeline result:
+   MISSING`, emit contract, stop. If a `bd`/`gh` call errors → `Pipeline result: ERROR`,
+   emit contract, stop.
+2. **Closed → return stored state, recompute nothing.** If the status is `closed`, do not
+   run review or scoring and do not check staleness — a closed issue is never recomputed.
+   Report the attributes already on the issue: `Review` = stored `review_status` (or `n/a`
+   if it was never reviewed); `WSJF` = stored `wsjf` (or `not scored`); `Pipeline result`
+   = `READY` when the stored review is `COMPLETE` and `wsjf` is present, otherwise
+   `INCOMPLETE`. `Ready: FALSE` (a closed issue is never ready). `Comments posted: 0`.
+   After the contract block, append one chat-only line — `Issue <id> was closed on
+   <closed_at>.` — using the issue's close date; never post it to the tracker. Emit, stop.
+3. **Read stored state** (`review_status`, `reviewed_at`, `wsjf`, `wsjf_calculated_at`,
+   `ready_content_hash`) and **compute the current content hash** `H`.
+4. **Decide freshness.** Fresh = stored hash exists and equals `H`.
+   - **Fresh:** reuse stored values. If `review_status=COMPLETE` and `wsjf` present →
+     `Pipeline result: READY`. If `review_status=INCOMPLETE` → `Pipeline result:
+     INCOMPLETE`. Rerun nothing. `Comments posted: 0`.
+   - **Stale/missing:** go to step 5.
+5. **Run review** (the `issue-review` skill) against the issue. Post the review comment
+   (Audit Trail). Write `review_status` and `reviewed_at` and `ready_content_hash=H`.
+   - If review is **INCOMPLETE** → `Pipeline result: INCOMPLETE`; do not score. Skip to
+     step 7.
+   - If review is **COMPLETE** → continue.
+6. **Run scoring** (the `wsjf` skill) against the issue. Post the WSJF comment and the
+   ready-declaration comment. Write `wsjf` and `wsjf_calculated_at`. `Pipeline result:
+   READY`.
+7. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
+   Tracker-ready-state: Beads → issue appears in `bd ready`; GitHub → issue state `OPEN`.
+8. **Emit the contract block.** Stop.
+
+## Audit Trail
+
+- Post a tracker comment **only for a step that actually ran this invocation.** A fresh,
+  reused verdict posts nothing (`Comments posted: 0`).
+- Human-readable comments are **append-only** — never edit or delete prior ones. Each
+  carries an ISO 8601 timestamp. The comment history is the canonical record of every
+  review iteration. (The machine-readable attributes are current-state and *are*
+  overwritten — that is separate from the audit trail.)
+- Comment templates (post only the ones whose step ran):
+
+  ```
+  ## Issue Review — [ISO 8601 timestamp]
+
+  [full issue-review output]
+  ```
+  ```
+  ## WSJF Score — [ISO 8601 timestamp]
+
+  [full wsjf output]
+  ```
+  ```
+  ## Ready for Implementation — [ISO 8601 timestamp]
+
+  Passed completeness review and scored. WSJF: [score] (CoD [CoD] / Size [size]).
+  ```
+
+## Recipes
+
+Beads commands run read-only where possible (`--readonly`); writes use `bd update`. The
+`jq` selectors tolerate both array and `{issue:…}`/flat shapes and missing keys.
+
+**Content hash (Beads):**
+```
+bd show <id> --json --readonly \
+  | jq -S 'if type=="array" then .[0] else (.issue // .) end
+           | {title,description,acceptance,design,type,issue_type,priority,labels,dependencies,deps}' \
+  | shasum -a 256 | cut -c1-16
+```
+
+**Content hash (GitHub):**
+```
+gh issue view <n> --json title,body,labels \
+  | jq -S '{title,body,labels:[.labels[].name]}' \
+  | shasum -a 256 | cut -c1-16
+```
+
+**Read stored state (Beads):**
+```
+bd show <id> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
+           | "review_status=\(.review_status//"")\nreviewed_at=\(.reviewed_at//"")\nwsjf=\(.wsjf//"")\nwsjf_calculated_at=\(.wsjf_calculated_at//"")\nready_content_hash=\(.ready_content_hash//"")"'
+```
+
+**Status / closed check (Beads):**
+```
+bd show <id> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end | .status'
+```
+
+**Close date (Beads):** from the same `bd show --json`, read `.closed_at`; if absent, fall
+back to `.updated_at`. **GitHub:** `gh issue view <n> --json closedAt`.
+
+**Ready-state membership (Beads):**
+```
+bd ready --json -n 0 --readonly \
+  | jq -e --arg id "<id>" '[.[]?,(.issues[]?)] | any(.id==$id)' >/dev/null && echo ready || echo not-ready
+```
+
+**Write attributes after a real run (Beads):**
+```
+bd update <id> \
+  --set-metadata review_status=<COMPLETE|INCOMPLETE> \
+  --set-metadata reviewed_at=<ISO8601> \
+  --set-metadata ready_content_hash=<H> \
+  [--set-metadata wsjf=<score> --set-metadata wsjf_calculated_at=<ISO8601>]   # only when scored
+```
+
+**Post a comment:** Beads `bd comment add <id> --body "..."` · GitHub `gh issue comment <n> --body "..."`.
+
+**GitHub state read/write:** read the latest `<!-- issue-ready:state … -->` marker from
+`gh issue view <n> --json comments`; issue open/closed from `gh issue view <n> --json state`.

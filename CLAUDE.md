@@ -4,37 +4,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-A personal Claude Code plugin and skill monorepo. It publishes reusable extensions to the Claude Code plugin marketplace under the `mark-satterfield` namespace.
+A Claude Code plugin monorepo. It publishes reusable extensions to the Claude Code plugin marketplace under the `mark-satterfield` namespace. Although it targets Claude Code, most — if not all — plugins work well with other agent harnesses, like Codex.
 
-- `plugins/` — Claude Code plugins (commands + skills bundled as installable units)
-- `skills/` — Standalone behavioral skills not tied to a plugin
+Everything ships as a **plugin**: `plugins/<name>/`. There is no longer a top-level `skills/` directory — skills now live inside the plugin that owns them. Loose, miscellaneous skills live in the catch-all `plugins/skills` plugin.
 
-## Commands
+## Plugins
 
-No build step and no npm scripts. Plugins and skills are plain Markdown/YAML — no compilation required. They are distributed via the marketplace manifest (`.claude-plugin/marketplace.json`); install one by copying or symlinking its `plugins/<name>/` (or `skills/<name>/`) directory into your Claude config.
+These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that a few **marketplace names differ from their directory names** (left column ≠ path).
+
+| Marketplace name | Directory | What it does |
+| --- | --- | --- |
+| `prompt` | `plugins/prompt-library` | Prompt-template management: create, search, run, compose, orchestrate |
+| `gitignore-guardian` | `plugins/gitignore-guardian` | `.gitignore` management + protective PreToolUse hooks |
+| `chat-history` | `plugins/chat-history` | Extract Claude Code session history into a project `.chats/` |
+| `dir-dr` | `plugins/dir-dr` | Directory Doctor — audit, map, and safely reorganize directory structure |
+| `skills-hygiene` | `plugins/skills-hygiene` | Deduplicate, promote, audit, and generalize skill installations |
+| `agent-teams-workforce` | `plugins/agent-teams-workforce` | Phase-gated SDLC agent workforce (primary, under active development) |
+| `award-web-builder` | `plugins/award-web-builder` | Award-tier website builder agent with design-system skills |
+| `self-improving-agent` | `plugins/self-improving-agent` | Curate memory; promote learnings to rules and skills |
+| `research-summarizer` | `plugins/research-summarizer` | Structured research summarization and briefs |
+| `skills` | `plugins/skills` | Catch-all bundle of frequently-used personal skills |
+| `my-editor` | `plugins/my-editor` | Personal editing and writing-style toolkit |
+| `patent` | `plugins/patent` | Patent-prep toolkit: ideate → draft → triage (free public data only) |
+| `obsidian` | `plugins/obsidian` | Obsidian toolkit: CLI, Bases, Canvas, Markdown, Defuddle |
+| `cds` | `plugins/cds` | Customizable Design System — brand-neutral stylesheet/mock/component generator |
+| `forge` | `plugins/forge` | Tooling for the FORGE framework — compose, revise, and review instructions an agent can execute without interpretation |
+
+Each plugin documents itself. When you work inside a plugin, Claude Code auto-loads that plugin's `CLAUDE.md` — so this file does not link to them individually.
 
 ## Plugin Architecture
 
-Each plugin lives in `plugins/<name>/` and follows this structure:
+Each plugin lives in `plugins/<name>/`. A typical layout (not every plugin has every directory):
 
-```
+```text
 plugins/<name>/
-├── .claude-plugin/plugin.json   # Claude Code plugin manifest (name, version, description)
-├── plugin.json                  # Extended manifest with metadata
-├── commands/                    # Slash commands — each .md file = one /name:command
-│   └── <command>.md             # YAML frontmatter + Markdown instructions
-└── skills/
-    └── <skill>/
-        └── SKILL.md             # Auto-activating skill with YAML frontmatter
+├── .claude-plugin/plugin.json   # Plugin manifest (name, version, description)
+├── README.md                    # Human-facing docs
+├── CLAUDE.md                    # Agent-facing docs (see "README.md vs CLAUDE.md")
+├── commands/<command>.md        # Slash commands — each file = one /name:command
+├── skills/<skill>/SKILL.md      # Auto-activating skills
+├── agents/<agent>.md            # Subagent definitions (auto-discovered)
+├── hooks/                       # Lifecycle hooks
+└── scripts/                     # Automation (validation, generation, sync)
 ```
 
-Commands are invoked as `/plugin-name:command`. Skills auto-activate based on their `description` frontmatter field — Claude Code matches them via semantic similarity.
+Commands are invoked as `/plugin-name:command`. Skills auto-activate when their `description` frontmatter semantically matches user intent.
 
-## Skill Frontmatter
+## README.md vs CLAUDE.md
 
-Both commands and skills use YAML frontmatter. Key fields:
+Every plugin should have both: a `README.md` (human-facing) and a `CLAUDE.md` (agent-facing). Claude Code auto-loads a plugin's `CLAUDE.md` when work happens inside that plugin — so root does not link to them individually.
+
+**Do not duplicate content between them, and do not put CLAUDE.md content in a README or vice versa.** For information that serves both humans and agents, keep it in `README.md` and import it into the agent's context from `CLAUDE.md`:
+
+```text
+@README.md
+```
+
+`@` imports are whole-file only — there is no line-range or heading-fragment form. Paths resolve relative to the importing file, imports nest up to 4 levels deep, and an `@path` inside backticks or a code fence is left as literal text. To surface only part of a file, split that part into its own small file and import that.
+
+Reference: <https://code.claude.com/docs/en/memory>
+
+## Skill & Command Naming
+
+When creating a new skill (or contemplating renaming an existing one), prioritize these guidelines:
+
+- Use verb-noun naming (e.g. `compose-spec`, not `compose`).
+- Avoid generic single-word names.
+- Do not prefix a name with its own namespace/parent (no `forge-compose` inside `forge`).
+- Exception: noun/role names are allowed for standing personas or agents (e.g. `pr-shepherd`).
+
+## Frontmatter
 
 **Commands (`commands/<name>.md`):**
+
 ```yaml
 ---
 description: "One-line trigger description for Claude Code"
@@ -44,6 +86,7 @@ allowed-tools: [Read, Write, Bash, ...]
 ```
 
 **Skills (`skills/<name>/SKILL.md`):**
+
 ```yaml
 ---
 name: skill-name
@@ -54,22 +97,10 @@ argument-hint: "[optional-arg]"
 ---
 ```
 
-## Primary Plugin: agent-teams-workforce
+Skill authoring conventions: frontmatter present; description ≥ 50 chars; body ≥ 200 chars; no "last updated/modified" text; no mermaid code fence in a `SKILL.md` body.
 
-The plugin under active development and the center of gravity for agentic SDLC work. It packages bounded-specialist agents, skills, and commands that run a phase-gated SDLC pipeline under a maker-checker, no-self-approval doctrine.
+## Build, Distribution & Workspaces
 
-- Agents: `plugins/agent-teams-workforce/agents/` — bounded specialists (one task category each), auto-discovered; adding `agents/<name>.md` needs no central roster edit.
-- Skills: `plugins/agent-teams-workforce/skills/` — reusable playbooks, including the `arc42` router + sub-skills (`arc42-author` / `-maintain` / `-extract` / `-verify`) and `c4-diagramming` / `uml-diagramming` (Mermaid-first; keep mermaid fences in `references/`, never in a `SKILL.md` body).
-- Commands: `plugins/agent-teams-workforce/commands/`.
-- Pipeline (workflow 1): PRD Creation → PRD Validation → Architecture Analysis (Gate 2) → **TRD Authoring (Phase 2.5 / Gate 2b)** → Spec Authoring (Gate 3) → Task Decomposition → … → Deployment. A living **arc42 SAD**, consolidated by `sad-maintainer` at the tail of Phase 2, is the architecture source of truth; its §2/§4/§8/§9 source-extract feeds the TRD and the Specs.
-- Governance: `Project Delivery Agentic Workforce Doctrine.md` and `rules/separation-of-duties.md` — bounded authority, no self-approval (every maker has a distinct checker), read-only coordination for leads, decider ≠ analyst.
+No build step and no npm scripts — plugins are plain Markdown/YAML. They are distributed via `.claude-plugin/marketplace.json`; install one by copying or symlinking its `plugins/<name>/` directory into your Claude config. When adding a new plugin, add an entry to `marketplace.json` pointing at its source directory.
 
-Skill quality is gated by `plugins/qa/scripts/validate_skill.py` (REQUIRED: frontmatter present, description ≥ 50 chars, body ≥ 200 chars, no `last updated/modified` text, no mermaid code fence in the body).
-
-## Marketplace Registration
-
-`.claude-plugin/marketplace.json` at repo root registers plugins for marketplace distribution. When adding a new plugin, add an entry here pointing to its source directory.
-
-## npm Workspaces
-
-`package.json` declares `plugins/*` and `skills/**/*` as workspaces. Each plugin/skill that needs its own `package.json` is auto-discovered.
+`package.json` declares `plugins/*` as workspaces.

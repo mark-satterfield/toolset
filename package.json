@@ -4,8 +4,7 @@
   "description": "A curated collection of Claude Code plugins and skills, organized by capability.",
   "private": false,
   "workspaces": [
-    "plugins/*",
-    "skills/**/*"
+    "plugins/*"
   ],
   "scripts": {},
   "repository": {

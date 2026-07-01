@@ -1,6 +1,6 @@
 # Promotion Rules
 
-When to promote a learning from auto-memory (MEMORY.md) to the project's rule system (CLAUDE.md or `.claude/rules/`).
+When to promote a learning from persistent memory (beads or auto-memory) to the project's rule system (CLAUDE.md or `.claude/rules/`).
 
 ## Promotion Criteria
 
@@ -74,10 +74,10 @@ When promoting, transform the learning:
 ## Promotion Workflow
 
 ```
-1. /si:review identifies candidate
+1. /self-improving-agent:review identifies candidate
 2. Confirm the pattern is still valid
 3. Distill into one-line instruction
-4. /si:promote writes to CLAUDE.md or rules/
-5. Remove from MEMORY.md
-6. Verify with /si:status
+4. /self-improving-agent:promote writes to CLAUDE.md or rules/
+5. Remove from persistent memory (`bd forget <key>` or edit MEMORY.md)
+6. Verify with /self-improving-agent:status
 ```

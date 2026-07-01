@@ -10,7 +10,7 @@
 #       "matcher": "Bash",
 #       "hooks": [{
 #         "type": "command",
-#         "command": "./skills/self-improving-agent/hooks/error-capture.sh"
+#         "command": "${CLAUDE_PLUGIN_ROOT}/hooks/error-capture.sh"
 #       }]
 #     }]
 #   }
@@ -95,6 +95,22 @@ done
 # Exit silently if no error
 [ "$contains_error" = false ] && exit 0
 
+# Detect memory backend for save suggestion
+REMEMBER_CMD='/self-improving-agent:remember "explanation of what went wrong and the fix"'
+if [ -f "${HOME}/.claude/hooks/lib/bd-guard.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${HOME}/.claude/hooks/lib/bd-guard.sh"
+    if bd_guard 2>/dev/null; then
+        REMEMBER_CMD='bd remember "explanation of what went wrong and the fix"'
+    fi
+elif [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/memory-backend.sh" ]; then
+    # shellcheck source=/dev/null
+    source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/memory-backend.sh"
+    if [ "$(detect_memory_backend 2>/dev/null)" = "beads" ]; then
+        REMEMBER_CMD='bd remember "explanation of what went wrong and the fix"'
+    fi
+fi
+
 # Extract relevant error context (first 5 lines containing the pattern)
 error_context=$(echo "$OUTPUT" | grep -i -m 5 "$matched_pattern" | head -5)
 
@@ -103,8 +119,8 @@ cat << EOF
 <error-detected>
 Command error detected (pattern: "$matched_pattern").
 If this was unexpected or required investigation to fix, save the solution:
-  /si:remember "explanation of what went wrong and the fix"
-Or if this is a known pattern, check: /si:review
+  ${REMEMBER_CMD}
+Or if this is a known pattern, check: /self-improving-agent:review
 Context: $(echo "$error_context" | head -2 | tr '\n' ' ' | cut -c1-200)
 </error-detected>
 EOF

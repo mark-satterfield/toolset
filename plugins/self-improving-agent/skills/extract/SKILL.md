@@ -1,20 +1,20 @@
 ---
 name: "extract"
 description: "Turn a proven pattern or debugging solution into a standalone reusable skill with SKILL.md, reference docs, and examples."
-command: /si:extract
+command: /self-improving-agent:extract
 ---
 
-# /si:extract — Create Skills from Patterns
+# /self-improving-agent:extract — Create Skills from Patterns
 
 Transforms a recurring pattern or debugging solution into a standalone, portable skill that can be installed in any project.
 
 ## Usage
 
 ```
-/si:extract <pattern description>                  # Interactive extraction
-/si:extract <pattern> --name docker-m1-fixes       # Specify skill name
-/si:extract <pattern> --output ./skills/            # Custom output directory
-/si:extract <pattern> --dry-run                     # Preview without creating files
+/self-improving-agent:extract <pattern description>                  # Interactive extraction
+/self-improving-agent:extract <pattern> --name docker-m1-fixes       # Specify skill name
+/self-improving-agent:extract <pattern> --output ./skills/            # Custom output directory
+/self-improving-agent:extract <pattern> --dry-run                     # Preview without creating files
 ```
 
 ## When to Extract
@@ -31,16 +31,32 @@ A learning qualifies for skill extraction when ANY of these are true:
 
 ## Workflow
 
+### Step 0: Detect memory backend
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/memory-backend.sh" 2>/dev/null
+BACKEND="$(detect_memory_backend 2>/dev/null || echo memory-md)"
+```
+
 ### Step 1: Identify the pattern
 
-Read the user's description. Search auto-memory for related entries:
+Read the user's description. Search persistent memory for related entries:
+
+**Beads backend:**
+
+```bash
+bd memories "<keywords>"
+bd recall <key>   # for full content
+```
+
+**Auto-memory backend:**
 
 ```bash
 MEMORY_DIR="$HOME/.claude/projects/$(pwd | sed 's|/|%2F|g; s|%2F|/|; s|^/||')/memory"
 grep -rni "<keywords>" "$MEMORY_DIR/"
 ```
 
-If found in auto-memory, use those entries as source material. If not, use the user's description directly.
+If found in memory, use those entries as source material. If not, use the user's description directly.
 
 ### Step 2: Determine skill scope
 
@@ -142,7 +158,7 @@ Files created:
 Install: /plugin install (copy to your skills directory)
 Publish: clawhub publish {{path}}
 
-Source: MEMORY.md entries at lines {{n, m, ...}} (retained — the skill is portable, the memory is project-specific)
+Source: {{backend}} entries {{source_ref}} (retained — the skill is portable, the memory is project-specific)
 ```
 
 ## Examples
@@ -150,7 +166,7 @@ Source: MEMORY.md entries at lines {{n, m, ...}} (retained — the skill is port
 ### Extracting a debugging pattern
 
 ```
-/si:extract "Fix for Docker builds failing on Apple Silicon with platform mismatch"
+/self-improving-agent:extract "Fix for Docker builds failing on Apple Silicon with platform mismatch"
 ```
 
 Creates `docker-m1-fixes/SKILL.md` with:
@@ -162,7 +178,7 @@ Creates `docker-m1-fixes/SKILL.md` with:
 ### Extracting a workflow pattern
 
 ```
-/si:extract "Always regenerate TypeScript API client after modifying OpenAPI spec"
+/self-improving-agent:extract "Always regenerate TypeScript API client after modifying OpenAPI spec"
 ```
 
 Creates `api-client-regen/SKILL.md` with:

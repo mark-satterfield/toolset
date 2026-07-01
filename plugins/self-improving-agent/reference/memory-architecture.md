@@ -25,7 +25,25 @@ A complete reference for how Claude Code's memory systems work together.
 - Can import with `@README` or `@docs/guide.md`
 - CLAUDE.local.md is auto-added to .gitignore
 
-### 2. Auto Memory (Claude → Claude)
+### 2. Beads Memory (You + Claude → Claude)
+
+**Purpose:** Persistent project knowledge stored in the beads database.
+
+**Location:** `.beads/` directory in the project root
+
+**Key facts:**
+- Use `bd remember "<insight>"` to store
+- Use `bd memories` to list/search
+- Use `bd recall <key>` to read one entry
+- Use `bd forget <key>` to remove after promotion
+- Injected at session start via `bd prime`
+- No 200-line truncation — unlike MEMORY.md
+
+**What it captures:**
+- Same categories as auto-memory: build commands, debugging solutions, preferences
+- Keyed entries support dedup/update via `--key`
+
+### 3. Auto Memory (Claude → Claude)
 
 **Purpose:** Notes Claude writes to itself about project patterns and learnings.
 
@@ -56,7 +74,7 @@ A complete reference for how Claude Code's memory systems work together.
 - Code style preferences and architecture notes
 - Your communication preferences and workflow habits
 
-### 3. Session Memory (Claude → Claude)
+### 4. Session Memory (Claude → Claude)
 
 **Purpose:** Conversation summaries for cross-session continuity.
 
@@ -68,7 +86,7 @@ A complete reference for how Claude Code's memory systems work together.
 - Loaded contextually (relevant past sessions, not all)
 - Use `/remember` to turn session memory into permanent project knowledge
 
-### 4. Rules Directory (You → Claude, scoped)
+### 5. Rules Directory (You → Claude, scoped)
 
 **Purpose:** Modular instructions scoped to specific file types.
 
@@ -95,19 +113,19 @@ When entries conflict:
 
 1. CLAUDE.md (highest — explicit instructions)
 2. `.claude/rules/` (high — scoped instructions)
-3. Auto-memory MEMORY.md (medium — learned patterns)
+3. Beads memory or auto-memory MEMORY.md (medium — learned patterns)
 4. Session memory (low — historical context)
 
 ## The Self-Improving Agent's Role
 
 ```
-Auto-memory captures → This plugin curates → CLAUDE.md enforces
+Memory captures → This plugin curates → CLAUDE.md enforces
 
-MEMORY.md (raw notes)  →  /si:review (analyze)  →  /si:promote (graduate)
-                                                          ↓
-                                                    CLAUDE.md or
-                                                    .claude/rules/
-                                                    (enforced rules)
+beads / MEMORY.md (raw notes)  →  /self-improving-agent:review (analyze)  →  /self-improving-agent:promote (graduate)
+                                                                                      ↓
+                                                                                CLAUDE.md or
+                                                                                .claude/rules/
+                                                                                (enforced rules)
 ```
 
 **Why this matters:** MEMORY.md entries are background context truncated at 200 lines. CLAUDE.md entries are high-priority instructions loaded in full. Promoting a pattern from memory to rules fundamentally changes how Claude treats it.
@@ -128,4 +146,4 @@ MEMORY.md (raw notes)  →  /si:review (analyze)  →  /si:promote (graduate)
 3. **Don't duplicate** — if it's in CLAUDE.md, remove it from MEMORY.md
 4. **Scope rules** — use `.claude/rules/` with paths for file-type-specific patterns
 5. **Review quarterly** — memory files go stale after refactors
-6. **Use /si:status** — monitor capacity before it becomes a problem
+6. **Use /self-improving-agent:status** — monitor capacity before it becomes a problem

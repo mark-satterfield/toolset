@@ -1,23 +1,32 @@
 ---
 name: "promote"
-description: "Graduate a proven pattern from auto-memory (MEMORY.md) to CLAUDE.md or .claude/rules/ for permanent enforcement."
-command: /si:promote
+description: "Graduate a proven pattern from persistent memory (beads or auto-memory) to CLAUDE.md or .claude/rules/ for permanent enforcement."
+command: /self-improving-agent:promote
 ---
 
-# /si:promote — Graduate Learnings to Rules
+# /self-improving-agent:promote — Graduate Learnings to Rules
 
-Moves a proven pattern from Claude's auto-memory into the project's rule system, where it becomes an enforced instruction rather than a background note.
+Moves a proven pattern from persistent memory into the project's rule system, where it becomes an enforced instruction rather than a background note.
+
+Supports beads and Claude auto-memory. See `reference/memory-backends.md`.
 
 ## Usage
 
 ```
-/si:promote <pattern description>                    # Auto-detect best target
-/si:promote <pattern> --target claude.md             # Promote to CLAUDE.md
-/si:promote <pattern> --target rules/testing.md      # Promote to scoped rule
-/si:promote <pattern> --target rules/api.md --paths "src/api/**/*.ts"  # Scoped with paths
+/self-improving-agent:promote <pattern description>                    # Auto-detect best target
+/self-improving-agent:promote <pattern> --target claude.md             # Promote to CLAUDE.md
+/self-improving-agent:promote <pattern> --target rules/testing.md      # Promote to scoped rule
+/self-improving-agent:promote <pattern> --target rules/api.md --paths "src/api/**/*.ts"  # Scoped with paths
 ```
 
 ## Workflow
+
+### Step 0: Detect memory backend
+
+```bash
+source "${CLAUDE_PLUGIN_ROOT}/hooks/lib/memory-backend.sh" 2>/dev/null
+BACKEND="$(detect_memory_backend 2>/dev/null || echo memory-md)"
+```
 
 ### Step 1: Understand the pattern
 
@@ -25,10 +34,18 @@ Parse the user's description. If vague, ask one clarifying question:
 - "What specific behavior should Claude follow?"
 - "Does this apply to all files or specific paths?"
 
-### Step 2: Find the pattern in auto-memory
+### Step 2: Find the pattern in persistent memory
+
+**Beads backend:**
 
 ```bash
-# Search MEMORY.md for related entries
+bd memories "<keywords>"
+bd recall <key>   # for full content of a match
+```
+
+**Auto-memory backend:**
+
+```bash
 MEMORY_DIR="$HOME/.claude/projects/$(pwd | sed 's|/|%2F|g; s|%2F|/|; s|^/||')/memory"
 grep -ni "<keywords>" "$MEMORY_DIR/MEMORY.md"
 ```
@@ -47,9 +64,9 @@ If the user didn't specify a target, recommend one based on scope.
 
 ### Step 4: Distill into a concise rule
 
-Transform the learning from auto-memory's note format into CLAUDE.md's instruction format:
+Transform the learning from memory's note format into CLAUDE.md's instruction format:
 
-**Before** (MEMORY.md — descriptive):
+**Before** (memory — descriptive):
 > The project uses pnpm workspaces. When I tried npm install it failed. The lock file is pnpm-lock.yaml. Must use pnpm install for dependencies.
 
 **After** (CLAUDE.md — prescriptive):
@@ -91,12 +108,19 @@ paths:
 - Include OpenAPI JSDoc comments on handler functions
 ```
 
-### Step 6: Clean up auto-memory
+### Step 6: Clean up persistent memory
 
-After promoting, remove or mark the original entry in MEMORY.md:
+**Beads backend:**
 
 ```bash
-# Show what will be removed
+bd forget <key>
+```
+
+Ask the user to confirm removal before running.
+
+**Auto-memory backend:**
+
+```bash
 grep -n "<pattern>" "$MEMORY_DIR/MEMORY.md"
 ```
 
@@ -108,8 +132,8 @@ Ask the user to confirm removal. Then edit MEMORY.md to remove the promoted entr
 ✅ Promoted to {{target}}
 
 Rule: "{{distilled rule}}"
-Source: MEMORY.md line {{n}} (removed)
-MEMORY.md: {{lines}}/200 lines remaining
+Source: {{backend}} {{source_ref}} (removed)
+{{#if memory-md}}MEMORY.md: {{lines}}/200 lines remaining{{/if}}
 
 The pattern is now an enforced instruction. Claude will follow it in all future sessions.
 ```
@@ -117,13 +141,13 @@ The pattern is now an enforced instruction. Claude will follow it in all future 
 ## Promotion Decision Guide
 
 ### Promote when:
-- Pattern appeared 3+ times in auto-memory
+- Pattern appeared 3+ times in persistent memory
 - You corrected Claude about it more than once
 - It's a project convention that any contributor should know
 - It prevents a recurring mistake
 
 ### Don't promote when:
-- It's a one-time debugging note (leave in auto-memory)
+- It's a one-time debugging note (leave in memory)
 - It's session-specific context (session memory handles this)
 - It might change soon (e.g., during a migration)
 - It's already covered by existing rules

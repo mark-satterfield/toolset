@@ -1,8 +1,0 @@
-{
-  "name": "qa",
-  "version": "0.1.0",
-  "description": "Validates plugins, skills, and slash commands for structural correctness and content quality",
-  "author": "mark-satterfield",
-  "license": "MIT",
-  "keywords": ["qa", "validation", "testing", "plugin", "skill", "command"]
-}

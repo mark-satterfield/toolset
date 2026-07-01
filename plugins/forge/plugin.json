@@ -1,0 +1,23 @@
+{
+  "name": "forge",
+  "version": "0.1.0",
+  "description": "Tooling that wraps the FORGE framework (Framework for Objective-Rooted, Gated Execution) — compose, revise, and review instructions an AI agent can execute without interpretation. Every gap a human leaves is a judgment call handed to the agent; forge closes those gaps in interactive Q&A or best-efforts them in headless mode, and grades the result for how well an agent will understand it and the risk that execution diverges from intent.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/forge",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "keywords": [
+    "forge",
+    "instructions",
+    "instruction-block",
+    "prompt-engineering",
+    "agent-instructions",
+    "runbook",
+    "linter",
+    "grading",
+    "framework"
+  ]
+}

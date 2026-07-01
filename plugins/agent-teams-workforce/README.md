@@ -23,3 +23,6 @@ Current roster scope:
 
 Workforce rules live in `rules/separation-of-duties.md`.
 
+> [!IMPORTANT]
+>
+> `sdlc-worforce.md` has been renamed to `AGENT-TEAMS-WORKFORCE.md`

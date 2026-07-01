@@ -1,0 +1,21 @@
+{
+  "name": "forge",
+  "version": "0.1.0",
+  "description": "Tooling for the FORGE framework — compose, revise, and review instructions an AI agent can execute without interpretation. Closes the gaps a human would otherwise leave for the agent to guess at.",
+  "author": {
+    "name": "mark-satterfield",
+    "url": "https://github.com/mark-satterfield/toolset"
+  },
+  "homepage": "https://github.com/mark-satterfield/toolset/tree/main/plugins/forge",
+  "repository": "https://github.com/mark-satterfield/toolset",
+  "license": "MIT",
+  "keywords": [
+    "forge",
+    "instructions",
+    "prompt-engineering",
+    "agent-instructions",
+    "runbook",
+    "linter",
+    "framework"
+  ]
+}
