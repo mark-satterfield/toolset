@@ -41,8 +41,12 @@
     ],
     "SessionStart": [
       {
-        "type": "command",
-        "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/init-update-project.sh\" \"${CLAUDE_PLUGIN_ROOT}\""
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/init-update-project.sh\" \"${CLAUDE_PLUGIN_ROOT}\""
+          }
+        ]
       }
     ]
   }
