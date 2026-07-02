@@ -1,6 +1,6 @@
 {
   "name": "chat-history",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Extract and organize Claude Code session history into a project .chats directory.",
   "author": {
     "name": "mark-satterfield",

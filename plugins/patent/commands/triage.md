@@ -12,7 +12,7 @@ Invoke the `patent-triage` skill across every idea in `patents/ideas/`.
 
 1. Ensure `patents/portfolio.md` exists. If absent or missing a moat-thesis section, the skill prompts the user to provide one.
 2. Walk every `patents/ideas/{slug}/idea.md` and its sibling files (`eligibility.md`, `enforceability.md`, `decision.md`).
-3. Load and execute `skills/patent-triage/SKILL.md`.
+3. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-triage/SKILL.md`.
 4. Output is an updated `portfolio.md` with:
    - Top-ranked priority table across all shaped ideas
    - Coverage gaps in your moat thesis (your thinking gaps, with inventor-actionable recommendations)

@@ -1,6 +1,6 @@
 {
   "name": "dir-dr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Scan, audit, reorganize, or map any directory, project, or file system structure.",
   "author": {
     "name": "mark-satterfield",

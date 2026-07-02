@@ -1,6 +1,6 @@
 {
   "name": "gitignore-guardian",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Gitignore management, auditing, and protection. PreToolUse hooks block dangerous .gitignore modifications and git add of ignored files.",
   "author": {
     "name": "mark-satterfield",

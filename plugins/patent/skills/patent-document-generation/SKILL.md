@@ -63,11 +63,11 @@ If a required file is missing, do not proceed. State exactly which earlier skill
 
 ## Step 3 — Assemble the document
 
-Open the matching template in `references/document-templates/`. Each template has placeholder sections; fill them from the directory contents.
+Open the matching template in `${CLAUDE_PLUGIN_ROOT}/references/document-templates/`. Each template has placeholder sections; fill them from the directory contents.
 
 ### Invention disclosure document (PRIMARY)
 
-Template: `references/document-templates/invention-disclosure.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/invention-disclosure.md`
 
 This is the canonical handoff artifact. The lawyer reads this, asks the inventor questions, and from there decides what to file and how to claim it.
 
@@ -91,7 +91,7 @@ The acceptance criterion is that someone reading only this document — includin
 
 ### Defensive publication (PRIMARY — inventor-direct action)
 
-Template: `references/document-templates/defensive-publication.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/defensive-publication.md`
 
 A defensive publication is a public, timestamped disclosure that creates prior art blocking subsequent filings by anyone else. It does NOT confer rights to the inventor — it sacrifices the patent option in exchange for cheap, fast prior-art creation.
 
@@ -116,7 +116,7 @@ After publishing: archive via web.archive.org, capture SHA-256 of the canonical 
 
 ### Claim chart (PRIMARY — inventor's own analysis)
 
-Template: `references/document-templates/claim-chart-template.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/claim-chart-template.md`
 
 Element-by-element table. One row per claim element, one column per target (prior-art reference, competitor product, inventor's own implementation).
 
@@ -124,7 +124,7 @@ This is for the inventor's analysis: novelty mapping, "does my product practice 
 
 ### Provisional Patent Application (PPA) draft (SECONDARY)
 
-Template: `references/document-templates/ppa-template.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/ppa-template.md`
 
 USPTO-format starting draft. Your lawyer will not file this as-is — they will rewrite in their house style. Generating this is useful when:
 - You want to understand the USPTO PPA format
@@ -146,7 +146,7 @@ Mark the output clearly: "This is an inventor-prepared draft. Filing should be d
 
 ### Non-provisional application skeleton (SECONDARY)
 
-Template: `references/document-templates/non-provisional-skeleton.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/non-provisional-skeleton.md`
 
 Same caveat as the PPA draft: USPTO-format starting point, lawyer will redraft. Generated only when the inventor specifically requests it.
 
@@ -154,7 +154,7 @@ Structure follows 37 CFR 1.77(b) — see the template for the section order.
 
 ### IDS prior-art summary (SECONDARY)
 
-Template: `references/document-templates/ids-template.md`
+Template: `${CLAUDE_PLUGIN_ROOT}/references/document-templates/ids-template.md`
 
 USPTO PTO/SB/08-format prior-art listing. Your lawyer files the actual IDS in their own format; this captures the substance for them.
 
@@ -200,10 +200,10 @@ Tell the user:
 
 ## References
 
-- `references/document-templates/invention-disclosure.md`
-- `references/document-templates/defensive-publication.md`
-- `references/document-templates/claim-chart-template.md`
-- `references/document-templates/ppa-template.md`
-- `references/document-templates/non-provisional-skeleton.md`
-- `references/document-templates/ids-template.md`
-- `references/state-model.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/invention-disclosure.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/defensive-publication.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/claim-chart-template.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/ppa-template.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/non-provisional-skeleton.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/document-templates/ids-template.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md`

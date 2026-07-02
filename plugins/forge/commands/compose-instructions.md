@@ -10,9 +10,9 @@ Invoke the `compose-instructions` skill.
 
 ## Process
 
-1. Resolve `$ARGUMENTS` per `references/operating-rules.md` §2:
+1. Resolve `$ARGUMENTS` per `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` §2:
    - A file path → read it as the source material. Fix an obvious path typo; if not findable in the obvious place, stop and say so. Do not crawl the file system.
    - Inline text → use it as the source material.
    - Empty → ask the user for the source material (interactive), naming the forms accepted.
 2. Determine mode: interactive unless `$ARGUMENTS` contains `headless`, `quiet`, `batch`, or `non-interactive`.
-3. Load and execute `skills/compose-instructions/SKILL.md`.
+3. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/compose-instructions/SKILL.md`.

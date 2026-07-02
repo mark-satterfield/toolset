@@ -1,6 +1,6 @@
 {
   "name": "patent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Personal patent prep toolkit for inventors working with a lawyer — ideate, assess eligibility, draft claims, score strategic worth, produce invention disclosure documents, and triage which ideas to bring to the lawyer next. Uses only free, public data sources.",
   "author": {
     "name": "mark-satterfield",

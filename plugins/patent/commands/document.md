@@ -27,7 +27,7 @@ Invoke the `patent-document-generation` skill on a fully-scoped idea.
 
 3. If a required file is missing, the skill tells the user which earlier skill to run, and stops.
 
-4. Load and execute `skills/patent-document-generation/SKILL.md`.
+4. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-document-generation/SKILL.md`.
 
 5. On completion, the skill outputs the file path. PDF rendering is attempted via pandoc, md-to-pdf, or weasyprint — if none is available, only the markdown is generated and the user is told.
 

@@ -15,7 +15,7 @@ Invoke the `patent-enforceability` skill on a claim-ready (or assessed) idea.
    - If a path, use it.
    - If empty, list every idea at funnel stage `assessed` or `claim-ready` and ask which to score.
 2. Prefer claim-ready ideas (claims pin scope, which sharpens the scoring). If only `assessed` is available, proceed but flag the score as provisional.
-3. Load and execute `skills/patent-enforceability/SKILL.md`.
+3. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-enforceability/SKILL.md`.
 4. On completion, recommend either `/patent:claims` (if not yet drafted), `/patent:document` (if a tier-S/A idea is ready to convert to filing), or `/patent:triage` (for portfolio-level next steps).
 
 ## Notes

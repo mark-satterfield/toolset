@@ -173,5 +173,5 @@ If you find yourself producing self-filing cost tables or fee schedules, you hav
 
 ## References
 
-- `references/scoring-rubrics.md` — tier mapping, royalty bands (informational only)
-- `references/state-model.md` — `portfolio.md` and `decision.md` schemas
+- `${CLAUDE_PLUGIN_ROOT}/references/scoring-rubrics.md` — tier mapping, royalty bands (informational only)
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — `portfolio.md` and `decision.md` schemas

@@ -1,6 +1,6 @@
 {
   "name": "obsidian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian toolkit forked from kepano/obsidian-skills. Bundles five Agent Skills for Obsidian work — CLI automation of running vaults, Bases (database) authoring, JSON Canvas authoring, Obsidian-flavored Markdown editing, and Defuddle-powered web-to-Markdown conversion. The obsidian-cli skill additionally carries platform and troubleshooting references cherry-picked from the third-party Obsidian-CLI-skill project.",
   "author": {
     "name": "mark-satterfield",

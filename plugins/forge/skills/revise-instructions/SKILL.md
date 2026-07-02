@@ -25,10 +25,10 @@ You modify an existing set of FORGE instructions to satisfy a change request, wi
 
 ## Read first
 
-- `references/framework.md` — the rules the revised instructions must still satisfy.
-- `references/template.md` — section structure, for any section the change adds.
-- `references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
-- `references/review-rubric.md` — how you grade the revised result before delivering.
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md` — the rules the revised instructions must still satisfy.
+- `${CLAUDE_PLUGIN_ROOT}/references/template.md` — section structure, for any section the change adds.
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md` — how you grade the revised result before delivering.
 
 ## Inputs
 
@@ -81,7 +81,7 @@ Print the grade block exactly as `review-rubric.md` specifies:
 
 ## References
 
-- `references/framework.md`
-- `references/template.md`
-- `references/operating-rules.md`
-- `references/review-rubric.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/template.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md`

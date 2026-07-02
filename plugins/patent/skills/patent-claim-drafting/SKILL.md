@@ -130,7 +130,7 @@ Each variant gets its own independent claim number, plus its own set of dependen
 
 ## Step 5 — 35 USC 112 compliance check
 
-Open `references/35-usc-112-checklist.md`. Walk every claim against this list:
+Open `${CLAUDE_PLUGIN_ROOT}/references/35-usc-112-checklist.md`. Walk every claim against this list:
 
 **112(a) — written description and enablement**
 
@@ -210,5 +210,5 @@ Recommend: "Claims are drafted. Run `/patent:enforce` to score how defensible an
 
 ## References
 
-- `references/35-usc-112-checklist.md` — formalism checklist
-- `references/state-model.md` — `claims.md` schema
+- `${CLAUDE_PLUGIN_ROOT}/references/35-usc-112-checklist.md` — formalism checklist
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — `claims.md` schema

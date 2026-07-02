@@ -16,7 +16,7 @@ Invoke the `patent-claim-drafting` skill on an assessed idea.
    - If empty, list every idea at funnel stage `assessed` and ask which to draft claims for.
 2. Verify funnel stage is `assessed`. If earlier, redirect to `/patent:assess` first.
 3. Verify `eligibility.md` exists and contains the Step 2b conclusion that bounds claim scope.
-4. Load and execute `skills/patent-claim-drafting/SKILL.md`.
+4. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-claim-drafting/SKILL.md`.
 5. On completion (funnel stage `claim-ready`), recommend `/patent:enforce` as the next step.
 
 ## Notes

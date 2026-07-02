@@ -15,7 +15,7 @@ Invoke the `patent-patentability` skill on a shaped idea.
    - If it is a path, use that path.
    - If empty, list every idea at funnel stage `shaped` or later in `patents/ideas/` and ask the user which to assess.
 2. Verify the idea is at funnel stage `shaped` or later. If `raw`, redirect to `/patent:idea` to complete shaping.
-3. Load and execute `skills/patent-patentability/SKILL.md`.
+3. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-patentability/SKILL.md`.
 4. On completion (funnel stage `assessed`), recommend `/patent:claims` as the next step.
 
 ## Notes

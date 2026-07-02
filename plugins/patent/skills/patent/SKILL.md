@@ -86,5 +86,5 @@ If you find yourself producing content beyond a one-sentence handoff message, yo
 
 ## References
 
-- `references/state-model.md` — full `patents/` layout and `idea.md` schema
-- `references/source-credibility.md` — source-tier hierarchy used by every sub-skill
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — full `patents/` layout and `idea.md` schema
+- `${CLAUDE_PLUGIN_ROOT}/references/source-credibility.md` — source-tier hierarchy used by every sub-skill

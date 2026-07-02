@@ -26,10 +26,10 @@ You turn rough material into a precise, self-contained set of instructions writt
 
 ## Read first
 
-- `references/framework.md` — the authoring spec. Section structure, sub-keywords, and the rules instructions must satisfy.
-- `references/template.md` — the fill-in scaffold you populate.
-- `references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
-- `references/review-rubric.md` — how you grade your own output before delivering.
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md` — the authoring spec. Section structure, sub-keywords, and the rules instructions must satisfy.
+- `${CLAUDE_PLUGIN_ROOT}/references/template.md` — the fill-in scaffold you populate.
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md` — how you grade your own output before delivering.
 
 ## Inputs
 
@@ -77,7 +77,7 @@ Print the grade block exactly as `review-rubric.md` specifies:
 
 ## References
 
-- `references/framework.md`
-- `references/template.md`
-- `references/operating-rules.md`
-- `references/review-rubric.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/template.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md`

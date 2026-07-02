@@ -50,13 +50,13 @@ Never use hedging filler ("it might be possible to consider"). Be direct. State 
 
 Take the user's raw input verbatim. Do not paraphrase. Write it to a new `patents/ideas/{slug}/idea.md` under a fresh `domain-area-feature` slug (kebab-case, e.g. `database-indexing-adaptive-bloom`, `api-rate-limiting-token-bucket-variant`). If the directory exists, append a suffix (`-2`, `-3`).
 
-Initialize `idea.md` with the schema in `references/state-model.md` — leave fields empty for now except `title` (best guess from the raw text), `raw description`, `conception date` (today's date), and `funnel stage: raw`.
+Initialize `idea.md` with the schema in `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — leave fields empty for now except `title` (best guess from the raw text), `raw description`, `conception date` (today's date), and `funnel stage: raw`.
 
 Create an empty `qa-log.md` in the same directory.
 
 ### Step 2 — Eligibility triage on the initial framing
 
-Read `references/alice-failure-modes.md`. Check whether the raw idea, as phrased, matches any of these recurring failure patterns:
+Read `${CLAUDE_PLUGIN_ROOT}/references/alice-failure-modes.md`. Check whether the raw idea, as phrased, matches any of these recurring failure patterns:
 
 1. **Pure business method** — organizing transactions, contracts, accounting, marketing strategies
 2. **Abstract algorithm with no technical effect** — mathematical formulas, generic data-manipulation
@@ -102,7 +102,7 @@ Ask questions one cluster at a time. NEVER ask everything at once. Each cluster 
 > 9. Why didn't existing systems already do this? What was the inferred reason — was a constraint thought immutable, was the tradeoff thought unfavorable, did people just not look?
 > 10. If a skilled engineer in this domain saw the prior art and the problem, would they obviously combine X with Y to land on your approach? If yes, what additional non-obvious step do you bring?
 
-After each answer, update the relevant field in `idea.md` and append the question + answer verbatim to `qa-log.md`. Course-correct the framing in one sentence when the answer drifts toward Alice failure modes or away from a measurable technical effect. Use `references/eligibility-reframings.md` for the ineligible-to-eligible mapping patterns.
+After each answer, update the relevant field in `idea.md` and append the question + answer verbatim to `qa-log.md`. Course-correct the framing in one sentence when the answer drifts toward Alice failure modes or away from a measurable technical effect. Use `${CLAUDE_PLUGIN_ROOT}/references/eligibility-reframings.md` for the ineligible-to-eligible mapping patterns.
 
 ### Step 4 — Proactive improvement-angle probing
 
@@ -162,7 +162,7 @@ Do not give false encouragement. The plan's acceptance criterion is explicit on 
 
 ## References
 
-- `references/state-model.md` — `idea.md` schema
-- `references/alice-failure-modes.md` — failure-mode catalog
-- `references/eligibility-reframings.md` — ineligible-to-eligible mapping
-- `references/epo-technical-effect.md` — what counts as a technical effect under EPO
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — `idea.md` schema
+- `${CLAUDE_PLUGIN_ROOT}/references/alice-failure-modes.md` — failure-mode catalog
+- `${CLAUDE_PLUGIN_ROOT}/references/eligibility-reframings.md` — ineligible-to-eligible mapping
+- `${CLAUDE_PLUGIN_ROOT}/references/epo-technical-effect.md` — what counts as a technical effect under EPO

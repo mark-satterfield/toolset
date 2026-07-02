@@ -1,6 +1,6 @@
 {
   "name": "skills-hygiene",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Manage Claude Code skill installations — deduplicate, promote, audit, internalize, and generalize skills across global and project levels.",
   "author": {
     "name": "mark-satterfield",

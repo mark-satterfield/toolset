@@ -10,7 +10,7 @@
     {
       "name": "prompt",
       "description": "Full-featured prompt management — create, search, run, compose, and orchestrate prompt templates with variable substitution.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -19,7 +19,7 @@
     {
       "name": "gitignore-guardian",
       "description": "Gitignore management, auditing, and protection with PreToolUse hooks that block dangerous .gitignore modifications and git add of ignored files.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -28,7 +28,7 @@
     {
       "name": "chat-history",
       "description": "Extract and organize Claude Code session history into a project .chats directory.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -37,7 +37,7 @@
     {
       "name": "dir-dr",
       "description": "Scan, audit, reorganize, or map any directory, project, or file system structure.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -46,7 +46,7 @@
     {
       "name": "skills-hygiene",
       "description": "Manage Claude Code skill installations — deduplicate, promote, audit, internalize, and generalize skills across global and project levels.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -55,7 +55,7 @@
     {
       "name": "agent-teams-workforce",
       "description": "A complete SDLC delivery workforce of bounded specialist agents, built on one principle: the agent is not the unit of trust — the workflow is. Each agent owns a single task category (plan, orchestrate, execute, approve, or test) with least-privilege tools; work moves through explicit artifacts and ends at gates that pass, loop, or escalate; no agent approves its own output, and the one that finds a flaw never fixes it. Realized as deterministic Workflow scripts — reusable gates and single-phase minis stitched into composites across two pipelines (PRD→Spec→Tasks and Spec→Deployment), a governance tier, and a parallel Documentation track.",
-      "version": "3.1.0",
+      "version": "3.2.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -64,7 +64,7 @@
     {
       "name": "award-web-builder",
       "description": "Award-winning website builder agent with deep design system integration, brand compliance, and skill orchestration for Webby/Awwwards-tier web surfaces.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -73,7 +73,7 @@
     {
       "name": "self-improving-agent",
       "description": "Curate auto-memory, promote learnings to CLAUDE.md and rules, extract proven patterns into reusable skills.",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -82,7 +82,7 @@
     {
       "name": "research-summarizer",
       "description": "Structured research summarization — summarize academic papers, compare web articles, extract citations, and produce actionable research briefs.",
-      "version": "2.1.2",
+      "version": "2.1.3",
       "author": {
         "name": "mark-satterfield"
       },
@@ -91,7 +91,7 @@
     {
       "name": "skills",
       "description": "Catch-all bundle of frequently-used personal skills.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -100,7 +100,7 @@
     {
       "name": "my-editor",
       "description": "Personal editing and writing-style toolkit with adhd-edit and my-style skills.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -109,7 +109,7 @@
     {
       "name": "patent",
       "description": "Personal patent prep toolkit for inventors working with an attorney — router skill plus six sub-skills (ideation, patentability, claim drafting, enforceability, document generation, triage). Alice-safe framing, prior-art search across free public APIs, invention-disclosure and defensive-publication generation. Produces artifacts to hand to your lawyer; does not file with the USPTO. Uses only free, public data sources.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -118,7 +118,7 @@
     {
       "name": "obsidian",
       "description": "Obsidian toolkit forked from kepano/obsidian-skills. Five Agent Skills — obsidian-cli (automate a running vault), obsidian-bases (v1.12+ database feature), obsidian-markdown (callouts, embeds, properties, wiki-links), json-canvas (.canvas authoring), and defuddle (web-to-Markdown). Adds platform + troubleshooting references to the CLI skill.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -127,7 +127,7 @@
     {
       "name": "cds",
       "description": "Customizable Design System — a brand-neutral design-system plugin with skills that generate stylesheets, mocks, and framework-native component code for any host project.",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "author": {
         "name": "mark-satterfield"
       },
@@ -136,7 +136,7 @@
     {
       "name": "forge",
       "description": "Tooling for the FORGE framework (Framework for Objective-Rooted, Gated Execution) — three skills to compose, revise, and review instructions an AI agent can execute without interpretation. Closes the gaps a human would otherwise leave for the agent to guess at, interactively or headlessly, and grades the result for interpretability and intent-fidelity risk.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "mark-satterfield"
       },

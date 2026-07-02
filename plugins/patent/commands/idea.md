@@ -13,7 +13,7 @@ Invoke the `patent-ideation` skill on the provided idea text or `idea.md` path.
 1. If `$ARGUMENTS` is empty, ask the user: "Describe your idea — what is the invention you want to shape? A sentence is fine; I'll ask the questions to flesh it out."
 2. If `$ARGUMENTS` is a path to an existing `idea.md`, read it and resume from the current `funnel stage`. If the stage is `raw`, continue shaping. If it is past `raw`, redirect to the appropriate next skill.
 3. Otherwise, treat `$ARGUMENTS` as the raw idea text.
-4. Load and execute `skills/patent-ideation/SKILL.md`.
+4. Load and execute `${CLAUDE_PLUGIN_ROOT}/skills/patent-ideation/SKILL.md`.
 5. On completion (funnel stage `shaped`), recommend `/patent:assess` as the next step.
 
 ## Notes

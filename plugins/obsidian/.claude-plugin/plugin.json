@@ -1,6 +1,6 @@
 {
   "name": "obsidian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian toolkit — automate vaults from the CLI, author Bases databases, build JSON Canvas files, write Obsidian-flavored Markdown, and convert web pages to clean Markdown via Defuddle.",
   "author": {
     "name": "mark-satterfield",

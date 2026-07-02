@@ -95,7 +95,7 @@ Score the evidence path:
 
 ## Step 4 — Freedom-to-operate (FTO) sidebar
 
-Reference `references/scoring-rubrics.md` for the FTO risk matrix. This is NOT enforceability of your patent — it's risk that practicing your invention infringes someone else's patent. Important context but scored separately.
+Reference `${CLAUDE_PLUGIN_ROOT}/references/scoring-rubrics.md` for the FTO risk matrix. This is NOT enforceability of your patent — it's risk that practicing your invention infringes someone else's patent. Important context but scored separately.
 
 | FTO risk | Infringement likelihood | Impact | Recommended response |
 |---|---|---|---|
@@ -183,5 +183,5 @@ Set the `tier` field in `idea.md` to the computed tier.
 
 ## References
 
-- `references/scoring-rubrics.md` — FTO risk matrix, strategic-value tiers
-- `references/state-model.md` — `enforceability.md` schema
+- `${CLAUDE_PLUGIN_ROOT}/references/scoring-rubrics.md` — FTO risk matrix, strategic-value tiers
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — `enforceability.md` schema

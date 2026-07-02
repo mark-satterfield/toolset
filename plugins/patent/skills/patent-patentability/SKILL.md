@@ -29,7 +29,7 @@ If the idea is not yet at stage `shaped`, route back to `patent-ideation`.
 
 ## Confidence labels
 
-Every conclusion you draw carries an explicit label. Borrowed from the source-credibility model in `references/source-credibility.md`:
+Every conclusion you draw carries an explicit label. Borrowed from the source-credibility model in `${CLAUDE_PLUGIN_ROOT}/references/source-credibility.md`:
 
 - **HIGH** — Cited by a controlling case or grounded in ≥2 Tier-1/2 prior-art sources
 - **MEDIUM** — One Tier-1/2 source, OR multiple Tier-3 sources in agreement
@@ -40,7 +40,7 @@ If you cannot reach at least MEDIUM, say so. Do not bury uncertainty.
 
 ## Step 1 — Alice/Mayo two-step analysis
 
-Open `references/federal-circuit-cases.md` for the controlling-case catalog.
+Open `${CLAUDE_PLUGIN_ROOT}/references/federal-circuit-cases.md` for the controlling-case catalog.
 
 **Step 2a: Is the claim directed to an abstract idea, law of nature, or natural phenomenon?**
 
@@ -76,7 +76,7 @@ Cite by case name + the relevant fact pattern, not just the holding.
 
 ## Step 2 — EPO further-technical-effect test
 
-For international framing strength, apply the EPO test from `references/epo-technical-effect.md`:
+For international framing strength, apply the EPO test from `${CLAUDE_PLUGIN_ROOT}/references/epo-technical-effect.md`:
 
 - Does the claimed mechanism produce a further technical effect beyond normal computer execution?
 - Examples of further technical effects: reduced memory consumption, faster processing of a specific class of input, improved sensor signal handling, better encryption strength, more efficient resource allocation
@@ -222,8 +222,8 @@ If any check fails, do not deliver — fix the gap. This pass borrows the VVC di
 
 ## References
 
-- `references/federal-circuit-cases.md` — Alice, Bilski, Mayo, DDR Holdings, Enfish, McRO, Berkheimer, Aatrix, Electric Power Group case summaries
-- `references/epo-technical-effect.md` — EPO test framework
-- `references/source-credibility.md` — 5-tier source hierarchy
-- `references/external-integrations.md` — API endpoint cheat sheet
-- `references/state-model.md` — `idea.md`, `eligibility.md`, `prior-art.md` schemas
+- `${CLAUDE_PLUGIN_ROOT}/references/federal-circuit-cases.md` — Alice, Bilski, Mayo, DDR Holdings, Enfish, McRO, Berkheimer, Aatrix, Electric Power Group case summaries
+- `${CLAUDE_PLUGIN_ROOT}/references/epo-technical-effect.md` — EPO test framework
+- `${CLAUDE_PLUGIN_ROOT}/references/source-credibility.md` — 5-tier source hierarchy
+- `${CLAUDE_PLUGIN_ROOT}/references/external-integrations.md` — API endpoint cheat sheet
+- `${CLAUDE_PLUGIN_ROOT}/references/state-model.md` — `idea.md`, `eligibility.md`, `prior-art.md` schemas

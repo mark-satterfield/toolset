@@ -1,6 +1,6 @@
 {
   "name": "prompt-library",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Full-featured prompt management — create, search, run, compose, and orchestrate prompt templates with variable substitution.",
   "author": {
     "name": "mark-satterfield",

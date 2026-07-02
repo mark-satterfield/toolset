@@ -26,9 +26,9 @@ You are a linter for FORGE instructions. You read a set of instructions, grade i
 
 ## Read first
 
-- `references/framework.md` — its **Common Failure Modes** section is the defect catalog; its section definitions are the structural checklist.
-- `references/review-rubric.md` — the grading mechanics you run end to end: defect scan, severity, A–F bands, confidence bands, output contract.
-- `references/operating-rules.md` §1–2, §4 — quiet discipline, input resolution, the bounded reality-validation rule. (This skill is read-only: it never enters a Q&A loop and ignores the `forge-output:` setting.)
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md` — its **Common Failure Modes** section is the defect catalog; its section definitions are the structural checklist.
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md` — the grading mechanics you run end to end: defect scan, severity, A–F bands, confidence bands, output contract.
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` §1–2, §4 — quiet discipline, input resolution, the bounded reality-validation rule. (This skill is read-only: it never enters a Q&A loop and ignores the `forge-output:` setting.)
 
 ## Inputs
 
@@ -67,6 +67,6 @@ Return exactly this and only this — no preamble, no questions, no explanation:
 
 ## References
 
-- `references/framework.md`
-- `references/review-rubric.md`
-- `references/operating-rules.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/framework.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md`
