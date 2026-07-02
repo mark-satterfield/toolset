@@ -9,4 +9,4 @@ These instructions will be loaded into the contect window at session start.
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [${CLAUDE_PLUGIN_ROOT}/AGENT-TEAMS-WORKFORCE.md](${CLAUDE_PLUGIN_ROOT}/AGENT-TEAMS-WORKFORCE.md) |
 | Useful commands                                              | [${CLAUDE_PLUGIN_ROOT}/commands](${CLAUDE_PLUGIN_ROOT}/commands) |
-|                                                              |                                                              |
+|                                                              |                                                              |hash: 4c37f4a
