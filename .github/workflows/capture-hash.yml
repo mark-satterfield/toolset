@@ -1,0 +1,31 @@
+name: Capture Commit Hash
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  write-hash:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_PUSH }}
+
+      - name: Update trailing hash line in agents-file.md
+        run: |
+          FILE=plugins/agent-teams-workforce/agents-file.md
+          SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          if tail -n1 "$FILE" | grep -qE '^hash:[[:space:]]*[a-f0-9]+$'; then
+            sed -i '$ d' "$FILE"
+          fi
+          printf 'hash: %s\n' "$SHORT" >> "$FILE"
+
+      - name: Commit and push
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: 'chore: update agents-file hash [skip ci]'
+          add: 'plugins/agent-teams-workforce/agents-file.md'
+          push: true

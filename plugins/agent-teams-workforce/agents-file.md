@@ -1,8 +1,9 @@
 ## Instructions for Agent Teams Workforce
+
 This project uses an agentic framework names "Agent Teams Workforce" to...
 
 These instructions will be loaded into the contect window at session start.
-@${CLAUDE_PLUGIN_ROOT}/AGENT-INSTRUCTIONS.md
+@${CLAUDE_PLUGIN_ROOT}/AGENT-INSTRUCTIONS.md`
 
 | Question about this:                                         | Find it here:                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
