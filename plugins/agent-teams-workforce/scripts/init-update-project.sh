@@ -25,7 +25,7 @@ LABEL="AGENT TEAMS WORKFORCE"
 # Read version from plugin.json
 # ---------------------------------------------------------------------------
 if [[ ! -f "$PLUGIN_JSON" ]]; then
-  echo "[init-update-project] ERROR: plugin.json not found at ${PLUGIN_JSON}" >&2
+  echo "[init-update-project] ERROR: ${PLUGIN_JSON} not found" >&2
   exit 1
 fi
 
@@ -36,28 +36,33 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Read hash from last line of agents-file.md (format: "hash: <sha>")
+# Read the hash key from the yaml front matter of agents-file.md
 # ---------------------------------------------------------------------------
 if [[ ! -f "$INSTRUCTIONS_FILE" ]]; then
   echo "[init-update-project] ERROR: agents-file.md not found at ${INSTRUCTIONS_FILE}" >&2
   exit 1
 fi
 
-LAST_LINE=$(tail -n 1 "$INSTRUCTIONS_FILE")
-if [[ ! "$LAST_LINE" =~ ^hash:[[:space:]]*([a-f0-9]+)$ ]]; then
-  echo "[init-update-project] ERROR: last line of agents-file.md is not 'hash: <sha>' — got: ${LAST_LINE}" >&2
-  exit 1
-fi
-HASH="${BASH_REMATCH[1]}"
+HASH=$(awk '
+  NR==1 && $0=="---" { infm=1; next }
+  infm && $0=="---" { exit }
+  infm && /^hash:[[:space:]]*/ { sub(/^hash:[[:space:]]*/, ""); print; exit }
+' "$INSTRUCTIONS_FILE")
 
 # ---------------------------------------------------------------------------
-# Build instruction body: every line of agents-file.md except the
-# trailing "hash: <sha>" line, with literal ${CLAUDE_PLUGIN_ROOT} occurrences
-# substituted for the resolved plugin root path. This is a plain string
-# replace — agents-file.md is free to use ${CLAUDE_PLUGIN_ROOT}
+# Build instruction body: every line of agents-file.md after the closing
+# front-matter delimiter. The "hash: <sha>" key lives inside the front matter,
+# so it is naturally excluded from the body. Literal ${CLAUDE_PLUGIN_ROOT}
+# occurrences are then substituted for the resolved plugin root path — a plain
+# string replace, so agents-file.md is free to use ${CLAUDE_PLUGIN_ROOT}
 # anywhere: in @-imports, markdown links, table cells, prose, etc.
 # ---------------------------------------------------------------------------
-INSTRUCTIONS_BODY=$(head -n -1 "$INSTRUCTIONS_FILE")
+INSTRUCTIONS_BODY=$(awk '
+  NR==1 && $0=="---" { infm=1; next }
+  infm && $0=="---" { infm=0; started=1; next }
+  started { print }
+' "$INSTRUCTIONS_FILE")
+
 INSTRUCTIONS_BODY="${INSTRUCTIONS_BODY//\$\{CLAUDE_PLUGIN_ROOT\}/${PLUGIN_ROOT}}"
 
 BEGIN_TAG="<!-- BEGIN ${LABEL}: v:${VERSION} hash:${HASH} -->"

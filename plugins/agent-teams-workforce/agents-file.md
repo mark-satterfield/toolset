@@ -1,3 +1,7 @@
+---
+hash: 4c37f4a
+---
+
 ## Instructions for Agent Teams Workforce
 
 This project uses an agentic framework names "Agent Teams Workforce" to...

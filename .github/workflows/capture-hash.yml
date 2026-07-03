@@ -16,12 +16,16 @@ jobs:
 
       - name: Update trailing hash line in agents-file.md
         run: |
-          FILE=plugins/agent-teams-workforce/agents-file.md
+          FILE="plugins/agent-teams-workforce/agents-file.md"
           SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          if tail -n1 "$FILE" | grep -qE '^hash:[[:space:]]*[a-f0-9]+$'; then
-            sed -i '$ d' "$FILE"
-          fi
-          printf 'hash: %s\n' "$SHORT" >> "$FILE"
+
+          new=$(awk -v h="$SHORT" '
+            NR==1 && $0=="---" { infm=1; print; next }
+            infm && $0=="---" { if (!found) print "hash: " h; infm=0; print; next }
+            infm && /^hash:[[:space:]]*/ { print "hash: " h; found=1; next }
+            { print }
+          ' "$FILE")
+          printf '%s\n' "$new" > "$FILE"
 
       - name: Commit and push
         uses: EndBug/add-and-commit@v9

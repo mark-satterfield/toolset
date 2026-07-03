@@ -26,15 +26,6 @@
       "source": "./plugins/gitignore-guardian"
     },
     {
-      "name": "chat-history",
-      "description": "Extract and organize Claude Code session history into a project .chats directory.",
-      "version": "1.0.1",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/chat-history"
-    },
-    {
       "name": "dir-dr",
       "description": "Scan, audit, reorganize, or map any directory, project, or file system structure.",
       "version": "1.0.1",
@@ -55,7 +46,7 @@
     {
       "name": "agent-teams-workforce",
       "description": "A complete SDLC delivery workforce of bounded specialist agents, built on one principle: the agent is not the unit of trust — the workflow is. Each agent owns a single task category (plan, orchestrate, execute, approve, or test) with least-privilege tools; work moves through explicit artifacts and ends at gates that pass, loop, or escalate; no agent approves its own output, and the one that finds a flaw never fixes it. Realized as deterministic Workflow scripts — reusable gates and single-phase minis stitched into composites across two pipelines (PRD→Spec→Tasks and Spec→Deployment), a governance tier, and a parallel Documentation track.",
-      "version": "3.2.1",
+      "version": "3.2.6",
       "author": {
         "name": "mark-satterfield"
       },
