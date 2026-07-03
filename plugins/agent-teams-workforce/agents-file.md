@@ -1,5 +1,5 @@
 ---
-hash: 4c37f4a
+hash: 45264a9
 ---
 
 ## Instructions for Agent Teams Workforce
