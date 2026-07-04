@@ -39,15 +39,14 @@ def parse_memory(path):
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     name = mtype = desc = ""
-    m = _FRONTMATTER.match(text)
-    if m:
+    if m := _FRONTMATTER.match(text):
         fm = m.group(1)
         nm = re.search(r"(?im)^\s*name\s*:\s*(.+?)\s*$", fm)
         tm = re.search(r"(?im)^\s*type\s*:\s*([A-Za-z]+)", fm)
         dm = re.search(r"(?im)^\s*description\s*:\s*(.+?)\s*$", fm)
-        name = nm.group(1).strip().strip("\"'") if nm else ""
-        mtype = tm.group(1).strip().lower() if tm else ""
-        desc = dm.group(1).strip().strip("\"'") if dm else ""
+        name = nm[1].strip().strip("\"'") if nm else ""
+        mtype = tm[1].strip().lower() if tm else ""
+        desc = dm[1].strip().strip("\"'") if dm else ""
     key = name or slug_from_filename(path)
     return {
         "path": path,
@@ -77,17 +76,20 @@ def find_issues(memories):
         keys.setdefault(m["key"], []).append(os.path.basename(m["path"]))
     known = set(keys)
     issues = []
-    for k, files in keys.items():
-        if len(files) > 1:
-            issues.append(f"duplicate key '{k}' from: {', '.join(files)} (last import wins)")
+    issues.extend(
+        f"duplicate key '{k}' from: {', '.join(files)} (last import wins)"
+        for k, files in keys.items()
+        if len(files) > 1
+    )
     for m in memories:
         if not m["had_name"]:
             issues.append(f"{os.path.basename(m['path'])}: no `name` in frontmatter; "
                           f"key derived from filename ('{m['key']}')")
-        for link in m["links"]:
-            if link not in known:
-                issues.append(f"{os.path.basename(m['path'])}: [[{link}]] has no matching "
-                              f"memory in this batch")
+        issues.extend(
+            f"{os.path.basename(m['path'])}: [[{link}]] has no matching memory in this batch"
+            for link in m["links"]
+            if link not in known
+        )
     return issues
 
 

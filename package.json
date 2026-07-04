@@ -1,7 +1,7 @@
 {
   "name": "@mark-satterfield/toolset",
   "version": "0.1.0",
-  "description": "A curated collection of Claude Code plugins and skills, organized by capability.",
+  "description": "A curated collection of Claude Code plugins.",
   "private": false,
   "workspaces": [
     "plugins/*"

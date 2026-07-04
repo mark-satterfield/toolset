@@ -53,15 +53,6 @@
       "source": "./plugins/agent-teams-workforce"
     },
     {
-      "name": "award-web-builder",
-      "description": "Award-winning website builder agent with deep design system integration, brand compliance, and skill orchestration for Webby/Awwwards-tier web surfaces.",
-      "version": "1.0.1",
-      "author": {
-        "name": "mark-satterfield"
-      },
-      "source": "./plugins/award-web-builder"
-    },
-    {
       "name": "self-improving-agent",
       "description": "Curate auto-memory, promote learnings to CLAUDE.md and rules, extract proven patterns into reusable skills.",
       "version": "1.0.1",

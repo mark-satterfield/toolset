@@ -33,6 +33,7 @@ Code fences and YAML frontmatter are skipped by default so the tool never
 touches real code. Stdlib only.
 """
 
+
 import argparse
 import json
 import os
@@ -42,7 +43,7 @@ import sys
 # --- extensions the hook will look at (CLI ignores this; it lints what you pass)
 DEFAULT_EXTS = {".md", ".markdown", ".mdx", ".txt", ".rst"}
 EXTS = {
-    e if e.startswith(".") else "." + e
+    e if e.startswith(".") else f".{e}"
     for e in os.environ.get("RESIDUE_LINT_EXTS", "").split(",")
     if e.strip()
 } or DEFAULT_EXTS
@@ -126,10 +127,7 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 def _regions(lines, include_code):
     """Yield (idx, line, is_prose). is_prose False inside fences/frontmatter."""
     in_fence = False
-    in_front = False
-    # YAML frontmatter only if the very first line is '---'
-    if lines and lines[0].strip() == "---":
-        in_front = True
+    in_front = bool(lines and lines[0].strip() == "---")
     for i, line in enumerate(lines):
         if in_front:
             yield i, line, False
@@ -145,7 +143,7 @@ def _regions(lines, include_code):
 
 def _normalize(seg):
     """Tidy a prose line after an inline span was removed."""
-    lead = re.match(r"^(\s*)", seg).group(1)
+    lead = re.match(r"^(\s*)", seg)[1]
     body = seg[len(lead):]
     body = re.sub(r"\s+([.,;:!?])", r"\1", body)  # " ." -> "."
     body = re.sub(r"[ \t]{2,}", " ", body)         # collapse double spaces
@@ -201,8 +199,7 @@ def scan(text, fix=False, include_code=False):
 
         # flags (report only, on the post-strip text)
         for cat, pat in FLAG:
-            m = pat.search(working)
-            if m:
+            if m := pat.search(working):
                 findings.append((ln, "flag", cat, working.strip()[:120]))
 
         out.append(working)
@@ -351,17 +348,16 @@ def scan_memory(text):
     m = _FRONTMATTER.match(text)
     if m:
         body = text[m.end():]
-        dm = re.search(r"(?im)^\s*description\s*:\s*(.+?)\s*$", m.group(1))
-        if dm:
-            desc = dm.group(1).strip().strip("\"'")
+        if dm := re.search(
+            r"(?im)^\s*description\s*:\s*(.+?)\s*$", m.group(1)
+        ):
+            desc = dm[1].strip().strip("\"'")
             _, df = scan(desc)
-            for _, _, cat, snip in df:
-                findings.append(("description", cat, snip))
+            findings.extend(("description", cat, snip) for _, _, cat, snip in df)
     else:
         body = text
     _, bf = scan(body)
-    for ln, _, cat, snip in bf:
-        findings.append((f"body:{ln}", cat, snip))
+    findings.extend((f"body:{ln}", cat, snip) for ln, _, cat, snip in bf)
     return findings
 
 
