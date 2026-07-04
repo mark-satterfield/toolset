@@ -1,6 +1,6 @@
 ---
 name: hindsight
-description: For project in ``~/.projects`. Use whenever the there is a question like "what are we", "what was I doing", "what was I working on", "was I stil working on something", "I have not idea what I was doing or working on", or there is indication of a designe to givue out the current status of work-in-progress or work complete.  Also useful at the start of a day or after a break to re-orient. Accepts an optional hours window (e.g. "/hindsight 48") and "all" to include every project on the machine.
+description: Re-orient across recent Claude Code sessions. Use whenever there is a question like "what are we doing", "what was I working on", "was I still working on something", "I have no idea what I was doing", or any indication the user wants the current status of work-in-progress or completed work. Also useful at the start of a day or after a break to re-orient. Accepts an optional hours window (e.g. "/hindsight 48") and "all" to include every project on the machine.
 allowed-tools: Bash, Read
 ---
 
@@ -17,10 +17,10 @@ which thread is which and where it stands.
 bun "${CLAUDE_SKILL_DIR}/scripts/list_sessions.ts" --hours 24
 ```
 
-- Default window is 24 hours; if the user gave a number (e.g. /where-am-i 48`),
+- Default window is 24 hours; if the user gave a number (e.g. `/hindsight 48`),
   pass it as `--hours`.
 - **Scope:** by default only sessions launched in the current folder or beneath it are
-  included (running from Kevin's HOME picks up the HOME and any sub-project under it —
+  included (running from your HOME picks up the HOME and any sub-project under it —
   but not other agents' homes). If the user says "all" / "everywhere" / asks about other
   projects, pass `--scope all`.
 - Output is JSON, newest first. Each session has: `session_id`, `title` (Claude Code's
@@ -53,11 +53,11 @@ through-line carries the open, and surfaces (chat, dashboard) stamp the time the
 example:
 
 ```
-> We've gotten a lot done today, multi-tasked on severl SkillSpoke initatives
+> We've gotten a lot done today, multi-tasked on several parallel initiatives
 
 ## 🟢 In motion (last hour)
 
-**1. Worked on agent-teams-workflow plugin
+**1. Worked on agent-teams-workflow plugin**
 
 blah, blah, 
 ↳ `claude --resume b7bf6ce8-79dd-429d-b9a7-a643a6dcda1e`
@@ -94,9 +94,8 @@ Formatting rules:
 
 ## Step 4 — save the report
 
-If the prompt included a request to save the save this digest, the save it to the path in the prompt.
-
-Do not prompt for a location.  Save do a location in ``~/.hindsignts/``
+If the prompt asked to save the digest, save it to the path in the prompt; otherwise
+save it under `~/.hindsights/`. Never prompt for a location.
 
 Surface `📄 Saved to <relPath>` at the end of the digest. Skip the report only when the
 scan returns zero sessions (nothing worth recording).

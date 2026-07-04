@@ -7,9 +7,11 @@ description: Designs and audits Claude Code plugins by separating role (subagent
 
 ## Core principle
 
-A subagent declares a *role*: identity, tool allowlist, model choice, output contract. A skill declares a *playbook*: methodology, references, scripts, or domain knowledge. The subagent file should reference skills, not restate them. A skill should be invokable by multiple callers — the main session, multiple subagents, other skills. If the same content appears in a subagent.md and a SKILL.md, the playbook wins and the subagent references it.
+A subagent declares a *role*: identity, tool allowlist, model choice, output contract. A skill declares a *playbook*: methodology, references, scripts, or domain knowledge. The subagent file should reference skills, not restate them. A skill should be invokable by multiple callers — the main session, multiple subagents, other skills.
 
 ## Fork decision
+
+(The fork/split and granularity vocabulary is owned by the `writing-great-skills` skill's "When to split"; this section applies it to the subagent-vs-skill boundary rather than re-deriving it.)
 
 Add `context: fork` to a SKILL.md when the skill is macro-shaped — defined input, fixed procedure, deliverable output, no conversational iteration with the parent — or when intermediate work would clutter the parent (large file reads, many tool calls, exploratory passes).
 
@@ -19,7 +21,7 @@ Do not fork when the skill is a thin inline rule set (spawn cost dominates), whe
 
 A subagent file earns its existence by declaring at least one of: a restricted `tools` allowlist, a non-default `model`, a structured output contract, or a persona that materially shapes responses. Without any of these, a forking skill is the right choice instead.
 
-The subagent body should be lean: identity statement, constraints, output contract, references to the skills it invokes. Subagent files exceeding roughly 50 lines of prose usually indicate embedded playbook content; extract.
+The subagent body should be lean: identity statement, constraints, output contract, references to the skills it invokes.
 
 ## Anti-patterns
 
@@ -59,4 +61,6 @@ When invoked on a design task, produce the file-by-file scaffold plan before wri
 
 `references/checklist.md` — full audit dimension list the script encodes; read when extending checks or interpreting findings.
 
-`scripts/audit_plugin.py` — Python stdlib-only audit script; run against a plugin root.o
+`scripts/audit_plugin.py` — Python stdlib-only audit script; run against a plugin root.
+
+`writing-great-skills` (skill) — the source of truth for skill-writing vocabulary and principles (predictability, invocation, information hierarchy, pruning, leading words, and the split/granularity rules this skill's Fork decision applies). This skill works at the plugin-architecture altitude; cite `writing-great-skills` for single-skill principles rather than re-deriving them.

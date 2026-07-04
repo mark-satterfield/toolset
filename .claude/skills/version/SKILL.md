@@ -1,18 +1,14 @@
 ---
 name: version
 description: >
-  Bump plugin versions in this repo's .claude-plugin/marketplace.json after making changes. Detects which plugins were modified, determines the appropriate semver bump (major, minor, or patch) from commit history, and updates the manifest. Use when the user wants to bump versions, update plugin versions, or says "version bump". Also trigger when the user says "bump changed plugins", "update versions", "bump versions", or anything about versioning plugins after making changes — even just "version" or "bump". This versions and commits, but it does not push.
+  Bump plugin versions in this repo's .claude-plugin/marketplace.json after making changes. Detects which plugins changed, picks the semver bump (major/minor/patch) from commit history, updates the manifest, and commits — but does not push. Use when the user wants to bump versions, update versions, version-bump, or bump changed plugins after making changes — even just "version" or "bump".
 ---
 
 # Plugin Version Bumper
 
 Bump plugin versions in this repo's `.claude-plugin/marketplace.json` based on what changed and why.
 
-This skill is scoped to the `mark-satterfield/toolset` repo. The manifest has a top-level `version` field for the registry itself, plus individual `version` fields for each plugin under `plugins/`.
-
-**Manifest version** — bump when the registry changes (new plugin added = minor, plugin removed or schema change = major, metadata tweaks = patch).
-
-**Plugin versions** — bump based on commits to each plugin's source directory.
+This skill is scoped to the `mark-satterfield/toolset` repo. The manifest carries one `version` field per plugin under `plugins/` — there is no registry-level version. Bump a plugin's version based on commits to its source directory.
 
 ## Versioning Rules
 
