@@ -132,6 +132,15 @@
         "name": "mark-satterfield"
       },
       "source": "./plugins/forge"
+    },
+    {
+      "name": "memre",
+      "description": "Memory-and-deliverable hygiene: a residue linter/fixer, a PostToolUse residue hook, an auto-memory audit, and a markdown-to-beads memory importer.",
+      "version": "0.1.1",
+      "author": {
+        "name": "mark-satterfield"
+      },
+      "source": "./plugins/memre"
     }
   ]
 }

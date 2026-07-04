@@ -41,6 +41,7 @@ Then enable the plugin in Claude Code settings.
 | `patent` | [patent](./plugins/patent) | Patent-prep toolkit: ideate → draft → triage (free public data only) |
 | `obsidian` | [obsidian](./plugins/obsidian) | Obsidian toolkit: CLI, Bases, Canvas, Markdown, Defuddle |
 | `cds` | [cds](./plugins/cds) | Customizable Design System — brand-neutral stylesheet/mock/component generator |
+| `memre` | [memre](./plugins/memre) | Memory-and-deliverable hygiene: residue linter/fixer, PostToolUse residue hook, auto-memory audit, markdown-to-beads importer |
 
 _In development (not yet on the marketplace):_ **forge** (`plugins/forge`) — tooling for the FORGE framework: author precise, gap-free instructions an AI agent can execute without interpretation.
 
