@@ -393,7 +393,7 @@ The workforce is optimized for reliable project delivery, not individual agent a
 
 ## The taxonomy
 
-Every agent is described by a role, one or more character types, and a home team.
+Every agent is described by a role and one or more character types. Team membership is not stamped on the agent — a team is a composition its lead owns, and an agent may serve on more than one team.
 
 ### Roles
 
@@ -689,7 +689,7 @@ Cross-cutting — runs alongside implementation and deployment; documentation cu
 
 ## The full roster, in detail
 
-Every agent, with its home team, role, character types, task category, responsibility, and the skills and tools it is granted.
+Every agent, with the team it is rostered under, its role, character types, task category, responsibility, and the skills and tools it is granted.
 
 | Agent | Team | Team Type | Role | Character Types | Category | Responsibility | Skills | Tools |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |

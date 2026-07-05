@@ -16,11 +16,9 @@ These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that 
 | --- | --- | --- |
 | `prompt` | `plugins/prompt-library` | Prompt-template management: create, search, run, compose, orchestrate |
 | `gitignore-guardian` | `plugins/gitignore-guardian` | `.gitignore` management + protective PreToolUse hooks |
-| `chat-history` | `plugins/chat-history` | Extract Claude Code session history into a project `.chats/` |
 | `dir-dr` | `plugins/dir-dr` | Directory Doctor — audit, map, and safely reorganize directory structure |
 | `skills-hygiene` | `plugins/skills-hygiene` | Deduplicate, promote, audit, and generalize skill installations |
 | `agent-teams-workforce` | `plugins/agent-teams-workforce` | Phase-gated SDLC agent workforce (primary, under active development) |
-| `award-web-builder` | `plugins/award-web-builder` | Award-tier website builder agent with design-system skills |
 | `self-improving-agent` | `plugins/self-improving-agent` | Curate memory; promote learnings to rules and skills |
 | `research-summarizer` | `plugins/research-summarizer` | Structured research summarization and briefs |
 | `skills` | `plugins/skills` | Catch-all bundle of frequently-used personal skills |
@@ -29,6 +27,8 @@ These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that 
 | `obsidian` | `plugins/obsidian` | Obsidian toolkit: CLI, Bases, Canvas, Markdown, Defuddle |
 | `cds` | `plugins/cds` | Customizable Design System — brand-neutral stylesheet/mock/component generator |
 | `forge` | `plugins/forge` | Tooling for the FORGE framework — compose, revise, and review instructions an agent can execute without interpretation |
+| `memre` | `plugins/memre` | Memory-and-deliverable hygiene: residue linter/fixer, PostToolUse hook, auto-memory audit, markdown-to-beads importer |
+| `okf` | `plugins/okf` | Open Knowledge Format toolkit — author, convert, audit, enrich, and validate agent-readable knowledge bundles |
 
 Each plugin documents itself. When you work inside a plugin, Claude Code auto-loads that plugin's `CLAUDE.md` — so this file does not link to them individually.
 

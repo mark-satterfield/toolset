@@ -8,7 +8,7 @@ Grade against `framework.md`. Its **Common Failure Modes** section is the defect
 
 ## What the grade measures
 
-The grade does **not** measure form-completeness. A three-line instruction with only an `[ANCHOR]` can earn an **A** if that anchor leaves the agent nothing to guess. A fully-populated instruction with every section present can earn an **F** if one of those sections hands the agent a dangerous, unbounded choice.
+The grade does **not** measure form-completeness. A three-line instruction with only an `ANCHOR` can earn an **A** if that anchor leaves the agent nothing to guess. A fully-populated instruction with every section present can earn an **F** if one of those sections hands the agent a dangerous, unbounded choice.
 
 The grade measures two coupled things, both about the **executing agent**, not about the document:
 
@@ -24,7 +24,7 @@ The grade measures two coupled things, both about the **executing agent**, not a
 Check the instructions against every item below. Each maps to the framework. For each defect found, assign a severity (next section).
 
 **Anchor integrity**
-- `[ANCHOR]` present with `Objective`, `Target`, and `Success Criteria`.
+- `ANCHOR` present with `Objective`, `Target`, and `Success Criteria`.
 - `Success Criteria` is observable and measurable, not a qualitative judgment ("successfully completed", "properly handled", "fully verified").
 - `Target` names a specific subject, not a broad spatial noun ("the system", "the codebase", "the data").
 
@@ -56,6 +56,10 @@ Check the instructions against every item below. Each maps to the framework. For
 - A block that spans more than one phase across a boundary — a human decision, or a step needing input that cannot exist until an earlier step completes — uses the framework's mechanism for that boundary: a `PAUSE` when the branch table is writable now, or a split into chained blocks (`Gate.After` → `Gate.Before`) when the next phase cannot be written yet. A monolith that crams such a boundary is a defect. It is **Blocking** when it forces the agent to act on input that does not yet exist (the agent will fabricate it); otherwise **Major**.
 - The inverse — two or more blocks that share one objective with no real phase boundary — should be a single block. Needless fragmentation is a **Minor** defect.
 
+**Open-question markers**
+- A gap the author left as `{OPEN: … — why}` (per `framework.md` Notation) is **disclosed incompleteness, not a hidden defect.** Grade it by its impact if executed unfilled — a load-bearing `{OPEN}` on a destructive or irreversible path is still **Blocking**; an `{OPEN}` on a cosmetic choice is **Minor**. Never treat a properly-marked, disclosed open question as a trap; the trap is the *undisclosed guess*, which reads as a normal value and which this rubric cannot catch by inspection — the composing process (`operating-rules.md` §4) exists to prevent it.
+- While any `{OPEN}` marker remains, the instructions are incomplete by definition: they cannot grade **A**, and the Suggestion must name closing the open questions as the path to a higher grade.
+
 ---
 
 ## Severity
@@ -72,7 +76,7 @@ Assign each defect one severity. Severity is about the executing agent's likely 
 
 Map the defect set to a letter. Find the lowest band whose condition the instructions meet.
 
-- **F** — `[ANCHOR]` missing or non-actionable (no measurable `Success Criteria`); OR a destructive/irreversible action over an undefined boundary; OR two or more Blocking defects. The agent cannot safely execute this.
+- **F** — `ANCHOR` missing or non-actionable (no measurable `Success Criteria`); OR a destructive/irreversible action over an undefined boundary; OR two or more Blocking defects. The agent cannot safely execute this.
 - **D** — exactly one Blocking defect; OR a cluster of Major defects that together make a wrong material outcome as likely as a right one.
 - **C** — no Blocking defects, but one or more Major defects that could plausibly change the outcome. The agent will probably comply, but the human is carrying risk they should see.
 - **B** — no Blocking and no outcome-changing Major defects. At most one or two low-impact Majors, or several Minors. Intent will almost certainly survive execution.

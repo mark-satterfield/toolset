@@ -50,18 +50,18 @@ The following steps are exhaustive.
    - **Gate consistency** — if these are chained blocks, does a changed `Gate.After` still match the next block's `Gate.Before`?
    - **Approach-type mixing** — did the change drop an `Option` into a `Sequential` block?
    - **Decomposition** — did the change extend the block across a phase boundary (a new human decision, or a step needing input that will not exist until an earlier step finishes) so it should become a `PAUSE` or a split into chained blocks? Conversely, did the change remove the boundary that justified a split, so two blocks should merge? Apply the `review-rubric.md` Decomposition check.
-5. **Validate inferences** against reality per `operating-rules.md` §4 — including any new file, value, or path the change introduces.
+5. **Apply the gap policy — `operating-rules.md` §4.** For any gap the change opens or exposes — including a new file, value, or path — try the bounded reality-check, then gate on the evidence: fill only with disclosed high-confidence evidence; otherwise leave an `{OPEN: <question> — <why>}` marker where the value belongs. Do not guess to complete a revision.
 6. **Resolve ambiguity by mode:**
-   - **Interactive:** if the change request itself is unclear, or the ripple exposes a gap, enter the Q&A loop (`operating-rules.md` §3). Apply the 70% rule. Acknowledge inferences. Keep going until the result grades B or better and the change is fully specified, or the user says done.
-   - **Headless:** do not ask. Best-effort the ambiguity, validate where you can, and record unvalidated inferences and 70%-rule risks in the Assumptions & Risks ledger.
+   - **Interactive:** if the change request itself is unclear, or the ripple exposes a gap, enter the Q&A loop (`operating-rules.md` §3) — mandatory, not skippable. Apply the 70% rule. Present every evidence-backed fill and every `{OPEN}` gap for confirmation. Keep going until the result grades B or better and the change is fully specified, or the user says done. If the human goes quiet or the wait times out, keep the evidence-backed fills, leave the rest as `{OPEN}` markers, and deliver incomplete — never guess to fill the silence.
+   - **Headless:** do not ask. Fill only the evidence-backed gaps; leave the rest as `{OPEN}` markers. Record every fill (with its evidence) and every open question in the disclosure ledger (`operating-rules.md` §5).
 7. **Grade** the revised result against `review-rubric.md`.
 8. **Deliver** per `operating-rules.md` §6 — console by default, the `forge-output:` location if set, or an explicit destination if given. If the source was a file and no other destination applies, the revised instructions replace the file's content. Strip any scaffolding.
 
 ## Output
 
-- The revised instructions, clean and whole (not a diff, unless the user asks for a diff).
-- Interactive mode, after a file write: the grade block, then the written path.
-- Headless mode: the instructions followed by the Assumptions & Risks ledger.
+- The revised instructions, clean and whole (not a diff, unless the user asks for a diff) — carrying `{OPEN: …}` markers for any gap the change exposed that had no evidence to fill it.
+- Interactive mode, after a file write: the grade block, then the written path. If any `{OPEN}` marker remains, say plainly that the output is incomplete and how the human can close it (fill directly, or re-run through the Q&A).
+- Headless mode: the instructions followed by the disclosure ledger (fills-with-evidence and open questions).
 
 Print the grade block exactly as `review-rubric.md` specifies:
 
@@ -75,8 +75,9 @@ Print the grade block exactly as `review-rubric.md` specifies:
 
 - The requested change is applied, and no content outside its scope was altered.
 - The ripple trace found no new Blocking or Major defect, or any it found was resolved before delivery.
+- **No gap was filled by guess.** Every filled gap has disclosed empirical evidence; every gap without it is an `{OPEN: …}` marker, not a fabricated value.
 - Every new inference was validated against reality where a bounded check was possible.
-- Interactive: ambiguities and 70%-rule risks were acknowledged. Headless: they appear in the ledger.
+- Interactive: ambiguities, fills, and `{OPEN}` gaps were surfaced to the human (the Q&A ran; it was not skipped). Headless: they appear in the disclosure ledger.
 - The revised instructions grade no lower than the original, or the regression is stated and (interactive) acknowledged.
 
 ## References

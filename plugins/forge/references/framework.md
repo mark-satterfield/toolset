@@ -30,6 +30,25 @@ agent is the subject unless stated otherwise.
 
 ---
 
+## Notation
+
+FORGE uses three delimiters, each with exactly one meaning. Do not overload them.
+
+- **Bare keyword** — a section. `ANCHOR`, `CONTEXT`, `PROCESS`. When instructions are written
+  in Markdown, sections are headings (`## ANCHOR`); the heading level marks the section, so no
+  brackets are needed. The six section keywords are a closed, literal set.
+- **`[square]`** — an **optional** element. In practice this is the actor annotation, present only
+  when a non-agent acts: `[Human: Mark]`, `[System: Exporter]`. Absence means the agent acts.
+- **`{curly}`** — a **value to fill in**. A placeholder for a real value. Replace the whole token,
+  braces included. `IF {condition} THEN:`, `LOOP {target} UNTIL {termination condition}:`.
+- **`{OPEN: question — why}`** — a **required value that could not be answered with evidence.** The
+  author (or the composing agent) leaves this marker in place rather than guessing. It is honest,
+  disclosed incompleteness — a signal that this gap needs a human answer before execution, not a
+  defect to be silently filled. Delivered instructions may carry `{OPEN: …}` markers; they may not
+  carry fabricated values dressed up as facts.
+
+---
+
 ## When to Write Instructions vs. When to Have a Conversation
 
 Not every task requires a formal instruction set. Use this framework when:
@@ -47,7 +66,7 @@ Reserve the framework for tasks where precision matters.
 
 ## The Sections
 
-### [CONTEXT] — Optional
+### CONTEXT — Optional
 
 **Purpose:** Align the agent on facts, definitions, scope, and starting state before it acts.
 
@@ -103,7 +122,7 @@ circumstances" is a Guideline.
 
 ---
 
-### [WHEN] — Optional
+### WHEN — Optional
 
 **Purpose:** Define the condition, event, or schedule that activates this instruction block.
 
@@ -136,7 +155,7 @@ exceeds 500" is a Trigger.
 
 ---
 
-### [ANCHOR] — **Mandatory**
+### ANCHOR — **Mandatory**
 
 **Purpose:** State what must be achieved, completely isolated from how to achieve it.
 
@@ -171,7 +190,7 @@ count. If it requires a file to exist, name the file and its location.
 
 ---
 
-### [PROCESS] — Optional
+### PROCESS — Optional
 
 **Purpose:** Describe how to achieve the ANCHOR objective.
 
@@ -242,7 +261,7 @@ a White-Listed block can contain Sequential sub-steps within each Option.
 Valid inside any approach type, at any nesting depth:
 
 ```
-IF [condition] THEN:
+IF {condition} THEN:
   ...
 OTHERWISE:
   ...
@@ -252,7 +271,7 @@ Every IF must have an OTHERWISE. If the false branch is "do nothing," write `OTH
 Do not leave the false branch implicit — the agent will fill it in.
 
 ```
-LOOP [target] UNTIL [termination condition]:
+LOOP {target} UNTIL {termination condition}:
   ...
 ```
 
@@ -273,7 +292,7 @@ When execution must pause for a human decision and then resume, use PAUSE:
 
 ```
 PAUSE:
-  [Human: name]  What the human does.
+  [Human: {name}]  What the human does.
   RESUME IF:     The condition or input that allows execution to continue.
   BRANCH:        (optional) How the human's response routes execution.
     "Response A" → What happens next.
@@ -295,7 +314,7 @@ is two blocks written at different times.
 
 ---
 
-### [SAFEGUARDS] — Optional
+### SAFEGUARDS — Optional
 
 **Purpose:** Execution controls. Behavioral rules, gates, error handling, and rollback logic.
 
@@ -355,7 +374,7 @@ and is about to execute.
 
 ---
 
-### [WHY] — Optional
+### WHY — Optional
 
 **Purpose:** The rationale that governs edge-case judgment.
 
@@ -380,12 +399,12 @@ A single instruction block covers one phase of work. When work has phases, use m
 Block B may reference the Gate.After of Block A as its Gate.Before:
 
 ```
-[Block A]
-  [SAFEGUARDS]
+Block A
+  SAFEGUARDS
     Gate.After: Export file written to /output/export.csv.
 
-[Block B]
-  [SAFEGUARDS]
+Block B
+  SAFEGUARDS
     Gate.Before: /output/export.csv exists and is non-empty.
 ```
 
@@ -458,7 +477,7 @@ an illustrative scenario as a literal binding rule.
 A non-technical example using all sections.
 
 ```
-[CONTEXT]
+CONTEXT
   Fact:   Tomatoes qualify as a fruit.
   Define: "bunch" = any quantity strictly greater than 100 items.
   Scope:
@@ -470,15 +489,15 @@ A non-technical example using all sections.
             Group 3: Greens
             Group 4: Other / Uncertain
 
-[WHEN]
+WHEN
   Trigger: The shipping container is confirmed sealed and ready for unloading.
 
-[ANCHOR]
+ANCHOR
   Objective:        Move a bunch of fruit from the shipping container to the color-coded baskets.
   Target:           All contents of the primary shipping container at dock 3.
   Success Criteria: Total fruit items placed across all baskets exceeds 100.
 
-[PROCESS]
+PROCESS
   White-Listed: Choose Option 1 or Option 2.
 
   Option 1 (Batch):
@@ -504,7 +523,7 @@ A non-technical example using all sections.
       Corrections → Apply corrections, then proceed to Gate.After check.
       Stop        → Initiate Rollback.
 
-[SAFEGUARDS]
+SAFEGUARDS
   Gate.Before:  All four baskets must be present and correctly labeled before starting.
   Gate.After:   Count all fruit items across all baskets. Total must exceed 100.
 
@@ -522,7 +541,7 @@ A non-technical example using all sections.
     Verify:   All four baskets are empty. Shipping container item count matches
               the pre-execution manifest.
 
-[WHY]
+WHY
   This is a smoke test of the sorting workflow, not a production run. Accuracy of color
   sorting is secondary to validating that the end-to-end process completes without structural
   failure. Rollback is guaranteed regardless of outcome.

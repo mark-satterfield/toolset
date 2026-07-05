@@ -6,7 +6,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| sdlc-pipeline-orchestrator | orchestrate | Top-level workflow-only orchestrator for both SDLC pipelines (PRD-to-Spec and Spec-to-Deployment) |
+| sdlc-pipeline-orchestrator | orchestrate | Top-level workflow-only orchestrator for both SDLC pipelines |
 | phase-gate-enforcer | approve | Referee for every phase gate in both workflows |
 | constitutional-agent | approve | Appeals court for novel conflicts the Phase Gate Enforcer cannot resolve from existing rules |
 | advantage-evaluator | approve | Evaluates competitive (non-constitutive) conflicts via speculative execution with rollback: lets the pipeline proceed under a flag, observes the outcome, then commits or reverts |

@@ -6,7 +6,7 @@ The framework itself lives in `references/framework.md`. The fill-in scaffold li
 
 ## What "instructions" means here
 
-A single unit of work written to the framework is a set of **instructions** (the framework's own template titles it an *instruction block*). Instructions may be delivered to an agent as a stand-alone prompt, or embedded in — or referenced by — a larger prompt. The only required part is `[ANCHOR]` (the objective); every other section is included only when it carries information the agent would not otherwise have or correctly assume.
+A single unit of work written to the framework is a set of **instructions** (the framework's own template titles it an *instruction block*). Instructions may be delivered to an agent as a stand-alone prompt, or embedded in — or referenced by — a larger prompt. The only required part is `ANCHOR` (the objective); every other section is included only when it carries information the agent would not otherwise have or correctly assume.
 
 The goal of every skill here is the same: produce instructions that are **self-contained, clear, concise, and complete**, so the executing agent has as little as possible to infer — even when its context is full. Hallucination is worst when the agent has to fill a gap from a conversation it half-remembers. A self-contained instruction removes the gap.
 
@@ -38,10 +38,12 @@ The full rubric — defect catalog, severity, anchored A–F bands, confidence b
 
 ## Modes
 
-- **Interactive (default).** The skill closes gaps with you. It runs a Q&A loop — using the `grill-me` skill when that skill is installed, otherwise a built-in loop — and keeps asking until the risk is low and everything fillable is filled, or until you say you are done. Every question batch includes an explicit "I'm done / show me the draft" exit. For anything it infers, it both validates the inference against reality where it can and gets your acknowledgment before relying on it.
-- **Headless / quiet.** Set by passing `headless` (or `quiet` / `batch` / `non-interactive`) in the prompt or as a skill argument. The skill asks nothing and best-efforts the result, but it still validates inferences against reality where it can, and it emits an **Assumptions & Risks** ledger so nothing it guessed is hidden.
+- **Interactive (default).** The skill closes gaps with you. It runs a Q&A loop — using the `grill-me` skill when that skill is installed, otherwise a built-in loop — and keeps asking until the risk is low and everything fillable is filled, or until you say you are done. The loop is mandatory: the skill will not skip it and hand you a draft full of silent guesses. Every question batch includes an explicit "I'm done / show me the draft" exit. For anything it infers, it validates against reality where it can and gets your acknowledgment before relying on it.
+- **Headless / quiet.** Set by passing `headless` (or `quiet` / `batch` / `non-interactive`) in the prompt or as a skill argument. The skill asks nothing and best-efforts the result, but headless is **not** permission to guess — it only removes the option to ask. It still validates against reality where it can, and it emits a **disclosure ledger** so nothing it filled or left open is hidden.
 
-In both modes, anything inferred, guessed, or assumed is validated against reality where a bounded check is possible (read the named file, check the named value, search the named document). The check is bounded — the obvious referent only. The skills do not crawl the file system.
+**The gap rule (both modes).** A gap is filled only with **disclosed empirical evidence** — something observed in reality (the source, an existing file, a project convention), not the skill's own hunch — and the evidence is shown to you. A gap it cannot ground stays a gap: it is marked inline as `{OPEN: <question> — <why>}` rather than guessed. When a human can't answer — headless, or you stepped away and the wait timed out — the skill **still does not guess**; it leaves the `{OPEN}` markers and tells you the output is incomplete. Incomplete-but-honest output is a valid deliverable; a complete-looking fabrication is not. You can fill the `{OPEN}` markers yourself, or run the instructions back through `/forge:compose-instructions` and answer the Q&A to close them.
+
+Validation is bounded: read the named file, check the named value, look at how sibling cases are handled — the obvious referent in the obvious place. The skills do not crawl the file system.
 
 ## Output
 

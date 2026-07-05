@@ -1,6 +1,6 @@
 {
   "name": "forge",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Tooling for the FORGE framework — compose, revise, and review instructions an AI agent can execute without interpretation. Closes the gaps a human would otherwise leave for the agent to guess at.",
   "author": {
     "name": "mark-satterfield",
