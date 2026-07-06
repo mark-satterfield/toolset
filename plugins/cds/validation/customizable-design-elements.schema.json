@@ -14,9 +14,9 @@
   "properties": {
     "$schema_version": {
       "type": "string",
-      "description": "Version of this schema the data file conforms to. Bumped when a breaking change is made.",
+      "description": "Version of this schema the data file conforms to. Bumped when a breaking change is made. The current major is 2 (2.x): schema 2.0 introduced the `dark: mirror` theme sentinel, the `geometry.elements` fixed-width group, and the bare `--{role key}` emission convention. A 1.x data file must be run through tools/migrate-elements.py before it will validate under 2.x.",
       "examples": [
-        "1.0.0"
+        "2.0.0"
       ]
     },
     "$conventions": {
@@ -101,8 +101,13 @@
         },
         "container_var_pattern": {
           "type": "string",
-          "description": "Pattern for section-wrapper-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-primary, editorial). A container is a section wrapper; its width is >= the page width.",
+          "description": "Pattern for section-wrapper-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-primary, editorial). A container is a section wrapper; its width is >= the page width, without exception (fixed sub-page element widths live in geometry.elements, not here).",
           "examples": ["--container-{key}"]
+        },
+        "element_var_pattern": {
+          "type": "string",
+          "description": "Pattern for fixed-element-width CSS variable names. {key} is the geometry.elements identifier (e.g. conversion-card). An element width is a fixed dimension of a specific component/card, always BELOW the page width — the opposite of a container. For backward compatibility the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name.",
+          "examples": ["--element-{key}"]
         },
         "column_var_pattern": {
           "type": "string",
@@ -140,6 +145,7 @@
           "radius_var_pattern": "--radius-{key}",
           "section_padding_var_pattern": "--section-pad-{key}",
           "container_var_pattern": "--container-{key}",
+          "element_var_pattern": "--element-{key}",
           "column_var_pattern": "--column-{key}",
           "component_size_var_pattern": "--{component}-{property}",
           "ease_var_pattern": "--ease-{key}",
@@ -570,7 +576,7 @@
     "ConcreteTheme": {
       "type": "object",
       "title": "ConcreteTheme",
-      "description": "A named theme that declares its own role bindings. A theme that changes appearance on light/dark mode flip declares BOTH a 'light' and a 'dark' mode, each binding every role. A theme that does NOT change between modes declares only its active mode (its single 'light' mode — which for an inherently-dark theme still holds dark swatches); the redundant mode is retained in the source data file as a fully-commented-out template that a maintainer can uncomment and edit to make the theme diverge in that mode. An absent mode therefore means 'identical to the theme's active mode'.",
+      "description": "A named theme that declares its own role bindings. A theme that changes appearance on light/dark mode flip declares BOTH a 'light' mode and a 'dark' mode, each binding every role. A theme that does NOT change between modes declares its 'light' mode and sets 'dark' to the literal sentinel string 'mirror' — 'dark: mirror' means 'the dark bindings are identical to this theme's light bindings'. GENERATOR CONTRACT: 'mirror' emits the light bindings again for dark mode (it is not a partial override; it is a full copy). This replaces the earlier convention of carrying a full commented-out duplicate dark block in the source file. Omitting the 'dark' key entirely still parses as 'no dark divergence', but 'dark: mirror' states the intent explicitly and machine-readably. COLOR-MODE UNIVERSES (finding 34): the binding modes declared here are exactly 'light' and 'dark'. The runtime color-mode universe is 'light | dark | system'; 'system' is not a binding mode — it resolves at runtime to whichever of light/dark the user agent reports, so it never appears in this data.",
       "required": ["modes"],
       "properties": {
         "description": {
@@ -579,13 +585,19 @@
         },
         "modes": {
           "type": "object",
-          "description": "Map of mode name to ThemeMode. Standard modes are 'light' and 'dark'. The schema doesn't enforce which modes exist; a linter does. A theme that doesn't change between modes legitimately defines only its active mode here; the other mode is carried as a commented-out template in the source file and is therefore absent from the parsed data.",
+          "description": "Map of mode name to ThemeMode, or the sentinel 'mirror'. Standard modes are 'light' and 'dark'. 'light' always carries a full ThemeMode. 'dark' is either a full ThemeMode (the theme diverges on mode flip) or the string 'mirror' (the theme's dark bindings equal its light bindings). Which modes must exist is enforced by the linter, not the schema. Binding modes are 'light' and 'dark' only; the runtime 'system' color-mode resolves to one of them and is never stored here (finding 34).",
           "minProperties": 1,
           "propertyNames": {
             "enum": ["light", "dark"]
           },
           "additionalProperties": {
-            "$ref": "#/$defs/ThemeMode"
+            "oneOf": [
+              { "$ref": "#/$defs/ThemeMode" },
+              {
+                "const": "mirror",
+                "description": "Sentinel: this mode's bindings are identical to the theme's 'light' bindings. Only meaningful on 'dark'. The generator emits the light bindings again for this mode."
+              }
+            ]
           }
         }
       },
@@ -693,7 +705,11 @@
         },
         "containers": {
           "$ref": "#/$defs/GeometryScale",
-          "description": "Section-wrapper widths per surface class (emitted via container_var_pattern, default --container-{key}). A section wrapper's width is >= the page width; a surface chooses a container token instead of hardcoding a max-width in the page. Inner reading columns live in `columns`, not here."
+          "description": "Section-wrapper widths per surface class (emitted via container_var_pattern, default --container-{key}). A section wrapper's width is >= the page width, without exception; a surface chooses a container token instead of hardcoding a max-width in the page. Fixed sub-page element widths live in `elements`; inner reading columns live in `columns`; neither belongs here."
+        },
+        "elements": {
+          "$ref": "#/$defs/GeometryScale",
+          "description": "Fixed-width UI elements that are NOT section wrappers (emitted via element_var_pattern, default --element-{key}). An element width is a fixed dimension of a specific component or card — e.g. the conversion card at 448px — and is always BELOW the page width, the opposite of a `containers` entry. Compatibility: for the conversion-card key the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name."
         },
         "columns": {
           "$ref": "#/$defs/GeometryScale",
@@ -702,7 +718,7 @@
         "components": {
           "type": "object",
           "title": "GeometryComponents",
-          "description": "Map of component key (matching a components.md family, e.g. 'topbar') to its GeometryComponent sizing block.",
+          "description": "Map of component key (matching a component family in reference/libraries/components/, e.g. 'topbar') to its GeometryComponent sizing block.",
           "minProperties": 1,
           "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
           "additionalProperties": { "$ref": "#/$defs/GeometryComponent" }

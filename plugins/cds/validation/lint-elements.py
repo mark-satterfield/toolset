@@ -2,6 +2,10 @@
 """
 Lint the customizable-design-elements YAML.
 
+This linter accepts SCHEMA 2.x data files ONLY. A 1.x file (dead `--role-*`
+convention, commented-out mirror dark blocks, conversion-card in `containers`)
+must first be run through tools/migrate-elements.py.
+
 Beyond JSON-Schema validation, this enforces the rules the schema cannot express
 because they require following var() alias chains:
 
@@ -13,6 +17,10 @@ because they require following var() alias chains:
                      color from the xyz palette" constraint)
   4. TIERS         — primitive palettes hold only hex; semantic palettes hold only
                      var() aliases (the three-tier discipline)
+  7. MIRROR        — the `dark: mirror` sentinel appears only on `dark`, and only
+                     where a concrete `light` mode exists for it to mirror (2.0)
+  8. ELEMENTS      — the `geometry.elements` fixed-width group and `geometry.containers`
+                     never share a key; conversion-card lives in `elements` (2.0)
 
 Coverage of `required` roles is reported as a WARNING, not a failure (some
 required flags predate the role/binding split and may be intentionally loose).
@@ -101,6 +109,22 @@ def main():
     trace = "--trace" in sys.argv
     path = args[0] if args else DEFAULT_YAML
     data = load(path)
+
+    # VERSION GATE — this linter validates SCHEMA 2.x only. A 1.x file uses the
+    # dead --role-* convention, commented-out mirror dark blocks, and
+    # conversion-card in `containers`; none of that validates here. Migrate first.
+    raw_ver = str(data.get("$schema_version", "")).strip()
+    major = raw_ver.split(".")[0] if raw_ver else ""
+    if major != "2":
+        shown = raw_ver or "(absent)"
+        print(f"VERSION .............. FAIL ($schema_version {shown}, need 2.x)")
+        print("\n1 FAILURE(S):")
+        print(f"  ✗  VERSION: this linter accepts schema 2.x only; the file "
+              f"declares {shown}. Run:  python3 tools/migrate-elements.py "
+              f"{path}")
+        sys.exit(1)
+    print(f"VERSION .............. PASS ({raw_ver})")
+
     tok, groups = token_map(data)
     palette_names = list(groups.keys())
     fails = []
@@ -162,6 +186,8 @@ def main():
         if "modes" not in t:
             continue
         for mode, mb in t["modes"].items():
+            if not isinstance(mb, dict):  # `dark: mirror` — mirrors light, already checked
+                continue
             for role, val in mb["bindings"].items():
                 fp = roles.get(role, {}).get("from_palette")
                 if not fp or "var" not in val:
@@ -182,6 +208,8 @@ def main():
         if "modes" not in t:
             continue
         for mode, mb in t["modes"].items():
+            if not isinstance(mb, dict):  # `dark: mirror` — inherits light's coverage
+                continue
             for r in req:
                 if r not in mb["bindings"]:
                     cov_fail.append(f"required role '{r}' unbound in {tn}.{mode}")
@@ -203,6 +231,51 @@ def main():
           f"({sum(1 for _ in _walk_descriptions(data))} descriptions)")
     fails += [f"DESCRIPTIONS {d}" for d in desc_fail]
 
+    # 7. MIRROR (hard) — the `dark: mirror` sentinel (schema 2.0) may appear only
+    #    on the `dark` mode, and only where a concrete `light` mode exists for it
+    #    to mirror. A mode value that is neither a bindings object nor the exact
+    #    string "mirror" is a malformed mode.
+    mirror_fail = []
+    n_mirror = 0
+    for tn, t in data["themes"].items():
+        if "modes" not in t:
+            continue
+        modes = t["modes"]
+        for mode, mb in modes.items():
+            if isinstance(mb, dict):
+                continue
+            if mb != "mirror":
+                mirror_fail.append(f"{tn}.{mode} is {mb!r}, not a bindings object "
+                                   f"or the sentinel \"mirror\"")
+                continue
+            n_mirror += 1
+            if mode != "dark":
+                mirror_fail.append(f"{tn}.{mode}: `mirror` is only valid on `dark`")
+            if not isinstance(modes.get("light"), dict):
+                mirror_fail.append(f"{tn}.{mode}: `mirror` has no concrete `light` "
+                                   f"mode to mirror")
+    print(f"7. MIRROR ............ {'PASS' if not mirror_fail else 'FAIL'} "
+          f"({n_mirror} mirrored dark modes)")
+    fails += [f"MIRROR {m}" for m in mirror_fail]
+
+    # 8. ELEMENTS (hard) — schema 2.0 splits fixed sub-page element widths out of
+    #    `containers` into `geometry.elements` (ruling 6 / finding 23). The two
+    #    scales must never share a key, and conversion-card belongs to `elements`.
+    elem_fail = []
+    geom = data.get("geometry") or {}
+    containers = geom.get("containers") or {}
+    elements = geom.get("elements") or {}
+    shared = sorted(set(containers) & set(elements))
+    for k in shared:
+        elem_fail.append(f"key '{k}' is in both geometry.containers and "
+                         f"geometry.elements (a width is one or the other)")
+    if "conversion-card" in containers:
+        elem_fail.append("conversion-card is in geometry.containers; it is a "
+                         "fixed element width and must live in geometry.elements")
+    print(f"8. ELEMENTS .......... {'PASS' if not elem_fail else 'FAIL'} "
+          f"({len(elements)} element widths)")
+    fails += [f"ELEMENTS {e}" for e in elem_fail]
+
     if trace:
         print("\n--- theme -> resolved hex ---")
         for tn, t in data["themes"].items():
@@ -210,6 +283,9 @@ def main():
                 print(f"  {tn:22} (alias -> {t['alias']})")
                 continue
             for mode, mb in t["modes"].items():
+                if not isinstance(mb, dict):
+                    print(f"  {tn}.{mode:20} (mirror -> light)")
+                    continue
                 for role, val in mb["bindings"].items():
                     if "var" in val:
                         hv, _ = resolve(val["var"], tok)

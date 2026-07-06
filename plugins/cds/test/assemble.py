@@ -15,7 +15,8 @@ and is linked as-is.
 Everything this script presents is DISCOVERED, never hardcoded:
   * the theme list comes from the bare class selectors in ``themes.css``
   * the mode list comes from the ``[data-mode="..."]`` selectors in ``themes.css``
-  * the shape order + names come from ``reference/shapes.md`` Part A
+  * the shape names come from the frontmatter of the ``reference/libraries/shapes/``
+    Building Blocks entries (ordered by entry filename)
 So the galleries stay correct for ANY elements YAML — no frozen snapshot.
 
 Edit an artifact, re-run this, re-screenshot — that is the iteration loop.
@@ -37,8 +38,11 @@ OUT = os.path.join(HERE, "visual-proof-out")
 STYLES = os.path.join(OUT, "styles")
 COMPONENTS = os.path.join(OUT, "components")
 SHAPES = os.path.join(OUT, "shapes")
-# The shape catalog's single source of truth: <plugin>/reference/shapes.md.
+# The shape catalog's single source of truth: the Building Blocks shape library
+# <plugin>/reference/libraries/shapes/ (one entry per file, typed frontmatter).
 REFERENCE = os.path.abspath(os.path.join(HERE, "..", "reference"))
+SHAPES_LIB = os.path.join(REFERENCE, "libraries", "shapes")
+_LIB_NON_ENTRIES = {"FORMAT.md", "CONVENTIONS.md"}
 
 # Populated by main() from the live artifacts before any page is built.
 THEMES = []
@@ -90,25 +94,38 @@ def discover_modes():
 
 
 def discover_shapes():
-    """(name, description) for every shape in shapes.md Part A, in document
-    order. Single source of truth — no duplicated catalog lives in this viewer,
-    and the retired S0-S28 ids cannot reappear because only the semantic names
-    are in the reference."""
-    p = os.path.join(REFERENCE, "shapes.md")
+    """(name, description) for every Shape in the reference/libraries/shapes/
+    library, ordered by entry filename. Single source of truth — no duplicated
+    catalog lives in this viewer, and the retired S0-S28 ids cannot reappear
+    because only the semantic names are in the reference.
+
+    The name is the frontmatter `name:`; the description is the tail of the body
+    H1 title (``# <name> — <description>``) when present, else empty."""
     specs = []
-    if not os.path.exists(p):
+    if not os.path.isdir(SHAPES_LIB):
         return specs
-    in_part_a = False
-    for ln in read(p).splitlines():
-        if ln.startswith("## Part A"):
-            in_part_a = True
+    for fn in sorted(os.listdir(SHAPES_LIB)):
+        if not fn.endswith(".md") or fn in _LIB_NON_ENTRIES:
             continue
-        if in_part_a and (ln.startswith("---") or ln.startswith("## ")):
-            break
-        if in_part_a and ln.strip().startswith("|"):
-            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
-            if len(cells) >= 2 and re.fullmatch(r"[a-z][a-z0-9-]*", cells[0]):
-                specs.append((cells[0], cells[1]))
+        text = read(os.path.join(SHAPES_LIB, fn))
+        # frontmatter name (top-level scalar in the leading --- block)
+        name = None
+        if text.startswith("---"):
+            end = text.find("\n---", 3)
+            if end != -1:
+                nm = re.search(r"^\s*name:\s*(\S+)\s*$", text[3:end], re.MULTILINE)
+                if nm:
+                    name = nm.group(1).strip().strip("\"'")
+        if not name or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+            continue
+        # body H1: "# <name> — <description>"  (em dash or hyphen separator)
+        desc = ""
+        h1 = re.search(r"^#\s+.+$", text, re.MULTILINE)
+        if h1:
+            parts = re.split(r"\s[—-]\s", h1.group(0), maxsplit=1)
+            if len(parts) == 2:
+                desc = parts[1].strip()
+        specs.append((name, desc))
     return specs
 
 

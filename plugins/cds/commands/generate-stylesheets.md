@@ -18,6 +18,6 @@ Invoke the `generate-stylesheets` skill in this plugin. Load and execute `skills
 
 ## Notes
 
-- Determinism contract: for the same `(elements YAML bytes, reference tree bytes)` pair, the emitted CSS is byte-identical.
-- After this command, `compose-page` and `compose-app-surface` will pass their stale-detection checks against the new `manifest.json`.
-- Halt codes the user may see: `ELEMENTS_YAML_UNSET`, `OUTPUT_PATH_UNRESOLVABLE`, `PRECONDITION_FAILED`, `ELEMENTS_VERSION_MISMATCH`, `MISSING_SPEC`.
+- Determinism contract: for the same `(elements YAML semantic content, reference tree bytes)` pair, the emitted CSS is byte-identical. Comments and `description:` prose are excluded from the YAML fingerprint, so they do not affect the output.
+- After this command, `compose-page` and `compose-app-surface` pass their stale-detection checks against the new `manifest.json`.
+- Halt codes the user may see: `ELEMENTS_YAML_UNSET`, `OUTPUT_PATH_UNRESOLVABLE`, `ELEMENTS_INVALID`, `ELEMENTS_VERSION_MISMATCH`, `MISSING_SPEC`.

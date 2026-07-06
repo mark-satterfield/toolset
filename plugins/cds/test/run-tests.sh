@@ -32,7 +32,7 @@ echo "▶ 2/3  correctness — property-based lint (schema, integrity, aliases, 
 python3 "$DIR/../validation/lint-elements.py" "$YAML"
 echo
 echo "▶ 3/3  render proof — verify generated artifacts exist, then assemble galleries"
-if [ -d "$OUT/styles" ] && [ -n "$(ls -A "$OUT/shapes" 2>/dev/null)" ]; then
+if [ -d "$OUT/styles" ] && [ -d "$OUT/shapes" ] && [ -n "$(ls -A "$OUT/shapes")" ]; then
   python3 "$DIR/assemble.py"
   echo "  open $OUT/index.html (components, shapes, landing) — switch theme/mode live."
 else

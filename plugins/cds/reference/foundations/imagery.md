@@ -5,10 +5,21 @@
 - All inline SVGs use `fill="none"` on the outer `<svg>` and `fill="currentColor"` on every inner `<path>`.
 - Icons inherit `--text-tertiary` by default and recolor automatically with the surrounding theme.
 - Use filled shapes, not strokes. Do not use `stroke-width` on marketing icons.
-- Common viewbox sizes: `0 0 18 18`, `0 0 20 20`, `0 0 30 30`, `0 0 32 32`.
-- Icon container sizes: 20px for link arrows, 24px for marginalia rail icons, 32px for feature icons, 40px for button leading-icon area.
-- Application-shell rail icons are 16px line-art with single-pixel strokes (the only stroked-icon context).
-- Tertiary text links use a trailing 30×30 SVG arrow as the "read more" affordance.
+- Tertiary text links use a trailing SVG arrow (the `--icon-viewbox-lg` drawing grid) as the "read more" affordance.
+
+**Icon scale.** The drawing grids and container sizes below are the icon scale's intrinsic tokens — standalone design choices no other scale derives. Viewbox tokens are unitless drawing grids (`--icon-viewbox-md` = 20 ⇒ `viewBox="0 0 20 20"`); size tokens are rendered container dimensions.
+
+| Token | Value | Applies to |
+|---|---:|---|
+| `--icon-viewbox-sm` | 18 | Small glyph drawing grid. |
+| `--icon-viewbox-md` | 20 | Default glyph drawing grid. |
+| `--icon-viewbox-lg` | 30 | Read-more arrow drawing grid. |
+| `--icon-viewbox-xl` | 32 | Feature-glyph drawing grid. |
+| `--icon-size-inline` | 20px | Link-arrow container. |
+| `--icon-size-marginalia` | 24px | Marginalia rail icon container. |
+| `--icon-size-feature` | 32px | Feature icon container. |
+| `--icon-size-button` | 40px | Button leading-icon area. |
+| `--icon-size-app-rail` | 16px | Application-shell rail glyph — line-art with single-pixel strokes (the only stroked-icon context). |
 
 ## §16.2 Mascot and decorative illustration
 
@@ -36,7 +47,9 @@ For every editorial featured card, place a centered SVG illustration on a satura
   border-radius: var(--radius-lg);
   display: grid;
   place-items: center;
-  padding: clamp(48px, 8vw, 128px);
+  /* §11.1 interpolation, Min 48px -> Max 128px (3 and 8 units of the §11.4
+     spacing scale; Min calibrates to the --sp-3 1440px-anchor value). */
+  padding: clamp(48px, calc(48px + 80 * (100vw - 320px) / 1120), 128px);
 }
 /* Variant classes are emitted DATA-DRIVENLY — generate-stylesheets emits one
    `.feature-tile--N` (and one shape-agnostic `.ground--N`) per `tile-ground-N`

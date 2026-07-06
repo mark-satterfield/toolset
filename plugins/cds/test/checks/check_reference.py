@@ -8,10 +8,13 @@ configuration must still pass. Every file is read fresh on each run.
 
 Checks (all config-agnostic):
 
-  1. SHAPE-HEADERS  — every shape named in the Part A catalog of reference/shapes.md owns a
-                      Slots bullet, a Layout bullet, and an Allowed-variants bullet.
-  2. COMPONENTS     — reference/components.md enumerates at least one component
-                      family header (the family list is enumerable, not empty).
+  1. SHAPE-HEADERS  — every entry in reference/libraries/shapes/ is a well-formed
+                      Shape: typed frontmatter whose `kind` is `shape`, whose
+                      `name` matches its filename, carrying the `slots` and
+                      `variants` contract keys, above a body title.
+  2. COMPONENTS     — every entry in reference/libraries/components/ is a
+                      well-formed Component: `kind: component`, `name` matching
+                      its filename, carrying the `token_bindings` contract.
   3. ROLE-PREFIX    — no `--role-` token survives in the reference tree or the
                       generated stylesheet set. Roles are emitted BARE
                       (`--surface-primary`) per $conventions.role_var_pattern
@@ -66,96 +69,103 @@ _VALID_SCOPES = {"both", "standalone", "app-embedded"}
 # A forbidden role-token prefix. Roles are emitted bare; any `--role-` is a
 # regression of the bare-role reconcile (#4).
 _ROLE_PREFIX_RE = re.compile(r"--role-")
-# A shape name token (semantic, lowercase-kebab) as it appears in the Part A catalog
-# first column and in each shape's section header "## <name> — ...".
-_SHAPE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]+$")
-# Component family headers: "## <something>" excluding the catalog preamble row.
-_COMPONENT_HDR_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 # A scope tag: "[scope: <value>]".
 _SCOPE_TAG_RE = re.compile(r"\[scope:\s*([^\]]+?)\s*\]")
 
-
-def _section_body(text, start_match, all_starts, idx):
-    """Return the body of a section from one `##` header to the next."""
-    start = start_match.end()
-    end = all_starts[idx + 1].start() if idx + 1 < len(all_starts) else len(text)
-    return text[start:end]
+# Non-entry files that live in the library dirs.
+_NON_ENTRIES = {"FORMAT.md", "CONVENTIONS.md"}
 
 
-def _shape_catalog_names(text):
-    """Names from the Part A catalog (first column of each table row)."""
-    names = []
-    in_part_a = False
-    for line in text.splitlines():
-        if line.strip().startswith("## Part A"):
-            in_part_a = True
-            continue
-        if in_part_a:
-            if line.startswith("## ") and "Part A" not in line:
-                break
-            if line.startswith("|"):
-                cells = [c.strip() for c in line.strip().strip("|").split("|")]
-                if cells and _SHAPE_NAME_RE.match(cells[0]):
-                    names.append(cells[0])
-    return names
+def _frontmatter(text):
+    """Parse a leading `---` YAML frontmatter block into a dict, or None."""
+    if not text.startswith("---"):
+        return None
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None
+    try:
+        data = yaml.safe_load(text[3:end])
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _library_entries(repo_root, *subparts):
+    """Absolute paths of every `.md` entry in a library dir (excluding the
+    FORMAT/CONVENTIONS meta files)."""
+    d = _ref(repo_root, "libraries", *subparts)
+    if not os.path.isdir(d):
+        return None
+    return [
+        os.path.join(d, fn)
+        for fn in sorted(os.listdir(d))
+        if fn.endswith(".md") and fn not in _NON_ENTRIES
+    ]
 
 
 def _check_shapes(repo_root, fails):
-    path = _ref(repo_root, "shapes.md")
-    if not os.path.isfile(path):
-        fails.append(f"SHAPE-HEADERS: reference/shapes.md not found at {path}")
-        return
-    text = _read(path)
-    catalog = _shape_catalog_names(text)
-    if not catalog:
+    entries = _library_entries(repo_root, "shapes")
+    if entries is None:
         fails.append(
-            "SHAPE-HEADERS: no shape names found in the Part A catalog of reference/shapes.md"
+            "SHAPE-HEADERS: reference/libraries/shapes/ directory not found"
         )
         return
-    catalog_set = set(catalog)
-    # Every H2 whose first word is a catalog name is that shape's section header.
-    all_h2 = list(_COMPONENT_HDR_RE.finditer(text))
-    shape_sections = []
-    for i, m in enumerate(all_h2):
-        words = m.group(1).split()
-        first = words[0] if words else ""
-        if first in catalog_set:
-            shape_sections.append((first, m, i))
-    documented = {name for name, _, _ in shape_sections}
-    for name in sorted(catalog_set - documented):
-        fails.append(f"SHAPE-HEADERS: catalog shape '{name}' has no '## {name} — ...' section")
-    # Each shape section must carry the three definitional bullets. Match the bold
-    # bullet labels case-insensitively; tolerate "Allowed variants" / "Allowed-variants".
-    for name, m, i in shape_sections:
-        body = _section_body(text, m, all_h2, i)
-        if not re.search(r"^\s*[-*]\s+\*\*Slots:?\*\*", body, re.MULTILINE | re.IGNORECASE):
-            fails.append(f"SHAPE-HEADERS: {name} is missing a **Slots** bullet")
-        if not re.search(r"^\s*[-*]\s+\*\*Layout:?\*\*", body, re.MULTILINE | re.IGNORECASE):
-            fails.append(f"SHAPE-HEADERS: {name} is missing a **Layout** bullet")
-        if not re.search(
-            r"^\s*[-*]\s+\*\*Allowed[ -]variants:?\*\*", body, re.MULTILINE | re.IGNORECASE
-        ):
+    if not entries:
+        fails.append("SHAPE-HEADERS: reference/libraries/shapes/ has no entries")
+        return
+    for path in entries:
+        base = os.path.basename(path)[:-len(".md")]
+        fm = _frontmatter(_read(path))
+        if fm is None:
+            fails.append(f"SHAPE-HEADERS: {base} has no YAML frontmatter block")
+            continue
+        if fm.get("kind") != "shape":
             fails.append(
-                f"SHAPE-HEADERS: {name} is missing an **Allowed variants** bullet"
+                f"SHAPE-HEADERS: {base} declares kind '{fm.get('kind')}', "
+                f"expected 'shape'"
             )
+        if fm.get("name") != base:
+            fails.append(
+                f"SHAPE-HEADERS: {base} frontmatter name '{fm.get('name')}' "
+                f"does not match its filename"
+            )
+        for key in ("slots", "variants"):
+            if key not in fm:
+                fails.append(
+                    f"SHAPE-HEADERS: {base} is missing the '{key}' contract key"
+                )
 
 
 def _check_components(repo_root, fails):
-    path = _ref(repo_root, "components.md")
-    if not os.path.isfile(path):
-        fails.append(f"COMPONENTS: reference/components.md not found at {path}")
-        return
-    text = _read(path)
-    headers = [m.group(1).strip() for m in _COMPONENT_HDR_RE.finditer(text)]
-    # A component family is any "## " header that names a family. The file always
-    # carries at least the §14 component catalog plus per-family headers; assert
-    # the family list is enumerable (non-empty) — the property, not a count.
-    families = [h for h in headers if h]
-    if not families:
+    entries = _library_entries(repo_root, "components")
+    if entries is None:
         fails.append(
-            "COMPONENTS: reference/components.md has no enumerable component "
-            "family headers (## ...)"
+            "COMPONENTS: reference/libraries/components/ directory not found"
         )
+        return
+    if not entries:
+        fails.append("COMPONENTS: reference/libraries/components/ has no entries")
+        return
+    for path in entries:
+        base = os.path.basename(path)[:-len(".md")]
+        fm = _frontmatter(_read(path))
+        if fm is None:
+            fails.append(f"COMPONENTS: {base} has no YAML frontmatter block")
+            continue
+        if fm.get("kind") != "component":
+            fails.append(
+                f"COMPONENTS: {base} declares kind '{fm.get('kind')}', "
+                f"expected 'component'"
+            )
+        if fm.get("name") != base:
+            fails.append(
+                f"COMPONENTS: {base} frontmatter name '{fm.get('name')}' "
+                f"does not match its filename"
+            )
+        if "token_bindings" not in fm:
+            fails.append(
+                f"COMPONENTS: {base} is missing the 'token_bindings' contract key"
+            )
 
 
 def _check_role_prefix(repo_root, fails):

@@ -13,17 +13,18 @@ Provide three distinct focus-ring styles. Use `:focus-visible` so that mouse-cli
 
 | Surface | Focus Style |
 |---|---|
-| Default | `outline: 2px solid var(--focus-ring); outline-offset: 1px;` Ring color resolves to a mid-neutral on light themes via the active theme's `focus-ring` binding. |
-| Inside a button or item with a 4px or smaller radius | `outline-offset: -2px` (ring sits inside the element edge). |
-| Conversion input | `outline: 2px solid var(--input-focus-ring); outline-offset: 2px;` Chromatic ring; the `input-focus-ring` role is constrained `from_palette: signals`. |
+| Default | `outline: var(--focus-width) solid var(--focus-ring); outline-offset: var(--focus-offset-default);` Ring color resolves to a mid-neutral on light themes via the active theme's `focus-ring` binding. |
+| Inside a button or item with a 4px or smaller radius | `outline-offset: var(--focus-offset-inner)` (ring sits inside the element edge). |
+| Conversion input | `outline: var(--focus-width) solid var(--input-focus-ring); outline-offset: var(--focus-offset-input);` Chromatic ring; the `input-focus-ring` role is constrained `from_palette: signals`. |
 
-Tokens for focus:
+Tokens for focus (calibrated to the table above):
 
 ```css
 :root {
   --focus-width: 2px;
+  --focus-offset-default: 1px;
   --focus-offset-inner: -2px;
-  --focus-offset-outer: 4px;
+  --focus-offset-input: 2px;
 }
 ```
 

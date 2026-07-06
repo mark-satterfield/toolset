@@ -8,7 +8,7 @@
 | Mobile wide | `480–700px` | Single-column. Drawer-style mobile nav. Editorial reading column at full width. |
 | Tablet | `700–1024px` | 12-column grid activates. Editorial reading column at 640px centered. Desktop topbar appears. |
 | Desktop | `1024–1440px` | Full container at 1192–1400px max. Three-pane application shell expands. |
-| Wide desktop | `> 1440px` | Container caps at 1440px (marketing) or 1400px (editorial). Outer page gutter grows. Long-form pages use a 316px outer gutter on each side. |
+| Wide desktop | `> 1440px` | Container caps at 1440px (marketing) or 1400px (editorial). Outer page gutter grows. Long-form pages hold the `--docs-outer-offset` gutter on each outer side. |
 
 ## §17.2 Scaling rules
 
@@ -16,8 +16,8 @@
 - Section padding clamps between the min and max values from layout.md §11.3. Major section padding reduces to 56px on mobile narrow via a discrete `@media` override.
 - Grid drops from 12 columns to 2 columns below the tablet breakpoint.
 - Container side gutter clamps between 32px and 64px.
-- Card padding clamps between 24px and 48px.
-- The conversion card width remains fixed at 448px on every breakpoint; the surrounding ground reflows.
+- Card padding rides `--sp-2`, the card-padding default (28–32px clamp).
+- The conversion card width (`--element-conversion-card`) remains fixed on every breakpoint; the surrounding ground reflows.
 
 ## §17.3 Mobile typography
 

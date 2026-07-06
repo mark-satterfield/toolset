@@ -26,7 +26,7 @@ On landing and marketing surfaces, treat motion as **one orchestrated page-load*
 
 Define these tokens at the root and use them by name everywhere. Values come from `motion.easing` in the elements YAML; the table is the shipped default.
 
-| Token | cubic-bezier | Use For |
+| Token | Value | Use For |
 |---|---|---|
 | `--ease-snap` | `cubic-bezier(0.165, 0.85, 0.45, 1)` | Authentication CTA transforms. |
 | `--ease-in-out` | `cubic-bezier(0.4, 0, 0.2, 1)` | General-purpose color and border-color transitions. |
@@ -34,7 +34,7 @@ Define these tokens at the root and use them by name everywhere. Values come fro
 | `--ease-in-quart` | `cubic-bezier(0.895, 0.03, 0.685, 0.22)` | "Read more" CTA color shifts; tab background-color transitions. |
 | `--ease-in-out-quart` | `cubic-bezier(0.77, 0, 0.175, 1)` | Inline link color cross-fades; opacity fades. |
 | `--ease-in-out-expo` | `cubic-bezier(1, 0, 0, 1)` | Max-height and dropdown opacity over longer durations. |
-| `--ease-out-power2` | `cubic-bezier(0.165, 0.84, 0.44, 1)` | Stagger animations on cards and panels. |
+| `--ease-out-power2` | `var(--ease-out-quart)` | Stagger animations on cards and panels. |
 
 ## §15.2 Durations
 
@@ -55,7 +55,7 @@ Define these tokens at the root and use them by name everywhere. Values come fro
 |---|---|
 | Primary landing page | Liveliest. Word-by-word hero reveal driven by `--reveal-index`, `--reveal-duration`, `--reveal-delay`, `--reveal-y`, `--reveal-stagger` CSS custom properties set by JavaScript on viewport entry. Card-grid in-view animation driven by `--card-index`. IntersectionObservers on the hero stack. Pill-tab swap. Status-spinner glyph animation inside code blocks. |
 | Product overview page | Lighter. Scroll-driven panel that grows from an inset rounded panel to a full-bleed edge with `border-radius: 0; margin: 0; max-width: 100%`. Wrap the entire effect in `@media (prefers-reduced-motion: no-preference)` and reset the final state inside the reduced-motion media query. |
-| Editorial detail page | Quiet. Scroll-into-view `.contentFade` opacity over 400ms with a 300ms delay. `.contentFadeUp` opacity + translateY(gutter) over 500ms with the same delay. Stagger items at 250ms / 500ms / 750ms / 1000ms for items 1–4. 200ms hover opacity dim on featured cards. 150ms inline link color cross-fade. 300ms header hide-on-scroll. No parallax. No image zoom. No scroll-progress bar. |
+| Editorial detail page | Quiet. Scroll-into-view `.contentFade` opacity over 400ms with a 300ms delay. `.contentFadeUp` opacity + translateY(gutter) over 500ms with the same delay. Stagger item delays derive as `250ms × index` for items 1–4 (calibrates to 250/500/750/1000ms). 200ms hover opacity dim on featured cards. 150ms inline link color cross-fade. 300ms header hide-on-scroll. No parallax. No image zoom. No scroll-progress bar. |
 | Documentation page | Near-zero. Header has no transition. Footer links carry the only motion: a 200ms color transition. |
 | Conversion page | Small. 100ms color and border-color on hover. 150–200ms transform plus radial-gradient highlight on the primary CTA. Lighter border on focus rather than a discrete ring. |
 | Application shell page | Quiet. Toggle slide on switches (200ms). Dropdown chevron rotation. Standard cross-fade on tab and route changes. |

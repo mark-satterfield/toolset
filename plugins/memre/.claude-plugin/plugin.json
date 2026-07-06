@@ -1,7 +1,7 @@
 {
   "name": "memre",
-  "version": "0.1.1",
-  "description": "Memory-and-deliverable hygiene. Keeps generated files free of process-residue (change annotations, decision narration, TODOs, and mentions of things named only to be excluded), audits auto-memory for records that store a change instead of a current fact, and imports file-based memories into beads. Ships a writing-rule skill, a PostToolUse residue hook, a linter/fixer, and a beads importer.",
+  "version": "0.2.0",
+  "description": "Memory-and-deliverable hygiene. Keeps generated files free of process-residue (change annotations, decision narration, TODOs, and mentions of things named only to be excluded), audits auto-memory for records that store a change instead of a current fact, and imports file-based memories into beads. Ships a writing-rule skill, a recordable-thing router, a decision logger, a semantic scan/clean pair, a linter/fixer, and a beads importer.",
   "author": {
     "name": "mark-satterfield",
     "url": "https://github.com/mark-satterfield/toolset"
@@ -15,7 +15,6 @@
     "linter",
     "residue",
     "beads",
-    "auto-memory",
-    "posttooluse-hook"
+    "auto-memory"
   ]
 }

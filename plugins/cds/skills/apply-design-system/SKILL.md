@@ -12,8 +12,7 @@ Loads the reference content the author needs to write non-UI code (handlers, dat
 
 - **From caller (runtime):** what is being built or changed (one sentence); which generated surface (page, section, or component) the author's code interacts with; rendering context (app-embedded or standalone); UI category (navigation, shell, modal, form, table, card grid, hero, footer, etc.); any motion or interaction requirements beyond defaults.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML — used to surface accurate token names back to the author.
-- **From shared reference (`../../reference/`):** always `page-types.md`, `foundations/overview.md`, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`; plus category-specific files (`components.md`, `foundations/motion.md`, `foundations/imagery.md`, `foundations/responsive.md`, the shared `shapes.md` catalog, and relevant shape-rules content from sibling skills' reference trees when needed).
-- **From `../compose-app-surface/reference/`:** `app-shapes.md` for shell-surface and modal-context questions.
+- **From the catalog (`../../reference/libraries/` + `../../reference/rules/`):** always the `section-containers/` entry for the surface's page type, `foundations/overview.md`, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`; plus category-specific entries — `libraries/components/*.md`, `libraries/shapes/*.md`, `libraries/shells/*.md`, the `rules/shape-selection/` and `rules/page-constraints/` entries, `foundations/motion.md`, `foundations/imagery.md`, `foundations/responsive.md` — resolved (plugin ∪ extensions) per `../../reference/pipeline.md`. Entry format is `../../reference/libraries/FORMAT.md`; `../../reference/aliases.md` maps the caller's words onto the internal terms.
 
 This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that points at host-project code or stylesheets. It surfaces token names from `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`; it never emits CSS or HTML.
 
@@ -28,12 +27,12 @@ This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that 
 ## Pipeline
 
 1. **Confirm rendering context.** App-embedded code must not assume a theme controller is present; standalone surfaces have one inlined.
-2. **Identify page-type context** from `../../reference/page-types.md`. If the surface is in-app, also load the Application Shell section.
-3. **Load the reference set for the category.** Always: `page-types.md`, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`, and `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. Plus category-specific files:
-   - **Shell surfaces** → `../compose-app-surface/reference/app-shapes.md` + `../../reference/components.md`.
-   - **Modals / drawers / side panels** → `../../reference/components.md` (Centered Dialog, Drawer, Side Panel sections) + `foundations/accessibility.md` (focus trap, dismissal, ARIA).
-   - **Forms** → `../../reference/components.md` (input families) + `foundations/accessibility.md` (label / error / live-region contracts).
-   - **Tables / card grids** → `../../reference/components.md` + the relevant `shapes.md` content from `../compose-page/reference/` or `../compose-app-surface/reference/` depending on context.
+2. **Identify the Section Container (alias: page type) context** from `../../reference/libraries/section-containers/`. If the surface is in-app, load the matching app-family Section Container and its Shell (`../../reference/libraries/shells/`).
+3. **Load the catalog set for the category** (plugin ∪ extensions, per `../../reference/pipeline.md`). Always: the surface's `section-containers/` entry, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`, and `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. Plus category-specific entries:
+   - **Shell surfaces** → `../../reference/libraries/shells/` + the relevant `../../reference/libraries/components/*.md` (shell furniture and panes).
+   - **Modals / drawers / side panels** → `../../reference/libraries/components/{dialog,drawer,side-panel}.md` (and siblings) + `foundations/accessibility.md` (focus trap, dismissal, ARIA).
+   - **Forms** → the input-family entries under `../../reference/libraries/components/` + `foundations/accessibility.md` (label / error / live-region contracts).
+   - **Tables / card grids** → `../../reference/libraries/components/*.md` + the relevant `../../reference/libraries/shapes/*.md` entries.
    - **Motion-coupled handlers** → `../../reference/foundations/motion.md`.
 4. **Surface the loaded content** to the caller as a structured markdown response with these named sections (each section may be empty if not applicable for the category):
 
@@ -46,7 +45,7 @@ This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that 
    ## Halt conditions
    ```
 
-   Class names are the kebab-case identifiers from `components.css` (`.button-primary`, `.surface-secondary`, `.text-tertiary`, etc.). Token names are the CSS custom properties from `tokens.css` (`--color-{palette}-{shade}`, `--{key}`, etc.). Event hooks and ARIA contracts come verbatim from `components.md` and `foundations/accessibility.md`. Reference pointers are file-and-section citations so the author can read deeper.
+   Class names are the kebab-case identifiers from `components.css` (`.button`, `.surface-secondary`, `.text-tertiary`, etc.). Token names are the CSS custom properties from `tokens.css` (`--color-{palette}-{shade}`, `--{key}`, etc.). Event hooks and ARIA contracts come verbatim from the Component entries' `behavior` and `accessibility` frontmatter (`../../reference/libraries/components/*.md`) and `foundations/accessibility.md`. Reference pointers are file-and-section citations so the author can read deeper.
 
 5. **Point the author at `../../reference/compliance.md`** for their completion gate — that is where they verify their non-UI code keeps the surface on-system.
 

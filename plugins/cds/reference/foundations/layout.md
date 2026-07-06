@@ -44,15 +44,27 @@ A surface **chooses a container token** for its wrapper; it does not hardcode a 
 | `--column-wide` | 1192px | the widest single content block |
 | `--column-medium` | 960px | a centered single column or quote block |
 | `--column-reading` | 640px | long-form body type (the `.u-reading` column) |
+| `--column-field-measure` | 512px | a compact field/value measure — a 2-col form row or a truncated identifier value |
 
-**Element widths** (a fixed component, not a container): `--container-conversion-card` (448px) is the conversion card element itself. The application-shell rail width is a component-level geometry token (`--app-shell-rail-width`, `geometry.components.app-shell-rail.width`), not a container.
+**Element widths** (`geometry.elements`, emitted `--element-{key}`) — the fixed width of an individual element. An element width is never applied to a section wrapper.
+
+| Token | Width | Element |
+|---|---:|---|
+| `--element-conversion-card` | 448px | The conversion card. Fixed on every breakpoint; the surrounding ground reflows. |
+
+`--container-conversion-card` is emitted as a compatibility alias of `--element-conversion-card`; both resolve to the same value, and new consumers use the `--element-` name.
+
+**Documentation outer offset** (`--docs-outer-offset`): the fixed gutter a long-form documentation page holds on each outer side at wide-desktop widths. An intrinsic geometry default — it is a standalone design choice, not a derivation of the container or column scales — calibrated to **316px**. YAML-overridable like every geometry token.
+
+Application-shell pane widths are component-level geometry tokens (§11.10), not containers.
 
 **Utility classes** (emitted into `components.css`):
 
 ```css
 /* Section wrapper. Default is page width; a wrapper is never narrower. */
 .u-container      { max-width: var(--container-marketing-primary); margin-inline: auto;
-                    padding-inline: clamp(32px, 4vw, 64px); }
+                    /* Min 32px, Max 64px, middle term per §11.1 */
+                    padding-inline: clamp(32px, calc(32px + 32 * (100vw - 320px) / 1120), 64px); }
 .u-container-full { max-width: none; }                 /* full-bleed, ≥ page width */
 /* Inner reading column — lives on a child, never on the section wrapper. */
 .u-reading        { max-width: var(--column-reading); margin-inline: auto; }
@@ -106,28 +118,30 @@ Use a single shared spacing scale across the system. Express in rems; convert to
 
 ## §11.5 Editorial vertical rhythm
 
-Use exact pixel margins for long-form prose. Do not vary these per page.
+Long-form prose margins derive from the spacing scale (§11.4). Do not vary these per page.
 
 | Element | Margin |
 |---|---|
-| h1 (page title) | `96px 0 48px` |
-| Metadata row to body | `24px` bottom on metadata, `24px` top on body |
-| Paragraph to paragraph | `16px 0` |
-| h2 (section) | `32px 0 8px` |
-| Ordered-list item | `12px` bottom |
+| h1 (page title) | `calc(6 * var(--sp-1)) 0 calc(3 * var(--sp-1))` — calibrates to 96px 0 48px |
+| Metadata row to body | `var(--sp-1-5)` bottom on metadata, `var(--sp-1-5)` top on body — calibrates to 24px |
+| Paragraph to paragraph | `var(--sp-1) 0` — calibrates to 16px 0 |
+| h2 (section) | `calc(2 * var(--sp-1)) 0 var(--sp-0-5)` — calibrates to 32px 0 8px |
+| Ordered-list item | `var(--sp-0-75)` bottom — calibrates to 12px |
 
 ## §11.6 Grid
 
-Use a 12-column grid above 700px viewport. Drop to 2 columns below 700px. Default gutter is 32px on both axes.
+Use a 12-column grid at the tablet breakpoint (700px) and above. Drop to 2 columns below the tablet breakpoint. Default gutter is 32px on both axes.
+
+Placements below are inclusive column spans (columns 1–12):
 
 | Layout Pattern | Column Span |
 |---|---|
 | Editorial header H1 | 1–6 |
-| Editorial body | 7–12 (or centered 640px within the full row) |
+| Editorial body | 7–12 (or a centered `--column-reading` column within the full row) |
 | Featured grid hero | 1–9 |
-| Featured grid side stack | 10–13 |
+| Featured grid side stack | 10–12 |
 | Documentation content | 1–10 |
-| Documentation sticky sidebar | 11–13 (hidden below 700px) |
+| Documentation sticky sidebar | 11–12 (hidden below the tablet breakpoint) |
 
 ## §11.7 Border-radius scale
 
@@ -167,6 +181,8 @@ The conversion-card 4-layer stack:
 }
 ```
 
+The 1.57% and 1.18% layer opacities are the shadow scale's intrinsic design choices — the tuned strengths of the stack's four layers, not derivations of any other token.
+
 Long-form pages use no shadows. Editorial and documentation surfaces rely on a single hard 1px rule between the metadata row and the body to mark figure/ground.
 
 ## §11.9 Border weights
@@ -177,3 +193,30 @@ Long-form pages use no shadows. Editorial and documentation surfaces rely on a s
 | `1px` | Default card hairline; list-row separator; metadata-to-body hard rule; form-field border. |
 
 Use the 0.5px weight via `1px solid rgba(<ink>, 0.15–0.3)` rather than `0.5px solid`. Browsers paint the alpha-thinned 1px more consistently than a literal subpixel border.
+
+## §11.10 Application-shell panes
+
+Application-shell pane geometry is a set of component-level geometry tokens in the YAML `geometry:` block. The values below are the shipped defaults; every token is YAML-overridable.
+
+| Token | Default | Pane |
+|---|---:|---|
+| `--app-shell-rail-width` | 256px | Primary navigation rail. |
+| `--app-shell-mini-rail` | 56px | Icon-only collapsed rail. |
+| `--app-shell-info-panel` | 320px | Contextual info/detail panel. |
+| `--app-shell-list-column` | 280px | List column of a list-detail layout. Host-resizable between 280px and 320px; the chosen width persists per user. |
+| `--app-shell-form-sidebar` | 320px | Form sidebar; compresses to a 280px floor. |
+| `--app-shell-bottom-strip` | 64px | Bottom action-strip height. |
+| `--app-shell-detail-card-max` | 1100px | Upper bound for inner cards in a detail viewport. |
+
+A pane width applies to the shell pane, never to a section wrapper or content block inside it.
+
+## §11.11 Control and row heights
+
+Interactive-control and list-row heights are component-level geometry tokens in the YAML `geometry:` block. The values below are the shipped defaults; every token is YAML-overridable.
+
+| Token | Default | Use For |
+|---|---:|---|
+| `--control-height` | 36px | Default inline-control height: toolbar actions, selects, standard-density chips. |
+| `--control-height-compact` | 32px | Compact inline controls in dense toolbars and filter strips. |
+| `--list-row-standard` | 40px | Default list-row height. |
+| `--list-row-compact` | 36px | Dense list rows and rail navigation rows. |

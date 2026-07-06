@@ -16,10 +16,10 @@ Use this checklist when you adopt the template for a new brand or product. Walk 
 - [ ] Editorial Serif mapped, fallback stack documented. [scope: both]
 - [ ] System Mono mapped, fallback stack documented. [scope: both]
 - [ ] Non-variable font fallback documented (weight substitution table per `foundations/typography.md` §13.2). [scope: both]
-- [ ] CSS `:root` palette block generated from the `foundations/overview.md` §4 tables per the `foundations/implementation.md` §8.1 pattern (no hand-edited hex values inside the CSS). [scope: both]
-- [ ] Theme-wrapper CSS classes generated from the `foundations/implementation.md` §6 tables per the `foundations/implementation.md` §8.2 pattern (no hand-edited role-to-swatch bindings inside the CSS). [scope: both]
-- [ ] Sample pages visually reviewed in light mode for every page type. [scope: standalone]
-- [ ] Sample pages visually reviewed in dark mode for every light-leaning page type. [scope: standalone]
+- [ ] CSS `:root` palette block generated from the elements YAML (`customizable-design-elements.yaml`, resolved via `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`) per the `foundations/implementation.md` §8.1 pattern (no hand-edited hex values inside the CSS). [scope: both]
+- [ ] Theme-wrapper CSS classes generated from the elements YAML theme bindings per the `foundations/implementation.md` §8.2 pattern (no hand-edited role-to-swatch bindings inside the CSS). [scope: both]
+- [ ] Sample pages visually reviewed in light mode for every Section Container (alias: page type). [scope: standalone]
+- [ ] Sample pages visually reviewed in dark mode for every light-leaning Section Container. [scope: standalone]
 - [ ] Sample pages visually reviewed with `prefers-reduced-motion: reduce` enabled. [scope: standalone]
 - [ ] Keyboard focus states checked on every interactive element across every theme. [scope: both]
 - [ ] Code-block fixed dark values reviewed and updated to mapped near-black neutrals. [scope: both]
@@ -30,7 +30,7 @@ Use this checklist when you adopt the template for a new brand or product. Walk 
 
 Use this checklist to verify any new page or component before merging.
 
-1. Palette is defined as a flat dictionary of named swatches in a single `:root` selector, generated from the `foundations/overview.md` §4 tables per the `foundations/implementation.md` §8.1 pattern. [scope: both]
+1. Palette is defined as a flat dictionary of named swatches in a single `:root` selector, generated from the elements YAML (`customizable-design-elements.yaml`, resolved via `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`) per the `foundations/implementation.md` §8.1 pattern. [scope: both]
 2. **No color identity ever appears outside the elements YAML.** Component CSS, foundations CSS, and any other implementation consume **role** variables only (`--surface-primary`, `--accent-primary`, `--tile-ground-1`, `--switch-active-bg`, …). A hex literal, a ramp step (`--color-neutral-950`), or a named swatch (`--color-panels-oat`) appearing in implementation is a violation — naming `oat` is identical in sin to writing `#E3DACC`. The only legitimate consumers of `--color-*` tokens are: (a) the `:root` palette emit (§8.1), and (b) theme wrappers (§8.2), which bind roles to semantic tokens. A role that may draw only from a specific palette declares it with `from_palette` in the YAML; the elements linter resolves every theme binding and fails if it lands outside the allowed palette. [scope: both]
 3. Every section is wrapped in a theme class (`default`, `clarity`, etc.). [scope: both]
 4. The document root carries `data-mode="light" | dark | system"` at first paint. [scope: standalone]
@@ -48,7 +48,7 @@ Use this checklist to verify any new page or component before merging.
 16. Code blocks render dark in light mode and continue dark in dark mode. [scope: both]
 17. The conversion-card 4-layer shadow stack is reserved for the conversion card only. [scope: both]
 18. Reading columns on long-form pages are exactly 640px wide. [scope: both]
-19. Card padding clamps between 24px and 48px. [scope: both]
+19. Card padding resolves from `var(--sp-2)`, which clamps between 28px and 32px. [scope: both]
 20. Section padding clamps between 64px and 200px depending on the section role. [scope: both]
 21. Component sizing, spacing, radius, and container width resolve from generated geometry tokens; no page-block `<style>` re-declares a system token or hardcodes a dimension the system already owns (§23 #18). [scope: both]
 22. Entrance motion (reveal/stagger/fade) animates in the base rule and is disabled only inside `@media (prefers-reduced-motion: reduce)` — never gated behind `@media (prefers-reduced-motion: no-preference)` (§23 #19). [scope: both]
@@ -70,26 +70,18 @@ These rules are non-negotiable. Treat any violation as a build-blocking error.
 9. **Long-form pages contain no shadows, no boxes, and a single hard 1px rule between metadata and body.** [scope: both]
 10. **Code blocks declare fixed dark hex values outside the theme system. They do not consume `--surface-primary`.** [scope: both]
 11. **All decorative SVGs inherit color via `currentColor` from the surrounding theme.** [scope: both]
-12. **Mobile narrow sections reduce major section padding to 56px. No exceptions.** [scope: both]
+12. **Mobile-narrow sections reduce major section padding to 56px. No exceptions.** [scope: both]
 13. **Components consume the `--accent-primary` role; the theme rebinds it to a softer accent in dark mode automatically. Components do not author dark-mode accent overrides and never reference an accent swatch directly.** [scope: both]
 14. **Every modal that is not a video or lightbox dialog uses a flat 50% black wash with no backdrop filter.** [scope: both]
 15. **A single currentColor glyph is the default logo: one glyph inheriting `--text-primary`, recoloring with the theme. Icons and mascot art are always single currentColor glyphs and are never authored as light/dark pairs. The one supported exception: a multi-color brand logo MAY ship an explicit light/dark asset pair declared in `assets.logo` (`mode: asset-pair`), selected by mode in CSS.** [scope: both]
-16. **Topbar height is consistent across a page type. Do not vary it per section.** [scope: both]
+16. **Topbar height is consistent across a Section Container. Do not vary it per Section.** [scope: both]
 17. **A theme wrapper is the only mechanism that repaints a section. Do not introduce ad-hoc `background-color` rules on sections.** [scope: both]
-18. **No page-block override of system-defined geometry.** Component sizing, spacing, radius, section padding, and container width are owned by the design system and emitted as tokens in the generated stylesheet set (`--{component}-{property}`, `--sp-*`, `--radius-*`, `--section-pad-*`, `--container-*`; see `foundations/layout.md` §11 and `foundations/implementation.md` §8.4). A page-block `<style>` (or inline style) must NOT re-declare one of those tokens, nor hardcode a literal value to resize a component the system already sizes — e.g. setting `.topbar-logo img { height: 26px }` when `--topbar-logo-height` exists (`components.md` §12.1). Consume the token instead; if the system lacks a needed dimension, add it to the YAML `geometry:` block, do not override it per page. [scope: both]
+18. **No page-block override of system-defined geometry.** Component sizing, spacing, radius, section padding, and container width are owned by the design system and emitted as tokens in the generated stylesheet set (`--{component}-{property}`, `--sp-*`, `--radius-*`, `--section-pad-*`, `--container-*`; see `foundations/layout.md` §11 and `foundations/implementation.md` §8.4). A page-block `<style>` (or inline style) must NOT re-declare one of those tokens, nor hardcode a literal value to resize a component the system already sizes — e.g. setting `.topbar-logo img { height: 26px }` when `--topbar-logo-height` exists (`libraries/components/topbar.md`). Consume the token instead; if the system lacks a needed dimension, add it to the YAML `geometry:` block, do not override it per page. [scope: both]
 19. **Entrance motion animates by default and is disabled only under reduced motion.** Reveal, stagger, and fade entrance patterns (`foundations/motion.md` §15.4) must animate in the base rule and reset to their visible final state only inside `@media (prefers-reduced-motion: reduce)`. Wrapping entrance motion in `@media (prefers-reduced-motion: no-preference)` is a violation: it silently removes the entrance for every reduce-motion user and can strand `opacity: 0` content invisible. (`no-preference` remains valid only for continuous/ambient enhancement whose static state is the no-animation baseline — e.g. a looping marquee — not for first-paint or scroll-entry reveals.) [scope: both]
 
 ---
 
-## Scope ambiguities
-
-- §21 "CSS `:root` palette block generated from the §4 tables per the §8.1 pattern (no hand-edited hex values inside the CSS)." — tagged `[scope: both]`. Ambiguity: the `:root` block lives in the design-system stylesheet, which standalone mocks inline and app-embedded surfaces import. The generation rule applies to the source CSS regardless of how it is delivered, but readers may interpret `:root` as a mock-only concern.
-- §21 "Theme-wrapper CSS classes generated from the §6 tables per the §8.2 pattern (no hand-edited role-to-swatch bindings inside the CSS)." — tagged `[scope: both]`. Same ambiguity as the `:root` palette rule: the theme-wrapper classes are part of the shared stylesheet, but the prose can read as page-level.
-- §22 #1 "Palette is defined as a flat dictionary of named swatches in a single `:root` selector, generated from the §4 tables per the §8.1 pattern." — tagged `[scope: both]`. Ambiguity: the rule describes the design-system stylesheet structure, which both contexts consume; an app-embedded surface does not author its own `:root` palette block but does depend on the shared one being correct.
-- §22 #6 "Themes that need to invert in dark mode have their dark-mode bindings inside both `[data-mode="dark"]` and `[data-mode="system"] @media (prefers-color-scheme: dark)` selectors." — tagged `[scope: both]`. Ambiguity: the selector pattern targets `data-mode` on the document root (a standalone mock concern), but the dark-mode binding rule itself governs the shared stylesheet that both contexts use.
-- §23 #10 "Code blocks declare fixed dark hex values outside the theme system. They do not consume `--surface-primary`." — tagged `[scope: both]`. Ambiguity: this rule sanctions raw hex values in one specific component, which conflicts with the general "no hand-edited hex" posture; the carve-out applies regardless of rendering context but may need a clearer policy statement.
-
 ## Conventions and cross-references
 
 - CSS variable references follow a bare-role convention: role tokens (`--text-primary`, `--surface-primary`, etc.) are bare — no prefix — per `$conventions.role_var_pattern: "--{role key}"` and `foundations/implementation.md §8.2`; palette swatches (`--color-accent-primary`, `--color-accent-dark`, etc.) carry the `--color-` prefix. Font-family references (`--font-sans`, `--font-serif`, `--font-mono` in §23 #2) follow the YAML's `font_var_pattern: "--font-{font key}"` convention and match `foundations/typography.md §13.1`.
-- Section cross-references (§4, §6, §8.1, §8.2, §8.4, §11, §12, §13.2, §15, §18.2) resolve to specific files: §4 → `foundations/overview.md`; §6, §8.1, §8.2, §8.4 → `foundations/implementation.md`; §11 → `foundations/layout.md`; §12 → `components.md`; §13.2 → `foundations/typography.md`; §15 → `foundations/motion.md`; §18.2 → `foundations/accessibility.md`. Additions to §21–§23 should follow the same `<file>.md §N.M` form.
+- Section cross-references (§8.1, §8.2, §8.4, §11, §12, §13.2, §15, §18.2) resolve to specific files: §8.1, §8.2, §8.4 → `foundations/implementation.md`; §11 → `foundations/layout.md`; §12 → the components library (`libraries/components/`); §13.2 → `foundations/typography.md`; §15 → `foundations/motion.md`; §18.2 → `foundations/accessibility.md`. Additions to §21–§23 should follow the same `<file>.md §N.M` form.

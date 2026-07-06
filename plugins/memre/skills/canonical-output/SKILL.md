@@ -28,7 +28,10 @@ The check: read each sentence as a stranger would. If a phrase only makes sense 
 someone who watched the file being built, or points at something not otherwise
 here, cut it.
 
-Reasoning, alternatives, and change history are valuable, but they live in the
-commit message, the pull request, the ticket, or a decisions log, never in the
-deliverable. If there is something like that to record, say it in chat or write it
-to the decisions log.
+Reasoning, alternatives, decisions, and the audit trail of how the file came to be
+are worth keeping — they are simply not part of the deliverable. The moment you feel
+the pull to pour that built-up record into the file is the moment to give it its
+real home instead: hand it to `record-observation`, the router that sends each piece
+where it belongs — a settled choice to the decision log, an unfinished action to an
+issue, a durable fact to memory, anything else to chat. Record it there, then keep
+the deliverable itself state-only.

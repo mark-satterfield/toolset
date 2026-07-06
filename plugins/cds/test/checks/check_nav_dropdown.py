@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-check_nav_dropdown — a rendered nav dropdown trigger is well-formed (components.md §12.1/§12.2).
+check_nav_dropdown — a rendered nav dropdown trigger is well-formed
+(reference/libraries/components/dropdown-panel.md, opened from a topbar
+primary-nav trigger per components/topbar.md).
 
-Dropdown panels are fully specified in components.md §12.2 (flat / mega /
-lift-and-scale) and a §12.1 `primary-nav` item may be a dropdown trigger. When
-the rendered landing sample includes such a trigger, it MUST carry the ARIA
-contract — otherwise the dropdown is keyboard- and screen-reader-broken.
+Dropdown panels are fully specified in components/dropdown-panel.md (flat / mega
+/ lift-and-scale) and a topbar `primary-nav` item may be a dropdown trigger
+(components/topbar.md). When the rendered landing sample includes such a trigger,
+it MUST carry the ARIA contract — otherwise the dropdown is keyboard- and
+screen-reader-broken.
 
 PROPERTY — every dropdown trigger present is well-formed.
     For each element carrying `aria-haspopup="menu"` in the rendered sample:
@@ -16,7 +19,7 @@ PROPERTY — every dropdown trigger present is well-formed.
 
 Render-dependent: if the landing sample is not built, the check skips cleanly
 (artifact existence is run-tests.sh tier 3's job). No class name, label, theme,
-or count is hardcoded — only the §12.2 ARIA contract.
+or count is hardcoded — only the dropdown-panel ARIA contract.
 
 Entry point:
     run(repo_root) -> list[str]   # empty list == passed (or skipped)
@@ -55,11 +58,11 @@ def run(repo_root):
             failures.append(
                 f"{_REL}: dropdown trigger #{i + 1} (<{m.group(1)} "
                 f"aria-haspopup=\"menu\">) is missing `aria-expanded` "
-                f"(components.md §12.2 keyboard/ARIA contract).")
+                f"(components/dropdown-panel.md keyboard/ARIA contract).")
     if not menu_present:
         failures.append(
             f"{_REL}: a dropdown trigger is present but no `role=\"menu\"` panel "
-            f"exists in the document (components.md §12.2).")
+            f"exists in the document (components/dropdown-panel.md).")
     return failures
 
 

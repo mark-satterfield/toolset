@@ -12,8 +12,8 @@ Walks a target (file, set of files, rendered URL, or pasted markup/CSS) against 
 
 - **From caller (runtime):** the target (file path, set of paths, rendered URL, or pasted markup/CSS); the audit scope (tokens, implementation, full design rules, or all three); the desired output format (inline annotations or structured report); the rendering context (app-embedded or standalone — the caller declares this; the skill does not infer it from host-project inspection).
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML — used to know the canonical token and role names.
-- **From shared reference (`../../reference/`):** `compliance.md`, `page-types.md`, plus any `foundations/*.md` file implicated by the audit scope.
-- **From sibling-skill reference trees** when relevant: `../compose-page/reference/landing-sections-shape-rules.md`, `../compose-app-surface/reference/app-shapes.md`.
+- **From shared reference (`../../reference/`):** `compliance.md`, the surface's `libraries/section-containers/` entry, plus any `foundations/*.md` file implicated by the audit scope.
+- **From the catalog** when relevant (plugin ∪ extensions, per `../../reference/pipeline.md`): `libraries/shapes/*.md`, `libraries/shells/*.md`, `libraries/components/*.md`, and the `rules/shape-selection/` + `rules/page-constraints/` entries.
 
 This skill does **not** read host-project code beyond the audit target the caller hands it. The target's rendering context is declared by the caller, not derived from surrounding code.
 
@@ -22,15 +22,15 @@ This skill does **not** read host-project code beyond the audit target the calle
 1. **What is being audited.** File path, set of paths, rendered URL, or pasted markup/CSS.
 2. **Surface kind.** Page, section, or component.
 3. **Rendering context.** App-embedded or standalone. Context controls rule scope — an in-app surface MUST NOT carry its own theme controller; a standalone MUST include one.
-4. **Page type.** Per `page-types.md` — needed for type-specific rules.
+4. **Section Container (alias: page type).** Per `../../reference/libraries/section-containers/` — needed for type-specific rules.
 5. **Audit scope.** Tokens, implementation, full design rules, or all three.
 6. **Output format.** Inline annotations on the target, or a structured report file.
 
 ## Pipeline
 
-1. **Load the rule set.** Read `../../reference/compliance.md`, the relevant page-type H2 from `../../reference/page-types.md`, and any `foundations/*.md` file implicated by the requested scope. Filter rules by their `[scope: ...]` tag based on the declared rendering context.
+1. **Load the rule set.** Read `../../reference/compliance.md`, the relevant `../../reference/libraries/section-containers/` entry and the `rules/page-constraints/` entries it references, and any `foundations/*.md` file implicated by the requested scope. Filter rules by their `[scope: ...]` tag based on the declared rendering context.
 2. **Walk the target.** For each rule, check compliance against the target. Record every violation with: rule identifier, observed value, expected value, file path and line (or selector path / pasted-region offset), and a suggested fix that cites the relevant reference section. Adjust rule scope as you go — rules tagged `[scope: app-embedded]` do not apply to a standalone target and vice versa; rules tagged `[scope: both]` apply to either.
-   - **Page-block override of system-defined geometry (`compliance.md` §23 #18).** Flag any page-block `<style>` rule or inline `style=` that re-declares a system geometry token (`--sp-*`, `--radius-*`, `--section-pad-*`, `--container-*`, or a `--{component}-{property}` token such as `--topbar-height`) **or** hardcodes a literal dimension for a component the system already sizes — the canonical case is `.topbar-logo img { height: 26px }` while `--topbar-logo-height` exists. Observed = the page-block declaration; expected = consume the generated token (`var(--topbar-logo-height)`, `var(--container-marketing-primary)`, …); fix cites `components.md` §12.1 / `foundations/layout.md` §11. Note: a value the design system does **not** define is not this finding — it is `undefined-in-reference` (step 3), with the suggested fix "add it to the YAML `geometry:` block."
+   - **Page-block override of system-defined geometry (`compliance.md` §23 #18).** Flag any page-block `<style>` rule or inline `style=` that re-declares a system geometry token (`--sp-*`, `--radius-*`, `--section-pad-*`, `--container-*`, or a `--{component}-{property}` token such as `--topbar-height`) **or** hardcodes a literal dimension for a component the system already sizes — the canonical case is `.topbar-logo img { height: 26px }` while `--topbar-logo-height` exists. Observed = the page-block declaration; expected = consume the generated token (`var(--topbar-logo-height)`, `var(--container-marketing-primary)`, …); fix cites `libraries/components/topbar.md` `sizing` / `foundations/layout.md` §11. Note: a value the design system does **not** define is not this finding — it is `undefined-in-reference` (step 3), with the suggested fix "add it to the YAML `geometry:` block."
    - **`no-preference`-gated entrance motion (`compliance.md` §23 #19).** Flag any entrance/reveal animation — a rule or `@keyframes` that brings content from `opacity: 0` / a `translate` offset to its visible state (hero word reveal, card stagger, content fade/`.is-inview`, `.reveal-word` / `.card-stagger` / `.content-fade` / `.content-fade-up`) — whose animation or transition is gated **inside** `@media (prefers-reduced-motion: no-preference)`. This is the failure where entrance motion vanishes for reduce-motion users (and `opacity: 0` content can be stranded invisible). Observed = the `no-preference` wrapper around the entrance; expected = animate in the base rule, disable only inside `@media (prefers-reduced-motion: reduce)`; fix cites `foundations/motion.md` §15.4/§15.5. **Do not flag** `no-preference` used for continuous/ambient enhancement whose static baseline is the no-animation state (e.g. a looping logo marquee, an optional expand transition) — that is a legitimate use, not an entrance.
 3. **Handle undefined patterns.** If the target uses a pattern the reference does not define (an unrecognized component, an off-system token, a layout shape with no entry), flag it as `undefined-in-reference` — this is itself an audit finding, not a free pass.
 4. **Emit the report** in the chosen output format. Inline annotations attach each violation to its location in the target. Structured reports list violations grouped by file, with a header summarizing total counts by severity tier (from `compliance.md`).
@@ -38,7 +38,7 @@ This skill does **not** read host-project code beyond the audit target the calle
 ## Halt conditions
 
 - `MISSING_SPEC` — the reference is too thin to evaluate a category of rules the caller asked about (name the gap; do not silently skip).
-- `PRECONDITION_FAILED` — the target cannot be read or parsed (file unreadable, URL unreachable, pasted markup malformed past recovery).
+- `TARGET_UNREADABLE` — the target cannot be read or parsed (file unreadable, URL unreachable, pasted markup malformed past recovery).
 - `ELEMENTS_YAML_UNSET` — `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` not set; the skill cannot know the canonical token names.
 
 Halt surface format:

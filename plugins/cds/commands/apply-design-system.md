@@ -13,7 +13,7 @@ Invoke the `apply-design-system` skill in this plugin. Load and execute `skills/
 1. Load `skills/apply-design-system/SKILL.md`.
 2. Treat `$ARGUMENTS` as the caller's one-sentence problem statement. If empty, ask: "What are you building or changing, and which generated surface does it interact with?"
 3. Run the discovery checklist (one-sentence summary → which surface → rendering context → UI category → motion/interaction).
-4. Apply the pipeline: confirm rendering context, identify page-type context, load the reference set for the category, surface the structured markdown response with named sections (Class names / Token names / Event hooks / ARIA contracts / Reference pointers / Halt conditions).
+4. Apply the pipeline: confirm rendering context, identify the Section Container (alias: page type) context, load the catalog set for the category, surface the structured markdown response with named sections (Class names / Token names / Event hooks / ARIA contracts / Reference pointers / Halt conditions).
 
 ## Notes
 

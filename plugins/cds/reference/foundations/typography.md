@@ -114,51 +114,51 @@ Clamp between a 20rem viewport (`min`) and a 90rem viewport (`max`).
 
 ## §13.5 Editorial scale (sans headings, serif body)
 
-Use on long-form editorial, news, documentation, and legal page types. The headline scale uses Primary Sans at heavy weights; the body uses Editorial Serif.
+Use on long-form editorial, news, documentation, and legal page types. The headline scale uses Primary Sans at heavy weights; the body uses Editorial Serif. Clamp between a 20rem viewport (`min`) and a 90rem viewport (`max`) per layout.md §11.1. Roles whose Min and Max are equal are fixed-value and declare their size directly without `clamp()`.
 
-| Text Role | Mobile | Tablet | Desktop | Family | Weight | Line Height | Use |
-|---|---:|---:|---:|---|---:|---:|---|
-| Display XXL | 56px | 72px | 80px | Sans | 700 | 100% | Marketing-home hero h1. |
-| Display XL | 48px | — | 64px | Sans | 700 | 100% | Brand mission h1. |
-| Display 1 | 42px | 58px | 72px | Sans | 700 | 100% | Available. |
-| Display 2 | 36px | 48px | 64px | Sans | 700 | 100% | Long-form legal page h1. |
-| Display L | 32px | 36px | 48px | Sans | 700 | 100% | Available. |
-| Display M | 28px | — | 32px | Sans | 700 | 100% | Available. |
-| Display S | 22px | — | 24px | Sans | 700 | 100% | Tile heading on marketing home. |
-| Headline 1 | 32px | 44px | 52px | Sans | 700 | 110% | Editorial page H1. `text-wrap: balance`, `text-align: center`. |
-| Headline 2 | 30px | 36px | 44px | Sans | 600 | 120% | Editorial section H2. |
-| Headline 3 | 28px | 30px | 36px | Sans | 600 | 120% | Sub-section H3. |
-| Headline 4 | 23px | — | 32px | Sans | 600 | 120% | Featured-card title; "Related content" rail title. Underline at 0.2em offset on links. |
-| Headline 5 | 20px | — | 25px | Sans | 600 | 120% | Legal section H2; long-form section H2. |
-| Headline 6 | 17px | 19px | 23px | Sans | 600 | 120% | Side-item titles. |
-| Paragraph L | 22px | — | 24px | Sans | 400 | 140% | Subtitle paragraph. `max-width: 40ch`. |
-| Paragraph M | 18px | — | 20px | Sans | 400 | 140% | Default lead paragraph. |
-| Paragraph S | 15px | — | 18px | Sans | 400 | 140% | Compact lead. |
-| Body 1 | 19px | — | 20px | Sans | 400 | 155% | Default sans body on editorial. |
-| Body 2 | 17px | — | — | Sans (or Serif with `.serif` modifier) | 400 (Sans) / 500 (Serif) | 155% | Editorial body paragraph. Serif modifier produces long-form reading body. |
-| Body 3 | 15px | — | — | Sans (or Serif with `.serif`) | 400 / 500 | 140% | Featured-card dek; meta paragraphs. |
-| Body 4 | 12px | — | — | Sans | 400 (or 700 with `.bold`) | 140% | Footer column heading. |
-| Caption | 14px | — | — | Sans | 400 | 120% | Column headers (uppercase via CSS). `letter-spacing: 0.15px`. |
-| Text Label | 16px | — | — | Sans | 600 | 100% | Effective-date stamp, language picker. `letter-spacing: -0.08px`. |
+| Text Role | Min Size | Max Size | Family | Weight | Line Height | Use |
+|---|---:|---:|---|---:|---:|---|
+| Display XXL | 56px | 80px | Sans | 700 | 100% | Marketing-home hero h1. |
+| Display XL | 48px | 64px | Sans | 700 | 100% | Brand mission h1. |
+| Editorial-Display-1 | 42px | 72px | Sans | 700 | 100% | Available. |
+| Editorial-Display-2 | 36px | 64px | Sans | 700 | 100% | Long-form legal page h1. |
+| Display L | 32px | 48px | Sans | 700 | 100% | Available. |
+| Display M | 28px | 32px | Sans | 700 | 100% | Available. |
+| Display S | 22px | 24px | Sans | 700 | 100% | Tile heading on marketing home. |
+| Headline 1 | 32px | 52px | Sans | 700 | 110% | Editorial page H1. `text-wrap: balance`, `text-align: center`. |
+| Headline 2 | 30px | 44px | Sans | 600 | 120% | Editorial section H2. |
+| Headline 3 | 28px | 36px | Sans | 600 | 120% | Sub-section H3. |
+| Headline 4 | 23px | 32px | Sans | 600 | 120% | Featured-card title; "Related content" rail title. Underline at 0.2em offset on links. |
+| Headline 5 | 20px | 25px | Sans | 600 | 120% | Legal section H2; long-form section H2. |
+| Headline 6 | 17px | 23px | Sans | 600 | 120% | Side-item titles. |
+| Paragraph L | 22px | 24px | Sans | 400 | 140% | Subtitle paragraph. `max-width: 40ch`. |
+| Paragraph M | 18px | 20px | Sans | 400 | 140% | Default lead paragraph. |
+| Paragraph S | 15px | 18px | Sans | 400 | 140% | Compact lead. |
+| Body 1 | 19px | 20px | Sans | 400 | 155% | Default sans body on editorial. |
+| Body 2 | 17px | 17px | Sans (or Serif with `.serif` modifier) | 400 (Sans) / 500 (Serif) | 155% | Editorial body paragraph. Serif modifier produces long-form reading body. |
+| Body 3 | 15px | 15px | Sans (or Serif with `.serif`) | 400 (or 700 with `.bold`) / 500 (Serif) | 140% | Featured-card dek; meta paragraphs; editorial eyebrow (weight range 500–700 via `.serif` / `.bold`). |
+| Body 4 | 12px | 12px | Sans | 400 (or 700 with `.bold`) | 140% | Footer column heading. |
+| Caption | 14px | 14px | Sans | 400 | 120% | Column headers (uppercase via CSS). `letter-spacing: 0.15px`. |
+| Text Label | 16px | 16px | Sans | 600 | 100% | Effective-date stamp, language picker. `letter-spacing: -0.08px`. |
 
 ## §13.6 Authentication card scale
 
-Use this scale on conversion or authentication card surfaces. The weight values below are intentionally precise (430, 480, 500) and depend on a variable-axis font. Substitute per §13.2 if mapping a non-variable font.
+Use this scale on conversion or authentication card surfaces. The weight values below are intentionally precise (430, 480, 500) and depend on a variable-axis font. Substitute per §13.2 if mapping a non-variable font. Line heights are size × a `--lh-*` ratio token (§13.3); each expression's calibration value is the pixel rendering it reproduces.
 
 | Text Role | Family | Size | Weight | Line Height | Notes |
-|---|---|---:|---:|---:|---|
-| Marketing headline outside card | Serif | 56px | 330 | 67.2px | Sits behind the card; weight 330 reads as ultralight on Serif. |
-| Marketing subhead | Serif | 18px | 400 | 28px | |
-| Input label | Sans | 14px | 430 | 19.6px | Ink at `--text-secondary`. |
+|---|---|---:|---:|---|---|
+| Marketing headline outside card | Serif | 56px | 330 | `--lh-120` (calibrates to 67.2px) | Sits behind the card; weight 330 reads as ultralight on Serif. |
+| Marketing subhead | Serif | 18px | 400 | `--lh-160` (calibrates to 28px) | |
+| Input label | Sans | 14px | 430 | `--lh-140` (calibrates to 19.6px) | Ink at `--text-secondary`. |
 | Required asterisk | Sans | 14px | 430 (inherit) | — | Ink at `--field-required`. |
-| Input value and placeholder | Sans | 16px | 430 | 22.4px | Placeholder at `--text-tertiary`. |
-| Button label | Sans | 16px | 500 | 24px | All button variants. |
-| "OR" divider | Sans | 12px | 400 | 16px | Uppercase via CSS. |
-| Legal blurb | Sans | 14px | 400 | 21px | Underlined inline link at 40% opacity at rest. |
+| Input value and placeholder | Sans | 16px | 430 | `--lh-140` (calibrates to 22.4px) | Placeholder at `--text-tertiary`. |
+| Button label | Sans | 16px | 500 | `--lh-150` (calibrates to 24px) | All button variants. |
+| "OR" divider | Sans | 12px | 400 | `--lh-130` (calibrates to 16px) | Uppercase via CSS. |
+| Legal blurb | Sans | 14px | 400 | `--lh-150` (calibrates to 21px) | Underlined inline link at 40% opacity at rest. |
 | Top-nav link | Sans | 14px | 500 | — | Ink at `--text-tertiary`. |
-| Top-nav primary button | Sans | 14px | 500 | 19.6px | |
-| Footer column heading | Sans | 12px | 400 | 16.8px | Ink at `var(--text-tertiary)` (low-contrast cool gray when resolved through the footer's theme). |
-| Footer link | Sans | 14px | 400 | 21px | No underline. |
+| Top-nav primary button | Sans | 14px | 500 | `--lh-140` (calibrates to 19.6px) | |
+| Footer column heading | Sans | 12px | 400 | `--lh-140` (calibrates to 16.8px) | Ink at `var(--text-tertiary)` (low-contrast cool gray when resolved through the footer's theme). |
+| Footer link | Sans | 14px | 400 | `--lh-150` (calibrates to 21px) | No underline. |
 
 ## §13.7 Inline rules
 

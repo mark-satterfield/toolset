@@ -44,7 +44,7 @@ Ask in this order. Each step gathers exactly one decision.
    - Global mode → `~/.claude/settings.json`.
    - Project mode → `<project-root>/.claude/settings.local.json` (gitignored layer — env vars often contain user-specific paths).
 2. Read the existing settings file as JSON. If the file does not exist, treat as `{}`.
-3. If the file is malformed JSON, STOP with `PRECONDITION_FAILED: settings.json is not valid JSON at <path>` — do not attempt repair.
+3. If the file is malformed JSON, STOP with `SETTINGS_MALFORMED: settings.json is not valid JSON at <path>` — do not attempt repair.
 4. Ensure the `env` key exists as an object; create if absent.
 5. For each captured variable, set `env[VAR_NAME] = value`. Leave all other `env` keys (and unrelated top-level keys) untouched.
 6. Write the result back with two-space indentation, trailing newline, and JSON key order preserved where the JSON library supports it.
@@ -52,9 +52,9 @@ Ask in this order. Each step gathers exactly one decision.
 
 ## Halt conditions
 
-- The settings file exists but is malformed JSON → STOP with `PRECONDITION_FAILED`.
-- A copy of the shipped setup file is requested but the destination directory cannot be created (permissions, path collision with a file) → STOP and surface the path.
-- The user declines to supply `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` and provides no path to an existing YAML → STOP and report that no setup was written.
+- `SETTINGS_MALFORMED` — the settings file exists but is not valid JSON.
+- `TEMPLATE_DEST_UNWRITABLE` — a copy of the shipped setup file is requested but the destination directory cannot be created (permissions, path collision with a file); surface the path.
+- `ELEMENTS_PATH_DECLINED` — the user declines to supply `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` and provides no path to an existing YAML; report that no setup was written.
 
 ## Hard rules
 

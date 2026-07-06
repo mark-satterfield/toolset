@@ -20,4 +20,5 @@ Invoke the `package-change` skill in this plugin. Load and execute `skills/packa
 - This is the boundary from "approved in cds" to "built in the app repo": the bundle is everything the app-repo developer (or developer agent) needs, and nothing is injected back into the source artifacts.
 - The bundle ships a CURRENT stylesheet set: if the set is stale the skill regenerates it first (via `generate-stylesheets`) before copying.
 - For a brownfield (update-mode) change the bundle also carries the original-files snapshot and the region-scoped change diff.
+- When the assets directory holds an `artwork-manifest.yaml` (the artwork provenance record from `reference/artwork.md`), the bundle ships it in `assets/` alongside the icon/image files.
 - Halt codes the user may see: `STATE_RECORD_NOT_FOUND`, `OUTPUT_PATH_UNRESOLVABLE`, `STYLESHEETS_REGEN_FAILED`, `ASSETS_UNRESOLVABLE`, `ELEMENTS_YAML_UNSET`.

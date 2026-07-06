@@ -159,6 +159,8 @@ def run(repo_root):
     md_files = []
     all_dirs = []
     for dirpath, _dirs, files in os.walk(plugin_root):
+        # analysis/ is the historical migration record and cites deleted files by design.
+        _dirs[:] = [d for d in _dirs if not (dirpath == plugin_root and d == "analysis")]
         all_dirs.append(dirpath)
         for fn in files:
             if fn.lower().endswith(".md"):

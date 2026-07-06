@@ -13,8 +13,14 @@ whatever elements YAML is supplied — nothing is hardcoded.
 ./run-tests.sh /path/to/other.yaml   # or any valid elements YAML
 ```
 
-1. **`check-plugin.py`** discovers and runs every `checks/check_*.py`
-   (schema, structure, links, reference, consistency, shape alignment, token coverage, topbar nav alignment).
+1. **`check-plugin.py`** discovers and runs every `checks/check_*.py`. The current set:
+   `check_consistency`, `check_links`, `check_nav_dropdown`, `check_reference`,
+   `check_reference_prose`, `check_schema`, `check_semantic_hash`,
+   `check_shape_alignment`, `check_structure`, `check_token_coverage`,
+   `check_topbar_nav` — covering schema validity, structure, internal links,
+   Building Blocks reference integrity (shape/component frontmatter, bare-role
+   tokens, `from_palette`, scope tags), reference prose discipline, the semantic
+   hash, shape-name integrity, token coverage, and topbar/dropdown nav contracts.
 2. **`../validation/lint-elements.py`** asserts properties: schema validity, every
    `var()` chain resolves, aliases target concrete themes, `from_palette` bindings
    land in allowed palettes, every required role is covered in every mode.
@@ -44,8 +50,8 @@ visual-proof-out/        (gitignored — regenerated on demand)
 assemble.py      committed tooling — assembles the artifacts above into browsable
                  galleries (a VIEWER only — it generates no CSS or markup; it
                  discovers themes from themes.css, modes from themes.css, and the
-                 shape order/names from reference/shapes.md Part A, so it stays
-                 correct for any config)
+                 shape names from the reference/libraries/shapes/ frontmatter, so it
+                 stays correct for any config)
 screenshots/     committed reference captures
 ```
 
@@ -54,8 +60,8 @@ pass: it **regenerates** (fans out across sub-agents — one runs `generate-styl
 others build the component fragments and the shape artifacts, one composes the landing
 page), then **verifies** (runs the deterministic checks above), then **assembles** the
 galleries. Everything is generated from the **live** config and the reference tree —
-never a re-implementation. The shape list is read from `reference/shapes.md` Part A, so
-shapes are never hardcoded.
+never a re-implementation. The shape list is read from the `reference/libraries/shapes/`
+Building Blocks entries, so shapes are never hardcoded.
 
 **How to view** — after a workflow run (or `python3 assemble.py` to re-view existing
 artifacts), open `visual-proof-out/index.html` in a browser. The theme/mode switch bar

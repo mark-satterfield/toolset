@@ -13,7 +13,8 @@ exclude = [
     "dist",
     "venv",
     ".venv",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "/tmp"
 ]
 
 # Ensure editor autocompletion and validation via JSON Schema

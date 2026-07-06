@@ -14,8 +14,8 @@ Assembles everything an approved change needs to reach the application repositor
 - **From the matching state record** (in `~/.claude/customizable-design-system/state/{compose-page|compose-app-surface}/` or the project-local equivalent, per `$CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE`): the resolved `sections` (shapes, themes, components, grounds), the `brief_snapshot`, the sidecar paths, `mode` (`generate` | `update`) and any `update_source`, and the referenced asset paths.
 - **From the generated stylesheet set** (at `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`): `tokens.css`, `components.css`, `themes.css`, and `manifest.json`.
 - **From the mock or surface:** the `compose-page` HTML mock, or the `compose-app-surface` framework code plus wiring diffs.
-- **From the sidecars:** the `wireframe.txt` and `decisions.md` files written beside a mock by `compose-page`.
-- **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR`** (and the asset paths in the state record): ancillary icon/image files that must ship on the same server as the page.
+- **From the sidecars:** the `wireframe.txt` and `decisions.md` files the pipeline writes beside every deliverable — a mock (`compose-page`) or an app surface (`compose-app-surface`).
+- **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR`** (and the asset paths in the state record): ancillary icon/image files that must ship on the same server as the page, plus the `artwork-manifest.yaml` provenance manifest (`../../reference/artwork.md`) when the assets directory holds one.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR`:** the default root under which bundles are written; if unset, asked once.
 - **From `../../lib/cds_hash.py`:** the shared fingerprint tool, to confirm the stylesheet set is current before bundling.
 
@@ -29,14 +29,14 @@ Assembles everything an approved change needs to reach the application repositor
 
 1. **Load the state record** for the resolved target — it is the build spec's spine.
 2. **Confirm stylesheet freshness.** Compute the live fingerprints with `python3 ../../lib/cds_hash.py inputs <$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS> ../../reference <$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR|NONE>` and compare to `manifest.json`. If stale or missing, invoke `../generate-stylesheets/SKILL.md` first so the bundle ships current CSS; if that regen halts, STOP `STYLESHEETS_REGEN_FAILED:{inner-code}`.
-3. **Synthesize the build spec** from the state record — the page/surface, its ordered sections (each with shape, components, grounds, token/class contract), wiring (for a surface), and the accessibility contracts the chosen components carry. This is reference-anchored, not invented: it cites `../../reference/components.md` and `../../reference/compliance.md` rather than restating them.
-4. **Copy the artifacts** into the bundle (layout below): the stylesheet set + manifest, the mock HTML or surface code + diffs, the wireframe and decision-log sidecars, the resolved ancillary assets, and the state record. If an asset path recorded in the state record cannot be resolved → STOP `ASSETS_UNRESOLVABLE` and name it.
+3. **Synthesize the build spec** from the state record — the page/surface, its ordered Sections (each with Shape, Components, grounds, token/class contract), wiring (for a surface), and the accessibility contracts the chosen Components carry. This is reference-anchored, not invented: it cites the catalog entries by path — `../../reference/libraries/{sections,shapes,section-containers,shells,components}/<name>.md` and the `../../reference/rules/{shape-selection,page-constraints}/<name>.md` entries the composition applied — plus `../../reference/compliance.md`, rather than restating them.
+4. **Copy the artifacts** into the bundle (layout below): the stylesheet set + manifest, the mock HTML or surface code + diffs, the wireframe and decision-log sidecars, the resolved ancillary assets (including `artwork-manifest.yaml` when the assets directory holds one), and the state record. If an asset path recorded in the state record cannot be resolved → STOP `ASSETS_UNRESOLVABLE` and name it.
 5. **For an update (brownfield) change** (`mode == update` in the state record), add an `update` folder: a snapshot of the original files the change started from (`update_source`) plus the region-scoped change diff, so the app-repo agent applies a scoped change rather than a from-scratch rebuild.
 6. **Write the bundle README** — the index plus a short "how the app-repo agent builds this" note. Emit nothing back into the source artifacts (no metadata injected into the mock, surface, or stylesheets).
 
 ## Output bundle layout
 
-A timestamped bundle directory under the package root, shaped like this (file names shown for a `compose-page` source; a surface source replaces the design folder with code + diffs):
+A timestamped bundle directory under the package root, shaped like this (file names shown for a `compose-page` source; a surface source replaces the design folder with code + diffs and carries the same `spec/` sidecars, which the pipeline writes for both deliverables):
 
 ```
 PACKAGE_ROOT/
@@ -52,6 +52,7 @@ PACKAGE_ROOT/
     styles/
       tokens.css  components.css  themes.css  manifest.json
     assets/                ancillary icon/image files for the same server
+      artwork-manifest.yaml  the artwork provenance manifest, copied when present
     state/
       <state-record>.yaml
     update/                present only when mode == update

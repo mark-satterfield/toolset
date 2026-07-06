@@ -1,10 +1,56 @@
 # Foundations — Implementation
 
-## §7 Mode resolution
+## §6 Theme contracts — narrative
 
-The mode marker is a single attribute on the document root: `data-mode="light"` or `data-mode="dark"`. A third value, `data-mode="system"`, defers to the OS preference.
+Themes are CSS classes that wrap a section. Each theme is the structural binding between role slots and palette swatches: when a section carries the theme class, the role variables inside that section resolve to the swatches the theme declares. Themes do not nest meaningfully — a child theme overrides the parent theme cleanly. The set of named themes shipped in `customizable-design-elements.yaml` is `clarity` (high-clarity light, card-heavy interiors, pricing, dense content), `default` (the principal warm light page theme), `editorial` (a direct alias of `default` for editorial and legal pages), `punctuation` (light punctuation between light and dark blocks), `statement` (high-contrast neutral feature panels that push ink to absolute black), `feature-dark` (mid dark feature panels with mascot in light tone), `code` (deeper dark for code blocks and second-tier dark interjections), and `deep` (near-black dark for the footer and principal story-panel reveal).
 
-The CSS reads the mode marker in three branches:
+### Why theme contracts exist
+
+The role-to-swatch binding is the load-bearing decoupling in the whole system. Components ask for `--text-primary`; the theme wrapper says what `--text-primary` resolves to in this section, in this mode. Without theme contracts, every component would have to know its surface — and the system would collapse into per-component color logic. The YAML's binding rows are exhaustive: every theme lists every role explicitly, so each theme class is fully self-contained and resolves without depending on another theme's declarations.
+
+### Light vs. dark theme binding narrative
+
+Light themes come in two kinds. Themes that change between modes (`default`, `clarity`, and its alias `editorial`) bind their role slots to light-mode swatches in their default class declaration; when the document root carries `data-mode="dark"`, those same theme classes are rebound — every role slot the theme paints is reassigned to its dark-mode swatch under a `:root[data-mode="dark"] .{theme}` selector. The primary accent softens to its dark-mode variant; surfaces invert; ink flips. Themes that do not change between modes (`punctuation`, `statement`) declare no live `dark` mode — they render their single expression in both UI modes, and the YAML keeps their dark mapping as a commented-out template for a maintainer who later wants them to diverge. Dark themes (`feature-dark`, `code`, `deep`) likewise require no dark-mode rebinding — they are already dark and continue to render dark in either mode. The literal swatch values for the light bindings and any dark-mode overrides live in `customizable-design-elements.yaml`; this document does not duplicate them.
+
+There is one cross-mode invariant: the chromatic signal (`--color-signals-focus`, consumed via the `switch-active-bg` and `input-focus-ring` roles) used for the switch active-fill and the conversion-input focus ring stays constant across every theme and every mode. It is the only signal the system treats as mode-invariant.
+
+### Button slot binding narrative
+
+Buttons resolve through their own slot family (`--button-primary-bg`, `--button-primary-text`, `--button-secondary-bg`, `--button-secondary-text`, `--button-brand-bg`, `--button-brand-text`, plus the tertiary-button border). The binding rule is mode-driven, not theme-driven: across every light theme in light mode, the primary-button ground sits at the visual opposite of the page ground (dark fill, light label). When the page goes dark, the primary button inverts in lockstep (light fill, dark label). The brand button does not invert — it stays accent-grounded regardless of mode. Secondary buttons shift between a soft neutral fill on light and a darker neutral fill in dark mode. The exact swatches at each slot in each mode are in the YAML.
+
+### §6.1 Light-mode theme bindings
+
+The light-mode theme bindings (which color each role resolves to when the theme runs in light mode) are project-customizable. The full binding tables for every theme class live in the file at `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`, under each theme's `light` block. This file documents only the role-binding contract — the values themselves are not duplicated here. See `customizable-design-elements.schema.json` for the canonical shape.
+
+### §6.2 Dark-mode theme bindings
+
+The dark-mode bindings follow the same role-binding contract as §6.1 but supply different color values per role. Same source-of-truth principle: values live in the elements YAML's `dark` block per theme — present as a live block only for concrete themes that actually change between modes (`default`, `clarity`; `editorial` carries no block of its own — it is an alias that mirrors `default`). A theme with no live `dark` block is taken at face value: it has a single expression that renders in both UI modes. For a theme that does not change between modes, the YAML keeps the full dark mapping as a commented-out template (uncomment and edit to make it diverge), so the binding stays on record without emitting a redundant override.
+
+### §6.3 Button slot bindings
+
+Button slot bindings (the background, label, hover, focus, and disabled colors for every button variant under every theme) live in the elements YAML's role definitions for the button family. See §6.4 below for the weight-oscillation behavior that pairs with the slot bindings.
+
+### §6.4 Button label weight oscillation
+
+Button label weight oscillates between modes to compensate for the perceptual weight shift between dark-ink-on-light and light-ink-on-dark. Apply a deliberate weight compensation: heavier weight on grounds where dark text reads heavier; lighter weight on grounds where inverted-light text reads thinner. The shipped weights are:
+
+| Button Variant | Light Mode | Dark Mode |
+|---|---:|---:|
+| Primary | 480 | 500 |
+| Secondary | 500 | 480 |
+| Brand | 500 | 480 |
+
+The pattern: the primary button reads dark-on-light in light mode (label = light text on dark fill), which perceptually thickens — so the weight is held back at 480. In dark mode, the primary button inverts to light-on-dark (label = dark text on light fill), which perceptually thins — so the weight steps up to 500. Secondary and brand buttons are not full-contrast inversions; they oscillate in the opposite direction to keep the visual weight aligned with the rest of the system.
+
+Use a variable-axis weight family. If you map a non-variable font into the system, approximate `480` to `500` and document the substitution in the font mapping instructions.
+
+---
+
+## §7 Color-mode resolution
+
+The color-mode marker is a single attribute on the document root: `data-mode="light"` or `data-mode="dark"`. A third value, `data-mode="system"`, defers to the OS preference.
+
+The CSS reads the color-mode marker in three branches:
 
 1. `:root[data-mode="light"]` — bind light-mode palette swatches.
 2. `:root[data-mode="dark"]` — bind dark-mode palette swatches.
@@ -92,7 +138,7 @@ Mapped example (burnt-orange accent family):
 }
 ````
 
-Mode declarations on the root (global; not derived from the palette):
+Color-mode declarations on the root (global; not derived from the palette):
 
 ```css
 :root { color-scheme: light; }
@@ -220,7 +266,7 @@ Component-level geometry resolves the same way — the topbar bar and its logo b
 
 ### §8.4 Geometry and motion token emission
 
-Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `components.md §12.1` for component geometry such as the 84px topbar and 40px logo height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
+Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `libraries/components/topbar.md` for component geometry such as the 84px topbar and 40px logo height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
 
 **Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers` / `columns`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`, `--column-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
 
@@ -246,9 +292,9 @@ Geometry and motion are configurable element sets in the elements YAML (`geometr
 
 ---
 
-## §9 JavaScript mode controller
+## §9 JavaScript color-mode controller
 
-Initialize the mode marker before the page paints. Run the controller from a small, render-blocking inline script in the document head so that the user does not see a flash of the wrong mode.
+Initialize the color-mode marker before the page paints. Run the controller from a small, render-blocking inline script in the document head so that the user does not see a flash of the wrong mode.
 
 ```html
 <script>
@@ -295,51 +341,3 @@ systemQuery.addEventListener('change', () => {
 Provide three controls in the user-facing preferences surface: `Light`, `Dark`, `System`. Selecting `System` clears the stored override and returns the surface to OS preference.
 
 Surfaces that must lock to light (the public unauthenticated card, long-form legal pages) set `data-mode="light"` on the closest wrapper, overriding the root marker for their subtree only.
-
----
-
-## §6 Theme contracts — narrative
-
-Themes are CSS classes that wrap a section. Each theme is the structural binding between role slots and palette swatches: when a section carries the theme class, the role variables inside that section resolve to the swatches the theme declares. Themes do not nest meaningfully — a child theme overrides the parent theme cleanly. The set of named themes shipped in `customizable-design-elements.yaml` is `clarity` (high-clarity light, card-heavy interiors, pricing, dense content), `default` (the principal warm light page theme), `editorial` (a direct alias of `default` for editorial and legal pages), `punctuation` (light punctuation between light and dark blocks), `statement` (high-contrast neutral feature panels that push ink to absolute black), `feature-dark` (mid dark feature panels with mascot in light tone), `code` (deeper dark for code blocks and second-tier dark interjections), and `deep` (near-black dark for the footer and principal story-panel reveal).
-
-### Why theme contracts exist
-
-The role-to-swatch binding is the load-bearing decoupling in the whole system. Components ask for `--text-primary`; the theme wrapper says what `--text-primary` resolves to in this section, in this mode. Without theme contracts, every component would have to know its surface — and the system would collapse into per-component color logic. The YAML's binding rows are exhaustive: every theme lists every role explicitly, so each theme class is fully self-contained and resolves without depending on another theme's declarations.
-
-### Light vs. dark theme binding narrative
-
-Light themes come in two kinds. Themes that change between modes (`default`, `clarity`, and its alias `editorial`) bind their role slots to light-mode swatches in their default class declaration; when the document root carries `data-mode="dark"`, those same theme classes are rebound — every role slot the theme paints is reassigned to its dark-mode swatch under a `:root[data-mode="dark"] .{theme}` selector. The primary accent softens to its dark-mode variant; surfaces invert; ink flips. Themes that do not change between modes (`punctuation`, `statement`) declare no live `dark` mode — they render their single expression in both UI modes, and the YAML keeps their dark mapping as a commented-out template for a maintainer who later wants them to diverge. Dark themes (`feature-dark`, `code`, `deep`) likewise require no dark-mode rebinding — they are already dark and continue to render dark in either mode. The literal swatch values for the light bindings and any dark-mode overrides live in `customizable-design-elements.yaml`; this document does not duplicate them.
-
-There is one cross-mode invariant: the chromatic signal (`--color-signals-focus`, consumed via the `switch-active-bg` and `input-focus-ring` roles) used for the switch active-fill and the conversion-input focus ring stays constant across every theme and every mode. It is the only signal the system treats as mode-invariant.
-
-### Button slot binding narrative
-
-Buttons resolve through their own slot family (`--button-primary-bg`, `--button-primary-text`, `--button-secondary-bg`, `--button-secondary-text`, `--button-brand-bg`, `--button-brand-text`, plus the tertiary-button border). The binding rule is mode-driven, not theme-driven: across every light theme in light mode, the primary-button ground sits at the visual opposite of the page ground (dark fill, light label). When the page goes dark, the primary button inverts in lockstep (light fill, dark label). The brand button does not invert — it stays accent-grounded regardless of mode. Secondary buttons shift between a soft neutral fill on light and a darker neutral fill in dark mode. The exact swatches at each slot in each mode are in the YAML.
-
-### §6.1 Light-mode theme bindings
-
-The light-mode theme bindings (which color each role resolves to when the theme runs in light mode) are project-customizable. The full binding tables for every theme class live in the file at `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`, under each theme's `light` block. This file documents only the role-binding contract — the values themselves are not duplicated here. See `customizable-design-elements.schema.json` for the canonical shape.
-
-### §6.2 Dark-mode theme bindings
-
-The dark-mode bindings follow the same role-binding contract as §6.1 but supply different color values per role. Same source-of-truth principle: values live in the elements YAML's `dark` block per theme — present as a live block only for concrete themes that actually change between modes (`default`, `clarity`; `editorial` carries no block of its own — it is an alias that mirrors `default`). A theme with no live `dark` block is taken at face value: it has a single expression that renders in both UI modes. For a theme that does not change between modes, the YAML keeps the full dark mapping as a commented-out template (uncomment and edit to make it diverge), so the binding stays on record without emitting a redundant override.
-
-### §6.3 Button slot bindings
-
-Button slot bindings (the background, label, hover, focus, and disabled colors for every button variant under every theme) live in the elements YAML's role definitions for the button family. See §6.4 below for the weight-oscillation behavior that pairs with the slot bindings.
-
-### §6.4 Button label weight oscillation
-
-Button label weight oscillates between modes to compensate for the perceptual weight shift between dark-ink-on-light and light-ink-on-dark. Apply a deliberate weight compensation: heavier weight on grounds where dark text reads heavier; lighter weight on grounds where inverted-light text reads thinner. The shipped weights are:
-
-| Button Variant | Light Mode | Dark Mode |
-|---|---:|---:|
-| Primary | 480 | 500 |
-| Secondary | 500 | 480 |
-| Brand | 500 | 480 |
-
-The pattern: the primary button reads dark-on-light in light mode (label = light text on dark fill), which perceptually thickens — so the weight is held back at 480. In dark mode, the primary button inverts to light-on-dark (label = dark text on light fill), which perceptually thins — so the weight steps up to 500. Secondary and brand buttons are not full-contrast inversions; they oscillate in the opposite direction to keep the visual weight aligned with the rest of the system.
-
-Use a variable-axis weight family. If you map a non-variable font into the system, approximate `480` to `500` and document the substitution in the font mapping instructions.
-
----
