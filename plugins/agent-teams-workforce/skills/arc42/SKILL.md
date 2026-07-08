@@ -34,7 +34,7 @@ The SAD follows the arc42 template: twelve numbered sections that together descr
 
 Before any dispatch, establish where the SAD lives.
 
-1. If the host project already has an arc42 document, use it. Probe in this order: a single `docs/architecture/arc42.md`, then a `docs/architecture/arc42/` directory with one Markdown file per section, then any path the project's own conventions point to (a `polyrepo-steward` manifest or a `CONTRIBUTING`/`README` reference).
+1. If the host project already has an arc42 document, use it. Probe in this order: a single `docs/architecture/arc42.md`, then a `docs/architecture/arc42/` directory with one Markdown file per section, then any path the project's own conventions point to (a `.polyrepo/manifest.yaml` or a `CONTRIBUTING`/`README` reference).
 2. If none exists, the default location is `docs/architecture/arc42/` with one Markdown file per arc42 section (`01-introduction-and-goals.md` through `12-glossary.md`). A single-file `docs/architecture/arc42.md` is the acceptable alternative for a small system — let the sub-skill that authors content decide, do not scaffold files yourself.
 
 State the resolved location in one sentence when you hand off, so the sub-skill knows where to read and write.

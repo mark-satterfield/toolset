@@ -13,8 +13,8 @@ project:
   name: string                   # short kebab-case identifier
   purpose: string                # one sentence, what the project does
   owners: [string]               # human or team names
-  created_at: ISO-8601 date      # when the manifest was first written
-  last_updated: ISO-8601 date    # bumped by every learning event
+  # No created_at / last_updated — git history is the audit trail
+  # (see "Dates and the audit trail" below).
 
 topology:
   kind: enum                     # see Topology kinds below
@@ -61,6 +61,10 @@ search_recipes: [SearchRecipe]?  # see SearchRecipe schema
 ownership:
   contacts: { topic: owner }?    # e.g., { build: alice, infra: bob }
   codeowners_files: [string]?    # paths to CODEOWNERS in each repo
+
+governance: [GovernanceEntry]?   # v3 — registry of the project's own
+                                 # scripts/tools/procedures/knowledge-base
+                                 # locations; see The `.polyrepo/` directory (v3)
 
 open_questions: [string]?        # things the steward does not know yet
 
@@ -230,7 +234,7 @@ omitted.
                                  # (see Endpoint notation); omit for
                                  # project-wide
   origin: string?                # who introduced the rule, if known
-  recorded_at: ISO-8601 date
+                                 # (a provenance date inside this string is fine)
 ```
 
 The `reason` field is non-negotiable. Rules without reasons rot — the
@@ -262,8 +266,7 @@ it as a recipe.
 ## DriftEntry schema
 
 ```yaml
-- observed_at: ISO-8601 date
-  what: string                   # what looks stale
+- what: string                   # what looks stale
   evidence: string               # how you noticed
   status: enum                   # open, resolved, false-alarm
   resolution: string?            # how it was reconciled
@@ -271,6 +274,15 @@ it as a recipe.
 
 Drift entries are how the steward keeps itself honest. Every reconcile
 pass that turns up something unexpected appends here.
+
+## Dates and the audit trail
+
+The manifest does **not** carry manual metadata-tracking date fields — no
+`created_at`, `last_updated`, `recorded_at`, `observed_at`, or `retired_at`. An
+unautomated date field goes stale and lies. **Git history is the audit trail**:
+it records what changed, when, and why. Provenance dates embedded inside an
+`origin` string (who introduced something, and when they say they did) are fine —
+those are content, not metadata the steward must keep current.
 
 ## Validation rules
 
@@ -290,7 +302,6 @@ hold; the group and wave rules are new in v2):
 - `relationships.deploy_waves` stage order **is the list order** — the
   first stage deploys first. No separate ordering field exists or is
   implied; do not add one.
-- `last_updated` is always the date of the most recent change.
 - `topology.manifest_location` matches the actual on-disk path.
 - All paths in `local_path` and `manifest_location` are absolute.
 
@@ -392,7 +403,6 @@ rules:
       Path imports couple deploy timing and break the published-contract
       boundary the package version guarantees.
     applies_to: [group:backend-services]   # scoped to the class, not project-wide
-    recorded_at: 2026-06-15
 ```
 
 This validates against the rules above: every `backend-services` member
@@ -401,6 +411,59 @@ dependency edge and the rule resolves to the defined group; every
 `deploy_waves` repo name resolves to a real repo; and the two stages
 deploy in list order (`foundation`, then `services`) with `auth-svc`
 gated on `vpc_enabled=true`.
+
+## The `.polyrepo/` directory (v3)
+
+The manifest does not stand alone. The steward's state lives in a `.polyrepo/`
+directory (located during setup — see the setup workflow), containing:
+
+| File / dir | Holds |
+|---|---|
+| `manifest.yaml` | The structural spine — this schema. |
+| `changelog.md` | Append-only learning log; every change appends here. |
+| `knowledge.yaml` | The knowledge store — durable, non-structural facts, mostly *where to find things*. Owned by the `polyrepo-info` skill. |
+| `procedures/` | Local procedures/scripts the steward writes for this project (not pushed to the plugin), registered in `governance`. |
+
+### Governance schema (v3)
+
+The top-level `governance` section is the registry of the project's own operational
+resources — the scripts, tools, procedures, and knowledge-base locations it provides.
+Managed by the `polyrepo-governance` skill.
+
+```yaml
+governance:
+  - id: string                   # short slug
+    type: enum                   # script | tool | procedure | knowledge-base
+    name: string
+    location: string             # path or URL
+    invoke: string?              # how to run/use it (scripts/tools)
+    notes: string?
+```
+
+### Knowledge store (v3, separate file)
+
+`.polyrepo/knowledge.yaml` is a *separate* file, not part of `manifest.yaml`. It caches
+durable facts the manifest's structure does not hold — heavily "where to find things." It
+is **not** a pre-computed answer to every question; derived facts are searched live.
+Managed by `polyrepo-info`; populated in bulk by `polyrepo-tribal-knowledge`.
+
+```yaml
+schema_version: 1
+knowledge:
+  - id: string
+    topic: string                # e.g. "repository naming convention"
+    kind: enum                   # location | fact | pointer
+    value: string                # the fact, or where/how to find it
+    source: string               # how it was learned
+```
+
+### `steward_preferences` decomposition (v3)
+
+`steward_preferences` had become a catch-all of preferences, rules, and knowledge. Under v3
+it is decomposed: behavioural preferences move to the steward *agent* (its system prompt);
+genuine constraints move to `rules[]`; and "where to find it" knowledge moves to
+`knowledge.yaml`. Any remaining project-specific behavioural preference the agent must read
+may still live in `steward_preferences`.
 
 ## Evolving the schema
 
@@ -427,3 +490,13 @@ read `schema_version` and know exactly what changed between versions.
   `rules[].applies_to` polymorphic — each entry may be a repo name or a
   `group:<name>`. Backward-compatible: repo-only endpoints remain valid
   and groups are additive. See *Migration from v1 to v2*.
+- **v3** — added the top-level `governance` section (registry of the
+  project's own scripts/tools/procedures/knowledge-base locations);
+  introduced a separate `.polyrepo/knowledge.yaml` knowledge store
+  (durable non-structural facts, mostly "where to find things", searched
+  live rather than pre-computed); documented the `.polyrepo/` directory
+  contents; and decomposed the `steward_preferences` catch-all (behaviour →
+  the steward agent, constraints → `rules[]`, knowledge → `knowledge.yaml`).
+  Also removed the manual metadata date fields (`created_at` / `last_updated` /
+  `recorded_at` / `observed_at` / `retired_at`) — git history is the audit trail.
+  Backward-compatible: the additions are optional and the date fields were advisory.

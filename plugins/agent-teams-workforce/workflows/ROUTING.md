@@ -9,7 +9,7 @@ executable form. Keep them in sync — edit both when the policy changes.
 
 | Composite | Front-end | For |
 |---|---|---|
-| `prd-to-spec` | prd-validation → architecture → spec-authoring → task-decomposition | a NEW feature with no implementation-ready contract yet |
+| `prd-to-spec` | prd-validation → architecture → trd-authoring → spec-authoring → task-decomposition | a NEW feature with no implementation-ready contract yet |
 | `spec-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior |
 | `infra-change` | infra-intent → shared tail (subset) | an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing) |
@@ -35,9 +35,10 @@ Notes on order:
 - **Bug and infra are checked before feature.** A bead can carry both a base
   `feature` type and a `bug`/`infra` label; the more specific kind wins.
 - **Spec-ready (rule 3) is checked before feature (rule 4)** on purpose. A
-  feature that *already* has an implementation-ready spec skips WF1 re-derivation
-  and goes straight to the build-and-ship tail. Without a `spec*`/`implementation`
-  label, a feature falls through to rule 4 and runs WF1 first.
+  feature that *already* has an implementation-ready spec skips prd-to-spec
+  re-derivation and goes straight to the build-and-ship tail. Without a
+  `spec*`/`implementation` label, a feature falls through to rule 4 and runs
+  prd-to-spec first.
 
 ### Ambiguity (rule 6)
 

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate (WF1 G2, WF2 G4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling.',
+    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling.',
   phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals' }],
 }
 

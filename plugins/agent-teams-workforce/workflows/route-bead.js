@@ -68,7 +68,7 @@ function deterministicRoute() {
   }
 
   // 3) Spec-ready work — a contract already exists; go straight to the build-and-ship tail.
-  //    Checked BEFORE the feature rule so a spec-ready feature skips WF1 re-derivation.
+  //    Checked BEFORE the feature rule so a spec-ready feature skips prd-to-spec re-derivation.
   if (hasLabel('spec', 'spec-ready', 'implementation', 'implement', 'spec-to-deploy')) {
     return route('spec-to-deploy', `label indicates an implementation-ready spec (labels=[${labels.join(', ')}]) → spec-to-deploy`)
   }

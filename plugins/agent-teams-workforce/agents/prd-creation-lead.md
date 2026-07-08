@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet
 permissionMode: default
 maxTurns: 75
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:how-to-delegate, agent-teams-workforce:delegate, agent-teams-workforce:orchestrator-discipline, agent-teams-workforce:polyrepo-steward]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:agent-orchestration, agent-teams-workforce:how-to-delegate, agent-teams-workforce:delegate, agent-teams-workforce:orchestrator-discipline, agent-teams-workforce:polyrepo-router]
 effort: medium
 isolation: worktree
 color: blue

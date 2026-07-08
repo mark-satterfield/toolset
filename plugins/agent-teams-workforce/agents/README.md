@@ -250,4 +250,4 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 ## Standalone
 
-- `polyrepo-cartographer` — read-only specialist that answers poly-repo structure questions from the polyrepo-steward manifest.
+- `polyrepo-steward` — caretaker and librarian of the project's repositories: reads and maintains the polyrepo manifest and knowledge store, answers count/ownership/structure questions, and performs all repository create/update/deprecate/list/search work. Reached via the `polyrepo-router` skill or the `/polyrepo-steward` command.

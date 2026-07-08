@@ -85,7 +85,7 @@ Every learning event has the same shape:
 1. **Update the manifest.** Find the right field in
    `manifest.yaml` and edit it. If the field does not yet exist, add
    it (and increment `schema_version` if the addition is structural).
-   Update `project.last_updated` to today's date.
+   Do not stamp a date on it — git history records when it changed.
 
 2. **Append to the changelog.** Add an entry to
    `.polyrepo/changelog.md` of the form:
@@ -111,7 +111,7 @@ Every learning event has the same shape:
 
 5. **Speak in outcomes, not internals.** When you tell the human
    you've captured something, do not narrate the file mechanics. "I
-   updated `manifest.yaml` and bumped `last_updated`" is internals.
+   updated `manifest.yaml` and appended the changelog" is internals.
    "Got it — I'll remember that" is outcome.
 
 ## Append-only, never destructive
@@ -128,7 +128,6 @@ through tombstone-style entries on rules:
   statement: Frontend never talks to the database directly.
   reason: Maintained the API as the single integration point.
   status: retired
-  retired_at: 2026-04-26
   retired_reason: >-
     Replaced by per-feature service-mesh policies that enforce the
     same boundary at the network layer.
@@ -158,18 +157,17 @@ answers.
 
 ## Audit trail
 
-The changelog is the steward's audit trail. Three things should be
-true at all times:
+**Git history is the audit trail** — it records what changed, when, and
+why, and never goes stale. The changelog complements it with the human
+narrative. Two things should be true at all times:
 
-- Every change to `manifest.yaml` has a corresponding changelog
-  entry on the same date.
-- Every changelog entry has enough information that someone reading
-  it a year later can understand *what* changed and *why*.
-- The manifest's `project.last_updated` matches the most recent
-  changelog date.
+- Every change to `manifest.yaml` has a corresponding changelog entry.
+- Every changelog entry has enough information that someone reading it a
+  year later can understand *what* changed and *why*.
 
-If any of these is violated, fix it during the next learning event.
-The audit trail is what makes the steward trustworthy over time.
+Do not add or maintain manual metadata date fields (`last_updated` and the
+like) to "track" currency — they go stale and lie; git already knows. A
+provenance date the human states inside an `origin` string is fine.
 
 ## When the steward learns something about itself
 
@@ -185,7 +183,6 @@ steward_preferences:
   - preference: Do not ask about CODEOWNERS files; this team does
       not use them.
     reason: Team uses Slack-based ownership, not git-based.
-    recorded_at: 2026-04-26
 ```
 
 These get logged to the changelog like any other learning event.
