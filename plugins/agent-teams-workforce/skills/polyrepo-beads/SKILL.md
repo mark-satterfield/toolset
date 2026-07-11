@@ -58,6 +58,24 @@ in `references/canonical-repo-state.md`):
 | Registration | Listed in the root repo's `config.yaml` `repos.additional` for hydration |
 | Local `.beads/` | Config only — **no** orphaned `dolt/`, `embeddeddolt/`, or `dolt-server.*` files |
 
+## Environment — read config, don't hardcode
+
+Project-specific values come from shell environment variables (exported so they work in Claude
+Code sessions and in automation alike). Resolve each as `SKILLSPOKE_* → BEADS_* → default`; the
+bundled scripts already do:
+
+| Value | Variable |
+|---|---|
+| Fleet directory (parent of the repos) | `SKILLSPOKE_APP_ROOT` |
+| Root / command-and-control repo | `SKILLSPOKE_CC` |
+| Shared server port | `SKILLSPOKE_BEADS_PORT` (default `3308`) |
+| Issue prefix | `SKILLSPOKE_BEADS_PREFIX` (`ssbd`) |
+| Logs directory | `SKILLSPOKE_LOGS` |
+
+Never bake these values into a command. If a variable is unset, fall back and say so — do not
+silently substitute a guessed path or prefix. See `references/canonical-repo-state.md` for the
+full table and values.
+
 ## How to work
 
 1. **Look before you touch.** Beads state has two homes — the local `.beads/` config and the

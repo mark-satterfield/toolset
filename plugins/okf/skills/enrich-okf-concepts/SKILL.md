@@ -50,6 +50,7 @@ existing and unknown frontmatter keys. Don't overwrite author intent — add,
 don't rewrite. `type` stays as the author set it unless it is clearly wrong (ask
 first). Minimal by default — only add sections that are warranted.
 
-After enriching, optionally regenerate affected `index.md` files
-(`${CLAUDE_PLUGIN_ROOT}/scripts/gen-index.sh`) since descriptions may have
-changed, and validate (`${CLAUDE_PLUGIN_ROOT}/scripts/validate-okf.sh`).
+After enriching, optionally regenerate indexes
+(`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/okf_tools/index.py <bundle>`) since
+descriptions may have changed, and validate
+(`${CLAUDE_PLUGIN_ROOT}/scripts/validate-okf.sh`).

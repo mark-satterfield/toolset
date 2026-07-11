@@ -1,5 +1,5 @@
 ---
-name: version
+name: version-plugins
 description: >
   Bump plugin versions in this repo's .claude-plugin/marketplace.json after making changes. Detects which plugins changed, picks the semver bump (major/minor/patch) from commit history, updates the manifest, and commits — but does not push. Use when the user wants to bump versions, update versions, version-bump, or bump changed plugins after making changes — even just "version" or "bump".
 ---

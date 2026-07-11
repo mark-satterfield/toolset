@@ -38,14 +38,22 @@ OpenAPI/GraphQL). Field and structure rules:
 
 ## Inline conversion workflow
 
-1. **Identify the source format** and open the matching guide section.
+1. **Identify the source/directory type** and open the matching guide section.
+   The directory type is a prior, not a guarantee — verify each file's actual
+   type as you go and re-dispatch if it doesn't match (a stray `.csv` or Notion
+   page inside an Obsidian vault gets its own rules).
 2. **Map each item to a concept** — add `type` to every file (the #1 thing that
-   makes output conformant), lift `title`/`description`, set `resource` when the
-   item is a real asset. Preserve unknown source metadata as extension keys.
+   makes output conformant); then **fill obvious gaps** for every file
+   regardless of format: `title` from a title field / H1 / filename,
+   `description` from a summary field / body / one-liner you write. Set
+   `resource` when the item is a real asset, and preserve unknown source
+   metadata as extension keys. For binary/non-text sources (PDF, DOCX, XLSX,
+   images…), extract to Markdown first with the `to-markdown-util` skill, then
+   convert the result.
 3. **Fix links** — convert wikilinks / Notion / intra-repo links to
    bundle-relative markdown links.
-4. **Generate indexes** — `${CLAUDE_PLUGIN_ROOT}/scripts/gen-index.sh <dir> > <dir>/index.md`
-   per directory; optionally a root `index.md` with `okf_version: "0.1"`.
+4. **Generate indexes** — `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/okf_tools/index.py <bundle>`
+   reindexes every directory in one pass (the root `index.md` gets `okf_version: "0.1"`).
 5. **Add a `log.md`** recording the conversion (optional).
 6. **Validate** — `${CLAUDE_PLUGIN_ROOT}/scripts/validate-okf.sh <bundle>` — and report the tree, the
    file count, and the conformance result.

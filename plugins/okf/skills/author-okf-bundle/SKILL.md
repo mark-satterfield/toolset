@@ -49,8 +49,9 @@ standalone "links" section. Broken links are allowed.
 
 ### 4. Generate indexes
 
-Run `${CLAUDE_PLUGIN_ROOT}/scripts/gen-index.sh <dir> > <dir>/index.md` for each directory to produce
-progressive-disclosure listings from child frontmatter. Optionally add a
+Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/okf_tools/index.py <bundle>` to
+regenerate progressive-disclosure listings for every directory from child
+frontmatter (the root index gets `okf_version` automatically). Optionally add a
 bundle-root `index.md` with `okf_version: "0.1"` frontmatter (the only index
 that may carry frontmatter).
 

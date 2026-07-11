@@ -1,13 +1,13 @@
 ---
 description: >
   Bump plugin versions in this repo's .claude-plugin/marketplace.json.
-  Wraps the version-bump skill: detects changed plugins, picks the semver
+  Wraps the version-plugins skill: detects changed plugins, picks the semver
   bump from commit history, updates the manifest, and commits. Pass --push
   to also pull --rebase and push once the commit lands. 
 argument-hint: "[--push]"
 ---
 
-Run the /version skill. The skill bumps
+Run the /version-plugins skill. The skill bumps
 the changed plugins in `.claude-plugin/marketplace.json` and commits the
 result. The skill does not push.
 

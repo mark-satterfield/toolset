@@ -4,23 +4,23 @@
 # Changes nothing. Prints a per-repo truth table and an anomaly list. Run before a release,
 # after a mass change, or whenever you suspect drift. See references/canonical-repo-state.md.
 #
-# Configuration (env overrides; defaults are SkillSpoke's):
-#   BEADS_FLEET_DIR   parent directory containing the repos      (default: $PWD)
-#   BEADS_REPO_GLOB   glob for child repos                       (default: "SkillSpoke-*")
-#   BEADS_SHARED_PORT shared Dolt server port                    (default: 3308)
-#   BEADS_PREFIX      required issue prefix                      (default: "ssbd")
-#   BEADS_SKIP        space-separated repos to skip (deprecated) (default: "")
-#                     (in a polyrepo project, get these from the manifest's lifecycle field)
+# Configuration. Each value resolves in order: project env var → generic env var → default.
+# The project env vars are set in the shell (available to Claude Code and to automation alike).
+#   fleet dir   SKILLSPOKE_APP_ROOT   → BEADS_FLEET_DIR   → $PWD
+#   port        SKILLSPOKE_BEADS_PORT → BEADS_SHARED_PORT → 3308
+#   prefix      SKILLSPOKE_BEADS_PREFIX → BEADS_PREFIX    → ssbd
+#   repo glob   BEADS_REPO_GLOB       → "<CC basename>-*" (derived from SKILLSPOKE_CC)
+#   skip list   BEADS_SKIP            → ""  (deprecated repos; source from the manifest)
 #
 # Repo→database name mapping: replace '-' with '_' (SkillSpoke-web -> SkillSpoke_web).
-# The root/C2 repo (a name with no hyphen suffix, e.g. "SkillSpoke") is excluded by the glob.
+# The root/C2 repo (SKILLSPOKE_CC, e.g. "SkillSpoke") is excluded by the glob.
 
 set -u -o pipefail
 
-BASE_DIR="${BEADS_FLEET_DIR:-$PWD}"
-GLOB="${BEADS_REPO_GLOB:-SkillSpoke-*}"
-PORT="${BEADS_SHARED_PORT:-3308}"
-PREFIX="${BEADS_PREFIX:-ssbd}"
+BASE_DIR="${SKILLSPOKE_APP_ROOT:-${BEADS_FLEET_DIR:-$PWD}}"
+GLOB="${BEADS_REPO_GLOB:-$(basename "${SKILLSPOKE_CC:-SkillSpoke}")-*}"
+PORT="${SKILLSPOKE_BEADS_PORT:-${BEADS_SHARED_PORT:-3308}}"
+PREFIX="${SKILLSPOKE_BEADS_PREFIX:-${BEADS_PREFIX:-ssbd}}"
 SKIP="${BEADS_SKIP:-}"
 
 command -v uv >/dev/null 2>&1 || { echo "FATAL: uv not on PATH (needed to reach the server)"; exit 1; }

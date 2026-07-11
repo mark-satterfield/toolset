@@ -1,7 +1,7 @@
 {
   "name": "okf",
-  "version": "0.1.0",
-  "description": "Open Knowledge Format (OKF) toolkit — author, convert, audit, enrich, and validate agent-readable knowledge bundles (markdown + YAML frontmatter). Router skill plus interactive skills and bulk-work agents.",
+  "version": "0.2.0",
+  "description": "Open Knowledge Format (OKF) toolkit — author, convert, sync, audit, enrich, validate, and visualize agent-readable knowledge bundles (markdown + YAML frontmatter). Router skill plus interactive skills and bulk-work agents.",
   "author": {
     "name": "mark-satterfield",
     "url": "https://github.com/mark-satterfield/toolset"

@@ -15,8 +15,11 @@
 #   --force-diverged   force-push when histories diverge (DESTRUCTIVE to remote history)
 #   --allow-root       permit converging the root/C2 repo (normally refused)
 #
-# Config (env; defaults are SkillSpoke's):
-#   BEADS_FLEET_DIR (default $PWD)   BEADS_SHARED_PORT (3308)   BEADS_PREFIX (ssbd)
+# Config. Each value resolves: project env var → generic env var → default.
+#   fleet dir  SKILLSPOKE_APP_ROOT   → BEADS_FLEET_DIR   → $PWD
+#   port       SKILLSPOKE_BEADS_PORT → BEADS_SHARED_PORT → 3308
+#   prefix     SKILLSPOKE_BEADS_PREFIX → BEADS_PREFIX    → ssbd
+#   root repo  SKILLSPOKE_CC (basename)                  → "SkillSpoke"
 #
 # Repo→database: replace '-' with '_'. Requires: bd, uv, and the shared server running.
 
@@ -24,10 +27,12 @@ set -u -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER="$SCRIPT_DIR/beads_server.py"
-BASE_DIR="${BEADS_FLEET_DIR:-$PWD}"
-PORT="${BEADS_SHARED_PORT:-3308}"
-PREFIX="${BEADS_PREFIX:-ssbd}"
+BASE_DIR="${SKILLSPOKE_APP_ROOT:-${BEADS_FLEET_DIR:-$PWD}}"
+PORT="${SKILLSPOKE_BEADS_PORT:-${BEADS_SHARED_PORT:-3308}}"
+PREFIX="${SKILLSPOKE_BEADS_PREFIX:-${BEADS_PREFIX:-ssbd}}"
+ROOT_REPO="$(basename "${SKILLSPOKE_CC:-SkillSpoke}")"
 export BD_ALLOW_REMOTE_MIGRATE=1
+export BEADS_SHARED_PORT="$PORT"   # so beads_server.py connects to the same server
 
 DRY=0; CLEAN=0; DISCARD=0; FORCE_DIV=0; ALLOW_ROOT=0; TARGET=""
 for a in "$@"; do
@@ -52,13 +57,14 @@ DB="$(printf '%s' "$REPO" | tr '-' '_')"
 META="$REPO_PATH/.beads/metadata.json"
 
 say() { printf '  %s\n' "$*"; }
-echo "▶ converge ${REPO}  (db=${DB})  ${DRY:+[DRY-RUN]}"
+LABEL=""; [ "$DRY" = 1 ] && LABEL="  [DRY-RUN]"
+echo "▶ converge ${REPO}  (db=${DB})${LABEL}"
 
-# Guard: never sweep the root/C2 repo (a name with no hyphen).
-if ! printf '%s' "$REPO" | grep -q '-'; then
-  if [ "$ALLOW_ROOT" = 1 ]; then say "root repo — proceeding (--allow-root)"
+# Guard: never sweep the root/C2 repo (identified by SKILLSPOKE_CC).
+if [ "$REPO" = "$ROOT_REPO" ]; then
+  if [ "$ALLOW_ROOT" = 1 ]; then say "root repo '${REPO}' — proceeding (--allow-root)"
   else say "✗ refusing to converge root/C2 repo '${REPO}' (holds real issues); pass --allow-root to override"; exit 1; fi
-fi
+else :; fi
 
 # Preflight + existence.
 command -v bd >/dev/null 2>&1 || { say "FATAL: bd not on PATH"; exit 1; }
@@ -77,14 +83,17 @@ ISSUES=$(printf '%s' "$STATUS" | sed -n 's/^issues: *//p')
 PFX=$(printf '%s' "$STATUS" | sed -n 's/^prefix: *//p')
 say "state: dirty=${DIRTY} issues=${ISSUES} prefix=${PFX}"
 
+if { [ "$FORCE_DIV" = 1 ] || [ "${ISSUES:-1}" = 0 ]; }; then FORCE_OK="allowed"; else FORCE_OK="BLOCKED (has issues; use --force-diverged)"; fi
 if [ "$DRY" = 1 ]; then
   say "PLAN:"
-  [ "$DIRTY" = 1 ] && say "  - working set dirty -> $([ "$DISCARD" = 1 ] && echo 'reset --hard (DISCARD)' || echo 'commit (preserve)')" || say "  - working set clean"
+  if [ "$DIRTY" = 1 ]; then
+    if [ "$DISCARD" = 1 ]; then say "  - working set dirty -> reset --hard (DISCARD)"; else say "  - working set dirty -> commit (preserve)"; fi
+  else say "  - working set clean"; fi
   say "  - align project_id + normalize metadata.json (mode=server, port=${PORT}, db=${DB})"
   say "  - bd migrate; set shared-server; pin port/database"
-  [ "$PFX" != "$PREFIX" ] && say "  - rename-prefix ${PREFIX}-" || say "  - prefix already ${PREFIX}"
-  say "  - bd dolt push (force on divergence: $([ "$FORCE_DIV" = 1 ] || [ "${ISSUES:-1}" = 0 ] && echo allowed || echo BLOCKED))"
-  [ "$CLEAN" = 1 ] && say "  - remove orphaned local artifacts" || say "  - (keep local artifacts; pass --clean to remove)"
+  if [ "$PFX" != "$PREFIX" ]; then say "  - rename-prefix ${PREFIX}-"; else say "  - prefix already ${PREFIX}"; fi
+  say "  - bd dolt push (force on divergence: ${FORCE_OK})"
+  if [ "$CLEAN" = 1 ]; then say "  - remove orphaned local artifacts"; else say "  - (keep local artifacts; pass --clean to remove)"; fi
   exit 0
 fi
 

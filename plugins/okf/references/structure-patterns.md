@@ -56,8 +56,9 @@ is a bullet with the linked concept's `description`:
 
 - Link to **subdirectories** with a trailing slash: `[References](references/)`.
 - Pull the description text from each child's frontmatter.
-- `scripts/gen-index.sh` generates a conformant `index.md` for a
-  directory automatically from child frontmatter.
+- `scripts/okf_tools/index.py <bundle>` regenerates a conformant `index.md`
+  for every directory from child frontmatter — grouped by `type`, with
+  subdirectory summaries; the root index keeps its `okf_version`.
 
 ## Cross-linking
 

@@ -36,21 +36,33 @@ cross-link.
 
 1. **Enumerate** the source (`Glob`/`find`). Plan the target tree — group by
    kind or subject, shallow depth.
-2. **Convert each item** to a concept `.md`:
+2. **Convert each item** to a concept `.md`. The source-format guide gives the
+   *likely* type per directory — treat it as a prior, verify each file's actual
+   content, and re-dispatch if it doesn't match (a `.csv` or Notion page inside
+   an Obsidian vault gets its own rules). For a binary/non-text source file
+   (PDF, DOCX, XLSX, PPTX, image), extract it to Markdown first with the
+   `to-markdown-util` skill, then convert the result; keep the original asset
+   and link it via `resource:`.
    - Add frontmatter with `type` (from the source's own category/type field, or
      inferred from the group; if genuinely unknowable, use the constraint the
      task gave you, else a descriptive default and note it in the log).
-   - Lift `title` and a one-line `description`. Set `resource` only for real
-     assets with a known URI.
-   - **Preserve** unknown source metadata as extension frontmatter keys.
+   - **Fill obvious gaps for every file, regardless of source format** — this
+     is not optional and not format-specific: `title` from a title-like
+     frontmatter field, else the H1, else the filename; `description` from a
+     `description`/`summary` field, else the body, else a one-line summary you
+     write. Best-effort — fill when the value is obvious, never invent data.
+     Set `resource` only for real assets with a known URI.
+   - **Preserve** unknown source metadata as extension frontmatter keys (add
+     the fields above; do not rewrite or drop existing ones).
    - Put structured content under `# Schema` / `# Examples` where it applies.
    - Convert wikilinks / Notion / intra-repo links to bundle-relative markdown
      links (`/path/to.md`).
 3. **Split** any multi-entity source document into one file per entity.
-4. **Generate indexes** — run the bundled `scripts/gen-index.sh <dir>` per
-   directory (or write conformant `index.md` files by hand: no frontmatter,
-   bullet per child with its description, subdirs with a trailing slash).
-   Optionally add a root `index.md` with `okf_version: "0.1"`.
+4. **Generate indexes** — run `python3 scripts/okf_tools/index.py <bundle>` to
+   reindex every directory in one pass (grouped by `type`, subdir summaries;
+   the root `index.md` gets `okf_version: "0.1"`). Or write conformant
+   `index.md` files by hand: no frontmatter, a bullet per child with its
+   description, subdirs with a trailing slash.
 5. **Add `log.md`** (if requested) recording the build, newest-first ISO dates.
 6. **Validate** — run `scripts/validate-okf.sh <bundle>` if available and fix any
    `E1`/`E2`/`E3` errors you introduced.

@@ -3,18 +3,25 @@
 This is the contract. Every active child repo's beads must match it. An audit is a comparison
 against this document; a repair is the act of bringing a repo back to it.
 
-Values in **angle brackets** are project-specific. The concrete values below are for
-**SkillSpoke**; confirm them for any other project (they live in the root repo's beads config
-and the global `~/.beads/config.yaml`, or ask the human).
+Values in **angle brackets** are project-specific. **Read them from the shell environment, do
+not hardcode them.** These `SKILLSPOKE_*` variables are exported in the shell, so they are
+available both inside Claude Code sessions and to automation/scripts run outside it. The scripts
+resolve each value as `SKILLSPOKE_* → BEADS_* → default`.
 
-| Project value | SkillSpoke |
-|---|---|
-| Shared server port | `3308` |
-| Shared server data dir | `~/.beads/shared-server/dolt/` |
-| Issue prefix | `ssbd` (IDs look like `ssbd-123`) |
-| Repo → database name | `SkillSpoke-<x>` → `SkillSpoke_<x>` (hyphens → underscores, camelCase kept) |
-| Root / C2 repo | `SkillSpoke` (database `SkillSpoke`) — holds the real issues, lists children for hydration |
-| Git remote sync | `refs/dolt/data` on each repo's `origin` |
+| Project value | Env var (source of truth) | SkillSpoke value |
+|---|---|---|
+| Fleet directory (parent of the repos) | `SKILLSPOKE_APP_ROOT` | `/Users/msat1971/projects/SkillSpoke/app` |
+| Root / C2 repo (holds real issues + hydration list) | `SKILLSPOKE_CC` | `…/app/SkillSpoke` (database `SkillSpoke`) |
+| Shared server port | `SKILLSPOKE_BEADS_PORT` (→ `3308`) | `3308` |
+| Issue prefix | `SKILLSPOKE_BEADS_PREFIX` | `ssbd` (IDs look like `ssbd-123`) |
+| Logs directory | `SKILLSPOKE_LOGS` | `/Users/msat1971/projects/SkillSpoke/logs` |
+| Shared server data dir | — (bd-managed) | `~/.beads/shared-server/dolt/` |
+| Repo → database name | — (rule) | `SkillSpoke-<x>` → `SkillSpoke_<x>` (hyphens → underscores, camelCase kept) |
+| Git remote sync | — (bd-managed) | `refs/dolt/data` on each repo's `origin` |
+
+> The prefix is `ss` (SkillSpoke) + `bd` (the beads CLI) = **`ssbd`**. If
+> `SKILLSPOKE_BEADS_PREFIX` ever reads something else, treat it as suspect and confirm before
+> any `rename-prefix` — a wrong value here renames the whole fleet's issues.
 
 ## The architecture (why the contract is shaped this way)
 

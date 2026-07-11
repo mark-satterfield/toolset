@@ -5,8 +5,8 @@ description: >-
   and dispatches to the right sub-skill or agent. Use when the user mentions
   'OKF', 'Open Knowledge Format', 'knowledge bundle', 'OKF bundle', 'knowledge
   catalog', 'LLM wiki', 'agent-readable knowledge', 'metadata as code', or wants
-  to create, convert a directory/files into, review/audit, enrich, or validate a
-  markdown+frontmatter knowledge base for AI agents. Also use when the user has a
+  to create, convert a directory/files into, review/audit, enrich, validate,
+  visualize, or sync a markdown+frontmatter knowledge base for AI agents. Also use when the user has a
   directory of markdown files and wants it made OKF-conformant or interoperable.
 allowed-tools: [Read, Grep, Glob, Bash, Agent]
 ---
@@ -26,9 +26,11 @@ workflow logic of its own — detect intent, then hand off.
 |---|---|---|
 | Create a bundle from scratch | `author-okf-bundle` skill | interactive |
 | Convert files / a directory / a foreign format to OKF | `convert-to-okf` skill | interactive; delegates to agent for large trees |
+| Sync / refresh / update a bundle from its source tree | `sync-okf-bundle` skill | interactive; delegates to agent for large diffs |
 | Review a directory tree and get recommendations | `okf-auditor` agent | read-only report |
 | Add schema / examples / citations / cross-links to concepts | `enrich-okf-concepts` skill | interactive; delegates to agent for bulk |
 | Check conformance | `validate-okf-bundle` skill | deterministic |
+| See / explore / visualize a bundle as an interactive graph | `visualize-okf-bundle` skill | deterministic |
 | Build a whole bundle autonomously from a big source | `okf-bundle-builder` agent | bulk write |
 | Enrich every concept across a bundle | `okf-enricher` agent | bulk write |
 
@@ -47,7 +49,7 @@ When unsure of the split, size the input first (`Glob`/`find` the tree, count
 ## Delegating to an agent
 
 Spawn with the `Agent` tool, `subagent_type` set to the agent name
-(`okf-auditor`, `okf-bundle-builder`, or `okf-enricher`). Give it: the source
+(`okf-auditor`, `okf-bundle-builder`, `okf-enricher`, or `okf-sync`). Give it: the source
 path, the target bundle path, and any known constraints (types to use, hosts to
 allow, whether to write indexes). The agents already know the OKF rules from the
 bundled `references/`.
@@ -60,7 +62,7 @@ point at them (bundled paths, resolve via `${CLAUDE_PLUGIN_ROOT}`):
 - `${CLAUDE_PLUGIN_ROOT}/references/spec-v01.md` — the authoritative spec
 - `${CLAUDE_PLUGIN_ROOT}/references/frontmatter-fields.md` — field reference
 - `${CLAUDE_PLUGIN_ROOT}/references/structure-patterns.md` — tree layout, indexes, cross-linking
-- `${CLAUDE_PLUGIN_ROOT}/references/conversion-guides.md` — per-format conversion rules
+- `${CLAUDE_PLUGIN_ROOT}/references/conversion-guides.md` — directory- and file-level conversion rules
 - `${CLAUDE_PLUGIN_ROOT}/references/examples.md` — concept examples by domain
 - `${CLAUDE_PLUGIN_ROOT}/references/serving-and-tooling.md` — okflint, kcmd, Knowledge Catalog
 

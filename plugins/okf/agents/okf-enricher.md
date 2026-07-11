@@ -44,9 +44,9 @@ not rewrite author intent.**
    `WebSearch` to find an authoritative source — but **cite, never fabricate**.
    Prefer the source system's own documentation. If a fact can't be sourced,
    leave it out.
-4. After enriching, regenerate affected `index.md` files
-   (`scripts/gen-index.sh <dir>`) since descriptions may have changed, and run
-   `scripts/validate-okf.sh <bundle>` if available.
+4. After enriching, regenerate indexes
+   (`python3 scripts/okf_tools/index.py <bundle>`) since descriptions may have
+   changed, and run `scripts/validate-okf.sh <bundle>` if available.
 
 ## Guardrails
 

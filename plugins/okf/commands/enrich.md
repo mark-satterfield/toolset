@@ -17,7 +17,8 @@ Invoke the `enrich-okf-concepts` skill to deepen existing OKF concepts.
    files, delegate to the `okf-enricher` agent (pass the bundle path, the
    enrichment moves, allowed hosts, and the paths to
    `${CLAUDE_PLUGIN_ROOT}/references` and `${CLAUDE_PLUGIN_ROOT}/scripts`).
-4. Regenerate affected indexes (`${CLAUDE_PLUGIN_ROOT}/scripts/gen-index.sh`) and
+4. Regenerate indexes
+   (`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/okf_tools/index.py <bundle>`) and
    validate.
 
 ## Notes
