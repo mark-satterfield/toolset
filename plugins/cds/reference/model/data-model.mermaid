@@ -1,0 +1,107 @@
+%% Logical data model - entities only (no processes / no rule engine)
+classDiagram
+    direction TB
+
+    class Archetype {
+        <<interface>>
+        blueprint / configuration
+        instances are stamped from it
+    }
+
+    class Group {
+        <<interface>>
+        bundles DesignElements
+    }
+
+    class DesignElement {
+        <<abstract>>
+        +geometry
+        +value
+    }
+
+    class Element {
+        <<concrete>>
+        raw HTML tag: div, span, table, row, button, img
+        NOT a DesignElement
+    }
+
+    class Component {
+        <<concrete>>
+        +sizingRules
+        +behaviorContracts
+        +accessibilityContracts
+        +tokenBindings
+    }
+
+    class ComponentLibrary {
+        <<concrete>>
+        list of pre-configured Components
+    }
+
+    class Shape {
+        <<concrete>>
+        +arrangement : STATIC | ORDERED
+        +proportions
+        layout template for position/proportion of parts
+    }
+
+    class ShapeLibrary {
+        <<concrete>>
+        list of pre-configured Shapes
+    }
+
+    class Frame {
+        <<abstract>>
+        +theme
+        +shape
+        container assigned a Shape (eager or lazy)
+    }
+
+    class Page {
+        <<concrete>>
+    }
+
+    class Section {
+        <<concrete>>
+    }
+
+    class ShellDefinition {
+        <<concrete>>
+    }
+
+    class ShapeSelectionRule {
+        <<concrete>>
+        content characteristics maps to eligible Shapes for a type
+    }
+
+    class ShapeSelectionRules {
+        <<concrete>>
+        list of ShapeSelectionRule
+    }
+
+    Component ..|> Archetype
+    Component ..|> Group
+    Shape ..|> Archetype
+    Shape ..|> Group
+    Frame ..|> Archetype
+    Frame ..|> Group
+
+    Component --|> DesignElement
+    Frame --|> DesignElement
+    Page --|> Frame
+    Section --|> Frame
+    ShellDefinition --|> Frame
+
+    Component *-- "*" Element : contains
+    Shape o-- "*" Component : contains
+    Shape o-- "*" Element : contains
+    Frame o-- "*" Frame : contains
+    Frame o-- "*" Component : contains
+    Frame o-- "*" Element : contains
+    Page *-- "*" Frame : contains
+    ShellDefinition *-- "*" Section : contains
+    ComponentLibrary o-- "*" Component : holds
+    ShapeLibrary o-- "*" Shape : holds
+    ShapeSelectionRules o-- "*" ShapeSelectionRule : holds
+
+    Frame --> "0..1" Shape : assigned (eager or lazy)

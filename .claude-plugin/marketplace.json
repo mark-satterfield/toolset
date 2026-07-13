@@ -117,8 +117,8 @@
     },
     {
       "name": "forge",
-      "description": "Tooling for the FORGE framework (Framework for Objective-Rooted, Gated Execution) — three skills to compose, revise, and review instructions an AI agent can execute without interpretation. Closes the gaps a human would otherwise leave for the agent to guess at, interactively or headlessly, and grades the result for interpretability and intent-fidelity risk.",
-      "version": "0.2.0",
+      "description": "Tooling for the FORGE framework (Framework for Objective-Rooted, Gated Execution) — four skills to compose, revise, and review instructions an AI agent can execute without interpretation, and to distill READY implementation plans out of multi-purpose documents (steps in; decisions, history, notes, and open questions stay out; per-step execution state makes cross-session handoff and resume deterministic). Closes the gaps a human would otherwise leave for the agent to guess at, interactively or headlessly, and grades the result for interpretability and intent-fidelity risk.",
+      "version": "0.3.0",
       "author": {
         "name": "mark-satterfield"
       },

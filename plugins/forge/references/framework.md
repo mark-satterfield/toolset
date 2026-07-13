@@ -312,6 +312,17 @@ A task that takes twenty seconds end-to-end with a human review in the middle is
 with a PAUSE. A task whose second phase depends on a budget number that hasn't been determined
 is two blocks written at different times.
 
+#### Implementation Plans
+
+When the instruction block is an **implementation plan** — a Sequential PROCESS that drives
+real system change and may be executed or resumed across sessions — PROCESS carries
+additional obligations defined in `implementation-plan.md`: the Phase → Step hierarchy, the
+four-element execution blueprint (Pre-condition, Action, Post-condition, Rollback), a
+per-step `Status` field, the resume and state-update rules, and the Separation Rule (only
+current implementation steps live in the plan; decisions, history, notes, to-dos, and
+open-question prose live outside it). A plan's PROCESS is always Sequential. That document
+governs whenever it applies; this framework still governs everything else about the block.
+
 ---
 
 ### SAFEGUARDS — Optional

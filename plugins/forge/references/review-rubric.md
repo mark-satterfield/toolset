@@ -56,6 +56,29 @@ Check the instructions against every item below. Each maps to the framework. For
 - A block that spans more than one phase across a boundary — a human decision, or a step needing input that cannot exist until an earlier step completes — uses the framework's mechanism for that boundary: a `PAUSE` when the branch table is writable now, or a split into chained blocks (`Gate.After` → `Gate.Before`) when the next phase cannot be written yet. A monolith that crams such a boundary is a defect. It is **Blocking** when it forces the agent to act on input that does not yet exist (the agent will fabricate it); otherwise **Major**.
 - The inverse — two or more blocks that share one objective with no real phase boundary — should be a single block. Needless fragmentation is a **Minor** defect.
 
+**Implementation plans** (applies only when the block is an implementation plan per
+`implementation-plan.md` — a Sequential PROCESS driving real system change; skip this group
+for every other instruction block)
+- Separation Rule contamination: the plan contains decisions or rationale, target-state
+  design, history ("why we changed course"), audit narrative, notes, to-do lists, or an
+  "Open Questions" prose section. The executing agent reads everything in its instructions
+  as instruction — contamination on or near the execution path is **Major**; a stray note
+  with no plausible effect on execution is **Minor**.
+- Objectives masquerading as steps: a step names an outcome ("Update the DNS records")
+  instead of a literal execution method. The agent must invent the method in real time —
+  **Major**; **Blocking** when the step is destructive or irreversible.
+- Blueprint completeness: every step carries `Status` and all four elements — Pre-condition,
+  Action, Post-condition, Rollback (`Rollback: none required — read-only` only on genuinely
+  read-only steps). A missing Post-condition or a silently absent Rollback on a
+  state-changing step is **Major**; on a destructive or irreversible step, **Blocking**.
+- Execution state and handoff: the plan carries the resume-rule `Gate.Before` and the
+  state-update `Guideline` (per `plan-template.md`), and step numbering is unambiguous
+  (`{phase}.{step}`). Without them a handoff session cannot know where to pick up — **Major**.
+- Rollback triggers are objective: metrics, log outputs, or time-bounds — not judgment
+  calls. A subjective abort criterion on a destructive path is **Major**.
+- PROCESS is Sequential: a plan offering the executor a choice of approaches is a design
+  document that has not finished deciding — **Major**.
+
 **Open-question markers**
 - A gap the author left as `{OPEN: … — why}` (per `framework.md` Notation) is **disclosed incompleteness, not a hidden defect.** Grade it by its impact if executed unfilled — a load-bearing `{OPEN}` on a destructive or irreversible path is still **Blocking**; an `{OPEN}` on a cosmetic choice is **Minor**. Never treat a properly-marked, disclosed open question as a trap; the trap is the *undisclosed guess*, which reads as a normal value and which this rubric cannot catch by inspection — the composing process (`operating-rules.md` §4) exists to prevent it.
 - While any `{OPEN}` marker remains, the instructions are incomplete by definition: they cannot grade **A**, and the Suggestion must name closing the open questions as the path to a higher grade.
