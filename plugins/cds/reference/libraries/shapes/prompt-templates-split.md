@@ -23,7 +23,7 @@ Two columns filling the main pane below a step indicator: the left column carrie
 
 ## Layout
 
-- **Split.** Two columns over the Section's content width: the templates panel takes roughly two-thirds (`grid-template-columns: minmax(0, 1fr) minmax(0, 67%)`), the prompt column the remainder, separated by a `--sp-1-5` gutter. Calibrates to 328px (prompt) / 711px (panel) columns at the reference desktop viewport (~1347px, inside an A1 main pane).
+- **Split.** Two columns over the Section's content width: the templates panel takes roughly two-thirds (`grid-template-columns: minmax(0, 1fr) minmax(0, 67%)`), the prompt column the remainder, separated by a `--sp-1-5` gutter. Calibrates to 328px (prompt) / 711px (panel) columns at the reference desktop viewport (~1347px, inside a rail-main main pane).
 - **Height.** The body fills the main-pane height remaining below the step indicator; the templates panel stretches to that height and scrolls its grid internally. Calibrates to a 762px panel at the reference viewport.
 
 ## Templates panel

@@ -16,9 +16,9 @@ Internal Building Blocks terms, with the user-facing alias on first use: **Secti
 
 This skill emits the mock-side render targets:
 
-- **assembled** (default) — Shell furniture + the Section Container. The user's "the page / full page".
-- **container-only** — the Section Container alone, no furniture. The user's "just the content, no nav, no footer".
-- **shell-only** — the Shell alone, its content slot labeled but unfilled. The user's "the frame / the chrome".
+- **assembled** (default) — the Shell's persistent Sections + the Section Container. The user's "the page / full page".
+- **container-only** — the Section Container alone, without the Shell's persistent Sections. The user's "just the content, no nav, no footer".
+- **shell-only** — the Shell alone, its Section Container slot labeled but unfilled (the Shell rendered as its template / Shell Template view). The user's "the frame / the chrome".
 - **spa** — one Shell, N Section Containers, a client-side switcher showing one at a time (the same mechanism as the color-mode toggle; no routing code).
 - **isolated section / component** — the piece in a minimal wrapper (width `--container-marketing-primary`, padding `--sp-4`, light color-mode default + toggle).
 
@@ -51,7 +51,7 @@ Runs in this exact order. Step 1 is the routing gate; alias translation (`../../
 
 ## Pipeline
 
-Execute the shared build pipeline (`../../reference/pipeline.md`) with render target = the target resolved in discovery (default `assembled`). The pipeline defines catalog resolution, the Shell → Section Container → per-Section resolution stages (including dynamic shape-selection, the page-constraint rejection loop, and fallback generation for a known Section whose candidates are all rejected), the stylesheet-freshness stage, the render targets, run-modes, sidecar emission, and the state record. This skill adds only the mock render specifics:
+Execute the shared build pipeline (`../../reference/pipeline.md`) with render target = the target resolved in discovery (default `assembled`). The pipeline defines catalog resolution, the Shell → Section Container → per-Section resolution stages (including dynamic Shape selection, the page-constraint rejection loop, and fallback generation for a known Section whose candidates are all rejected), the stylesheet-freshness stage, the render targets, run-modes, sidecar emission, and the state record. This skill adds only the mock render specifics:
 
 - **Assembly (mock).** Emit a single self-contained HTML file at the resolved output path. The `<head>` inlines `tokens.css`, `components.css`, `themes.css` (from `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`) inside one `<style>` block, then inlines the theming + color-mode scripts from `../../reference/foundations/implementation.md`. Asset references in supplied content inline as a `data:` URI when readable from disk; an absolute URL or unreadable path is used verbatim with a warning to the caller. The HTML carries no agent-side metadata — no decision logs, provenance comments, or structural maps (the reasoning lives in the sidecars).
 - **Build every Component to its `libraries/components/<name>.md` entry.** Layout, sizing, spacing, radius, and container width resolve from the generated tokens the entry's `token_bindings` name; the page block consumes them and declares no geometry of its own. A page-block override of a system geometry token is an `audit-against-system` finding (`../../reference/compliance.md`). A section wrapper's `max-width` is a `--container-*` width (`≥` the page width), never a `--column-*` reading width. If a needed dimension has no token, the gap belongs in the YAML `geometry:` block (STOP `MISSING_SPEC` and surface it), not in a page override.
@@ -66,7 +66,7 @@ Sidecars (`<basename>.wireframe.txt`, `<basename>.decisions.md`), the state reco
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the pipeline's freshness stage found the set stale or missing and the auto-invoked `generate-stylesheets` itself halted; the inner code is surfaced verbatim.
 - `SHELL_UNKNOWN:{name}` — a named Shell resolves in neither the reference nor the extensions.
 - `SECTION_CONTAINER_UNKNOWN:{name}` — the requested Section Container resolves in neither the reference nor the extensions.
-- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the container sequence resolves in neither the reference nor the extensions. (A *known* Section whose shape candidates are all rejected is not a halt — the pipeline fallback-generates a fitting layout and records it in the decisions sidecar.)
+- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the container sequence resolves in neither the reference nor the extensions. (A *known* Section whose Shape candidates are all rejected is not a halt — the pipeline fallback-generates a fitting layout and records it in the decisions sidecar.)
 - `MISSING_SPEC` — a required spec is too thin to render and is absent from both the reference and the extensions (name the gap).
 - `MISSING_COMPONENT:{name}` — a required Component is defined in neither reference nor extensions.
 - `UPDATE_SOURCE_UNREADABLE` — the existing artifact supplied for a brownfield update cannot be read or parsed.

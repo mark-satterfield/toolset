@@ -21,7 +21,7 @@ accessibility:
   - "role=dialog aria-modal aria-labelledby; focus trap per foundations/accessibility.md §18.3"
   - "aria-live=polite error surface in the body"
 token_bindings: [--surface-raised, --text-primary, --focus-ring]
-shell_furniture: false
+shell_component: false
 composite: true
 ---
 

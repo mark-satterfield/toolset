@@ -22,13 +22,13 @@ accessibility:
   - "badge <label> for= the textbox id; content role=textbox contenteditable"
   - "trailing actions are standalone tab-focusable buttons"
 token_bindings: [--surface-raised, --border-subtle, --text-primary, --text-tertiary, --focus-ring, --typeface-sans]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 
 # Editor card
 
-A self-contained card representing one labelled turn in a composed message sequence (system / user / assistant). The role badge is a small label absolutely positioned in the top-left corner of the card's chrome; the content area is a rich-text editor that fills the rest of the card. Optional trailing affordances (delete, info, expand, reorder) live in the top-right corner.
+A self-contained card representing one labelled turn in a composed message sequence (system / user / assistant). The role badge is a small label absolutely positioned in the top-left corner of the card; the content area is a rich-text editor that fills the rest of the card. Optional trailing affordances (delete, info, expand, reorder) live in the top-right corner.
 
 ## Slots
 

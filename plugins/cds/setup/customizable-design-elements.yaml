@@ -1,5 +1,5 @@
 # ============================================================
-# Customizable Design System — customizable elements
+# Configurable Design System (CDS) — customizable elements
 # Validates against: ./customizable-design-elements.schema.json
 # ============================================================
 
@@ -1383,11 +1383,11 @@ geometry:
     marketing-primary: { value: "1440px", description: "Marketing section-wrapper width (the page width)." }
     editorial:         { value: "1400px", description: "Editorial / long-form section-wrapper width." }
 
-  # ----- fixed element widths -> --element-{key} (foundations/layout.md §11.2)
-  # A fixed-width UI element (a card, not a section wrapper): its width is BELOW
-  # the page width, the opposite of a container. generate-stylesheets ALSO emits
-  # --container-conversion-card as an alias of --element-conversion-card until
-  # consumers migrate off the old container-scale name.
+  # ----- fixed Component widths -> --element-{key} (foundations/layout.md §11.2)
+  # A fixed width of a specific Component (a card, not a section wrapper): its
+  # width is BELOW the page width, the opposite of a container. generate-stylesheets
+  # ALSO emits --container-conversion-card as an alias of --element-conversion-card
+  # until consumers migrate off the old container-scale name.
   elements:
     conversion-card:   { value: "448px",  description: "Conversion card element width." }
 

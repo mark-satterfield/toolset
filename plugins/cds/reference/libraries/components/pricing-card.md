@@ -17,7 +17,7 @@ token_bindings:
   - --surface-raised
   - --border-subtle
   - --border-strong
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

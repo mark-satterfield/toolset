@@ -13,7 +13,7 @@ sizing:
 behavior: [display-toggle-mount, backdrop-blur]
 accessibility: [native-video-controls, caption-tracks, escape-close]
 token_bindings: []
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 
@@ -26,9 +26,9 @@ The modal dialog variant for video and image content, with a blurred backdrop: c
 - Backdrop: mapped near-black neutral at 90% opacity with `backdrop-filter: blur(5–10px)`. Lightboxes are the only dialogs that apply backdrop blur.
 - Content panel scales up to `75rem`, `90vw`, `90vh`.
 
-## Video player chrome
+## Video player controls
 
-Use the browser-native `<video controls>` chrome rather than a custom control bar, so the platform's accessible playback controls apply. Keyboard handling follows the native `<video>` contract: Space toggles play/pause when the player is focused, arrow keys seek and adjust volume, and `F` toggles fullscreen. Dialog-level Escape closes the lightbox (exiting fullscreen first if active), returning focus to the invoking element.
+Use the browser-native `<video controls>` playback controls rather than a custom control bar, so the platform's accessible playback controls apply. Keyboard handling follows the native `<video>` contract: Space toggles play/pause when the player is focused, arrow keys seek and adjust volume, and `F` toggles fullscreen. Dialog-level Escape closes the lightbox (exiting fullscreen first if active), returning focus to the invoking element.
 
 ## Caption tracks
 

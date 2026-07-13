@@ -20,7 +20,7 @@ accessibility:
   - "button role=switch + aria-checked; Space and Enter toggle"
   - "foundation focus ring on :focus-visible"
 token_bindings: [--switch-active-bg, --surface-tertiary, --surface-raised, --focus-ring]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

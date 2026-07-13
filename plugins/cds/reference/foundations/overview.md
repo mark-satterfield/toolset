@@ -12,7 +12,7 @@ Layer on top of this substrate:
 
 - A **dual-family type system** pairing a humanist Primary Sans with a literary Editorial Serif, plus a Mono family reserved for code. Each role is mapped to a font family of the implementer's choice.
 - A small set of **saturated panel grounds** reserved for theme-state interjections — feature panels, illustration tiles, badge fills. The shipped setup uses ten named tones (oat, peach, coral, fig, olive, mineral, cactus, sky, heather, plum); implementers map their own set into the same slot structure.
-- A **role-and-theme architecture** in which every paintable element names a role; the surrounding theme wrapper defines what that role resolves to.
+- A **role-and-theme architecture** in which every paintable Component names a role (the Element beneath it stays CDS-unaware); the surrounding theme wrapper defines what that role resolves to.
 
 The system is conservative on long-form reading and editorial surfaces, lively on marketing and product surfaces. Motion is quiet on legal, editorial, and authentication; livelier on hero and feature sections. Across all surfaces, the same primary ink, the same selection tint, and the same reading-column width recur.
 
@@ -25,7 +25,7 @@ Build every surface from a single shared token vocabulary. Do not let any compon
 The architecture rests on roles, not colors.
 
 ```
-An element names a role.
+A Component names a role.
 The palette names colors.
 A theme is the contract between them.
 
@@ -33,8 +33,8 @@ The palette contains named swatches.
 A theme assigns palette swatches to semantic roles.
 Color-mode selects the light or dark resolution of the active theme.
 The Section Container register determines which themes wrap which Sections.
-Elements do not know about palettes, themes, color-modes, or Section Containers.
-Elements only request semantic roles.
+Components do not know about palettes, themes, color-modes, or Section Containers.
+Components only request semantic roles.
 ```
 
 The seven layers, in resolution order — palette → role → theme → color-mode → Section Container register → Section → Component:
@@ -43,7 +43,7 @@ The seven layers, in resolution order — palette → role → theme → color-m
 2. **Roles** — semantic role slots: named CSS custom properties (`--surface-primary`, `--text-primary`, `--accent-primary`, etc.) that Components request.
 3. **Themes** — named wrapper classes (`editorial`, `deep`, etc.) that bind each role slot to a palette swatch.
 4. **Color-mode** — a single document-root marker (`data-mode="light"` or `data-mode="dark"`) that re-binds the roles of every active theme to its dark-mode swatches when set to dark.
-5. **Section Container register** (alias: page type) — a high-level surface classification (marketing, editorial, legal, authentication, application) that determines which themes wrap which Sections and how dense the visual rhythm is.
+5. **Section Container register** — the container's family classification (marketing, editorial, legal, authentication, application) plus its foundations bindings (type scale, motion register) that determine which themes wrap which Sections and how dense the visual rhythm is.
 6. **Sections** — block-level containers that carry a theme class and define the Section's vertical rhythm and grid.
 7. **Components** — leaves of the tree that paint themselves using only the role variables resolved by their nearest theme ancestor. The Element remains the conceptual floor beneath the Component: whatever paints, paints through a role.
 
@@ -52,7 +52,7 @@ Two peer token systems sit alongside the chain (they are not resolution layers):
 - **Motion behavior** is bound to interaction state (rest, hover, focus, active, in-viewport) and respects the user's `prefers-reduced-motion` preference. It does not consume role variables; it consumes **motion tokens** (durations, easing curves, and entrance-pattern parameters) — a configurable element set defined in the elements YAML `motion:` block and emitted globally, peer to color and geometry.
 - **Responsive behavior** scales typographic size, container width, section padding, and grid column count by viewport range. These are **geometry tokens** — a configurable element set defined in the elements YAML `geometry:` block (spacing, radius, section padding, container widths, and component sizing), emitted globally. Role variables do not change at breakpoints; geometry tokens interpolate with the viewport (`foundations/layout.md` §11.1).
 
-### How one element gets painted
+### How one Component gets painted
 
 The full rendering sequence:
 
@@ -70,11 +70,11 @@ The full rendering sequence:
 12. The component paints using the resolved swatch.
 
 ```
-The element never reads the palette.
-The element never reads the theme.
-The element never reads the color-mode.
-The element never reads the Section Container register.
-The element only reads its role.
+The Component never reads the palette.
+The Component never reads the theme.
+The Component never reads the color-mode.
+The Component never reads the Section Container register.
+The Component only reads its role.
 ```
 
 ---

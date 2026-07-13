@@ -19,7 +19,7 @@ content_defaults:
 
 # project-picker-gallery — Tabbed project cards with an onboarding lead card
 
-A project/file picker filling a canvas pane (typically Shell A5's Recent tab): a tab strip on the left with a right-aligned search input, then a responsive grid of cards. The first card is an onboarding card (small art glyph + title + tutorial link on a tinted ground); the rest are project cards (top color-band header + thumbnail panel + title + recency stamp + owner pill). The number of project cards is content-driven.
+A project/file picker filling a canvas pane (typically the form-sidebar-canvas Shell's Recent tab): a tab strip on the left with a right-aligned search input, then a responsive grid of cards. The first card is an onboarding card (small art glyph + title + tutorial link on a tinted ground); the rest are project cards (top color-band header + thumbnail panel + title + recency stamp + owner pill). The number of project cards is content-driven.
 
 Creation is owned by the Shell's form sidebar, not by this gallery — the user lands here to resume a recent project or follow the onboarding path.
 

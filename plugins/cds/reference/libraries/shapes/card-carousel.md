@@ -25,4 +25,4 @@ A single horizontal row of cards exceeding the viewport width, with prev/next ar
 
 ## Self-containment
 
-Paging and prev/next behavior are shape-level, not provided by the generated component stylesheet or any shared script. The fragment carries its own scoped `<style>` and a scoped IIFE `<script>` that scopes itself to its own instance(s) so multiple carousels on one page never collide; it implements the control states (`aria-disabled` at ends), snap-aligned paging, and the auto-advance pause/suppression rules, with motion gated by reduced motion.
+Paging and prev/next behavior are Shape-level, not provided by the generated component stylesheet or any shared script. The fragment carries its own scoped `<style>` and a scoped IIFE `<script>` that scopes itself to its own instance(s) so multiple carousels on one page never collide; it implements the control states (`aria-disabled` at ends), snap-aligned paging, and the auto-advance pause/suppression rules, with motion gated by reduced motion.

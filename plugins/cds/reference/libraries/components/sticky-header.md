@@ -4,7 +4,7 @@ name: sticky-header
 family: editorial
 aliases: [hide-on-scroll header, auto-hiding header, scroll-away nav]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: header, required: true, accepts: [topbar] }
@@ -21,7 +21,7 @@ token_bindings: []
 
 # Sticky header
 
-A header that hides on downward scroll and reappears on upward scroll. Optional; applies only to editorial surfaces. Shell furniture: a behavioral modifier over the topbar, inheriting its dimension contract.
+A header that hides on downward scroll and reappears on upward scroll. Optional; applies only to editorial surfaces. A behavioral modifier over the Shell's persistent top-nav Section (the topbar), inheriting its dimension contract.
 
 ## Variants
 

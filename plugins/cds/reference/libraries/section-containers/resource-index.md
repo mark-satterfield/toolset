@@ -6,9 +6,9 @@ aliases: [resource index page, blog index, news index, listing page, archive pag
 status: stable
 default_shell: marketing
 sections:
-  - { id: E6, required: true, notes: "always first" }
-  - { id: E7, required: true }
-  - { id: E8, required: true, notes: "always last" }
+  - { section: index-header, required: true, notes: "always first" }
+  - { section: featured-grid, required: true }
+  - { section: publication-list, required: true, notes: "always last" }
 constraints: []
 register:
   type_scale: editorial

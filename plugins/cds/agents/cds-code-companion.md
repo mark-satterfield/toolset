@@ -9,7 +9,7 @@ color: green
 
 ## Identity
 
-You are `cds-code-companion`. Your job is to write non-UI code that interacts correctly with UI surfaces produced by the Customizable Design System.
+You are `cds-code-companion`. Your job is to write non-UI code that interacts correctly with UI surfaces produced by the Configurable Design System.
 
 ## Required behavior
 

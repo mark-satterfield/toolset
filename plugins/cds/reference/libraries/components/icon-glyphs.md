@@ -14,7 +14,7 @@ accessibility:
   - "recolors with the surrounding theme through currentColor; no glyph names a swatch"
 token_bindings:
   - --text-tertiary
-shell_furniture: false
+shell_component: false
 composite: false
 content_defaults: {}
 ---

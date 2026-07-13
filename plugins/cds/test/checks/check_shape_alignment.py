@@ -3,7 +3,7 @@
 check_shape_alignment — shape-name integrity.
 
 Guards shape-NAME integrity: a property that, once broken, produces silent
-visual regressions (a section rendered with the wrong shape, or the retired
+visual regressions (a Section rendered with the wrong Shape, or the retired
 S#-index scheme creeping back after an incomplete rename). Checked statically
 against whatever the repo currently declares — no shape list, count, or class
 name is hardcoded beyond the structural contract under test.

@@ -4,7 +4,7 @@ name: account-row
 family: app
 aliases: [user menu, account menu, profile row, user row]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: avatar, required: true, accepts: [initial, image, icon-glyph] }
@@ -31,7 +31,7 @@ token_bindings: [--surface-raised, --border-subtle, --text-primary, --text-secon
 
 # Account row
 
-A row anchored to the bottom of the rail (or sidebar) showing the current user's identity, role/org, and an expandable menu trigger for account actions. Fills the left-rail's `account` slot. Shell furniture.
+A row anchored to the bottom of the rail (or sidebar) showing the current user's identity, role/org, and an expandable menu trigger for account actions. Fills the left-rail's `account` slot within the Shell's persistent rail Section.
 
 ## Variants
 

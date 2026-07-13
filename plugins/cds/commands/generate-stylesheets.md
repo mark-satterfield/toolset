@@ -1,5 +1,5 @@
 ---
-description: Regenerate the Customizable Design System stylesheet set — tokens.css, components.css, themes.css, and manifest.json — from the elements YAML and reference tree.
+description: Regenerate the Configurable Design System stylesheet set — tokens.css, components.css, themes.css, and manifest.json — from the elements YAML and reference tree.
 argument-hint: "[--full | --incremental]"
 allowed-tools: Read, Write, Bash, Glob, AskUserQuestion
 ---

@@ -2,9 +2,9 @@
 kind: component
 name: left-rail
 family: app
-aliases: [sidebar, rail, app rail, left nav, app shell left rail]
+aliases: [sidebar, rail, nav rail, app rail, left nav, app shell left rail]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: outer-rail, required: true, accepts: [workspace-switcher, section-header, item-row, account-row] }
@@ -34,7 +34,7 @@ token_bindings: [--surface-secondary, --surface-tertiary, --border-subtle, --tex
 
 # App shell left rail
 
-Three-pane navigation chrome for app Shells: the icon-rail and list-column collapse into a single rail column, with a fluid detail viewport filling the remaining width. Shell furniture.
+Three-pane navigation for app Shells: the icon-rail and list-column collapse into a single rail column, with a fluid detail viewport filling the remaining width. It realizes the Shell's persistent navigation rail Section.
 
 ## Variants
 

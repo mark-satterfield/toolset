@@ -8,11 +8,11 @@ The working catalog is the plugin's `reference/libraries/` + `reference/rules/` 
 
 ## Stages
 
-1. **Resolve the Shell.** Named by the user, or the Section Container's `default_shell`. Halt `SHELL_UNKNOWN:{name}` only when a named shell exists in neither source.
+1. **Resolve the Shell.** Named by the user, or the Section Container's `default_shell`. Halt `SHELL_UNKNOWN:{name}` only when a named Shell exists in neither source.
 2. **Resolve the Section Container.** Halt `SECTION_CONTAINER_UNKNOWN:{name}` when it exists in neither source.
 3. **Resolve each Section in order.**
    - `deterministic` → populate its fixed layout with the content.
-   - `dynamic` → run its shape-selection rule over the content contract signals + `page_meta`; take candidates in order (primary, alternates, default); validate each against the container's page constraints (rejection loop); apply the first survivor.
+   - `dynamic` → run its Shape Selection Rule (`shape-selection-rule`) over the content contract signals + `page_meta`; take candidates in order (primary, alternates, default); validate each against the container's Page-Level Aesthetic Constraints (`page-constraint` entries) in the post-selection rejection loop; apply the first survivor.
    - All candidates rejected → **fallback generation**: the composer constructs a layout that fits the content and satisfies the constraints, and the decisions sidecar records the layout as fallback-generated. Halt `SECTION_TYPE_UNKNOWN:{id}` only when the Section id itself exists in neither source.
 4. **Assemble** per the render target (below). Stylesheet freshness first: compare the `cds_hash.py` semantic fingerprints (elements YAML, reference tree, extensions tree) against `manifest.json`; on mismatch invoke `generate-stylesheets` and proceed — never halt for staleness; halt `STYLESHEETS_REGEN_FAILED:{inner}` only if that regeneration itself fails.
 5. **Emit sidecars and the state record** — both composers, every run:
@@ -25,8 +25,8 @@ The working catalog is the plugin's `reference/libraries/` + `reference/rules/` 
 
 | Target | What renders | Who uses it |
 |---|---|---|
-| `assembled` (default) | Shell furniture + the Section Container | both composers |
-| `container-only` | The Section Container alone — no furniture | both composers |
+| `assembled` (default) | the Shell's persistent Sections + the Section Container | both composers |
+| `container-only` | The Section Container alone — without the Shell's persistent Sections | both composers |
 | `shell-only` | The Shell with a labeled placeholder in its content slot | compose-page |
 | `spa` | One Shell, N Section Containers, a client-side switcher showing one at a time (same mechanism as the color-mode toggle; no routing code) | compose-page |
 | isolated section / component | The piece in a minimal wrapper (width `--container-marketing-primary`, padding `--sp-4`, light color-mode default + toggle) | compose-page |

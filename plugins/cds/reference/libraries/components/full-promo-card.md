@@ -15,7 +15,7 @@ accessibility: [non-interactive-container, whole-card-link-option]
 token_bindings:
   - --border-subtle
   - --surface-primary
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

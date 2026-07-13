@@ -4,7 +4,7 @@ name: skip-links
 family: shared
 aliases: [skip to content, skip navigation, bypass links]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: skip-link, required: true, accepts: [in-page-anchor] }
@@ -23,7 +23,7 @@ token_bindings: [--surface-primary, --text-primary, --radius-md, --focus-ring]
 
 # Skip links
 
-Keyboard-accessible jump targets at the top of the body that snap into view on focus. Shell furniture.
+Keyboard-accessible jump targets at the top of the body that snap into view on focus. It realizes one of the Shell's persistent Sections.
 
 ## Variants
 

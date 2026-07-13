@@ -23,4 +23,4 @@ A rotating quote in a viewport (one quote at a time with attribution) stacked ab
 
 ## Self-containment
 
-The synchronized rotation is shape-level behavior, not provided by the generated component stylesheet or any shared script. The fragment carries its own scoped `<style>` and a scoped IIFE `<script>` that scopes itself to its own instance(s) so multiple copies on one page never collide; it implements the paired quote/logo index advance, the hover/focus pause, and the reduced-motion suppression with manual prev/next as the static fallback.
+The synchronized rotation is Shape-level behavior, not provided by the generated component stylesheet or any shared script. The fragment carries its own scoped `<style>` and a scoped IIFE `<script>` that scopes itself to its own instance(s) so multiple copies on one page never collide; it implements the paired quote/logo index advance, the hover/focus pause, and the reduced-motion suppression with manual prev/next as the static fallback.

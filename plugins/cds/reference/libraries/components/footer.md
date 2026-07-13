@@ -4,7 +4,7 @@ name: footer
 family: shared
 aliases: [site footer, footer grid, footer navigation]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: columns, required: true, accepts: [column-heading, column-link] }
@@ -32,7 +32,7 @@ content_defaults:
 
 # Footer
 
-Multi-column site footer providing secondary navigation, legal, and social affordances. Shell furniture: the Shell places it below the content region as a named theme island, outside the Section Container's ground alternation.
+Multi-column site footer providing secondary navigation, legal, and social affordances. The Shell uses it as a persistent footer Section, placed below the content region as a named theme island, outside the Section Container's ground alternation.
 
 ## Slots
 

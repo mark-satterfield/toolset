@@ -1,0 +1,18 @@
+---
+kind: shape-selection-rule
+name: hero
+section: hero
+family: landing
+status: stable
+signals: [visual_type]
+table:
+  - { when: "visual_type == video", primary: centered-stack, alternates: [sub-hero-split] }
+  - { when: "visual_type == screenshot", primary: split-text-media, alternates: [centered-stack] }
+  - { when: "visual_type == code-or-install-snippet", primary: centered-affordance, alternates: [centered-stack] }
+  - { when: "visual_type == chat-or-live-affordance", primary: centered-affordance, alternates: [] }
+default: centered-stack
+---
+
+# Shape selection — Hero
+
+The hero's pick is driven entirely by the visual the content supplies. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`); if every candidate is rejected, the composer falls back to agent-generated layout and records that in the decisions sidecar.

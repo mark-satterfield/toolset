@@ -1,5 +1,5 @@
 ---
-description: Export the live Customizable Design System as a single DESIGN.md file — the map of colors, typography, geometry, motion, the Building Blocks catalog, rules, and compliance, written to the DESIGN.md convention for humans and tools alike.
+description: Export the live Configurable Design System as a single DESIGN.md file — the map of colors, typography, geometry, motion, the Building Blocks catalog, rules, and compliance, written to the DESIGN.md convention for humans and tools alike.
 argument-hint: "[output-path]"
 allowed-tools: Read, Write, Bash, Glob, AskUserQuestion
 ---

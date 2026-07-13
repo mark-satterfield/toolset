@@ -2,9 +2,9 @@
 kind: component
 name: mobile-drawer
 family: shared
-aliases: [hamburger menu, mobile nav, mobile menu, nav drawer]
+aliases: [hamburger menu, mobile nav, mobile menu, nav drawer, drawer]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: hamburger, required: true, accepts: [button] }
@@ -27,7 +27,7 @@ token_bindings: [--surface-primary, --container-margin, --ease-in-out-expo]
 
 # Mobile drawer
 
-Collapses the desktop topbar into a full-viewport drawer at mobile widths, sharing the same DOM as the topbar. Shell furniture.
+Collapses the desktop topbar into a full-viewport drawer at mobile widths, sharing the same DOM as the topbar. It realizes the Shell's persistent top-nav Section at mobile widths.
 
 ## Variants
 

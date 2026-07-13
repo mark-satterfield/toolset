@@ -101,12 +101,12 @@
         },
         "container_var_pattern": {
           "type": "string",
-          "description": "Pattern for section-wrapper-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-primary, editorial). A container is a section wrapper; its width is >= the page width, without exception (fixed sub-page element widths live in geometry.elements, not here).",
+          "description": "Pattern for section-wrapper-width CSS variable names. {key} is the geometry.containers identifier (e.g. marketing-primary, editorial). A container is a section wrapper; its width is >= the page width, without exception (fixed sub-page Component widths (the geometry.elements group) live in geometry.elements, not here).",
           "examples": ["--container-{key}"]
         },
         "element_var_pattern": {
           "type": "string",
-          "description": "Pattern for fixed-element-width CSS variable names. {key} is the geometry.elements identifier (e.g. conversion-card). An element width is a fixed dimension of a specific component/card, always BELOW the page width — the opposite of a container. For backward compatibility the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name.",
+          "description": "Pattern for fixed-element-width CSS variable names. {key} is the geometry.elements identifier (e.g. conversion-card). A fixed width of a specific Component (e.g. the conversion card), always BELOW the page width — the opposite of a container. For backward compatibility the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name.",
           "examples": ["--element-{key}"]
         },
         "column_var_pattern": {
@@ -709,7 +709,7 @@
         },
         "elements": {
           "$ref": "#/$defs/GeometryScale",
-          "description": "Fixed-width UI elements that are NOT section wrappers (emitted via element_var_pattern, default --element-{key}). An element width is a fixed dimension of a specific component or card — e.g. the conversion card at 448px — and is always BELOW the page width, the opposite of a `containers` entry. Compatibility: for the conversion-card key the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name."
+          "description": "Fixed component widths that are NOT section wrappers (emitted via element_var_pattern, default --element-{key}). Each entry is a fixed dimension of a specific Component (e.g. the conversion card at 448px), always BELOW the page width — the opposite of a `containers` entry. The `elements` group key and `--element-{key}` variable names are retained machine identifiers. Compatibility: for the conversion-card key the generator ALSO emits --container-conversion-card as an alias of --element-conversion-card until consumers migrate off the old container-scale name."
         },
         "columns": {
           "$ref": "#/$defs/GeometryScale",

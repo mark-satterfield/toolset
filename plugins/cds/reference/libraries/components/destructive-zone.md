@@ -15,7 +15,7 @@ behavior:
 accessibility:
   - "inherits the destructive-button contract, including the destructive focus ring"
 token_bindings: [--border-subtle, --button-destructive-bg, --button-destructive-text]
-shell_furniture: false
+shell_component: false
 composite: true
 ---
 
@@ -30,7 +30,7 @@ The destructive action does NOT sit inside a bordered or tinted card. It sits in
 - Wrapper layout: `display: block`, full container width.
 - Wrapper padding: `--sp-1-5` top only (calibrates to 24px) — the divider provides the visual separation; no left/right/bottom padding.
 - Wrapper border: `1px solid --border-subtle` on the TOP edge only.
-- Wrapper background: inherits the page surface (no tint, no card chrome).
+- Wrapper background: inherits the page surface (no tint, no card styling).
 
 The destructive zone pattern is **divider-delimited, not card-delimited**. A bordered/tinted destructive card is an alternative pattern this system does not use.
 

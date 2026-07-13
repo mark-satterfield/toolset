@@ -21,13 +21,13 @@ accessibility:
   - "visually-hidden label or aria-label matching the placeholder"
   - "Escape clears the focused input"
 token_bindings: [--surface-raised, --border-subtle, --border-strong, --focus-ring, --text-primary, --text-tertiary, --typeface-sans]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 
 # List filter
 
-A single-line text input with a leading search glyph and a placeholder, used to filter a list rendered elsewhere on the same page. Distinct from the general-purpose search input (`libraries/components/search-input.md`); the list filter is the in-list filter pattern with a wrapper that owns the chrome and a transparent inner input.
+A single-line text input with a leading search glyph and a placeholder, used to filter a list rendered elsewhere on the same page. Distinct from the general-purpose search input (`libraries/components/search-input.md`); the list filter is the in-list filter pattern with a wrapper that owns the visual styling and a transparent inner input.
 
 ## Slots
 

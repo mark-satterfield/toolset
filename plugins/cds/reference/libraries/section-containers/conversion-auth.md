@@ -6,8 +6,8 @@ aliases: [conversion page, authentication page, sign-in page, sign-up page, logi
 status: stable
 default_shell: auth
 sections:
-  - { id: X1, required: true, notes: "always first" }
-  - { id: X2, required: true, notes: "always last" }
+  - { section: conversion-headline, required: true, notes: "always first" }
+  - { section: conversion-card, required: true, notes: "always last" }
 constraints: []
 register:
   type_scale: authentication-card
@@ -16,7 +16,7 @@ register:
 
 # Conversion / Authentication Page
 
-A single-action conversion surface: one prominent input, two-to-three secondary actions, and minimal surrounding chrome. The Shell supplies the stripped topbar and the dark footer; this container is content Sections only, in the fixed order above: marketing headline → card.
+A single-action conversion surface: one prominent input, two-to-three secondary actions, and a minimal surrounding Shell. The Shell supplies the stripped topbar and the dark footer; this container is content Sections only, in the fixed order above: marketing headline → card.
 
 ## Theme
 

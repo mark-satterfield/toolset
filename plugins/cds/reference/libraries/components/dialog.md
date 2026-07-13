@@ -16,7 +16,7 @@ accessibility: [modal-dialog-pattern, focus-trap, escape-close]
 token_bindings:
   - --surface-raised
   - --text-primary
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

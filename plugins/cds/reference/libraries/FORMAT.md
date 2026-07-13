@@ -2,14 +2,13 @@
 
 Every Building Block is one `.md` file: typed YAML frontmatter + a body. The same format applies in the plugin's `reference/libraries/` and `reference/rules/` trees and in a project's extensions dir (`$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` mirrors both trees; a matching `kind` + basename overrides the plugin entry wholesale).
 
-Terminology is the Building Blocks vocabulary: Component, Shape, Section, Section Container, Shell, plus the two rule kinds (shape-selection-rule, page-constraint). `reference/aliases.md` maps user-facing words onto these; entry bodies use the internal vocabulary only.
+Terminology is the Building Blocks vocabulary: Element (concept only — never configured), Component (a component library entry is a Component Definition; a Component on a page is an instance of it), Shape, Section, Section Container (user-facing alias: page type), Shell, plus the two rule kinds: Shape Selection Rules (`shape-selection-rule`) and Page-Level Aesthetic Constraints (`page-constraint`). `reference/aliases.md` maps user-facing words onto these; entry bodies use the internal vocabulary only.
 
 ## Common frontmatter (every kind)
 
 ```yaml
 kind: component | shape | section | section-container | shell | shape-selection-rule | page-constraint
-name: kebab-case-name          # basename of the file (sections prefix their id: t1-hero.md)
-id: T1                         # stable ID. Required for sections (T#, E#, D#, X#, AS#) and app shells (A#); named section-containers and named shells omit it. Never reused after retirement.
+name: kebab-case-name          # basename of the file (e.g. hero.md → hero); the entry is cited by this name everywhere
 family: landing | editorial | docs | auth | app | shared
 aliases: []                    # user-facing names this entry answers to
 status: stable | draft
@@ -25,7 +24,7 @@ sizing: {}                     # dimension contract: token refs and derivation f
 behavior: []                   # interaction contracts: events, states, keyboard
 accessibility: []              # ARIA pattern, focus, contrast obligations
 token_bindings: []             # role tokens the component consumes (semantic vocabulary only)
-shell_furniture: false         # true for chrome: topbar, footer, rail, drawer, skip-links, switcher, account-row
+shell_component: false            # true for Components that realize a Shell's persistent Sections: topbar, footer, rail, drawer, skip-links, switcher, account-row
 composite: false               # true for multi-component compositions (modal-with-form, field-group, destructive-zone)
 content_defaults: {}           # declared example content (e.g. the footer's default column IA); supplied content overrides
 ```
@@ -45,13 +44,13 @@ content_defaults: {}           # declared example content for drafted-mode scaff
 mode: deterministic | dynamic  # deterministic: layout fixed here; dynamic: Shape assigned at build by the rule engine
 content_contract: {}           # the typed signals this section's rule consumes (the completed content_meta fields relevant to it)
 theme: default                 # theme class or `scheduled` (takes the constraint-assigned ground)
-composition_notes: []          # cross-section notes (e.g. T14 may embed inside T10)
+composition_notes: []          # cross-section notes (e.g. cross-promo may embed inside trust-detail)
 ```
 
 ### section-container
 
 ```yaml
-sections: []                   # ordered: {id, required, notes}
+sections: []                   # ordered: {section, required, notes} — each names a Section by name
 constraints: []                # page-constraint refs applying to this container
 register: {}                   # foundations bindings: type scale, motion register
 default_shell: marketing      # shell name resolved when the user asks for "the page"
@@ -59,18 +58,20 @@ default_shell: marketing      # shell name resolved when the user asks for "the 
 
 ### shell
 
+A Shell entry may describe a Shell Template — persistent Sections pinned around a placeholder `content_slot` for a Section Container — or an instantiated Shell persisted for reuse; the composer instantiates a Template into a Shell.
+
 ```yaml
-furniture: []                  # component refs (topbar, footer, rail, …) with placement
+sections: []                   # each persistent Section of the Shell, realized by a named Component (topbar, footer, rail, …), with placement
 panes: []                      # named regions for app shells: {name, width: token-or-formula, collapse}
 content_slot: {}               # what the shell accepts: {kinds: [section-container], families: []}
 ```
 
-Shell IDs: marketing/editorial/docs/auth shells are named; app shells keep the letter code law (A1–A5 shipped; extensions A6…A26, then AA1). A novel viewport partitioning always takes a new letter code — never a variant of an existing one.
+Every Shell is named by its layout (marketing, editorial, docs, auth, rail-main, …). A novel viewport partitioning always takes a new name — never a variant of an existing one.
 
 ### shape-selection-rule
 
 ```yaml
-section: T1                    # the Section this rule serves (one file per section)
+section: hero                  # the Section this rule serves, by name (one file per section)
 signals: []                    # content_contract fields consulted
 table: []                      # ordered rows: {when: predicate over signals+page_meta, primary: shape, alternates: [shapes]}
 default: shape-name            # fallback candidate before agent generation

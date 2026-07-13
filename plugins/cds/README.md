@@ -1,4 +1,4 @@
-# CDS — Customizable Design System
+# CDS — Configurable Design System
 
 A brand-neutral design system you install in any project. CDS gives you a stylesheet set, a way to mock pages, sections, and components, a way to ship framework-native in-app surfaces, a way to package an approved mock into a hand-off bundle, a DESIGN.md export, and an audit tool — all derived from one YAML file of design choices you supply.
 
@@ -6,8 +6,8 @@ A brand-neutral design system you install in any project. CDS gives you a styles
 
 ## What's in the box
 
-- **8 slash commands** for direct invocation: `/cds:setup`, `/cds:generate-stylesheets`, `/cds:compose-page`, `/cds:compose-app-surface`, `/cds:apply-design-system`, `/cds:audit-against-system`, `/cds:export-design`, `/cds:package-change`.
-- **8 skills** the commands invoke. Seven also auto-route from natural-language phrasing (the model recognizes "build me a landing page", "audit this UI", "regenerate the CSS", "export the design system", "package this change", etc.). The `setup` skill carries `disable-model-invocation: true` and fires only from `/cds:setup`.
+- **9 slash commands** for direct invocation: `/cds:setup`, `/cds:generate-stylesheets`, `/cds:compose-page`, `/cds:review-mock`, `/cds:compose-app-surface`, `/cds:apply-design-system`, `/cds:audit-against-system`, `/cds:export-design`, `/cds:package-change`.
+- **9 skills** the commands invoke. Eight also auto-route from natural-language phrasing (the model recognizes "build me a landing page", "open the mock so I can comment", "audit this UI", "regenerate the CSS", "export the design system", "package this change", etc.). The `setup` skill carries `disable-model-invocation: true` and fires only from `/cds:setup`.
 - **2 sub-agents** that bundle the right skills with an identity: `cds-ui-author` (for UI work), `cds-code-companion` (for non-UI code that touches UI).
 - **A reference tree** of every fixed design decision — the Building Blocks catalog (`reference/libraries/`), the composition rules (`reference/rules/`), the foundations (spacing, motion, type scales, accessibility, imagery), the shared build pipeline, the artwork contract, and the compliance rules — that the skills consult deterministically.
 - **A schema** (2.0) for the one file you customize (`customizable-design-elements.yaml`).
@@ -20,13 +20,13 @@ What you supply: the YAML. Optionally, environment variables for default paths.
 
 Everything the catalog holds is one of five kinds, plus two rule kinds. The skills translate your everyday words onto these at the boundary (`reference/aliases.md`) and use the internal vocabulary from there.
 
-- **Component** — the smallest CDS-aware unit (button, text input, footer, topbar). Carries five contracts: slots, sizing, behavior, accessibility, token bindings.
-- **Shape** — a content-free slot arrangement for one Section. An abstract layout contract.
+- **Component** — the smallest CDS-aware unit, built from Elements (browser-native DOM nodes — a concept only, never configured). Carries five contracts: slots, sizing, behavior, accessibility, token bindings. A catalog entry is a Component Definition; a Component on a page is an instance of its Definition.
+- **Shape** — a template: an abstract, content-free layout contract describing a slot arrangement. Shapes live in a library; multiple Shapes can serve the same Section type, and a dynamic Section receives its Shape at build time.
 - **Section** — a themable content container. `deterministic` (its layout is fixed at definition) or `dynamic` (its Shape is chosen at build by the rule engine).
 - **Section Container** — an ordered list of Sections forming a page region or a whole page. **User-facing alias: "page type."**
-- **Shell** — the outermost frame: it wraps a Section Container with persistent furniture (topbar/footer for marketing, rail/panes for app).
+- **Shell** — the outermost structural frame: it wraps a Section Container with persistent Sections (topbar/footer for marketing, rail/panes for app). A Shell Template pins those persistent Sections around a placeholder slot for a Section Container; the composer instantiates it into a Shell that can be persisted for reuse.
 
-Plus the rules the composer runs: a **shape-selection rule** per dynamic Section (content signals → an ordered list of eligible Shapes) and **page-constraint** entries (post-selection validators over the accumulating page — the Variety Principle, alternation schedule, eyebrow deny-by-default, etc.).
+Plus the rules the composer runs: a **Shape Selection Rule** per dynamic Section (content signals → an ordered list of eligible Shapes) and **Page-Level Aesthetic Constraint** entries (post-selection validators run in a rejection loop over the accumulating page — the Variety Principle, alternation schedule, eyebrow deny-by-default, etc.).
 
 Each Building Block is one `.md` file (typed YAML frontmatter + body) under `reference/libraries/{components,shapes,sections,section-containers,shells}/` and `reference/rules/{shape-selection,page-constraints}/`. Entry format is `reference/libraries/FORMAT.md`.
 
@@ -46,7 +46,7 @@ Each Building Block is one `.md` file (typed YAML frontmatter + body) under `ref
 
 CDS reads its configuration from environment variables in your `settings.json`'s `env` block. All are optional — when one is unset, the relevant skill asks you for the value at call time (or halts with the matching code if you decline).
 
-Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-var rules).
+Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-var rules). The `CUSTOMIZABLE_DESIGN_SYSTEM_` prefix (and the `customizable-design-elements.yaml` filename) predate the rename to Configurable Design System and are retained verbatim for compatibility.
 
 | Variable | Required? | Resolves | Consumed by |
 |---|---|---|---|
@@ -119,7 +119,13 @@ What you do NOT put in this YAML: the default spacing / type scale / motion / ra
 
 > "Build a landing page for our launch."
 
-`compose-page` runs the shared build pipeline (`reference/pipeline.md`) and produces one self-contained HTML file you can open in a browser, attach to a spec, or send for review. It inlines the stylesheet set and a light/dark color-mode toggle. Two content modes: **drafted** (the skill generates a fill-in scaffold from the resolved Sections' slots) or **supplied** ("render this blog post: docs/announcements/launch.md" — the skill parses your content into the chosen page type). Isolated section/component requests wrap the piece in a minimal page so the browser can render it.
+`compose-page` runs the shared build pipeline (`reference/pipeline.md`) and produces one self-contained HTML file you can open in a browser, attach to a spec, or send for review. It inlines the stylesheet set and a light/dark color-mode toggle. Two content modes: **drafted** (the skill generates a fill-in scaffold from the resolved Sections' slots) or **supplied** ("render this blog post: docs/announcements/launch.md" — the skill parses your content into the chosen Section Container (page type)). Isolated Section/Component requests wrap the piece in a minimal page so the browser can render it.
+
+### Review a mock visually
+
+> "Open the mock so I can comment on it."
+
+`review-mock` closes the loop between composing and iterating: **compose → review-mock → paste the change request → compose iterates.** It runs `tools/build-review-harness.py` to build a playground-style harness (`<mock>.review.html`, one self-contained file) beside the mock and opens it in your browser. The harness embeds the mock exactly as shipped (light/dark toggle intact), maps the wireframe sidecar's blocks onto the page's structural regions — hovering shows each region's Building Blocks identity (the Section id and the Shape it received), clicking pins a numbered comment with quick tags (copy, layout, color, spacing, swap-shape, remove, add) — and a bottom panel assembles one natural-language change request grouped by region. Press Copy and paste it back to Claude: the request names the mock's file path, so it routes straight into `compose-page` iteration against the same output path. Without sidecars the harness still works, labeling regions "Region 1..N". The `.review.html` is a review artifact, not a deliverable — `package-change` does not bundle it.
 
 ### Build an in-app surface
 
@@ -133,11 +139,11 @@ Both composers render the one pipeline; they differ in output form (mock HTML vs
 
 | Target | What renders | Composer |
 |---|---|---|
-| `assembled` (default) | Shell furniture + the Section Container — "the full page" | both |
+| `assembled` (default) | the Shell's persistent Sections + the Section Container — "the full page" | both |
 | `container-only` | The Section Container alone — no nav, no footer | both |
 | `shell-only` | The Shell with a labeled, unfilled content slot — "the frame / the chrome" | `compose-page` |
 | `spa` | One Shell, N Section Containers, a client-side switcher showing one at a time (same mechanism as the color-mode toggle; no routing code) | `compose-page` |
-| isolated section / component | The piece in a minimal wrapper (`--container-marketing-primary` width, `--sp-4` padding, light mode + toggle) | `compose-page` |
+| isolated Section / Component | The piece in a minimal wrapper (`--container-marketing-primary` width, `--sp-4` padding, light mode + toggle) | `compose-page` |
 
 ### The sidecars (every run, both composers)
 
@@ -194,7 +200,7 @@ For one-shot operations (regenerate stylesheets, audit one file, one quick mock)
 
 For sustained work, spawn the appropriate sub-agent (Task tool, `subagent_type=cds-ui-author` or `cds-code-companion`):
 
-- **`cds-ui-author`** — wraps `compose-page`, `compose-app-surface`, `apply-design-system`, `audit-against-system`, `export-design`, `package-change`. Its system prompt mandates consulting the catalog and self-auditing before declaring done, and forbids hand-rolling markup or CSS. `agents/cds-ui-author.md`.
+- **`cds-ui-author`** — wraps `compose-page`, `review-mock`, `compose-app-surface`, `apply-design-system`, `audit-against-system`, `export-design`, `package-change`. Its system prompt mandates consulting the catalog and self-auditing before declaring done, and forbids hand-rolling markup or CSS. `agents/cds-ui-author.md`.
 - **`cds-code-companion`** — wraps `apply-design-system`, `audit-against-system`. Use when an agent writes non-UI code that touches generated UI and you want the design vocabulary loaded up front. `agents/cds-code-companion.md`.
 
 Sub-agents are recommended, not enforcement gates: every skill stays directly callable by its slash command, its natural-language trigger, or an explicit invocation. A caller that bypasses the sub-agents bypasses the system-prompt mandates that come with them.
@@ -220,11 +226,11 @@ Matching uses strict `output_path` equality. A fresh output path starts fresh; a
 - It will not emit theme controllers, mode resolvers, or routing for in-app surfaces. Your host project owns those.
 - It will not embed metadata inside a deliverable. Mocks and emitted code are clean; reasoning lives in the sidecars.
 - It will not invent catalog entries. New colors, roles, or themes are your work in the elements YAML; new Building Blocks go in your extensions dir. An **unknown** Shell, Section Container, or Section id halts (`SHELL_UNKNOWN`, `SECTION_CONTAINER_UNKNOWN`, `SECTION_TYPE_UNKNOWN`) rather than guessing.
-- It will **not** halt when a *known* dynamic Section's shape candidates are all rejected by the page constraints. Instead the composer **fallback-generates** a layout that fits the content and satisfies the constraints, and records it as fallback-generated in the decisions sidecar. (This replaces the old shape-rules halt: the "no best guess" principle now lives at the catalog boundary — unknown entries — not at the composition boundary.)
+- It will **not** halt when a *known* dynamic Section's shape candidates are all rejected by the Page-Level Aesthetic Constraints. Instead the composer **fallback-generates** a layout that fits the content and satisfies the constraints, and records it as fallback-generated in the decisions sidecar. (This replaces the old shape-rules halt: the "no best guess" principle now lives at the catalog boundary — unknown entries — not at the composition boundary.)
 
 ### Halt codes you may see
 
-`WRONG_SKILL` · `SHELL_UNKNOWN` · `SECTION_CONTAINER_UNKNOWN` · `SECTION_TYPE_UNKNOWN` · `MISSING_COMPONENT` · `MISSING_SPEC` · `STYLESHEETS_REGEN_FAILED` · `UPDATE_SOURCE_UNREADABLE` · `UPDATE_TARGET_AMBIGUOUS` · `ARTWORK_UNRESOLVABLE` · `COMPLIANCE_UNSATISFIABLE` · `SHELL_FIT_FAILED` · `FRAMEWORK_UNSET` · `OUTPUT_PATH_UNRESOLVABLE` · `TARGET_UNREADABLE` · `STATE_RECORD_NOT_FOUND` · `ASSETS_UNRESOLVABLE` · `ELEMENTS_YAML_UNSET` · `ELEMENTS_INVALID` · `ELEMENTS_VERSION_MISMATCH`.
+`WRONG_SKILL` · `SHELL_UNKNOWN` · `SECTION_CONTAINER_UNKNOWN` · `SECTION_TYPE_UNKNOWN` · `MISSING_COMPONENT` · `MISSING_SPEC` · `STYLESHEETS_REGEN_FAILED` · `UPDATE_SOURCE_UNREADABLE` · `UPDATE_TARGET_AMBIGUOUS` · `ARTWORK_UNRESOLVABLE` · `COMPLIANCE_UNSATISFIABLE` · `SHELL_FIT_FAILED` · `FRAMEWORK_UNSET` · `OUTPUT_PATH_UNRESOLVABLE` · `TARGET_UNREADABLE` · `REVIEW_HARNESS_FAILED` · `STATE_RECORD_NOT_FOUND` · `ASSETS_UNRESOLVABLE` · `ELEMENTS_YAML_UNSET` · `ELEMENTS_INVALID` · `ELEMENTS_VERSION_MISMATCH`.
 
 ---
 
@@ -260,7 +266,7 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 
 **"The skill stopped with `SECTION_CONTAINER_UNKNOWN:editorial-detail`."** Neither the plugin catalog nor your extensions carry that Section Container. The composer halts rather than guess — add the entry to `reference/libraries/section-containers/` or to your `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/libraries/section-containers/`.
 
-**"A section's layout says it was fallback-generated."** That is not an error. A known dynamic Section whose shape candidates were all rejected by the page constraints gets a composer-generated layout that fits — the decisions sidecar records exactly which candidates were rejected and why.
+**"A Section's layout says it was fallback-generated."** That is not an error. A known dynamic Section whose shape candidates were all rejected by the Page-Level Aesthetic Constraints gets a composer-generated layout that fits — the decisions sidecar records exactly which candidates were rejected and why.
 
 **"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the catalog. Add its entry under `reference/libraries/components/` (or your extensions dir) to enable it.
 
@@ -284,8 +290,9 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 | The artwork contract | `reference/artwork.md` |
 | Compliance rules | `reference/compliance.md` |
 | Sub-agent system prompts | `agents/cds-ui-author.md`, `agents/cds-code-companion.md` |
-| Slash commands | `commands/{setup,generate-stylesheets,compose-page,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}.md` |
-| Skills | `skills/{setup,generate-stylesheets,compose-page,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}/SKILL.md` |
+| Slash commands | `commands/{setup,generate-stylesheets,compose-page,review-mock,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}.md` |
+| Skills | `skills/{setup,generate-stylesheets,compose-page,review-mock,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}/SKILL.md` |
+| The review-harness builder | `tools/build-review-harness.py` |
 | Schema 2.0 migration record + tooling | `analysis/schema-2-migration-notes.md`, `tools/migrate-elements.py` |
 | Your per-run skill state | `~/.claude/customizable-design-system/state/{skill}/` (global) or `<project>/.claude/customizable-design-system/state/{skill}/` (project) |
 | The plugin manifest | `.claude-plugin/plugin.json` |

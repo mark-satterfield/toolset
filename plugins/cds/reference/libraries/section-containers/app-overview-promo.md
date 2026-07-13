@@ -4,13 +4,13 @@ name: app-overview-promo
 family: app
 aliases: [product overview screen, feature overview, tier overview, promo dashboard]
 status: stable
-default_shell: A1
+default_shell: rail-main
 sections:
-  - { id: AS1, required: true, notes: "title variant with a period picker in the right cluster" }
-  - { id: AS9, required: true }
-  - { id: AS2, required: true, notes: "tile size variant; typical content: 2 stat tiles" }
-  - { id: AS6, required: true, notes: "typical content: 2 chart cards side by side, each with a legend" }
-  - { id: AS10, required: false }
+  - { section: page-header, required: true, notes: "title variant with a period picker in the right cluster" }
+  - { section: hero-promo, required: true }
+  - { section: kpi-summary, required: true, notes: "tile size variant; typical content: 2 stat tiles" }
+  - { section: chart-panels, required: true, notes: "typical content: 2 chart cards side by side, each with a legend" }
+  - { section: info-note, required: false }
 constraints: []
 register:
   motion_register: application-shell
@@ -18,7 +18,7 @@ register:
 
 # App overview with promo
 
-A product-tier or feature-specific overview screen that combines a promotional card (CTA to onboard or upgrade) with at-a-glance metrics: page heading with a period picker, a full-width hero promo card, a stat-tile pair, a chart-card pair, and an info-note footer strip. Fills the main pane of an app Shell (default A1).
+A product-tier or feature-specific overview screen that combines a promotional card (CTA to onboard or upgrade) with at-a-glance metrics: page heading with a period picker, a full-width hero promo card, a stat-tile pair, a chart-card pair, and an info-note footer strip. Fills the main pane of an app Shell (default rail-main).
 
 ## Determinations
 

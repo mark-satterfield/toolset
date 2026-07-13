@@ -18,7 +18,7 @@ content_defaults:
 
 # tool-permission-detail — Read/write groups with per-row policy controls
 
-An integration/connector permission editor filling a detail viewport (typically Shell A4's): a connector header — logo + name on the left, a "Disconnect" link and a kebab menu (View details / Refresh tools list / Remove) on the right — a 1–3-sentence description, a "Tool permissions" subhead with a one-line helper, then collapsible permission groups. Each group carries a label, a count badge, and a right-aligned default-policy chip; its rows each carry a one-line tool description on the left and three per-row policy controls on the right (allow / approve / deny glyph buttons).
+An integration/connector permission editor filling a detail viewport (typically the mini-rail-list-detail Shell's): a connector header — logo + name on the left, a "Disconnect" link and a kebab menu (View details / Refresh tools list / Remove) on the right — a 1–3-sentence description, a "Tool permissions" subhead with a one-line helper, then collapsible permission groups. Each group carries a label, a count badge, and a right-aligned default-policy chip; its rows each carry a one-line tool description on the left and three per-row policy controls on the right (allow / approve / deny glyph buttons).
 
 ## HTML skeleton
 

@@ -23,7 +23,7 @@ accessibility:
   - "Enter/Space opens the dialog popover"
   - "wrapper non-focusable; Tab focuses the inner button"
 token_bindings: [--surface-raised, --border-subtle, --border-strong, --focus-ring, --error-text, --text-primary, --text-tertiary, --typeface-sans]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

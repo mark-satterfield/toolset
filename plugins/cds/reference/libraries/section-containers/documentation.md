@@ -6,8 +6,8 @@ aliases: [documentation page, docs page, reference page, legal page, terms page,
 status: stable
 default_shell: docs
 sections:
-  - { id: D1, required: true, notes: "always first" }
-  - { id: D2, required: true, notes: "always last" }
+  - { section: doc-header, required: true, notes: "always first" }
+  - { section: doc-body, required: true, notes: "always last" }
 constraints: []
 register:
   type_scale: editorial
@@ -52,7 +52,7 @@ Long-form reference content: legibility and stability. Closest in style to edito
 
 ### Motion (documentation register, `foundations/motion.md` §15.3)
 
-- Only footer link colors transition (200ms) — Shell furniture.
+- Only footer link colors transition (200ms) — the footer is a persistent Shell Section.
 - The topbar has no transition.
 
 ### Responsive

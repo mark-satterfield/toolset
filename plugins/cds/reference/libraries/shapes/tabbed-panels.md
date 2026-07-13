@@ -24,4 +24,4 @@ A horizontal tab strip above a single full-width panel that swaps on selection; 
 
 ## Self-containment
 
-Tab switching is shape-level behavior, not a component-family style, so the generated component stylesheet does not provide it. The fragment carries its own scoped `<style>` and a scoped `<script>` written as an IIFE that scopes itself to its own instance(s) so multiple copies on one page never collide. The script implements the tablist keyboard contract (arrow-key navigation, `aria-selected` management) per `foundations/accessibility.md`; the cross-fade is gated by reduced motion with an instant-swap fallback.
+Tab switching is Shape-level behavior, not a component-family style, so the generated component stylesheet does not provide it. The fragment carries its own scoped `<style>` and a scoped `<script>` written as an IIFE that scopes itself to its own instance(s) so multiple copies on one page never collide. The script implements the tablist keyboard contract (arrow-key navigation, `aria-selected` management) per `foundations/accessibility.md`; the cross-fade is gated by reduced motion with an instant-swap fallback.

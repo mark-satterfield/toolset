@@ -114,7 +114,7 @@ Clamp between a 20rem viewport (`min`) and a 90rem viewport (`max`).
 
 ## §13.5 Editorial scale (sans headings, serif body)
 
-Use on long-form editorial, news, documentation, and legal page types. The headline scale uses Primary Sans at heavy weights; the body uses Editorial Serif. Clamp between a 20rem viewport (`min`) and a 90rem viewport (`max`) per layout.md §11.1. Roles whose Min and Max are equal are fixed-value and declare their size directly without `clamp()`.
+Use on long-form editorial, news, documentation, and legal Section Containers. The headline scale uses Primary Sans at heavy weights; the body uses Editorial Serif. Clamp between a 20rem viewport (`min`) and a 90rem viewport (`max`) per layout.md §11.1. Roles whose Min and Max are equal are fixed-value and declare their size directly without `clamp()`.
 
 | Text Role | Min Size | Max Size | Family | Weight | Line Height | Use |
 |---|---:|---:|---|---:|---:|---|

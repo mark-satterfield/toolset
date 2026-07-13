@@ -1,23 +1,23 @@
 ---
 name: compose-app-surface
-description: Builds and wires a surface — page route, in-app section, or shell component (modal, drawer, side panel) — into the host's live application. Emits framework-native code (target from $CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK) derived from the deterministic reference, plus the navigation, route-table, or shell diffs to make the surface reachable. Trigger ONLY when the request carries an explicit app-embedding signal — phrases like "in the app", "in-app", "to the app", "ship to the app", "add to the app"; a named live route as build target ("/settings", "/profile", "/billing/history"); or wiring verbs paired with a destination ("wire X into the checkout flow", "register a route at /Y", "add a drawer to /Z"). Do NOT trigger when the request lacks both app-embedding language and a live route (route to compose-page). Do NOT trigger when "for the app" describes non-UI work (tests, docs, audits, copy). Do NOT trigger on stylesheet regeneration, informational queries, or audits.
+description: Builds and wires a surface — page route, in-app section, or in-app Component (modal, drawer, side panel) — into the host's live application. Emits framework-native code (target from $CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK) derived from the deterministic reference, plus the navigation, route-table, or shell diffs to make the surface reachable. Trigger ONLY when the request carries an explicit app-embedding signal — phrases like "in the app", "in-app", "to the app", "ship to the app", "add to the app"; a named live route as build target ("/settings", "/profile", "/billing/history"); or wiring verbs paired with a destination ("wire X into the checkout flow", "register a route at /Y", "add a drawer to /Z"). Do NOT trigger when the request lacks both app-embedding language and a live route (route to compose-page). Do NOT trigger when "for the app" describes non-UI work (tests, docs, audits, copy). Do NOT trigger on stylesheet regeneration, informational queries, or audits.
 allowed-tools: Read, Write, Edit, Bash, Glob
 ---
 
 ## What this skill does
 
-Renders the shared build pipeline (`../../reference/pipeline.md`) to framework-native app code (per `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`) plus the diffs that wire the surface into the host application's nav, side rail, route table, or parent component. This skill owns the app render target and its discovery; catalog resolution, the resolution stages, run-modes, sidecars, and compliance are defined once in the pipeline and cited here — never restated. The emitted code links to the generated stylesheet set (it does not inline it — inlining is the mock render target, owned by `compose-page`). Host-owned concerns (theming, color-mode resolution, routing, the navigation shell, token bindings, build infrastructure) are never re-emitted.
+Renders the shared build pipeline (`../../reference/pipeline.md`) to framework-native app code (per `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`) plus the diffs that wire the surface into the host application's nav, side rail, route table, or parent component. This skill owns the app render target and its discovery; catalog resolution, the resolution stages, run-modes, sidecars, and compliance are defined once in the pipeline and cited here — never restated. The emitted code links to the generated stylesheet set (it does not inline it — inlining is the mock render target, owned by `compose-page`). Host-owned concerns (theming, color-mode resolution, routing, the host's navigation frame, token bindings, build infrastructure) are never re-emitted.
 
 ## Vocabulary
 
-Internal Building Blocks terms, with the user-facing alias on first use: **Shell** (alias: app screen frame / the surrounding chrome — the app Shell partitions the viewport into panes), **Shell pane** (alias: sidebar / rail / left nav), **Section Container** (alias: page type), **Section** (alias: in-app region / band), **Shape** (alias: layout / arrangement), **Component** (alias: widget / control). `../../reference/aliases.md` maps every user-facing word onto these; this skill translates the caller's words at the boundary and uses internal vocabulary everywhere after.
+Internal Building Blocks terms, with the user-facing alias on first use: **Shell** (alias: app screen frame / the surrounding chrome) — the app Shell wraps a Section Container with persistent Sections; panes are the layout regions those Sections and the content slot occupy. What callers name a sidebar / rail / left nav is a persistent Section of the app Shell; its layout region is a pane, a geometry concept (`--pane-*` tokens), not a Building Blocks term. **Section Container** (alias: page type), **Section** (alias: in-app region / band), **Shape** (alias: layout / arrangement), **Component** (alias: widget / control). `../../reference/aliases.md` maps every user-facing word onto these; this skill translates the caller's words at the boundary and uses internal vocabulary everywhere after.
 
 ## Render targets (from `../../reference/pipeline.md`)
 
 This skill emits the app-side render targets:
 
-- **assembled** (default) — app Shell furniture + the Section Container.
-- **container-only** — the Section Container alone (a section or component bound into an existing in-app page), no Shell furniture.
+- **assembled** (default) — the app Shell's persistent Sections + the Section Container.
+- **container-only** — the Section Container alone (a section or component bound into an existing in-app page), without the Shell's persistent Sections.
 
 App output links the stylesheet set, emits framework-native code plus a wiring diff citing the reference, and never emits theme controllers, color-mode resolvers, or routing.
 
@@ -26,7 +26,7 @@ App output links the stylesheet set, emits framework-native code plus a wiring d
 - **From caller (runtime):** plain-language request; optional supplied content (file path, attached document, pasted text); the feature name; the kind of surface; where it lives in the codebase; how it is reached; runtime data dependencies.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`:** the elements YAML, used indirectly through the generated stylesheet set.
 - **From the generated stylesheet set** (at `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`): `tokens.css`, `components.css`, `themes.css`, `manifest.json`.
-- **From the catalog** — the `../../reference/libraries/` + `../../reference/rules/` trees overlaid by `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` (same structure), resolved per `../../reference/pipeline.md` (Catalog resolution). App surfaces resolve against `libraries/shells/` (app-family Shells A1–A5 and extensions), `libraries/section-containers/` (app family), `libraries/sections/`, `libraries/shapes/`, `libraries/components/`, and `rules/`; entry format is `../../reference/libraries/FORMAT.md`.
+- **From the catalog** — the `../../reference/libraries/` + `../../reference/rules/` trees overlaid by `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` (same structure), resolved per `../../reference/pipeline.md` (Catalog resolution). App surfaces resolve against `libraries/shells/` (app-family Shells and extensions), `libraries/section-containers/` (app family), `libraries/sections/`, `libraries/shapes/`, `libraries/components/`, and `rules/`; entry format is `../../reference/libraries/FORMAT.md`.
 - **From `../../reference/compliance.md`:** the rule set the compliance pass runs.
 - **From `../../reference/foundations/`:** the emission specifics the stylesheet set already encodes (ARIA contracts, keyboard semantics, focus rules come from the Component entries and `foundations/accessibility.md`).
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`:** the target framework (e.g. `react`, `vue`, `svelte`, `solid`). If unset → STOP `FRAMEWORK_UNSET`.
@@ -51,7 +51,7 @@ Alias translation (`../../reference/aliases.md`) happens throughout.
 
 ## Pipeline
 
-Execute the shared build pipeline (`../../reference/pipeline.md`) with render target = the target resolved in discovery (default `assembled`, or `container-only` for a section/component bound into an existing page). The pipeline defines catalog resolution, the Shell → Section Container → per-Section resolution stages (including dynamic shape-selection, the page-constraint rejection loop, and fallback generation for a known Section whose candidates are all rejected), the stylesheet-freshness stage, the render targets, run-modes, sidecar emission, and the state record. This skill adds only the app render specifics:
+Execute the shared build pipeline (`../../reference/pipeline.md`) with render target = the target resolved in discovery (default `assembled`, or `container-only` for a section/component bound into an existing page). The pipeline defines catalog resolution, the Shell → Section Container → per-Section resolution stages (including dynamic Shape selection, the page-constraint rejection loop, and fallback generation for a known Section whose candidates are all rejected), the stylesheet-freshness stage, the render targets, run-modes, sidecar emission, and the state record. This skill adds only the app render specifics:
 
 - **Confirm host fit.** The request must describe a surface that fits an app-family Shell. If it fits no app Shell → STOP `SHELL_FIT_FAILED`.
 - **Emit framework-native code** per `$CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK` that implements the resolved spec exactly. The code **links to or imports** the generated stylesheet set from `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`; it does NOT inline that CSS. Class names match the kebab-case identifiers in `components.css`. ARIA contracts, keyboard semantics, and focus rules come from `../../reference/foundations/accessibility.md` and the Component entries — they are not invented. The code carries no agent-side metadata.
@@ -65,7 +65,7 @@ Sidecars (`<basename>.wireframe.txt`, `<basename>.decisions.md`), the state reco
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the pipeline's freshness stage found the set stale or missing and the auto-invoked `generate-stylesheets` itself halted; the inner code is surfaced verbatim.
 - `SHELL_UNKNOWN:{name}` — a named Shell resolves in neither the reference nor the extensions.
 - `SECTION_CONTAINER_UNKNOWN:{name}` — the requested Section Container resolves in neither the reference nor the extensions.
-- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the container sequence resolves in neither the reference nor the extensions. (A *known* Section whose shape candidates are all rejected is not a halt — the pipeline fallback-generates a fitting layout and records it in the decisions sidecar.)
+- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the container sequence resolves in neither the reference nor the extensions. (A *known* Section whose Shape candidates are all rejected is not a halt — the pipeline fallback-generates a fitting layout and records it in the decisions sidecar.)
 - `MISSING_COMPONENT:{name}` — a Component is defined in neither reference nor extensions.
 - `MISSING_SPEC` — a required spec is too thin to emit code and is absent from both reference and extensions (name the gap).
 - `UPDATE_SOURCE_UNREADABLE` — the existing file(s) supplied for a brownfield update cannot be read or parsed.
@@ -91,7 +91,7 @@ Emitted code must satisfy every rule tagged `[scope: app-embedded]` and every ru
 ## Boundary — does not
 
 - Does not generate standalone mocks — `compose-page` owns those.
-- Does not emit theming, color-mode-resolution, routing, navigation-shell, or token-binding code — all host-owned.
+- Does not emit theming, color-mode-resolution, routing, host-navigation-frame, or token-binding code — all host-owned.
 - Does not inline the stylesheet set in emitted code.
 - Does not inspect host-project code for naming, conventions, tokens, or patterns. The catalog is the only source of truth.
 - Does not run the host project's build, tests, or deploy.

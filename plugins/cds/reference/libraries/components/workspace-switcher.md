@@ -4,7 +4,7 @@ name: workspace-switcher
 family: app
 aliases: [workspace picker, org switcher, team switcher]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: wrapper, required: true, accepts: [trigger, collapse-toggle] }
@@ -37,7 +37,7 @@ token_bindings: [--border-subtle, --surface-secondary, --text-primary, --text-te
 
 # Workspace switcher
 
-A control at the top of the rail letting the user switch between workspaces in the current organization. Fills the left-rail's `workspace-switcher` slot. Shell furniture.
+A control at the top of the rail letting the user switch between workspaces in the current organization. Fills the left-rail's `workspace-switcher` slot within the Shell's persistent rail Section.
 
 ## Variants
 

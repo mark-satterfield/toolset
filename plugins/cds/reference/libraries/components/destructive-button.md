@@ -19,7 +19,7 @@ token_bindings:
   - --button-destructive-text
   - --danger-100
   - --text-inverse
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

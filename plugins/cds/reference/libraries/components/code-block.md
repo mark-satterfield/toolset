@@ -17,7 +17,7 @@ token_bindings:
   - --surface-primary
   - --surface-secondary
   - --text-primary
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

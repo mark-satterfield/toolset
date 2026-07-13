@@ -17,7 +17,7 @@ content_defaults:
 
 # record-detail — Metadata strip + readable body
 
-A single library record filling a detail viewport (typically Shell A4's): a title row with an `<h1>` record name, a right-aligned enabled-toggle (the toggle-switch component) and a kebab menu; a compact single-line metadata strip of dt/dd pairs; a description block (small label + free-text paragraph); and a content body — a stacked rendering of the record's readable content with a small top-right toolbar that switches between the rendered view and the raw/source view (eye glyph / `</>` glyph).
+A single library record filling a detail viewport (typically the mini-rail-list-detail Shell's): a title row with an `<h1>` record name, a right-aligned enabled-toggle (the toggle-switch component) and a kebab menu; a compact single-line metadata strip of dt/dd pairs; a description block (small label + free-text paragraph); and a content body — a stacked rendering of the record's readable content with a small top-right toolbar that switches between the rendered view and the raw/source view (eye glyph / `</>` glyph).
 
 The view-toggle pattern (rendered vs. source) applies to any record that has both a human view and a raw view.
 

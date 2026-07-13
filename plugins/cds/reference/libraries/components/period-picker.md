@@ -19,7 +19,7 @@ accessibility:
   - "wrapper role=combobox; inner button aria-haspopup=dialog + aria-expanded"
   - "dialog focus-trap contract on the panel"
 token_bindings: [--surface-raised, --border-subtle, --text-primary, --text-tertiary, --typeface-sans]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

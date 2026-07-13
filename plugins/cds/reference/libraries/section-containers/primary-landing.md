@@ -6,23 +6,23 @@ aliases: [landing page, primary landing page, product landing page, marketing la
 status: stable
 default_shell: marketing
 sections:
-  - { id: T1, required: true, notes: "always first; alternation index 1" }
-  - { id: T2, required: false }
-  - { id: T3, required: false }
-  - { id: T4, required: false }
-  - { id: T5, required: false }
-  - { id: T6, required: false }
-  - { id: T7, required: false }
-  - { id: T8, required: false }
-  - { id: T9, required: false, notes: "theme island: clarity" }
-  - { id: T10, required: false }
-  - { id: T11, required: false }
-  - { id: T12, required: false }
-  - { id: T13, required: false }
-  - { id: T14, required: false, notes: "may embed inside T10 — see t14 composition notes" }
-  - { id: T15, required: false }
-  - { id: T16, required: false, notes: "omitted entirely when page_meta.buying_mode == browse; dark variant is a named theme island" }
-  - { id: T18, required: false, notes: "standalone label preceding another content unit; may appear multiple times" }
+  - { section: hero, required: true, notes: "always first; alternation index 1" }
+  - { section: trust-strip, required: false }
+  - { section: validation-block, required: false }
+  - { section: capability-showcase, required: false }
+  - { section: workflow-process, required: false }
+  - { section: use-case-routing, required: false }
+  - { section: path-fork, required: false }
+  - { section: interactive-demo, required: false }
+  - { section: pricing, required: false, notes: "theme island: clarity" }
+  - { section: trust-detail, required: false }
+  - { section: faq, required: false }
+  - { section: news-updates, required: false }
+  - { section: resource-directory, required: false }
+  - { section: cross-promo, required: false, notes: "may embed inside trust-detail — see cross-promo composition notes" }
+  - { section: sub-hero, required: false }
+  - { section: final-cta, required: false, notes: "omitted entirely when page_meta.buying_mode == browse; dark variant is a named theme island" }
+  - { section: section-header, required: false, notes: "standalone label preceding another content unit; may appear multiple times" }
 constraints: [ground-alternation, variety-principle, eyebrow-scope]
 register:
   type_scale: marketing
@@ -37,7 +37,7 @@ The Shell supplies topbar and footer; this container is content Sections only.
 
 ## Theme islands
 
-Pricing (T9) → `clarity`. A dark Final CTA (T16) → its declared island. Islands apply on top of the scheduled ground per `ground-alternation`. The hero uses `default`; feature blocks stay on the principal theme — grounds alternate per `ground-alternation`, never as a theme rotation.
+Pricing (pricing) → `clarity`. A dark Final CTA (final-cta) → its declared island. Islands apply on top of the scheduled ground per `ground-alternation`. The hero uses `default`; feature blocks stay on the principal theme — grounds alternate per `ground-alternation`, never as a theme rotation.
 
 ## Register rules
 

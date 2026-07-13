@@ -9,7 +9,7 @@ slots:
   - { name: value, required: true, accepts: [code] }
   - { name: copy, required: true, accepts: [icon-button] }
 sizing:
-  row: "inline-flex, content-driven, no chrome"
+  row: "inline-flex, content-driven, no visual styling of its own"
   gap: "component geometry"
   copy-button: "icon-button geometry, radius --radius-xs"
   value-max-width: "--column-field-measure"
@@ -20,7 +20,7 @@ accessibility:
   - "copy button aria-label joins action + identifier name"
   - "value wrapped in <code>; aria-live=polite copy announcement"
 token_bindings: [--text-primary, --text-secondary, --font-mono, --focus-ring]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 
@@ -58,7 +58,7 @@ Click on the copy button writes the full value to the clipboard and triggers the
 ## Structural skeleton
 
 ```html
-<p class="identifier-row"><!-- inline-flex, no chrome -->
+<p class="identifier-row"><!-- inline-flex, no styling of its own -->
   <span class="identifier-row__label"><!-- --text-secondary -->Organization ID:</span>
   <code class="identifier-row__value"><!-- --font-mono, --text-primary, --column-field-measure cap -->00000000-0000-4000-8000-000000000000</code>
   <button class="identifier-row__copy" aria-label="Copy Organization ID"><!-- icon-button base -->

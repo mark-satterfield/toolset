@@ -6,11 +6,11 @@ aliases: [editorial detail page, blog post, article page, post page]
 status: stable
 default_shell: marketing
 sections:
-  - { id: E1, required: true, notes: "always first" }
-  - { id: E2, required: true, notes: "the only saturated panel surface on the page" }
-  - { id: E3, required: true }
-  - { id: E4, required: true, notes: "closes the article body" }
-  - { id: E5, required: true, notes: "always last" }
+  - { section: article-header, required: true, notes: "always first" }
+  - { section: illustration-tile, required: true, notes: "the only saturated panel surface on the page" }
+  - { section: article-body, required: true }
+  - { section: social-share, required: true, notes: "closes the article body" }
+  - { section: related-content, required: true, notes: "always last" }
 constraints: []
 register:
   type_scale: editorial
@@ -23,7 +23,7 @@ Long-form article reading: legibility, scannability, and a quiet, confident tone
 
 ## Theme
 
-`editorial` for the entire page, single-theme: themes do not rotate inside the article body, and the E2 illustration tile is the only saturated panel. The footer's `deep` island belongs to the Shell.
+`editorial` for the entire page, single-theme: themes do not rotate inside the article body, and the illustration-tile illustration tile is the only saturated panel. The footer's `deep` island belongs to the Shell.
 
 ## Register rules
 

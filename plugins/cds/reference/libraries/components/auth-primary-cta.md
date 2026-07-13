@@ -17,7 +17,7 @@ accessibility: [focus-visible-ring, disabled-inherited]
 token_bindings:
   - --accent-primary
   - --focus-ring
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

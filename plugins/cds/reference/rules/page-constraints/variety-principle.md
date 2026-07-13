@@ -19,14 +19,14 @@ applies_to: { families: [landing], containers: [] }
 | Type role | any type role in `foundations/typography.md` |
 | Alignment | any alignment register (shape-set conventions) |
 | Density | sparse → packed |
-| Structural pattern | any shape in the library |
+| Structural pattern | any Shape in the library |
 | Section padding | the `--section-pad-*` scale |
 | Radius (where containers round) | the `--radius-*` scale |
 
-**Combine freely.** Every Section is a fresh composition decision; no combination repeats across adjacent Sections. Unless a shape is intentionally centered, alternate its alignment — a two-column shape mirrors its text/visual sides relative to the previous two-column Section.
+**Combine freely.** Every Section is a fresh composition decision; no combination repeats across adjacent Sections. Unless a Shape is intentionally centered, alternate its alignment — a two-column Shape mirrors its text/visual sides relative to the previous two-column Section.
 
 **Theme and background are NOT variety dimensions.** The principal theme stays constant for the whole page; grounds follow `ground-alternation`; theme islands are declared on the Section Container.
 
 ## As a validator
 
-Reject a shape candidate whose rendered dimensions would repeat the immediately preceding Section's combination (same structural pattern + same alignment + same density). On rejection the rule engine tries the next candidate; on exhaustion the composer fallback-generates a layout that satisfies the variety dimensions.
+Reject a Shape candidate whose rendered dimensions would repeat the immediately preceding Section's combination (same structural pattern + same alignment + same density). On rejection the rule engine tries the next candidate; on exhaustion the composer fallback-generates a layout that satisfies the variety dimensions.

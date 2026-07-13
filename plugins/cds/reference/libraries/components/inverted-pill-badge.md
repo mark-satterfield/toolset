@@ -17,7 +17,7 @@ accessibility: []
 token_bindings:
   - --text-primary
   - --surface-primary
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

@@ -18,7 +18,7 @@ behavior:
 accessibility:
   - "dimension groups are <fieldset> + <legend>; segment options aria-pressed"
 token_bindings: [--accent-primary, --text-primary, --text-tertiary]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

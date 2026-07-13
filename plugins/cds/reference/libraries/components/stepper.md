@@ -17,7 +17,7 @@ accessibility:
   - "wrapper <ol> (implicit role=list); connectors aria-hidden"
   - "no navigation landmark — a status indicator"
 token_bindings: [--text-primary, --text-tertiary, --text-inverse, --border-subtle, --status-positive-bg, --focus-ring, --typeface-sans, --font-mono]
-shell_furniture: false
+shell_component: false
 composite: false
 ---
 

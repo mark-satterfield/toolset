@@ -20,7 +20,7 @@ content_defaults:
 
 # template-gallery — Example entries with live control panels
 
-A vertical stack of template entries filling a canvas pane (typically Shell A5's Examples tab), beneath the canvas tab strip. Each entry is a self-contained advert-plus-demo:
+A vertical stack of template entries filling a canvas pane (typically the form-sidebar-canvas Shell's Examples tab), beneath the canvas tab strip. Each entry is a self-contained advert-plus-demo:
 
 - Left: a large live preview canvas, with a small title row and an eyebrow ("CONSTRUCTION / 13 DIMENSIONS") above it.
 - Right: a control-panel descriptor rendering each of the template's dimensions as a labelled control-group preview (segments, sliders, toggles).

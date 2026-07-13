@@ -4,7 +4,7 @@ name: dropdown-panel
 family: shared
 aliases: [dropdown, nav dropdown, mega menu, flyout menu]
 status: stable
-shell_furniture: true
+shell_component: true
 composite: false
 slots:
   - { name: trigger, required: true, accepts: [nav-link, button] }
@@ -30,7 +30,7 @@ token_bindings: [--surface-tertiary, --list-row-standard, --radius-xs]
 
 # Dropdown panel
 
-Reveals grouped link lists or grids below a topbar trigger, opened on hover (desktop) or click (touch). Shell furniture: it descends from the topbar's primary-nav triggers.
+Reveals grouped link lists or grids below a topbar trigger, opened on hover (desktop) or click (touch). Part of the Shell's persistent top-nav Section: it descends from the topbar's primary-nav triggers.
 
 ## Variants
 
