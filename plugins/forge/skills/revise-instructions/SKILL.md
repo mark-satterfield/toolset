@@ -29,6 +29,7 @@ You modify an existing set of FORGE instructions to satisfy a change request, wi
 - `${CLAUDE_PLUGIN_ROOT}/references/template.md` — section structure, for any section the change adds.
 - `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
 - `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md` — how you grade the revised result before delivering.
+- `${CLAUDE_PLUGIN_ROOT}/references/implementation-plan.md` and `${CLAUDE_PLUGIN_ROOT}/references/plan-template.md` — read both when the block being revised is an implementation plan; the ripple trace then includes plan integrity.
 
 ## Inputs
 
@@ -40,7 +41,7 @@ Mode is interactive unless the prompt or an argument says `headless` / `quiet` /
 
 The following steps are exhaustive.
 
-1. **Read** the existing instructions, the change request, and the four reference files above.
+1. **Read** the existing instructions, the change request, and the reference files above (the two plan references only when the block is an implementation plan).
 2. **Locate the change.** Identify exactly which sections, steps, or sub-keywords the request touches. Preserve everything else verbatim — do not rewrite untouched content for style. Respect the human's existing wording.
 3. **Apply the change.** Make the requested modification. If it adds a section, populate it from the template; if it removes one, delete it cleanly.
 4. **Trace the ripple.** Re-check the whole block for defects the change may have introduced, using the `review-rubric.md` defect scan, with attention to:
@@ -49,13 +50,14 @@ The following steps are exhaustive.
    - **Scope overlap** — does the change now contradict or subsume another instruction?
    - **Gate consistency** — if these are chained blocks, does a changed `Gate.After` still match the next block's `Gate.Before`?
    - **Approach-type mixing** — did the change drop an `Option` into a `Sequential` block?
+   - **Plan integrity** — if the block is an implementation plan (the Applicability test in `implementation-plan.md`), the revision must not strip any step's `Status` or blueprint elements (Pre-condition, Action, Post-condition, Rollback), remove the standing resume-rule `Gate.Before` or state-update `Guideline`, introduce Separation Rule contamination (decisions, history, notes, to-dos, open-question prose), or renumber steps already marked `done` (a handoff session resumes by step number and status; renumbering executed history corrupts state). Conversely, if the change makes a non-plan block cross the Applicability threshold, restructure its PROCESS onto the `plan-template.md` step format.
    - **Decomposition** — did the change extend the block across a phase boundary (a new human decision, or a step needing input that will not exist until an earlier step finishes) so it should become a `PAUSE` or a split into chained blocks? Conversely, did the change remove the boundary that justified a split, so two blocks should merge? Apply the `review-rubric.md` Decomposition check.
 5. **Apply the gap policy — `operating-rules.md` §4.** For any gap the change opens or exposes — including a new file, value, or path — try the bounded reality-check, then gate on the evidence: fill only with disclosed high-confidence evidence; otherwise leave an `{OPEN: <question> — <why>}` marker where the value belongs. Do not guess to complete a revision.
 6. **Resolve ambiguity by mode:**
    - **Interactive:** if the change request itself is unclear, or the ripple exposes a gap, enter the Q&A loop (`operating-rules.md` §3) — mandatory, not skippable. Apply the 70% rule. Present every evidence-backed fill and every `{OPEN}` gap for confirmation. Keep going until the result grades B or better and the change is fully specified, or the user says done. If the human goes quiet or the wait times out, keep the evidence-backed fills, leave the rest as `{OPEN}` markers, and deliver incomplete — never guess to fill the silence.
    - **Headless:** do not ask. Fill only the evidence-backed gaps; leave the rest as `{OPEN}` markers. Record every fill (with its evidence) and every open question in the disclosure ledger (`operating-rules.md` §5).
 7. **Grade** the revised result against `review-rubric.md`.
-8. **Deliver** per `operating-rules.md` §6 — console by default, the `forge-output:` location if set, or an explicit destination if given. If the source was a file and no other destination applies, the revised instructions replace the file's content. Strip any scaffolding.
+8. **Deliver** per `operating-rules.md` §6 — an explicit destination if given, the `forge-output:` location if set, otherwise a new file beside the source (`{source-basename}.revised.md`), or the console when the source was inline text. The source file itself is never the destination — input documents are read-only (§6). Strip any scaffolding.
 
 ## Output
 
@@ -86,3 +88,5 @@ Print the grade block exactly as `review-rubric.md` specifies:
 - `${CLAUDE_PLUGIN_ROOT}/references/template.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/implementation-plan.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/plan-template.md`

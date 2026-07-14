@@ -121,7 +121,8 @@ The following steps are exhaustive.
     this order: an explicit destination in the prompt; the project's `forge-output:` setting;
     otherwise write beside the source document as `{source-basename}.plan.md` (inline-text
     source with no destination: interactive — ask once; headless — write to
-    `./{slug-of-title}.plan.md`). Strip all scaffolding comments.
+    `./{slug-of-title}.plan.md`). The source document is never the destination — input
+    documents are read-only (`operating-rules.md` §6). Strip all scaffolding comments.
 
 ## Output
 

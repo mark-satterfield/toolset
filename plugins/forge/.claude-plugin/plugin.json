@@ -1,7 +1,7 @@
 {
   "name": "forge",
-  "version": "0.3.0",
-  "description": "Tooling for the FORGE framework — compose, revise, and review instructions an AI agent can execute without interpretation, and distill READY implementation plans out of multi-purpose documents. Closes the gaps a human would otherwise leave for the agent to guess at.",
+  "version": "0.4.0",
+  "description": "Tooling for the FORGE framework \u2014 compose, revise, and review instructions an AI agent can execute without interpretation, and distill READY implementation plans out of multi-purpose documents. Closes the gaps a human would otherwise leave for the agent to guess at.",
   "author": {
     "name": "mark-satterfield",
     "url": "https://github.com/mark-satterfield/toolset"

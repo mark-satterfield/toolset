@@ -56,9 +56,10 @@ Check the instructions against every item below. Each maps to the framework. For
 - A block that spans more than one phase across a boundary — a human decision, or a step needing input that cannot exist until an earlier step completes — uses the framework's mechanism for that boundary: a `PAUSE` when the branch table is writable now, or a split into chained blocks (`Gate.After` → `Gate.Before`) when the next phase cannot be written yet. A monolith that crams such a boundary is a defect. It is **Blocking** when it forces the agent to act on input that does not yet exist (the agent will fabricate it); otherwise **Major**.
 - The inverse — two or more blocks that share one objective with no real phase boundary — should be a single block. Needless fragmentation is a **Minor** defect.
 
-**Implementation plans** (applies only when the block is an implementation plan per
-`implementation-plan.md` — a Sequential PROCESS driving real system change; skip this group
-for every other instruction block)
+**Implementation plans** (applies only when the block passes the Applicability test in
+`implementation-plan.md` — state change outside the conversation, execution spanning sessions
+or hands, or failure requiring recovery; skip this group for every other instruction block.
+The test attaches to the work, not to which skill authored the block)
 - Separation Rule contamination: the plan contains decisions or rationale, target-state
   design, history ("why we changed course"), audit narrative, notes, to-do lists, or an
   "Open Questions" prose section. The executing agent reads everything in its instructions

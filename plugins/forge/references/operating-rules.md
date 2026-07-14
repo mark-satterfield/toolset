@@ -121,13 +121,16 @@ Open Questions — gaps left unfilled, each still marked {OPEN: …} in the inst
 
 ## 6. Where output goes
 
+**Input documents are read-only.** No skill ever overwrites a file it read as input. The one exception: the user's prompt explicitly names that exact input path as the destination (rule 1). If any other rule resolves to an input path, fall through to rule 3's naming instead.
+
 Resolve the destination in this order. The first that applies wins.
 
 1. **Explicit destination in the prompt** — the user named a path or said "write it to X". Use it.
 2. **Project setting `forge-output:`** — the active project context (its `CLAUDE.md` or other loaded memory) defines a line `forge-output: <path>`. This is the project's default, set like an environment variable.
    - If `<path>` is a directory, write a file there named from a slug of the instruction title (`# Instruction Block: {Title}`); if there is no title, slug the `Objective`.
    - If `<path>` is a file, write there.
-3. **Console** — none of the above. Print the instructions to the console.
+3. **New file beside the source** — the source was a file and nothing above applies. Write a new file next to it, named `{source-basename}.{artifact}.md` where `{artifact}` says what the file is: `instructions` (compose-instructions), `revised` (revise-instructions), `plan` (distill-plan).
+4. **Console** — the source was inline text and nothing above applies. Print the instructions to the console.
 
 After any **file** write in interactive mode, print the grade block (section 7) followed by the written path. `review-instructions` never writes a file and never consults `forge-output:`.
 

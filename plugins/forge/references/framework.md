@@ -314,9 +314,10 @@ is two blocks written at different times.
 
 #### Implementation Plans
 
-When the instruction block is an **implementation plan** — a Sequential PROCESS that drives
-real system change and may be executed or resumed across sessions — PROCESS carries
-additional obligations defined in `implementation-plan.md`: the Phase → Step hierarchy, the
+When the instruction block is an **implementation plan** — it passes the Applicability test
+in `implementation-plan.md`: a step changes state outside the conversation, execution could
+span sessions or hands, or failure requires recovery — PROCESS carries additional
+obligations defined in that document: the Phase → Step hierarchy, the
 four-element execution blueprint (Pre-condition, Action, Post-condition, Rollback), a
 per-step `Status` field, the resume and state-update rules, and the Separation Rule (only
 current implementation steps live in the plan; decisions, history, notes, to-dos, and

@@ -30,6 +30,7 @@ You turn rough material into a precise, self-contained set of instructions writt
 - `${CLAUDE_PLUGIN_ROOT}/references/template.md` — the fill-in scaffold you populate.
 - `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md` — quiet discipline, input resolution, modes, the reality-validation rule, output destination. Obey it.
 - `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md` — how you grade your own output before delivering.
+- `${CLAUDE_PLUGIN_ROOT}/references/implementation-plan.md` and `${CLAUDE_PLUGIN_ROOT}/references/plan-template.md` — read both when step 4 classifies the block as an implementation plan; they then govern PROCESS.
 
 ## Inputs
 
@@ -41,19 +42,22 @@ Mode is interactive unless the prompt or an argument says `headless` / `quiet` /
 
 The following steps are exhaustive.
 
-1. **Read** the source material and the four reference files above.
+1. **Read** the source material and the reference files above (the two plan references only when step 4 classifies the block as a plan).
 2. **Draft the ANCHOR first.** `ANCHOR` is the only required section. State `Objective`, `Target`, and a measurable `Success Criteria`. If you cannot state a measurable success criterion from the source, that is the first gap to close (interactive) or log (headless).
 3. **Map the rest.** Add only the sections that carry information the agent would not reliably have or correctly assume: `CONTEXT`, `WHEN`, `PROCESS`, `SAFEGUARDS`, `WHY`. An empty section is noise; a needed-but-absent section is a defect. Delete every section you do not use, and delete the template's scaffolding comments.
-4. **Find the gaps** — anything missing, unclear, ambiguous, conflicting, or that you would otherwise fill by assumption. You are the only party who can judge how an AI agent will read a gap. Run the defect scan from `review-rubric.md` against the draft to surface them. **Do not fill a gap yet.**
-5. **Apply the gap policy — `operating-rules.md` §4, the core of this skill.** For each gap, try the bounded reality-check for evidence, then gate on it:
+4. **Classify the work — is this block an implementation plan?** Apply the Applicability test in `implementation-plan.md` (state change outside the conversation, execution that could span sessions or hands, failure that requires recovery).
+   - IF the test says plan THEN: PROCESS follows `implementation-plan.md` — Sequential only, Phase → Step hierarchy, every step carrying `Status: pending` and the four blueprint elements (Pre-condition, Action, Post-condition, Rollback) on the step format of `plan-template.md`; SAFEGUARDS includes that template's standing resume-rule `Gate.Before` and state-update `Guideline`; the Separation Rule holds (no decisions, history, notes, to-dos, or open-question prose in the block); and delivery must be to a file (a plan carries execution state — console-only is not valid). Additionally, if the source material is an existing multi-purpose document the plan must be *extracted from*, say once that `/forge:distill-plan` is the purpose-built entry (it adds the classification pass and the distillation report), then proceed here only if the user chooses to continue.
+   - OTHERWISE: write PROCESS as ordinary framework steps and continue.
+5. **Find the gaps** — anything missing, unclear, ambiguous, conflicting, or that you would otherwise fill by assumption. You are the only party who can judge how an AI agent will read a gap. Run the defect scan from `review-rubric.md` against the draft to surface them. **Do not fill a gap yet.**
+6. **Apply the gap policy — `operating-rules.md` §4, the core of this skill.** For each gap, try the bounded reality-check for evidence, then gate on it:
    - **High-confidence, evidence-backed** → fill it, and disclose the evidence (what you observed and why it decided the fill).
    - **Not high-confidence** → do **not** fill it. Leave an `{OPEN: <question> — <why>}` marker where the value belongs. Guessing here is the specific failure this skill exists to prevent.
-6. **Resolve the gaps by mode:**
+7. **Resolve the gaps by mode:**
    - **Interactive:** enter the Q&A loop (`operating-rules.md` §3) — this is **mandatory, not optional**; you may not skip to delivery because the draft self-grades well. Use `grill-me` if available. Apply the 70% rule. Present every evidence-backed fill and every `{OPEN}` gap for the human to confirm or answer. Keep going until the draft grades B or better and everything the human is willing to fill is filled, or the user says done. If the human goes quiet or the wait times out, keep the evidence-backed fills, leave the rest as `{OPEN}` markers, and deliver incomplete — never guess to fill the silence.
    - **Headless:** do not ask. Fill only the evidence-backed gaps; leave the rest as `{OPEN}` markers. Record every fill (with its evidence) and every open question in the disclosure ledger (`operating-rules.md` §5).
-7. **Handle phases (decomposition).** Produce one instruction block by default. When the work spans more than one phase across a boundary — a human decision, or a step needing input that cannot exist until an earlier phase completes — follow the framework's PAUSE-vs-split rule: one block with a `PAUSE` when you can write the branch table now; chained blocks (linking `Gate.After` → `Gate.Before`) when a later phase cannot be written yet. Do not cram a phase boundary into a single block — that forces the agent to fabricate input that does not yet exist. This is the `review-rubric.md` Decomposition check.
-8. **Grade** the result against `review-rubric.md`.
-9. **Deliver** per `operating-rules.md` §6 — console by default, the `forge-output:` location if the project sets one, or an explicit destination if the user gave one. Strip scaffolding. Emit a fragment instead of a full block if the instructions are meant to be embedded in a larger prompt.
+8. **Handle phases (decomposition).** Produce one instruction block by default. When the work spans more than one phase across a boundary — a human decision, or a step needing input that cannot exist until an earlier phase completes — follow the framework's PAUSE-vs-split rule: one block with a `PAUSE` when you can write the branch table now; chained blocks (linking `Gate.After` → `Gate.Before`) when a later phase cannot be written yet. Do not cram a phase boundary into a single block — that forces the agent to fabricate input that does not yet exist. This is the `review-rubric.md` Decomposition check.
+9. **Grade** the result against `review-rubric.md`.
+10. **Deliver** per `operating-rules.md` §6 — an explicit destination if the user gave one, the `forge-output:` location if the project sets one, otherwise a new file beside the source (`{source-basename}.instructions.md`), or the console when the source was inline text. Never overwrite an input document (§6). Strip scaffolding. Emit a fragment instead of a full block if the instructions are meant to be embedded in a larger prompt.
 
 ## Output
 
@@ -72,6 +76,7 @@ Print the grade block exactly as `review-rubric.md` specifies:
 ## Acceptance criteria
 
 - The output contains a complete, measurable `ANCHOR` and no template scaffolding comments.
+- The Applicability test from `implementation-plan.md` was applied; if the block classified as an implementation plan, its PROCESS carries the Phase → Step hierarchy, per-step `Status` and blueprint elements, the standing resume/state-update SAFEGUARDS, no Separation Rule contamination, and the plan was delivered to a file.
 - Every `IF` has an `OTHERWISE`; every `LOOP` has a termination condition and a never-reached behavior.
 - **No gap was filled by guess.** Every filled gap has disclosed empirical evidence; every gap without it is an `{OPEN: …}` marker, not a fabricated value.
 - Every inference was validated against reality where a bounded check was possible.
@@ -84,3 +89,5 @@ Print the grade block exactly as `review-rubric.md` specifies:
 - `${CLAUDE_PLUGIN_ROOT}/references/template.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/operating-rules.md`
 - `${CLAUDE_PLUGIN_ROOT}/references/review-rubric.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/implementation-plan.md`
+- `${CLAUDE_PLUGIN_ROOT}/references/plan-template.md`

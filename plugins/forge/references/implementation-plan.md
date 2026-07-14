@@ -2,15 +2,39 @@
 
 How the PROCESS portion of a FORGE instruction block is written when that block is an
 **implementation plan** — a Sequential PROCESS meant to drive real system change, executed by
-one agent or handed across several sessions. This document governs `distill-plan` output and
-applies to any forge skill whenever the instructions being composed, revised, or reviewed are
-an implementation plan.
+one agent or handed across several sessions. This discipline attaches to the **kind of work**,
+not to the skill that authored the block: `compose-instructions` writing implementation work
+from rough intent, `revise-instructions` modifying it, `review-instructions` grading it, and
+`distill-plan` extracting it from a multi-purpose document all produce and enforce the same
+PROCESS shape whenever the Applicability test below says the block is a plan.
 
 An implementation plan contains **current implementation steps and nothing else**. Everything
 else a working document accumulates — decisions, history, audit trails, notes, to-do lists,
 open questions — lives outside the plan. That separation is not cosmetic: an executing agent
 reads everything in its instructions as instruction. A "Why we changed course" section in the
 middle of a plan is noise at best and a misread directive at worst.
+
+---
+
+## Applicability — when a block is an implementation plan
+
+A FORGE instruction block is an implementation plan, and its PROCESS must follow this
+document, when **any** of these holds:
+
+1. **State change:** any PROCESS step changes state outside the conversation — files, repos,
+   infrastructure, databases, configuration, external services.
+2. **Session span:** execution could outlive one session, or the plan may be handed from one
+   agent to another.
+3. **Recovery cost:** a failed or half-completed run requires deliberate recovery — the work
+   cannot simply be re-asked from scratch.
+
+When **none** holds — read-only analysis, a report, a single-session task whose failure costs
+nothing but the retry — the block is not a plan. Write PROCESS as ordinary framework steps;
+the blueprint would be dead weight there. Do not apply this document to make a three-step
+read-only task carry Status fields and rollback procedures.
+
+The test is evaluated by whichever skill is authoring, revising, or reviewing the block. It
+is a property of the work, not of the entry point.
 
 ---
 
