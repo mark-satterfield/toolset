@@ -1,13 +1,14 @@
 # CDS — Configurable Design System
 
-A brand-neutral design system you install in any project. CDS gives you a stylesheet set, a way to mock pages, sections, and components, a way to ship framework-native in-app surfaces, a way to package an approved mock into a hand-off bundle, a DESIGN.md export, and an audit tool — all derived from one YAML file of design choices you supply.
+A brand-neutral design system you install in any project. CDS gives you a stylesheet set, a way to compose Shells, Pages, and Views you can open in a browser, a visual review harness, a way to package an approved output into a hand-off bundle, a DESIGN.md export, and an audit tool — all derived from one YAML file of design choices you supply.
 
 ---
 
 ## What's in the box
 
-- **9 slash commands** for direct invocation: `/cds:setup`, `/cds:generate-stylesheets`, `/cds:compose-page`, `/cds:review-mock`, `/cds:compose-app-surface`, `/cds:apply-design-system`, `/cds:audit-against-system`, `/cds:export-design`, `/cds:package-change`.
-- **9 skills** the commands invoke. Eight also auto-route from natural-language phrasing (the model recognizes "build me a landing page", "open the mock so I can comment", "audit this UI", "regenerate the CSS", "export the design system", "package this change", etc.). The `setup` skill carries `disable-model-invocation: true` and fires only from `/cds:setup`.
+- **9 slash commands** for direct invocation: `/cds:setup`, `/cds:compose-shell`, `/cds:compose-page`, `/cds:compose-view`, `/cds:review`, `/cds:apply-design-system`, `/cds:audit-against-system`, `/cds:export-design`, `/cds:package-change`.
+- **The same-named skills** the commands invoke. Eight also auto-route from natural-language phrasing (the model recognizes "compose my site's shell", "build me a landing page", "let me see it in the shell", "open it so I can comment", "audit this UI", "export the design system", "package this change", etc.). The `setup` skill carries `disable-model-invocation: true` and fires only from `/cds:setup`.
+- **One internal skill**, `generate-css` — the machinery that produces the CSS output (`tokens.css`, `components.css`, `themes.css`, `manifest.json`). It has no command and no natural-language trigger: every user-facing skill runs a silent stylesheet-freshness stage that invokes it when the inputs have moved, then proceeds. You never run it, and no agent will ever tell you to — what you see is always built from the current system.
 - **2 sub-agents** that bundle the right skills with an identity: `cds-ui-author` (for UI work), `cds-code-companion` (for non-UI code that touches UI).
 - **A reference tree** of every fixed design decision — the Building Blocks catalog (`reference/libraries/`), the composition rules (`reference/rules/`), the foundations (spacing, motion, type scales, accessibility, imagery), the shared build pipeline, the artwork contract, and the compliance rules — that the skills consult deterministically.
 - **A schema** (2.0) for the one file you customize (`customizable-design-elements.yaml`).
@@ -18,17 +19,18 @@ What you supply: the YAML. Optionally, environment variables for default paths.
 
 ## The Building Blocks model
 
-Everything the catalog holds is one of five kinds, plus two rule kinds. The skills translate your everyday words onto these at the boundary (`reference/aliases.md`) and use the internal vocabulary from there.
+The model is defined normatively in `reference/model/entity-catalog.md` and `reference/model/data-model.mermaid` — the only authority on its vocabulary. In brief:
 
-- **Component** — the smallest CDS-aware unit, built from Elements (browser-native DOM nodes — a concept only, never configured). Carries five contracts: slots, sizing, behavior, accessibility, token bindings. A catalog entry is a Component Definition; a Component on a page is an instance of its Definition.
-- **Shape** — a template: an abstract, content-free layout contract describing a slot arrangement. Shapes live in a library; multiple Shapes can serve the same Section type, and a dynamic Section receives its Shape at build time.
-- **Section** — a themable content container. `deterministic` (its layout is fixed at definition) or `dynamic` (its Shape is chosen at build by the rule engine).
-- **Section Container** — an ordered list of Sections forming a page region or a whole page. **User-facing alias: "page type."**
-- **Shell** — the outermost structural frame: it wraps a Section Container with persistent Sections (topbar/footer for marketing, rail/panes for app). A Shell Template pins those persistent Sections around a placeholder slot for a Section Container; the composer instantiates it into a Shell that can be persisted for reuse.
+- **Component** — the smallest CDS-aware unit, built from Elements (raw HTML tags — a concept only, never configured). Carries sizing rules, behavior contracts, accessibility contracts, and token bindings. A catalog entry is a Component Definition; realized on a page it becomes HTML, CSS, and TypeScript. Lives in the **ComponentLibrary**.
+- **Shape** — a template layout for positioning and the proportional and other geospatial properties of Components and Elements. Shapes have no dimensions of their own; variability is handled by selecting a different Shape, never by leaving positions open. Lives in the **ShapeLibrary** — Sections point to Shapes so every layout is shareable.
+- **Frame** — the abstract container: themeable, and assigned a Shape either **eagerly** (a predefined Shape supplied up front) or **lazily** (resolved at build time by the Rule Engine from the content). **Section**, **Page**, and **ShellDefinition** are the concrete Frames:
+  - **Section** — a single region of a page. Its layout is always a Shape in the ShapeLibrary (`shape:` frontmatter = eager; absent = lazy via its ShapeSelectionRule).
+  - **Page** — one or more Sections in sequence; nests inside the vacant space of a Shell. Every Page carries a **page family** (landing, app, editorial, docs, auth) that selects its typography and motion register and scopes its constraints — stated plainly, obvious from the prompt, or the skill asks.
+  - **ShellDefinition** — the blueprint of a site's repeating portions (menus pinned to canvas edges, a common footer). It carries real content. Its stored output is the **Shell**. The plugin ships no shells — every Shell is composed by you.
+- **Rules** — a **ShapeSelectionRule** per lazily-assigned Section (content signals → an ordered list of eligible Shapes) and **PageLevelAestheticConstraint** entries (post-selection validators run as a rejection loop over the accumulating page).
+- **Outputs** — **CSS** (the stylesheet set), **Page HTML** (the content region on its own), **Shell** (stored for reuse), **View** (the Page HTML nested inside the Shell — the thing a visitor would see).
 
-Plus the rules the composer runs: a **Shape Selection Rule** per dynamic Section (content signals → an ordered list of eligible Shapes) and **Page-Level Aesthetic Constraint** entries (post-selection validators run in a rejection loop over the accumulating page — the Variety Principle, alternation schedule, eyebrow deny-by-default, etc.).
-
-Each Building Block is one `.md` file (typed YAML frontmatter + body) under `reference/libraries/{components,shapes,sections,section-containers,shells}/` and `reference/rules/{shape-selection,page-constraints}/`. Entry format is `reference/libraries/FORMAT.md`.
+Each Building Block is one `.md` file (typed YAML frontmatter + body) under `reference/libraries/{components,shapes,sections,pages}/` and `reference/rules/{shape-selection,page-constraints}/`. Entry format is `reference/libraries/FORMAT.md`.
 
 ---
 
@@ -38,13 +40,13 @@ Each Building Block is one `.md` file (typed YAML frontmatter + body) under `ref
 2. Choose how to scope it:
    - **Global** — one design system across all your projects.
    - **Project** — design system scoped to this project; does not bleed into others.
-3. Set up your environment variables (next section) — by hand using this README, or by running `/cds:setup` for a guided walkthrough.
+3. Set up your environment variables (next section) — by hand using this README, or by running `/cds:setup` for a guided walkthrough. Setup is never required; this README is a complete substitute.
 
 ---
 
 ## Configure: environment variables
 
-CDS reads its configuration from environment variables in your `settings.json`'s `env` block. All are optional — when one is unset, the relevant skill asks you for the value at call time (or halts with the matching code if you decline).
+CDS reads its configuration from environment variables in your `settings.json`'s `env` block. All are optional — when one is unset, the relevant skill asks you for the value at call time, or applies its documented default.
 
 Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-var rules). The `CUSTOMIZABLE_DESIGN_SYSTEM_` prefix (and the `customizable-design-elements.yaml` filename) predate the rename to Configurable Design System and are retained verbatim for compatibility.
 
@@ -52,16 +54,15 @@ Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-va
 |---|---|---|---|
 | `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` | Recommended | Path to your populated `customizable-design-elements.yaml` | All skills |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE` | Recommended | `global` or `project` — gates where per-skill state is stored | composers, `package-change` |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` | Optional | Output directory for the generated CSS files | `generate-stylesheets`, composers, `export-design`, `package-change` |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` | Optional | Default output directory for HTML mocks | `compose-page` |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR` | Optional | Default output directory for framework-native component code | `compose-app-surface` |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK` | Required for `compose-app-surface` | Framework target (e.g., `react`, `vue`, `svelte`, `plain-html`) | `compose-app-surface` |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` | Optional | Project extensions dir — mirrors `reference/libraries/` + `reference/rules/`, read alongside and overriding the plugin catalog by name | composers, `export-design`, `generate-stylesheets` (fingerprint) |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` | Optional | Output directory for the generated CSS files | all skills (via the silent freshness stage) |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` | Optional | Default output directory for composed HTML outputs | `compose-page`, `compose-view` |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` | Optional | The shells output area — one file per Shell, named per Shell. Unset → a `shells/` directory that is a sibling of the mocks directory, applied silently | `compose-shell` (stores), `compose-view` (resolves by name) |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` | Optional | Project extensions dir — mirrors `reference/libraries/` + `reference/rules/`, read alongside and overriding the plugin catalog by name | composers, `export-design`, freshness fingerprint |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR` | Optional | Directory holding brand assets + the `artwork-manifest.yaml` | composers, `package-change` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_DESIGN_MD_PATH` | Optional | Default output path for the `DESIGN.md` export | `export-design` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` | Optional | Default output root for `package-change` hand-off bundles | `package-change` |
 
-When a variable is unset, the relevant skill asks for the value at call time. If you decline, the skill halts with the appropriate `STOP:` code (e.g., `ELEMENTS_YAML_UNSET`, `FRAMEWORK_UNSET`, `OUTPUT_PATH_UNRESOLVABLE`).
+When a variable is unset and has no documented default, the relevant skill asks for the value at call time. If you decline, the skill halts with the appropriate `STOP:` code (e.g., `ELEMENTS_YAML_UNSET`, `OUTPUT_PATH_UNRESOLVABLE`).
 
 ### Settings file location
 
@@ -79,15 +80,14 @@ Edit the chosen settings file directly. Example for a global install:
     "CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE": "global",
     "CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR": "/Users/you/projects/my-app/src/styles/design-system",
     "CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR": "/Users/you/projects/my-app/design-mocks",
-    "CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR": "/Users/you/projects/my-app/src/components/cds",
-    "CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK": "react"
+    "CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR": "/Users/you/projects/my-app/design-mocks-shells"
   }
 }
 ```
 
 ### Configure with `/cds:setup`
 
-Type `/cds:setup` in Claude Code. It asks whether you already have a populated YAML (and captures the path), or bootstraps one from the shipped template (global → `~/.claude/customizable-design-system/customizable-design-elements.yaml`, project → `<project-root>/.customizable-design-elements.yaml`), then captures the optional defaults and writes them to the right `settings.json` `env` block, preserving your other keys. It is idempotent — re-running reads current values and offers them as defaults. Setup is never required; this README is a complete substitute.
+Type `/cds:setup` in Claude Code. It asks whether you already have a populated YAML (and captures the path), or bootstraps one from the shipped template (global → `~/.claude/customizable-design-system/customizable-design-elements.yaml`, project → `<project-root>/.customizable-design-elements.yaml`), then captures the optional defaults — assets, stylesheets, mocks, and shells directories — and writes them to the right `settings.json` `env` block, preserving your other keys. It is idempotent — re-running reads current values and offers them as defaults. Setup is never required; this README is a complete substitute.
 
 ---
 
@@ -97,140 +97,140 @@ This is the only file you really customize. It carries:
 
 - **Color catalog**: common colors + named palettes (Ramp type for stepwise progressions, Discrete type for named-color sets). Each color has a hex value and optional display name.
 - **Typefaces / fonts**: variable + static fonts with their axes, and semantic font roles (`sans`, `serif`, `mono`) → typeface assignments with CSS fallback chains.
-- **Roles**: semantic CSS roles (surface/text/border/accent families) + component roles. Each has a type, a scope, a description, and an optional fallback.
+- **Roles**: semantic CSS roles (surface/text/border/accent groupings) + component roles. Each has a type, a scope, a description, and an optional fallback.
 - **Themes**: named theme classes. Each defines `light` and `dark` mode bindings — what color each role resolves to. `dark: mirror` says "the dark bindings equal this theme's light bindings" (schema 2.0, below).
 - **Optional `geometry:` / `motion:` override blocks**: the reference ships the geometry and motion *values*; a YAML row overrides one key. Omitting these blocks is valid — the reference values are used unchanged.
 
 The schema at `validation/customizable-design-elements.schema.json` is the authoritative shape. The shipped `setup/customizable-design-elements.yaml` is a worked example you copy and edit.
 
-What you do NOT put in this YAML: the default spacing / type scale / motion / radius values (reference-sourced, YAML-overridable per key), and output paths / framework / install mode (env vars).
+What you do NOT put in this YAML: the default spacing / type scale / motion / radius values (reference-sourced, YAML-overridable per key), and output paths / install mode (env vars).
 
 ---
 
 ## Core workflows
 
-### Regenerate the stylesheet set
+### Compose your site's Shell
 
-> "Regenerate the design-system CSS."
+> "Compose my site's shell: top nav with Home / Pricing / Docs, footer with the legal links."
 
-`generate-stylesheets` reads your YAML + the reference and writes `tokens.css`, `components.css`, `themes.css`, and a `manifest.json` of semantic fingerprints to your stylesheets directory. You rarely run this by hand: the composers, `export-design`, and `package-change` detect a stale set (by comparing the **semantic** hashes of your YAML, the reference tree, and any extensions against the manifest) and **regenerate it themselves** before proceeding. The hash is semantic — a comment- or `description:`-only YAML edit does not trigger a regeneration.
+`/cds:compose-shell` composes a **Shell** from your content and instructions — the ShellDefinition is the transient blueprint carrying your real menu items, logo, and colors. It emits the Shell HTML, shows it, and stores it **named per Shell** in the shells output area for reuse. Done once per site, edited rarely — editing later is the same command, and Views regenerated afterward inherit the change.
 
-### Mock a page, a section, or a component
+### Compose a Page
 
-> "Build a landing page for our launch."
+> "Create a landing page: hero, three feature tiles, pricing, a closing CTA."
 
-`compose-page` runs the shared build pipeline (`reference/pipeline.md`) and produces one self-contained HTML file you can open in a browser, attach to a spec, or send for review. It inlines the stylesheet set and a light/dark color-mode toggle. Two content modes: **drafted** (the skill generates a fill-in scaffold from the resolved Sections' slots) or **supplied** ("render this blog post: docs/announcements/launch.md" — the skill parses your content into the chosen Section Container (page type)). Isolated Section/Component requests wrap the piece in a minimal page so the browser can render it.
+`/cds:compose-page` composes a **Page** — one or more Sections in sequence — per the shared build pipeline (`reference/pipeline.md`) and produces one self-contained **Page HTML** file you can open in a browser, attach to a spec, or send for review. Each Section's Shape resolves eagerly (named up front) or lazily (the Rule Engine picks from its ShapeSelectionRule, validated by the PageLevelAestheticConstraints rejection loop). Two content modes: **drafted** (the skill generates a fill-in scaffold from the resolved Sections' slots) or **supplied** ("render this blog post: docs/announcements/launch.md"). Isolated Section/Component requests wrap the piece in a minimal page so the browser can render it.
 
-### Review a mock visually
+### See it in the Shell — the View
 
-> "Open the mock so I can comment on it."
+> "Now let me see it in the shell."
 
-`review-mock` closes the loop between composing and iterating: **compose → review-mock → paste the change request → compose iterates.** It runs `tools/build-review-harness.py` to build a playground-style harness (`<mock>.review.html`, one self-contained file) beside the mock and opens it in your browser. The harness embeds the mock exactly as shipped (light/dark toggle intact), maps the wireframe sidecar's blocks onto the page's structural regions — hovering shows each region's Building Blocks identity (the Section id and the Shape it received), clicking pins a numbered comment with quick tags (copy, layout, color, spacing, swap-shape, remove, add) — and a bottom panel assembles one natural-language change request grouped by region. Press Copy and paste it back to Claude: the request names the mock's file path, so it routes straight into `compose-page` iteration against the same output path. Without sidecars the harness still works, labeling regions "Region 1..N". The `.review.html` is a review artifact, not a deliverable — `package-change` does not bundle it.
+`/cds:compose-view` produces a **View**: the Page HTML nested inside a stored Shell, resolved **by name** from the shells area. One Shell serves many Pages. The **SPA variant** nests N Pages in one Shell with a client-side switcher showing one at a time — the same mechanism as the color-mode toggle; no routing code.
 
-### Build an in-app surface
+### Review any output visually
 
-> "Build the settings page in the app."
+> "Open it so I can comment."
 
-`compose-app-surface` runs the same pipeline to framework-native component code (per `CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK`) at your `APP_SURFACE_DIR`, plus the wiring diffs (nav entry, route table, parent component) that make the surface reachable. The emitted code **links** the stylesheet set (inlining is mock-only) and never emits theme controllers, color-mode resolvers, or routing — your host project owns those. Trigger it only with an explicit app-embedding signal ("in the app", "to the app", or a live route name); standalone-mock requests route to `compose-page`.
+`/cds:review` closes the loop between composing and iterating: **compose → review → paste the change request → the owning composer iterates.** It opens ANY generated output — a Shell, a Page HTML, a View, an isolated Section or Component — in a playground-style harness (`<basename>.review.html`, built by `tools/build-review-harness.py`, one self-contained file) in your browser. Hovering shows each region's Building Blocks identity (the Section id and the Shape it received), clicking pins a numbered comment with quick tags (copy, layout, color, spacing, swap-shape, remove, add), and a bottom panel assembles one natural-language change request. Press Copy and paste it back: the request routes to the composer that owns the artifact. The `.review.html` is a review artifact, not a deliverable — `package-change` does not bundle it.
 
-### Render targets
+### "Change the color of that button."
 
-Both composers render the one pipeline; they differ in output form (mock HTML vs. app code) and which targets each offers.
-
-| Target | What renders | Composer |
-|---|---|---|
-| `assembled` (default) | the Shell's persistent Sections + the Section Container — "the full page" | both |
-| `container-only` | The Section Container alone — no nav, no footer | both |
-| `shell-only` | The Shell with a labeled, unfilled content slot — "the frame / the chrome" | `compose-page` |
-| `spa` | One Shell, N Section Containers, a client-side switcher showing one at a time (same mechanism as the color-mode toggle; no routing code) | `compose-page` |
-| isolated Section / Component | The piece in a minimal wrapper (`--container-marketing-primary` width, `--sp-4` padding, light mode + toggle) | `compose-page` |
-
-### The sidecars (every run, both composers)
-
-Beside the metadata-free deliverable, the pipeline writes two sidecars on **every** run of **both** composers:
-
-- `<basename>.wireframe.txt` — one block per Section (`ID · section · shape · ground`) with an ASCII arrangement sketch.
-- `<basename>.decisions.md` — per Section: the chosen shape, the rule row that fired, alternates rejected and by which constraint, the ground assignment, width, motion notes, and the fallback-generated flag.
-
-The deliverable itself stays clean — the reasoning lives in the sidecars, never in the artifact. The pipeline also writes a deterministic **state record** (the `brief_snapshot` + resolved `sections`) that `package-change` consumes.
-
-### Artwork
-
-Artwork arrives bound to a brief slot — a slot name paired with a file path (read in place) or a URL (fetched into `CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR`). When a needed slot is unsupplied, the composer resolves it in a fixed order and stops at the first that yields the asset: the system glyph set → generation → online sourcing at a free-license floor → locate-and-hand-off (a licensed asset the user must fetch) → halt `ARTWORK_UNRESOLVABLE:{slot}`. Every asset records one entry in `<assets-dir>/artwork-manifest.yaml`, which rides into the `package-change` bundle. Full contract: `reference/artwork.md`.
+Say it in plain language. The agent determines whether that is a change to *this page* or to *the system* (one clarifying question if genuinely ambiguous), edits whatever actually holds the value — the page, or the token/role in your elements YAML — regenerates whatever that invalidates, re-renders, and shows the result. You never hear the words CSS, manifest, hash, or stale.
 
 ### Export the design system as DESIGN.md
 
 > "Export the design system."
 
-`export-design` reads the live system (elements YAML + catalog + stylesheet manifest) and emits one `DESIGN.md` — the map of colors (palettes → roles → themes with real values), typography, geometry and motion summaries, the Building Blocks catalog with contracts and aliases, the rule summaries, the compliance essentials, and how to consume the class and token names. It follows the emerging DESIGN.md convention (frontmatter tokens + ordered `##` sections) so any consumer — a human, or a tool that reads DESIGN.md the way AGENTS.md is read — can follow the system without opening the plugin. Regenerated, never hand-edited; deterministic given the same inputs.
+`/cds:export-design` reads the live system (elements YAML + catalog + stylesheet manifest) and emits one `DESIGN.md` — the map of colors (palettes → roles → themes with real values), typography, geometry and motion summaries, the Building Blocks catalog with contracts and per-entry aliases, the rule summaries, the compliance essentials, and how to consume the class and token names. Any consumer — a human, or a tool that reads DESIGN.md the way AGENTS.md is read — can follow the system without opening the plugin. Regenerated, never hand-edited; deterministic given the same inputs.
 
 ### Consult the design system while writing handlers
 
 > "I'm wiring the form-submit for the sign-up page. What classes, tokens, events, and ARIA contracts should I bind to?"
 
-`apply-design-system` loads the relevant catalog content into the calling agent's context as a structured response (`## Class names`, `## Token names`, `## Event hooks`, `## ARIA contracts`, `## Reference pointers`, `## Halt conditions`). No code is generated — your handler stays yours; CDS surfaces the contract you bind against.
+`/cds:apply-design-system` loads the relevant catalog content into the calling agent's context as a structured response (`## Class names`, `## Token names`, `## Event hooks`, `## ARIA contracts`, `## Reference pointers`, `## Halt conditions`). No code is generated — your handler stays yours; CDS surfaces the contract you bind against.
 
 ### Audit existing UI
 
 > "Audit the search results page."
 
-`audit-against-system` checks a target (file, set of files, rendered URL, or pasted markup/CSS) against `compliance.md`, scoped by the rendering context you declare (app-embedded vs. standalone). Output is inline annotations or a structured report; each violation cites the relevant reference file. This skill IS the compliance gate — the composers run the same rule set before delivery.
+`/cds:audit-against-system` checks a target (file, set of files, rendered URL, or pasted markup/CSS) against `compliance.md`, scoped by the rendering context you declare (app-embedded vs. standalone). Output is inline annotations or a structured report; each violation cites the relevant reference file. This skill IS the compliance gate — the composers run the same rule set before delivery.
+
+### Build UI directly in your app repo
+
+> "Create a modal that does x, y, and z." (said to an agent in your application repository)
+
+No composer, no mockup, no CDS command required — the design system is simply *in force*. The building agent consults it (`apply-design-system` or the exported `DESIGN.md`) for colors, fonts, sizes, spacing, and ARIA contracts; links the generated stylesheets; builds with system classes and tokens; and runs `audit-against-system` before saying done.
 
 ### Package an approved change for the app repo
 
-> "This mock is approved — package it for the app repo."
+> "This is approved — package it for the app repo."
 
-`package-change` bundles everything the change needs to cross the boundary into one directory: the current stylesheet set (regenerated first if stale), the mock HTML (or the framework surface + wiring diffs), a derived `build-spec.md` that cites the catalog entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in cds" to "built in the app repo."
+`/cds:package-change` bundles everything the change needs to cross the boundary into one directory: the current stylesheet set, the approved artifact (a Page HTML, a Shell, or a View), a derived `build-spec.md` that cites the catalog entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in CDS" to "built in the app repo," and the only bridge outward — the plugin never pivots into app work.
 
-### Update an existing page or surface (brownfield)
+### Update an existing page (brownfield)
 
 > "Update the hero on this existing page: src/pages/landing.html"
 
-Supply an existing file (from your repo or a Figma reference) and the composer applies the change to the targeted region only, leaving the rest intact — `compose-page` rewrites the standalone HTML byte-for-byte outside the region; `compose-app-surface` emits a region-scoped diff.
+Supply an existing file (from your repo or a Figma reference) and `compose-page` applies the change to the targeted region only, rewriting the standalone HTML byte-for-byte outside the region.
 
 ### Extend the catalog without forking
 
-Drop `*.md` entries into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, which **mirrors `reference/libraries/` + `reference/rules/` exactly** (`libraries/{components,shapes,sections,section-containers,shells}/`, `rules/{shape-selection,page-constraints}/`). The composers read them alongside the plugin catalog; a project entry whose `kind` + basename match a plugin entry **overrides it wholesale**, and project-only entries extend the catalog. A previously-halting Shell, Section Container, or Section composes once you supply its entry — no plugin release required.
+Drop `*.md` entries into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, which **mirrors `reference/libraries/` + `reference/rules/` exactly** (`libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). The composers read them alongside the plugin catalog; a project entry whose `kind` + basename match a plugin entry **overrides it wholesale**, and project-only entries extend the catalog. A previously-halting Page or Section composes once you supply its entry — no plugin release required.
+
+### The sidecars (every composer, every run)
+
+Beside the metadata-free deliverable, the pipeline writes two sidecars on **every** run:
+
+- `<basename>.wireframe.txt` — one block per Section (`ID · section · shape · ground`) with an ASCII arrangement sketch.
+- `<basename>.decisions.md` — per Section: the chosen shape, the rule row that fired, alternates rejected and by which constraint, the ground assignment, width, motion notes, and the fallback-generated flag.
+
+The deliverable itself stays clean — the reasoning lives in the sidecars, never in the artifact. The pipeline also writes a deterministic **state record** (the `brief_snapshot` + resolved `sections`) that `package-change` and iteration consume.
+
+### Artwork
+
+Artwork arrives bound to a brief slot — a slot name paired with a file path (read in place) or a URL (fetched into `CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR`). When a needed slot is unsupplied, the composer resolves it in a fixed order and stops at the first that yields the asset: the system glyph set → generation → online sourcing at a free-license floor → locate-and-hand-off (a licensed asset the user must fetch) → halt `ARTWORK_UNRESOLVABLE:{slot}`. Every asset records one entry in `<assets-dir>/artwork-manifest.yaml`, which rides into the `package-change` bundle. Full contract: `reference/artwork.md`.
 
 ---
 
 ## Sub-agent usage patterns
 
-For one-shot operations (regenerate stylesheets, audit one file, one quick mock), call the skill or slash command directly.
+For one-shot operations (audit one file, one quick mock), call the skill or slash command directly.
 
 For sustained work, spawn the appropriate sub-agent (Task tool, `subagent_type=cds-ui-author` or `cds-code-companion`):
 
-- **`cds-ui-author`** — wraps `compose-page`, `review-mock`, `compose-app-surface`, `apply-design-system`, `audit-against-system`, `export-design`, `package-change`. Its system prompt mandates consulting the catalog and self-auditing before declaring done, and forbids hand-rolling markup or CSS. `agents/cds-ui-author.md`.
+- **`cds-ui-author`** — wraps `compose-shell`, `compose-page`, `compose-view`, `review`, `apply-design-system`, `audit-against-system`, `export-design`, `package-change`. In the design studio every line of UI flows through the compose skills; in an app repo it runs the direct-build discipline (consult → build with system tokens/classes → audit before done). `agents/cds-ui-author.md`.
 - **`cds-code-companion`** — wraps `apply-design-system`, `audit-against-system`. Use when an agent writes non-UI code that touches generated UI and you want the design vocabulary loaded up front. `agents/cds-code-companion.md`.
 
-Sub-agents are recommended, not enforcement gates: every skill stays directly callable by its slash command, its natural-language trigger, or an explicit invocation. A caller that bypasses the sub-agents bypasses the system-prompt mandates that come with them.
+Sub-agents are recommended, not enforcement gates: every skill stays directly callable by its slash command, its natural-language trigger, or an explicit invocation.
 
 ---
 
 ## Iteration model
 
-Mocks are deliverables, not state. To iterate, call `compose-page` again with the change in plain language ("make the hero darker, swap the second feature card"). The pipeline:
+Outputs are deliverables, not state. To iterate, call the owning composer again with the change in plain language ("make the hero darker, swap the second feature card"). The pipeline:
 
-1. Resolves the output path you supplied (or the default from `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`).
+1. Resolves the output path you supplied (or the default from `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` / the shells area).
 2. Looks for a prior state record at that exact path.
 3. If found, loads the prior `brief_snapshot` + `sections` and applies your change to them.
 4. Writes the next version to the same path + a new state record and sidecars.
 
-Matching uses strict `output_path` equality. A fresh output path starts fresh; a continuation phrased against a new path gets one clarifying ask. Iteration (from a prior CDS state record) is distinct from update/brownfield (from external files). The plugin assumes a single user; no file locking.
+Matching uses strict `output_path` equality. A fresh output path starts fresh; a continuation phrased against a new path gets one clarifying ask. Iteration (from a prior CDS state record) is distinct from update/brownfield (from external files). A Shell edit overwrites its stored file; Views regenerated afterward inherit the change. The plugin assumes a single user; no file locking.
 
 ---
 
 ## What CDS will not do
 
 - It will not read your host-project code to infer conventions. Everything comes from the reference tree, your elements YAML, or runtime input you give it.
-- It will not emit theme controllers, mode resolvers, or routing for in-app surfaces. Your host project owns those.
-- It will not embed metadata inside a deliverable. Mocks and emitted code are clean; reasoning lives in the sidecars.
-- It will not invent catalog entries. New colors, roles, or themes are your work in the elements YAML; new Building Blocks go in your extensions dir. An **unknown** Shell, Section Container, or Section id halts (`SHELL_UNKNOWN`, `SECTION_CONTAINER_UNKNOWN`, `SECTION_TYPE_UNKNOWN`) rather than guessing.
-- It will **not** halt when a *known* dynamic Section's shape candidates are all rejected by the Page-Level Aesthetic Constraints. Instead the composer **fallback-generates** a layout that fits the content and satisfies the constraints, and records it as fallback-generated in the decisions sidecar. (This replaces the old shape-rules halt: the "no best guess" principle now lives at the catalog boundary — unknown entries — not at the composition boundary.)
+- It will not tell you to regenerate CSS or run any maintenance command. Stylesheet freshness is silent machinery: every entry point checks and regenerates before doing its work.
+- It will not emit theme controllers, mode resolvers, or routing. The View's SPA switcher is a mock-local visibility mechanism; your host project owns runtime plumbing.
+- It will not embed metadata inside a deliverable. Composed HTML is clean; reasoning lives in the sidecars.
+- It will not ship shells. Every Shell is composed by you, from your content, via `compose-shell`.
+- It will not invent catalog entries. New colors, roles, or themes are your work in the elements YAML; new Building Blocks go in your extensions dir. An **unknown** Page, Section, Component, or stored Shell name halts (`PAGE_UNKNOWN`, `SECTION_TYPE_UNKNOWN`, `MISSING_COMPONENT`, `SHELL_UNKNOWN`) rather than guessing.
+- It will **not** halt when a *known* lazily-assigned Section's Shape candidates are all rejected by the PageLevelAestheticConstraints. Instead the composer **fallback-generates** a layout that fits the content and satisfies the constraints, and records it as fallback-generated in the decisions sidecar. The "no best guess" principle lives at the catalog boundary — unknown entries — not at the composition boundary.
 
 ### Halt codes you may see
 
-`WRONG_SKILL` · `SHELL_UNKNOWN` · `SECTION_CONTAINER_UNKNOWN` · `SECTION_TYPE_UNKNOWN` · `MISSING_COMPONENT` · `MISSING_SPEC` · `STYLESHEETS_REGEN_FAILED` · `UPDATE_SOURCE_UNREADABLE` · `UPDATE_TARGET_AMBIGUOUS` · `ARTWORK_UNRESOLVABLE` · `COMPLIANCE_UNSATISFIABLE` · `SHELL_FIT_FAILED` · `FRAMEWORK_UNSET` · `OUTPUT_PATH_UNRESOLVABLE` · `TARGET_UNREADABLE` · `REVIEW_HARNESS_FAILED` · `STATE_RECORD_NOT_FOUND` · `ASSETS_UNRESOLVABLE` · `ELEMENTS_YAML_UNSET` · `ELEMENTS_INVALID` · `ELEMENTS_VERSION_MISMATCH`.
+`WRONG_SKILL` · `SHELL_UNKNOWN` · `PAGE_UNKNOWN` · `SECTION_TYPE_UNKNOWN` · `MISSING_COMPONENT` · `MISSING_SPEC` · `STYLESHEETS_REGEN_FAILED` · `UPDATE_SOURCE_UNREADABLE` · `UPDATE_TARGET_AMBIGUOUS` · `ARTWORK_UNRESOLVABLE` · `COMPLIANCE_UNSATISFIABLE` · `OUTPUT_PATH_UNRESOLVABLE` · `TARGET_UNREADABLE` · `REVIEW_HARNESS_FAILED` · `STATE_RECORD_NOT_FOUND` · `ASSETS_UNRESOLVABLE` · `ELEMENTS_YAML_UNSET` · `ELEMENTS_INVALID` · `ELEMENTS_VERSION_MISMATCH`.
 
 ---
 
@@ -262,15 +262,15 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 
 ## Troubleshooting
 
-**"The skill said it regenerated my stylesheets."** Expected — when your YAML, reference, or extensions change, the pipeline regenerates the set itself before composing. A comment- or `description:`-only YAML edit does not trigger one (the hash is semantic). If an auto-regeneration fails you'll see `STYLESHEETS_REGEN_FAILED` with the inner cause.
+**"The composer halted with `PAGE_UNKNOWN:editorial-detail`."** Neither the plugin catalog nor your extensions carry that Page. The composer halts rather than guess — add the entry to your `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/libraries/pages/` (the plugin's own catalog ships nine Page entries under `reference/libraries/pages/`).
 
-**"The skill stopped with `SECTION_CONTAINER_UNKNOWN:editorial-detail`."** Neither the plugin catalog nor your extensions carry that Section Container. The composer halts rather than guess — add the entry to `reference/libraries/section-containers/` or to your `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/libraries/section-containers/`.
+**"`compose-view` halted with `SHELL_UNKNOWN:main`."** No stored Shell named `main` exists in your shells area. Compose it first: `/cds:compose-shell`.
 
-**"A Section's layout says it was fallback-generated."** That is not an error. A known dynamic Section whose shape candidates were all rejected by the Page-Level Aesthetic Constraints gets a composer-generated layout that fits — the decisions sidecar records exactly which candidates were rejected and why.
+**"A Section's layout says it was fallback-generated."** That is not an error. A known lazily-assigned Section whose Shape candidates were all rejected by the PageLevelAestheticConstraints gets a composer-generated layout that fits — the decisions sidecar records exactly which candidates were rejected and why.
 
-**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the catalog. Add its entry under `reference/libraries/components/` (or your extensions dir) to enable it.
+**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the catalog. Add its entry under your extensions dir's `libraries/components/` to enable it.
 
-**"My sub-agent is generating UI code by hand instead of using `compose-page`."** The sub-agent's system prompt mandates the skills, but Claude can drift. Re-spawn it, or remind it to invoke `compose-page` / `compose-app-surface` rather than emit markup directly.
+**"My sub-agent is generating studio UI by hand instead of composing."** The sub-agent's system prompt mandates the compose skills, but Claude can drift. Re-spawn it, or remind it to invoke the compose skills rather than emit markup directly.
 
 **"`/cds:setup` overwrote a value I had hand-edited."** It should not — the merge preserves unrelated keys and offers current values as defaults. If a known value changed, that is a bug; surface it.
 
@@ -280,18 +280,19 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 
 | Looking for | Where |
 |---|---|
+| The entity model (normative) | `reference/model/entity-catalog.md` + `reference/model/data-model.mermaid` |
 | Your design choices (palettes, typefaces, themes) | `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` |
 | The schema for your design choices | `validation/customizable-design-elements.schema.json` |
-| The Building Blocks catalog | `reference/libraries/{components,shapes,sections,section-containers,shells}/` + `reference/libraries/FORMAT.md` |
+| The Building Blocks catalog | `reference/libraries/{components,shapes,sections,pages}/` + `reference/libraries/FORMAT.md` |
 | Composition rules (shape-selection, page constraints) | `reference/rules/{shape-selection,page-constraints}/` |
-| The shared build pipeline (both composers) | `reference/pipeline.md` |
-| User-facing word → internal term map | `reference/aliases.md` |
+| The shared build pipeline (all composers) | `reference/pipeline.md` |
 | Fixed design rules (spacing, motion, type scales, accessibility, imagery) | `reference/foundations/*.md` |
 | The artwork contract | `reference/artwork.md` |
 | Compliance rules | `reference/compliance.md` |
+| Your composed Shells | `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` (default: the `shells/` sibling of your mocks directory) |
 | Sub-agent system prompts | `agents/cds-ui-author.md`, `agents/cds-code-companion.md` |
-| Slash commands | `commands/{setup,generate-stylesheets,compose-page,review-mock,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}.md` |
-| Skills | `skills/{setup,generate-stylesheets,compose-page,review-mock,compose-app-surface,apply-design-system,audit-against-system,export-design,package-change}/SKILL.md` |
+| Slash commands | `commands/{setup,compose-shell,compose-page,compose-view,review,apply-design-system,audit-against-system,export-design,package-change}.md` |
+| Skills | `skills/{setup,generate-css,compose-shell,compose-page,compose-view,review,apply-design-system,audit-against-system,export-design,package-change}/SKILL.md` |
 | The review-harness builder | `tools/build-review-harness.py` |
 | Schema 2.0 migration record + tooling | `analysis/schema-2-migration-notes.md`, `tools/migrate-elements.py` |
 | Your per-run skill state | `~/.claude/customizable-design-system/state/{skill}/` (global) or `<project>/.claude/customizable-design-system/state/{skill}/` (project) |

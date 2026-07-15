@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: tagged-card-grid
-family: landing
+page_family: landing
 aliases: [labeled card grid, category card grid]
 status: stable
 slots:

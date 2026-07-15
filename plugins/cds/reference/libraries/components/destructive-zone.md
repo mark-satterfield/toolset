@@ -1,7 +1,7 @@
 ---
 kind: component
 name: destructive-zone
-family: app
+page_family: app
 aliases: [danger zone, destructive section, delete zone]
 status: stable
 slots:

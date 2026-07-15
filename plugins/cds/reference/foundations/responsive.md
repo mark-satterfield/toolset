@@ -7,7 +7,7 @@
 | Mobile narrow | `< 480px` | Single-column. Section padding drops to 56px top/bottom. 2-column grid. Drawer-style mobile nav. Reading column at 100% width minus side gutter. |
 | Mobile wide | `480–700px` | Single-column. Drawer-style mobile nav. Editorial reading column at full width. |
 | Tablet | `700–1024px` | 12-column grid activates. Editorial reading column at 640px centered. Desktop topbar appears. |
-| Desktop | `1024–1440px` | Full container at 1192–1400px max. Three-pane application shell expands. |
+| Desktop | `1024–1440px` | Full container at 1192–1400px max. The application Shell's Sections all show. |
 | Wide desktop | `> 1440px` | Container caps at 1440px (marketing) or 1400px (editorial). Outer page gutter grows. Long-form pages hold the `--docs-outer-offset` gutter on each outer side. |
 
 ## §17.2 Scaling rules

@@ -1,10 +1,10 @@
 ---
 kind: section
 name: doc-header
-family: docs
+page_family: docs
 aliases: [document title, doc title block, legal page header]
 status: stable
-mode: deterministic
+shape: title-meta-stack
 content_contract: {}
 theme: editorial
 composition_notes: []
@@ -12,14 +12,11 @@ composition_notes: []
 
 # Doc header
 
-The title block of a documentation page: the page h1 and its metadata row.
+The title block of a documentation page: the page h1 and its metadata row. Its layout is the `left-ruled` variant of the title-meta-stack Shape (`libraries/shapes/title-meta-stack.md`); the eyebrow slot is unfilled.
 
-## Slots
+## Content
 
 - `title` — the page h1 at the Editorial-Display-2 role.
-- `metadata` — effective-date stamp and "Previous Version" link at the Text Label role; optional language picker (a single-option dropdown by default).
+- `meta` — effective-date stamp and "Previous Version" link at the Text Label role; optional language picker (a single-option dropdown by default).
 
-## Determinations
-
-- A single hard 1px rule at `--border-strong` separates the metadata row from the body — the only line work on the page.
-- Zero radius anywhere in the header; structure relies on whitespace and the hairline.
+The Shape's hairline beneath the metadata row is the only line work on the page.

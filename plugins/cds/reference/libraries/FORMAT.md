@@ -2,15 +2,18 @@
 
 Every Building Block is one `.md` file: typed YAML frontmatter + a body. The same format applies in the plugin's `reference/libraries/` and `reference/rules/` trees and in a project's extensions dir (`$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` mirrors both trees; a matching `kind` + basename overrides the plugin entry wholesale).
 
-Terminology is the Building Blocks vocabulary: Element (concept only — never configured), Component (a component library entry is a Component Definition; a Component on a page is an instance of it), Shape, Section, Section Container (user-facing alias: page type), Shell, plus the two rule kinds: Shape Selection Rules (`shape-selection-rule`) and Page-Level Aesthetic Constraints (`page-constraint`). `reference/aliases.md` maps user-facing words onto these; entry bodies use the internal vocabulary only.
+Terminology is the Building Blocks vocabulary defined in `reference/model/entity-catalog.md`: Element (concept only — never configured), Component (a component library entry is a Component Definition; a Component on a page is an instance of it), Shape, Frame, Section, Page, ShellDefinition (its stored output is a Shell), plus the two rule kinds: Shape Selection Rules (`shape-selection-rule`) and Page-Level Aesthetic Constraints (`page-constraint`). Entry bodies use this vocabulary only.
 
 ## Common frontmatter (every kind)
 
 ```yaml
-kind: component | shape | section | section-container | shell | shape-selection-rule | page-constraint
+kind: component | shape | section | page | shape-selection-rule | page-constraint
 name: kebab-case-name          # basename of the file (e.g. hero.md → hero); the entry is cited by this name everywhere
-family: landing | editorial | docs | auth | app | shared
-aliases: []                    # user-facing names this entry answers to
+page_family: landing | editorial | docs | auth | app | shared
+                               # the page family this entry serves; shared = all families.
+                               # The page family selects the typography and motion register and scopes
+                               # which Page-Level Aesthetic Constraints apply (see entity-catalog.md).
+aliases: []                    # searchable synonyms this entry answers to (never a routing decision)
 status: stable | draft
 ```
 
@@ -24,7 +27,9 @@ sizing: {}                     # dimension contract: token refs and derivation f
 behavior: []                   # interaction contracts: events, states, keyboard
 accessibility: []              # ARIA pattern, focus, contrast obligations
 token_bindings: []             # role tokens the component consumes (semantic vocabulary only)
-shell_component: false            # true for Components that realize a Shell's persistent Sections: topbar, footer, rail, drawer, skip-links, switcher, account-row
+shell_component: false         # true for Components that typically realize a Shell's Sections
+                               # (topbar, footer, rail, drawer, skip-links, switcher, account-row);
+                               # consulted by compose-shell when the user composes a Shell
 composite: false               # true for multi-component compositions (modal-with-form, field-group, destructive-zone)
 content_defaults: {}           # declared example content (e.g. the footer's default column IA); supplied content overrides
 ```
@@ -38,35 +43,29 @@ self_contained: false          # true ⇒ the fragment carries its own scoped <s
 content_defaults: {}           # declared example content for drafted-mode scaffolds (e.g. rate-table default columns); supplied content overrides — the layout contract itself is content-free
 ```
 
+A Shape is a layout template — it positions Components and Elements and carries their proportional and other geospatial properties. It is not a DesignElement and has no dimensions of its own; when a Shape is applied to a Frame, the Components become realized.
+
 ### section
 
 ```yaml
-mode: deterministic | dynamic  # deterministic: layout fixed here; dynamic: Shape assigned at build by the rule engine
+shape: shape-name              # eager Shape assignment: the Shape, by name, from the ShapeLibrary.
+                               # Omit for lazy assignment: the Shape is resolved at build time by the
+                               # Rule Engine from the Section's content via its shape-selection-rule.
 content_contract: {}           # the typed signals this section's rule consumes (the completed content_meta fields relevant to it)
 theme: default                 # theme class or `scheduled` (takes the constraint-assigned ground)
 composition_notes: []          # cross-section notes (e.g. cross-promo may embed inside trust-detail)
 ```
 
-### section-container
+A Section never contains its own layout — layout always lives in a Shape in the ShapeLibrary so it stays shareable across Pages. A Section either names its Shape (eager) or carries the content signals its rule needs (lazy).
+
+### page
 
 ```yaml
 sections: []                   # ordered: {section, required, notes} — each names a Section by name
-constraints: []                # page-constraint refs applying to this container
-register: {}                   # foundations bindings: type scale, motion register
-default_shell: marketing      # shell name resolved when the user asks for "the page"
+constraints: []                # page-constraint refs applying to this Page
 ```
 
-### shell
-
-A Shell entry may describe a Shell Template — persistent Sections pinned around a placeholder `content_slot` for a Section Container — or an instantiated Shell persisted for reuse; the composer instantiates a Template into a Shell.
-
-```yaml
-sections: []                   # each persistent Section of the Shell, realized by a named Component (topbar, footer, rail, …), with placement
-panes: []                      # named regions for app shells: {name, width: token-or-formula, collapse}
-content_slot: {}               # what the shell accepts: {kinds: [section-container], families: []}
-```
-
-Every Shell is named by its layout (marketing, editorial, docs, auth, rail-main, …). A novel viewport partitioning always takes a new name — never a variant of an existing one.
+A Page is one or more Sections in sequence; it nests inside the vacant space of a Shell. A Page entry never names a Shell — Shells are composed by the user (`compose-shell`) and paired with a Page at view time (`compose-view`).
 
 ### shape-selection-rule
 
@@ -82,7 +81,7 @@ default: shape-name            # fallback candidate before agent generation
 ### page-constraint
 
 ```yaml
-applies_to: {families: [], containers: []}   # scoping; family default overridable per container
+applies_to: {page_families: [], pages: []}   # scoping; a page-family default overridable per Page
 check: |                       # the validator statement, written as a decidable rule over the accumulating page
 ```
 
@@ -94,7 +93,7 @@ Free markdown after the frontmatter: the layout description, ASCII sketch where 
 
 ## Dimension rule
 
-A dimension in any entry is one of: (a) a token reference (`var(--sp-2)`, `--container-marketing-primary`); (b) a derivation formula over tokens or parent dimensions (`50% of content_slot minus var(--sp-1) gap`); (c) an intrinsic literal ONLY when the value is a genuine standalone design choice and no token expresses it — in which case it belongs in the YAML geometry scale, not the entry. Frozen consequences of parent dimensions are format violations.
+A dimension in any entry is one of: (a) a token reference (`var(--sp-2)`, `--container-marketing-primary`); (b) a derivation formula over tokens or parent dimensions (`50% of the vacant space minus var(--sp-1) gap`); (c) an intrinsic literal ONLY when the value is a genuine standalone design choice and no token expresses it — in which case it belongs in the YAML geometry scale, not the entry. Frozen consequences of parent dimensions are format violations.
 
 ## Prose rule
 

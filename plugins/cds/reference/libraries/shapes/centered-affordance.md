@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: centered-affordance
-family: landing
+page_family: landing
 aliases: [hero with chat input, hero with install command, interactive hero]
 status: stable
 slots:

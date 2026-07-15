@@ -1,7 +1,7 @@
 ---
 kind: component
 name: related-rail
-family: editorial
+page_family: editorial
 aliases: [related rail, related-content rail, sibling articles, read-more rail]
 status: stable
 slots:

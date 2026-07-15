@@ -1,10 +1,9 @@
 ---
 kind: section
 name: trust-detail
-family: landing
+page_family: landing
 aliases: [security section, trust and security, compliance section, governance section]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   has_visual_per_item: bool

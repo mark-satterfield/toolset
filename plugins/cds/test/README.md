@@ -41,7 +41,7 @@ generated is ever committed:
 ```
 visual-proof-out/        (gitignored — regenerated on demand)
   styles/        tokens.css, components.css, themes.css, switcher.js, manifest.json
-                 — emitted by executing the generate-stylesheets skill on the live YAML
+                 — emitted by executing the generate-css skill on the live YAML
   components/    one real markup fragment per component family
   shapes/        one pregenerated artifact per shape, named with its semantic name
   landing.html   a full sample landing page (alternating sections, variety principle)
@@ -56,7 +56,7 @@ screenshots/     committed reference captures
 ```
 
 **The single entry — `cds-render-proof` workflow.** Run it to do everything in one
-pass: it **regenerates** (fans out across sub-agents — one runs `generate-stylesheets`,
+pass: it **regenerates** (fans out across sub-agents — one runs `generate-css`,
 others build the component fragments and the shape artifacts, one composes the landing
 page), then **verifies** (runs the deterministic checks above), then **assembles** the
 galleries. Everything is generated from the **live** config and the reference tree —

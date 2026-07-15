@@ -1,7 +1,7 @@
 ---
 kind: component
 name: destructive-button
-family: shared
+page_family: shared
 aliases: [destructive button, delete button, danger button]
 status: stable
 slots:

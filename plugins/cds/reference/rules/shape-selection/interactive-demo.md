@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: interactive-demo
 section: interactive-demo
-family: landing
+page_family: landing
 status: stable
 signals: [demo_format]
 table:

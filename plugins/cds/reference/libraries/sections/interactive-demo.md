@@ -1,10 +1,9 @@
 ---
 kind: section
 name: interactive-demo
-family: landing
+page_family: landing
 aliases: [demo, interactive demo, try it, product preview, see it in action]
 status: stable
-mode: dynamic
 content_contract:
   demo_format: "prompt-artifact | multi-surface"
 theme: scheduled

@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: split-banner-fork
-family: landing
+page_family: landing
 aliases: [stacked path bands, mirrored fork bands, two-band fork]
 status: stable
 slots:

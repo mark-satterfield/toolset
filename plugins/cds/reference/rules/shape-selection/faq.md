@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: faq
 section: faq
-family: landing
+page_family: landing
 status: stable
 signals: [item_count, copy_density_per_item]
 table:

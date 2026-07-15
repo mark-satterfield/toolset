@@ -4,8 +4,8 @@ Canonical record of the customizable-design-elements schema **2.0.0** change and
 how to migrate a live 1.x data file. Machinery only — libraries, rules, skills,
 and reference docs are out of scope here.
 
-Reference: `analysis/model-mapping.md` §7 (machinery evolution) and §5 rulings 6
-and 8; `analysis/plugin-audit.md` findings 23, 25, 26, 27, 33, 34.
+Reference: the schema itself (`validation/customizable-design-elements.schema.json`)
+and the migration tooling (`tools/migrate-elements.py`, `tools/check-values-parity.py`).
 
 ---
 

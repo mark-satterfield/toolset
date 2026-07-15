@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: divider-label
-family: landing
+page_family: landing
 aliases: [labeled divider, section divider, hairline label]
 status: stable
 slots:

@@ -1,7 +1,7 @@
 ---
 kind: component
 name: editorial-featured-card
-family: editorial
+page_family: editorial
 aliases: [featured card, editorial card, illustration card]
 status: stable
 slots:

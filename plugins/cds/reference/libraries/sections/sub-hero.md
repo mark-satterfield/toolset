@@ -1,10 +1,9 @@
 ---
 kind: section
 name: sub-hero
-family: landing
+page_family: landing
 aliases: [sub-hero, secondary hero, mid-page CTA, mid-page hero]
 status: stable
-mode: dynamic
 content_contract:
   visual_type: "video | none"
 theme: scheduled

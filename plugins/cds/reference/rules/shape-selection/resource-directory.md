@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: resource-directory
 section: resource-directory
-family: landing
+page_family: landing
 status: stable
 signals: [has_source_tag_per_item]
 table:

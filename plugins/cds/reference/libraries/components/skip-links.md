@@ -1,7 +1,7 @@
 ---
 kind: component
 name: skip-links
-family: shared
+page_family: shared
 aliases: [skip to content, skip navigation, bypass links]
 status: stable
 shell_component: true

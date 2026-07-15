@@ -1333,7 +1333,7 @@ themes:
 # GEOMETRY
 # Configurable page-, surface-, and component-level sizing,
 # spacing, and geometry. A first-class element set, peer to
-# color and motion. generate-stylesheets emits each entry as a
+# color and motion. generate-css emits each entry as a
 # CSS custom property in tokens.css; the component classes in
 # components.css consume them, so the DESIGN SYSTEM owns
 # component sizing and a page never re-invents it in a <style>
@@ -1385,7 +1385,7 @@ geometry:
 
   # ----- fixed Component widths -> --element-{key} (foundations/layout.md §11.2)
   # A fixed width of a specific Component (a card, not a section wrapper): its
-  # width is BELOW the page width, the opposite of a container. generate-stylesheets
+  # width is BELOW the page width, the opposite of a container. generate-css
   # ALSO emits --container-conversion-card as an alias of --element-conversion-card
   # until consumers migrate off the old container-scale name.
   elements:
@@ -1415,7 +1415,7 @@ geometry:
     # §12.5 App shell left rail.
     app-shell-rail:
       width: { value: "256px", description: "Primary navigation rail width (layout.md §11.10)." }
-    # Layout.md §11.10 application-shell panes. Emitted as --app-shell-{pane}.
+    # Layout.md §11.10 application-shell geometry sizing the Shell's Sections. Emitted as --app-shell-{key}.
     app-shell:
       mini-rail:    { value: "56px",  description: "Icon-only collapsed rail width." }
       info-panel:   { value: "320px", description: "Contextual info/detail panel width." }
@@ -1428,7 +1428,7 @@ geometry:
 # MOTION
 # Configurable easing curves, durations, and entrance-pattern
 # parameters. A first-class element set, peer to color and
-# geometry. generate-stylesheets emits the tokens into
+# geometry. generate-css emits the tokens into
 # tokens.css AND emits the reveal/stagger/fade @keyframes and
 # pattern classes into components.css — animating in the base
 # rule and disabling ONLY inside
@@ -1460,7 +1460,7 @@ motion:
     "600": { value: "600ms", description: "Dropdown panel grow." }
 
   # ----- entrance patterns -> --{pattern}-{property} (foundations/motion.md §15.4)
-  # Each pattern's parameters are emitted as tokens; generate-stylesheets emits
+  # Each pattern's parameters are emitted as tokens; generate-css emits
   # the matching @keyframes + class:
   #   reveal  -> .reveal-word   (hero word-by-word, JS sets --reveal-index)
   #   card    -> .card-stagger  (card grid entry,   JS sets --card-index)

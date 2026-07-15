@@ -2,8 +2,8 @@
 """
 cds_hash — deterministic input fingerprints for the CDS stylesheet pipeline.
 
-ONE implementation, shared by `generate-stylesheets` (which writes the manifest)
-and the composers (`compose-page` / `compose-app-surface`, which read the
+ONE implementation, shared by `generate-css` (which writes the manifest)
+and the composers (`compose-page` / `compose-shell` / `compose-view`, which read the
 manifest to decide whether the stylesheet set is stale). Sharing one script is
 the point: the writer and the readers can never disagree on what "the inputs
 changed" means.
@@ -14,7 +14,7 @@ Subcommands
       Print the SEMANTIC SHA-256 of the elements YAML — the hash of its MEANING,
       not its bytes. Parsing drops comments and formatting; every `description:`
       value (human prose) is then removed; the remaining structure is serialized
-      canonically in FILE ORDER. Key order is load-bearing — `generate-stylesheets`
+      canonically in FILE ORDER. Key order is load-bearing — `generate-css`
       walks the YAML blocks in file order and emits tokens in that order, so a
       reordering legitimately changes the emitted CSS and therefore the hash.
       A comment-only or description-only edit does NOT change this hash, so it

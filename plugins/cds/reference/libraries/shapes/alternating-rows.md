@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: alternating-rows
-family: landing
+page_family: landing
 aliases: [zigzag layout, alternating feature rows, image-text rows]
 status: stable
 slots:

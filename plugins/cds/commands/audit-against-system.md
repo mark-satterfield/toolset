@@ -1,7 +1,7 @@
 ---
 description: Audit existing UI (file paths, rendered URL, or pasted markup/CSS) against the design system's compliance rules and emit a report with citations and suggested fixes.
 argument-hint: "[file path, set of paths, URL, or pasted markup/CSS] [--inline | --report]"
-allowed-tools: Read, Glob, Grep, WebFetch
+allowed-tools: Read, Write, Bash, Glob, Grep, WebFetch
 ---
 
 # /cds:audit-against-system
@@ -12,12 +12,12 @@ Invoke the `audit-against-system` skill in this plugin. Load and execute `skills
 
 1. Load `skills/audit-against-system/SKILL.md`.
 2. Treat `$ARGUMENTS` as the target plus optional output-format flag. If `$ARGUMENTS` is empty, ask: "What should I audit — a file path, a URL, or pasted markup/CSS? And do you want inline annotations or a structured report?"
-3. Run the discovery checklist (what is being audited → surface kind → rendering context [caller-declared, never inferred] → Section Container [alias: page type] → audit scope → output format).
-4. Apply the pipeline: load the rule set from `compliance.md` filtered by the declared rendering context, walk the target rule-by-rule, flag undefined-in-reference patterns as findings, emit the report in the chosen output format.
+3. Run the discovery checklist (what is being audited → surface kind → rendering context [caller-declared, never inferred] → Page and page family → audit scope → output format).
+4. Apply the pipeline: run the silent stylesheet-freshness stage first (findings compare against the current system — never surfaced to the user as anything to act on), load the rule set from `compliance.md` filtered by the declared rendering context, walk the target rule-by-rule, flag undefined-in-reference patterns as findings, emit the report in the chosen output format.
 
 ## Notes
 
 - This command IS the compliance gate. It does not have one of its own.
 - The caller declares the rendering context (`app-embedded` or `standalone`) — the skill does NOT infer it from host-project inspection.
 - Every finding cites a reference file. Absence of violations in a scoped audit is NOT blanket certification.
-- Halt codes the user may see: `MISSING_SPEC`, `TARGET_UNREADABLE`, `ELEMENTS_YAML_UNSET`.
+- Halt codes the user may see: `MISSING_SPEC`, `TARGET_UNREADABLE`, `ELEMENTS_YAML_UNSET`, `STYLESHEETS_REGEN_FAILED:{inner}`.

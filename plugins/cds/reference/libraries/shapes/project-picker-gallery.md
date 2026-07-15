@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: project-picker-gallery
-family: app
+page_family: app
 aliases: [project picker, recent projects gallery, file picker, new-prototype gallery]
 status: stable
 slots:
@@ -19,7 +19,7 @@ content_defaults:
 
 # project-picker-gallery — Tabbed project cards with an onboarding lead card
 
-A project/file picker filling a canvas pane (typically the form-sidebar-canvas Shell's Recent tab): a tab strip on the left with a right-aligned search input, then a responsive grid of cards. The first card is an onboarding card (small art glyph + title + tutorial link on a tinted ground); the rest are project cards (top color-band header + thumbnail panel + title + recency stamp + owner pill). The number of project cards is content-driven.
+A project/file picker filling the vacant space — it suits an application Shell with a form-sidebar Section, as the Recent-tab view: a tab strip on the left with a right-aligned search input, then a responsive grid of cards. The first card is an onboarding card (small art glyph + title + tutorial link on a tinted ground); the rest are project cards (top color-band header + thumbnail panel + title + recency stamp + owner pill). The number of project cards is content-driven.
 
 Creation is owned by the Shell's form sidebar, not by this gallery — the user lands here to resume a recent project or follow the onboarding path.
 
@@ -52,4 +52,4 @@ Creation is owned by the Shell's form sidebar, not by this gallery — the user 
 ## Determinations
 
 - Card hover/selection: on hover a card raises with the faint-elevation shadow (`foundations/layout.md` §11.8) and its border steps from `--border-subtle` to `--border-strong` (the hover/emphasis border step) over a 150ms `--ease-in-out` transition (suppressed under reduced-motion). The card is a link, so `:focus-visible` paints the standard focus ring (`foundations/accessibility.md` §18.2).
-- Card overflow: cards wrap to additional rows — a responsive grid, `repeat(auto-fill, minmax(var(--app-shell-list-column), 1fr))` (the pane-width token, `foundations/layout.md` §11.10, as the card floor) — not horizontal scroll, so every project stays reachable without a horizontal scrollbar.
+- Card overflow: cards wrap to additional rows — a responsive grid, `repeat(auto-fill, minmax(var(--app-shell-list-column), 1fr))` (the `--app-shell-list-column` token, `foundations/layout.md` §11.10, as the card floor) — not horizontal scroll, so every project stays reachable without a horizontal scrollbar.

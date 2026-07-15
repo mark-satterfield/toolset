@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: use-case-routing
 section: use-case-routing
-family: landing
+page_family: landing
 status: stable
 signals: [item_count, taxonomy_type, has_subitems_per_category]
 table:

@@ -1,9 +1,14 @@
 ---
 kind: page-constraint
 name: variety-principle
-family: landing
+page_family: landing
 status: stable
-applies_to: { families: [landing], containers: [] }
+applies_to: { page_families: [landing], pages: [] }
+check: |
+  Reject a Shape candidate whose rendered dimensions would repeat the
+  immediately preceding Section's combination — same structural pattern and
+  same alignment and same density. Theme and background are not variety
+  dimensions and are never grounds for rejection under this constraint.
 ---
 
 # The Variety Principle
@@ -25,7 +30,7 @@ applies_to: { families: [landing], containers: [] }
 
 **Combine freely.** Every Section is a fresh composition decision; no combination repeats across adjacent Sections. Unless a Shape is intentionally centered, alternate its alignment — a two-column Shape mirrors its text/visual sides relative to the previous two-column Section.
 
-**Theme and background are NOT variety dimensions.** The principal theme stays constant for the whole page; grounds follow `ground-alternation`; theme islands are declared on the Section Container.
+**Theme and background are NOT variety dimensions.** The principal theme stays constant for the whole page; grounds follow `ground-alternation`; theme islands are declared on the Page.
 
 ## As a validator
 

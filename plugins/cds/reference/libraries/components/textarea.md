@@ -1,7 +1,7 @@
 ---
 kind: component
 name: textarea
-family: shared
+page_family: shared
 aliases: [textarea, multi-line input, text area]
 status: stable
 slots:

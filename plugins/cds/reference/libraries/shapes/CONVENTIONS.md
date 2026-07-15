@@ -8,7 +8,7 @@ Per-Shape slot and layout detail is definitive at the level each entry states. C
 
 ## Theme and ground
 
-No Shape sets its own theme or Section ground. Every Shape inherits the surrounding Section's theme and takes the Section's scheduled `surface-primary`/`surface-secondary` ground from `rules/page-constraints/ground-alternation.md`. A Section that must read as a distinct theme (e.g. a dark band) is a named theme island declared on the Section Container, not a Shape-level choice.
+No Shape sets its own theme or Section ground. Every Shape inherits the surrounding Section's theme and takes the Section's scheduled `surface-primary`/`surface-secondary` ground from `rules/page-constraints/ground-alternation.md`. A Section that must read as a distinct theme (e.g. a dark band) is a named theme island declared on the Page, not a Shape-level choice.
 
 ## Interactive and animated Shapes are self-contained
 
@@ -24,7 +24,7 @@ numbered-steps step rows wrap onto additional grid rows when the step count exce
 
 ## Eyebrows are deny-by-default
 
-Enforced as the landing-family page constraint `rules/page-constraints/eyebrow-scope.md`. A section-level eyebrow — a short label line above a Section's heading — is authorized in exactly two places: the optional eyebrow in heading-strip (the standalone heading strip), and the per-card tag/pill inside tagged-card-grid and resource-grid. No other Shape carries a section-level eyebrow. A hero (centered-stack, split-text-media, centered-affordance, sub-hero-split), a card-grid heading (card-grid), a workflow (numbered-steps), a CTA panel (banner-strip, cta-panel, cta-newsletter), and every other Shape begin directly with the heading — no kicker above it. When a label genuinely must precede a content unit, model it as its own heading-strip Section rather than decorating an adjacent Section's heading.
+Enforced as the landing page-family constraint `rules/page-constraints/eyebrow-scope.md`. A section-level eyebrow — a short label line above a Section's heading — is authorized in exactly two places: the optional eyebrow in heading-strip (the standalone heading strip), and the per-card tag/pill inside tagged-card-grid and resource-grid. No other Shape carries a section-level eyebrow. A hero (centered-stack, split-text-media, centered-affordance, sub-hero-split), a card-grid heading (card-grid), a workflow (numbered-steps), a CTA panel (banner-strip, cta-panel, cta-newsletter), and every other Shape begin directly with the heading — no kicker above it. When a label genuinely must precede a content unit, model it as its own heading-strip Section rather than decorating an adjacent Section's heading.
 
 ## Heading alignment registers
 

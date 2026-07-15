@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: editor-card-stack
-family: app
+page_family: app
 aliases: [composition surface, prompt builder, message-flow composer]
 status: stable
 slots:
@@ -72,4 +72,4 @@ A vertical stack of editor cards forming a composition surface, each card repres
 - Drag-to-reorder: cards are reorderable by a drag handle on the left edge; a keyboard alternative moves the focused card with the handle focused and Up/Down arrows. Reordering animates with the standard cross-fade (`foundations/motion.md` §15.3, application-shell register), suppressed under reduced-motion.
 - Model picker: a dropdown trigger listing the host project's available models; the selection persists per document and restores on reopen.
 
-Suits prompt builders, message-flow composers, conversation scripters, and script editors. Pairs with the rail-main-info-panel Shell (the right info panel hosts the welcome/help guide).
+Suits prompt builders, message-flow composers, conversation scripters, and script editors. Suits an application Shell with a rail Section and a right info-panel Section (the info panel hosts the welcome/help guide).

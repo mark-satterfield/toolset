@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: capability-showcase
 section: capability-showcase
-family: landing
+page_family: landing
 status: stable
 signals: [item_count, has_visual_per_item, copy_density_per_item, taxonomy_type]
 table:

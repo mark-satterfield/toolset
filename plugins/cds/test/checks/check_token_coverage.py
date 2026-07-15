@@ -59,7 +59,7 @@ def run(repo_root):
     return [
         f"TOKEN-COVERAGE: components.css references {tok} but it is defined "
         f"nowhere in the generated stylesheet set (tokens.css / themes.css). "
-        f"generate-stylesheets must emit it; otherwise the component renders "
+        f"generate-css must emit it; otherwise the component renders "
         f"with that property collapsed."
         for tok in missing
     ]

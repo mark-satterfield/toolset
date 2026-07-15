@@ -1,10 +1,10 @@
 ---
 kind: section
 name: prompt-and-templates
-family: app
+page_family: app
 aliases: [quickstart body, prompt and template picker, create-or-browse body]
 status: stable
-mode: deterministic
+shape: prompt-templates-split
 content_contract:
   templates: "list of {title, description, starter_text} (content-driven)"
   prompt_placeholder: "placeholder text for the prompt strip"
@@ -15,6 +15,6 @@ composition_notes:
 
 # Prompt and templates
 
-The two-column body of a creation flow: a left prompt column ("start blank") and a right templates panel ("start from a template"), presented side by side with equal standing. Layout is fixed at definition to the `prompt-templates-split` Shape (`libraries/shapes/prompt-templates-split.md`), which carries the full slot and dimension contract.
+The body of a creation flow, offering two entry points with equal standing: a prompt for starting blank, and a templates gallery for starting from a template. Its layout is the `prompt-templates-split` Shape (`libraries/shapes/prompt-templates-split.md`), which carries the full slot and dimension contract.
 
-The prompt strip belongs to this Section's left column — it is not Shell rail-main-prompt-strip's viewport-bottom strip.
+The prompt strip belongs to this Section's prompt column — it is never a strip pinned to the viewport floor by the Shell.

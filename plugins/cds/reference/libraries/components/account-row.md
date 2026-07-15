@@ -1,7 +1,7 @@
 ---
 kind: component
 name: account-row
-family: app
+page_family: app
 aliases: [user menu, account menu, profile row, user row]
 status: stable
 shell_component: true
@@ -12,7 +12,7 @@ slots:
   - { name: role-or-org, required: false, accepts: [text] }
   - { name: caret, required: false, accepts: [chevron-glyph] }
 sizing:
-  full-width: "rail pane width minus 2 × rail padding; calibrates to 232px at the 256px reference rail"
+  full-width: "var(--app-shell-rail-width) minus 2 × rail padding; calibrates to 232px at the 256px reference rail"
   full-height: "48px"
   full-padding: "6px vertical × 8px horizontal"
   full-radius: "var(--radius-sm) (8px)"
@@ -43,7 +43,7 @@ The `footer-strip` variant is the form-sidebar placement: it shares the identity
 
 ## Determinations — full variant
 
-- Outer button: width fills the rail content — rail pane width minus 2 × rail padding (calibrates to 232px at the 256px reference rail); height 48px; padding `6px` vertical × `8px` horizontal; border-radius `var(--radius-sm)`; background transparent at rest.
+- Outer button: width fills the rail content — `var(--app-shell-rail-width)` minus 2 × rail padding (calibrates to 232px at the 256px reference rail); height 48px; padding `6px` vertical × `8px` horizontal; border-radius `var(--radius-sm)`; background transparent at rest.
 - Layout: `display: flex; align-items: center; gap: 12px`.
 - Avatar: 32×32px; border-radius `var(--radius-xs)` (calibrates to 6px) — NOT a circle; border `0.5px solid var(--border-subtle)`; background = the theme's raised ground (`--surface-raised`) at 60% opacity; glyph ink `--text-secondary`. Inner SVG icon: 20×20px centered.
 - Name/role stack container: `flex flex-col; align-items: flex-start; min-width: 0; overflow: hidden; padding-right: 16px; flex: 1`.

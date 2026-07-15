@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: card-grid
-family: landing
+page_family: shared
 aliases: [feature grid, icon card grid, three-up cards]
 status: stable
 slots:

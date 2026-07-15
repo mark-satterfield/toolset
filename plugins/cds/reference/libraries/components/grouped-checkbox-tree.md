@@ -1,7 +1,7 @@
 ---
 kind: component
 name: grouped-checkbox-tree
-family: app
+page_family: app
 aliases: [event tree, permission picker, checkbox group tree, scope selector]
 status: stable
 slots:

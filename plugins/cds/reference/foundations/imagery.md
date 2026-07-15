@@ -51,7 +51,7 @@ For every editorial featured card, place a centered SVG illustration on a satura
      spacing scale; Min calibrates to the --sp-3 1440px-anchor value). */
   padding: clamp(48px, calc(48px + 80 * (100vw - 320px) / 1120), 128px);
 }
-/* Variant classes are emitted DATA-DRIVENLY — generate-stylesheets emits one
+/* Variant classes are emitted DATA-DRIVENLY — generate-css emits one
    `.feature-tile--N` (and one shape-agnostic `.ground--N`) per `tile-ground-N`
    role declared in the YAML, so the variant set's size follows the data, not
    this file. Ground and ink come from the theme's `tile-ground-*` (constrained

@@ -1,10 +1,9 @@
 ---
 kind: section
 name: resource-directory
-family: landing
+page_family: landing
 aliases: [resources, resource library, docs and guides, content library]
 status: stable
-mode: dynamic
 content_contract:
   has_source_tag_per_item: bool
 theme: scheduled

@@ -1,7 +1,7 @@
 ---
 kind: component
 name: toggle-switch
-family: shared
+page_family: shared
 aliases: [switch, toggle, on/off switch]
 status: stable
 slots:

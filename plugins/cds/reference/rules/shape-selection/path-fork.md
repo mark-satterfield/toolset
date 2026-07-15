@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: path-fork
 section: path-fork
-family: landing
+page_family: landing
 status: stable
 signals: [item_count, emphasis]
 table:

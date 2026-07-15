@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: list-empty-state
-family: app
+page_family: app
 aliases: [empty list, empty table state, zero state list]
 status: stable
 slots:

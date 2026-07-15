@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: tabbed-panels
-family: landing
+page_family: landing
 aliases: [tabs, tabbed showcase, feature tabs]
 status: stable
 slots:

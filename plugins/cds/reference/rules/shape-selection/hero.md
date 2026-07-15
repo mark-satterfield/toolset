@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: hero
 section: hero
-family: landing
+page_family: landing
 status: stable
 signals: [visual_type]
 table:

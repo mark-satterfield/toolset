@@ -1,10 +1,9 @@
 ---
 kind: section
 name: news-updates
-family: landing
+page_family: landing
 aliases: [news, updates, changelog section, announcements, releases]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   has_emphasis_item: bool

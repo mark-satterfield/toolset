@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: cross-promo
 section: cross-promo
-family: landing
+page_family: landing
 status: stable
 signals: [format]
 table:

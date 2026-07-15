@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: stacked-quotes
-family: landing
+page_family: landing
 aliases: [testimonial stack, pull quotes, quote stack]
 status: stable
 slots:

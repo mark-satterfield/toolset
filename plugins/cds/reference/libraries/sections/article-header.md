@@ -1,10 +1,10 @@
 ---
 kind: section
 name: article-header
-family: editorial
+page_family: editorial
 aliases: [article header, post header, article hero]
 status: stable
-mode: deterministic
+shape: title-meta-stack
 content_contract: {}
 theme: editorial
 composition_notes: []
@@ -12,16 +12,12 @@ composition_notes: []
 
 # Article header
 
-The centered three-line header opening an editorial-detail Section Container: subjects line, title, date, stacked and centered.
+The three-line header opening an editorial-detail Page: subjects line, title, date. Its layout is the `centered` variant of the title-meta-stack Shape (`libraries/shapes/title-meta-stack.md`).
 
-## Slots
+## Content
 
-- `subjects` — the eyebrow Component, this Section's declared eyebrow slot (the editorial exception named in `rules/page-constraints/eyebrow-scope.md`). Body 3 with the `.bold` modifier (the role's documented editorial-eyebrow weight range, 500–700), sentence case.
-- `title` — the article h1 at the editorial Headline 1 role (`text-wrap: balance`, `text-align: center`).
-- `date` — Body 3 agate at `--text-tertiary`.
+- `eyebrow` — the subjects line, this Section's declared eyebrow slot (the editorial exception named in `rules/page-constraints/eyebrow-scope.md`). Body 3 with the `.bold` modifier (the role's documented editorial-eyebrow weight range, 500–700), sentence case.
+- `title` — the article h1 at the editorial Headline 1 role (`text-wrap: balance`).
+- `meta` — the date, Body 3 agate at `--text-tertiary`.
 
-## Determinations
-
-- All three lines center on the reading axis; the header sits inside the container width, not the reading column.
-- Padding to the following Section is `--sp-3` (calibrates to 48px at the reference viewport).
-- The Article hero Component (`libraries/components/article-hero.md`) implements this arrangement.
+The Article hero Component (`libraries/components/article-hero.md`) realizes this Section.

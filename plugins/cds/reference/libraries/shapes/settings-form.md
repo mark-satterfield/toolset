@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: settings-form
-family: app
+page_family: app
 aliases: [organization settings, settings page, two-column settings form]
 status: stable
 slots:

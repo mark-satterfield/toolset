@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: validation-block
 section: validation-block
-family: landing
+page_family: landing
 status: stable
 signals: [item_count, has_metric_per_item, logos_presence]
 table:

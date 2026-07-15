@@ -1,7 +1,7 @@
 ---
 kind: component
 name: empty-state-card
-family: app
+page_family: app
 aliases: [empty state, empty-state card, zero state]
 status: stable
 slots:

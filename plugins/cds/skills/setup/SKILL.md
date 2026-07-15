@@ -1,6 +1,6 @@
 ---
 name: setup
-description: User-invoked only via the /cds:setup slash command — not triggered by natural language. Guides a step-by-step walkthrough to capture CUSTOMIZABLE_DESIGN_SYSTEM_* environment variable values (elements path, install mode, optional directories, framework target) and writes them to the env block of the appropriate settings.json (global ~/.claude/settings.json or project .claude/settings.local.json). Idempotent — safe to re-run to update existing values. Does not generate stylesheets, mocks, or component code.
+description: User-invoked only via the /cds:setup slash command — not triggered by natural language. Guides a step-by-step walkthrough to capture CUSTOMIZABLE_DESIGN_SYSTEM_* environment variable values (elements path, install mode, optional output directories) and writes them to the env block of the appropriate settings.json (global ~/.claude/settings.json or project .claude/settings.local.json). Idempotent — safe to re-run to update existing values. Does not generate CSS, mocks, Shells, or Views.
 allowed-tools: Read, Write, Edit, Bash, Glob
 disable-model-invocation: true
 ---
@@ -32,10 +32,9 @@ Ask in this order. Each step gathers exactly one decision.
    - Record the resulting path as the value for `CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` and the install mode as the value for `CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE`.
 4. For each of the optional env vars below, ask the user one at a time; accept "skip" to leave the variable unset:
    - `CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR` — directory for brand assets (SVGs, images, illustrations).
-   - `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` — default output for `generate-stylesheets`.
+   - `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` — default output for `generate-css`.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` — default output for `compose-page` mocks.
-   - `CUSTOMIZABLE_DESIGN_SYSTEM_APP_SURFACE_DIR` — default output for `compose-app-surface` framework-native code.
-   - `CUSTOMIZABLE_DESIGN_SYSTEM_FRAMEWORK` — framework target for `compose-app-surface` (e.g., `react-tsx`, `vue-sfc`, `plain-html`).
+   - `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` — the shells output area where `compose-shell` stores composed Shells (one file per Shell, named per Shell; `compose-view` resolves Shells by name from here). When left unset, a `shells/` directory that is a sibling of the mocks directory is used automatically.
 5. Confirm the captured values back to the user before writing.
 
 ## Pipeline
@@ -64,7 +63,7 @@ Ask in this order. Each step gathers exactly one decision.
 
 ## Boundary — does not
 
-- Generate stylesheets, mocks, or component code (those are `generate-stylesheets`, `compose-page`, `compose-app-surface`).
+- Generate CSS, mocks, Shells, or Views (those belong to the composers; `generate-css` is internal machinery).
 - Edit `customizable-design-elements.yaml` content. It only copies the shipped template to the chosen path.
 - Write to any settings file beyond the chosen one (no cross-scope writes).
 - Touch the plugin's own files in `cds/`. Setup is project-side configuration, not plugin-tree mutation.

@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: resource-grid
-family: landing
+page_family: landing
 aliases: [resources section, content library grid, article grid]
 status: stable
 slots:

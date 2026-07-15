@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: numbered-steps
-family: landing
+page_family: landing
 aliases: [how it works, step row, 1-2-3 steps]
 status: stable
 slots:

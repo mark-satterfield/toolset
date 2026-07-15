@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: pricing
 section: pricing
-family: landing
+page_family: landing
 status: stable
 signals: [pricing_model, has_segment_toggle]
 table:

@@ -1,7 +1,7 @@
 ---
 kind: component
 name: setting-card
-family: app
+page_family: app
 aliases: [preference card, settings card, settings row]
 status: stable
 slots:
@@ -11,7 +11,7 @@ slots:
   - { name: primary-action, required: false, accepts: [primary-button] }
   - { name: pill, required: false, accepts: [badge] }
 sizing:
-  width: "fills the settings main pane"
+  width: "fills the vacant space"
   padding: "--sp-2"
   radius: "--radius-md"
   slot-gap: "--sp-1-5"
@@ -40,7 +40,7 @@ A self-contained card representing a single preference: title, 1–2-paragraph e
 
 ## Sizing
 
-- Card outer width: fills the settings main pane.
+- Card outer width: fills the vacant space.
 - Card padding: `--sp-2` on all sides (calibrates to 32px).
 - Card border: hairline `--border-subtle` (an alpha-thinned 1px per `foundations/layout.md` §11.9; calibrates to the sub-pixel hairline rendering).
 - Card border-radius: `--radius-md` (calibrates to 12px).

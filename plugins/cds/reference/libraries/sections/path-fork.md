@@ -1,10 +1,9 @@
 ---
 kind: section
 name: path-fork
-family: landing
+page_family: landing
 aliases: [path fork, choose your path, self-serve vs assisted, buy or talk to sales]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   emphasis: "balanced | sequential | contrast"

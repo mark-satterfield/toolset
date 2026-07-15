@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: section-header
 section: section-header
-family: landing
+page_family: landing
 status: stable
 signals: [position]
 table:

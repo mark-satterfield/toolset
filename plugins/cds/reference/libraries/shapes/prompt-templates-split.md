@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: prompt-templates-split
-family: app
+page_family: app
 aliases: [quickstart two-column, create-or-browse split, prompt plus template gallery]
 status: stable
 slots:
@@ -19,12 +19,12 @@ content_defaults:
 
 # prompt-templates-split — Prompt column beside a templates panel
 
-Two columns filling the main pane below a step indicator: the left column carries a centered empty-state heading, helper sentence, and a prompt strip pinned near the column's bottom; the right column is a self-scrolling templates panel with a heading, a search input, and a two-column card grid.
+Two columns filling the vacant space below a step indicator: the left column carries a centered empty-state heading, helper sentence, and a prompt strip pinned near the column's bottom; the right column is a self-scrolling templates panel with a heading, a search input, and a two-column card grid.
 
 ## Layout
 
-- **Split.** Two columns over the Section's content width: the templates panel takes roughly two-thirds (`grid-template-columns: minmax(0, 1fr) minmax(0, 67%)`), the prompt column the remainder, separated by a `--sp-1-5` gutter. Calibrates to 328px (prompt) / 711px (panel) columns at the reference desktop viewport (~1347px, inside a rail-main main pane).
-- **Height.** The body fills the main-pane height remaining below the step indicator; the templates panel stretches to that height and scrolls its grid internally. Calibrates to a 762px panel at the reference viewport.
+- **Split.** Two columns over the Section's content width: the templates panel takes roughly two-thirds (`grid-template-columns: minmax(0, 1fr) minmax(0, 67%)`), the prompt column the remainder, separated by a `--sp-1-5` gutter. Calibrates to 328px (prompt) / 711px (panel) columns at the reference desktop viewport (~1347px, inside the vacant space of an application Shell).
+- **Height.** The body fills the vacant space's height remaining below the step indicator; the templates panel stretches to that height and scrolls its grid internally. Calibrates to a 762px panel at the reference viewport.
 
 ## Templates panel
 

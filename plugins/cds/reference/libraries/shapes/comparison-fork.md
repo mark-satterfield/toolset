@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: comparison-fork
-family: landing
+page_family: landing
 aliases: [comparison columns, attribute fork, side-by-side path compare]
 status: stable
 slots:

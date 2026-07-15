@@ -32,18 +32,18 @@ A theme is the contract between them.
 The palette contains named swatches.
 A theme assigns palette swatches to semantic roles.
 Color-mode selects the light or dark resolution of the active theme.
-The Section Container register determines which themes wrap which Sections.
-Components do not know about palettes, themes, color-modes, or Section Containers.
+The page family determines which themes wrap which Sections.
+Components do not know about palettes, themes, color-modes, or page families.
 Components only request semantic roles.
 ```
 
-The seven layers, in resolution order — palette → role → theme → color-mode → Section Container register → Section → Component:
+The seven layers, in resolution order — palette → role → theme → color-mode → page family → Section → Component:
 
 1. **Palette** — a flat dictionary of named swatches. Each swatch is a single hex value with no role. The values are implementer-mapped; the swatch names form a stable contract.
 2. **Roles** — semantic role slots: named CSS custom properties (`--surface-primary`, `--text-primary`, `--accent-primary`, etc.) that Components request.
 3. **Themes** — named wrapper classes (`editorial`, `deep`, etc.) that bind each role slot to a palette swatch.
 4. **Color-mode** — a single document-root marker (`data-mode="light"` or `data-mode="dark"`) that re-binds the roles of every active theme to its dark-mode swatches when set to dark.
-5. **Section Container register** — the container's family classification (marketing, editorial, legal, authentication, application) plus its foundations bindings (type scale, motion register) that determine which themes wrap which Sections and how dense the visual rhythm is.
+5. **Page family** — the Page's family classification (landing, app, editorial, docs, auth) plus its foundations bindings (type scale, motion register) that determine which themes wrap which Sections and how dense the visual rhythm is.
 6. **Sections** — block-level containers that carry a theme class and define the Section's vertical rhythm and grid.
 7. **Components** — leaves of the tree that paint themselves using only the role variables resolved by their nearest theme ancestor. The Element remains the conceptual floor beneath the Component: whatever paints, paints through a role.
 
@@ -73,7 +73,7 @@ The full rendering sequence:
 The Component never reads the palette.
 The Component never reads the theme.
 The Component never reads the color-mode.
-The Component never reads the Section Container register.
+The Component never reads the page family.
 The Component only reads its role.
 ```
 
@@ -180,6 +180,6 @@ Roles exist so that components never know the color they paint. A component asks
 
 The shipped role inventory (defined in `customizable-design-elements.yaml`) covers every paintable surface in the system: page grounds, secondary and tertiary surfaces, raised and muted surfaces, primary/secondary/tertiary/inverse text, subtle and strong borders, the primary/interactive/heroes accents, selection tint, focus ring, navigation ground and text, footer ground and text, hero ground and text, the four button variants (primary, secondary, brand, tertiary) with their fill and label slots, the switch active fill, and error text and fill.
 
-Every component requests these role slots by `var(--name)` only. **Never reference a `--p-*` palette swatch directly inside a component class.** The palette is for themes; roles are for components. The contract is one-directional: palette → role → theme → color-mode → Section Container register → Section → Component. Breaking it (by reading the palette from a component) collapses the indirection that makes the rest of the system work.
+Every component requests these role slots by `var(--name)` only. **Never reference a `--p-*` palette swatch directly inside a component class.** The palette is for themes; roles are for components. The contract is one-directional: palette → role → theme → color-mode → page family → Section → Component. Breaking it (by reading the palette from a component) collapses the indirection that makes the rest of the system work.
 
 ---

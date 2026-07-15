@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: card-carousel
-family: landing
+page_family: landing
 aliases: [carousel, card slider, horizontal scroller]
 status: stable
 slots:

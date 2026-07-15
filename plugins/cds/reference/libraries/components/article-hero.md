@@ -1,7 +1,7 @@
 ---
 kind: component
 name: article-hero
-family: editorial
+page_family: editorial
 aliases: [article hero, editorial hero, article header]
 status: stable
 slots:

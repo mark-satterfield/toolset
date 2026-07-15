@@ -1,10 +1,9 @@
 ---
 kind: section
 name: use-case-routing
-family: landing
+page_family: landing
 aliases: [use cases, who it's for, personas, for teams, audience routing]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   taxonomy_type: "discipline | role | workload | surface | null"

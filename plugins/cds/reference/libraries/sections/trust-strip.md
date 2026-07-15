@@ -1,10 +1,9 @@
 ---
 kind: section
 name: trust-strip
-family: landing
+page_family: landing
 aliases: [trust strip, logo strip, logo bar, customer logos, logo wall]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
 theme: scheduled

@@ -1,7 +1,7 @@
 ---
 kind: component
 name: workspace-switcher
-family: app
+page_family: app
 aliases: [workspace picker, org switcher, team switcher]
 status: stable
 shell_component: true
@@ -15,7 +15,7 @@ slots:
   - { name: color-dot, required: false, accepts: [color-swatch] }
   - { name: panel, required: true, accepts: [search-input, workspace-row, create-workspace-action] }
 sizing:
-  wrapper-width: "rail pane width minus 2 × rail padding (var(--sp-0-75) per side); calibrates to 232px at the 256px reference rail"
+  wrapper-width: "var(--app-shell-rail-width) minus 2 × rail padding (var(--sp-0-75) per side); calibrates to 232px at the 256px reference rail"
   wrapper-height: "32px"
   wrapper-padding: "0 5px 0 0"
   wrapper-radius: "var(--radius-xs) (calibrates to 6px)"
@@ -46,7 +46,7 @@ A control at the top of the rail letting the user switch between workspaces in t
 
 ## Determinations — full variant
 
-- Wrapper: width = rail pane width minus 2 × rail padding (calibrates to 232px at the 256px reference rail); height 32px; padding `0 5px 0 0`; border `1px solid var(--border-subtle)` (hairline at low alpha against the dark rail surface); border-radius `var(--radius-xs)` (calibrates to 6px); background transparent (the rail's `--surface-secondary` shows through); layout `display: flex; gap: 2px; align-items: center`.
+- Wrapper: width = `var(--app-shell-rail-width)` minus 2 × rail padding (calibrates to 232px at the 256px reference rail); height 32px; padding `0 5px 0 0`; border `1px solid var(--border-subtle)` (hairline at low alpha against the dark rail surface); border-radius `var(--radius-xs)` (calibrates to 6px); background transparent (the rail's `--surface-secondary` shows through); layout `display: flex; gap: 2px; align-items: center`.
 - Trigger: width = wrapper width minus the trailing 5px padding and 2px gap (calibrates to 225px); height 30px; padding `0 0 0 8px`; internal gap 4px.
 - Trigger children: the `name` span is `flex: 1; min-width: 0` with truncation, 12px, weight 400, ink `--text-primary`; the `caret` is a 12×12px chevron in the faint ink stratum (one step below `--text-tertiary`), `flex-shrink: 0`, with a trailing margin of `calc(0.75 × var(--sp-0-25))` (calibrates to 3px) separating it from the wrapper's trailing edge.
 

@@ -1,15 +1,14 @@
 ---
 kind: section
 name: workflow-process
-family: landing
+page_family: landing
 aliases: [how it works, steps, process, workflow, getting started steps]
 status: stable
-mode: dynamic
 content_contract:
   step_count: int
 theme: scheduled
 composition_notes:
-  - "A workflow whose step_count does not fit one Shape cleanly may split into two consecutive workflow-process Sections, each carrying a contiguous range of the steps — a composition decision on the Section Container, not a Shape pick."
+  - "A workflow whose step_count does not fit one Shape cleanly may split into two consecutive workflow-process Sections, each carrying a contiguous range of the steps — a composition decision on the Page, not a Shape pick."
 ---
 
 # Workflow / Process

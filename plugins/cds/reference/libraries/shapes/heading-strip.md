@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: heading-strip
-family: landing
+page_family: landing
 aliases: [section label, standalone heading, section heading strip]
 status: stable
 slots:

@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: tag-columns
-family: landing
+page_family: landing
 aliases: [tag cloud columns, category columns, pill columns]
 status: stable
 slots:

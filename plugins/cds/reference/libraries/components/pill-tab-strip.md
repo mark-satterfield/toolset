@@ -1,7 +1,7 @@
 ---
 kind: component
 name: pill-tab-strip
-family: shared
+page_family: shared
 aliases: [segmented control, pill tabs, tab strip, toggle group]
 status: stable
 slots:

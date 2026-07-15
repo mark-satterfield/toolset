@@ -1,10 +1,10 @@
 ---
 kind: section
 name: publication-list
-family: editorial
+page_family: editorial
 aliases: [publication list, article list, post index, archive list]
 status: stable
-mode: deterministic
+shape: listing-rows
 content_contract: {}
 theme: editorial
 composition_notes: []
@@ -12,18 +12,11 @@ composition_notes: []
 
 # Publication list
 
-The chronological index of a resource-index page: a filter input above a row-per-entry list with date, category, and title columns.
+The chronological index of a resource-index Page: every published entry, one row apiece, filterable in place. Its layout is the listing-rows Shape (`libraries/shapes/listing-rows.md`).
 
-## Slots
+## Content
 
-- `filter` — a search-input Component (`libraries/components/search-input.md`) used as an inline list filter, at full content width above the list.
-- `rows` — one row per entry: date, category, title columns.
-- `sidebar` — optional sticky sidebar.
-- `pagination` — a pagination indicator (`libraries/components/pagination.md`); no numbered page buttons.
-
-## Determinations
-
-- On the 12-column grid the list content spans grid lines 1–10; the optional sticky sidebar spans lines 11–13.
-- Column headers use the editorial Caption role (the role carries its own letter-spacing), uppercase via CSS.
-- Date and category meta use Body 3 agate at `--text-tertiary`.
-- Below the tablet breakpoint the rows collapse to stacked cards; below 700px the sticky sidebar is hidden.
+- The filter slot carries a search-input Component (`libraries/components/search-input.md`) used as an inline list filter over the entries.
+- Each row carries an entry's date, category, and title.
+- The optional sticky sidebar carries supporting content alongside the index.
+- The pagination slot carries a pagination indicator (`libraries/components/pagination.md`); no numbered page buttons.

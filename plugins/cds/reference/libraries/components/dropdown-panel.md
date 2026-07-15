@@ -1,7 +1,7 @@
 ---
 kind: component
 name: dropdown-panel
-family: shared
+page_family: shared
 aliases: [dropdown, nav dropdown, mega menu, flyout menu]
 status: stable
 shell_component: true

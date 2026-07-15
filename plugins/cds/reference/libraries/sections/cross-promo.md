@@ -1,10 +1,9 @@
 ---
 kind: section
 name: cross-promo
-family: landing
+page_family: landing
 aliases: [cross-promo, promo banner, product plug, inline promotion]
 status: stable
-mode: dynamic
 content_contract:
   format: "narrow-banner | event-register-card"
 theme: scheduled

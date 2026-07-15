@@ -1,7 +1,7 @@
 ---
 kind: component
 name: pricing-card
-family: landing
+page_family: landing
 aliases: [pricing card, tier card, plan card]
 status: stable
 slots:

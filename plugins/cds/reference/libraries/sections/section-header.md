@@ -1,15 +1,14 @@
 ---
 kind: section
 name: section-header
-family: landing
+page_family: landing
 aliases: [eyebrow, section header, kicker, section label, heading strip]
 status: stable
-mode: dynamic
 content_contract:
   position: "lead | interstitial"
 theme: scheduled
 composition_notes:
-  - "Precedes another content unit; may appear multiple times within one Section Container"
+  - "Precedes another content unit; may appear multiple times within one Page"
 ---
 
 # Section Header / Eyebrow

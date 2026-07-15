@@ -1,7 +1,7 @@
 ---
 kind: component
 name: topbar
-family: shared
+page_family: shared
 aliases: [nav, nav bar, top nav, menu bar, header nav, site header]
 status: stable
 shell_component: true
@@ -26,7 +26,7 @@ token_bindings: [--nav-bg, --text-primary, --topbar-height, --topbar-logo-height
 
 # Topbar
 
-A fixed-position desktop bar that anchors global navigation and conversion CTAs without painting a visible boundary. The Shell uses it as a persistent top-nav Section: it frames the content region and does not participate in the Section Container's ground alternation.
+A fixed-position desktop bar that anchors global navigation and conversion CTAs without painting a visible boundary. It realizes the Shell's top-nav Section: it frames the content region and does not participate in the Page's ground alternation.
 
 ## Slots
 

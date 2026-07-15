@@ -1,7 +1,7 @@
 ---
 kind: component
 name: hero-promo-card
-family: landing
+page_family: landing
 aliases: [hero promo card, hero-adjacent promo]
 status: stable
 slots:

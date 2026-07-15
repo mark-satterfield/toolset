@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: setting-card-stack
-family: app
+page_family: app
 aliases: [stacked setting cards, preference cards, privacy settings stack]
 status: stable
 slots:
@@ -20,7 +20,7 @@ content_defaults:
 
 A vertical stack of setting cards, each carrying a section title (with an optional "NEW" pill), a 1–2-paragraph explanation (inline links allowed), and one or more controls: a toggle-switch component, a button, or a read-only value with a link action. Destructive actions live **inside** the cards they belong to as an inline sub-row (explanatory sentence + destructive button), not in a separate zone at the bottom.
 
-Each card is full-width of the main pane. Cards are visually separated by spacing, not dividers.
+Each card is full width of the vacant space. Cards are visually separated by spacing, not dividers.
 
 ## HTML skeleton
 

@@ -1,10 +1,10 @@
 ---
 kind: section
 name: page-header
-family: app
+page_family: app
 aliases: [page heading, greeting header, screen title]
 status: stable
-mode: deterministic
+shape: heading-action-row
 content_contract:
   heading_form: "greeting | title"
   subhead: "present | absent"
@@ -15,7 +15,7 @@ composition_notes: []
 
 # Page header
 
-The heading row of an app main pane: an `<h1>` on the left and an optional right-side cluster. The main pane owns its page heading — app Shell rails never duplicate it.
+The heading row of an app Page: the `<h1>` and the optional cluster of controls beside it. The Page owns its heading — app Shell rails never duplicate it. Its layout is the `heading-action-row` Shape (`libraries/shapes/heading-action-row.md`).
 
 Variants by content:
 

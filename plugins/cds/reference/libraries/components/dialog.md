@@ -1,7 +1,7 @@
 ---
 kind: component
 name: dialog
-family: shared
+page_family: shared
 aliases: [dialog, modal, centered dialog, modal card]
 status: stable
 slots:

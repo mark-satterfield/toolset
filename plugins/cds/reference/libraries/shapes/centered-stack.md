@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: centered-stack
-family: landing
+page_family: landing
 aliases: [centered hero, hero with video below, text over visual]
 status: stable
 slots:

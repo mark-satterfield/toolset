@@ -10,7 +10,7 @@ Invoke the `setup` skill in this plugin. Load and execute `skills/setup/SKILL.md
 ## Process
 
 1. Load `skills/setup/SKILL.md`.
-2. Walk the user through the discovery checklist (existing YAML or bootstrap; global or project install; optional asset / output / framework defaults).
+2. Walk the user through the discovery checklist (existing YAML or bootstrap; global or project install; optional asset / stylesheet / mocks / shells output defaults).
 3. Apply the pipeline (locate the target `settings.json`, ensure `env` exists, merge captured values, write with two-space indentation, preserve unrelated keys).
 4. Report the resulting `env` block to the user as confirmation.
 

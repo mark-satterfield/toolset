@@ -1,10 +1,9 @@
 ---
 kind: section
 name: faq
-family: landing
+page_family: landing
 aliases: [FAQ, frequently asked questions, questions section]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   copy_density_per_item: "brief | rich"

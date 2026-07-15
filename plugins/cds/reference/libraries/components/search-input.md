@@ -1,7 +1,7 @@
 ---
 kind: component
 name: search-input
-family: shared
+page_family: shared
 aliases: [search input, search box, search bar]
 status: stable
 slots:

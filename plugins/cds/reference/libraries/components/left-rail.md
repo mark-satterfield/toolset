@@ -1,7 +1,7 @@
 ---
 kind: component
 name: left-rail
-family: app
+page_family: app
 aliases: [sidebar, rail, nav rail, app rail, left nav, app shell left rail]
 status: stable
 shell_component: true
@@ -12,9 +12,9 @@ slots:
   - { name: section-header, required: false, accepts: [label] }
   - { name: item-row, required: true, accepts: [icon, label] }
   - { name: account, required: false, accepts: [account-row] }
-  - { name: detail-viewport, required: true, accepts: [section-container] }
+  - { name: detail-viewport, required: true, accepts: [page] }
 sizing:
-  rail-width: "the app Shell's rail pane width (shell pane token); calibrates to 256px at the reference desktop viewport"
+  rail-width: "var(--app-shell-rail-width); calibrates to 256px at the reference desktop viewport"
   rail-padding: "var(--sp-0-75) on all sides; calibrates to 12px"
   nav-row-height: "var(--list-row-compact) (36px)"
   nav-row-padding: "8px horizontal (rows with a leading icon inflate left padding to 40px to reserve the icon column)"
@@ -34,7 +34,7 @@ token_bindings: [--surface-secondary, --surface-tertiary, --border-subtle, --tex
 
 # App shell left rail
 
-Three-pane navigation for app Shells: the icon-rail and list-column collapse into a single rail column, with a fluid detail viewport filling the remaining width. It realizes the Shell's persistent navigation rail Section.
+Navigation for app Shells combining the Shell's rail-and-list Sections: the icon-rail and list-column collapse into a single rail column, with a fluid detail viewport filling the remaining width. It realizes the Shell's persistent navigation rail Section.
 
 ## Variants
 
@@ -42,7 +42,7 @@ Three-pane navigation for app Shells: the icon-rail and list-column collapse int
 
 ## Determinations
 
-- Rail outer container: `position: fixed; left: 0; top: 0`; width = the Shell's rail pane token (calibrates to 256px); `height: 100vh`.
+- Rail outer container: `position: fixed; left: 0; top: 0`; width = `var(--app-shell-rail-width)` (calibrates to 256px); `height: 100vh`.
 - Rail padding: `var(--sp-0-75)` (calibrates to 12px) on all sides.
 - Rail background: `var(--surface-secondary)` (elevated rail ground).
 - Rail border-right: `0.5px solid var(--border-subtle)` — a hairline at low alpha against the dark surface; alpha is encoded in the role binding for dark themes.

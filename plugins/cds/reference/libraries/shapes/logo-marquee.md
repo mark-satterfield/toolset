@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: logo-marquee
-family: landing
+page_family: landing
 aliases: [logo ticker, scrolling logos, logo wall, marquee]
 status: stable
 slots:

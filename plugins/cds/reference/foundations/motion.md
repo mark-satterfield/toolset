@@ -1,8 +1,8 @@
 # Motion and Interaction
 
-Motion is a **configurable element set** — a first-class peer to color and geometry — defined in the elements YAML's `motion:` block (`motion.easing`, `motion.duration`, `motion.patterns`), resolved at `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. The curves, durations, and pattern parameters below are the **canonical defaults the shipped YAML encodes**; `generate-stylesheets` sources their values from the YAML, not from this prose.
+Motion is a **configurable element set** — a first-class peer to color and geometry — defined in the elements YAML's `motion:` block (`motion.easing`, `motion.duration`, `motion.patterns`), resolved at `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. The curves, durations, and pattern parameters below are the **canonical defaults the shipped YAML encodes**; `generate-css` sources their values from the YAML, not from this prose.
 
-**Emission contract.** `generate-stylesheets` does two things with the `motion:` block, every time:
+**Emission contract.** `generate-css` does two things with the `motion:` block, every time:
 
 1. Emits the easing and duration tokens into `tokens.css` (`--ease-{key}`, `--duration-{key}`).
 2. Emits the **entrance-motion patterns** — the reveal / stagger / fade keyframes and their pattern classes — into the generated CSS (§15.4), parameterized by the `motion.patterns` tokens, **plus** the global reduced-motion gate (§15.5). The patterns live in the design system so composers apply a class; they never author entrance keyframes per page.
@@ -62,7 +62,7 @@ Define these tokens at the root and use them by name everywhere. Values come fro
 
 ## §15.4 Reveal animation patterns
 
-These are the exact CSS templates `generate-stylesheets` emits into the generated stylesheet set, parameterized by the `motion.patterns` tokens. Each pattern **animates in the base rule** and resets to its final visible state **only** inside `@media (prefers-reduced-motion: reduce)`. Inline `var(--token, <fallback>)` fallbacks equal the shipped defaults so the rule still resolves if a token is absent.
+These are the exact CSS templates `generate-css` emits into the generated stylesheet set, parameterized by the `motion.patterns` tokens. Each pattern **animates in the base rule** and resets to its final visible state **only** inside `@media (prefers-reduced-motion: reduce)`. Inline `var(--token, <fallback>)` fallbacks equal the shipped defaults so the rule still resolves if a token is absent.
 
 Hero word-by-word entrance (`reveal` → `.reveal-word`; JS sets `--reveal-index` per word):
 

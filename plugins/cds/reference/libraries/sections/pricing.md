@@ -1,10 +1,9 @@
 ---
 kind: section
 name: pricing
-family: landing
+page_family: landing
 aliases: [pricing, plans, pricing table, tiers, rates]
 status: stable
-mode: dynamic
 content_contract:
   pricing_model: "subscription-tiers | usage-rates"
   has_segment_toggle: bool

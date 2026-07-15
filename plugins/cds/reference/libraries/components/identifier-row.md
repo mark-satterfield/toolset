@@ -1,7 +1,7 @@
 ---
 kind: component
 name: identifier-row
-family: app
+page_family: app
 aliases: [read-only identifier row, copyable ID, ID row, UUID row]
 status: stable
 slots:

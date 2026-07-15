@@ -1,7 +1,7 @@
 ---
 kind: component
 name: footer
-family: shared
+page_family: shared
 aliases: [site footer, footer grid, footer navigation]
 status: stable
 shell_component: true
@@ -32,7 +32,7 @@ content_defaults:
 
 # Footer
 
-Multi-column site footer providing secondary navigation, legal, and social affordances. The Shell uses it as a persistent footer Section, placed below the content region as a named theme island, outside the Section Container's ground alternation.
+Multi-column site footer providing secondary navigation, legal, and social affordances. It realizes the Shell's footer Section, placed below the content region as a named theme island, outside the Page's ground alternation.
 
 ## Slots
 

@@ -1,7 +1,7 @@
 ---
 kind: component
 name: sticky-header
-family: editorial
+page_family: editorial
 aliases: [hide-on-scroll header, auto-hiding header, scroll-away nav]
 status: stable
 shell_component: true

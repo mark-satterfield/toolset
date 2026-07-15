@@ -1,7 +1,7 @@
 ---
 kind: component
 name: full-promo-card
-family: landing
+page_family: landing
 aliases: [promo card, bordered promo card, product callout card]
 status: stable
 slots:

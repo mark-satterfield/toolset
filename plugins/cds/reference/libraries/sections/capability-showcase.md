@@ -1,10 +1,9 @@
 ---
 kind: section
 name: capability-showcase
-family: landing
+page_family: landing
 aliases: [features, feature grid, capabilities, what it does, feature showcase]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   has_visual_per_item: bool

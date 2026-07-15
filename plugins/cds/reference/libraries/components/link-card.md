@@ -1,7 +1,7 @@
 ---
 kind: component
 name: link-card
-family: editorial
+page_family: editorial
 aliases: [link card, navigation card, asset card]
 status: stable
 slots:

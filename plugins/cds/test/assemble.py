@@ -146,7 +146,7 @@ def switcher_js():
     return read(p).replace("</script>", "<\\/script>")
 
 
-CHROME = """
+GALLERY_BAR_CSS = """
   :root { color-scheme: light dark; }
   body { margin:0; font:14px/1.5 system-ui,-apple-system,sans-serif;
          background:var(--role-surface-primary,#fff); color:var(--role-text-primary,#111); }
@@ -224,7 +224,7 @@ def page(title, lede, active, body):
             "<title>%s</title><script>%s</script><style>%s\n%s</style></head><body>%s"
             "<div class=\"galwrap\"><div class=\"galhead\"><h1>%s</h1><p>%s</p></div>%s</div>%s"
             "</body></html>"
-            % (html.escape(title), switcher_js(), inlined_css(), CHROME, bar,
+            % (html.escape(title), switcher_js(), inlined_css(), GALLERY_BAR_CSS, bar,
                html.escape(title), lede, body, wire))
 
 

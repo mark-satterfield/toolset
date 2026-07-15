@@ -2,7 +2,7 @@
 kind: shape-selection-rule
 name: workflow-process
 section: workflow-process
-family: landing
+page_family: landing
 status: stable
 signals: [step_count]
 table:

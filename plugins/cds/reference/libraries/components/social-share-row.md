@@ -1,7 +1,7 @@
 ---
 kind: component
 name: social-share-row
-family: editorial
+page_family: editorial
 aliases: [share row, social share, share icons]
 status: stable
 slots:

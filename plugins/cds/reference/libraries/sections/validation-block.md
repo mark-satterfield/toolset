@@ -1,10 +1,9 @@
 ---
 kind: section
 name: validation-block
-family: landing
+page_family: landing
 aliases: [testimonials, customer quotes, social proof, validation block]
 status: stable
-mode: dynamic
 content_contract:
   item_count: int
   has_metric_per_item: bool

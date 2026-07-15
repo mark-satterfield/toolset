@@ -1,7 +1,7 @@
 ---
 kind: component
 name: list-filter
-family: app
+page_family: app
 aliases: [search field, list search, filter box, inline filter input]
 status: stable
 slots:

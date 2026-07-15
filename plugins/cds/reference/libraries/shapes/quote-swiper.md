@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: quote-swiper
-family: landing
+page_family: landing
 aliases: [testimonial slider, rotating quotes, quote carousel]
 status: stable
 slots:

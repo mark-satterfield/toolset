@@ -1,7 +1,7 @@
 ---
 kind: shape
 name: feature-quote
-family: landing
+page_family: landing
 aliases: [hero testimonial, big quote, featured quote]
 status: stable
 slots:
