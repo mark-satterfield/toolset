@@ -1,11 +1,12 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. Maker agents author each artifact in parallel; INDEPENDENT reviewer agents judge the reviewable artifacts (segregation of duties — no author reviews its own work); a bounded maker/checker loop re-runs the maker on rejection and the spec-decider breaks any deadlock. Read-and-author only — no nested workflow(); the downstream gate owns final acceptance.',
+    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. A Spec and its Story are created together, so this mini also emits exactly ONE Story bead specification paired with the Spec — a container scoped to the single repo in args.repoPath, with no task breakdown and no WSJF score; work the spec set implies in any other repo is returned as a finding, never a second Story (the caller runs this mini once per repo and writes the bead with bd). Maker agents author each artifact in parallel; INDEPENDENT reviewer agents judge the reviewable artifacts (segregation of duties — no author reviews its own work); a bounded maker/checker loop re-runs the maker on rejection and the spec-decider breaks any deadlock. Read-and-author only — no nested workflow(); the downstream gate owns final acceptance.',
   phases: [
     { title: 'Author specs', detail: 'makers author each spec artifact in parallel' },
     { title: 'Review specs', detail: 'independent reviewers judge the reviewable artifacts' },
     { title: 'Decide', detail: 'spec-decider breaks any maker/checker deadlock' },
+    { title: 'Emit story', detail: 'author the ONE Story bead this Spec pairs with — container only, single repo' },
   ],
 }
 
@@ -20,8 +21,25 @@ export const meta = {
 //   trd?: any,                    // upstream TRD / requirements packet to author from
 //   constraints?: string[],       // architectural constraints (REST v1, no Step Functions, etc.)
 //   accessPatterns?: string[],    // known data access patterns for the data model
+//   repoPath: string,             // the ONE repo this Spec/Story covers (required) — a Story is scoped to a single repo
+//   storyKey?: string,            // key for the emitted Story (default 'S1'). The caller runs this
+//                                 // mini once per repo and must give each Story a distinct key.
+//   epic: { key?, id?, title? },  // the parent Epic the Story hangs under; missing -> Story emitted unparented
 //   maxLoops?: number,            // bounded maker/checker retries per reviewable artifact (default 2)
 // }
+//
+// returns { ok, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
+// acceptanceCriteria, definitionOfDone, reviewFindings, decision, outOfRepoFindings, note }
+// where story is the ONE Story bead specification this Spec pairs with (a Spec and its
+// Story are created together; nothing here writes to .beads — the caller writes it with bd):
+//   story: {
+//     key:           string,   // stable local key ("S1") — parent links in the bead set are by key
+//     type:          'story',  // literal — a Story is a container, never worked, only decomposed
+//     title:         string,
+//     description:   string,
+//     repoPath:      string,   // the single repo this Story covers — copied from args.repoPath
+//     parentEpicKey: string,   // epic.key || epic.id; null when no Epic was supplied
+//   }
 //
 // MODULE FORM: all logic lives inside async main(); the file's last top-level
 // statement is `await main(args)`. This keeps the file a clean standalone ES module
@@ -108,6 +126,21 @@ const DECISION_SCHEMA = {
   },
 }
 
+// The story maker returns only prose plus scope findings. Key, type, repoPath, and
+// parentEpicKey are assembled deterministically below — an agent must never pick the
+// repo the Story covers or the Epic it hangs under. outOfRepoFindings is required
+// (empty when clean) so the maker always answers the single-repo scope question.
+const STORY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'description', 'outOfRepoFindings'],
+  properties: {
+    title: { type: 'string' },
+    description: { type: 'string' },
+    outOfRepoFindings: { type: 'array', items: { type: 'string' } },
+  },
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
 function ctxBlock(s, trd, constraints) {
@@ -142,6 +175,8 @@ async function main(a) {
   const trd = a && a.trd
   const constraints = Array.isArray(a && a.constraints) ? a.constraints : []
   const accessPatterns = Array.isArray(a && a.accessPatterns) ? a.accessPatterns : []
+  const repoPath = (a && a.repoPath) || null
+  const epic = (a && a.epic) || null
   const MAX_LOOPS = (a && a.maxLoops) || 2
   const ctx = ctxBlock(s, trd, constraints)
 
@@ -342,10 +377,67 @@ async function main(a) {
     )
   }
 
+  // ── Phase 4: Emit story — a Spec and its Story are created together ────────────
+  phase('Emit story')
+
+  if (!repoPath) {
+    log(
+      'spec-authoring: no repoPath supplied — a Story is scoped to a single repo, so the emitted Story carries repoPath null and downstream decomposition cannot scope its tasks'
+    )
+  }
+
+  // Parent links are by key. An Epic is created with its PRD upstream of here; when
+  // none was passed in we still emit the Story (unparented) so the Spec/Story pairing
+  // holds, and the caller backfills the Epic and reparents before tasks can route.
+  const parentEpicKey = (epic && (epic.key || epic.id)) || null
+  if (!parentEpicKey) {
+    log(
+      'spec-authoring: no parent Epic supplied — the Story bead is emitted UNPARENTED (parentEpicKey null); backfill its Epic and reparent before its tasks can route as workable'
+    )
+  }
+
+  const specSet = {
+    apiSpec: finalArtifacts.apiSpec,
+    dataModelSpec: finalArtifacts.dataModelSpec,
+    eventContracts: finalArtifacts.eventContracts,
+    errorSpec: authored.errorSpec,
+    acceptanceCriteria: finalArtifacts.acceptance,
+    definitionOfDone: authored.dod,
+  }
+
+  const storyDraft = await agent(
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, only decomposed downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}`,
+    {
+      label: 'author:story-bead',
+      phase: 'Emit story',
+      agentType: 'agent-teams-workforce:user-story-writer',
+      schema: STORY_SCHEMA,
+    }
+  )
+
+  // Exactly ONE Story per invocation, so the local key is fixed. Key, type, repoPath,
+  // and parentEpicKey are assembled here, not by the maker — the single-repo scope and
+  // the Epic parentage are caller-supplied facts, never an agent's choice. Nothing
+  // here writes to .beads; the caller writes the bead with bd, linking by key.
+  // The caller runs this mini once per repo, so a hardcoded key would give every
+  // Story in a multi-repo Epic the same one — collapsing the parent links and the
+  // Story dependency graph onto a single phantom Story. The caller supplies the key
+  // because only it knows how many repos the Epic spans; 'S1' is the single-repo
+  // default.
+  const story = {
+    key: (a && a.storyKey) || 'S1',
+    type: 'story',
+    title: storyDraft.title,
+    description: storyDraft.description,
+    repoPath,
+    parentEpicKey,
+  }
+
   // ── Return: one object threading every phase output ───────────────────────────
   const allResolved = deadlocked.length === 0
   return {
     ok: allResolved || (decision && decision.ruling !== 'revise'),
+    story,
     spec: {
       id: s.id || null,
       title: s.title || null,
@@ -360,8 +452,9 @@ async function main(a) {
     definitionOfDone: authored.dod,
     reviewFindings,
     decision,
+    outOfRepoFindings: storyDraft.outOfRepoFindings || [],
     note:
-      'errorSpec and definitionOfDone have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks.',
+      'errorSpec, definitionOfDone, and the story bead have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
   }
 }
 
