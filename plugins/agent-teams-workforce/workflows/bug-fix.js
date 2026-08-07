@@ -125,7 +125,17 @@ const red = await gateLoop({
     // passes here) is equally strong evidence and is the ONLY form available for a
     // stale bead.
     'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red)',
-    'The test fails for the intended reason (the failure message names the defect, not a harness or import error)',
+    // MISSING-CAPABILITY CARVE-OUT. The older wording ("not a harness or import error")
+    // was structurally unsatisfiable for any defect whose fix INTRODUCES a symbol. If the
+    // bug is "ConfigurationError is never raised" and ConfigurationError does not exist
+    // yet, the only failure obtainable at HEAD is that symbol's absence — which reads as
+    // an import error. The gate then rejects a correct test, the writer cannot possibly
+    // comply, and the loop exhausts. That cost 827k tokens on ssbd-cg27 alone, and this
+    // is the same family of false rejection the differential-red carve-out above fixed.
+    // The distinction that actually matters is WHOSE absence: the code under test
+    // (legitimate red) versus the test's own scaffolding (a broken test).
+    'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
+    'The test asserts the real post-fix behavior, not merely that a symbol is absent. Once the capability exists the test must still be meaningful — it must exercise the behavior (the raise, the log record, the persistence call), not just that an import now succeeds.',
     'No production code was changed to manufacture the failure',
   ],
   escalateTargets: ['triage'],
