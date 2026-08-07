@@ -229,7 +229,20 @@ if (!refactor.ok) return await failAfterDoc('refactor', refactor)
 phase('Integration')
 const integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
-  criteria: ['Integration/contract/E2E suites pass', 'Contracts valid across boundaries', 'Coverage met', 'No flaky tests'],
+  criteria: [
+    'Integration/contract/E2E suites pass',
+    'Contracts valid across boundaries',
+    // "Coverage met" was unsatisfiable for two legitimate change classes, and rejected
+    // correct work at 1.88M tokens on ssbd-ew3t alone.
+    //   1. A DELETION. Its correct test asserts ABSENCE — repo-wide greps, path checks,
+    //      SHA freezes. It never imports the deleted code, because the code is gone.
+    //      Coverage is necessarily 0% and "no data was collected" is the RIGHT result.
+    //   2. A repo with NO integration suite at all. Demanding coverage of a suite that
+    //      does not exist fails the change for a pre-existing gap it did not cause.
+    // Judge coverage against what the change could possibly cover, not an absolute.
+    'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.',
+    'No flaky tests',
+  ],
   escalateTargets: ['green', 'red', 'triage'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
 })
