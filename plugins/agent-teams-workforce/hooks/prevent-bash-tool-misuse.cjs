@@ -50,14 +50,25 @@ const VIOLATIONS = [
       'Use the Glob tool instead of Bash find. Reason: built-in tools handle gitignore and permissions correctly.',
     example: 'Glob(pattern="**/*.ts")',
   },
-  {
-    // ls at start of command (not in pipeline, not ls -la for human consumption)
-    pattern: /^\s*ls\b(?!\s+-la\s*$)/,
-    redirect: 'Glob',
-    message:
-      'Use the Glob tool instead of Bash ls. Reason: built-in tools handle encoding and permissions correctly.',
-    example: 'Glob(pattern="*", path="/some/dir")',
-  },
+  // `ls` is deliberately NOT a violation.
+  //
+  // It was swept in by analogy with the content-reading rules below, but the
+  // reason those exist does not apply to it. cat/head/tail/sed read file
+  // CONTENTS, where Read genuinely handles large files, binaries, and encoding
+  // better than a shell redirect. `ls` reads a directory entry table: there is
+  // nothing to decode and no encoding to get wrong.
+  //
+  // Glob is also not a substitute. It answers "which paths match this pattern",
+  // sorted by mtime; `ls` answers "what is in this directory", including
+  // subdirectories as entries and, with -l, sizes, dates, and symlink targets.
+  // Those are different questions.
+  //
+  // The rule was self-defeating besides: it exempted `ls -la` as "human
+  // consumption" while blocking bare `ls`, permitting the form that produces
+  // several times more output in a hook set whose whole purpose is protecting the
+  // context window. And being anchored at `^\s*ls`, any prefix defeated it —
+  // `echo x; ls dir/` passed untouched, so it only ever taxed the plainest
+  // phrasing of an honest command.
   {
     // cat a file (not cat /dev/stdin, not cat | something)
     pattern: /^\s*cat\s+[^|]+\.\w+\s*$/,
@@ -106,8 +117,8 @@ const LEGITIMATE_PATTERNS = [
   /npm\s.*\|\s*(grep|head)/, // npm output piped
   /cat\s+\/dev\/(stdin|null)/, // cat /dev/stdin or /dev/null
   /cat\s+-/, // cat - (stdin)
-  /ls\s+-la\s*$/, // ls -la for human-readable directory listing
-  /^\s*ls\b.*(\|\||&&|\|)/, // ls combined with &&, ||, or | — blocking the chain prevents legitimate commands after ls
+  // (the two `ls` exemptions that lived here are gone with the `ls` rule itself —
+  // nothing needs exempting from a rule that no longer exists)
 ];
 
 function main() {
