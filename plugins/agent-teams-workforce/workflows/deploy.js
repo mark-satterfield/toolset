@@ -62,8 +62,21 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
   }
 )
 
+// NOT-APPLICABLE CARVE-OUT. Not every deployable repo has a CDK surface. A static web app
+// ships by `aws s3 sync` + a CloudFront invalidation and owns no CloudFormation stack at all.
+// With only {synthValid, driftDetected} to report, such a repo could answer nothing but
+// synthValid:false — "no CDK app here" was indistinguishable from "synth is broken" — and the
+// readiness review then correctly refused to roll out. ssbd-mqkq died exactly there: the
+// remaining work was one s3 sync, SkillSpoke-web has no cdk.json and no stack, and the run
+// spent 293k tokens producing readiness artifacts for a deploy it then blocked.
+// `applicable:false` is a clean NOT-APPLICABLE, never a failure. Guard it: a repo that HAS a
+// CDK app must not escape a broken synth by claiming the stage does not apply.
 const cdk = await agent(
-  `Validate the service's CDK: run synth and check for drift between the stacks and deployed infrastructure. READ-ONLY — do not deploy. Report whether synth succeeds and whether drift exists. Work within: ${repo}`,
+  `Validate the service's CDK: run synth and check for drift between the stacks and deployed infrastructure. READ-ONLY — do not deploy. Work within: ${repo}
+
+FIRST, determine whether this repo has a CDK surface at all. If there is no cdk.json, no CDK app entrypoint, and no CloudFormation stack owned by this repo, then CDK validation DOES NOT APPLY: return applicable=false with synthValid=false and driftDetected=false, and name in \`details\` how the repo actually deploys (for example an S3 sync plus CloudFront invalidation) and which repo owns its infrastructure, if any. Do NOT report applicable=false merely because synth is inconvenient, the environment is unclear, or you lack credentials — that is a genuine failure and must be reported as applicable=true with synthValid=false.
+
+If the repo DOES have a CDK app, return applicable=true and report whether synth succeeds and whether drift exists. Beware a task or script NAMED cdk:deploy that runs no CDK operation; check what it actually executes before treating it as evidence of a CDK surface.`,
   {
     label: 'deploy:cdk-validate',
     phase: 'Deploy-readiness',
@@ -71,8 +84,9 @@ const cdk = await agent(
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['synthValid', 'driftDetected'],
+      required: ['applicable', 'synthValid', 'driftDetected'],
       properties: {
+        applicable: { type: 'boolean' },
         synthValid: { type: 'boolean' },
         driftDetected: { type: 'boolean' },
         details: { type: 'string' },
@@ -80,6 +94,12 @@ const cdk = await agent(
     },
   }
 )
+// Collapse the three-state result into one line the readiness review cannot misread.
+const cdkStatus = !cdk
+  ? 'CDK: not reported'
+  : cdk.applicable === false
+    ? 'CDK: NOT APPLICABLE — this repo owns no CDK app or stack, so synth and drift are out of scope and MUST NOT count against readiness. Judge readiness on the tests and smoke evidence alone.'
+    : `CDK: synthValid=${cdk.synthValid}, drift=${cdk.driftDetected}`
 
 // Selected readiness artifacts — concurrent, distinct concerns. finops/slo are advisory;
 // runbook/pipeline author operational artifacts (none of them deploy).
@@ -137,7 +157,7 @@ const readiness = await agent(
   `Run a production-readiness review for this change and return a go/no-go. Consider: tests green, smoke tests present, CDK synth valid, no unresolved drift, documentation current, the selected readiness artifacts, and the decided rollout strategy. You do NOT trigger the deploy — you assess readiness only.
 
 Smoke tests: ${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none'}
-CDK: synthValid=${cdk && cdk.synthValid}, drift=${cdk && cdk.driftDetected}
+${cdkStatus}
 Documentation current: ${a.docCurrency ? a.docCurrency.docsCurrent : 'unknown'}
 Readiness artifacts produced: ${artifacts.join(', ') || 'none'}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}${feedback}`,
@@ -225,7 +245,11 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
 ${
   multiRepo
     ? `This change spans MULTIPLE repos/stacks — deploy in approved wave order per /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke/deployment/waves.yaml and waves.shared.yaml, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
-    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read waves.yaml. Just run \`cdk deploy\` for the affected stack(s) in this repo against dev.`
+    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read waves.yaml. Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
+        cdk && cdk.applicable === false
+          ? 'CDK validation already reported that this repo owns NO CDK app or stack, so `cdk deploy` does not exist here and will fail. Find the real deploy path — check the Taskfile, package.json scripts, and any deploy script — and run that. For a static site this is typically a build followed by `aws s3 sync` and a CloudFront invalidation; you MUST wait for the invalidation to report Completed before smoke-testing, or you will read stale cached bytes and wrongly report success.'
+          : 'this repo has a CDK app, so run `cdk deploy` for the affected stack(s) against dev.'
+      } Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.`
 }
 
 Then RUN the smoke tests (${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none authored'}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
