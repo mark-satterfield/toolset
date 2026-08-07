@@ -4,7 +4,7 @@
  * ssbd-ja5d / AC-ORCH-10c — regression pins on the two enforcement primitives
  * that demonstrably work today. The fix for ssbd-ja5d must not break them.
  *
- *   - prevent-bash-tool-misuse.cjs:166 — exit 2 on a bare `grep` Bash call in
+ *   - pre-tool-orchestrator-edit-guard.cjs — exit 2 on an orchestrator code write in
  *     an orchestrator session.
  *   - gitignore-edit-guard.sh:160 — exit 2 on an Edit that strips a sensitive
  *     pattern from a .gitignore; :23-26 — immediate exit 0 for any path not
@@ -28,20 +28,28 @@ const {
 
 const GITIGNORE_GUARD_CMD = 'bash ${CLAUDE_PLUGIN_ROOT}/hooks/gitignore-edit-guard.sh';
 
-test('AC-ORCH-10c pin: bare `grep` at command start in an orchestrator session is blocked with exit 2 by prevent-bash-tool-misuse.cjs', () => {
-  const guards = guardsMatchingTool('Bash');
-  assert.ok(guards.length > 0, 'harness precondition: Bash guards registered');
-  const evt = hookEvent({ toolName: 'Bash', toolInput: { command: 'grep -r TODO src/' } });
+// The pin's purpose is the PRIMITIVE — that a registered PreToolUse guard reaches
+// a terminal exit 2 in an orchestrator session — not the command that trips it.
+// It pinned prevent-bash-tool-misuse.cjs, which has been removed: its rules were
+// tool-choice preferences rather than forbidden actions, and three of the seven
+// redirected to Grep/Glob, which native Claude Code builds dropped in 2.1.117.
+// A rule whose redirect target does not exist is a dead end, not enforcement.
+// The pin now rides the orchestrator edit guard, a genuinely constitutive
+// constraint (REQ-ORCH-01).
+test('AC-ORCH-10c pin: a registered PreToolUse guard still reaches a terminal exit 2', () => {
+  const guards = guardsMatchingTool('Write');
+  assert.ok(guards.length > 0, 'harness precondition: a Write guard is registered');
+  const evt = hookEvent({ toolName: 'Write', toolInput: { file_path: '/tmp/atw-pin/probe.py', content: 'x' } });
   const outcomes = guards.map((g) => ({ g, r: runGuard(g.command, evt) }));
   const blocking = outcomes.filter((o) => o.r.status === 2);
   assert.ok(
     blocking.length > 0,
-    `AC-ORCH-10c: the working primitive at prevent-bash-tool-misuse.cjs:166 must still block ` +
-      `a bare grep with exit 2; observed: [${outcomes.map((o) => o.r.status).join(', ')}]`,
+    `AC-ORCH-10c: an orchestrator code write must still be denied with exit 2; ` +
+      `observed: [${outcomes.map((o) => o.r.status).join(', ')}]`,
   );
   assert.ok(
-    blocking.some((o) => /Bash Tool Misuse Prevented/.test(o.r.stderr)),
-    'blocking stderr must carry the existing correction message',
+    blocking.some((o) => /Orchestrator Edit Blocked/.test(o.r.stderr)),
+    'blocking stderr must carry the correction message',
   );
 });
 

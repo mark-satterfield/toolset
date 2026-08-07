@@ -2,7 +2,9 @@
 /**
  * PreToolUse hook — records an orchestrator read of a source/config file.
  *
- * Fires on: Read and Grep against source, config, and test paths.
+ * Fires on: Read against source, config, and test paths. (The standalone Grep
+ * tool was removed from native Claude Code builds in 2.1.117 — search runs
+ * through Bash now, so there is no Grep call left to observe here.)
  * Action: records the read and states what it costs.
  *
  * This hook does not deny, and it grants no exemption. It used to ask the

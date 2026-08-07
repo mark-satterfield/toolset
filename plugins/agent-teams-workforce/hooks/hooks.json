@@ -1,5 +1,5 @@
 {
-  "description": "Orchestrator role enforcement — ssbd-ja5d. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
+  "description": "Orchestrator role enforcement \u2014 ssbd-ja5d. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
   "hooks": {
     "PreToolUse": [
       {
@@ -21,7 +21,7 @@
         ]
       },
       {
-        "matcher": "Read|Grep",
+        "matcher": "Read",
         "hooks": [
           {
             "type": "command",
@@ -35,15 +35,6 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-diagnostic-command-gate.cjs\""
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/prevent-bash-tool-misuse.cjs\""
           }
         ]
       },

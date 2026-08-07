@@ -116,14 +116,19 @@ session that hit it.
 
 ## Built-in tool enforcement
 
-Use `Read`, `Grep`, and `Glob` rather than shelling out to `cat`, `grep`,
-`find`, `ls`, `head`, `tail`, or `sed -n`. The built-ins handle encoding, large
-files, binary detection, and permissions correctly.
+There is none, deliberately, and this section records why so it is not
+reintroduced by analogy.
 
-Pipelines are unaffected: `git log | grep`, `gh ... | head`, and similar
-composite commands are legitimate shell use.
+`Read` is still the better way to read a file — it handles encoding, large files,
+and binary detection. But it is a preference, not a rule, and no guard enforces it.
 
-Guard: `prevent-bash-tool-misuse.cjs`.
+Search is Bash's job here: Claude Code removed the standalone `Grep` and `Glob`
+tools from native builds in 2.1.117, so `grep`, `rg`, `find`, and `ls` are the
+supported path. A guard redirecting them named tools that do not exist, which left
+a blocked command with no alternative — and the only way forward was around the
+guard, which is exactly the behaviour this rule set exists to prevent.
+
+Enforcement is reserved for the forbidden actions. Tool choice is not one of them.
 
 ## Diagnostic command delegation
 

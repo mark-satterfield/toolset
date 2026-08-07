@@ -52,7 +52,7 @@ const HOOKS_JSON_PATH = path.join(PLUGIN_ROOT, 'hooks', 'hooks.json');
 const HOOK_SCRIPTS = {
   readWarning: path.join(PLUGIN_ROOT, 'hooks', 'pre-tool-orchestrator-read-warning.cjs'),
   diagnosticGate: path.join(PLUGIN_ROOT, 'hooks', 'pre-tool-diagnostic-command-gate.cjs'),
-  bashMisuse: path.join(PLUGIN_ROOT, 'hooks', 'prevent-bash-tool-misuse.cjs'),
+  editGuard: path.join(PLUGIN_ROOT, 'hooks', 'pre-tool-orchestrator-edit-guard.cjs'),
   blockExplore: path.join(PLUGIN_ROOT, 'hooks', 'pre-tool-block-explore-for-analysis.cjs'),
   gitignoreEditGuard: path.resolve(
     PLUGIN_ROOT,

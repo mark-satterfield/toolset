@@ -144,7 +144,7 @@ test('AC-ORCH-04b (pin): with a non-empty agent_id, each existing guard exits 0 
     const cases = [
       { tool: 'Read', toolInput: { file_path: probe } },
       { tool: 'Bash', toolInput: { command: 'pytest' } },
-      { tool: 'Bash', toolInput: { command: 'grep -r foo .' } },
+      { tool: 'Bash', toolInput: { command: 'cat config.py' } },
       {
         tool: 'Task',
         toolInput: {

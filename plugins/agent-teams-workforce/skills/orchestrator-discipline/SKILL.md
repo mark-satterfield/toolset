@@ -98,10 +98,9 @@ Subagents implement, verify, and run diagnostics — that is their job.
 | Self-Verification Gate | `Bash` | **Blocking.** Denies network fetches and git inspection of artifacts this session produced, read from the session transcript. |
 | Diagnostic Command Gate | `Bash` | **Blocking.** Denies test runners, type checkers, and linters. Delegate the run and take the verdict. |
 | Beads Write Guard | `Bash` | **Blocking.** Denies beads mutations. Reads are unaffected. |
-| Built-In Tool Enforcement | `Bash` | **Blocking.** Redirects `cat`, `grep`, `find`, `ls`, `head`, `tail`, `sed -n` to `Read`, `Grep`, `Glob`. Pipelines pass. |
 | Workflow Dispatch Guard | `Workflow` | **Blocking.** Denies dispatch by bare name; requires `scriptPath`, an inline `script`, or `resumeFromRunId`. |
 | Roster Dispatch Guard | `Agent`, `Task` | **Blocking.** Denies generic agent types for domain or reasoning work and names the roster owner. |
-| Source File Read Guard | `Read`, `Grep` | Records the read and states its cost. Editing the file is separately blocked, so no exemption is implied or offered. |
+| Source File Read Guard | `Read` | Records the read and states its cost. Editing the file is separately blocked, so no exemption is implied or offered. |
 | Workflow Payload Cap | `Workflow`, `Task` completion | **Blocking.** Denies completion payloads over 15 lines. |
 
 ## Rules
@@ -158,6 +157,18 @@ Pure file-pattern and keyword searches pass.
 
 **Source File Read Guard.** Fires on source, config, and test paths. Prose,
 plans, and backlog items do not fire.
+
+**On tool choice.** There is deliberately no guard policing `cat` versus `Read`,
+or `grep` versus a search tool. Claude Code removed the standalone `Grep` and
+`Glob` tools from native builds in 2.1.117 — search runs through Bash now — so
+rules redirecting `grep`, `find`, and `ls` pointed at tools that do not exist,
+leaving a blocked command with no way forward except around the guard. What was
+left after removing them was `cat`/`head`/`tail` versus `Read`: a style
+preference, not one of the forbidden actions this layer exists to enforce.
+
+A guard that blocks honest work teaches the operator to route around the guards.
+That is the failure mode this hook set exists to prevent, so the enforcement layer
+covers forbidden actions only.
 
 See [Investigation Escalation Anti-Pattern](./references/investigation-escalation.md)
 for the full pattern analysis and correct alternatives.

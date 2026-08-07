@@ -24,17 +24,24 @@ const H = require('./support/hook-harness.cjs');
 
 const SUBAGENT_ID = 'subagent-9f2c';
 
-test('AC-ORCH-10c: prevent-bash-tool-misuse.cjs still denies a bare grep in an orchestrator session with exit 2', () => {
-  const event = H.makeEvent({
-    toolName: 'Bash',
-    toolInput: { command: 'grep -r "needle" .' },
-  });
-  const r = H.runScript(H.HOOK_SCRIPTS.bashMisuse, event);
-  assert.equal(r.status, 2, 'bare grep must still be blocked with exit code 2');
-  assert.ok(
-    r.stderr.includes('Bash Tool Misuse Prevented'),
-    'the denial feedback must still be written to stderr',
-  );
+// The anchor's purpose is the PRIMITIVE — that a PreToolUse guard reaches a
+// terminal exit 2 — not the command that trips it. It used prevent-bash-tool-misuse,
+// which has been removed: its rules were tool-choice preferences rather than
+// forbidden actions, and three of the seven redirected to tools this build does
+// not have. The vehicle is now the orchestrator edit guard, which enforces an
+// actual constitutive constraint (REQ-ORCH-01).
+test('AC-ORCH-10c: a registered PreToolUse guard still reaches a terminal exit 2', () => {
+  let tmp;
+  try {
+    tmp = H.makeTempDir('ssbd-ja5d-anchor-');
+    const probe = H.writeProbe(tmp, 'probe.py', 'SENTINEL_ORIGINAL\n');
+    const event = H.makeEvent({ toolName: 'Write', toolInput: { file_path: probe, content: 'x' } });
+    const r = H.runScript(H.HOOK_SCRIPTS.editGuard, event);
+    assert.equal(r.status, 2, 'an orchestrator code write must still be blocked with exit code 2');
+    assert.ok(r.stderr.includes('Orchestrator Edit Blocked'), 'the denial feedback must reach stderr');
+  } finally {
+    if (tmp) H.removeTempDir(tmp);
+  }
 });
 
 test('AC-ORCH-10c: gitignore-edit-guard.sh still denies removing a sensitive pattern from .gitignore with exit 2', () => {
@@ -84,14 +91,6 @@ test('AC-ORCH-04b[existing-hooks]: all four existing hook scripts preserve the s
         event: H.makeEvent({
           toolName: 'Bash',
           toolInput: { command: 'pytest tests/' },
-          agentId: SUBAGENT_ID,
-        }),
-      },
-      {
-        script: H.HOOK_SCRIPTS.bashMisuse,
-        event: H.makeEvent({
-          toolName: 'Bash',
-          toolInput: { command: 'grep -r "needle" .' },
           agentId: SUBAGENT_ID,
         }),
       },

@@ -8,7 +8,7 @@
  * Threat model entry: root cause (C) "THE BASH GATE'S PATTERN LIST OMITS
  * SELF-VERIFICATION ENTIRELY" — pre-tool-diagnostic-command-gate.cjs:20-35
  * enumerates linter/test binaries only; git log/diff/show and curl match
- * nothing, and prevent-bash-tool-misuse.cjs:101 whitelists `git ... | grep`.
+ * nothing for git commands.
  *
  * Session-production state fixture: the GIVEN "has already issued a
  * successful Edit against P in this same session" is supplied through the
