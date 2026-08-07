@@ -1,11 +1,12 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8/§9) under an independent conformance check. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit.',
+    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD/ADRs already settle skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8/§9) under an independent conformance check. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
-    { title: 'Proposals', detail: 'integration + security + cost + persistence + cdk options, with context-map + failure-mode analysis (concurrent)' },
-    { title: 'Challenge', detail: 'pattern + tradeoff + boundary + ADR + cost-impact + ops-readiness panel (concurrent checkers)' },
-    { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges' },
+    { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD/ADRs — settled questions skip the panel; contested ones name the analysis dimensions' },
+    { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, context-map + failure-mode analysis, concurrent); skipped when settled' },
+    { title: 'Challenge', detail: 'pattern + tradeoff + boundary + ADR + cost-impact + ops-readiness panel (concurrent checkers) — runs only over proposals that were produced' },
+    { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled' },
     { title: 'Update SAD', detail: 'author ADRs/fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8/§9, conformance-checked' },
   ],
 }
@@ -15,6 +16,8 @@ export const meta = {
 //   sadPath?: string,        // path to the arc42 SAD (defaults to the vault arch42 tree)
 //   feedback?: string,       // optional upstream gate feedback to fold in
 //   maxLoops?: number,       // SAD maker-checker passes before decider deadlock (default 2)
+//   dimensions?: string[],   // override: force the analyst panel to exactly these axes (triage is skipped)
+//   forceFullPanel?: boolean,// override: skip triage and run the full panel + challenge wave as today
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const d = a.decision || {}
@@ -99,67 +102,163 @@ const FAILURE_MODES_SCHEMA = {
   },
 }
 
-// ── Phase 1: Proposals ─────────────────────────────────────────────────────────
-// Five INDEPENDENT makers propose from their lens, plus two analysis advisors
-// (context map, failure modes), all concurrently. The coordinator is a read-only
-// router only — it frames the decisions and dispatches; it authors and rules nothing.
-phase('Proposals')
+// The seven analysis axes triage may select from. The first five map onto the lens
+// makers below; the last two map onto the analysis advisors (context map, failure modes).
+const ALL_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk', 'bounded-context', 'failure-mode']
 
-const frame = await agent(
-  `You are the architecture-decision-workflow-coordinator — a READ-ONLY router. Do NOT author any option and do NOT rule on anything. Frame the decision so the analysts can each propose from their lens: state the sub-decisions to be made, the constraints that bound them, and which lens (integration/decomposition, security, cost) each analyst should focus on.
+const TRIAGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['settled', 'rationale', 'relevantDecisions', 'dimensions'],
+  properties: {
+    settled: { type: 'boolean' },
+    rationale: { type: 'string' },
+    relevantDecisions: { type: 'array', items: { type: 'string' } },
+    dimensions: { type: 'array', items: { type: 'string', enum: ALL_DIMENSIONS } },
+  },
+}
+
+// ── Phase 0: Triage ────────────────────────────────────────────────────────────
+// ONE read-only agent sizes the panel to the decision before anything is dispatched,
+// because running the full 23-agent fan-out on a question the SAD already answers is
+// what makes operators abandon the pipeline. Triage only classifies — the
+// architecture-decider still makes every ruling, so segregation of duties holds.
+phase('Triage')
+
+// Caller overrides: a caller who already knows the decision is contested can force
+// the panel shape (dimensions) or the full run (forceFullPanel) without spending a
+// triage call whose verdict would then be ignored.
+const forcedDimensions = Array.isArray(a.dimensions)
+  ? a.dimensions.filter((x) => ALL_DIMENSIONS.includes(x))
+  : null
+
+let triage = null
+let settled = false
+let activeDimensions = []
+if (a.forceFullPanel === true) {
+  activeDimensions = ALL_DIMENSIONS
+  log('Triage skipped: forceFullPanel=true — running the full analyst panel and challenge wave')
+} else if (forcedDimensions && forcedDimensions.length) {
+  activeDimensions = forcedDimensions
+  log(`Triage skipped: caller forced the panel — analysts selected: ${activeDimensions.join(', ')}`)
+} else {
+  triage = await agent(
+    `You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD and the accepted ADR inventory — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
+
+Return settled=true when the SAD or an accepted ADR already answers this question, or when it is a routine variation on a settled pattern; otherwise settled=false. Cite in relevantDecisions the ADRs or SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)} — include an axis only when the decision could plausibly turn on it, never by reflex.
 
 ${decisionHeader}`,
-  {
-    label: 'proposals:frame',
-    phase: 'Proposals',
-    agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['subDecisions', 'constraints', 'dispatch'],
-      properties: {
-        subDecisions: { type: 'array', items: { type: 'string' } },
-        constraints: { type: 'array', items: { type: 'string' } },
-        dispatch: { type: 'string' },
-      },
-    },
+    {
+      label: 'triage:classify',
+      phase: 'Triage',
+      agentType: 'agent-teams-workforce:architecture-boundary-guardian',
+      schema: TRIAGE_SCHEMA,
+    }
+  )
+  if (!triage) {
+    // A triage failure must widen the analysis, never narrow it — fail open to the full panel.
+    activeDimensions = ALL_DIMENSIONS
+    log('Triage returned no verdict — failing open to the full analyst panel')
+  } else if (triage.settled) {
+    settled = true
+    log(`Triage: SETTLED — ${triage.rationale}`)
+    log(`Prior decisions cited: ${(triage.relevantDecisions || []).join('; ') || '(none named)'} — skipping the analyst fan-out and the challenge wave`)
+  } else {
+    activeDimensions = (Array.isArray(triage.dimensions) ? triage.dimensions : []).filter((x) => ALL_DIMENSIONS.includes(x))
+    if (activeDimensions.length) {
+      log(`Triage: CONTESTED — ${triage.rationale}`)
+      log(`Analysts selected: ${activeDimensions.join(', ')}`)
+    } else {
+      // Contested-but-no-dimensions is incoherent; treat it as fully contested rather
+      // than letting an empty list silently skip the analysis a contested decision needs.
+      activeDimensions = ALL_DIMENSIONS
+      log('Triage: CONTESTED but named no dimensions — failing open to the full analyst panel')
+    }
   }
-)
+}
 
-const frameBlock = `Framing from the coordinator:
-Sub-decisions: ${(frame.subDecisions || []).join('; ') || 'n/a'}
-Constraints: ${(frame.constraints || []).join('; ') || 'n/a'}`
-
+// ── Phase 1: Proposals ─────────────────────────────────────────────────────────
+// Up to five INDEPENDENT makers propose from their lens, plus two analysis advisors
+// (context map, failure modes), all concurrently — but ONLY the ones triage or the
+// caller selected, because a one-dimension decision does not deserve a seven-agent
+// fan-out, and a settled decision dispatches none at all. The coordinator is a
+// read-only router only — it frames the decisions and dispatches; it authors and
+// rules nothing.
 const makers = [
   {
     agentType: 'agent-teams-workforce:integration-pattern-architect',
+    dim: 'integration',
     lens: 'integration/decomposition',
     ask: 'Propose the integration and service-decomposition approach: event-driven flows, service boundaries, and the tradeoffs of each option. Honor the platform constraints (event-driven only — no Step Functions; service isolation; SSM for cross-stack refs).',
   },
   {
     agentType: 'agent-teams-workforce:security-architecture-designer',
+    dim: 'security',
     lens: 'security',
     ask: 'Propose the security architecture: trust boundaries, authn/authz placement, data protection, and surface the security tradeoffs of each option.',
   },
   {
     agentType: 'agent-teams-workforce:cost-architecture-reviewer',
+    dim: 'cost',
     lens: 'cost',
     ask: 'Assess the cost-architecture tradeoffs of each option: cost drivers, scaling cost shape, and which option is most cost-efficient for the stated drivers.',
   },
   {
     agentType: 'agent-teams-workforce:persistence-architecture-specialist',
+    dim: 'persistence',
     lens: 'persistence',
     ask: 'Propose the persistence approach: DynamoDB single- vs multi-table design, key schema, GSI/LSI strategy, and the access-pattern tradeoffs of each option.',
   },
   {
     agentType: 'agent-teams-workforce:cdk-infrastructure-designer',
+    dim: 'cdk',
     lens: 'cdk-infrastructure',
     ask: 'Propose the CDK construct topology: Lambda boundaries within the chassis, layer/packaging strategy, and the infrastructure tradeoffs of each option.',
   },
 ]
 
-const proposalResults = await parallel([
-  ...makers.map((m) => () =>
+let frame = null
+let proposals = []
+let contextMap = null
+let failureModes = []
+if (settled) {
+  log('Proposals phase skipped — settled decisions go straight to the architecture-decider')
+} else {
+  phase('Proposals')
+
+  frame = await agent(
+    `You are the architecture-decision-workflow-coordinator — a READ-ONLY router. Do NOT author any option and do NOT rule on anything. Frame the decision so the analysts can each propose from their lens: state the sub-decisions to be made, the constraints that bound them, and which lens each analyst should focus on. Triage scaled the panel to these dimensions — frame for them only: ${activeDimensions.join(', ')}.
+
+${decisionHeader}`,
+    {
+      label: 'proposals:frame',
+      phase: 'Proposals',
+      agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['subDecisions', 'constraints', 'dispatch'],
+        properties: {
+          subDecisions: { type: 'array', items: { type: 'string' } },
+          constraints: { type: 'array', items: { type: 'string' } },
+          dispatch: { type: 'string' },
+        },
+      },
+    }
+  )
+
+  const frameBlock = `Framing from the coordinator:
+Sub-decisions: ${((frame && frame.subDecisions) || []).join('; ') || 'n/a'}
+Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
+
+  // Dispatch only the selected slice of the panel. The two advisors are dimensions
+  // like any other — a decision with no boundary or failure-mode stake does not pay
+  // for a context map or a failure-mode catalogue.
+  const activeMakers = makers.filter((m) => activeDimensions.includes(m.dim))
+  const wantsContextMap = activeDimensions.includes('bounded-context')
+  const wantsFailureModes = activeDimensions.includes('failure-mode')
+
+  const jobs = activeMakers.map((m) => () =>
     agent(
       `${m.ask}\n\n${decisionHeader}\n\n${frameBlock}`,
       {
@@ -169,49 +268,58 @@ const proposalResults = await parallel([
         schema: PROPOSAL_SCHEMA,
       }
     )
-  ),
-  () =>
-    agent(
-      `You are the bounded-context-mapper. Map the domain boundaries and context relationships this decision touches: which bounded contexts are involved and how they relate (upstream/downstream, conformist, anti-corruption layer). Return the context map; do NOT rule or author options.
+  )
+  if (wantsContextMap) {
+    jobs.push(() =>
+      agent(
+        `You are the bounded-context-mapper. Map the domain boundaries and context relationships this decision touches: which bounded contexts are involved and how they relate (upstream/downstream, conformist, anti-corruption layer). Return the context map; do NOT rule or author options.
 
 ${decisionHeader}
 
 ${frameBlock}`,
-      {
-        label: 'proposals:context-map',
-        phase: 'Proposals',
-        agentType: 'agent-teams-workforce:bounded-context-mapper',
-        schema: CONTEXT_MAP_SCHEMA,
-      }
-    ),
-  () =>
-    agent(
-      `You are the failure-mode-analyst. Model the failure modes the proposed directions must withstand: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius. Do NOT author options or rule.
+        {
+          label: 'proposals:context-map',
+          phase: 'Proposals',
+          agentType: 'agent-teams-workforce:bounded-context-mapper',
+          schema: CONTEXT_MAP_SCHEMA,
+        }
+      )
+    )
+  }
+  if (wantsFailureModes) {
+    jobs.push(() =>
+      agent(
+        `You are the failure-mode-analyst. Model the failure modes the proposed directions must withstand: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius. Do NOT author options or rule.
 
 ${decisionHeader}
 
 ${frameBlock}`,
-      {
-        label: 'proposals:failure-modes',
-        phase: 'Proposals',
-        agentType: 'agent-teams-workforce:failure-mode-analyst',
-        schema: FAILURE_MODES_SCHEMA,
-      }
-    ),
-])
-const proposals = proposalResults.slice(0, makers.length).filter(Boolean)
-const contextMap = proposalResults[makers.length] || null
-const failureModes = (proposalResults[makers.length + 1] && proposalResults[makers.length + 1].failureModes) || []
+        {
+          label: 'proposals:failure-modes',
+          phase: 'Proposals',
+          agentType: 'agent-teams-workforce:failure-mode-analyst',
+          schema: FAILURE_MODES_SCHEMA,
+        }
+      )
+    )
+  }
+
+  const proposalResults = await parallel(jobs)
+  proposals = proposalResults.slice(0, activeMakers.length).filter(Boolean)
+  let cursor = activeMakers.length
+  if (wantsContextMap) contextMap = proposalResults[cursor++] || null
+  if (wantsFailureModes) failureModes = (proposalResults[cursor] && proposalResults[cursor].failureModes) || []
+}
 const proposalsText = JSON.stringify(proposals, null, 2)
 const analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
 
 // ── Phase 2: Challenge ─────────────────────────────────────────────────────────
 // Six INDEPENDENT checkers stress the proposals concurrently — pattern, tradeoff,
 // boundary coupling, ADR conformance, cost-at-scale, and operational readiness.
-// Different agents than the makers — no proposer challenges its own proposal.
-phase('Challenge')
-
-const challengeResults = await parallel([
+// Different agents than the makers — no proposer challenges its own proposal. The
+// wave runs only over proposals that were actually produced, because a settled
+// decision (or an analysis-only panel) leaves nothing to challenge.
+const runChallengeWave = () => parallel([
   () =>
     agent(
       `You are the architecture-pattern-challenger. Challenge the proposed patterns against SkillSpoke platform constraints and known anti-patterns. Name each pattern that conflicts with a constraint or is a known anti-pattern, with the reason and the constraint it violates. Do NOT author replacement patterns — only challenge.
@@ -420,6 +528,14 @@ ${proposalsText}`,
     ),
 ])
 
+let challengeResults = []
+if (!settled && proposals.length) {
+  phase('Challenge')
+  challengeResults = await runChallengeWave()
+} else if (!settled) {
+  log('Challenge wave skipped — the selected panel produced no lens proposals to challenge')
+}
+
 const challenges = {
   patterns: (challengeResults[0] && challengeResults[0].challenges) || [],
   unstatedRisks: (challengeResults[1] && challengeResults[1].unstatedRisks) || [],
@@ -432,22 +548,34 @@ const challengesText = JSON.stringify(challenges, null, 2)
 
 // ── Phase 3: Decide ─────────────────────────────────────────────────────────────
 // The decider ONLY rules — it does not analyze or author. Distinct from makers and
-// checkers.
+// checkers, and it ALWAYS runs: triage classifies but never decides, so even a
+// settled decision gets an explicit ruling — one that cites the prior decisions
+// triage surfaced instead of re-deriving them.
 phase('Decide')
 
-const decision = await agent(
-  `You are the architecture-decider. Rule on the architecture given the proposals, the analysis, and the challenges. You ONLY rule — do not re-analyze, do not author new options, do not write the SAD. Choose the approach, state the ruling as a decision (not a discussion), and list the constraints the ruling imposes downstream. Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none). Blocking challenges must be resolved by the ruling or the ruling is invalid.
+const evidenceBlock = settled
+  ? `Triage classified this decision as SETTLED by the existing SAD/ADRs, so no analyst panel ran.
+Triage rationale: ${triage.rationale}
+Relevant prior decisions: ${(triage.relevantDecisions || []).join('; ') || '(none named)'}
 
-${decisionHeader}
-
-Proposals:
+Rule by CITING those prior decisions rather than re-deriving the analysis. If you find they do not actually answer this question, say so in the ruling and impose a constraint that the decision be re-run with forceFullPanel.`
+  : `Proposals:
 ${proposalsText}
 
 Analysis (context map + failure modes):
 ${analysisText}
 
 Challenges:
-${challengesText}`,
+${challengesText}
+
+Blocking challenges must be resolved by the ruling or the ruling is invalid.`
+
+const decision = await agent(
+  `You are the architecture-decider. Rule on the architecture given the evidence below. You ONLY rule — do not re-analyze, do not author new options, do not write the SAD. Choose the approach, state the ruling as a decision (not a discussion), and list the constraints the ruling imposes downstream. Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).
+
+${decisionHeader}
+
+${evidenceBlock}`,
   {
     label: 'decide:ruling',
     phase: 'Decide',
@@ -639,6 +767,9 @@ ${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none
 return {
   ok: !!conformanceVerdict && conformanceVerdict.verdict === 'pass',
   decisionRef: d.id || null,
+  triage,
+  settledByTriage: settled,
+  panelDimensions: activeDimensions,
   proposals,
   tradeoffs: proposals.map((p) => ({ lens: p.lens, recommendation: p.recommendation, options: p.options })),
   contextMap,
