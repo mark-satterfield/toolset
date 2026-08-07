@@ -152,9 +152,20 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
   }
 )
 
-// Production-readiness review aggregates ALL evidence into a go/no-go. It assesses only.
-const readiness = await agent(
-  `Run a production-readiness review for this change and return a go/no-go. Consider: tests green, smoke tests present, CDK synth valid, no unresolved drift, documentation current, the selected readiness artifacts, and the decided rollout strategy. You do NOT trigger the deploy — you assess readiness only.
+// THE DEPLOY COULD NEVER FIRE. This stage used to ask production-readiness-review-facilitator
+// for a go/no-go — the one thing that agent's charter explicitly forbids ("facilitates only,
+// never decides readiness"). It correctly refused, and its refusal collapsed into the schema's
+// required boolean as ready:false. Rollout is gated on readiness.ready, so the gate could never
+// open: deploy.js could not deploy anything, for any repo, ever. Observed on ssbd-mqkq run
+// wf_773feccc-143 — readiness.ready=false with findings that begin "ROLE BOUNDARY: This agent's
+// charter explicitly forbids declaring the feature ready or not ready ... the verdict request is
+// declined and routed back as an escalation", deployedToDev=false, rollout=null.
+// The facilitator was right and the script was wrong. Segregation of duties is the point: the
+// facilitator ASSEMBLES the packet, and the Gate 5 verdict belongs to phase-gate-enforcer.
+const readinessPacket = await agent(
+  `ASSEMBLE the deployment readiness packet for this change. Do NOT issue a go/no-go and do NOT declare the change ready or not ready — that verdict is Gate 5's and belongs to the phase-gate-enforcer, not to you. Your job is to inventory the evidence and state, per item, whether it is PRESENT, MISSING, or NOT APPLICABLE, with what you actually verified.
+
+Cover: tests green, smoke test RESULTS (not merely that spec files exist), CDK synth/drift, documentation currency, the selected readiness artifacts, and the decided rollout strategy.
 
 Smoke tests: ${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none'}
 ${cdkStatus}
@@ -162,9 +173,39 @@ Documentation current: ${a.docCurrency ? a.docCurrency.docsCurrent : 'unknown'}
 Readiness artifacts produced: ${artifacts.join(', ') || 'none'}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}${feedback}`,
   {
-    label: 'deploy:readiness',
+    label: 'deploy:readiness-packet',
     phase: 'Deploy-readiness',
     agentType: 'agent-teams-workforce:production-readiness-review-facilitator',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['inventory'],
+      properties: {
+        inventory: { type: 'array', items: { type: 'string' } },
+        concerns: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  }
+)
+
+// Gate 5 verdict — the enforcer rules, and it is the only role permitted to.
+const readiness = await agent(
+  `GATE 5 — DEPLOY READINESS. Rule on whether this change may roll out to the ${(a.env || c.env || 'dev').toLowerCase()} environment. Return ready=true (proceed) or ready=false (block), with reasons.
+
+CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production, and serves fewer than five alpha users. It is NOT an outward-facing release and is NOT human-gated. Judge it accordingly: block only on evidence that the change is BROKEN or UNSAFE, never on missing process artifacts.
+
+BLOCK on: failing tests, a failing smoke run, a broken CDK synth where CDK applies, an unresolved drift that this change would worsen, or a security finding.
+DO NOT BLOCK on: absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, a missing wave-execution log, or an artifact marked NOT APPLICABLE. Those are process artifacts; their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
+
+Readiness packet:
+${(readinessPacket && readinessPacket.inventory || []).join('\n') || 'no inventory returned'}
+Concerns raised: ${(readinessPacket && readinessPacket.concerns || []).join('; ') || 'none'}
+${cdkStatus}
+Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}${feedback}`,
+  {
+    label: 'deploy:gate5-verdict',
+    phase: 'Deploy-readiness',
+    agentType: 'agent-teams-workforce:phase-gate-enforcer',
     schema: {
       type: 'object',
       additionalProperties: false,
