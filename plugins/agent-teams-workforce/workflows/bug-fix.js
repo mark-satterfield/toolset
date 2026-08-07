@@ -141,19 +141,68 @@ const red = await gateLoop({
   escalateTargets: ['triage'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
 })
-if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
-if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
 
-// ── Green (Gate 2b) ───────────────────────────────────────────────────────────
-phase('Green')
-const green = await gateLoop({
-  gate: '2b', phaseName: 'TDD Green',
-  criteria: ['The previously-failing test now passes', 'No other tests regressed', 'The change is minimal and the test was not weakened'],
-  escalateTargets: ['triage', 'red'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
-})
-if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
-if (!green.ok) return { ok: false, stage: 'green', bead: bead.id, detail: green }
+// ── Red ⇄ Green with WORKING escalation ───────────────────────────────────────
+// Escalation used to be a labelled exit, not control flow: gateLoop returned
+// {escalate:'red'} and the caller immediately failed the run. So Green could name Red
+// as its escalation target, Red would never re-run, and the run died — even though the
+// composite's own description claims it "owns loop and escalate control flow".
+//
+// This bites hardest on a DEFECTIVE TEST, where the deadlock is total by design: the
+// implementer is forbidden to modify a test, and the gate is right to fail a test that
+// does not pass. Neither role may fix it, so nobody can. ssbd-ew3t hit exactly this —
+// a test searched for a literal that its own variable name contained, so it could never
+// pass no matter how correct the production change was. 683k tokens, correct deletions,
+// zero regressions, run failed.
+//
+// Escalating to Red re-runs the TEST-AUTHORING phase with the gate's evidence, which is
+// the only phase permitted to repair a test. Bounded so a Red/Green disagreement cannot
+// ping-pong forever.
+const MAX_ESCALATIONS = a.maxEscalations || 2
+let redResult = red
+let green = null
+let escalations = 0
+
+for (;;) {
+  if (redResult.artifact && redResult.artifact.ledger) runLedger.push(redResult.artifact.ledger)
+  if (!redResult.ok) return { ok: false, stage: 'red', bead: bead.id, detail: redResult }
+
+  phase('Green')
+  green = await gateLoop({
+    gate: '2b', phaseName: 'TDD Green',
+    criteria: ['The previously-failing test now passes', 'No other tests regressed', 'The change is minimal and the test was not weakened'],
+    escalateTargets: ['triage', 'red'],
+    phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: redResult.artifact, implementer: a.implementer, feedback }),
+  })
+  if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
+  if (green.ok) break
+
+  const canRetryRed = green.escalate === 'red' && escalations < MAX_ESCALATIONS
+  if (!canRetryRed) return { ok: false, stage: 'green', bead: bead.id, detail: green }
+
+  escalations += 1
+  const why = (green.verdict && (green.verdict.feedback || (green.verdict.criteria || []).filter((c) => !c.met).map((c) => `${c.criterion}: ${c.evidence}`).join('\n'))) || 'Green gate escalated to Red without stated feedback.'
+  log(`Green escalated to Red (${escalations}/${MAX_ESCALATIONS}) — re-authoring tests`)
+
+  phase('Red')
+  redResult = await gateLoop({
+    gate: '2a', phaseName: `TDD Red (re-authored after Green escalation ${escalations})`,
+    criteria: [
+      'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red)',
+      'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
+      'The test asserts the real post-fix behavior, not merely that a symbol is absent.',
+      'No production code was changed to manufacture the failure',
+      'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.',
+    ],
+    escalateTargets: ['triage'],
+    phaseFn: (feedback) =>
+      workflow('agent-teams-workforce:tdd-red', {
+        contract,
+        red: redResult.artifact,
+        feedback: `The Green gate escalated back to test authoring. Green could not pass because of a defect in the TESTS THEMSELVES, not in the production change. Repair the test, then re-confirm it is still a genuine red.\n\nGreen gate evidence:\n${why}\n\n${feedback || ''}`,
+      }),
+  })
+}
 
 // Documentation runs ALONGSIDE the rest of the tail (started, awaited before deploy).
 const docTrack = workflow('agent-teams-workforce:documentation', { contract, green: green.artifact })
