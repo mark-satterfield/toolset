@@ -165,7 +165,9 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
 const readinessPacket = await agent(
   `ASSEMBLE the deployment readiness packet for this change. Do NOT issue a go/no-go and do NOT declare the change ready or not ready — that verdict is Gate 5's and belongs to the phase-gate-enforcer, not to you. Your job is to inventory the evidence and state, per item, whether it is PRESENT, MISSING, or NOT APPLICABLE, with what you actually verified.
 
-Cover: tests green, smoke test RESULTS (not merely that spec files exist), CDK synth/drift, documentation currency, the selected readiness artifacts, and the decided rollout strategy.
+Cover: unit/integration tests green, smoke tests AUTHORED AND SOUND, CDK synth/drift, documentation currency, the selected readiness artifacts, and the decided rollout strategy.
+
+ON SMOKE TESTS, DO NOT ASK FOR RESULTS HERE. Smoke tests are POST-deployment: they assert what the deployed environment actually serves, so they cannot run — let alone pass — until the deploy that produces those bytes has happened. Demanding smoke results at this point is circular and deadlocks the pipeline. What you inventory now is that the suite EXISTS and is SOUND: it fails against the currently-broken environment, and it SKIPS rather than passes when its target URL is unset. Their passing run is Gate 5 evidence gathered AFTER rollout, not before it.
 
 Smoke tests: ${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none'}
 ${cdkStatus}
@@ -192,10 +194,14 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
 const readiness = await agent(
   `GATE 5 — DEPLOY READINESS. Rule on whether this change may roll out to the ${(a.env || c.env || 'dev').toLowerCase()} environment. Return ready=true (proceed) or ready=false (block), with reasons.
 
-CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production, and serves fewer than five alpha users. It is NOT an outward-facing release and is NOT human-gated. Judge it accordingly: block only on evidence that the change is BROKEN or UNSAFE, never on missing process artifacts.
+CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever ships and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out.
 
-BLOCK on: failing tests, a failing smoke run, a broken CDK synth where CDK applies, an unresolved drift that this change would worsen, or a security finding.
-DO NOT BLOCK on: absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, a missing wave-execution log, or an artifact marked NOT APPLICABLE. Those are process artifacts; their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
+DEPLOYMENT IS NOT THE FINAL STATE, AND IT IS NOT A REWARD FOR PASSING EVERY TEST. It is the step that makes the remaining evidence obtainable. Some tests — every post-deployment smoke test — can only run against a deployed environment, so requiring them to pass BEFORE deploying is circular and permanently deadlocks the pipeline. Never do it.
+
+BLOCK on: failing unit or integration tests, a broken CDK synth where CDK applies, a security finding, or an unresolved drift this change would worsen.
+DO NOT BLOCK on: smoke tests that have not run or are currently failing against the OLD deployed bytes — that is the defect being fixed and is the normal, expected pre-deploy state. Also do not block on absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, a missing wave-execution log, or an artifact marked NOT APPLICABLE; those are process artifacts and their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
+
+What you require of smoke tests HERE is only that a sound suite EXISTS to run afterwards. Their passing run is collected AFTER rollout, where a failing smoke DOES mean the rollout failed.
 
 Readiness packet:
 ${(readinessPacket && readinessPacket.inventory || []).join('\n') || 'no inventory returned'}
