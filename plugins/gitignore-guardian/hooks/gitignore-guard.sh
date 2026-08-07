@@ -23,17 +23,44 @@ if [ $NODE_EXIT -ne 0 ] || [ -z "$COMMAND" ]; then
   exit 0
 fi
 
-# Only check git add commands
-if ! echo "$COMMAND" | grep -qE '^\s*git\s+add\b'; then
+# Segment the command at the shell separators (&&, ||, ;, newline) so every
+# candidate `git add` is evaluated in COMMAND POSITION. The previous matcher was
+# anchored to the start of the whole command, which exited 0 for any compound
+# `cd <repo> && git add <file>` form — making the cd-honoring WORKDIR logic
+# below unreachable in exactly the case it was written for. Backslash-newline
+# continuations are joined first: a multi-line `git add a \<newline> b` is ONE
+# invocation, not two segments.
+set +e
+SEGMENTS=$(printf '%s' "$COMMAND" | awk 'BEGIN { RS = "\001" } {
+  gsub(/\\\n/, " ")
+  gsub(/&&|\|\||;/, "\n")
+  print
+}')
+AWK_EXIT=$?
+set -e
+if [ $AWK_EXIT -ne 0 ]; then
+  # Segmentation failed — fall back to the raw command as a single segment so
+  # the guard degrades to its old (bare-form) coverage instead of silently
+  # allowing everything through.
+  SEGMENTS="$COMMAND"
+fi
+
+# Only check commands with a git add invocation in command position. A `git add`
+# inside an argument (e.g. quoted prose in an echo) never starts a segment and
+# is therefore not treated as an invocation.
+if ! printf '%s\n' "$SEGMENTS" | grep -qE '^[[:space:]]*git[[:space:]]+add([[:space:]]|$)'; then
   exit 0
 fi
 
-# Extract file paths from git add command (skip flags like -A, -u, --all, -f, -p)
-# Parse out the actual file arguments
+# Extract file paths from the git add segment(s) ONLY (skip flags like -A, -u,
+# --all, -f, -p). Extracting from the raw command would emit the `cd`, `<repo>`,
+# and separator tokens as bogus "ignored file" entries.
 set +e
-# Split on newlines and tabs as well as spaces: a multi-line `git add a \<newline> b`
-# left every continuation line glued together and produced bogus "paths".
-FILES=$(echo "$COMMAND" | sed -E 's/^\s*git\s+add\s+//' | tr ' \t\n' '\n\n\n' | grep -vE '^-' | grep -vE '^\s*$' | grep -vE '^\\$')
+FILES=$(printf '%s\n' "$SEGMENTS" \
+  | grep -E '^[[:space:]]*git[[:space:]]+add([[:space:]]|$)' \
+  | sed -E 's/^[[:space:]]*git[[:space:]]+add[[:space:]]*//' \
+  | tr ' \t' '\n\n' \
+  | grep -vE '^-' | grep -vE '^[[:space:]]*$' | grep -vE '^\\$')
 set -e
 
 # Evaluate ignore rules IN THE REPO THE COMMAND ACTUALLY TARGETS. This hook runs in the

@@ -13,6 +13,16 @@ export const meta = {
   ],
 }
 
+// THE ONE deployed-red criterion, shared by BOTH Red gates (first and
+// post-escalation). Duplicating the text at each call site meant a single-site
+// edit silently diverged the two gates — prompt text is executable configuration
+// here, so it gets a single source of truth. The anti-abuse clauses mirror the
+// sibling carve-out in deploy.js (cdk-validate): the sufficiency grant is
+// explicitly conditioned on its precondition so it cannot be read as surviving
+// the precondition's failure.
+export const DEPLOYED_RED_CRITERION =
+  'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
+
 // args: { bead: { id, title, description, repoPath }, implementer?, maxLoops? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
@@ -135,7 +145,7 @@ const red = await gateLoop({
     // whose evidence was airtight — 676k tokens to reject a correct finding.
     // Red against the deployed environment is the STRONGEST form of red available, not a
     // weaker one: it observes the defect in the artifact users actually receive.
-    'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own: do NOT additionally demand a source-level failure, and do NOT reject it because the working tree greps clean.',
+    DEPLOYED_RED_CRITERION,
     // When red is deployed-only the remediation is a DEPLOY, not an implementation. Green
     // will correctly find no production code to write, so the verdict must name the real
     // action instead of sending Green hunting for a change that does not exist.
@@ -203,8 +213,9 @@ for (;;) {
   redResult = await gateLoop({
     gate: '2a', phaseName: `TDD Red (re-authored after Green escalation ${escalations})`,
     criteria: [
-      // Same deployed-artifact carve-out as the first Red gate — see the comment there.
-      'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own: do NOT additionally demand a source-level failure, and do NOT reject it because the working tree greps clean.',
+      // Same deployed-artifact carve-out as the first Red gate — the SHARED constant
+      // guarantees the two gates can never diverge. See the comment at its definition.
+      DEPLOYED_RED_CRITERION,
       'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
       'The test asserts the real post-fix behavior, not merely that a symbol is absent.',
       'No production code was changed to manufacture the failure',

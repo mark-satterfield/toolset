@@ -12,6 +12,23 @@ const green = a.green || {}
 const feedback = a.feedback ? `\nPrior gate feedback to address:\n${a.feedback}` : ''
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
 
+// MACHINE-CHECKABLE GREEN EVIDENCE (ssbd-1xcs D1). tdd-green.js produces
+// { greenConfirmed, evidence } precisely so this stage does not depend on the
+// facilitator's prose inventory — the facilitator is forbidden from ruling and
+// is not required to run anything. Test evidence has THREE states, not two:
+// confirmed green, confirmed failing, and NOT RUN / NOT REPORTED. The third
+// state is a blocking gap, never "genuine uncertainty" — an unrun test suite
+// must never reach AWS.
+const greenEvidence = typeof green.evidence === 'string' ? green.evidence.trim() : ''
+const greenEvidenceOk = green.greenConfirmed === true && greenEvidence !== ''
+const greenStatusLine = greenEvidenceOk
+  ? `Unit/integration tests CONFIRMED GREEN (machine-checked from the Green artifact) — evidence: ${greenEvidence}`
+  : `Unit/integration tests UNCONFIRMED — ${
+      green.greenConfirmed === true
+        ? 'the Green artifact claims green but carries no supporting evidence; a bare flag with no evidence string is not confirmation'
+        : 'the Green artifact reports no confirmed passing run (tests not run / not reported)'
+    }. This is a blocking gap, not uncertainty.`
+
 phase('Deploy-readiness')
 
 // deployment-lead (READ-ONLY) routes the readiness sequence and selects which optional
@@ -94,12 +111,18 @@ If the repo DOES have a CDK app, return applicable=true and report whether synth
     },
   }
 )
-// Collapse the three-state result into one line the readiness review cannot misread.
+// Collapse the result into one line the readiness review cannot misread — WITHOUT
+// discarding `details`. The anti-spoofing guard in the prompt above only works if a
+// false applicable=false is catchable, so a NOT APPLICABLE claim travels with the
+// validator's evidence, and a claim with NO evidence is flagged, not absolved.
+const cdkDetails = cdk && typeof cdk.details === 'string' ? cdk.details.trim() : ''
 const cdkStatus = !cdk
   ? 'CDK: not reported'
   : cdk.applicable === false
-    ? 'CDK: NOT APPLICABLE — this repo owns no CDK app or stack, so synth and drift are out of scope and MUST NOT count against readiness. Judge readiness on the tests and smoke evidence alone.'
-    : `CDK: synthValid=${cdk.synthValid}, drift=${cdk.driftDetected}`
+    ? cdkDetails
+      ? `CDK: NOT APPLICABLE — this repo owns no CDK app or stack, so synth and drift are out of scope and MUST NOT count against readiness. Judge readiness on the tests and smoke evidence alone. Validator evidence for the not-applicable claim: ${cdkDetails}`
+      : 'CDK: the validator claims NOT APPLICABLE but supplied no supporting details. The claim is UNSUBSTANTIATED — treat it as unverified, and do not absolve synth and drift on an unevidenced claim.'
+    : `CDK: synthValid=${cdk.synthValid}, drift=${cdk.driftDetected}${cdkDetails ? ` — details: ${cdkDetails}` : ''}`
 
 // Selected readiness artifacts — concurrent, distinct concerns. finops/slo are advisory;
 // runbook/pipeline author operational artifacts (none of them deploy).
@@ -191,14 +214,14 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
 )
 
 // Gate 5 verdict — the enforcer rules, and it is the only role permitted to.
-const readiness = await agent(
+let readiness = await agent(
   `GATE 5 — DEPLOY READINESS. Rule on whether this change may roll out to the ${(a.env || c.env || 'dev').toLowerCase()} environment. Return ready=true (proceed) or ready=false (block), with reasons.
 
-CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever ships and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out.
+CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever ships and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out. That uncertainty default is scoped to PROCESS artifacts (absent FinOps, SLOs, runbook, pipeline authoring): it does not apply to unit/integration test evidence. Missing, unconfirmed, or unreported test results are a blocking gap, not uncertainty.
 
 DEPLOYMENT IS NOT THE FINAL STATE, AND IT IS NOT A REWARD FOR PASSING EVERY TEST. It is the step that makes the remaining evidence obtainable. Some tests — every post-deployment smoke test — can only run against a deployed environment, so requiring them to pass BEFORE deploying is circular and permanently deadlocks the pipeline. Never do it.
 
-BLOCK on: failing unit or integration tests, a broken CDK synth where CDK applies, a security finding, or an unresolved drift this change would worsen.
+BLOCK on: failing unit or integration tests, unit or integration tests NOT RUN or NOT REPORTED (an absent, unconfirmed, or evidence-free Green artifact is a third state distinct from pass and fail, and it blocks), a broken CDK synth where CDK applies, a security finding, or an unresolved drift this change would worsen.
 DO NOT BLOCK on: smoke tests that have not run or are currently failing against the OLD deployed bytes — that is the defect being fixed and is the normal, expected pre-deploy state. Also do not block on absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, a missing wave-execution log, or an artifact marked NOT APPLICABLE; those are process artifacts and their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
 
 What you require of smoke tests HERE is only that a sound suite EXISTS to run afterwards. Their passing run is collected AFTER rollout, where a failing smoke DOES mean the rollout failed.
@@ -206,6 +229,7 @@ What you require of smoke tests HERE is only that a sound suite EXISTS to run af
 Readiness packet:
 ${(readinessPacket && readinessPacket.inventory || []).join('\n') || 'no inventory returned'}
 Concerns raised: ${(readinessPacket && readinessPacket.concerns || []).join('; ') || 'none'}
+${greenStatusLine}
 ${cdkStatus}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}${feedback}`,
   {
@@ -223,6 +247,21 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
     },
   }
 )
+
+// MACHINE-CHECK BACKSTOP (ssbd-1xcs D1). The enforcer's prose verdict cannot
+// overrule the machine-checkable Green artifact: without confirmed test evidence
+// the gate stays shut no matter what was ruled, because "not run / not reported"
+// must resolve as a blocking gap, never through the uncertainty default above.
+if (!greenEvidenceOk) {
+  readiness = {
+    ...(readiness || {}),
+    ready: false,
+    findings: [
+      ...((readiness && readiness.findings) || []),
+      'BLOCKED: unit/integration test results are unconfirmed (not run / not reported) — green.greenConfirmed=true with a non-empty green.evidence string is required before any rollout.',
+    ],
+  }
+}
 
 // ── Rollout ───────────────────────────────────────────────────────────────────
 // Deploying to dev is how code gets into AWS at all — it is the point of the pipeline,
@@ -294,7 +333,9 @@ ${
     ? `This change spans MULTIPLE repos/stacks — deploy in approved wave order per /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke/deployment/waves.yaml and waves.shared.yaml, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
     : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read waves.yaml. Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
         cdk && cdk.applicable === false
-          ? 'CDK validation already reported that this repo owns NO CDK app or stack, so `cdk deploy` does not exist here and will fail. Find the real deploy path — check the Taskfile, package.json scripts, and any deploy script — and run that. For a static site this is typically a build followed by `aws s3 sync` and a CloudFront invalidation; you MUST wait for the invalidation to report Completed before smoke-testing, or you will read stale cached bytes and wrongly report success.'
+          ? `CDK validation already reported that this repo owns NO CDK app or stack, so \`cdk deploy\` does not exist here and will fail. ${
+              cdkDetails ? `The validator reported how this repo actually deploys: ${cdkDetails}. ` : ''
+            }Find the real deploy path — check the Taskfile, package.json scripts, and any deploy script — and run that. For a static site this is typically a build followed by \`aws s3 sync\` and a CloudFront invalidation; you MUST wait for the invalidation to report Completed before smoke-testing, or you will read stale cached bytes and wrongly report success.`
           : 'this repo has a CDK app, so run `cdk deploy` for the affected stack(s) against dev.'
       } Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.`
 }

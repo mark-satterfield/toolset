@@ -86,13 +86,17 @@ function recordGate(gate, phaseName, attempt, verdict, extra) {
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow, initialFeedback }) {
-  // Seed the FIRST attempt with findings already known from a previous run. Without this a
+  // Seed EVERY attempt with findings already known from a previous run. Without this a
   // re-dispatch after a gate failure starts blind and must spend a full expensive attempt
   // rediscovering what the prior gate already proved — which on infra-intent is the single
-  // costliest thing this pipeline does.
-  let feedback = initialFeedback || ''
+  // costliest thing this pipeline does. The seed is a persistent channel, not an initial
+  // value: a later gate verdict replaces only the per-attempt gate feedback, never the seed.
+  const seed = initialFeedback || ''
+  let gateFeedback = ''
+  let artifact
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-    const artifact = await phaseFn(feedback)
+    const feedback = [seed, gateFeedback].filter(Boolean).join('\n')
+    artifact = await phaseFn(feedback)
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, artifact, escalateTargets,
     })
@@ -110,10 +114,12 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
       return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact, verdict }
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
-    feedback = verdict.feedback || ''
+    gateFeedback = verdict.feedback || ''
   }
   recordGate(gate, phaseName, MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
-  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
+  // Carry the last-authored artifact like every other non-ok exit does — loop exhaustion
+  // is exactly where the caller most needs the final intent for diagnosis.
+  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true, artifact }
 }
 
 // ── Front-end: infrastructure provisioning intent ───────────────────────────────
