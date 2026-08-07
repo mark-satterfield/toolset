@@ -28,6 +28,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /**
  * Diagnostic binaries and subcommands. Each entry is anchored at a command
@@ -96,6 +97,11 @@ function main() {
 
   // Subagents run diagnostics — that is their job.
   if (data.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(data)) {
     process.exit(0);
   }
 

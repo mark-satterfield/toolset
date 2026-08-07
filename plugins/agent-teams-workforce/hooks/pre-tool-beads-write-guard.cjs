@@ -23,6 +23,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /**
  * beads subcommands that mutate tracker state. Matched against a `bd`
@@ -70,6 +71,11 @@ function main() {
   }
 
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

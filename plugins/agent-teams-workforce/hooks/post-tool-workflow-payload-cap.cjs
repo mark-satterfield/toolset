@@ -22,6 +22,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Maximum lines a workflow completion may return into orchestrator context. */
 const MAX_PAYLOAD_LINES = 15;
@@ -63,6 +64,11 @@ function main() {
   }
 
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

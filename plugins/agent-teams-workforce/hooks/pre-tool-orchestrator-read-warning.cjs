@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 /**
- * PreToolUse hook: warns when the orchestrator reads source/config files.
+ * PreToolUse hook — records an orchestrator read of a source/config file.
  *
- * The orchestrator should NOT read files it will not Edit/Write in the same turn.
- * Pass file paths to agents instead — agents have fresh context, orchestrator does not.
+ * Fires on: Read and Grep against source, config, and test paths.
+ * Action: records the read and states what it costs.
  *
- * Fires on: Read, Grep tool calls targeting source/config/test files
- * Action: injects additionalContext reminder (non-blocking)
+ * This hook does not deny, and it grants no exemption. It used to ask the
+ * orchestrator whether it intended to edit the file this turn and to proceed if
+ * so — an exemption whose predicate is the actor's own unobservable future
+ * intent (REQ-ORCH-02, root cause B). Editing source from the orchestrator is
+ * now denied outright by pre-tool-orchestrator-edit-guard.cjs, so the question
+ * no longer has anything to gate: there is no read that is a legitimate step
+ * toward an orchestrator edit.
  *
- * Non-blocking by design — legitimate reads (reading a file you ARE about to edit)
- * are not disrupted. The reminder surfaces the decision point.
+ * What remains is a real cost with no rule attached — the shared context window
+ * — so the emitted text states it and nothing more.
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 const SOURCE_FILE_EXTENSIONS =
   /\.(py|toml|yaml|yml|js|cjs|mjs|ts|jsx|tsx|json|cfg|ini|env|sh|bash|go|rs|rb|java|c|cpp|h|hpp)$/i;
@@ -77,6 +83,12 @@ process.stdin.on('end', () => {
   // When running inside a subagent, the hook input includes agent_id and agent_type
   // fields that are absent in the orchestrator session. Verified 2026-03-23.
   if (data.agent_id) {
+    process.stdout.write(JSON.stringify({}));
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(data)) {
     process.stdout.write(JSON.stringify({}));
     process.exit(0);
   }

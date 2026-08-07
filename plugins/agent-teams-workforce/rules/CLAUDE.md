@@ -11,6 +11,12 @@ The orchestrator holds the only context window in a run that cannot be
 refreshed. Subagents get a fresh one per task. That asymmetry, not seniority, is
 why these constraints bind the orchestrator and exempt subagents.
 
+**Scope.** These rules govern projects that use this plugin. They do not govern
+the monorepo that builds it, where writing hooks and workflow scripts is the
+work itself. The boundary is decided by file location — a project holding
+`.claude-plugin/marketplace.json` with this plugin inside it is the source repo
+— and cannot be claimed by any actor for its own session.
+
 ## Read permission and prohibition
 
 Permitted without qualification: prose (`.md`, `.txt`, `.rst`), plans, briefs,

@@ -23,6 +23,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Tools capable of mutating a file on disk. */
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -90,6 +91,11 @@ function main() {
 
   // (2) Subagents implement. This guard governs the orchestrator only.
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

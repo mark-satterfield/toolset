@@ -25,6 +25,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Tools whose successful use means this session produced an artifact. */
 const PRODUCING_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -135,6 +136,11 @@ function main() {
   }
 
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

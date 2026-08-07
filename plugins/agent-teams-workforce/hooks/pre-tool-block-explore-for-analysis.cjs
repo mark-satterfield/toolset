@@ -28,6 +28,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /**
  * Agent types that carry no roster charter. Anything lacking a plugin
@@ -213,6 +214,11 @@ function main() {
 
   // Subagents dispatch freely — this guard governs the orchestrator.
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

@@ -21,6 +21,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Reads all of stdin synchronously; returns null when unreadable. */
 function readStdin() {
@@ -56,6 +57,11 @@ function main() {
   }
 
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 

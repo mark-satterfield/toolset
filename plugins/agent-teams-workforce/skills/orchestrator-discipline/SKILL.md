@@ -38,6 +38,26 @@ of its intent. "Proceed if you intend to edit this file" is not a machine
 decision — the predicate is unobservable and self-reported. Every exemption a
 guard implements is derived from the hook input and the state it names.
 
+## Where the guards apply
+
+The guards govern sessions that **use** this plugin. They are inert in the
+monorepo that **builds** it — authoring a hook means writing `.cjs` and `.json`
+files from a top-level session, which is precisely what the edit guard denies,
+and a guard that blocks its own maintenance is one nobody can maintain.
+
+The boundary is machine-observable and settles on where the files are, not on
+what anyone intends. A session is building this plugin when its project
+directory contains `.claude-plugin/marketplace.json` — the registry manifest,
+present only in the source monorepo — **and** this plugin's directory sits
+inside that project. Installed under `~/.claude/plugins/cache/`, the second
+condition fails; in a consuming project, the first does. No flag, assertion, or
+declared intent can satisfy either.
+
+This is a scope boundary, not an exemption. Inside the source repo the guards
+are not the applicable ruleset; they are never waived for an actor that asked.
+
+Implemented in `hooks/lib/plugin-scope.cjs`.
+
 ## Registered guards
 
 All guards exempt subagent sessions, identified by `agent_id` in the hook input.

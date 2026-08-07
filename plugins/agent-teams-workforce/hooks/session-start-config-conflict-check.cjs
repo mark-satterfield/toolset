@@ -21,6 +21,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Settings keys whose value can contradict a recorded non-negotiable. */
 const PERMISSIVE_MODES = new Set(['bypassPermissions', 'acceptEdits', 'dontAsk']);
@@ -117,6 +118,11 @@ function main() {
     } catch {
       event = {};
     }
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
+    emit(null);
   }
 
   const projectDir = process.env.CLAUDE_PROJECT_DIR || event.cwd || process.cwd();

@@ -15,6 +15,7 @@
  */
 
 const fs = require('node:fs');
+const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
 /** Reads all of stdin synchronously. */
 function readStdin() {
@@ -126,6 +127,11 @@ function main() {
   // When running inside a subagent, the hook input includes agent_id and agent_type
   // fields that are absent in the orchestrator session. Verified 2026-03-23.
   if (event.agent_id) {
+    process.exit(0);
+  }
+
+  // Out of scope in the monorepo that builds this plugin.
+  if (!guardsApplyHere(event)) {
     process.exit(0);
   }
 
