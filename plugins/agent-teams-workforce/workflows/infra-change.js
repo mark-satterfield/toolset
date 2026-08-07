@@ -85,8 +85,12 @@ function recordGate(gate, phaseName, attempt, verdict, extra) {
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
-  let feedback = ''
+async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow, initialFeedback }) {
+  // Seed the FIRST attempt with findings already known from a previous run. Without this a
+  // re-dispatch after a gate failure starts blind and must spend a full expensive attempt
+  // rediscovering what the prior gate already proved — which on infra-intent is the single
+  // costliest thing this pipeline does.
+  let feedback = initialFeedback || ''
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
@@ -138,6 +142,7 @@ const g1Loop = await gateLoop({
     'Security and cost reviewers raised no open blocking finding',
   ],
   escalateTargets: ['infra-intent'],
+  initialFeedback: a.priorFindings || '',
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:infra-intent', {
       change: { id: bead.id, title: bead.title, description: bead.description, repoPath: bead.repoPath },
