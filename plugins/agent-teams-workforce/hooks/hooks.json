@@ -48,7 +48,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|mcp__beads__.*",
         "hooks": [
           {
             "type": "command",

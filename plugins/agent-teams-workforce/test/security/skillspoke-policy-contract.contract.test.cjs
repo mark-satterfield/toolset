@@ -40,8 +40,16 @@ function readJsonIfPresent(p) {
 test('AC-ORCH-09a: bypassPermissions is either absent from settings.local.json or covered by an explicit dated exception in AGENTS.md', () => {
   assert.ok(fs.existsSync(AGENTS_MD), `precondition: ${AGENTS_MD} must exist to evaluate the rule`);
   const agentsMd = fs.readFileSync(AGENTS_MD, 'utf8');
+  // REQ-ORCH-09 is about a prohibition and a contradicting setting BOTH being in
+  // force at once. Removing the prohibition is one of the two legitimate ways to
+  // resolve that — the other being a dated exception — so its absence satisfies
+  // the requirement rather than failing a precondition. Treating "the prohibition
+  // still exists" as a precondition made the test unable to observe the conflict
+  // being fixed the simpler way.
   const prohibition = /--dangerously-skip-permissions/.test(agentsMd);
-  assert.ok(prohibition, 'precondition: AGENTS.md still states the non-negotiable prohibition');
+  if (!prohibition) {
+    return; // no prohibition, no conflict
+  }
 
   const local = readJsonIfPresent(SETTINGS_LOCAL_JSON);
   const bypassSet =

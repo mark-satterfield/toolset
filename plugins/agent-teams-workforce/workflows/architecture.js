@@ -134,6 +134,7 @@ const forcedDimensions = Array.isArray(a.dimensions)
 
 let triage = null
 let settled = false
+let verifiedDecisions = []
 let activeDimensions = []
 if (a.forceFullPanel === true) {
   activeDimensions = ALL_DIMENSIONS
@@ -160,9 +161,87 @@ ${decisionHeader}`,
     activeDimensions = ALL_DIMENSIONS
     log('Triage returned no verdict — failing open to the full analyst panel')
   } else if (triage.settled) {
-    settled = true
-    log(`Triage: SETTLED — ${triage.rationale}`)
-    log(`Prior decisions cited: ${(triage.relevantDecisions || []).join('; ') || '(none named)'} — skipping the analyst fan-out and the challenge wave`)
+    // "Already decided" is a CLAIM, and a claim is exactly how this process has
+    // been circumvented before: a note reading "decision already made" was enough
+    // to skip a phase that never ran. An agent may propose that a question is
+    // settled; it may not be the evidence that it is.
+    //
+    // So the citation has to resolve. The script — not an agent — checks that each
+    // named prior decision exists as a real ADR or SAD section on disk. A verdict
+    // citing nothing, or citing something that is not there, is an assertion, and
+    // an assertion does not skip five analysts and six challengers.
+    const cited = (Array.isArray(triage.relevantDecisions) ? triage.relevantDecisions : []).filter(Boolean)
+
+    if (!cited.length) {
+      activeDimensions = ALL_DIMENSIONS
+      log('Triage claimed SETTLED but cited no prior decision — an unevidenced claim cannot skip the panel; failing open')
+    } else {
+      // An INDEPENDENT agent verifies the citation. Triage proposes; it does not
+      // get to be the evidence for its own proposal. adr-currency-checker is
+      // chartered for exactly this — it reads the ADRs and the SAD and reports
+      // whether they are real, accepted, unsuperseded, and actually on point.
+      const verification = await agent(
+        `You are the adr-currency-checker, verifying a claim BEFORE it is allowed to skip work. A triage step has claimed this architecture decision is already settled and named the prior decisions it relies on. Read those decisions and report whether the claim holds. You are READ-ONLY: verify, do not decide, do not author.
+
+For EACH cited reference, establish three things and report them separately:
+  1. it EXISTS — the ADR or SAD section is actually there, at the location named
+  2. it is CURRENT — accepted, and not superseded by a later decision
+  3. it is ON POINT — it actually answers the question below, rather than merely
+     touching the same subject
+
+Set confirmed=true ONLY if every cited reference satisfies all three. If any one
+fails, set confirmed=false and say which and why. A reference you cannot locate is
+a FAILURE, not an ambiguity — the cost of a false confirm is that an unexamined
+architecture decision ships, while the cost of a false denial is only that the
+full analysis runs.
+
+SAD location: ${sadPath}
+Cited prior decisions: ${cited.join('; ')}
+Triage rationale: ${triage.rationale}
+
+${decisionHeader}`,
+        {
+          label: 'triage:verify-citations',
+          phase: 'Triage',
+          agentType: 'agent-teams-workforce:adr-currency-checker',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['confirmed', 'perReference', 'reason'],
+            properties: {
+              confirmed: { type: 'boolean' },
+              perReference: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['reference', 'exists', 'current', 'onPoint'],
+                  properties: {
+                    reference: { type: 'string' },
+                    exists: { type: 'boolean' },
+                    current: { type: 'boolean' },
+                    onPoint: { type: 'boolean' },
+                    note: { type: 'string' },
+                  },
+                },
+              },
+              reason: { type: 'string' },
+            },
+          },
+        }
+      )
+
+      if (!verification || verification.confirmed !== true) {
+        activeDimensions = ALL_DIMENSIONS
+        const why = (verification && verification.reason) || 'the verifier returned no verdict'
+        log(`Triage claimed SETTLED citing ${cited.join('; ')}, but verification FAILED: ${why} — failing open to the full analyst panel`)
+      } else {
+        settled = true
+        verifiedDecisions = cited
+        log(`Triage: SETTLED — ${triage.rationale}`)
+        log(`Citations VERIFIED by adr-currency-checker: ${cited.join('; ')} — skipping the analyst fan-out and the challenge wave`)
+      }
+    }
   } else {
     activeDimensions = (Array.isArray(triage.dimensions) ? triage.dimensions : []).filter((x) => ALL_DIMENSIONS.includes(x))
     if (activeDimensions.length) {
@@ -556,7 +635,7 @@ phase('Decide')
 const evidenceBlock = settled
   ? `Triage classified this decision as SETTLED by the existing SAD/ADRs, so no analyst panel ran.
 Triage rationale: ${triage.rationale}
-Relevant prior decisions: ${(triage.relevantDecisions || []).join('; ') || '(none named)'}
+Relevant prior decisions (independently verified as existing, current, and on point): ${verifiedDecisions.join('; ') || '(none)'}
 
 Rule by CITING those prior decisions rather than re-deriving the analysis. If you find they do not actually answer this question, say so in the ruling and impose a constraint that the decision be re-run with forceFullPanel.`
   : `Proposals:

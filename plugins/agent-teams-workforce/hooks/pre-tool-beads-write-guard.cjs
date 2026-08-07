@@ -14,12 +14,18 @@
  * That channel needs a writer boundary: agents write beads, the orchestrator
  * reads them. Reads are untouched.
  *
+ * The boundary covers BOTH ways of reaching beads. Matching only the `bd` shell
+ * command left the MCP tools (mcp__beads__create, mcp__beads__update) wide open,
+ * which is not a smaller hole than the one being closed — it is the same hole
+ * with a different door.
+ *
  * Decision order:
  *   1. unparseable input     -> exit 0 (other Bash guards still run)
  *   2. subagent session      -> exit 0
- *   3. non-Bash tool         -> exit 0
- *   4. beads read command    -> exit 0
- *   5. beads write command   -> exit 2
+ *   3. beads MCP write tool  -> exit 2
+ *   4. non-Bash tool         -> exit 0
+ *   5. beads read command    -> exit 0
+ *   6. beads write command   -> exit 2
  */
 
 const fs = require('node:fs');
@@ -47,6 +53,55 @@ const BD_WRITE_PATTERN = new RegExp(
   `(?:^|[;&|]|&&|\\|\\|)\\s*bd\\s+(?:${BD_WRITE_SUBCOMMANDS.join('|')})\\b`,
   'i',
 );
+
+/**
+ * MCP beads tools that mutate. The read-side tools (context, ready, show) are
+ * deliberately absent: the orchestrator reading beads is the intended flow.
+ */
+const BD_MCP_WRITE_TOOLS = new Set([
+  'mcp__beads__create',
+  'mcp__beads__update',
+  'mcp__beads__close',
+  'mcp__beads__delete',
+  'mcp__beads__note',
+  'mcp__beads__comment',
+  'mcp__beads__dep',
+  'mcp__beads__label',
+]);
+
+/** Emits the denial feedback on stderr and terminates with exit 2. */
+function deny(what, detail) {
+  process.stderr.write(
+    `${[
+      '--- Beads Write Blocked ---',
+      '',
+      what,
+      ...(detail ? [`Input: ${detail}`] : []),
+      '',
+      'beads carries findings between workflow phases. Downstream agents read bead',
+      'notes as authoritative upstream input, so a note written here reaches them',
+      'indistinguishable from one an agent produced — and can tell a purpose-built',
+      'agent its analysis is already done. A note reading "decision already made"',
+      'is enough to skip a phase that was never run.',
+      '',
+      'Agents write beads; the orchestrator reads them.',
+      '',
+      'To record something in a bead, route it through the agent that owns the',
+      'finding:',
+      '  - architecture decisions   -> architecture-decider (architecture workflow)',
+      '  - spec content             -> spec-authoring workflow',
+      '  - task breakdown / scores  -> task-decomposition workflow',
+      '  - run outcomes             -> run-ledger-writer',
+      '',
+      'Read access is unaffected: bd list, bd show, bd ready, bd stats, and the',
+      'mcp__beads__ read tools.',
+      '',
+      'Rule source: agent-teams-workforce — beads writer boundary',
+      '--- End ---',
+    ].join('\n')}\n`,
+  );
+  process.exit(2);
+}
 
 /** Reads all of stdin synchronously; returns '' when unreadable. */
 function readStdin() {
@@ -79,7 +134,14 @@ function main() {
     process.exit(0);
   }
 
-  if (String(event.tool_name ?? '') !== 'Bash') {
+  const toolName = String(event.tool_name ?? '');
+
+  // The MCP route reaches the same tracker as the shell command.
+  if (BD_MCP_WRITE_TOOLS.has(toolName)) {
+    deny(`MCP tool: ${toolName}`, JSON.stringify(event.tool_input ?? {}).slice(0, 200));
+  }
+
+  if (toolName !== 'Bash') {
     process.exit(0);
   }
 
@@ -101,33 +163,7 @@ function main() {
     process.exit(0);
   }
 
-  process.stderr.write(
-    `${[
-      '--- Beads Write Blocked ---',
-      '',
-      `Command: ${command.trim()}`,
-      '',
-      'beads carries findings between workflow phases. Downstream agents read',
-      'bead notes as authoritative upstream input, so a note written here reaches',
-      'them indistinguishable from one an agent produced — and can tell an agent',
-      'its analysis is already done.',
-      '',
-      'Agents write beads; the orchestrator reads them.',
-      '',
-      'To record something in a bead, route it through the agent that owns the',
-      'finding:',
-      '  - architecture decisions   -> architecture-decider (architecture workflow)',
-      '  - spec content             -> spec-authoring workflow',
-      '  - task breakdown / scores  -> task-decomposition workflow',
-      '  - run outcomes             -> run-ledger-writer',
-      '',
-      'Read access is unaffected: bd list, bd show, bd ready, bd stats.',
-      '',
-      'Rule source: agent-teams-workforce — beads writer boundary',
-      '--- End ---',
-    ].join('\n')}\n`,
-  );
-  process.exit(2);
+  deny(`Command: ${command.trim()}`);
 }
 
 main();

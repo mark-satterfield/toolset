@@ -32,8 +32,8 @@ async function run({ args = {}, triage }) {
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
     agentImpl: (call) => {
       if (call.label === 'triage:classify') return triage
-      if (call.label === 'sad:conformance') return { conformant: true, findings: [] }
-      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', conformant: true }
+      if (call.label === 'sad:conformance') return { verdict: 'pass', conformant: true, findings: [] }
+      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true }
     },
   })
 }
@@ -42,13 +42,18 @@ function agentTypesUsed(calls) {
   return calls.filter((c) => c.kind === 'agent').map((c) => (c.opts && c.opts.agentType) || null)
 }
 
-test('a SETTLED question skips the analyst fan-out and the challenge wave', async () => {
-  const { calls } = await run({
+test('a SETTLED question with a VERIFIED citation skips the analyst fan-out and the challenge wave', async () => {
+  const { calls } = await runVerified({
     triage: {
       settled: true,
       rationale: 'ADR-014 already settles this',
       relevantDecisions: ['ADR-014'],
       dimensions: [],
+    },
+    verification: {
+      confirmed: true,
+      perReference: [{ reference: 'ADR-014', exists: true, current: true, onPoint: true }],
+      reason: 'accepted, unsuperseded, on point',
     },
   })
 
@@ -64,8 +69,9 @@ test('a SETTLED question skips the analyst fan-out and the challenge wave', asyn
 })
 
 test('a settled question still reaches the decider and the independent conformance check', async () => {
-  const { calls } = await run({
+  const { calls } = await runVerified({
     triage: { settled: true, rationale: 'settled', relevantDecisions: ['ADR-014'], dimensions: [] },
+    verification: { confirmed: true, perReference: [], reason: 'ok' },
   })
   const used = agentTypesUsed(calls)
   for (const required of ALWAYS) {
@@ -98,8 +104,9 @@ test('an OPEN question runs only the dimensions triage named', async () => {
 })
 
 test('triage classifies but never decides', async () => {
-  const { calls } = await run({
+  const { calls } = await runVerified({
     triage: { settled: true, rationale: 'settled', relevantDecisions: ['ADR-1'], dimensions: [] },
+    verification: { confirmed: true, perReference: [], reason: 'ok' },
   })
   const triageCall = calls.find((c) => c.label === 'triage:classify')
   assert.ok(triageCall, 'a triage step must run')
@@ -122,9 +129,10 @@ test('a triage failure widens the panel rather than narrowing it', async () => {
 })
 
 test('forceFullPanel skips triage and runs everything', async () => {
-  const { calls } = await run({
+  const { calls } = await runVerified({
     args: { forceFullPanel: true },
     triage: { settled: true, rationale: 'would have skipped', relevantDecisions: [], dimensions: [] },
+    verification: { confirmed: true, perReference: [], reason: 'ok' },
   })
   const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
   assert.ok(
@@ -134,5 +142,103 @@ test('forceFullPanel skips triage and runs everything', async () => {
   assert.ok(
     labels.some((l) => String(l).startsWith('proposals:')),
     'a caller who knows the decision is contested must be able to say so and get the full panel',
+  )
+})
+
+// ── "Already decided" is a claim, and a claim cannot skip work ────────────────
+//
+// This process was previously circumvented by a bead note reading "Decision
+// already made" — untrue, and sufficient. Triage reintroduced the same shape:
+// an agent asserting `settled: true` skipped five analysts and six challengers.
+// The assertion must now survive an independent check before it buys anything.
+
+/** Runs with a scripted triage verdict AND a scripted citation verification. */
+async function runVerified({ triage, verification, args = {} }) {
+  return runWorkflowScript(architecture, {
+    args: { decision: { id: 'AD-1', title: 'chassis or not', context: 'c' }, ...args },
+    workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
+    agentImpl: (call) => {
+      if (call.label === 'triage:classify') return triage
+      if (call.label === 'triage:verify-citations') return verification
+      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true }
+    },
+  })
+}
+
+const SETTLED_CLAIM = {
+  settled: true,
+  rationale: 'Decision already made',
+  relevantDecisions: ['ADR-014'],
+  dimensions: [],
+}
+
+test('a settled claim whose citation FAILS verification runs the full panel', async () => {
+  const { calls } = await runVerified({
+    triage: SETTLED_CLAIM,
+    verification: {
+      confirmed: false,
+      perReference: [{ reference: 'ADR-014', exists: false, current: false, onPoint: false }],
+      reason: 'ADR-014 does not exist',
+    },
+  })
+  const used = agentTypesUsed(calls)
+  assert.ok(
+    used.includes('agent-teams-workforce:security-architecture-designer'),
+    'a citation that does not check out must not skip the analysis — "already decided" is exactly how this was circumvented before',
+  )
+})
+
+test('a settled claim citing NOTHING never reaches verification and runs the full panel', async () => {
+  const { calls } = await runVerified({
+    triage: { ...SETTLED_CLAIM, relevantDecisions: [] },
+    verification: { confirmed: true, perReference: [], reason: 'should never be asked' },
+  })
+  const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
+  assert.ok(
+    !labels.includes('triage:verify-citations'),
+    'there is nothing to verify, so no agent should be spent asking',
+  )
+  assert.ok(
+    agentTypesUsed(calls).includes('agent-teams-workforce:security-architecture-designer'),
+    'an unevidenced claim must fail open to the full panel',
+  )
+})
+
+test('a verifier that returns nothing is treated as failure, not as consent', async () => {
+  const { calls } = await runVerified({ triage: SETTLED_CLAIM, verification: null })
+  assert.ok(
+    agentTypesUsed(calls).includes('agent-teams-workforce:security-architecture-designer'),
+    'silence from the verifier must widen the panel — a missing verdict is not a passing one',
+  )
+})
+
+test('only a VERIFIED citation skips the panel', async () => {
+  const { calls } = await runVerified({
+    triage: SETTLED_CLAIM,
+    verification: {
+      confirmed: true,
+      perReference: [{ reference: 'ADR-014', exists: true, current: true, onPoint: true }],
+      reason: 'ADR-014 is accepted, unsuperseded, and answers this question',
+    },
+  })
+  const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
+  assert.ok(!labels.some((l) => String(l).startsWith('proposals:')), 'a verified citation may skip the fan-out')
+  for (const required of ALWAYS) {
+    assert.ok(agentTypesUsed(calls).includes(required), `${required} must still run`)
+  }
+})
+
+test('the verifier is a different agent from triage', async () => {
+  const { calls } = await runVerified({
+    triage: SETTLED_CLAIM,
+    verification: { confirmed: true, perReference: [], reason: 'ok' },
+  })
+  const triageCall = calls.find((c) => c.label === 'triage:classify')
+  const verifyCall = calls.find((c) => c.label === 'triage:verify-citations')
+  assert.ok(verifyCall, 'a settled claim must be independently verified')
+  assert.notEqual(
+    verifyCall.opts.agentType,
+    triageCall.opts.agentType,
+    'the agent that made the claim must not be the one that confirms it',
   )
 })
