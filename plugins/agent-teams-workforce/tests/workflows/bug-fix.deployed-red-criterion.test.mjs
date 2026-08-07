@@ -52,14 +52,17 @@ function parseStringLiteral(lit) {
  * Extract `export const NAME = <string literal>` declarations from the script
  * source and decode the literals without executing any source text.
  */
-function exportedStringConsts(src) {
-  const re = /export\s+const\s+([A-Za-z_$][\w$]*)\s*=\s*('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)/g
+function topLevelStringConsts(src) {
+  // Deliberately NOT `export const`. The runtime accepts exactly one top-level
+  // export — meta — and rejects the script on a second, before any phase runs.
+  // This constant was exported to satisfy an earlier reading of this test, which
+  // made bug-fix.js the only undispatchable workflow in the set. What the
+  // requirement actually needs is ONE shared constant, so a single edit changes
+  // both call sites; module-private satisfies that exactly.
   const out = []
+  const re = /^const\s+([A-Z0-9_]+)\s*=\s*\n?\s*(['`])([\s\S]*?)\2/gm
   let m
-  while ((m = re.exec(src)) !== null) {
-    const value = parseStringLiteral(m[2])
-    if (typeof value === 'string') out.push({ name: m[1], value })
-  }
+  while ((m = re.exec(src)) !== null) out.push({ name: m[1], value: m[3] })
   return out
 }
 
@@ -108,12 +111,12 @@ function deployedRedEntries(criteria) {
 // ─── H1-AC1 (AC28) — single source for the deployed-red criterion ─────────────
 // Also absorbs the deterministic half of H1-AC4 (AC31): the identical criterion
 // reaches gate-enforce for gate '2a' on BOTH the first and post-escalation paths.
-test('H1-AC1: both Red gates receive the deployed-red criterion from ONE shared exported constant', async () => {
+test('H1-AC1: both Red gates receive the deployed-red criterion from ONE shared constant', async () => {
   const src = readWorkflowSource(BUG_FIX_JS)
-  const candidates = exportedStringConsts(src).filter((c) => /Deployed red/i.test(c.value))
+  const candidates = topLevelStringConsts(src).filter((c) => /Deployed red/i.test(c.value))
   assert.equal(
     candidates.length, 1,
-    'bug-fix.js must export exactly one shared deployed-red criterion constant so a single edit changes both call sites — currently the text is duplicated as two independent string literals (lines 138 and 207)'
+    'bug-fix.js must carry exactly one shared deployed-red criterion constant so a single edit changes both call sites. It must NOT be exported — the runtime rejects a second top-level export outright.'
   )
   const constant = candidates[0].value
 

@@ -32,10 +32,19 @@ export function readWorkflowSource(absPath) {
  */
 export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflowImpl } = {}) {
   const raw = readFileSync(absPath, 'utf8')
-  // The runner accepts `export const <name> = ...` at script top level; a plain
-  // AsyncFunction body does not. Neutralize the export keyword only — everything
-  // else runs verbatim.
-  const transformed = raw.replace(/^export\s+const\s+/gm, 'const ')
+  // The runner accepts ONE top-level export — `meta` — and rejects the script on a
+  // second one before any phase runs. Stripping every `export const` made this
+  // harness more permissive than the runtime it models, which is how a workflow
+  // carrying two exports passed the suite while being undispatchable in practice.
+  // Neutralize `meta` only, and fail here on anything else, as the runtime does.
+  const stray = raw.split('\n').filter((l) => /^export\s/.test(l) && !/^export const meta\b/.test(l))
+  if (stray.length) {
+    throw new Error(
+      `${absPath}: the runtime accepts only \`export const meta\` at top level and rejects the ` +
+        `script on any other top-level export. Found: ${stray.map((l) => l.trim().slice(0, 60)).join(' | ')}`,
+    )
+  }
+  const transformed = raw.replace(/^export\s+const\s+meta\b/m, 'const meta')
 
   const calls = []
   const agent = async (prompt, opts = {}) => {

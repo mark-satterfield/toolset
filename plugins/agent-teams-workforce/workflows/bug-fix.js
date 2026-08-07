@@ -20,7 +20,11 @@ export const meta = {
 // sibling carve-out in deploy.js (cdk-validate): the sufficiency grant is
 // explicitly conditioned on its precondition so it cannot be read as surviving
 // the precondition's failure.
-export const DEPLOYED_RED_CRITERION =
+// NOT exported. The runtime accepts exactly ONE top-level export — `meta` — and
+// rejects the script outright on a second one, before any phase runs. Nothing
+// imports this; it was exported by habit and it made bug-fix.js the only
+// undispatchable workflow in the set.
+const DEPLOYED_RED_CRITERION =
   'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
 
 // args: { bead: { id, title, description, repoPath }, implementer?, maxLoops? }
