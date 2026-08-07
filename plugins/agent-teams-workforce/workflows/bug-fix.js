@@ -223,7 +223,16 @@ const refactor = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
 })
 if (refactor.artifact && refactor.artifact.ledger) runLedger.push(refactor.artifact.ledger)
-if (!refactor.ok) return await failAfterDoc('refactor', refactor)
+// Refactor is BEHAVIOR-PRESERVING CLEANUP on already-green code. It must never be able
+// to destroy a completed Red+Green. It previously could, twice over: a gate failure
+// returned out of the whole composite, and a subagent that finished without emitting
+// StructuredOutput THREW and killed the run outright — that crash cost 1.13M tokens on
+// ssbd-mqkq, a one-line deletion, after Green had already succeeded.
+// Degrade instead: keep the green code, record the finding, and carry on to Integration.
+if (!refactor.ok) {
+  log(`Refactor did not pass (${refactor.reason || 'gate failure'}) — keeping the green implementation and continuing. Cleanup is not a correctness gate.`)
+  runLedger.push({ phase: 'refactor', beadId: bead.id || null, ok: false, degraded: true, reason: refactor.reason || 'gate failure' })
+}
 
 // ── Integration (Gate 3) ──────────────────────────────────────────────────────
 phase('Integration')
@@ -283,7 +292,7 @@ return {
   note: 'Deployed to DEV and smoke-tested. Outward-facing qa/prod rollout remains a separate human-gated action.',
   contract,
   results: {
-    red: red.artifact, green: green.artifact, refactor: refactor.artifact,
+    red: redResult.artifact, green: green.artifact, refactor: refactor && refactor.artifact,
     integration: integration.artifact, adversarial: adversarial.artifact,
     deployReadiness: deployReady.artifact, documentation: docCurrency,
   },
