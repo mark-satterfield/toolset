@@ -118,14 +118,18 @@ try {
   result = await (async () => {
 phase('Infra Intent')
 log(`Infra change ${bead.id || '(no id)'} — ${bead.title || ''}`)
-const intent = await workflow('agent-teams-workforce:infra-intent', {
-  change: { id: bead.id, title: bead.title, description: bead.description, repoPath: bead.repoPath },
-  adrs,
-})
-if (!intent) return { ok: false, stage: 'infra-intent', reason: 'infra-intent produced nothing' }
-
 // ── Gate 1: Infra Intent (provisioning contract is concrete + fresh + clean) ─────
-const g1 = await workflow('agent-teams-workforce:gate-enforce', {
+// G1 USED TO BE A STANDALONE GATE THAT COULD NOT LOOP. It called gate-enforce once and
+// returned on anything but 'pass' — so a verdict of 'loop', which means "retry this phase
+// with my feedback", ended the run instead. This is the same defect class as ssbd-wmtw
+// (escalation as a labelled exit rather than control flow), which was repaired for the
+// Red/Green pair but never here.
+// It is expensive precisely because infra-intent is expensive. On ssbd-w1r9 the gate
+// returned 'loop' with a detailed, reproducible feedback packet naming exactly what the
+// maker had to change — and the run died anyway, 486k subagent tokens spent, the feedback
+// salvageable only by hand. Route it through gateLoop so the maker re-authors against the
+// gate's own findings, bounded by MAX_LOOPS.
+const g1Loop = await gateLoop({
   gate: 'G1',
   phaseName: 'Infra Intent',
   criteria: [
@@ -133,13 +137,19 @@ const g1 = await workflow('agent-teams-workforce:gate-enforce', {
     'Referenced ADRs are current and no dependency change invalidates the intent',
     'Security and cost reviewers raised no open blocking finding',
   ],
-  artifact: intent,
   escalateTargets: ['infra-intent'],
+  phaseFn: (feedback) =>
+    workflow('agent-teams-workforce:infra-intent', {
+      change: { id: bead.id, title: bead.title, description: bead.description, repoPath: bead.repoPath },
+      adrs,
+      feedback,
+    }),
 })
-recordGate('G1', 'Infra Intent', 1, g1, g1 ? undefined : { terminal: 'no-verdict' })
-if (!g1 || g1.verdict !== 'pass') {
-  return { ok: false, stage: 'infra-intent', bead: bead.id, gate: 'G1', detail: g1, intent }
+if (!g1Loop.ok) {
+  return { ok: false, stage: 'infra-intent', bead: bead.id, gate: 'G1', detail: g1Loop, intent: g1Loop.artifact }
 }
+const intent = g1Loop.artifact
+if (!intent) return { ok: false, stage: 'infra-intent', reason: 'infra-intent produced nothing' }
 
 // Tail-facing contract: carries the repo + a change descriptor the tail prompts
 // render, plus the provisioning intent and the infra assertion the Red test encodes.
