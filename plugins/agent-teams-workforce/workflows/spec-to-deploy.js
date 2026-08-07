@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-to-deploy',
   description:
-    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-readiness. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy stops at readiness — production rollout is a separate human-gated action.',
+    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
   phases: [
     { title: 'Spec Freshness' },
     { title: 'Red' },
@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Refactor' },
     { title: 'Integration' },
     { title: 'Adversarial' },
-    { title: 'Deploy-readiness' },
+    { title: 'Deploy-to-dev' },
   ],
 }
 
@@ -40,7 +40,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'spec-to-deploy', bead: null, subject: spec.id || null, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-readiness',
+        phase: 'Deploy-to-dev',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -228,31 +228,35 @@ const adversarial = await gateLoop({
 })
 if (!adversarial.ok) return await failAfterDoc('adversarial', adversarial)
 
-// Documentation must be current before readiness.
+// Documentation must be current before the deploy.
 const docCurrency = await docTrack
 if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
 
-// ── Deploy readiness (Gate 5) — NO autonomous prod rollout ────────────────────
-phase('Deploy-readiness')
+// ── Deploy to dev (Gate 5) — dev IS deployed; only qa/prod is human-gated ─────
+// Deploying to dev is how code reaches AWS and is part of the development
+// lifecycle, not a release. A change cannot be integration-tested in AWS until
+// it is IN AWS. This phase runs deploy.js, which deploys to dev and smoke-tests
+// the deployed endpoints. Outward-facing qa/prod rollout never happens here.
+phase('Deploy-to-dev')
 const deployReady = await gateLoop({
-  gate: '5', phaseName: 'Deployment readiness',
+  gate: '5', phaseName: 'Deploy to dev',
   criteria: [
     'CDK synth valid, no unresolved drift',
     'Smoke tests present',
-    'Documentation current',
-    'Readiness review is go',
+    'Deployed to the dev environment',
+    'Smoke tests pass against the deployed dev endpoints',
   ],
   escalateTargets: ['integration', 'green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', spec: spec.id, detail: deployReady }
+if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', spec: spec.id, detail: deployReady }
 
 return {
   ok: true,
   spec: spec.id,
-  stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-readiness'],
-  note: 'READY for deployment. Production rollout is a separate human-gated action — this composite does not deploy to prod.',
+  stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-to-dev'],
+  note: 'DEPLOYED TO DEV and smoke-checked against the deployed endpoints. Outward-facing qa/prod rollout is a separate human-gated action and did not happen here.',
   contract,
   results: {
     freshness: freshness.artifact, red: red.artifact, green: green.artifact, refactor: refactor.artifact,

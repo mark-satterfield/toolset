@@ -1,134 +1,213 @@
 export const meta = {
   name: 'route-bead',
   description:
-    'Leaf mini — Unattended-mode bead router for the agentic SDLC. Given one ready bead, decides deterministically (by bead.type and labels) which composite must handle it (prd-to-spec, spec-to-deploy, bug-fix, infra-change) or returns null to SKIP it. Pure routing logic — it spawns no agents unless a genuine classification ambiguity (the deterministic table cannot decide) needs the read-only ambiguity-detector. Never authors content, never force-fits a bead to a composite. Returns { bead, composite, reason }.',
+    'Leaf mini — Unattended-mode bead router for the agentic SDLC. Enforces the work-item hierarchy: PRD→Epic, Spec→Story, Story→Task, and Bug standing alone. ONLY a Task or a Bug is workable, and a Task only when it has a parent Story and a grandparent Epic. Epics and Stories are containers — they are never worked, only DECOMPOSED into the next level down. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite), "decompose" (dispatch the composite that creates the next level), or "skip" (with the reason). Pure routing logic; it authors nothing and force-fits nothing.',
   phases: [
-    { title: 'Classify', detail: 'deterministic type/label -> composite mapping; null = skip' },
+    { title: 'Classify', detail: 'hierarchy + workability rules; never force-fit' },
   ],
 }
 
 // args: {
 //   bead: {
-//     id:          string,           // e.g. "ssbd-123"
-//     type?:       string,           // bead type — feature | bug | infra | task | chore | epic | docs | ...
-//     labels?:     string[],         // free-form labels; influence routing (see ROUTING.md)
-//     title?:      string,
+//     id:           string,          // e.g. "ssbd-123"
+//     type?:        string,          // epic | story | task | bug | infra | chore | docs | ...
+//     labels?:      string[],
+//     title?:       string,
 //     description?: string,
+//
+//     // ── Hierarchy inputs. Supply these or a Task can never be judged workable. ──
+//     parentType?:  string,          // type of the immediate parent ('epic' | 'story' | ...)
+//     parentId?:    string,
+//     ancestorTypes?: string[],      // every ancestor type, nearest-first: ['story','epic']
+//     childCount?:  number,          // how many children this bead already has
 //   },
-//   allowAmbiguityAgent?: boolean,    // default true — set false to force a deterministic-only pass
-//                                     // (genuinely ambiguous beads then SKIP instead of being classified)
+//   allowAmbiguityAgent?: boolean,   // default true
 // }
 //
 // Returns: {
-//   bead,                            // the bead echoed back (the caller threads it onward)
-//   composite,                       // 'prd-to-spec' | 'spec-to-deploy' | 'bug-fix' | 'infra-change' | null
-//   reason,                          // human-readable why-this-route / why-skipped
-//   ruledBy?,                        // 'deterministic' | 'ambiguity-detector' — provenance of the decision
+//   bead,
+//   action,      // 'work' | 'decompose' | 'skip'
+//   composite,   // 'prd-to-spec' | 'spec-to-deploy' | 'bug-fix' | 'infra-change' | null
+//   reason,
+//   ruledBy?,    // 'deterministic' | 'ambiguity-detector'
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
 const allowAmbiguityAgent = a.allowAmbiguityAgent !== false
 
-// The four composites this router can dispatch to. Anything not on this list is a skip.
-const COMPOSITES = ['prd-to-spec', 'spec-to-deploy', 'bug-fix', 'infra-change']
-
-// ── Normalize the bead's classification inputs ─────────────────────────────────
-const type = String(bead.type || '').trim().toLowerCase()
-const labels = (Array.isArray(bead.labels) ? bead.labels : [])
-  .map((l) => String(l || '').trim().toLowerCase())
-  .filter(Boolean)
+const norm = (v) => String(v || '').trim().toLowerCase()
+const type = norm(bead.type)
+const labels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm).filter(Boolean)
 const labelSet = new Set(labels)
 const hasLabel = (...names) => names.some((n) => labelSet.has(n))
 
+const parentType = norm(bead.parentType)
+const ancestorTypes = (Array.isArray(bead.ancestorTypes) ? bead.ancestorTypes : []).map(norm)
+const childCount = Number.isFinite(bead.childCount) ? bead.childCount : null
+const labelTail = labels.length ? `, labels=[${labels.join(', ')}]` : ''
+
 phase('Classify')
 
-// Standard return shape.
-function route(composite, reason, ruledBy) {
-  return { bead, composite, reason, ruledBy: ruledBy || 'deterministic' }
+function route(action, composite, reason, ruledBy) {
+  return { bead, action, composite, reason, ruledBy: ruledBy || 'deterministic' }
+}
+const work = (composite, reason) => route('work', composite, reason)
+const decompose = (composite, reason) => route('decompose', composite, reason)
+const skip = (reason) => route('skip', null, reason)
+
+// Which build-and-ship composite a workable item belongs to. Infra beats the
+// default because an infra task changes provisioning, not application code.
+function workComposite() {
+  if (type === 'infra' || type === 'infrastructure' || hasLabel('infra', 'infrastructure', 'cdk', 'iac', 'provisioning')) {
+    return 'infra-change'
+  }
+  return 'spec-to-deploy'
 }
 
-// ── Deterministic routing table (see ROUTING.md for the authoritative policy) ───
-// Order matters: the FIRST matching rule wins. Labels can override the base type
-// so an explicitly-labelled bead is never mis-typed.
+// ── The hierarchy rules ────────────────────────────────────────────────────────
 //
-//   bug    | label "bug"/"defect"/"regression"          -> bug-fix
-//   infra  | label "infra"/"infrastructure"/"cdk"/"iac"  -> infra-change
-//   feature| label "feature"/"prd"/"requirement"         -> prd-to-spec
-//          | label "spec"/"spec-ready"/"implementation"   -> spec-to-deploy
-//   else                                                 -> SKIP (null) + reason
+//   Files:  PRD ──> TRD ──> Spec
+//   Beads:  Epic ──1:many──> Story ──> Task          Bug stands alone
+//
+//   A Story is scoped to a single repo. A Task is scoped to one agent's work
+//   within one repo. ONLY a Task or a Bug is workable; a Task only when it has
+//   a parent Story and a grandparent Epic.
+//
+//   Epics and Stories are never worked. An Epic with no Stories needs
+//   decomposing; a Story with no Tasks needs decomposing. Once decomposed they
+//   are inert containers and the work lives in their descendants.
 function deterministicRoute() {
-  // 1) Bugs — symptom-first; bug-triage manufactures the contract, shared tail fixes it.
+  // 1) BUG — workable on its own. No parent required: a defect in existing
+  //    behavior is its own contract, manufactured by bug-triage.
   if (type === 'bug' || hasLabel('bug', 'defect', 'regression', 'hotfix')) {
-    return route('bug-fix', `type/label indicates a defect (type="${type || 'n/a'}"${labels.length ? `, labels=[${labels.join(', ')}]` : ''}) → bug-fix`)
+    return work('bug-fix', `bug is workable standing alone (type="${type || 'n/a'}"${labelTail}) → bug-fix`)
   }
 
-  // 2) Infrastructure — provisioning intent; infra-intent front-end + trimmed tail.
-  if (type === 'infra' || type === 'infrastructure' || hasLabel('infra', 'infrastructure', 'cdk', 'iac', 'provisioning')) {
-    return route('infra-change', `type/label indicates an infrastructure change (type="${type || 'n/a'}"${labels.length ? `, labels=[${labels.join(', ')}]` : ''}) → infra-change`)
+  // 2) EPIC — a container, never worked. Decompose it if it has no Stories yet.
+  if (type === 'epic' || hasLabel('epic')) {
+    if (childCount === 0) {
+      return decompose(
+        'prd-to-spec',
+        `epic has no Stories yet → prd-to-spec, to produce the TRD/Spec and the Story + Task beads beneath it`,
+      )
+    }
+    if (childCount === null) {
+      return skip(
+        `epic is a container and is never worked directly; childCount was not supplied, so whether it still needs decomposing cannot be determined → SKIP (supply bead.childCount to route epics)`,
+      )
+    }
+    return skip(
+      `epic already has ${childCount} child Story/Stories — it is a container, and the work lives in its descendants → SKIP (route its Tasks instead)`,
+    )
   }
 
-  // 3) Spec-ready work — a contract already exists; go straight to the build-and-ship tail.
-  //    Checked BEFORE the feature rule so a spec-ready feature skips prd-to-spec re-derivation.
-  if (hasLabel('spec', 'spec-ready', 'implementation', 'implement', 'spec-to-deploy')) {
-    return route('spec-to-deploy', `label indicates an implementation-ready spec (labels=[${labels.join(', ')}]) → spec-to-deploy`)
+  // 3) STORY — a container, never worked. Decompose it if it has no Tasks yet.
+  if (type === 'story' || hasLabel('story')) {
+    if (childCount === 0) {
+      return decompose(
+        'prd-to-spec',
+        `story has no Tasks yet → prd-to-spec, whose task-decomposition phase emits the Task beads beneath it`,
+      )
+    }
+    if (childCount === null) {
+      return skip(
+        `story is a container and is never worked directly; childCount was not supplied, so whether it still needs decomposing cannot be determined → SKIP (supply bead.childCount to route stories)`,
+      )
+    }
+    return skip(
+      `story already has ${childCount} child Task(s) — it is a container, and the work lives in its Tasks → SKIP (route its Tasks instead)`,
+    )
   }
 
-  // 4) Features / requirements — no contract yet; run the PRD→spec front-end first.
-  if (type === 'feature' || type === 'epic' || type === 'story' || hasLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
-    return route('prd-to-spec', `type/label indicates a feature needing a contract (type="${type || 'n/a'}"${labels.length ? `, labels=[${labels.join(', ')}]` : ''}) → prd-to-spec`)
+  // 4) TASK — the workable unit, but ONLY inside a complete hierarchy.
+  //    A parentless Task has no Story, therefore no Spec, therefore no contract
+  //    to build against. Dispatching it would make the implementer invent one.
+  if (type === 'task' || hasLabel('task')) {
+    const hasStoryParent = parentType === 'story' || ancestorTypes.includes('story')
+    const hasEpicAncestor = ancestorTypes.includes('epic')
+
+    if (hasStoryParent && hasEpicAncestor) {
+      const composite = workComposite()
+      return work(
+        composite,
+        `task sits under a Story and an Epic (parent="${parentType || ancestorTypes[0] || 'story'}", ancestors=[${ancestorTypes.join(', ') || 'story, epic'}]) → ${composite}`,
+      )
+    }
+
+    const missing = [!hasStoryParent && 'parent Story', !hasEpicAncestor && 'ancestor Epic']
+      .filter(Boolean)
+      .join(' and ')
+    return skip(
+      `task is missing its ${missing}; a Task without a Story has no Spec and therefore no contract to build against → SKIP (attach it to a Story under an Epic, or decompose the Epic first)`,
+    )
   }
 
-  // 5) Explicitly out-of-pipeline kinds — skipped and reported, never force-fit.
-  if (type === 'chore' || type === 'docs' || type === 'task' || type === 'research' || type === 'spike') {
-    return route(null, `type="${type}" is out of the automated pipeline (no composite handles it) → SKIP (reported, not force-fit)`)
+  // 5) FEATURE / PRD-shaped work that is not yet an Epic. This is the entry to
+  //    the hierarchy: it needs an Epic and everything beneath it.
+  if (type === 'feature' || hasLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
+    return decompose(
+      'prd-to-spec',
+      `feature/PRD-shaped work with no Epic structure yet (type="${type || 'n/a'}"${labelTail}) → prd-to-spec, to create the Epic → Story → Task hierarchy`,
+    )
   }
 
-  // 6) Nothing matched — unknown/unlabelled. Defer to the ambiguity agent if allowed.
+  // 6) Explicitly out-of-pipeline kinds.
+  if (type === 'chore' || type === 'docs' || type === 'research' || type === 'spike') {
+    return skip(`type="${type}" is out of the automated pipeline (no composite handles it) → SKIP (reported, not force-fit)`)
+  }
+
+  // 7) Unknown — defer to the ambiguity agent if allowed.
   return null
 }
 
 const det = deterministicRoute()
 if (det) {
-  log(`route-bead ${bead.id || '(no id)'}: ${det.composite || 'SKIP'} — ${det.reason}`)
+  log(`route-bead ${bead.id || '(no id)'}: ${det.action.toUpperCase()}${det.composite ? ` via ${det.composite}` : ''} — ${det.reason}`)
   return det
 }
 
-// ── Ambiguity escalation ────────────────────────────────────────────────────────
-// The deterministic table could not decide. By policy we never force-fit, so the
-// default is to SKIP. Only when a classification agent is permitted do we ask the
-// READ-ONLY ambiguity-detector to classify from the title/description — it never
-// authors content and never executes the chosen composite; the script applies the
-// verdict (and still skips if the agent is not confident or names a non-composite).
+// ── Ambiguity escalation ───────────────────────────────────────────────────────
+// The deterministic table could not decide. Policy is never to force-fit, so the
+// default is SKIP. The READ-ONLY ambiguity-detector may classify the bead's TYPE
+// from its title/description — it decides what the bead IS, not what to run. The
+// script then re-applies the same hierarchy rules to that answer, so a classified
+// bead can never bypass the workability rule.
 if (!allowAmbiguityAgent) {
-  const reason = `type="${type || 'n/a'}"${labels.length ? `, labels=[${labels.join(', ')}]` : ''} matched no routing rule and ambiguity classification is disabled → SKIP (reported, not force-fit)`
+  const reason = `type="${type || 'n/a'}"${labelTail} matched no routing rule and ambiguity classification is disabled → SKIP (reported, not force-fit)`
   log(`route-bead ${bead.id || '(no id)'}: SKIP — ${reason}`)
-  return route(null, reason)
+  return skip(reason)
 }
 
 const classification = await agent(
-  `You are a READ-ONLY classifier for the agentic SDLC bead router. A bead could not be routed by its type/labels alone. Read its title and description and decide which ONE pipeline composite — if any — should handle it. Author NOTHING; do not run the composite; only classify.
+  `You are a READ-ONLY classifier for the agentic SDLC bead router. A bead could not be classified by its type/labels alone. Read its title and description and decide WHAT KIND of work item it is. You are NOT choosing a pipeline and NOT running anything — you only name the kind.
 
 Bead ${bead.id || '(no id)'}
 Declared type: ${type || '(none)'}
 Labels: ${labels.length ? labels.join(', ') : '(none)'}
+Parent type: ${parentType || '(none)'}
+Ancestor types: ${ancestorTypes.length ? ancestorTypes.join(', ') : '(none)'}
+Child count: ${childCount === null ? '(unknown)' : childCount}
 Title: ${bead.title || '(none)'}
 Description:
 ${bead.description || '(none)'}
 
-The four composites and what each is for:
-- prd-to-spec  — a NEW feature/requirement that has NO implementation-ready contract yet; needs PRD validation → architecture → spec → tasks.
-- spec-to-deploy — work whose spec/contract ALREADY exists and is implementation-ready; goes straight to build-and-ship.
-- bug-fix          — a defect/regression in EXISTING behavior; a symptom to reproduce, root-cause, and fix.
-- infra-change     — an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing).
+The work-item kinds:
+- epic    — a container for a whole PRD's worth of work. Spans repos. Holds Stories. Never worked directly.
+- story   — a container scoped to ONE repo, corresponding to a Spec. Holds Tasks. Never worked directly.
+- task    — one agent's unit of work within ONE repo. Workable, but only under a Story and an Epic.
+- bug     — a defect or regression in EXISTING behavior. Workable standing alone.
+- infra   — a provisioning/IaC change (CDK, AWS resources, deploy plumbing).
+- feature — requirement-shaped work that has no Epic/Story/Task structure yet.
+- other   — chore, docs-only, research spike, or too underspecified to classify.
 
 Rules:
-- Pick exactly one composite ONLY if the bead clearly belongs to it.
-- If the bead is genuinely out of scope for all four (a chore, doc-only edit, research spike, or too underspecified to classify), choose to SKIP — do NOT force-fit it into a composite.
-- "confidence" reflects how sure you are; below clear confidence, SKIP.
+- Name the kind the bead actually IS. Do not pick a kind because it would let work proceed.
+- If the bead is too underspecified to place, answer "other".
+- "confident" false forces a SKIP.
 
 Deliver:
-- composite: one of "prd-to-spec" | "spec-to-deploy" | "bug-fix" | "infra-change" | "skip".
-- confident: true only if the bead clearly belongs to the chosen composite (false forces a SKIP).
+- kind: one of "epic" | "story" | "task" | "bug" | "infra" | "feature" | "other".
+- confident: true only if the bead clearly is that kind.
 - reason: the concrete signal in the title/description that drove the decision.`,
   {
     label: 'classify:ambiguous-bead',
@@ -137,12 +216,9 @@ Deliver:
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['composite', 'confident', 'reason'],
+      required: ['kind', 'confident', 'reason'],
       properties: {
-        composite: {
-          type: 'string',
-          enum: ['prd-to-spec', 'spec-to-deploy', 'bug-fix', 'infra-change', 'skip'],
-        },
+        kind: { type: 'string', enum: ['epic', 'story', 'task', 'bug', 'infra', 'feature', 'other'] },
         confident: { type: 'boolean' },
         reason: { type: 'string' },
       },
@@ -150,19 +226,40 @@ Deliver:
   }
 )
 
-// Apply the verdict defensively: only dispatch on a confident pick of a real
-// composite; anything else (skip, low confidence, or an unexpected value) is a
-// reported SKIP — the router never force-fits an unclassifiable bead.
-const picked = classification && classification.composite
+const kind = classification && classification.kind
 const confident = !!(classification && classification.confident)
 const agentReason = (classification && classification.reason) || 'no reason returned'
 
-if (picked && picked !== 'skip' && confident && COMPOSITES.includes(picked)) {
-  const reason = `ambiguity-detector classified → ${picked}: ${agentReason}`
-  log(`route-bead ${bead.id || '(no id)'}: ${picked} — ${reason}`)
-  return route(picked, reason, 'ambiguity-detector')
+if (!kind || kind === 'other' || !confident) {
+  const reason = `ambiguity-detector could not confidently classify this bead (kind="${kind || 'none'}", confident=${confident}): ${agentReason} → SKIP (reported, not force-fit)`
+  log(`route-bead ${bead.id || '(no id)'}: SKIP — ${reason}`)
+  return skip(reason)
 }
 
-const skipReason = `ambiguity-detector could not confidently route this bead (verdict="${picked || 'none'}", confident=${confident}): ${agentReason} → SKIP (reported, not force-fit)`
-log(`route-bead ${bead.id || '(no id)'}: SKIP — ${skipReason}`)
-return route(null, skipReason, 'ambiguity-detector')
+// Re-apply the SAME hierarchy rules to the classified kind. The classifier
+// decides what the bead IS; the workability rule stays the script's and is not
+// negotiable by an agent's answer — a classified 'task' with no Story still skips.
+let final
+if (kind === 'bug') {
+  final = work('bug-fix', `classified as a bug: ${agentReason} → bug-fix`)
+} else if (kind === 'epic' || kind === 'story') {
+  final =
+    childCount === 0
+      ? decompose('prd-to-spec', `classified as an ${kind} with no children: ${agentReason} → prd-to-spec to decompose it`)
+      : skip(`classified as an ${kind} — a container, never worked directly: ${agentReason} → SKIP (route its descendants instead)`)
+} else if (kind === 'task') {
+  const hasStoryParent = parentType === 'story' || ancestorTypes.includes('story')
+  const hasEpicAncestor = ancestorTypes.includes('epic')
+  final =
+    hasStoryParent && hasEpicAncestor
+      ? work(workComposite(), `classified as a task under a Story and an Epic: ${agentReason} → ${workComposite()}`)
+      : skip(`classified as a task but it lacks a parent Story and/or an ancestor Epic: ${agentReason} → SKIP (attach it to a Story under an Epic first)`)
+} else if (kind === 'infra') {
+  final = work('infra-change', `classified as an infrastructure change: ${agentReason} → infra-change`)
+} else {
+  final = decompose('prd-to-spec', `classified as feature-shaped work with no hierarchy yet: ${agentReason} → prd-to-spec`)
+}
+
+final.ruledBy = 'ambiguity-detector'
+log(`route-bead ${bead.id || '(no id)'}: ${final.action.toUpperCase()}${final.composite ? ` via ${final.composite}` : ''} — ${final.reason}`)
+return final

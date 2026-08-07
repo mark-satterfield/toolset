@@ -1,14 +1,14 @@
 export const meta = {
   name: 'infra-change',
   description:
-    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-ship tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy stops at readiness — production rollout is a separate human-gated action.',
+    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-ship tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
   phases: [
     { title: 'Infra Intent' },
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Integration' },
     { title: 'Adversarial' },
-    { title: 'Deploy-readiness' },
+    { title: 'Deploy-to-dev' },
   ],
 }
 
@@ -36,7 +36,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'infra-change', bead: { id: bead.id || null, title: bead.title || null }, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-readiness',
+        phase: 'Deploy-to-dev',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -261,25 +261,28 @@ if (RUN_ADVERSARIAL) {
   log('Adversarial lane skipped (runAdversarial=false) — trimmed infra path')
 }
 
-// Documentation must be current before readiness.
+// Documentation must be current before the deploy.
 const docCurrency = await docTrack
 if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
 
-// ── Deploy readiness (Gate 5) — NO autonomous prod rollout ───────────────────────
-phase('Deploy-readiness')
+// ── Deploy to dev (Gate 5) — dev IS deployed; only qa/prod is human-gated ───────
+// Deploying to dev is how infrastructure reaches AWS and is part of the
+// development lifecycle, not a release. A stack cannot be validated against AWS
+// until it is IN AWS. Outward-facing qa/prod rollout never happens here.
+phase('Deploy-to-dev')
 const deployReady = await gateLoop({
-  gate: 'G5', phaseName: 'Deployment readiness',
+  gate: 'G5', phaseName: 'Deploy to dev',
   criteria: [
     'CDK synth valid, no unresolved drift',
     'Smoke tests present',
-    'Documentation current',
-    'Readiness review is go',
+    'Deployed to the dev environment',
+    'Smoke tests pass against the deployed dev endpoints',
   ],
   escalateTargets: ['integration', 'green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract: tailContract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', bead: bead.id, detail: deployReady }
+if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', bead: bead.id, detail: deployReady }
 
 return {
   ok: true,
@@ -290,10 +293,10 @@ return {
     'green',
     'integration',
     ...(RUN_ADVERSARIAL ? ['adversarial'] : []),
-    'deploy-readiness',
+    'deploy-to-dev',
   ],
   adversarialRun: RUN_ADVERSARIAL,
-  note: 'READY for deployment. Production rollout is a separate human-gated action — this composite does not deploy to prod. Refactor phase is omitted on the infra path.',
+  note: 'DEPLOYED TO DEV and smoke-checked against the deployed endpoints. Outward-facing qa/prod rollout is a separate human-gated action and did not happen here. Refactor phase is omitted on the infra path.',
   contract: tailContract,
   results: {
     intent,
