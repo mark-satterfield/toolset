@@ -5,6 +5,43 @@ export const meta = {
   phases: [{ title: 'Green', detail: 'minimum code to pass; confirm Green' }],
 }
 
+// The implementer roster this mini may dispatch. Every name the lead returns is
+// filtered against this list before it becomes an agentType — an unfiltered name
+// would dispatch a nonexistent agent type in the phase that writes production
+// code. Mirrors OPTIMIZER_ROSTER in tdd-refactor.js.
+const IMPLEMENTER_ROSTER = [
+  'chassis-extension-implementer',
+  'power-tools-configuration-implementer',
+  'api-gateway-cdk-implementer',
+  'event-api-client-implementer',
+  'event-driven-consumer-implementer',
+  'dynamodb-access-layer-implementer',
+  'cognito-lambda-trigger-implementer',
+  'webauthn-implementer',
+  'payments-integration-implementer',
+  'email-notification-implementer',
+  'mcp-server-implementer',
+  'bedrock-integration-implementer',
+  'matching-algorithm-implementer',
+  'recommendation-engine-implementer',
+  'vector-search-embeddings-implementer',
+  'behavioral-signals-implementer',
+  'llm-observability-implementer',
+  'nextjs-component-implementer',
+  'appsync-client-subscription-implementer',
+  'ios-swiftui-implementer',
+  'android-compose-implementer',
+  'react-native-implementer',
+  'appsync-cdk-implementer',
+  'glue-etl-implementer',
+  'kinesis-stream-implementer',
+  'dynamodb-streams-cdc-implementer',
+  's3-data-lake-implementer',
+  'athena-redshift-analytics-implementer',
+  // Selected by the infra path, which pre-specifies args.implementer.
+  'cdk-stack-author',
+]
+
 // args: { contract, red, implementer?, feedback? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
@@ -26,11 +63,17 @@ phase('Green')
 let implementers
 let selectionMode
 if (a.implementer) {
+  if (!IMPLEMENTER_ROSTER.includes(a.implementer)) {
+    throw new Error(
+      `tdd-green: caller pre-specified implementer '${a.implementer}', which is not on the implementer roster. ` +
+        `Dispatching it would resolve to a nonexistent agent type. Roster: ${IMPLEMENTER_ROSTER.join(', ')}`
+    )
+  }
   implementers = [a.implementer]
   selectionMode = 'selected'
 } else {
   const selection = await agent(
-    `You are the implementation-lead — a READ-ONLY router. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn from the SkillSpoke implementer roster: chassis-extension-implementer, power-tools-configuration-implementer, api-gateway-cdk-implementer, event-api-client-implementer, event-driven-consumer-implementer, dynamodb-access-layer-implementer, cognito-lambda-trigger-implementer, webauthn-implementer, payments-integration-implementer, email-notification-implementer, mcp-server-implementer, bedrock-integration-implementer, matching-algorithm-implementer, recommendation-engine-implementer, vector-search-embeddings-implementer, behavioral-signals-implementer, llm-observability-implementer, nextjs-component-implementer, appsync-client-subscription-implementer, ios-swiftui-implementer, android-compose-implementer, react-native-implementer, appsync-cdk-implementer, glue-etl-implementer, kinesis-stream-implementer, dynamodb-streams-cdc-implementer, s3-data-lake-implementer, athena-redshift-analytics-implementer. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones. Enforce the hard architectural constraints (event API only, service isolation, chassis extension) in your rationale.
+    `You are the implementation-lead — a READ-ONLY router. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from the SkillSpoke implementer roster: ${IMPLEMENTER_ROSTER.join(', ')}. Any name outside this list is discarded. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones. Enforce the hard architectural constraints (event API only, service isolation, chassis extension) in your rationale.
 
 Work within the repository at: ${repo}
 
@@ -50,7 +93,10 @@ ${taskBlock}`,
       },
     }
   )
-  const picked = selection && Array.isArray(selection.implementers) ? selection.implementers.filter(Boolean) : []
+  const picked =
+    selection && Array.isArray(selection.implementers)
+      ? selection.implementers.filter((i) => IMPLEMENTER_ROSTER.includes(i))
+      : []
   implementers = picked.length ? picked : ['chassis-extension-implementer']
   selectionMode = picked.length ? 'selected' : 'default'
 }

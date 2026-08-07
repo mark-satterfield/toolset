@@ -1,118 +1,138 @@
 #!/usr/bin/env node
-/**
- * PreToolUse hook: warns when the orchestrator runs diagnostic commands directly.
- *
- * Diagnostic commands (ty, ruff, pytest, pylint, etc.) produce large outputs
- * that consume orchestrator context. The orchestrator should delegate these to an
- * agent and receive a summary instead.
- *
- * Fires on: Bash tool calls matching diagnostic command patterns
- * Action: injects additionalContext reminder (non-blocking)
- *
- * Non-blocking by design — the exception for post-edit verification of a specific
- * file is documented in the warning text, so the orchestrator can make the call.
- */
+'use strict';
 
 /**
- * Diagnostic command patterns that produce large output unsuitable for
- * direct consumption in the orchestrator's context window.
+ * PreToolUse hook — REQ-ORCH-04 category 2 (ssbd-ja5d, root causes B + C).
+ *
+ * Running the project's own diagnostics is self-verification: the orchestrator
+ * checks whether the work is good using output it reads itself, in the one
+ * context window that cannot be refreshed. Diagnostics belong to the agent that
+ * did the work, or to a reviewer that did not.
+ *
+ * This gate used to warn and exit 0, with a documented exemption for
+ * "post-edit verification of a specific file" that the orchestrator evaluated
+ * about itself. Both properties were defects: an advisory is not enforcement,
+ * and an exemption conditioned on the actor's own account of its intent is not
+ * machine-observable. It now denies with exit 2 and offers no exemption.
+ *
+ * Matching is command-position anchored and ignores quoted spans, so a search
+ * whose argument merely contains a binary name (grep -n 'pytest' file) is not
+ * a diagnostic invocation and is not blocked.
+ *
+ * Decision order:
+ *   1. unparseable input   -> exit 0 (other Bash guards still run)
+ *   2. subagent session    -> exit 0
+ *   3. non-Bash tool       -> exit 0
+ *   4. no diagnostic match -> exit 0
+ *   5. diagnostic match    -> exit 2
+ */
+
+const fs = require('node:fs');
+
+/**
+ * Diagnostic binaries and subcommands. Each entry is anchored at a command
+ * position (start of line, or after ; && || | newline or an opening paren).
  */
 const DIAGNOSTIC_PATTERNS = [
-  /\bty\s+check\b/,
-  /\bruff\s+check\b/,
-
-  /\bpyright\b/,
-  /\bbasedpyright\b/,
-  /\bpylint\b/,
-  /\bpytest\b/,
-  /\bpre-commit\s+run\b/,
-  /\bprek\s+run\b/,
-  /\beslint\b/,
-  /\btsc\b.*--noEmit/,
-  /\bcargo\s+check\b/,
-  /\bcargo\s+clippy\b/,
-  /\bgo\s+vet\b/,
+  /(?:^|[;&|\n(])\s*ty\s+check\b/,
+  /(?:^|[;&|\n(])\s*ruff\s+check\b/,
+  /(?:^|[;&|\n(])\s*pyright\b/,
+  /(?:^|[;&|\n(])\s*basedpyright\b/,
+  /(?:^|[;&|\n(])\s*pylint\b/,
+  /(?:^|[;&|\n(])\s*pytest\b/,
+  /(?:^|[;&|\n(])\s*mypy\b/,
+  /(?:^|[;&|\n(])\s*pre-commit\s+run\b/,
+  /(?:^|[;&|\n(])\s*prek\s+run\b/,
+  /(?:^|[;&|\n(])\s*eslint\b/,
+  /(?:^|[;&|\n(])\s*tsc\b[^;&|\n]*--noEmit/,
+  /(?:^|[;&|\n(])\s*cargo\s+check\b/,
+  /(?:^|[;&|\n(])\s*cargo\s+clippy\b/,
+  /(?:^|[;&|\n(])\s*go\s+vet\b/,
 ];
 
 /**
- * @param {string} command
- * @returns {string|null} matched pattern description, or null if no match
+ * Strips quoted substrings so a binary name appearing as a search target or a
+ * string literal is not read as an invocation.
  */
+function stripQuotedSpans(text) {
+  return text
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/'[^']*'/g, ' ')
+    .replace(/"[^"]*"/g, ' ');
+}
+
+/** Returns the matched diagnostic invocation, or null. */
 function matchesDiagnosticCommand(command) {
   if (!command) return null;
+  const stripped = stripQuotedSpans(command);
   for (const pattern of DIAGNOSTIC_PATTERNS) {
-    const match = command.match(pattern);
-    if (match) return match[0];
+    const match = stripped.match(pattern);
+    if (match) return match[0].trim().replace(/^[;&|(]\s*/, '');
   }
   return null;
 }
 
-let input = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  input += chunk;
-});
-process.stdin.on('end', () => {
-  let data = {};
+/** Reads all of stdin synchronously; returns '' when unreadable. */
+function readStdin() {
   try {
-    data = JSON.parse(input);
+    return fs.readFileSync(0, 'utf8');
   } catch {
-    process.stdout.write(JSON.stringify({}));
+    return '';
+  }
+}
+
+function main() {
+  const raw = readStdin();
+  if (!raw.trim()) {
     process.exit(0);
   }
 
-  // Skip warning for subagent sessions — subagents SHOULD run diagnostics.
-  // When running inside a subagent, the hook input includes agent_id and agent_type
-  // fields that are absent in the orchestrator session. Verified 2026-03-23.
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    process.exit(0);
+  }
+
+  // Subagents run diagnostics — that is their job.
   if (data.agent_id) {
-    process.stdout.write(JSON.stringify({}));
     process.exit(0);
   }
 
-  const toolName = data.tool_name || '';
-  if (toolName !== 'Bash') {
-    process.stdout.write(JSON.stringify({}));
+  if ((data.tool_name || '') !== 'Bash') {
     process.exit(0);
   }
 
   const command = data.tool_input?.command || '';
   const matched = matchesDiagnosticCommand(command);
-
   if (!matched) {
-    process.stdout.write(JSON.stringify({}));
     process.exit(0);
   }
 
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: 'PreToolUse',
-      additionalContext: `<orchestrator-diagnostic-warning>
-CONTEXT WINDOW CHECK: You are about to run a diagnostic command as the orchestrator.
+  process.stderr.write(
+    `${[
+      '--- Orchestrator Diagnostic Blocked ---',
+      '',
+      `Matched: ${matched}`,
+      `Command: ${command.substring(0, 200)}`,
+      '',
+      'Running the project diagnostics here makes the orchestrator the verifier of',
+      'work it routed, and spends the one context window the run cannot refresh.',
+      '',
+      'Delegate the run and take the verdict:',
+      '  - tdd-green / tdd-refactor already run the suite and report Green',
+      '  - integration-testing-lead owns suite execution and result aggregation',
+      '  - flaky-test-detector confirms intermittent failures',
+      '  - root-cause-analyst classifies a failure and names where it escalates',
+      '',
+      'A delegated run costs nothing from this window: the agent reads the output',
+      'in its own context and returns the outcome.',
+      '',
+      'Rule source: REQ-ORCH-04 category 2 (ssbd-ja5d) — diagnostics are delegated',
+      '--- End ---',
+    ].join('\n')}\n`,
+  );
+  process.exit(2);
+}
 
-Command matched: "${matched}"
-Full command: ${command.substring(0, 200)}
-
-RULE: The orchestrator MUST NOT run diagnostic commands that produce large output
-directly into its context. Diagnostic output consumes shared context but the
-orchestrator rarely edits based on it — delegate instead.
-
-CORRECT APPROACH:
-1. Delegate to an Explore agent or specialist:
-   "Run: ${command.substring(0, 100)} and report: total count by category,
-   affected file paths, representative example of each category."
-2. Receive the summary (low token cost).
-3. Delegate fixes to the appropriate specialist agent with file paths.
-
-ANTI-PATTERN: Run diagnostic → read output → "now I understand" →
-  read more files → plan to self-implement
-CORRECT: Delegate diagnostic → receive summary → delegate fix
-
-EXCEPTION: If you just Edited a specific file and need to verify that file only,
-proceed — but scope the check to that single file, not the entire codebase.
-</orchestrator-diagnostic-warning>`,
-    },
-  };
-
-  process.stdout.write(JSON.stringify(output));
-  process.exit(0);
-});
+main();

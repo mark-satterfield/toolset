@@ -106,24 +106,22 @@ process.stdin.on('end', () => {
   const output = {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      additionalContext: `<orchestrator-read-warning>
-CONTEXT WINDOW CHECK: You are about to read a source/config file as the orchestrator.
+      additionalContext: `<orchestrator-read-record>
+ORCHESTRATOR SOURCE READ RECORDED.
 
 File: ${targetPath}
 
-BEFORE PROCEEDING — ask yourself:
-1. Will you Edit or Write this file in this same turn? If YES: proceed.
-2. Are you reading it to understand before delegating? If YES: STOP.
-   Pass the file path to the agent instead. Agents have fresh context.
-   You do not.
+This session is the orchestrator. Its context window is the one shared resource
+in the run that cannot be refreshed; every subagent gets a fresh one per task.
+Source content read here is spent for the remainder of the session.
 
-RULE: NEVER read source code, config, or test files unless you will Edit/Write them this turn.
-Pass paths to agents — they perform their own verification.
+Editing this file from the orchestrator is separately blocked by the edit guard
+(REQ-ORCH-01), so reading it is not a step toward changing it.
 
-ANTI-PATTERN: "Let me understand the patterns to scope the delegation"
-CORRECT: Write the path into the delegation prompt. Then use the agentic-workflow
-delegation guidance to enforce a verification-first delegation framework. Delegate first.
-</orchestrator-read-warning>`,
+What a delegated read costs instead: nothing from this window. Pass the path
+into the agent's prompt and the agent reads it in its own context, verifies it
+there, and returns a verdict.
+</orchestrator-read-record>`,
     },
   };
 

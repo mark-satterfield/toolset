@@ -1,0 +1,39 @@
+{
+  "artifact": "Authorization matrix for bug ssbd-ja5d — orchestrator role enforcement",
+  "note": "role x resource x action x expected outcome. Every cell is sourced from an acceptance criterion of ssbd-ja5d; no cell is assumed. Cells not listed here are UNDEFINED and must be escalated to test-design-lead, never treated as implicitly allowed or denied (default-deny mindset). expected 'deny' means a registered PreToolUse guard terminates with exit code 2 and the tool call does not execute; 'allow' means guard exit code 0.",
+  "roles": {
+    "orchestrator": "top-level session; PreToolUse hook input JSON contains no agent_id field",
+    "subagent": "dispatched agent; hook input JSON contains a non-empty agent_id"
+  },
+  "cells": [
+    { "id": "M-01", "role": "orchestrator", "action": "Edit", "resource": "code file (.py)", "expected": "deny", "source": "AC-ORCH-01b", "rootCause": "A" },
+    { "id": "M-02", "role": "orchestrator", "action": "Write", "resource": "code file (.py)", "expected": "deny", "source": "AC-ORCH-01b", "rootCause": "A" },
+    { "id": "M-03", "role": "orchestrator", "action": "MultiEdit", "resource": "code file (.py)", "expected": "deny", "source": "AC-ORCH-01b", "rootCause": "A" },
+    { "id": "M-04", "role": "orchestrator", "action": "NotebookEdit", "resource": "code file (.py)", "expected": "deny", "source": "AC-ORCH-01b", "rootCause": "A" },
+    { "id": "M-05", "role": "orchestrator", "action": "Write", "resource": "code file (.js)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-06", "role": "orchestrator", "action": "Write", "resource": "code file (.cjs)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-07", "role": "orchestrator", "action": "Write", "resource": "code file (.mjs)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-08", "role": "orchestrator", "action": "Write", "resource": "code file (.ts)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-09", "role": "orchestrator", "action": "Write", "resource": "code file (.sh)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-10", "role": "orchestrator", "action": "Write", "resource": "code file (.py)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-11", "role": "orchestrator", "action": "Write", "resource": "code file (.toml)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-12", "role": "orchestrator", "action": "Write", "resource": "code file (.yaml)", "expected": "deny", "source": "AC-ORCH-01d", "rootCause": "A" },
+    { "id": "M-13", "role": "orchestrator", "action": "Write", "resource": "artifact report (.md in designated artifact output directory)", "expected": "allow", "source": "AC-ORCH-01e", "rootCause": "A" },
+    { "id": "M-14", "role": "subagent", "action": "Write", "resource": "code file (.py)", "expected": "allow", "source": "AC-ORCH-01f", "rootCause": "D" },
+    { "id": "M-15", "role": "orchestrator", "action": "Bash", "resource": "curl against deployed endpoint, after producing an artifact this session", "expected": "deny", "source": "AC-ORCH-03a", "rootCause": "C" },
+    { "id": "M-16", "role": "orchestrator", "action": "Bash", "resource": "git diff -- <produced path>", "expected": "deny", "source": "AC-ORCH-03b", "rootCause": "C" },
+    { "id": "M-17", "role": "orchestrator", "action": "Bash", "resource": "git log -p -- <produced path>", "expected": "deny", "source": "AC-ORCH-03b", "rootCause": "C" },
+    { "id": "M-18", "role": "orchestrator", "action": "Bash", "resource": "git show HEAD -- <produced path>", "expected": "deny", "source": "AC-ORCH-03b", "rootCause": "C" },
+    { "id": "M-19", "role": "orchestrator", "action": "Bash", "resource": "git log --oneline | grep (self-verification via whitelist)", "expected": "deny", "source": "AC-ORCH-03c", "rootCause": "C" },
+    { "id": "M-20", "role": "subagent", "action": "Bash", "resource": "curl / git diff / git show on own artifacts", "expected": "allow", "source": "AC-ORCH-03d", "rootCause": "D" },
+    { "id": "M-21", "role": "orchestrator", "action": "Bash", "resource": "git status --porcelain", "expected": "allow", "source": "AC-ORCH-03e", "rootCause": "C" },
+    { "id": "M-22", "role": "orchestrator", "action": "Bash", "resource": "git rev-parse HEAD", "expected": "allow", "source": "AC-ORCH-03e", "rootCause": "C" },
+    { "id": "M-23", "role": "orchestrator", "action": "Bash", "resource": "git show HEAD with no artifact produced this session", "expected": "allow", "source": "AC-ORCH-03f", "rootCause": "C" },
+    { "id": "M-24", "role": "orchestrator", "action": "Bash", "resource": "standalone grep at command start", "expected": "deny", "source": "AC-ORCH-10c (existing prevent-bash-tool-misuse.cjs:166)", "rootCause": "regression pin" },
+    { "id": "M-25", "role": "orchestrator", "action": "Edit", "resource": ".gitignore removing a sensitive pattern", "expected": "deny", "source": "AC-ORCH-10c (existing gitignore-edit-guard.sh:160)", "rootCause": "regression pin" },
+    { "id": "M-26", "role": "orchestrator", "action": "Edit", "resource": "non-.gitignore path via gitignore-edit-guard.sh", "expected": "allow", "source": "AC-ORCH-10c (gitignore-edit-guard.sh:23-26)", "rootCause": "regression pin" },
+    { "id": "M-27", "role": "orchestrator", "action": "Workflow dispatch", "resource": "workflow whose on-disk script digest differs from the session-start snapshot", "expected": "deny-or-execute-current (never silent stale execution)", "source": "AC-ORCH-06a", "rootCause": "F" },
+    { "id": "M-28", "role": "orchestrator", "action": "receive workflow completion", "resource": "payload > 15 lines", "expected": "truncate to <= 15 lines + detail file path", "source": "AC-ORCH-08a", "rootCause": "H" },
+    { "id": "M-29", "role": "orchestrator", "action": "receive workflow completion", "resource": "payload <= 15 lines", "expected": "allow unchanged", "source": "AC-ORCH-08c", "rootCause": "H" }
+  ]
+}

@@ -1,102 +1,114 @@
 ---
 name: orchestrator-discipline
-description: Orchestrator context window discipline enforcement. Prevents the orchestrator from reading source files it will not edit, running diagnostic commands that waste context, and rationalizing delegation bypasses. Use when setting up orchestrator guardrails, reviewing delegation discipline, or diagnosing context window waste in multi-agent workflows. Activates PreToolUse hooks that surface decision points before source file reads and diagnostic command execution.
+description: >-
+  Orchestrator role enforcement for multi-agent workflows. Registers blocking
+  PreToolUse and PostToolUse guards that stop the orchestrator editing code,
+  verifying its own output, dispatching workflows by stale name, absorbing full
+  completion payloads, routing domain work to generic agents, or writing into
+  the beads channel agents use to pass findings. Use when setting up
+  orchestrator guardrails, reviewing delegation discipline, diagnosing context
+  window waste, or investigating why an orchestrator bypassed a workflow.
 user-invocable: true
 ---
 
 # Orchestrator Discipline
 
-Enforce delegation discipline for the orchestrator role in multi-agent Claude Code workflows. The orchestrator's context window is a shared resource across the entire session — agents get fresh context per task, the orchestrator does not.
+Enforce the orchestrator role in multi-agent workflows. The orchestrator
+sequences phases, dispatches agents, and routes verdicts. It does not produce,
+and it does not verify.
 
-## What This Plugin Provides
+The constraint exists because the orchestrator's context window is the only one
+in a run that cannot be refreshed — subagents get a fresh window per task. An
+orchestrator that reads source, runs diagnostics, and forms its own view of the
+code has spent that shared resource and acquired opinions that compete with the
+agents chartered to hold them.
 
-### 1. PreToolUse Hooks (Structural Enforcement)
+## Enforcement, not advice
 
-Two hooks fire automatically on every tool call:
+Every constraint here is a hook that terminates with exit code 2.
 
-**Source File Read Warning** — fires on `Read` and `Grep` targeting source/config/test files (`.py`, `.toml`, `.yaml`, `.json`, etc.). Injects a decision-point reminder asking: "Will you Edit/Write this file this turn?"
+This is the design principle, learned the hard way: **a constraint expressed as
+prose is a factor the actor weighs against other pressures, and the actor is the
+party under constraint.** Advisory text asking the orchestrator to consider
+whether it should proceed is consistently answered "yes, this time." Any guard
+covering a forbidden action must deny, not warn.
 
-**Diagnostic Command Gate** — fires on `Bash` calls matching diagnostic commands (`ty check`, `ruff check`, `mypy`, `pytest`, `eslint`, `cargo check`, etc.). Reminds the orchestrator to delegate the command to an Explore agent instead.
+The same reasoning rules out exemptions conditioned on the actor's own account
+of its intent. "Proceed if you intend to edit this file" is not a machine
+decision — the predicate is unobservable and self-reported. Every exemption a
+guard implements is derived from the hook input and the state it names.
 
-**Bash Built-In Tool Enforcement Gate** — fires on `Bash` calls that should use built-in Claude Code tools (`Read`, `Grep`, `Glob`). **Blocking** — exits 2 to prevent the command and redirect to the correct tool.
+## Registered guards
 
-The Source File Read Warning and Diagnostic Command Gate are **non-blocking** — they inject `additionalContext` to surface the decision, not prevent it. The Bash Built-In Tool Enforcement Gate is **blocking** — it exits 2 to structurally enforce the rule.
+All guards exempt subagent sessions, identified by `agent_id` in the hook input.
+Subagents implement, verify, and run diagnostics — that is their job.
 
-### 2. Rules (Behavioral Constraints)
+| Guard | Fires on | Behavior |
+| --- | --- | --- |
+| Orchestrator Edit Guard | `Edit`, `Write`, `MultiEdit`, `NotebookEdit` | **Blocking.** Denies writes to code, config, and infrastructure files. Prose stays writable. Fails closed on unreadable input. |
+| Self-Verification Gate | `Bash` | **Blocking.** Denies network fetches and git inspection of artifacts this session produced, read from the session transcript. |
+| Diagnostic Command Gate | `Bash` | **Blocking.** Denies test runners, type checkers, and linters. Delegate the run and take the verdict. |
+| Beads Write Guard | `Bash` | **Blocking.** Denies beads mutations. Reads are unaffected. |
+| Built-In Tool Enforcement | `Bash` | **Blocking.** Redirects `cat`, `grep`, `find`, `ls`, `head`, `tail`, `sed -n` to `Read`, `Grep`, `Glob`. Pipelines pass. |
+| Workflow Dispatch Guard | `Workflow` | **Blocking.** Denies dispatch by bare name; requires `scriptPath`, an inline `script`, or `resumeFromRunId`. |
+| Roster Dispatch Guard | `Agent`, `Task` | **Blocking.** Denies generic agent types for domain or reasoning work and names the roster owner. |
+| Source File Read Guard | `Read`, `Grep` | Records the read and states its cost. Editing the file is separately blocked, so no exemption is implied or offered. |
+| Workflow Payload Cap | `Workflow`, `Task` completion | **Blocking.** Denies completion payloads over 15 lines. |
 
-The `rules/CLAUDE.md` file is loaded into every session and provides:
+## Rules
 
-- Read permission/prohibition lists with a falsifiable test
-- Delegation constraint definitions (no exemption categories)
-- Investigation escalation anti-pattern documentation
-- Tool use denial protocol (HARD STOP — no workarounds)
-- Bash built-in tool enforcement
-- Diagnostic command delegation patterns
-- Epistemic identity scoping for orchestrator role
+`rules/CLAUDE.md` is loaded into every session and carries the behavioral layer
+the guards enforce: read permission and prohibition with a falsifiable test,
+delegation constraints with no exemption categories, the investigation
+escalation anti-pattern, the tool use denial protocol, built-in tool
+enforcement, diagnostic command delegation, and epistemic identity scoping for
+the orchestrator role.
 
-### 3. Reference Material
+## Correct workflow
 
-See [Investigation Escalation Anti-Pattern](./references/investigation-escalation.md) for the detailed pattern analysis, root cause diagnosis, and correct workflow alternatives.
+1. A task arrives. The orchestrator does not read the codebase to understand it.
+2. If current state is needed, dispatch a roster agent with the paths in the
+   prompt. The agent reads in its own context and returns a verdict.
+3. If scope changed, present that to the human for a routing decision.
+4. Dispatch implementation to the workflow that owns the phase, by `scriptPath`.
+5. Take the verdict. Route it to the gate. Do not re-derive it.
 
-## When to Activate
+The anti-pattern this replaces: read source to scope the delegation, read more
+for context, run a diagnostic to check an assumption, conclude the work is
+simple enough to do directly. Each step is defensible alone; the sequence ends
+with the orchestrator having done the work unobserved.
 
-This skill auto-loads via the plugin's hooks and rules. Manual activation is useful when:
+## Guard behavior reference
 
-- Reviewing whether the orchestrator is following delegation discipline
-- Diagnosing context window waste in a session
-- Training new orchestrator configurations on delegation patterns
+**Orchestrator Edit Guard.** Denies by target extension: `js`, `cjs`, `mjs`,
+`jsx`, `ts`, `cts`, `mts`, `tsx`, `py`, `pyi`, `ipynb`, `rb`, `go`, `rs`,
+`java`, `kt`, `swift`, `c`, `h`, `cpp`, `hpp`, `cc`, `cs`, `sh`, `bash`, `zsh`,
+`fish`, `sql`, `toml`, `yaml`, `yml`, `json`, `jsonc`, `ini`, `cfg`, `conf`,
+`env`, `tf`, `tfvars`, `gradle`, `properties`. Prose extensions are absent by
+design. Empty or unparseable input is denied — a guard that cannot read its
+input has no basis for permitting a write.
 
-## Correct Orchestrator Workflow
+**Self-Verification Gate.** Reads `transcript_path` from the hook input and
+collects paths from successful `Edit`, `Write`, `MultiEdit`, and `NotebookEdit`
+tool_use entries. With no produced artifacts, git access is normal. With
+produced artifacts, `curl`/`wget` and any `git diff|log|show|blame|status`
+naming a produced path are denied.
 
-```mermaid
-flowchart TD
-    Start([Task arrives]) --> Q1{Does orchestrator need<br>current codebase state?}
-    Q1 -->|Yes| Explore["Delegate to Explore agent<br>with diagnostic command"]
-    Q1 -->|No| Direct[Delegate implementation<br>to specialist agent]
-    Explore --> Summary[Receive summary<br>from agent]
-    Summary --> Q2{Scope changed?}
-    Q2 -->|Yes| User[Present to user<br>for routing decision]
-    Q2 -->|No| Direct
-    User --> Direct
-    Direct --> PostCheck["Spot-check agent output<br>(read deliverable only)"]
+**Diagnostic Command Gate.** Matches `pytest`, `mypy`, `pyright`,
+`basedpyright`, `pylint`, `ty check`, `ruff check`, `eslint`, `tsc --noEmit`,
+`cargo check`, `cargo clippy`, `go vet`, `pre-commit run`, `prek run` at a
+command position. Quoted spans are stripped, so searching for one of these
+names is not an invocation of it.
 
-    Q1 -.->|WRONG| Self["Read source files yourself<br>Run diagnostics yourself"]
-    Self -.->|Escalates to| Bypass["'This is simple enough<br>to do myself'"]
-```
+**Roster Dispatch Guard.** Treats `Explore`, `Plan`, `general-purpose`,
+`claude`, `fork`, and any un-namespaced type as generic. A namespaced roster
+agent passes. Generic types are denied when the task text matches a domain
+(architecture, requirements, TRD, spec, decomposition, bug, test design,
+refactor, security, deployment, integration, documentation) or a reasoning verb.
+Pure file-pattern and keyword searches pass.
 
-## Hook Behavior Reference
+**Source File Read Guard.** Fires on source, config, and test paths. Prose,
+plans, and backlog items do not fire.
 
-### Source File Read Warning
-
-**Triggers on**: `Read` or `Grep` where target path matches:
-
-- Extensions: `.py`, `.toml`, `.yaml`, `.yml`, `.js`, `.ts`, `.jsx`, `.tsx`, `.json`, `.cfg`, `.ini`, `.env`, `.sh`, `.bash`, `.go`, `.rs`, `.rb`, `.java`, `.c`, `.cpp`, `.h`, `.hpp`
-- Test paths: directories named `test/`, `tests/`, `spec/`, `__tests__/`, or files matching `test_*.py`
-
-**Does NOT trigger on**: `.md`, `.txt`, plan files, backlog items, CLAUDE.md, skill definitions
-
-### Bash Built-In Tool Enforcement Gate
-
-**Triggers on**: `Bash` where command matches Bash-equivalent file operations:
-
-- `grep` at start of command (standalone, not pipeline)
-- `find ... -name` patterns
-- `ls` at start of command (not `ls -la`)
-- `cat file.ext` (file reads, not stdin)
-- `head -N`, `tail -N file.ext`, `sed -n 'N,Mp'`
-
-**Blocking**: YES — exits with code 2 to prevent the command and provide redirect message.
-
-**Does NOT trigger on**: Pipeline uses (`git log | grep`, `uv run | head`), `cat /dev/stdin`, `cat -`, `ls -la`
-
-### Diagnostic Command Gate
-
-**Triggers on**: `Bash` where command matches:
-
-- Python: `ty check`, `ruff check`, `mypy`, `pyright`, `basedpyright`, `pylint`, `pytest`
-- JavaScript/TypeScript: `eslint`, `tsc --noEmit`
-- Rust: `cargo check`, `cargo clippy`
-- Go: `go vet`
-- Meta: `pre-commit run`, `prek run`
-
-**Does NOT trigger on**: `git status`, `ls`, `wc`, `uv run` (without diagnostic subcommand), or any non-diagnostic bash command
+See [Investigation Escalation Anti-Pattern](./references/investigation-escalation.md)
+for the full pattern analysis and correct alternatives.

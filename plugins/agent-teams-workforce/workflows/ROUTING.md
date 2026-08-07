@@ -84,8 +84,8 @@ composite completes and stops on a queue condition, not a clock. One tick:
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
    (`bd update --status` / claim), so a second runner can't grab the same bead.
 3. **Route it.** Call `route-bead` with `{ bead }`.
-   - composite is non-null → run that composite on-demand
-     (`Workflow({ name: <composite>, args: { bead } })`).
+   - composite is non-null → run that composite on-demand, dispatched by path
+     (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
    - composite is null → **report the skip** (id + reason) and leave the bead's
      status as it was.
 4. **Report the outcome** — composite result, or the skip reason.
@@ -98,7 +98,23 @@ operator). The loop ends only when no claimable, routable work remains.
 
 ### Both run modes use the same composites
 
-- **On-demand:** `Workflow({ name: 'bug-fix', args: { bead } })` (etc.) for a
-  chosen bead — the operator picks the composite.
+- **On-demand:** `Workflow({ scriptPath: '.../workflows/bug-fix.js', args: { bead } })`
+  (etc.) for a chosen bead — the operator picks the composite.
 - **Unattended:** `/loop` self-paces over `bd ready`, using `route-bead` to pick
   the composite per bead. Same composites, same minis — only the selection differs.
+
+### Dispatch by path, not by name
+
+Both modes dispatch with `scriptPath`. Dispatch by bare `name` resolves the
+composite against the **registry snapshot taken at session start**, and that
+snapshot goes stale the moment a workflow script changes on disk.
+
+The failure is silent in both directions. A long-running session keeps executing
+the revision that existed when it began, so a fix landed mid-session never takes
+effect; and the tool call records only the name, so nothing afterwards can
+establish which revision actually ran. A run that looks reproducible is not.
+
+`scriptPath` pins the artifact under execution, and `resumeFromRunId` continues
+a run whose revision is already pinned. Name dispatch is refused by
+`pre-tool-workflow-dispatch-guard.cjs`, which detects the stale-snapshot form
+and names the path-pinned replacement.
