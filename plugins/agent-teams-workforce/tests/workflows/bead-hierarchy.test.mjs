@@ -266,3 +266,23 @@ test('an accepted review reports no dispute', async () => {
   assert.equal(result.scoringDisputed, false)
   assert.deepEqual(result.scoringFindings, [])
 })
+
+// ── Promotion to a PRD is a human decision ────────────────────────────────────
+
+test('a feature bead is a REQUEST — it is skipped, not auto-promoted', async () => {
+  // Promoting a feature to a PRD and an Epic decides that it is worth building,
+  // and now. A loop that promotes every feature bead it finds has decided the
+  // roadmap, which is not a call this pipeline has the standing to make.
+  const r = await route({ type: 'feature' })
+  assert.equal(r.action, 'skip')
+  assert.equal(r.composite, null)
+  assert.match(r.reason, /human decision/i)
+  assert.match(r.reason, /start-prd/, 'the skip must name the command that promotes it')
+})
+
+test('a bead labelled prd/requirement is treated the same way', async () => {
+  for (const label of ['prd', 'requirement', 'feature']) {
+    const r = await route({ type: 'chore', labels: [label] })
+    assert.equal(r.action, 'skip', `label "${label}" must not auto-promote`)
+  }
+})

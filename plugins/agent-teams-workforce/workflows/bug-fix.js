@@ -137,6 +137,34 @@ log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
 const contract = await workflow('agent-teams-workforce:bug-triage', { bead })
 if (!contract) return { ok: false, stage: 'triage', reason: 'triage produced nothing' }
 
+// Triage sizes the bug as well as diagnosing it. A defect whose honest remedy is a
+// redesign does NOT continue down this path: the fix path has no PRD validation, no
+// architecture ruling, and no spec, so building it here would ship an unreviewed
+// architecture change on the authority of a bug ticket.
+//
+// Promotion to a PRD and an Epic is a HUMAN decision — whether to build it, and
+// now — so this stops and reports rather than promoting itself.
+if (contract.scope === 'needs-prd') {
+  log(`Bug ${bead.id || ''} needs a PRD, not a fix — stopping before Red. ${contract.scopeRationale || ''}`)
+  return {
+    ok: false,
+    stage: 'triage',
+    outcome: 'needs-prd',
+    bead: bead.id || null,
+    reason: contract.scopeRationale || 'triage sized this defect as needing a PRD and an Epic',
+    contractsTouched: contract.contractsTouched || [],
+    diagnosis: {
+      reproduction: contract.reproduction,
+      rootCause: contract.rootCause,
+      affectedFiles: contract.affectedFiles,
+      blastRadius: contract.blastRadius,
+    },
+    note:
+      'Nothing was built and nothing was deployed. The diagnosis above is the input a PRD ' +
+      'would start from. Promote it when you want it built: /agent-teams-workforce:start-prd.',
+  }
+}
+
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
 phase('Red')
 const red = await gateLoop({

@@ -144,10 +144,19 @@ function deterministicRoute() {
 
   // 5) FEATURE / PRD-shaped work that is not yet an Epic. This is the entry to
   //    the hierarchy: it needs an Epic and everything beneath it.
+  // 5) FEATURE — a request, not work, and promoting it is the HUMAN's call.
+  //
+  // A feature bead becomes implementable by being promoted to a PRD and an Epic,
+  // and that decision is a product decision: whether this is worth building at
+  // all, and now. An automated loop that promotes every feature bead it finds has
+  // decided the roadmap, which is not a call any agent here has the standing to
+  // make. So this is a reported SKIP, not a decompose.
   if (type === 'feature' || hasLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
-    return decompose(
-      'prd-to-spec',
-      `feature/PRD-shaped work with no Epic structure yet (type="${type || 'n/a'}"${labelTail}) → prd-to-spec, to create the Epic → Story → Task hierarchy`,
+    return skip(
+      `feature is a REQUEST, not work (type="${type || 'n/a'}"${labelTail}). A feature becomes ` +
+        `implementable by being promoted to a PRD and an Epic, which is a human decision about ` +
+        `whether to build it. → SKIP. When you want it built: /agent-teams-workforce:start-prd, ` +
+        `or dispatch prd-to-spec with { request } to author the PRD first.`,
     )
   }
 
