@@ -226,6 +226,80 @@ test('tasks land under their own Story, not pooled under the first', async () =>
   assert.deepEqual(orphans, [], 'every task must point at a Story that exists in this hierarchy')
 })
 
+test('task keys are unique ACROSS Stories, not just within one', async () => {
+  // task-decomposition mints keys local to its own invocation — T1, T2 — and the
+  // composite runs it once per Story. Concatenated without namespacing, every
+  // Story's first task is "T1" and the flat bead set collides.
+  const repos = ['/repo-a', '/repo-b', '/repo-c']
+  const { result } = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
+    workflowImpl: (call) => {
+      const name = String(call.name || '')
+      if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
+      if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
+      if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
+      if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 's' } }
+      if (name.endsWith('spec-authoring')) {
+        const key = (call.payload && call.payload.storyKey) || 'S1'
+        return {
+          ok: true,
+          specSet: { apiSpec: { summary: 's' } },
+          story: { key, type: 'story', title: `Story ${key}`, description: 'd', repoPath: call.payload.repoPath, parentEpicKey: 'E1' },
+        }
+      }
+      if (name.endsWith('task-decomposition')) {
+        // Exactly what the real mini returns: invocation-local keys.
+        const sk = ((call.payload && call.payload.story) || {}).key || 'S?'
+        return {
+          ok: true,
+          beadSet: [
+            { key: 'T1', type: 'task', parentStoryId: sk, title: 't1', description: 'd', acceptanceCriteria: ['a'], dependsOn: [] },
+            { key: 'T2', type: 'task', parentStoryId: sk, title: 't2', description: 'd', acceptanceCriteria: ['a'], dependsOn: ['T1'] },
+          ],
+        }
+      }
+      return null
+    },
+    agentImpl: (call) => (call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null),
+  })
+
+  assert.equal(result.ok, true, `composite failed at ${result.stage}`)
+  const keys = result.hierarchy.tasks.map((t) => t.key)
+  assert.equal(
+    new Set(keys).size,
+    keys.length,
+    `task keys collide across Stories: [${keys.join(', ')}] — bd would write one task where several were meant`,
+  )
+
+  // Namespacing must carry through the intra-Story dependency edges too, or a
+  // task ends up depending on a key that no longer exists.
+  const byKey = new Set(keys)
+  for (const t of result.hierarchy.tasks) {
+    for (const dep of t.dependsOn || []) {
+      assert.ok(byKey.has(dep), `task ${t.key} depends on "${dep}", which is not a key in this hierarchy`)
+    }
+  }
+})
+
+test('a caller-supplied Epic is normalized to carry type "epic"', async () => {
+  const { result } = await run({
+    args: {
+      prd: { id: 'PRD-1', title: 'PRD One', body: 'b' },
+      repoPath: '/repo-a',
+      epic: { key: 'EX-9', title: 'given without a type' },
+    },
+    repos: ['/repo-a'],
+    withEpic: false,
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.hierarchy.epic.key, 'EX-9')
+  assert.equal(
+    result.hierarchy.epic.type,
+    'epic',
+    'a caller-supplied Epic must still be emitted as a well-formed epic bead spec',
+  )
+})
+
 // ── Dependencies live at the Story level, and only there ──────────────────────
 
 test('Stories carry the dependency graph; the Epic carries none', async () => {

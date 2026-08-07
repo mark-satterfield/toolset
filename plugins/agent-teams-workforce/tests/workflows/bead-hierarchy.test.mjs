@@ -170,6 +170,39 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
   }
 })
 
+test('a Story identified only by `key` still parents its tasks', async () => {
+  // Before bd writes them, a Story has no id — only the local key the composite
+  // assigned. Reading `story.id` alone yields parentStoryId: null on every task,
+  // and route-bead then refuses to work any of them.
+  const { result } = await runWorkflowScript(taskDecomposition, {
+    args: {
+      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
+      story: { key: 'S2', title: 'keyed but not yet written to bd' },
+    },
+    agentImpl: (call) => {
+      if (call.label === 'decompose:tasks') {
+        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
+      }
+      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
+      if (call.label === 'wsjf:score') {
+        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
+      }
+      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
+      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
+      return null
+    },
+  })
+
+  assert.equal(result.ok, true)
+  for (const bead of result.beadSet) {
+    assert.equal(
+      bead.parentStoryId,
+      'S2',
+      'a Story that exists only as a local key must still parent its tasks — otherwise every task is unroutable',
+    )
+  }
+})
+
 test('task-decomposition tells the decomposer it may not mint a container', () => {
   const src = readWorkflowSource(taskDecomposition)
   assert.match(

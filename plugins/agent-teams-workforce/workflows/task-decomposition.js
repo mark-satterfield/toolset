@@ -25,18 +25,23 @@ const specRef = spec.id || spec.title || '(unspecified spec)'
 if (!spec.title && !spec.description && !spec.id) {
   log('⚠ no spec supplied — running in dry/demo mode')
 }
-// A Story is created alongside its Spec, upstream of here. Without its id the
-// emitted tasks are parentless, and route-bead will (correctly) refuse to work
-// a Task that has no parent Story.
-if (!story.id) {
-  log('⚠ no story.id supplied — emitted tasks will be parentless and will not route as workable')
+// A Story is created alongside its Spec, upstream of here. Without it the emitted
+// tasks are parentless, and route-bead will (correctly) refuse to work a Task that
+// has no parent Story.
+//
+// The Story has no bd id until the caller writes it, so before emission it is
+// identified by the local key the composite assigned. Reading `story.id` alone left
+// every task with parentStoryId: null — unroutable, and silently so.
+const storyRef = story.id || story.key || null
+if (!storyRef) {
+  log('⚠ no story.id or story.key supplied — emitted tasks will be parentless and will not route as workable')
 }
 
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
 ${spec.source ? `Source: ${spec.source}` : ''}
 Repository: ${spec.repoPath || '(repo path not provided)'}
-Parent Story: ${story.id || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}`
+Parent Story: ${storyRef || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}`
 
 // Shared sub-schema: one decomposed task.
 //
@@ -281,7 +286,7 @@ const beadsValidation = await agent(
 
 Return valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only.
 
-Parent Story for this task set: ${story.id || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
+Parent Story for this task set: ${storyRef || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
 
 Tasks:
 ${JSON.stringify(tasks, null, 2)}
@@ -351,7 +356,7 @@ const beadSet = tasks
     title: t.title,
     description: t.description,
     type: 'task',
-    parentStoryId: story.id || null,
+    parentStoryId: storyRef,
     acceptanceCriteria: t.acceptanceCriteria,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
     wsjf: wsjfByKey[t.key] ? wsjfByKey[t.key].wsjf : null,
@@ -373,6 +378,6 @@ return {
   scoringReview,
   beadsValidation,
   beadSet,
-  story: { id: story.id || null, title: story.title || null },
-  note: `Tasks only — every emitted bead is type "task"${story.id ? ` parented to Story ${story.id}` : ', UNPARENTED (no story.id was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), independently reviewed, and Beads-format valid. Emit via bd from the main repo path.`,
+  story: { id: story.id || null, key: story.key || null, ref: storyRef, title: story.title || null },
+  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), independently reviewed, and Beads-format valid. Emit via bd from the main repo path.`,
 }

@@ -175,16 +175,34 @@ async function main(a) {
   const trd = a && a.trd
   const constraints = Array.isArray(a && a.constraints) ? a.constraints : []
   const accessPatterns = Array.isArray(a && a.accessPatterns) ? a.accessPatterns : []
-  const repoPath = (a && a.repoPath) || null
+  // A Story is scoped to a single repo, so the repo is what makes it well-formed —
+  // without one there is nothing to deploy, test, or own. Emitting a repo-less Story
+  // that reads as valid downstream is worse than refusing: the caller writes it with
+  // bd, its tasks inherit a parent that names no repo, and the defect only surfaces
+  // when an implementer is handed work with nowhere to do it. The caller runs this
+  // mini once per repo and always knows which one.
+  const repoPath = (a && a.repoPath) || (s && s.repoPath) || null
   const epic = (a && a.epic) || null
+  if (!repoPath) {
+    return {
+      ok: false,
+      stage: 'story',
+      reason:
+        'no repoPath supplied — a Story is scoped to a single repo and cannot be emitted without one. Run this mini once per repo, passing args.repoPath each time.',
+    }
+  }
   const MAX_LOOPS = (a && a.maxLoops) || 2
   const ctx = ctxBlock(s, trd, constraints)
 
   // ── Phase 1: Author specs (makers, in parallel) ───────────────────────────────
   phase('Author specs')
 
-  const authored = await parallel({
-    apiSpec: () =>
+  // parallel() takes an ARRAY of thunks — that is the runner's contract and what
+  // every other workflow in this directory passes. An object map is iterated as
+  // an empty list, so all six specs came back undefined.
+  const [apiSpecDraft, dataModelSpecDraft, eventContractsDraft, errorSpecDraft, acceptanceDraft, dodDraft] =
+    await parallel([
+    () =>
       agent(
         `Author the API/OpenAPI contract specification for this feature (spec-first). REST API v1 only — HTTP API v2 is banned. Define resources, methods, request/response schemas, status codes, and auth. Author only — do not review your own work.\n\n${ctx}`,
         {
@@ -194,7 +212,7 @@ async function main(a) {
           schema: SPEC_SCHEMA,
         }
       ),
-    dataModelSpec: () =>
+    () =>
       agent(
         `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${ctx}`,
         {
@@ -204,7 +222,7 @@ async function main(a) {
           schema: SPEC_SCHEMA,
         }
       ),
-    eventContracts: () =>
+    () =>
       agent(
         `Author the event contracts/schemas for this feature. Use dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema. Author only — do not review your own work.\n\n${ctx}`,
         {
@@ -214,7 +232,7 @@ async function main(a) {
           schema: SPEC_SCHEMA,
         }
       ),
-    errorSpec: () =>
+    () =>
       agent(
         `Author the error-handling specification for this feature: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed). Author only — do not review your own work.\n\n${ctx}`,
         {
@@ -224,7 +242,7 @@ async function main(a) {
           schema: SPEC_SCHEMA,
         }
       ),
-    acceptance: () =>
+    () =>
       agent(
         `Author the acceptance criteria for this spec as testable given/when/then statements covering the happy path, error paths, and boundary conditions. Author only — do not review your own work.\n\n${ctx}`,
         {
@@ -234,7 +252,7 @@ async function main(a) {
           schema: AC_SCHEMA,
         }
       ),
-    dod: () =>
+    () =>
       agent(
         `Codify the Definition of Done for this spec as a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). Author only — do not review your own work.\n\n${ctx}`,
         {
@@ -244,7 +262,15 @@ async function main(a) {
           schema: DOD_SCHEMA,
         }
       ),
-  })
+    ])
+  const authored = {
+    apiSpec: apiSpecDraft,
+    dataModelSpec: dataModelSpecDraft,
+    eventContracts: eventContractsDraft,
+    errorSpec: errorSpecDraft,
+    acceptance: acceptanceDraft,
+    dod: dodDraft,
+  }
 
   // ── Phase 2 & 3: independent review + bounded maker/checker loop + decider ──────
   phase('Review specs')
@@ -458,4 +484,7 @@ async function main(a) {
   }
 }
 
-await main(typeof args === 'string' ? JSON.parse(args) : (args || {}))
+// Top-level return, as every sibling workflow does: the runner takes the script's
+// completion value as the mini's result. `await main(...)` alone discarded it, so
+// every caller — including prd-to-spec's per-repo Story collection — saw undefined.
+return await main(typeof args === 'string' ? JSON.parse(args) : (args || {}))

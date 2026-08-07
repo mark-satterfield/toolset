@@ -192,7 +192,14 @@ if (creation && creation.epic) {
   epic = creation.epic
   epicPath = 'epic-created'
 } else if (a.epic) {
-  epic = a.epic
+  // A caller-supplied Epic is adopted rather than re-minted, but it still has to
+  // leave here as a well-formed epic bead spec — a caller that passed only a key
+  // and a title would otherwise put an untyped object into the hierarchy.
+  epic = {
+    key: a.epic.key || a.epic.id || 'E1',
+    ...a.epic,
+    type: 'epic',
+  }
   epicPath = 'epic-supplied'
 } else {
   epic = {
@@ -477,7 +484,22 @@ for (const pair of specPairs) {
     continue
   }
   decompositions.push({ repoPath: pair.repoPath, storyKey: pair.story.key || null, artifact: decomposition.artifact })
-  for (const t of (decomposition.artifact && decomposition.artifact.beadSet) || []) tasks.push(t)
+  // task-decomposition mints keys local to its own invocation — T1, T2 — and this
+  // loop runs it once per Story. Concatenated as-is, every Story's first task is
+  // "T1" and bd would write one task where several were meant. Namespace by the
+  // Story key, and carry the same rewrite through the intra-Story dependency edges
+  // so no task ends up depending on a key that no longer exists.
+  const storyKeyForTasks = pair.story.key || pair.story.id
+  const localToNamespaced = new Map()
+  const storyTasks = (decomposition.artifact && decomposition.artifact.beadSet) || []
+  for (const t of storyTasks) localToNamespaced.set(t.key, `${storyKeyForTasks}-${t.key}`)
+  for (const t of storyTasks) {
+    tasks.push({
+      ...t,
+      key: localToNamespaced.get(t.key) || t.key,
+      dependsOn: (t.dependsOn || []).map((d) => localToNamespaced.get(d) || d),
+    })
+  }
 }
 if (decompositionFailures.length) {
   return {
