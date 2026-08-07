@@ -1,8 +1,8 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deployment readiness (Gate 5). A read-only deployment-lead selects the readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) and the deployment-strategy-decider rules the rollout plan; smoke tests, CDK synth/drift, and the selected artifacts feed a production-readiness review that returns a go/no-go. It does NOT run `cdk deploy` to production and does NOT invoke the wave sequencer — the actual rollout is a human-gated, outward-affecting action triggered separately.',
-  phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke + readiness review (no prod rollout)' }],
+    'Shared-tail mini — Deploy (Gate 5). A read-only deployment-lead selects the readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) and the deployment-strategy-decider rules the rollout plan; smoke tests, CDK synth/drift, and the selected artifacts feed a readiness review that returns a go/no-go. On a go, it DEPLOYS TO DEV via the wave sequencer and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
+  phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke + readiness review, then open the PR and roll out to dev' }],
 }
 
 // args: { contract, green, docCurrency?, feedback? }
@@ -157,12 +157,113 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
   }
 )
 
+// ── Rollout ───────────────────────────────────────────────────────────────────
+// Deploying to dev is how code gets into AWS at all — it is the point of the pipeline,
+// not an outward-facing action, and it is NOT human-gated. `dev` is the default target.
+// Only qa/prod rollout is human-gated; the sequencer is invoked for those only when a
+// caller explicitly asks, and prod never rolls out from here.
+// Wave sequencing is for GREENFIELD, cross-repo fleet deploys. A change confined to one
+// repo/stack just deploys that stack — pass `multiRepo: true` to opt into wave ordering.
+const targetEnv = (a.env || c.env || 'dev').toLowerCase()
+const rolloutAllowed = targetEnv === 'dev'
+const multiRepo = a.multiRepo === true || c.multiRepo === true
+
+// ── Ship: open the PR ─────────────────────────────────────────────────────────
+// Until 2026-08-07 NO script in this pipeline set opened a PR. Every composite run
+// ended with committed work stranded on a branch, silently violating the definition
+// of done ("a PR is opened with skillspoke-pr") — which is why callers kept hand-
+// rolling PR creation into ad-hoc agent prompts beside the pipeline.
+// MERGE IS NOT THIS STAGE'S JOB. The PR flow owns it: skillspoke-pr posts the
+// CodeRabbit review request, shepherd-pr iterates the findings, and the merge lands
+// through that flow. This stage must never run `gh pr merge` behind it.
+const shipEnabled = a.ship !== false && rolloutAllowed
+let ship = null
+if (readiness && readiness.ready && shipEnabled) {
+  ship = await agent(
+    `Open a pull request for this change. Repo: ${repo}
+
+SEQUENCE
+1. Confirm the work is committed on a feature branch IN A WORKTREE and pushed to origin. Never branch in a main working tree. If work is uncommitted, commit it as \`type(scope): description\` with NO \`Co-Authored-By\` header.
+2. Run the repo's gates LOCALLY FIRST: the test suite, \`ruff check\`, and \`npx cdk synth\`. This fleet has NO CI — no repo has \`.github/workflows\`, so the only PR checks are CodeRabbit and Socket Security, neither of which runs tests, lint, or synth. Your local run is the ONLY real gate. If any gate fails, STOP and report; do not open the PR on known-broken work.
+3. Open the PR with \`/Users/msat1971/.local/bin/skillspoke-pr\`. NEVER \`gh pr create\` — CodeRabbit does not scan PRs opened under an agent token, so \`gh pr create\` yields an unreviewed PR.
+   KNOWN QUIRK: \`skillspoke-pr\` exits 1 AFTER successfully creating the PR, because its follow-up CodeRabbit comment call fails. DO NOT read exit 1 as failure. Confirm the real outcome in \`~/.claude/pr-daemon.log\`, which records every created PR and its URL.
+
+DO NOT MERGE. Do not run \`gh pr merge\`. Merging is owned by the PR flow (CodeRabbit review, then shepherd-pr iteration), not by this pipeline. Opening the PR is where your job ends.
+
+HARD LIMITS
+- NEVER bypass a quality gate. \`--no-verify\` is forbidden in every form. If a hook fails, fix findings, restage, retry; if they cannot be fixed, abort with no commit and report.
+- Report the literal PR URL. Never claim a PR you did not observe created in the daemon log.`,
+    {
+      label: 'deploy:ship-pr',
+      phase: 'Deploy-readiness',
+      agentType: 'agent-teams-workforce:deployment-lead',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['prOpened', 'gatesPassed'],
+        properties: {
+          prOpened: { type: 'boolean' },
+          prUrl: { type: 'string' },
+          gatesPassed: { type: 'boolean' },
+          findings: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+}
+
+// Rollout targets dev, which is NOT mainline-gated — dev is how code reaches AWS for
+// fast feedback, and the PR merges asynchronously through the review flow. So rollout
+// does not wait on the merge; it does require the local gates to have passed.
+let rollout = null
+if (readiness && readiness.ready && rolloutAllowed && (!shipEnabled || (ship && ship.gatesPassed))) {
+  rollout = await agent(
+    `Deploy this change to the DEV environment (AWS account 616930583457, us-east-1).
+
+Repo: ${c.repoPath || '(unspecified)'}
+Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}
+${
+  multiRepo
+    ? `This change spans MULTIPLE repos/stacks — deploy in approved wave order per /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke/deployment/waves.yaml and waves.shared.yaml, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
+    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read waves.yaml. Just run \`cdk deploy\` for the affected stack(s) in this repo against dev.`
+}
+
+Then RUN the smoke tests (${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none authored'}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
+
+HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. If a deploy errors, stop and report exactly where and why. Report literal deploy output; never claim a deployment you did not observe succeed.`,
+    {
+      label: 'deploy:rollout-dev',
+      phase: 'Deploy-readiness',
+      agentType: multiRepo
+        ? 'agent-teams-workforce:wave-deployment-sequencer'
+        : 'agent-teams-workforce:cdk-stack-author',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['deployed', 'stacks', 'smokePassed'],
+        properties: {
+          deployed: { type: 'boolean' },
+          stacks: { type: 'array', items: { type: 'string' } },
+          smokePassed: { type: 'boolean' },
+          stoppedAtWave: { type: 'string' },
+          evidence: { type: 'string' },
+          findings: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+}
+
 const ledger = {
   phase: 'deploy',
   beadId: (c.bead && c.bead.id) || null,
-  chosen: ['deployment-lead', 'smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), 'deployment-strategy-decider', 'production-readiness-review-facilitator'],
+  chosen: ['deployment-lead', 'smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), 'deployment-strategy-decider', 'production-readiness-review-facilitator', ...(rollout ? [multiRepo ? 'wave-deployment-sequencer' : 'cdk-stack-author'] : [])],
   mode: selectionMode,
-  ok: !!(readiness && readiness.ready),
+  env: targetEnv,
+  prOpened: !!(ship && ship.prOpened),
+  prUrl: (ship && ship.prUrl) || null,
+  rolledOut: !!(rollout && rollout.deployed),
+  ok: !!(readiness && readiness.ready) && (!shipEnabled || !!(ship && ship.prOpened)) && (!rolloutAllowed || !!(rollout && rollout.deployed && rollout.smokePassed)),
 }
 
-return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, deployedToProd: false, ledger }
+return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, ship, rollout, env: targetEnv, prOpened: !!(ship && ship.prOpened), prUrl: (ship && ship.prUrl) || null, deployedToDev: !!(rollout && rollout.deployed), deployedToProd: false, ledger }

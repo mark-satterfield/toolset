@@ -56,15 +56,47 @@ async function persistRun(outcome) {
   }
 }
 
+// Every adjudication goes to the ledger. Without the verdict and its per-criterion
+// evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
+// distinguish a genuine defect from an over-strict criterion or a loop exhaustion.
+// Module-scoped here (not nested in gateLoop) because this pipeline also has a
+// standalone G1 gate call that must be recorded the same way.
+function recordGate(gate, phaseName, attempt, verdict, extra) {
+  return runLedger.push({
+    phase: `gate:${gate}`,
+    gate,
+    gatePhase: phaseName,
+    attempt,
+    maxLoops: MAX_LOOPS,
+    verdict: (verdict && verdict.verdict) || 'no-verdict',
+    criteria: ((verdict && verdict.criteria) || []).map((c) => ({
+      criterion: c.criterion,
+      met: c.met,
+      evidence: c.evidence,
+    })),
+    unmetCriteria: ((verdict && verdict.criteria) || [])
+      .filter((c) => !c.met)
+      .map((c) => c.criterion),
+    feedback: (verdict && verdict.feedback) || null,
+    escalateTo: (verdict && verdict.escalateTo) || null,
+    flags: (verdict && verdict.flags) || [],
+    ...(extra || {}),
+  })
+}
+
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
-    const verdict = await workflow(gateWorkflow || 'gate-enforce', {
+    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, artifact, escalateTargets,
     })
-    if (!verdict) return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    if (!verdict) {
+      recordGate(gate, phaseName, attempt, null, { terminal: 'no-verdict' })
+      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    }
+    recordGate(gate, phaseName, attempt, verdict)
     if (verdict.verdict === 'pass') {
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
@@ -76,6 +108,7 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
+  recordGate(gate, phaseName, MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
   return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
 }
 
@@ -85,14 +118,14 @@ try {
   result = await (async () => {
 phase('Infra Intent')
 log(`Infra change ${bead.id || '(no id)'} — ${bead.title || ''}`)
-const intent = await workflow('infra-intent', {
+const intent = await workflow('agent-teams-workforce:infra-intent', {
   change: { id: bead.id, title: bead.title, description: bead.description, repoPath: bead.repoPath },
   adrs,
 })
 if (!intent) return { ok: false, stage: 'infra-intent', reason: 'infra-intent produced nothing' }
 
 // ── Gate 1: Infra Intent (provisioning contract is concrete + fresh + clean) ─────
-const g1 = await workflow('gate-enforce', {
+const g1 = await workflow('agent-teams-workforce:gate-enforce', {
   gate: 'G1',
   phaseName: 'Infra Intent',
   criteria: [
@@ -103,6 +136,7 @@ const g1 = await workflow('gate-enforce', {
   artifact: intent,
   escalateTargets: ['infra-intent'],
 })
+recordGate('G1', 'Infra Intent', 1, g1, g1 ? undefined : { terminal: 'no-verdict' })
 if (!g1 || g1.verdict !== 'pass') {
   return { ok: false, stage: 'infra-intent', bead: bead.id, gate: 'G1', detail: g1, intent }
 }
@@ -133,7 +167,7 @@ const red = await gateLoop({
     'No production CDK code changed yet — tests/assertions only',
   ],
   escalateTargets: ['infra-intent'],
-  phaseFn: (feedback) => workflow('tdd-red', { contract: tailContract, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
@@ -149,13 +183,13 @@ const green = await gateLoop({
   ],
   escalateTargets: ['infra-intent', 'red'],
   phaseFn: (feedback) =>
-    workflow('tdd-green', { contract: tailContract, red: red.artifact, implementer: 'cdk-stack-author', feedback }),
+    workflow('agent-teams-workforce:tdd-green', { contract: tailContract, red: red.artifact, implementer: 'cdk-stack-author', feedback }),
 })
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
 if (!green.ok) return { ok: false, stage: 'green', bead: bead.id, detail: green }
 
 // Documentation runs ALONGSIDE the rest of the tail (started after Green, awaited before deploy).
-const docTrack = workflow('documentation', { contract: tailContract, green: green.artifact })
+const docTrack = workflow('agent-teams-workforce:documentation', { contract: tailContract, green: green.artifact })
 
 // Settle the parallel documentation track before any early failure return, so a
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
@@ -174,7 +208,7 @@ const integration = await gateLoop({
     'Cross-stack SSM references resolve (no CloudFormation exports)',
   ],
   escalateTargets: ['green', 'red', 'infra-intent'],
-  phaseFn: (feedback) => workflow('integration', { contract: tailContract, green: green.artifact, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract: tailContract, green: green.artifact, feedback }),
 })
 if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
 if (!integration.ok) return await failAfterDoc('integration', integration)
@@ -186,14 +220,14 @@ let adversarial = { skipped: true }
 if (RUN_ADVERSARIAL) {
   phase('Adversarial')
   const adv = await gateLoop({
-    gate: 'G4', phaseName: 'Adversarial Validation', gateWorkflow: 'gate-constitutional',
+    gate: 'G4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
     criteria: [
       'No open constitutive findings (no infra misconfiguration, unpatched CVE, or data exposure)',
       'All confirmed findings adjudicated',
     ],
     escalateTargets: ['green', 'infra-intent'],
     phaseFn: (feedback) =>
-      workflow('adversarial', {
+      workflow('agent-teams-workforce:adversarial', {
         contract: tailContract,
         green: green.artifact,
         trimmedScope: ['infrastructure-security-scanner', 'dependency-cve-auditor', 'data-exposure-scanner'],
@@ -221,7 +255,7 @@ const deployReady = await gateLoop({
     'Readiness review is go',
   ],
   escalateTargets: ['integration', 'green'],
-  phaseFn: (feedback) => workflow('deploy', { contract: tailContract, green: green.artifact, docCurrency, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract: tailContract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
 if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', bead: bead.id, detail: deployReady }

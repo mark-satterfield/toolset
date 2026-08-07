@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bug-fix',
   description:
-    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-ship tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy stops at readiness — production rollout is a separate human-gated action.',
+    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-ship tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
   phases: [
     { title: 'Triage' },
     { title: 'Red' },
@@ -54,12 +54,41 @@ async function persistRun(outcome) {
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // Every adjudication goes to the ledger. Without the verdict and its per-criterion
+  // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
+  // distinguish a genuine defect from an over-strict criterion or a loop exhaustion.
+  const recordGate = (attempt, verdict, extra) =>
+    runLedger.push({
+      phase: `gate:${gate}`,
+      gate,
+      gatePhase: phaseName,
+      attempt,
+      maxLoops: MAX_LOOPS,
+      verdict: (verdict && verdict.verdict) || 'no-verdict',
+      criteria: ((verdict && verdict.criteria) || []).map((c) => ({
+        criterion: c.criterion,
+        met: c.met,
+        evidence: c.evidence,
+      })),
+      unmetCriteria: ((verdict && verdict.criteria) || [])
+        .filter((c) => !c.met)
+        .map((c) => c.criterion),
+      feedback: (verdict && verdict.feedback) || null,
+      escalateTo: (verdict && verdict.escalateTo) || null,
+      flags: (verdict && verdict.flags) || [],
+      ...(extra || {}),
+    })
+
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
-    const verdict = await workflow(gateWorkflow || 'gate-enforce', {
+    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, artifact, escalateTargets,
     })
-    if (!verdict) return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    if (!verdict) {
+      recordGate(attempt, null, { terminal: 'no-verdict' })
+      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    }
+    recordGate(attempt, verdict)
     if (verdict.verdict === 'pass') {
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
@@ -71,6 +100,7 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
+  recordGate(MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
   return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
 }
 
@@ -80,16 +110,26 @@ try {
   result = await (async () => {
 phase('Triage')
 log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-const contract = await workflow('bug-triage', { bead })
+const contract = await workflow('agent-teams-workforce:bug-triage', { bead })
 if (!contract) return { ok: false, stage: 'triage', reason: 'triage produced nothing' }
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
 phase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
-  criteria: ['A failing test reproduces the defect', 'The test fails for the intended reason', 'No production code changed yet'],
+  criteria: [
+    // Red is satisfied by EITHER a failure at HEAD or a DIFFERENTIAL failure at the
+    // pre-fix revision. A bead whose defect was already repaired cannot fail at HEAD;
+    // demanding it there fails correct work and burns a full pipeline proving a bug is
+    // gone. Differential red (same test, detached pre-fix worktree, fails there and
+    // passes here) is equally strong evidence and is the ONLY form available for a
+    // stale bead.
+    'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red)',
+    'The test fails for the intended reason (the failure message names the defect, not a harness or import error)',
+    'No production code was changed to manufacture the failure',
+  ],
   escalateTargets: ['triage'],
-  phaseFn: (feedback) => workflow('tdd-red', { contract, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
@@ -100,13 +140,13 @@ const green = await gateLoop({
   gate: '2b', phaseName: 'TDD Green',
   criteria: ['The previously-failing test now passes', 'No other tests regressed', 'The change is minimal and the test was not weakened'],
   escalateTargets: ['triage', 'red'],
-  phaseFn: (feedback) => workflow('tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
 })
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
 if (!green.ok) return { ok: false, stage: 'green', bead: bead.id, detail: green }
 
 // Documentation runs ALONGSIDE the rest of the tail (started, awaited before deploy).
-const docTrack = workflow('documentation', { contract, green: green.artifact })
+const docTrack = workflow('agent-teams-workforce:documentation', { contract, green: green.artifact })
 
 // Settle the parallel documentation track before any early failure return, so a
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
@@ -121,7 +161,7 @@ const refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
   criteria: ['Tests still green', 'Behavior preserved (no regression)', 'Complexity/duplication reduced'],
   escalateTargets: ['green'],
-  phaseFn: (feedback) => workflow('tdd-refactor', { contract, green: green.artifact, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
 })
 if (refactor.artifact && refactor.artifact.ledger) runLedger.push(refactor.artifact.ledger)
 if (!refactor.ok) return await failAfterDoc('refactor', refactor)
@@ -132,7 +172,7 @@ const integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
   criteria: ['Integration/contract/E2E suites pass', 'Contracts valid across boundaries', 'Coverage met', 'No flaky tests'],
   escalateTargets: ['green', 'red', 'triage'],
-  phaseFn: (feedback) => workflow('integration', { contract, green: green.artifact, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
 })
 if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
 if (!integration.ok) return await failAfterDoc('integration', integration)
@@ -140,10 +180,10 @@ if (!integration.ok) return await failAfterDoc('integration', integration)
 // ── Adversarial (Gate 4 — constitutional) ─────────────────────────────────────
 phase('Adversarial')
 const adversarial = await gateLoop({
-  gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'gate-constitutional',
+  gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
   criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
   escalateTargets: ['green', 'triage'],
-  phaseFn: (feedback) => workflow('adversarial', { contract, green: green.artifact, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:adversarial', { contract, green: green.artifact, feedback }),
 })
 if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
 if (!adversarial.ok) return await failAfterDoc('adversarial', adversarial)
@@ -158,7 +198,7 @@ const deployReady = await gateLoop({
   gate: '5', phaseName: 'Deployment readiness',
   criteria: ['CDK synth valid, no unresolved drift', 'Smoke tests present', 'Documentation current', 'Readiness review is go'],
   escalateTargets: ['integration', 'green'],
-  phaseFn: (feedback) => workflow('deploy', { contract, green: green.artifact, docCurrency, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
 if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', bead: bead.id, detail: deployReady }
@@ -166,8 +206,9 @@ if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', bead: bead.i
 return {
   ok: true,
   bead: bead.id,
-  stagesComplete: ['triage', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-readiness'],
-  note: 'READY for deployment. Production rollout is a separate human-gated action — this composite does not deploy to prod.',
+  stagesComplete: ['triage', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy'],
+  deployedToDev: !!(deployReady.artifact && deployReady.artifact.deployedToDev),
+  note: 'Deployed to DEV and smoke-tested. Outward-facing qa/prod rollout remains a separate human-gated action.',
   contract,
   results: {
     red: red.artifact, green: green.artifact, refactor: refactor.artifact,

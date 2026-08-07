@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. A read-only validation lead fans the raw PRD out to nine independent analysts in parallel (ambiguity, completeness, conflict, NFRs, constraints, dependency graph, domain boundaries, requirements clarification, BRD traceability), then aggregates their findings into one validated-PRD package. Read-only: it judges and packages the PRD but authors no PRD content.',
+    'Leaf mini — PRD Validation. A read-only validation lead fans the raw PRD out to eight independent analysts in parallel (ambiguity, completeness, conflict, NFRs, constraints, dependency graph, domain boundaries, requirements clarification), then aggregates their findings into one validated-PRD package. A ninth, BRD traceability, is opt-in and runs only when args.brd is supplied. Read-only: it judges and packages the PRD but authors no PRD content.',
   phases: [
     { title: 'Validate', detail: 'parallel independent analysts inspect the raw PRD' },
     { title: 'Aggregate', detail: 'read-only lead consolidates findings into one package' },
@@ -316,12 +316,26 @@ ${prdBlock}`,
         },
       }
     ),
-  () =>
+  // BRD traceability is OPT-IN: it runs only when a BRD is actually supplied.
+  // Running it without one produced every requirement as an "orphan", which the
+  // aggregator then folded in as major findings — noise that reads as PRD defects.
+  // A team with stakeholder-traceability obligations passes args.brd and gets the
+  // audit; a team without one pays nothing for a check it did not ask for.
+  !brd
+    ? () => ({
+        traceable: false,
+        matrix: [],
+        orphanRequirements: [],
+        unimplementedObjectives: [],
+      })
+    : () =>
     agent(
-      `You are an INDEPENDENT validator (brd-traceability-auditor). Build a traceability matrix mapping each PRD requirement to the BRD objective(s) it serves. Flag orphanRequirements (PRD requirements tracing to NO BRD objective) and unimplementedObjectives (BRD objectives no PRD requirement serves). If NO BRD is supplied below, set traceable=false and report that traceability could not be verified — do NOT invent objectives. Do NOT rewrite the PRD.
+      `You are an INDEPENDENT validator (brd-traceability-auditor). Build a traceability matrix mapping each PRD requirement to the BRD objective(s) it serves. Flag orphanRequirements (PRD requirements tracing to NO BRD objective) and unimplementedObjectives (BRD objectives no PRD requirement serves). Do NOT rewrite the PRD.
+
+A BRD states business objectives, not features. A PRD requirement that maps to a stated objective or guiding principle is traced — do NOT report it as an orphan merely because the BRD names no objective at this feature's altitude. Report unimplementedObjectives only where a BRD objective is one this single PRD could plausibly have served.
 
 BRD objectives:
-${brd || '(no BRD supplied — traceability not verifiable)'}
+${brd}
 
 PRD under validation:
 ${prdBlock}`,
@@ -417,7 +431,12 @@ const ledger = {
   phase: 'prd-validation',
   beadId: null,
   subject: prdId || null,
-  chosen: ['ambiguity-detector', 'completeness-checker', 'requirements-conflict-detector', 'nfr-analyst', 'constraint-extractor', 'dependency-graph-extractor', 'domain-boundary-validator', 'requirements-clarifier', 'brd-traceability-auditor', 'prd-validation-lead'],
+  chosen: [
+    'ambiguity-detector', 'completeness-checker', 'requirements-conflict-detector', 'nfr-analyst',
+    'constraint-extractor', 'dependency-graph-extractor', 'domain-boundary-validator', 'requirements-clarifier',
+    ...(brd ? ['brd-traceability-auditor'] : []),
+    'prd-validation-lead',
+  ],
   mode: 'fixed', // design-mandated full fan-out — all 9 analysts wired
   ok: aggregate.validationVerdict === 'pass',
 }

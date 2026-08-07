@@ -17,6 +17,8 @@ export const meta = {
 //   request?: { id?, title?, description?, repoPath?, requestedBy? },  // raw request — triggers optional PRD creation
 //   prd?: { id?, title?, body?, content?, path?, repoPath?, acceptanceCriteria?[] }, // existing PRD; skips creation
 //   context?: string,             // bounded-context / service-boundary notes for PRD validation
+//   brd?: string,                 // BRD objectives text — WITHOUT it the traceability audit has nothing
+//                                 // to audit against and every requirement reads as an orphan
 //   decision?: { id?, title?, context?, drivers?[], repoPath? }, // the architecture question
 //   sad?: { path?, sectionLayout? },  // arc42 SAD location for TRD extraction
 //   sadPath?: string,             // arc42 SAD path for the architecture mini
@@ -65,12 +67,41 @@ async function persistRun(outcome) {
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // Every adjudication goes to the ledger. Without the verdict and its per-criterion
+  // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
+  // distinguish a genuine defect from an over-strict criterion or a loop exhaustion.
+  const recordGate = (attempt, verdict, extra) =>
+    runLedger.push({
+      phase: `gate:${gate}`,
+      gate,
+      gatePhase: phaseName,
+      attempt,
+      maxLoops: MAX_LOOPS,
+      verdict: (verdict && verdict.verdict) || 'no-verdict',
+      criteria: ((verdict && verdict.criteria) || []).map((c) => ({
+        criterion: c.criterion,
+        met: c.met,
+        evidence: c.evidence,
+      })),
+      unmetCriteria: ((verdict && verdict.criteria) || [])
+        .filter((c) => !c.met)
+        .map((c) => c.criterion),
+      feedback: (verdict && verdict.feedback) || null,
+      escalateTo: (verdict && verdict.escalateTo) || null,
+      flags: (verdict && verdict.flags) || [],
+      ...(extra || {}),
+    })
+
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
-    const verdict = await workflow(gateWorkflow || 'gate-enforce', {
+    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, artifact, escalateTargets,
     })
-    if (!verdict) return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    if (!verdict) {
+      recordGate(attempt, null, { terminal: 'no-verdict' })
+      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+    }
+    recordGate(attempt, verdict)
     if (verdict.verdict === 'pass') {
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
@@ -82,6 +113,7 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
+  recordGate(MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
   return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
 }
 
@@ -96,7 +128,7 @@ let creation = null
 let prd = a.prd || null
 if (!prd && a.request) {
   log(`Creating PRD from request ${a.request.id || '(no id)'} — ${a.request.title || ''}`)
-  creation = await workflow('prd-creation', { request: a.request })
+  creation = await workflow('agent-teams-workforce:prd-creation', { request: a.request })
   if (!creation || !creation.ok) {
     return { ok: false, stage: 'prd-creation', reason: 'PRD creation did not produce an aligned PRD', detail: creation }
   }
@@ -125,7 +157,14 @@ const validation = await gateLoop({
   ],
   escalateTargets: ['prd-creation'],
   phaseFn: (feedback) =>
-    workflow('prd-validation', { prd, context: feedback ? `${a.context || ''}\n\nGate feedback:\n${feedback}` : a.context }),
+    workflow('agent-teams-workforce:prd-validation', {
+      prd,
+      // The BRD must be threaded through explicitly. prd-validation reads args.brd and hands it
+      // to the traceability auditor; when it is absent the auditor has no objectives to map to
+      // and reports every requirement as an orphan, which reads as a PRD defect but is not one.
+      brd: a.brd,
+      context: feedback ? `${a.context || ''}\n\nGate feedback:\n${feedback}` : a.context,
+    }),
 })
 if (validation.artifact && validation.artifact.ledger) runLedger.push(validation.artifact.ledger)
 if (!validation.ok) return { ok: false, stage: 'prd-validation', detail: validation, prd }
@@ -135,7 +174,7 @@ const validatedPrd = (validation.artifact && validation.artifact.validatedPrd) |
 // Consumes the validated PRD; produces the ruled decision + arc42 SAD source feed.
 phase('Architecture')
 const architecture = await gateLoop({
-  gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'gate-constitutional',
+  gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
   criteria: [
     'The chosen architecture honors all platform constitutive bans (no Step Functions, no HTTP API v2, no FastAPI/Flask/Django, REST v1 only, Powertools-only, service isolation, SSM-not-CFN-exports, dot-only event naming)',
     'Every significant decision is ruled by the decider and recorded in the SAD/arc42 source feed',
@@ -143,7 +182,7 @@ const architecture = await gateLoop({
   ],
   escalateTargets: ['prd-validation'],
   phaseFn: (feedback) =>
-    workflow('architecture', {
+    workflow('agent-teams-workforce:architecture', {
       decision: a.decision || {
         id: prd.id,
         title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
@@ -170,7 +209,7 @@ const trdAuthoring = await gateLoop({
   ],
   escalateTargets: ['architecture', 'prd-validation'],
   phaseFn: (feedback) =>
-    workflow('trd-authoring', {
+    workflow('agent-teams-workforce:trd-authoring', {
       prd: {
         id: prd.id,
         title: prd.title,
@@ -201,7 +240,7 @@ const specAuthoring = await gateLoop({
   ],
   escalateTargets: ['trd-authoring', 'architecture'],
   phaseFn: (feedback) =>
-    workflow('spec-authoring', {
+    workflow('agent-teams-workforce:spec-authoring', {
       spec: a.spec || {
         id: prd.id,
         title: prd.title,
@@ -232,7 +271,7 @@ const decomposition = await gateLoop({
   ],
   escalateTargets: ['spec-authoring'],
   phaseFn: (feedback) =>
-    workflow('task-decomposition', {
+    workflow('agent-teams-workforce:task-decomposition', {
       spec: {
         id: prd.id,
         title: prd.title,

@@ -39,7 +39,17 @@ The workflow engine cannot stamp a run id or timestamp (it forbids randomness/cl
 3. Write ONE JSONL line per entry in `runLedger` to a fresh file `.claude/workflow-runs/<RUNID>.jsonl`. Each line is that ledger entry **plus** the shared envelope fields: `runId`, `composite`, `beadId` (from `bead.id`, else null), `outcome`, `ts`. Preserve every field the entry already carries; add nothing else.
 4. If `runLedger` is empty, write a single line with `phase: "(none)"` so the run is still visible.
 
-Use a fresh `<RUNID>` file each run — never append to another run's file (avoids concurrent-write corruption). Prefer `jq -c` to guarantee compact, valid JSON per line; if `jq` is unavailable, build the lines carefully and validate before writing.
+Use a fresh `<RUNID>` file each run — never append to another run's file (avoids concurrent-write corruption).
+
+**Every entry MUST occupy exactly one physical line.** Pretty-printed, indented, or multi-line JSON is a defect, not a formatting preference: it makes the file unreadable by any line-oriented consumer, which is the whole point of JSONL. Build the file with `jq -c`, or with `python3 -c` using `json.dumps(obj)` and **no** `indent` argument. Never hand-assemble JSON with newlines inside an object.
+
+Before returning, verify what you wrote — every line must parse on its own:
+
+```
+while IFS= read -r l; do printf '%s' "$l" | jq -e . >/dev/null || echo "BAD LINE: $l"; done < .claude/workflow-runs/<RUNID>.jsonl
+```
+
+If any line fails, rewrite the file compactly and re-verify before returning.
 
 ## Rules
 
