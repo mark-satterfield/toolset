@@ -191,7 +191,7 @@ async function main(a) {
         'no repoPath supplied — a Story is scoped to a single repo and cannot be emitted without one. Run this mini once per repo, passing args.repoPath each time.',
     }
   }
-  const MAX_LOOPS = (a && a.maxLoops) || 2
+  const MAX_LOOPS = (a && a.maxLoops) || 1
   const ctx = ctxBlock(s, trd, constraints)
 
   // ── Phase 1: Author specs (makers, in parallel) ───────────────────────────────

@@ -26,7 +26,17 @@ export const DEPLOYED_RED_CRITERION =
 // args: { bead: { id, title, description, repoPath }, implementer?, maxLoops? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
-const MAX_LOOPS = a.maxLoops || 3
+// Gate retry budget. One rework round, then proceed with the finding recorded.
+//
+// This was 3, and nested minis carried their own bound of 2 on top, so a single
+// phase could burn six expensive attempts before anyone saw a result — the
+// dominant cost in every run that stalled. A checker's objection is information;
+// it does not have to be a veto. One revision is where nearly all the value is:
+// if a maker cannot address a finding on the second try, a third rarely helps and
+// the finding is better carried forward than ground against.
+//
+// Callers who want the old behaviour pass args.maxLoops explicitly.
+const MAX_LOOPS = a.maxLoops || 2
 if (!bead.id) log('⚠ no bead.id supplied — running in dry/demo mode')
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`

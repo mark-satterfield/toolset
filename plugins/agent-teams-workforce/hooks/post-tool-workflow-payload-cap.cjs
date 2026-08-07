@@ -24,8 +24,20 @@
 const fs = require('node:fs');
 const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
 
-/** Maximum lines a workflow completion may return into orchestrator context. */
-const MAX_PAYLOAD_LINES = 15;
+/**
+ * Caps on what a completion may return into orchestrator context.
+ *
+ * The original cap was 15 lines, set when a single workflow completion could eat
+ * a large fraction of the window. On a 1M-token context that is far tighter than
+ * the constraint warrants: fifteen lines cannot carry a gate verdict with
+ * per-criterion evidence, so workflows were truncating things the orchestrator
+ * needed in order to route correctly.
+ *
+ * Characters matter as much as lines — one 8,000-character line passed the old
+ * cap while sixteen short ones failed — so both are measured and either trips it.
+ */
+const MAX_PAYLOAD_LINES = 200;
+const MAX_PAYLOAD_CHARS = 24000;
 
 /** Reads all of stdin synchronously; returns '' when unreadable. */
 function readStdin() {
@@ -78,8 +90,10 @@ function main() {
   }
 
   const lines = text.split('\n');
-  if (lines.length <= MAX_PAYLOAD_LINES) {
-    // Under the cap: pass through unchanged and say nothing.
+  const overLines = lines.length > MAX_PAYLOAD_LINES;
+  const overChars = text.length > MAX_PAYLOAD_CHARS;
+  if (!overLines && !overChars) {
+    // Under both caps: pass through unchanged and say nothing.
     process.exit(0);
   }
 
@@ -92,7 +106,8 @@ function main() {
       '',
       `Tool: ${toolName}`,
       `Workflow: ${workflowName}`,
-      `Payload: ${lines.length} lines (cap ${MAX_PAYLOAD_LINES})`,
+      `Payload: ${lines.length} lines (cap ${MAX_PAYLOAD_LINES}), ${text.length} chars (cap ${MAX_PAYLOAD_CHARS})`,
+      `Over on: ${[overLines && 'lines', overChars && 'characters'].filter(Boolean).join(' and ')}`,
       '',
       'A completion payload this size belongs in the run transcript, not in the',
       'orchestrator context window. The orchestrator needs the verdict, not the',

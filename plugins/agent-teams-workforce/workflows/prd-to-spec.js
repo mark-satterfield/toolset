@@ -33,7 +33,17 @@ export const meta = {
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-const MAX_LOOPS = a.maxLoops || 3
+// Gate retry budget. One rework round, then proceed with the finding recorded.
+//
+// This was 3, and nested minis carried their own bound of 2 on top, so a single
+// phase could burn six expensive attempts before anyone saw a result — the
+// dominant cost in every run that stalled. A checker's objection is information;
+// it does not have to be a veto. One revision is where nearly all the value is:
+// if a maker cannot address a finding on the second try, a third rarely helps and
+// the finding is better carried forward than ground against.
+//
+// Callers who want the old behaviour pass args.maxLoops explicitly.
+const MAX_LOOPS = a.maxLoops || 2
 const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.prd.repoPath) || null
 // One Epic may span repos and a Story is scoped to exactly one, so spec authoring
 // fans out once per repo below. Absent an explicit span the single repoPath is the
@@ -272,7 +282,7 @@ const trdAuthoring = await gateLoop({
       sad: a.sad || { path: a.sadPath },
       trdPath: a.trdPath,
       repoPath,
-      maxLoops: 2,
+      maxLoops: 1,
       feedback,
     }),
 })
@@ -326,7 +336,7 @@ for (const [repoIndex, repo] of repos.entries()) {
         repoPath: repo,
         storyKey,
         epic,
-        maxLoops: 2,
+        maxLoops: 1,
         constraints: feedback ? [feedback] : undefined,
       }),
   })

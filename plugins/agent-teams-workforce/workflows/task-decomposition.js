@@ -20,7 +20,7 @@ export const meta = {
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const spec = a.spec || {}
 const story = a.story || {}
-const MAX_SCORING_PASSES = a.maxScoringPasses || 2
+const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
 const specRef = spec.id || spec.title || '(unspecified spec)'
 if (!spec.title && !spec.description && !spec.id) {
   log('⚠ no spec supplied — running in dry/demo mode')
@@ -257,18 +257,22 @@ ${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}`,
   }
 }
 
-if (!scoringAccepted) {
-  return {
-    ok: false,
-    stage: 'wsjf-score',
-    reason: `WSJF scores not accepted within ${MAX_SCORING_PASSES} review passes`,
-    spec: specRef,
-    tasks,
-    dependencyDag: { edges: dag.edges, acyclic: dag.acyclic },
-    buildOrder: dag.buildOrder,
-    wsjfScores,
-    scoringReview,
-  }
+// A scoring disagreement is NOT a reason to discard the decomposition.
+//
+// This used to return ok:false and throw away everything — the tasks, the DAG,
+// the whole structural result — because a scorer and a reviewer could not agree
+// on priority arithmetic within two passes. That is disproportionate: the tasks
+// are the deliverable and the scores are advisory. Prioritization can be revised
+// after the fact; a discarded decomposition has to be redone from the spec.
+//
+// So an unresolved review is recorded as a finding on the emitted set and the run
+// continues. The caller sees exactly which scores are disputed and why.
+const scoringDisputed = !scoringAccepted
+if (scoringDisputed) {
+  log(
+    `WSJF review unresolved after ${MAX_SCORING_PASSES} passes — emitting tasks with the ` +
+      `latest scores and recording the dispute. Tasks are the deliverable; scores are advisory.`
+  )
 }
 
 // ── Validate & emit ─────────────────────────────────────────────────────────
@@ -376,8 +380,12 @@ return {
   buildOrder: dag.buildOrder,
   wsjfScores,
   scoringReview,
+  scoringDisputed,
+  scoringFindings: scoringDisputed
+    ? ((scoringReview && scoringReview.issues) || []).map((i) => `${i.key}: ${i.problem}`)
+    : [],
   beadsValidation,
   beadSet,
   story: { id: story.id || null, key: story.key || null, ref: storyRef, title: story.title || null },
-  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), independently reviewed, and Beads-format valid. Emit via bd from the main repo path.`,
+  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and Beads-format valid.${scoringDisputed ? ' WSJF review did NOT converge — scores are the scorer\'s latest and are recorded as disputed; the task structure is unaffected.' : ' Scoring passed independent review.'} Emit via bd from the main repo path.`,
 }

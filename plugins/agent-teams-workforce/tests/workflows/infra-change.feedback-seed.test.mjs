@@ -34,6 +34,9 @@ async function runInfra({ priorFindings, g1Verdicts, intentReturns } = {}) {
   let g1Count = 0
   const { result } = await runWorkflowScript(INFRA_JS, {
     args: {
+      // Pinned explicitly: this exercises loop MECHANICS (seed persistence,
+      // artifact carrying), not the default budget, which is now 2.
+      maxLoops: 3,
       bead: { id: 'ssbd-fixture', title: 'encrypt bucket', description: 'd', repoPath: '/tmp/fixture' },
       ...(priorFindings !== undefined ? { priorFindings } : {}),
     },

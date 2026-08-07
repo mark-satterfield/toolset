@@ -4,31 +4,32 @@
 /**
  * PreToolUse hook — REQ-ORCH-04 category 2 (ssbd-ja5d, root causes B + C).
  *
- * Running the project's own diagnostics is self-verification: the orchestrator
- * checks whether the work is good using output it reads itself, in the one
- * context window that cannot be refreshed. Diagnostics belong to the agent that
- * did the work, or to a reviewer that did not.
+ * The rule is "the producer may not be the verifier", not "the orchestrator may
+ * not run tests". Those are different, and conflating them cost more than it
+ * saved: blocking every diagnostic by binary name meant the orchestrator could
+ * not spot-check a claim an agent had made, which pushes it toward trusting
+ * reports it should be able to check.
  *
- * This gate used to warn and exit 0, with a documented exemption for
- * "post-edit verification of a specific file" that the orchestrator evaluated
- * about itself. Both properties were defects: an advisory is not enforcement,
- * and an exemption conditioned on the actor's own account of its intent is not
- * machine-observable. It now denies with exit 2 and offers no exemption.
+ * So the gate now keys on session state, exactly as the self-verification gate
+ * does. Running the suite when this session has written nothing is a baseline
+ * check and is allowed. Running it after this session produced code is the
+ * producer grading its own work, and is denied.
  *
- * Matching is command-position anchored and ignores quoted spans, so a search
- * whose argument merely contains a binary name (grep -n 'pytest' file) is not
- * a diagnostic invocation and is not blocked.
+ * Output volume is handled where it belongs — by the completion payload cap —
+ * rather than by refusing to let the command run at all.
  *
  * Decision order:
- *   1. unparseable input   -> exit 0 (other Bash guards still run)
- *   2. subagent session    -> exit 0
- *   3. non-Bash tool       -> exit 0
- *   4. no diagnostic match -> exit 0
- *   5. diagnostic match    -> exit 2
+ *   1. unparseable input        -> exit 0 (other Bash guards still run)
+ *   2. subagent session         -> exit 0
+ *   3. non-Bash tool            -> exit 0
+ *   4. no diagnostic match      -> exit 0
+ *   5. session produced nothing -> exit 0  (baseline check)
+ *   6. session produced code    -> exit 2  (self-verification)
  */
 
 const fs = require('node:fs');
 const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
+const { producedPaths } = require('./lib/session-production.cjs');
 
 /**
  * Diagnostic binaries and subcommands. Each entry is anchored at a command
@@ -115,15 +116,26 @@ function main() {
     process.exit(0);
   }
 
+  // A diagnostic run by a session that has produced nothing is a baseline check,
+  // not self-verification. Let it through.
+  const produced = producedPaths(String(data.transcript_path ?? ''));
+  if (produced.length === 0) {
+    process.exit(0);
+  }
+
   process.stderr.write(
     `${[
-      '--- Orchestrator Diagnostic Blocked ---',
+      '--- Self-Verification Blocked ---',
       '',
       `Matched: ${matched}`,
       `Command: ${command.substring(0, 200)}`,
       '',
-      'Running the project diagnostics here makes the orchestrator the verifier of',
-      'work it routed, and spends the one context window the run cannot refresh.',
+      `This session has produced ${produced.length} artifact(s), including:`,
+      ...produced.slice(0, 3).map((p) => `  ${p}`),
+      '',
+      'Running the suite over code this session wrote is the producer grading its',
+      'own work. A diagnostic run by a session that has written nothing is a',
+      'baseline check and is not blocked.',
       '',
       'Delegate the run and take the verdict:',
       '  - tdd-green / tdd-refactor already run the suite and report Green',

@@ -211,3 +211,58 @@ test('task-decomposition tells the decomposer it may not mint a container', () =
     'the decomposer prompt must forbid minting containers — the schema alone leaves the rule unexplained',
   )
 })
+
+// ── A scoring dispute must not destroy the decomposition ──────────────────────
+
+test('an unresolved WSJF review emits the tasks anyway, with the dispute recorded', async () => {
+  // Priority arithmetic is advisory; the task structure is the deliverable. This
+  // used to return ok:false and discard the tasks, the DAG, and the whole run.
+  const { result } = await runWorkflowScript(taskDecomposition, {
+    args: {
+      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
+      story: { key: 'S1', title: 'the story' },
+      maxScoringPasses: 2,
+    },
+    agentImpl: (call) => {
+      if (call.label === 'decompose:tasks') {
+        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
+      }
+      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
+      if (call.label === 'wsjf:score') {
+        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
+      }
+      // The reviewer never accepts.
+      if (String(call.label).startsWith('wsjf:review')) {
+        return { accepted: false, feedback: 'jobSize looks optimistic', issues: [{ key: 'T1', problem: 'jobSize disputed' }] }
+      }
+      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
+      return null
+    },
+  })
+
+  assert.equal(result.ok, true, 'a scoring disagreement must not discard correct structural work')
+  assert.equal(result.beadSet.length, 1, 'the tasks are still emitted')
+  assert.equal(result.beadSet[0].parentStoryId, 'S1')
+  assert.equal(result.scoringDisputed, true, 'the dispute must be visible to the caller')
+  assert.deepEqual(result.scoringFindings, ['T1: jobSize disputed'])
+})
+
+test('an accepted review reports no dispute', async () => {
+  const { result } = await runWorkflowScript(taskDecomposition, {
+    args: { spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' }, story: { key: 'S1' } },
+    agentImpl: (call) => {
+      if (call.label === 'decompose:tasks') {
+        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
+      }
+      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
+      if (call.label === 'wsjf:score') {
+        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
+      }
+      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
+      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
+      return null
+    },
+  })
+  assert.equal(result.scoringDisputed, false)
+  assert.deepEqual(result.scoringFindings, [])
+})

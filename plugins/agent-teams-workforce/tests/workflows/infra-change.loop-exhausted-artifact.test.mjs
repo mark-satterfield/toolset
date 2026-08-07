@@ -26,7 +26,8 @@ async function runInfra({ g1Verdicts, intentReturns }) {
   const intentPayloads = []
   let g1Count = 0
   const { result } = await runWorkflowScript(INFRA_JS, {
-    args: { bead: { id: 'ssbd-fixture', title: 'encrypt bucket', description: 'd', repoPath: '/tmp/fixture' } },
+    // maxLoops pinned: this exercises loop mechanics, not the default budget (now 2).
+    args: { maxLoops: 3, bead: { id: 'ssbd-fixture', title: 'encrypt bucket', description: 'd', repoPath: '/tmp/fixture' } },
     agentImpl: () => ({ written: true }), // ledger:persist
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:infra-intent') {
