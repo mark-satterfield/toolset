@@ -1,6 +1,6 @@
 {
   "name": "agent-teams-workforce",
-  "version": "4.4.0",
+  "version": "4.5.0",
   "description": "A complete SDLC delivery workforce of bounded specialist agents, built on one principle: the agent is not the unit of trust — the workflow is. Each agent owns a single task category (plan, orchestrate, execute, approve, or test) with least-privilege tools; work moves through explicit artifacts and ends at gates that pass, loop, or escalate; no agent approves its own output, and the one that finds a flaw never fixes it. Realized as deterministic Workflow scripts — reusable gates and single-phase minis stitched into composites across two pipelines (PRD→Spec→Tasks and Spec→Deployment), a governance tier, and a parallel Documentation track.",
   "author": {
     "name": "mark-satterfield"
