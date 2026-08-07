@@ -1,9 +1,9 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — turns a spec/contract into an implementation-ready, WSJF-scored, Beads-valid task set. Decomposes into atomic tasks, sequences them into an acyclic dependency DAG with a build order, scores every task with WSJF (no P0-P4 priorities), independently reviews the scores in a bounded maker-checker loop, and validates the whole set against the Beads format before emit. Makers (decomposer, mapper, scorer) never judge their own work — an independent reviewer and an independent format validator do that.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. The task set is then sequenced into an acyclic dependency DAG with a build order, WSJF-scored (the sole prioritization metric — no P0-P4), independently reviewed in a bounded maker-checker loop, and validated against the Beads format and the hierarchy rule before emit. Makers (decomposer, mapper, scorer) never judge their own work — an independent reviewer and an independent format validator do that.',
   phases: [
-    { title: 'Decompose', detail: 'spec -> atomic, independently-shippable tasks' },
+    { title: 'Decompose', detail: 'Spec -> atomic tasks under its Story; tasks only' },
     { title: 'Sequence (DAG)', detail: 'dependencies -> acyclic DAG + build order' },
     { title: 'WSJF score', detail: 'score every task; independent review, bounded retry' },
     { title: 'Validate & emit', detail: 'Beads-format validation -> emit bead set' },
@@ -11,23 +11,41 @@ export const meta = {
 }
 
 // args: {
-//   spec: { id?, title?, description?, source?, repoPath? },  // what to decompose
+//   spec:  { id?, title?, description?, source?, repoPath? },  // the Spec being decomposed
+//   story: { id?, title? },                                    // the Story the Spec pairs with —
+//                                                              // ALREADY EXISTS; every emitted task
+//                                                              // is parented to it
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const spec = a.spec || {}
+const story = a.story || {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2
 const specRef = spec.id || spec.title || '(unspecified spec)'
 if (!spec.title && !spec.description && !spec.id) {
   log('⚠ no spec supplied — running in dry/demo mode')
 }
+// A Story is created alongside its Spec, upstream of here. Without its id the
+// emitted tasks are parentless, and route-bead will (correctly) refuse to work
+// a Task that has no parent Story.
+if (!story.id) {
+  log('⚠ no story.id supplied — emitted tasks will be parentless and will not route as workable')
+}
 
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
 ${spec.source ? `Source: ${spec.source}` : ''}
-Repository: ${spec.repoPath || '(repo path not provided)'}`
+Repository: ${spec.repoPath || '(repo path not provided)'}
+Parent Story: ${story.id || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}`
 
 // Shared sub-schema: one decomposed task.
+//
+// `type` is a single-member enum on purpose. Decomposing a Story produces TASKS
+// and nothing else. An Epic is created alongside its PRD and a Story alongside
+// its Spec — neither is ever minted here, and there is no point in the flow at
+// which decomposing a Story yields an Epic, a Story, or a loose feature. The
+// enum previously admitted feature/chore/epic, which let the decomposer emit a
+// second Epic underneath an existing one and corrupt the hierarchy.
 const taskSchema = {
   type: 'object',
   additionalProperties: false,
@@ -36,7 +54,7 @@ const taskSchema = {
     key: { type: 'string' },
     title: { type: 'string' },
     description: { type: 'string' },
-    type: { type: 'string', enum: ['feature', 'bug', 'task', 'chore', 'epic'] },
+    type: { type: 'string', enum: ['task'] },
     acceptanceCriteria: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -46,7 +64,13 @@ phase('Decompose')
 log(`Decomposing ${specRef}`)
 
 const decomposition = await agent(
-  `Decompose the spec below into ATOMIC, independently-shippable tasks. Each task must be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Do NOT sequence, score, or prioritize — that is downstream work. Do NOT write code. Assign each task a stable, human-readable local "key" (e.g. T1, T2) that downstream phases will reference.
+  `Decompose the Spec below into ATOMIC TASKS. Each task must be scoped to ONE agent's work within the single repository named below, be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Assign each a stable, human-readable local "key" (e.g. T1, T2) that downstream phases reference.
+
+You emit TASKS ONLY. Every item you return has type "task".
+
+Do not emit an Epic, a Story, or a loose feature under any circumstance. The Epic was created with its PRD and the Story with this Spec; both already exist upstream and every task you emit is a child of the Story named below. If the Spec looks too large for one Story, that is a finding to report in your rationale — say so there and still decompose only what this Spec covers. Splitting it yourself by inventing a container is not available to you.
+
+Do NOT sequence, score, or prioritize — that is downstream work. Do NOT write code.
 
 ${specBlock}`,
   {
@@ -247,7 +271,17 @@ phase('Validate & emit')
 
 // Independent format validation — a different agent than every maker above.
 const beadsValidation = await agent(
-  `Validate that the task set below conforms to the Beads format before it is emitted as a bead set. Check every task: a valid id/key with the ssbd- prefix once emitted, all required Beads fields present (title, type, description, acceptance criteria), the type is a permitted Beads type, and the dependency DAG is internally consistent (every edge references a known task, no edge references a missing key, the graph remains acyclic). Return valid=true only if all tasks pass; otherwise valid=false with per-task violations. Do NOT modify the tasks — judge only.
+  `Validate that the task set below conforms to the Beads format before it is emitted as a bead set. Check every item:
+
+- its type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit. An Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else. Report any such item as a violation on the "type" field.
+- it is scoped to ONE agent's work within the single repository the Spec names — not a multi-repo or multi-agent unit of work.
+- a valid id/key with the ssbd- prefix once emitted.
+- all required Beads fields present: title, type, description, acceptance criteria.
+- the dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic.
+
+Return valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only.
+
+Parent Story for this task set: ${story.id || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
 
 Tasks:
 ${JSON.stringify(tasks, null, 2)}
@@ -307,12 +341,17 @@ const orderIndex = {}
 ;(dag.buildOrder || []).forEach((k, i) => {
   orderIndex[k] = i
 })
+// Every emitted bead is a task parented to the Story this Spec pairs with.
+// `type` is forced rather than copied: the schema already constrains it, and a
+// task set that silently carried anything else would corrupt the hierarchy
+// route-bead depends on.
 const beadSet = tasks
   .map((t) => ({
     key: t.key,
     title: t.title,
     description: t.description,
-    type: t.type,
+    type: 'task',
+    parentStoryId: story.id || null,
     acceptanceCriteria: t.acceptanceCriteria,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
     wsjf: wsjfByKey[t.key] ? wsjfByKey[t.key].wsjf : null,
@@ -334,5 +373,6 @@ return {
   scoringReview,
   beadsValidation,
   beadSet,
-  note: 'Tasks are atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), independently reviewed, and Beads-format valid. Emit via bd from the main repo path.',
+  story: { id: story.id || null, title: story.title || null },
+  note: `Tasks only — every emitted bead is type "task"${story.id ? ` parented to Story ${story.id}` : ', UNPARENTED (no story.id was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), independently reviewed, and Beads-format valid. Emit via bd from the main repo path.`,
 }
