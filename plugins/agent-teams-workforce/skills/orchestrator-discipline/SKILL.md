@@ -38,6 +38,35 @@ of its intent. "Proceed if you intend to edit this file" is not a machine
 decision — the predicate is unobservable and self-reported. Every exemption a
 guard implements is derived from the hook input and the state it names.
 
+## Orchestrator mode — off by default
+
+The guards constrain one role: an orchestrator sequencing an SDLC run. Most
+sessions in a repo are not that. Troubleshooting, a one-off script, anything
+unrelated to the pipelines — enforcing the orchestrator contract on those blocks
+honest work, and an operator who is blocked doing honest work learns to route
+around the guards. That is the exact behavior they exist to prevent, so leaving
+them permanently armed is self-defeating.
+
+Mode is therefore **off by default** and switched on for a run:
+
+```bash
+/agent-teams-workforce:orchestrator-mode on   "starting the MVP-1 run"
+/agent-teams-workforce:orchestrator-mode off  "run complete"
+/agent-teams-workforce:orchestrator-mode status
+```
+
+It is stored at `.claude/agent-teams-workforce.local.md` in the project, and every
+transition is appended to `.claude/agent-teams-workforce.mode-log` with a timestamp
+and reason. **Hooks load at session start**, so a mode change takes effect on the
+next session, not the current one.
+
+This is not the actor granting itself an exemption. The mode is a human decision
+recorded on disk before the work starts, identical for every call in the session,
+and never a per-call judgement about intent. While mode is on, the edit guard
+refuses to let the orchestrator write the mode file, so a run cannot quietly
+disarm itself part-way through — turning it off means running the command, which
+leaves a record.
+
 ## Where the guards apply
 
 The guards govern sessions that **use** this plugin. They are inert in the

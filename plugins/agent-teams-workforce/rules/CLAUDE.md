@@ -17,6 +17,14 @@ work itself. The boundary is decided by file location — a project holding
 `.claude-plugin/marketplace.json` with this plugin inside it is the source repo
 — and cannot be claimed by any actor for its own session.
 
+**Mode.** They also govern only sessions running an SDLC pipeline. Orchestrator
+mode is off by default; `/agent-teams-workforce:orchestrator-mode on` arms it for
+a run. A repo where the guards are always on is a repo where ordinary work gets
+blocked and the operator learns to route around them — which is the failure these
+rules exist to prevent. The mode is set on disk before the work starts and every
+transition is logged; it is never a per-call judgement the actor makes about its
+own intent, and while armed the mode file itself may not be edited from here.
+
 ## Read permission and prohibition
 
 Permitted without qualification: prose (`.md`, `.txt`, `.rst`), plans, briefs,

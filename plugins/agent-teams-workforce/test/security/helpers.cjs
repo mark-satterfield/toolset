@@ -19,6 +19,23 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 /** Absolute root of the agent-teams-workforce plugin under test (repo source copy). */
+/**
+ * Guards are gated on orchestrator mode, which is OFF by default so that ordinary
+ * work in a repo is unconstrained. These suites test the ARMED orchestrator — the
+ * role the guards exist to constrain — so the harness points every spawned guard at
+ * a fixture project with mode on, unless the caller names its own project dir.
+ */
+const ARMED_FIXTURE = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atw-armed-'));
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.claude', 'agent-teams-workforce.local.md'),
+    '---\norchestrator_mode: on\n---\n',
+    'utf8',
+  );
+  return dir;
+})();
+
 const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
 
 /** Absolute root of the gitignore-guardian plugin (regression pins, AC-ORCH-10c). */
@@ -110,7 +127,12 @@ function runGuard(command, hookInput, opts = {}) {
   const res = spawnSync('bash', ['-c', command], {
     input,
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PLUGIN_ROOT: opts.pluginRoot || PLUGIN_ROOT },
+    env: {
+      ...process.env,
+      CLAUDE_PLUGIN_ROOT: opts.pluginRoot || PLUGIN_ROOT,
+      // These suites test the ARMED orchestrator; mode is off by default.
+      CLAUDE_PROJECT_DIR: opts.projectDir || ARMED_FIXTURE,
+    },
     timeout: 15000,
   });
   return { status: res.status, stdout: res.stdout ?? '', stderr: res.stderr ?? '' };

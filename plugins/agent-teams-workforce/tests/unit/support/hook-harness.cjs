@@ -25,6 +25,23 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+/**
+ * Guards are gated on orchestrator mode, which is OFF by default so that ordinary
+ * work in a repo is unconstrained. These suites test the ARMED orchestrator — the
+ * role the guards exist to constrain — so the harness points every spawned guard at
+ * a fixture project with mode on, unless the caller names its own project dir.
+ */
+const ARMED_FIXTURE = (() => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atw-armed-'));
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.claude', 'agent-teams-workforce.local.md'),
+    '---\norchestrator_mode: on\n---\n',
+    'utf8',
+  );
+  return dir;
+})();
+
 /** Absolute root of the agent-teams-workforce plugin inside this repo. */
 const PLUGIN_ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -123,6 +140,7 @@ function runGuard(guard, stdinText, opts = {}) {
     encoding: 'utf8',
     timeout: 15000,
     cwd: opts.cwd,
+    env: { ...process.env, CLAUDE_PROJECT_DIR: opts.cwd || ARMED_FIXTURE },
   });
   return {
     status: result.status,
@@ -256,6 +274,7 @@ function isEmptyDecision(stdout) {
 
 module.exports = {
   PLUGIN_ROOT,
+  ARMED_FIXTURE,
   HOOKS_JSON_PATH,
   HOOK_SCRIPTS,
   INTENT_EXEMPTION_MARKERS,

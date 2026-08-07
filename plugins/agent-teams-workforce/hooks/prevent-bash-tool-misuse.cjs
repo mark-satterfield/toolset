@@ -27,6 +27,13 @@ function readStdin() {
 }
 
 /**
+ * NOTE ON REDIRECTS: these name Read/Grep/Glob, which a session may not actually
+ * have — a foreground session can carry Bash and Read but no Grep or Glob, in
+ * which case a blocked command has no suggested alternative and the only way
+ * forward is around the guard. The message therefore states the redirect as a
+ * preference and says what to do when the tool is absent, rather than asserting a
+ * replacement that may not exist.
+ *
  * Violation rules: pattern + redirect tool + message.
  * Pipeline-safe: patterns that are part of legitimate pipelines
  * (e.g., git log | grep, uv run ... | head) are excluded.
@@ -175,6 +182,10 @@ function main() {
           v.message,
           '',
           `Use instead: ${v.example}`,
+          '',
+          `If ${v.redirect} is not available in this session, say so and use the`,
+          'shell form — this rule is about preferring the built-in when there is',
+          'one, not about forbidding the work. Do not route around it silently.',
           '',
           'Rule source: orchestrator-discipline plugin — Bash Built-In Tool Enforcement',
           '--- End ---',

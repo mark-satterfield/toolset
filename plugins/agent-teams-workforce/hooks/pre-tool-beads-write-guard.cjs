@@ -93,6 +93,14 @@ function main() {
     process.exit(0);
   }
 
+  // `bd create --help` writes nothing — it prints usage. The pattern matches on
+  // the subcommand NAME, which is not the same as judging whether the call
+  // mutates anything, so a help lookup was being blocked as a write. Same for
+  // dry-run and version flags: all reads.
+  if (/(?:^|\s)(?:--help|-h|--dry-run|--version|-V)(?:\s|$)/.test(command)) {
+    process.exit(0);
+  }
+
   process.stderr.write(
     `${[
       '--- Beads Write Blocked ---',

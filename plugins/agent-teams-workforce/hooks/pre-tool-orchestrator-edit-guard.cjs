@@ -111,6 +111,24 @@ function main() {
     process.exit(0);
   }
 
+  // The mode file is what armed this guard. Editing it directly is how a run
+  // disarms itself part-way through — silently, and without the transition log
+  // that makes a mode change accountable. Switching mode is legitimate; doing it
+  // by writing this file behind the script is not.
+  if (target.replace(/\\/g, '/').endsWith('.claude/agent-teams-workforce.local.md')) {
+    deny([
+      `File: ${target}`,
+      '',
+      'This is the orchestrator-mode file. Editing it here would disarm the guards',
+      'mid-run without recording the transition.',
+      '',
+      'Switch mode through the command instead, which logs it:',
+      '  /agent-teams-workforce:orchestrator-mode off <reason>',
+      '',
+      'Rule source: agent-teams-workforce — mode changes are recorded, not silent',
+    ]);
+  }
+
   // (4) Code, config, or infrastructure — delegate it.
   const ext = extensionOf(target);
   if (CODE_EXTENSIONS.has(ext)) {
