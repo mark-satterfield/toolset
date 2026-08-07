@@ -6,7 +6,7 @@ description: >-
   requiring capacity-mode tuning, query efficiency, and index cost reduction.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: fable
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:dynamodb, agent-teams-workforce:aws-cost-operations]

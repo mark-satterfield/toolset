@@ -7,7 +7,7 @@ description: >-
   decision adjudication, evidence weighing, and rationale recording.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: fable
+model: opus
 permissionMode: acceptEdits
 maxTurns: 30
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design]

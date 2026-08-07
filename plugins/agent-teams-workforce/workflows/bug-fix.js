@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Refactor' },
     { title: 'Integration' },
     { title: 'Adversarial' },
-    { title: 'Deploy-readiness' },
+    { title: 'Deploy-to-dev' },
   ],
 }
 
@@ -55,7 +55,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'bug-fix', bead: { id: bead.id || null, title: bead.title || null }, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-readiness',
+        phase: 'Deploy-to-dev',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -338,20 +338,24 @@ const adversarial = await gateLoop({
 if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
 if (!adversarial.ok) return await failAfterDoc('adversarial', adversarial)
 
-// Documentation must be current before readiness.
+// Documentation must be current before the deploy.
 const docCurrency = await docTrack
 if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
 
-// ── Deploy readiness (Gate 5) — NO autonomous prod rollout ────────────────────
-phase('Deploy-readiness')
+// ── Deploy to dev (Gate 5) — dev IS deployed; only qa/prod is human-gated ─────
+// Deploying to dev is how the fix reaches AWS and is part of the development
+// lifecycle, not a release. Naming this phase "readiness" is what made every
+// other composite report a completed deploy as merely ready — the same defect,
+// missed here because bug-fix already deployed correctly and only its LABEL lied.
+phase('Deploy-to-dev')
 const deployReady = await gateLoop({
-  gate: '5', phaseName: 'Deployment readiness',
-  criteria: ['CDK synth valid, no unresolved drift', 'Smoke tests present', 'Documentation current', 'Readiness review is go'],
+  gate: '5', phaseName: 'Deploy to dev',
+  criteria: ['CDK synth valid, no unresolved drift', 'Smoke tests present', 'Deployed to the dev environment', 'Smoke tests pass against the deployed dev endpoints'],
   escalateTargets: ['integration', 'green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return { ok: false, stage: 'deploy-readiness', bead: bead.id, detail: deployReady }
+if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', bead: bead.id, detail: deployReady }
 
 return {
   ok: true,

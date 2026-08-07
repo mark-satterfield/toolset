@@ -7,7 +7,7 @@ description: >-
   inference error handling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: fable
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:bedrock, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:senior-prompt-engineer, agent-teams-workforce:aws-agentic-ai]

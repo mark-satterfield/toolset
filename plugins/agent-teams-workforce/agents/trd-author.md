@@ -7,7 +7,7 @@ description: >-
   derivation, and interface and data obligation definition.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
-model: opus
+model: fable
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42-extract, agent-teams-workforce:senior-architect]
