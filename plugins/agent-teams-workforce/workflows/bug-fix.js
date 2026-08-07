@@ -124,7 +124,22 @@ const red = await gateLoop({
     // gone. Differential red (same test, detached pre-fix worktree, fails there and
     // passes here) is equally strong evidence and is the ONLY form available for a
     // stale bead.
-    'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red)',
+    // DEPLOYED-ARTIFACT CARVE-OUT. A defect can be real and live while the source tree is
+    // already correct, because the fix was committed but never deployed. The artifact under
+    // test is then the DEPLOYED bytes, not the working tree, and NO source-level red of any
+    // kind — at HEAD or differential — is obtainable. ssbd-mqkq hit exactly this: commit
+    // 924fd5c93 removed the third-party script, apps/web/app/layout.tsx and out/ both grep
+    // clean, yet https://dev.myagent.skillspoke.ai served the script on every page load,
+    // proven by a failing Playwright run AND an independent cache-busted curl. The gate
+    // computed redConfirmed:false purely because the SOURCE was clean, and failed a run
+    // whose evidence was airtight — 676k tokens to reject a correct finding.
+    // Red against the deployed environment is the STRONGEST form of red available, not a
+    // weaker one: it observes the defect in the artifact users actually receive.
+    'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own: do NOT additionally demand a source-level failure, and do NOT reject it because the working tree greps clean.',
+    // When red is deployed-only the remediation is a DEPLOY, not an implementation. Green
+    // will correctly find no production code to write, so the verdict must name the real
+    // action instead of sending Green hunting for a change that does not exist.
+    'If red was obtained ONLY against the deployed environment, say so explicitly in the evidence and name the remediation as deploy-and-invalidate rather than a code change.',
     // MISSING-CAPABILITY CARVE-OUT. The older wording ("not a harness or import error")
     // was structurally unsatisfiable for any defect whose fix INTRODUCES a symbol. If the
     // bug is "ConfigurationError is never raised" and ConfigurationError does not exist
@@ -188,7 +203,8 @@ for (;;) {
   redResult = await gateLoop({
     gate: '2a', phaseName: `TDD Red (re-authored after Green escalation ${escalations})`,
     criteria: [
-      'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red)',
+      // Same deployed-artifact carve-out as the first Red gate — see the comment there.
+      'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own: do NOT additionally demand a source-level failure, and do NOT reject it because the working tree greps clean.',
       'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
       'The test asserts the real post-fix behavior, not merely that a symbol is absent.',
       'No production code was changed to manufacture the failure',
