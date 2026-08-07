@@ -35,18 +35,30 @@ const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
  * beads subcommands that mutate tracker state. Matched against a `bd`
  * invocation at the start of the command or after a shell separator.
  */
+/**
+ * The hazard is PROSE reaching a downstream agent's prompt. A bead's description
+ * and notes are read by the agents that later work it, so text written there
+ * arrives indistinguishable from an agent's own finding — "decision already made"
+ * was enough to skip a phase that never ran.
+ *
+ * Tracker ADMINISTRATION is a different thing and is not blocked. Closing a
+ * resolved bead, reopening one, or moving its status injects no instruction into
+ * anyone's prompt; blocking it only forces the operator to disarm the guards to
+ * do routine bookkeeping, which is how a guard trains people to work around it.
+ */
 const BD_WRITE_SUBCOMMANDS = [
   'create', 'new', 'add',
   'update', 'edit', 'set',
-  'close', 'reopen', 'delete', 'rm',
   'note', 'notes', 'comment',
-  'assign', 'unassign',
   'label', 'unlabel', 'tag',
   'priority', 'estimate', 'score',
   'dep', 'depend', 'link', 'unlink',
-  'move', 'rename',
+  'rename',
   'import', 'sync', 'merge',
 ];
+
+/** Administrative subcommands that carry no prose into an agent prompt. */
+const BD_ADMIN_SUBCOMMANDS = ['close', 'reopen', 'delete', 'rm', 'assign', 'unassign', 'move', 'defer'];
 
 /** Matches a `bd <write-subcommand>` invocation anywhere a command may start. */
 const BD_WRITE_PATTERN = new RegExp(
@@ -61,8 +73,6 @@ const BD_WRITE_PATTERN = new RegExp(
 const BD_MCP_WRITE_TOOLS = new Set([
   'mcp__beads__create',
   'mcp__beads__update',
-  'mcp__beads__close',
-  'mcp__beads__delete',
   'mcp__beads__note',
   'mcp__beads__comment',
   'mcp__beads__dep',
@@ -93,8 +103,8 @@ function deny(what, detail) {
       '  - task breakdown / scores  -> task-decomposition workflow',
       '  - run outcomes             -> run-ledger-writer',
       '',
-      'Read access is unaffected: bd list, bd show, bd ready, bd stats, and the',
-      'mcp__beads__ read tools.',
+      'Unaffected: reads (bd list/show/ready/stats, mcp__beads__ read tools) and',
+      `tracker admin (${BD_ADMIN_SUBCOMMANDS.join(', ')}, bd update --status).`,
       '',
       'Rule source: agent-teams-workforce — beads writer boundary',
       '--- End ---',
@@ -152,6 +162,12 @@ function main() {
 
   const match = BD_WRITE_PATTERN.exec(command);
   if (!match) {
+    process.exit(0);
+  }
+
+  // `bd update --status <x>` moves a bead through the workflow and carries no
+  // prose; only the text-bearing flags are the hazard.
+  if (/(?:^|\s)bd\s+update\b/.test(command) && !/(?:--notes?|--desc|--description|--comment|--title)\b/.test(command)) {
     process.exit(0);
   }
 

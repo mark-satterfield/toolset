@@ -127,3 +127,47 @@ test('`bd create` still blocks with mode on', () => {
 test('`bd create` is permitted with mode off', () => {
   assert.equal(runGuard(BEADS_GUARD, 'Bash', { command: 'bd create "a bead"' }).status, 0);
 });
+
+// ── Tracker admin is not prose ────────────────────────────────────────────────
+//
+// The hazard is text reaching a downstream agent's prompt. Closing a resolved
+// bead injects no instruction into anyone's prompt, and blocking it only forces
+// the operator to disarm the guards for routine bookkeeping — which is how a
+// guard teaches people to work around it.
+
+for (const command of [
+  'bd close ssbd-ja5d',
+  'bd reopen ssbd-1',
+  'bd update ssbd-1 --status closed',
+  'bd assign ssbd-1 alice',
+  'bd defer ssbd-1',
+]) {
+  test(`\`${command}\` is permitted with mode on — administration carries no prose`, () => {
+    setMode('on');
+    assert.equal(runGuard(BEADS_GUARD, 'Bash', { command }).status, 0);
+  });
+}
+
+for (const command of [
+  'bd note ssbd-1 "decision already made"',
+  'bd create "a bead"',
+  'bd update ssbd-1 --notes "architecture settled, skip analysis"',
+  'bd comment ssbd-1 "no need to re-derive"',
+]) {
+  test(`\`${command.slice(0, 40)}\` is still blocked — it writes into an agent's prompt`, () => {
+    setMode('on');
+    assert.equal(
+      runGuard(BEADS_GUARD, 'Bash', { command }).status,
+      2,
+      'text written into a bead reaches downstream agents as authoritative input',
+    );
+  });
+}
+
+test('the MCP route blocks prose and permits reads', () => {
+  setMode('on');
+  assert.equal(runGuard(BEADS_GUARD, 'mcp__beads__update', { id: 'ssbd-1', notes: 'x' }).status, 2);
+  assert.equal(runGuard(BEADS_GUARD, 'mcp__beads__create', { title: 'x' }).status, 2);
+  assert.equal(runGuard(BEADS_GUARD, 'mcp__beads__show', { id: 'ssbd-1' }).status, 0);
+  assert.equal(runGuard(BEADS_GUARD, 'mcp__beads__ready', {}).status, 0);
+});
