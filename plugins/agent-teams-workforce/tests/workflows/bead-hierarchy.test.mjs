@@ -286,3 +286,15 @@ test('a bead labelled prd/requirement is treated the same way', async () => {
     assert.equal(r.action, 'skip', `label "${label}" must not auto-promote`)
   }
 })
+
+test('the Red phase tells writers to extend the existing suite, not fork it', () => {
+  // Tests written by tdd-red are permanent — deploy.js commits them and every
+  // later run inherits them. Without an instruction to look first, runs accrete
+  // parallel files covering the same behavior, which makes the suite slow and
+  // its failures ambiguous about which expectation is authoritative.
+  const src = readWorkflowSource(path.join(WORKFLOWS, 'tdd-red.js'))
+  assert.match(src, /FIND THE EXISTING SUITE BEFORE YOU WRITE/,
+    'the writer prompt must require locating the existing coverage first')
+  assert.match(src, /these tests are permanent/i,
+    'the writer must know its output is committed and inherited, not scratch')
+})
