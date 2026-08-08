@@ -93,6 +93,8 @@ const writerResults = (await parallel(writersFinal.map((w) => () =>
 
 FIND THE EXISTING SUITE BEFORE YOU WRITE. These tests are permanent: they are committed and every later run inherits them. Locate the file that already covers this module or behavior and ADD to it, matching its imports, fixtures, naming, and helpers. Create a new file only when nothing covers this area yet.
 
+ASSERT AGAINST WHAT THE CODE PRODUCES, NOT A COMMITTED ARTIFACT. Synthesize, build, or render the thing under test as part of the test run. A test that reads a checked-in build output — a committed cdk.out template, a generated client, a snapshot nobody regenerates — passes forever no matter what the code does, and it will not fail when the defect returns. If half a suite synthesizes in process and half reads a committed file, the two halves are testing different artifacts and the suite is lying about what it covers.
+
 A second file covering the same behavior is worse than no test at all — the suite gets slower, and a failure no longer tells anyone which expectation is the real one. If you find an existing test that is WRONG rather than missing, say so in your evidence and leave it alone; repairing it is not yours to do.
 
 ${taskBlock}

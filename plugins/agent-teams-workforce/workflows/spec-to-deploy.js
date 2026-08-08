@@ -158,6 +158,7 @@ phase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
   criteria: [
+    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
     'A failing test encodes the spec contract',
     'The test fails for the intended reason',
     'No production code changed yet',

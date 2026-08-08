@@ -193,6 +193,7 @@ phase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
   criteria: [
+    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
     'A failing infra test/synth assertion encodes the provisioning intent',
     'The assertion fails for the intended reason (the intent is not yet expressed in CDK)',
     'No production CDK code changed yet — tests/assertions only',

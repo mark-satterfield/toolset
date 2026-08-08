@@ -298,3 +298,19 @@ test('the Red phase tells writers to extend the existing suite, not fork it', ()
   assert.match(src, /these tests are permanent/i,
     'the writer must know its output is committed and inherited, not scratch')
 })
+
+test('the Red phase forbids asserting against committed build artifacts', () => {
+  // Observed live on ssbd-sa5j: half a suite synthesized the CDK template in
+  // process while the other half read a checked-in cdk.out template three days
+  // stale. The two halves asserted against different artifacts, so the suite
+  // reported coverage it did not have — and the stale half would pass forever.
+  const red = readWorkflowSource(path.join(WORKFLOWS, 'tdd-red.js'))
+  assert.match(red, /ASSERT AGAINST WHAT THE CODE PRODUCES, NOT A COMMITTED ARTIFACT/,
+    'the writer prompt must forbid testing against checked-in build output')
+
+  for (const composite of ['bug-fix.js', 'spec-to-deploy.js', 'infra-change.js']) {
+    const src = readWorkflowSource(path.join(WORKFLOWS, composite))
+    assert.match(src, /freshly generated artifacts, not checked-in build output/,
+      `${composite}: the Red gate must check this, not only the writer prompt — a prompt is advice, a gate criterion is checked`)
+  }
+})

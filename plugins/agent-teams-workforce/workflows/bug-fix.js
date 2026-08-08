@@ -170,6 +170,7 @@ phase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
   criteria: [
+    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
     // Red is satisfied by EITHER a failure at HEAD or a DIFFERENTIAL failure at the
     // pre-fix revision. A bead whose defect was already repaired cannot fail at HEAD;
     // demanding it there fails correct work and burns a full pipeline proving a bug is
