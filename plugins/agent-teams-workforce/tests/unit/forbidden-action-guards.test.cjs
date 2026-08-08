@@ -29,7 +29,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const H = require('./support/hook-harness.cjs');
+const { exemptsSubagents, scopeOf } = require('../../hooks/lib/guard-registry.cjs');
 
 const SUBAGENT_ID = 'subagent-9f2c';
 
@@ -133,21 +135,20 @@ for (const cat of categories()) {
       guards.length > 0,
       `AC-ORCH-04b[${cat.id}]: ${cat.missingMsg} — there is no guard whose subagent exemption can be verified (checked ${H.HOOKS_JSON_PATH})`,
     );
-    // REQ-ORCH-04b exempts subagents because these guards enforce the
-    // orchestrator's ROLE — it does not implement, and a subagent does, so a
-    // role guard that blocked subagents would block the work itself.
+    // Whether a subagent is exempt depends on WHAT THE GUARD GOVERNS, and each
+    // guard declares that in hooks/lib/guard-registry.cjs.
     //
-    // That reasoning does not extend to guards enforcing WHERE work may land.
-    // pre-tool-protect-main-worktree denies writes to the default branch in a main
-    // working tree, and the failure it exists to stop was a TEST WRITER — a
-    // subagent — putting files on `main`. Exempting subagents there would exempt
-    // precisely the actor that caused the problem, leaving a guard that enforces
-    // nothing. It is excluded here by name, deliberately and narrowly: the
-    // exemption is scoped to role guards, and every other guard on this matcher
-    // still has to prove it.
-    const ROLE_EXEMPT_ONLY = /pre-tool-protect-main-worktree\.cjs$/;
+    // A guard about WHO may act ('orchestrator-role') exempts subagents: the
+    // orchestrator does not implement, a subagent does, and blocking it would
+    // block the work. A guard about WHERE work may land ('universal') binds
+    // everyone — writing to the default branch in a main working tree is wrong
+    // whoever does it, and the failure that motivated that rule was a subagent.
+    //
+    // This assertion used to read "every guard on this matcher exempts subagents",
+    // which was true only because every guard happened to be the first kind. The
+    // first guard of the second kind then failed it for being correct.
     for (const guard of guards) {
-      if (ROLE_EXEMPT_ONLY.test(guard.scriptPath)) continue;
+      if (!exemptsSubagents(path.basename(guard.scriptPath))) continue;
       const r = H.runGuard(guard, cat.event(SUBAGENT_ID));
       assert.equal(
         r.status,
@@ -187,4 +188,27 @@ test('AC-ORCH-04c: every forbidden-action guard terminates with exit code 2 on v
       `AC-ORCH-04c[${cat.id}]: the category is covered only by an exit-0 hookSpecificOutput.additionalContext advisory — text the actor may disregard is not enforcement (single-sentence root cause)`,
     );
   }
+});
+
+test('AC-ORCH-04d: every registered guard declares what it governs', () => {
+  // The subagent exemption is decided by a guard's declared scope, so an
+  // undeclared guard has no answer — and would silently inherit whichever
+  // behaviour the first test to exercise it happened to assume.
+  const config = H.loadHooksConfig();
+  const undeclared = [];
+  for (const event of Object.keys(config.hooks || {})) {
+    for (const entry of config.hooks[event] || []) {
+      for (const h of entry.hooks || []) {
+        const m = /([\w.-]+\.(?:cjs|sh))/.exec(String(h.command || ''));
+        if (!m) continue;
+        if (!scopeOf(m[1])) undeclared.push(`${event}: ${m[1]}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    undeclared,
+    [],
+    `these hooks are registered but not declared in hooks/lib/guard-registry.cjs, so ` +
+      `whether they bind subagents is undefined: ${undeclared.join(', ')}`,
+  );
 });

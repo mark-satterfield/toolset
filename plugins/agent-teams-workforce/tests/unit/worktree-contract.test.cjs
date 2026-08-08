@@ -163,12 +163,14 @@ test('nothing this plugin ships hides errors with 2>/dev/null', () => {
   assert.deepEqual(offenders, [], `these hide stderr:\n  ${offenders.join('\n  ')}`);
 });
 
-test('the main-tree guard is the ONLY guard that binds subagents', () => {
-  // Scoping REQ-ORCH-04b's subagent exemption is a real weakening if it spreads.
-  // Pin the exception to exactly one guard, so a second one cannot be added by
-  // quietly widening the exclusion instead of arguing for it.
-  const spec = read('tests/unit/forbidden-action-guards.test.cjs');
-  const excluded = [...spec.matchAll(/ROLE_EXEMPT_ONLY = \/([^/]+)\//g)].map((m) => m[1]);
-  assert.equal(excluded.length, 1, 'exactly one exclusion pattern should exist');
-  assert.match(excluded[0], /protect-main-worktree/, 'and it must name the location guard specifically');
+test('the main-tree guard is declared universal; the role guards are not', () => {
+  // Replaces an earlier hack that excluded this guard from the spec by filename.
+  // Scope is now a declared property each guard carries, so the spec checks the
+  // right behaviour for each rather than one rule with an exception carved out.
+  const { scopeOf } = require(path.join(ROOT, 'hooks', 'lib', 'guard-registry.cjs'));
+  assert.equal(scopeOf('pre-tool-protect-main-worktree.cjs'), 'universal',
+    'a rule about WHERE work lands binds everyone, including the subagent that caused the failure');
+  assert.equal(scopeOf('pre-tool-orchestrator-edit-guard.cjs'), 'orchestrator-role',
+    'a rule about WHO may act must still exempt subagents, or it blocks the work itself');
 });
+
