@@ -76,11 +76,29 @@ WTDIR="$(dirname "$REPO")/.worktrees"
 WT="$WTDIR/$ARGUMENTS-$(basename "$REPO" | sed 's/^SkillSpoke-//')"
 BRANCH=fix/$ARGUMENTS                 # feat/ for a task
 
-# Reuse an existing worktree for this bead; only create one if none exists.
+# Branch from the CURRENT tip, not a stale ref. Fetch first, then use whichever of
+# local main / origin/main is ahead. A worktree cut from an older commit silently
+# omits work that has already landed — and the Red survey, looking for tests that
+# ARE committed but not in this tree, finds nothing and re-authors them.
+git -C "$REPO" fetch origin main
+BASE=$(git -C "$REPO" rev-parse main)
+git -C "$REPO" merge-base --is-ancestor "$BASE" origin/main && BASE=$(git -C "$REPO" rev-parse origin/main)
+
 if ! git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS"; then
-  git -C "$REPO" worktree add -b "$BRANCH" "$WT"
+  git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE"
 fi
 ```
+
+**Then confirm the worktree actually has what you expect.** A worktree at the wrong
+commit is invisible until a phase behaves oddly:
+
+```bash
+git -C "$WT" log --oneline -1
+git -C "$REPO" log --oneline -1 main
+```
+
+If they differ, say so before dispatching — the run will not see work that is
+committed on `main` but absent from the tree it was given.
 
 If a worktree for this bead already exists, REUSE it — a resumed or re-dispatched
 run must land in the same tree as the attempt before it, or the second run cannot

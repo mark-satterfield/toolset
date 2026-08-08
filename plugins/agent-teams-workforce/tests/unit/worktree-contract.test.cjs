@@ -174,3 +174,15 @@ test('the main-tree guard is declared universal; the role guards are not', () =>
     'a rule about WHO may act must still exempt subagents, or it blocks the work itself');
 });
 
+
+test('/work-bead branches from the current tip, not a possibly-stale ref', () => {
+  // Observed on ssbd-sa5j: the worktree was cut at 97f6e58 while main had already
+  // moved to 048bd9c, which carried the committed unit suite. Red's survey looked
+  // for those tests in a tree that genuinely did not have them, found nothing, and
+  // re-authored the phase that had just been paid for. The survey was correct; it
+  // was handed the wrong tree.
+  const cmd = read('commands/work-bead.md');
+  assert.match(cmd, /git -C "\$REPO" fetch origin main/, 'branching without fetching can use a stale ref');
+  assert.match(cmd, /confirm the worktree actually has what you expect/i,
+    'a worktree at the wrong commit is invisible until a phase behaves oddly — check it explicitly');
+});
