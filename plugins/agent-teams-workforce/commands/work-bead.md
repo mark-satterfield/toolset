@@ -62,12 +62,23 @@ collide in.
 
 ```bash
 REPO=<the repo from step 1>
-BRANCH=fix/$ARGUMENTS                 # or feat/ for a task
-WT="$(dirname "$REPO")/$(basename "$REPO")-$ARGUMENTS"
+git -C "$REPO" worktree list          # ALWAYS look first — see below
+```
 
-git -C "$REPO" worktree list          # reuse one that already exists for this bead
-git -C "$REPO" worktree add -b "$BRANCH" "$WT" 2>/dev/null \
-  || git -C "$REPO" worktree add "$WT" "$BRANCH"
+**Follow the convention already in use.** This fleet keeps worktrees under a
+`.worktrees/` directory beside the repo, named `<bead>-<repo-or-domain>`, e.g.
+`apps/personal-agent/.worktrees/ssbd-0wmo-document`. Read the existing list and
+match it. Inventing a third layout scatters the fleet's worktrees across
+directories where the next run will not find them.
+
+```bash
+WTDIR="$(dirname "$REPO")/.worktrees"
+WT="$WTDIR/$ARGUMENTS-$(basename "$REPO" | sed 's/^SkillSpoke-//')"
+BRANCH=fix/$ARGUMENTS                 # feat/ for a task
+
+# Reuse an existing worktree for this bead; only create one if none exists.
+git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS" \
+  || git -C "$REPO" worktree add -b "$BRANCH" "$WT"
 ```
 
 If a worktree for this bead already exists, REUSE it — a resumed or re-dispatched
