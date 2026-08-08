@@ -17,7 +17,7 @@ of here is bead-driven; this step is what creates the beads.
 The first argument is a path or a title. If it is a title, search the product docs:
 
 ```bash
-ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/ 2>/dev/null
+ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
 ```
 
 Prefer `obsidian-cli` (vault `skillspoke-docs`) when Obsidian is running; if it is
@@ -43,7 +43,7 @@ never existed, and re-running costs the whole front-end.
 ## 3. Check for an existing Epic
 
 ```bash
-bd list --type epic 2>/dev/null | grep -i "<prd title>"
+bd list --type epic | grep -i "<prd title>"
 ```
 
 - Found → pass it as `epic` so it is adopted rather than duplicated.

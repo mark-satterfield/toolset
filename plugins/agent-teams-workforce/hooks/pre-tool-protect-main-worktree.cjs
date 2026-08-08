@@ -21,7 +21,7 @@
  * that binds only the orchestrator would have stopped nothing.
  *
  * Decision order:
- *   1. unparseable input                    -> exit 0
+ *   1. unparseable input                    -> exit 2  (FAIL CLOSED, REQ-ORCH-10a)
  *   2. out of scope (source repo / mode off)-> exit 0
  *   3. non-edit tool                        -> exit 0
  *   4. path not in a git repo               -> exit 0
@@ -52,7 +52,10 @@ function git(cwd, args) {
     return execFileSync('git', args, {
       cwd,
       encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
+      // stderr is INHERITED, not discarded. Suppressing it hides why a repo
+      // lookup failed, and this fleet's rules prohibit hiding errors — a guard
+      // that fails silently is indistinguishable from one that passed.
+      stdio: ['ignore', 'pipe', 'inherit'],
       timeout: 5000,
     }).trim();
   } catch {
@@ -72,15 +75,33 @@ function containingDir(filePath) {
   return null;
 }
 
+/** Denies with a reason and exits 2. */
+function denyUnreadable(why) {
+  process.stderr.write(
+    `${[
+      '--- Write to Main Working Tree Blocked ---',
+      '',
+      why,
+      '',
+      'This guard sits on the edit path, so it cannot fail open: a guard that cannot',
+      'establish WHERE a write is going has no basis for permitting it (REQ-ORCH-10a).',
+      '--- End ---',
+    ].join('\n')}\n`,
+  );
+  process.exit(2);
+}
+
 function main() {
   const raw = readStdin();
-  if (!raw.trim()) process.exit(0);
+  if (!raw.trim()) {
+    denyUnreadable('The guard received no hook input and cannot establish the write target.');
+  }
 
   let event;
   try {
     event = JSON.parse(raw);
   } catch {
-    process.exit(0);
+    denyUnreadable('The guard could not parse its hook input as JSON.');
   }
 
   // NOTE: no agent_id check. See the header — this guard binds subagents too.

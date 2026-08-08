@@ -133,7 +133,21 @@ for (const cat of categories()) {
       guards.length > 0,
       `AC-ORCH-04b[${cat.id}]: ${cat.missingMsg} — there is no guard whose subagent exemption can be verified (checked ${H.HOOKS_JSON_PATH})`,
     );
+    // REQ-ORCH-04b exempts subagents because these guards enforce the
+    // orchestrator's ROLE — it does not implement, and a subagent does, so a
+    // role guard that blocked subagents would block the work itself.
+    //
+    // That reasoning does not extend to guards enforcing WHERE work may land.
+    // pre-tool-protect-main-worktree denies writes to the default branch in a main
+    // working tree, and the failure it exists to stop was a TEST WRITER — a
+    // subagent — putting files on `main`. Exempting subagents there would exempt
+    // precisely the actor that caused the problem, leaving a guard that enforces
+    // nothing. It is excluded here by name, deliberately and narrowly: the
+    // exemption is scoped to role guards, and every other guard on this matcher
+    // still has to prove it.
+    const ROLE_EXEMPT_ONLY = /pre-tool-protect-main-worktree\.cjs$/;
     for (const guard of guards) {
+      if (ROLE_EXEMPT_ONLY.test(guard.scriptPath)) continue;
       const r = H.runGuard(guard, cat.event(SUBAGENT_ID));
       assert.equal(
         r.status,

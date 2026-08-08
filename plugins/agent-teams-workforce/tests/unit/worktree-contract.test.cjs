@@ -141,3 +141,34 @@ test('a path outside any git repo is ignored', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('nothing this plugin ships hides errors with 2>/dev/null', () => {
+  // A fleet non-negotiable: errors stay visible in hooks, scripts, and commands.
+  // A guard that fails silently is indistinguishable from one that passed, which
+  // is the worst possible failure mode for a guard.
+  const dirs = ['commands', 'hooks', 'scripts'];
+  const offenders = [];
+  for (const d of dirs) {
+    const full = path.join(ROOT, d);
+    if (!fs.existsSync(full)) continue;
+    for (const f of fs.readdirSync(full)) {
+      const p = path.join(full, f);
+      if (!fs.statSync(p).isFile()) continue;
+      const src = fs.readFileSync(p, 'utf8');
+      // Allow the prohibition itself to name the pattern.
+      const lines = src.split('\n').filter((l) => /2>\/dev\/null/.test(l) && !/prohibit|forbid|never/i.test(l));
+      if (lines.length) offenders.push(`${d}/${f}: ${lines[0].trim().slice(0, 70)}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `these hide stderr:\n  ${offenders.join('\n  ')}`);
+});
+
+test('the main-tree guard is the ONLY guard that binds subagents', () => {
+  // Scoping REQ-ORCH-04b's subagent exemption is a real weakening if it spreads.
+  // Pin the exception to exactly one guard, so a second one cannot be added by
+  // quietly widening the exclusion instead of arguing for it.
+  const spec = read('tests/unit/forbidden-action-guards.test.cjs');
+  const excluded = [...spec.matchAll(/ROLE_EXEMPT_ONLY = \/([^/]+)\//g)].map((m) => m[1]);
+  assert.equal(excluded.length, 1, 'exactly one exclusion pattern should exist');
+  assert.match(excluded[0], /protect-main-worktree/, 'and it must name the location guard specifically');
+});

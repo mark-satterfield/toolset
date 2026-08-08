@@ -12,7 +12,7 @@ yourself and do not hand-roll a phase.
 ## 1. Resolve the bead
 
 ```bash
-bd show $ARGUMENTS --json 2>/dev/null || bd show $ARGUMENTS
+bd show $ARGUMENTS --json || bd show $ARGUMENTS
 ```
 
 Pull out `id`, `title`, `description`, `type`, `labels`, and the parent chain.
@@ -77,8 +77,9 @@ WT="$WTDIR/$ARGUMENTS-$(basename "$REPO" | sed 's/^SkillSpoke-//')"
 BRANCH=fix/$ARGUMENTS                 # feat/ for a task
 
 # Reuse an existing worktree for this bead; only create one if none exists.
-git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS" \
-  || git -C "$REPO" worktree add -b "$BRANCH" "$WT"
+if ! git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS"; then
+  git -C "$REPO" worktree add -b "$BRANCH" "$WT"
+fi
 ```
 
 If a worktree for this bead already exists, REUSE it — a resumed or re-dispatched
