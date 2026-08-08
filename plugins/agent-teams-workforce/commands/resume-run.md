@@ -11,12 +11,25 @@ be resumed, which is the more important half.
 
 ## 1. Establish what the run left behind
 
-A killed run does not clean up. Before anything else, find out what is on disk:
+A killed run does not clean up. Before anything else, find out what is on disk.
+
+**`git status` does NOT see linked worktrees.** Each has its own working tree and
+index, and this workforce does branch work in worktrees — so a status run in the
+main tree can show nothing while the actual work sits elsewhere, or show half the
+picture and lead you to delete the wrong half. Enumerate them:
 
 ```bash
 cd <the repo the run was working in>
-git status --short
+git worktree list
+for w in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
+  echo "=== $w"; git -C "$w" status --short; git -C "$w" branch --show-current
+done
 ```
+
+Report every tree that has changes, and which branch each is on. If uncommitted
+work is sitting on `main` in the MAIN tree, say so explicitly — branch work belongs
+in a worktree, so that is either a rule the run broke or something else writing to
+the repo, and both are worth knowing before you resume on top of it.
 
 Report it. Three cases, and they lead to different places:
 
