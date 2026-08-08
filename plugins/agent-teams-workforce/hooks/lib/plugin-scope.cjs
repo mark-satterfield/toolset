@@ -96,11 +96,51 @@ function orchestratorMode(projectDir) {
 }
 
 /**
+ * The session that armed this project, or null when the arm names no session.
+ *
+ * The guards constrain a role, but a mode read only from the project directory
+ * approximates that role by LOCATION: arming a run bound every session opened in
+ * the repo, including the one the operator opened alongside it to do unrelated
+ * work. That session is not the orchestrator, and blocking it is the same failure
+ * as leaving the guards permanently armed — it teaches the operator to route
+ * around them.
+ *
+ * So the arm records which session made it, and the guards bind that session
+ * alone. This is still not a self-granted exemption (REQ-ORCH-02): the binding is
+ * written to disk before the work starts and compared against an id the harness
+ * reports, not one the actor asserts about itself.
+ *
+ * Null means the arm predates session binding, or was made where no session id
+ * was observable. Both are treated as project-wide, so an already-armed repo
+ * keeps behaving exactly as it did.
+ *
+ * @param {string} projectDir
+ * @returns {string|null}
+ */
+function armedSession(projectDir) {
+  if (!projectDir) return null;
+  let raw;
+  try {
+    raw = fs.readFileSync(path.join(projectDir, MODE_FILE), 'utf8');
+  } catch {
+    return null;
+  }
+  const match = /^\s*armed_by_session\s*:\s*["']?([\w.-]+)["']?\s*$/m.exec(raw);
+  return match ? String(match[1]) : null;
+}
+
+/**
  * True when the orchestrator guards apply to this hook event.
  *
- * Two independent conditions must both hold:
- *   1. this is not the monorepo that builds the plugin, and
- *   2. the project has orchestrator mode switched on.
+ * Three independent conditions must all hold:
+ *   1. this is not the monorepo that builds the plugin,
+ *   2. the project has orchestrator mode switched on, and
+ *   3. this event belongs to the session that armed it.
+ *
+ * Condition 3 is skipped when the arm names no session — see `armedSession`.
+ * When the arm DOES name one and the event reports no session id, the guards
+ * apply: an event we cannot attribute is not thereby exempt, and the rest of
+ * this plugin's guards fail closed on unreadable input for the same reason.
  *
  * @param {object} event parsed hook input; `cwd` names the project directory
  * @param {string} [pluginRoot]
@@ -109,7 +149,13 @@ function orchestratorMode(projectDir) {
 function guardsApplyHere(event, pluginRoot = PLUGIN_ROOT) {
   const projectDir = process.env.CLAUDE_PROJECT_DIR || (event && event.cwd) || '';
   if (isPluginSourceRepo(projectDir, pluginRoot)) return false;
-  return orchestratorMode(projectDir) === 'on';
+  if (orchestratorMode(projectDir) !== 'on') return false;
+
+  const armed = armedSession(projectDir);
+  if (!armed) return true; // project-wide arm — every session in the repo is bound
+  const here = (event && event.session_id) || '';
+  if (!here) return true; // unattributable event — fail closed
+  return here === armed;
 }
 
 /** Absolute path to a project's mode file. */
@@ -122,6 +168,7 @@ module.exports = {
   MODE_FILE,
   isPluginSourceRepo,
   orchestratorMode,
+  armedSession,
   modeFilePath,
   guardsApplyHere,
 };

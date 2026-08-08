@@ -32,18 +32,26 @@ test.afterEach(() => {
   H.removeTempDir(projectDir);
 });
 
-function setMode(action, reason = 'test') {
-  return spawnSync(process.execPath, [MODE_SCRIPT, action, reason], {
-    encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
-  });
+/**
+ * The session the harness reports for guard events by default. Arming under the
+ * same id keeps these suites testing the ARMED orchestrator: the arm binds one
+ * session, so a test that armed under a different id would be exercising an
+ * unbound bystander without saying so.
+ */
+const ARMING_SESSION = 'ssbd-ja5d-unit-session';
+
+function setMode(action, reason = 'test', { session = ARMING_SESSION } = {}) {
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: projectDir };
+  if (session) env.CLAUDE_CODE_SESSION_ID = session;
+  else delete env.CLAUDE_CODE_SESSION_ID;
+  return spawnSync(process.execPath, [MODE_SCRIPT, action, reason], { encoding: 'utf8', env });
 }
 
 /** Runs a guard as an orchestrator session rooted at the temp project. */
-function runGuard(script, toolName, toolInput) {
+function runGuard(script, toolName, toolInput, { sessionId } = {}) {
   return H.runScript(
     script,
-    H.makeEvent({ toolName, toolInput, cwd: projectDir }),
+    H.makeEvent({ toolName, toolInput, cwd: projectDir, sessionId }),
     { cwd: projectDir },
   );
 }
@@ -90,8 +98,9 @@ test('every transition is recorded with a reason', () => {
   setMode('on', 'starting the MVP-1 run');
   setMode('off', 'run complete');
   const log = fs.readFileSync(path.join(projectDir, '.claude', 'agent-teams-workforce.mode-log'), 'utf8');
-  assert.match(log, /off -> on\tstarting the MVP-1 run/);
-  assert.match(log, /on -> off\trun complete/);
+  assert.match(log, /off -> on\t.*\tstarting the MVP-1 run/);
+  assert.match(log, /on -> off\t.*\trun complete/);
+  assert.match(log, new RegExp(`off -> on\t${ARMING_SESSION}\t`), 'the log records who took the arm');
 });
 
 test('status reports without changing anything', () => {
@@ -109,6 +118,103 @@ test('a run cannot silently disarm itself by editing the mode file', () => {
   const r = runGuard(EDIT_GUARD, 'Write', { file_path: modeFile, content: 'orchestrator_mode: off\n' });
   assert.equal(r.status, 2, 'disarming must go through the command, which logs it');
   assert.match(r.stderr, /orchestrator-mode/);
+});
+
+// ── The arm binds one session ─────────────────────────────────────────────────
+//
+// Mode read only from the project directory approximated the orchestrator ROLE by
+// LOCATION: arming a run bound every session opened in the repo, so the operator
+// could not do unrelated work alongside it without disarming the run. Same failure
+// as leaving the guards permanently armed, and the same lesson learned — route
+// around them.
+
+const MODE_FILE = path.join('.claude', 'agent-teams-workforce.local.md');
+
+test('the arming session stays guarded', () => {
+  setMode('on', 'starting a run');
+  const probe = H.writeProbe(projectDir, 'thing.py', 'x\n');
+  const r = runGuard(EDIT_GUARD, 'Write', { file_path: probe, content: 'y' }, { sessionId: ARMING_SESSION });
+  assert.equal(r.status, 2, 'the session that armed the run is the one under the contract');
+});
+
+test('another session in the same repo is unconstrained while a run is armed', () => {
+  setMode('on', 'starting a run');
+  const probe = H.writeProbe(projectDir, 'thing.py', 'x\n');
+  const r = runGuard(EDIT_GUARD, 'Write', { file_path: probe, content: 'y' }, { sessionId: 'some-other-session' });
+  assert.equal(r.status, 0, 'unrelated work must not have to wait for the run to finish');
+});
+
+test('an arm that names a session records it in the mode file', () => {
+  setMode('on');
+  const raw = fs.readFileSync(path.join(projectDir, MODE_FILE), 'utf8');
+  assert.match(raw, new RegExp(`^armed_by_session: ${ARMING_SESSION}$`, 'm'));
+});
+
+test('an event carrying no session id is guarded, not waived', () => {
+  setMode('on');
+  const probe = H.writeProbe(projectDir, 'thing.py', 'x\n');
+  const r = runGuard(EDIT_GUARD, 'Write', { file_path: probe, content: 'y' }, { sessionId: '' });
+  assert.equal(r.status, 2, 'an event the guard cannot attribute is not thereby exempt');
+});
+
+test('an arm made with no session id available binds the whole project', () => {
+  const r = setMode('on', 'no harness id', { session: null });
+  assert.match(r.stdout, /binds EVERY session/);
+  const probe = H.writeProbe(projectDir, 'thing.py', 'x\n');
+  assert.equal(
+    runGuard(EDIT_GUARD, 'Write', { file_path: probe, content: 'y' }, { sessionId: 'any-session' }).status,
+    2,
+    'without an id to bind, the arm can only fall back to the old project-wide scope',
+  );
+});
+
+test('a mode file predating session binding still binds the whole project', () => {
+  fs.mkdirSync(path.join(projectDir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(projectDir, MODE_FILE), '---\norchestrator_mode: on\n---\n', 'utf8');
+  const probe = H.writeProbe(projectDir, 'thing.py', 'x\n');
+  assert.equal(
+    runGuard(EDIT_GUARD, 'Write', { file_path: probe, content: 'y' }, { sessionId: 'any-session' }).status,
+    2,
+    'an already-armed repo must keep behaving exactly as it did',
+  );
+});
+
+test('a second session cannot take the arm from the first', () => {
+  setMode('on', 'the real run');
+  const r = setMode('on', 'me too', { session: 'some-other-session' });
+  assert.match(r.stdout, /already on/);
+  assert.match(r.stdout, new RegExp(`armed by session ${ARMING_SESSION}`));
+
+  const raw = fs.readFileSync(path.join(projectDir, MODE_FILE), 'utf8');
+  assert.match(
+    raw,
+    new RegExp(`^armed_by_session: ${ARMING_SESSION}$`, 'm'),
+    'taking the arm would move the guards off the run they were protecting',
+  );
+});
+
+test('status names the holder and whether this session is bound by it', () => {
+  setMode('on');
+  const mine = setMode('status');
+  assert.match(mine.stdout, new RegExp(`armed by session: ${ARMING_SESSION}`));
+  assert.match(mine.stdout, /guards here: ARMED/);
+
+  const theirs = setMode('status', '', { session: 'some-other-session' });
+  assert.match(theirs.stdout, /guards here: off — the arm belongs to another session/);
+});
+
+test('disarming from an unbound session says whose run just lost its guards', () => {
+  setMode('on', 'the real run');
+  const r = setMode('off', 'oops', { session: 'some-other-session' });
+  assert.match(r.stdout, new RegExp(`belonged to session ${ARMING_SESSION}`));
+  assert.match(r.stdout, /now unguarded/);
+});
+
+test('disarming clears the binding', () => {
+  setMode('on');
+  setMode('off', 'run complete');
+  const raw = fs.readFileSync(path.join(projectDir, MODE_FILE), 'utf8');
+  assert.doesNotMatch(raw, /armed_by_session/, 'mode off constrains nobody, so it holds no binding');
 });
 
 // ── The guard must judge what a command does, not what it is called ───────────

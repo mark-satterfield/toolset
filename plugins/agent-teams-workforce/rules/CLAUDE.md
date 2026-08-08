@@ -19,7 +19,9 @@ work itself. The boundary is decided by file location — a project holding
 
 **Mode.** They also govern only sessions running an SDLC pipeline. Orchestrator
 mode is off by default; `/agent-teams-workforce:orchestrator-mode on` arms it for
-a run. A repo where the guards are always on is a repo where ordinary work gets
+a run, and the arm binds the session that made it — another session opened in the
+same project is unconstrained. A repo where the guards are always on, or where
+arming a run blocks every other session in it, is a repo where ordinary work gets
 blocked and the operator learns to route around them — which is the failure these
 rules exist to prevent. The mode is set on disk before the work starts and every
 transition is logged; it is never a per-call judgement the actor makes about its

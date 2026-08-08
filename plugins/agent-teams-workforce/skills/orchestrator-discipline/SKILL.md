@@ -56,9 +56,15 @@ Mode is therefore **off by default** and switched on for a run:
 ```
 
 It is stored at `.claude/agent-teams-workforce.local.md` in the project, and every
-transition is appended to `.claude/agent-teams-workforce.mode-log` with a timestamp
-and reason. **Hooks load at session start**, so a mode change takes effect on the
-next session, not the current one.
+transition is appended to `.claude/agent-teams-workforce.mode-log` with a timestamp,
+the session that made it, and a reason. The guards re-read that file on every call,
+so a change is live at once — it does not wait for a session restart.
+
+**The arm binds the session that made it**, recorded as `armed_by_session`. Other
+sessions in the same project run unconstrained, so a run and an unrelated
+troubleshooting session can share a repo. An arm made where no session id was
+observable — and any mode file predating the binding — falls back to binding the
+whole project.
 
 This is not the actor granting itself an exemption. The mode is a human decision
 recorded on disk before the work starts, identical for every call in the session,
