@@ -50,3 +50,94 @@ test('/resume-run enumerates worktrees rather than trusting the main tree', () =
   assert.match(cmd, /git worktree list/, 'resume must look in every tree, not just the one it is standing in');
   assert.match(cmd, /does NOT see linked worktrees/i, 'and must say why, or the step reads as redundant');
 });
+
+// ── The guard that makes it structural ────────────────────────────────────────
+
+const { execFileSync } = require('node:child_process');
+const os = require('node:os');
+
+const GUARD = path.join(ROOT, 'hooks', 'pre-tool-protect-main-worktree.cjs');
+
+/** A real git repo on `main`, plus a linked worktree on a feature branch. */
+function makeRepos() {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atw-wt-'));
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(repo);
+  const g = (args, cwd = repo) => execFileSync('git', args, { cwd, stdio: 'ignore' });
+  g(['init', '-b', 'main']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 't']);
+  fs.writeFileSync(path.join(repo, 'seed.txt'), 'x');
+  g(['add', '.']);
+  g(['commit', '-m', 'seed']);
+  const wt = path.join(base, '.worktrees', 'ssbd-1-repo');
+  g(['worktree', 'add', '-b', 'fix/ssbd-1', wt]);
+
+  const project = path.join(base, 'project');
+  fs.mkdirSync(path.join(project, '.claude'), { recursive: true });
+  fs.writeFileSync(
+    path.join(project, '.claude', 'agent-teams-workforce.local.md'),
+    '---\norchestrator_mode: on\n---\n',
+  );
+  return { base, repo, wt, project };
+}
+
+function runGuard(filePath, project, extra = {}) {
+  const event = JSON.stringify({
+    session_id: 's',
+    cwd: project,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Write',
+    tool_input: { file_path: filePath, content: 'x' },
+    ...extra,
+  });
+  const r = require('node:child_process').spawnSync(process.execPath, [GUARD], {
+    input: event,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_PROJECT_DIR: project },
+  });
+  return r.status;
+}
+
+test('writing to the default branch in the MAIN tree is blocked', () => {
+  const { base, repo, project } = makeRepos();
+  try {
+    assert.equal(runGuard(path.join(repo, 'src', 'new.py'), project), 2);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('writing in a LINKED worktree on a feature branch is allowed', () => {
+  const { base, wt, project } = makeRepos();
+  try {
+    assert.equal(runGuard(path.join(wt, 'src', 'new.py'), project), 0, 'the worktree is where work belongs');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('the guard binds SUBAGENTS too — an implementer writing to main is the failure', () => {
+  // Every other guard here exempts subagents, because implementing is their job.
+  // This one governs WHERE anyone may write, and the observed failure was a test
+  // writer putting files on main. A rule binding only the orchestrator stops nothing.
+  const { base, repo, project } = makeRepos();
+  try {
+    assert.equal(
+      runGuard(path.join(repo, 'src', 'new.py'), project, { agent_id: 'sub-1', agent_type: 'worker' }),
+      2,
+      'exempting subagents here would exempt exactly the actor that caused the problem',
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a path outside any git repo is ignored', () => {
+  const { base, project } = makeRepos();
+  try {
+    assert.equal(runGuard(path.join(os.tmpdir(), 'nowhere', 'x.txt'), project), 0);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
