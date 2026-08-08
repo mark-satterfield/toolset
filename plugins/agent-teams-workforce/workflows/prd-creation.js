@@ -28,7 +28,7 @@ const request = a.request || {}
 const MAX_PASSES = a.maxPasses || 2
 const repo = request.repoPath || '(repo path not provided — this is a docs/vault artifact)'
 if (!request.title && !request.description) {
-  log('⚠ no request.title/description supplied — running in dry/demo mode')
+  return { ok: false, stage: 'input', error: 'no request.title/description supplied — refusing to run without a work item' }
 }
 
 const requestText = [

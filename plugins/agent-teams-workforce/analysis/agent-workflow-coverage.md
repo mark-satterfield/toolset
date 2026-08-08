@@ -9,9 +9,9 @@ Workflows are JavaScript scripts that spawn agents through `agent(prompt, { agen
 - **Static** — a literal `agentType: 'agent-teams-workforce:foo'`.
 - **Dynamic (selected)** — `agentType: \`agent-teams-workforce:${x}\`` where `x` is drawn at runtime from a candidate roster hard-coded in the script (a read-only "lead" agent picks the fewest specialists whose surface the change touches). For these, the table lists every roster candidate the workflow **can** dispatch, marked *(roster)*. Which actually run is decided per-run by the lead — captured as candidates rather than forced precision.
 
-Composite workflows (`bug-fix`, `spec-to-deploy`, `prd-to-spec`, `infra-change`) do not spawn specialists directly (except `run-ledger-writer`); they call the leaf/shared minis via `workflow(...)`. Agents are therefore attributed to the mini that dispatches them; the composite that drives that mini is noted where relevant.
+Composite workflows (`bug-fix`, `task-to-deploy`, `prd-to-spec`, `infra-change`) do not spawn specialists directly (except `run-ledger-writer`); they call the leaf/shared minis via `workflow(...)`. Agents are therefore attributed to the mini that dispatches them; the composite that drives that mini is noted where relevant.
 
-Two substring false positives and comment-only mentions were excluded: `trd-author` matched inside `'trd-authoring'` in `prd-to-spec` (not a dispatch); `chassis-extension-implementer` in `spec-to-deploy` is a doc comment; `spec-decider` in `prd-to-spec` is a log-message string; `wave-deployment-sequencer` in `deploy` appears only in a comment stating it is deliberately **not** invoked.
+Two substring false positives and comment-only mentions were excluded: `trd-author` matched inside `'trd-authoring'` in `prd-to-spec` (not a dispatch); `chassis-extension-implementer` in `task-to-deploy` is a doc comment; `spec-decider` in `prd-to-spec` is a log-message string; `wave-deployment-sequencer` in `deploy` appears only in a comment stating it is deliberately **not** invoked.
 
 ---
 
@@ -30,7 +30,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | advantage-evaluator | gate-enforce | gate (post-pass) | Applies advantage principle to competitive flags |
 | adversarial-critique-adjudicator | adversarial | Adjudicate | Referees finding severity; constitutive vs competitive |
 | ambiguity-detector | prd-validation | fan-out analysts | Detects ambiguous PRD requirements |
-| ambiguity-detector | route-bead | classification | Read-only tie-breaker when routing table can't decide |
+| ambiguity-detector | route-build, route-elaboration | classification | Read-only tie-breaker when routing table can't decide |
 | android-compose-implementer | tdd-green | Green *(implementer roster)* | Android/Compose production code to pass tests |
 | api-contract-designer | architecture | Update SAD *(design roster: restApi)* | OpenAPI contract draft for decided REST surface |
 | api-documentation-writer | documentation | Documentation *(writer roster)* | API reference docs for shipped APIs |
@@ -163,7 +163,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | run-ledger-writer | bug-fix | ledger (final) | Persists run decision ledger (JSONL) |
 | run-ledger-writer | infra-change | ledger (final) | Persists run decision ledger |
 | run-ledger-writer | prd-to-spec | ledger (final) | Persists run decision ledger |
-| run-ledger-writer | spec-to-deploy | ledger (final) | Persists run decision ledger |
+| run-ledger-writer | task-to-deploy | ledger (final) | Persists run decision ledger |
 | s3-data-lake-implementer | tdd-green | Green *(implementer roster)* | S3 data-lake layout code |
 | sad-conformance-reviewer | architecture | Update SAD | Independent conformance check of SAD edit |
 | sad-maintainer | architecture | Update SAD | Consolidates ruling into arc42 SAD (maker) |
@@ -238,7 +238,7 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 
 | Reused agent | # | Workflows |
 | --- | --- | --- |
-| run-ledger-writer | 4 | bug-fix, infra-change, prd-to-spec, spec-to-deploy |
+| run-ledger-writer | 4 | bug-fix, infra-change, prd-to-spec, task-to-deploy |
 | infrastructure-security-scanner | 3 | adversarial, infra-change, infra-intent |
 | spec-decider | 2 | prd-creation, spec-authoring |
 | architecture-decider | 2 | architecture, infra-intent |
@@ -251,7 +251,7 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 | root-cause-analyst | 2 | bug-triage, integration |
 | phase-gate-enforcer | 2 | gate-constitutional, gate-enforce |
 | acceptance-criteria-writer | 2 | bug-triage, spec-authoring |
-| ambiguity-detector | 2 | prd-validation, route-bead |
+| ambiguity-detector | 3 | prd-validation, route-build, route-elaboration |
 | cdk-stack-author | 2 | tdd-green (roster) + infra-change (pins it as Green implementer) |
 
 Most reuse is genuine cross-cutting infrastructure: `run-ledger-writer` (telemetry), the gate enforcer, and the architecture/infra overlap (infra-intent deliberately reuses the architecture team's decider, designer, and cost reviewer). This is healthy reuse, not accidental duplication.

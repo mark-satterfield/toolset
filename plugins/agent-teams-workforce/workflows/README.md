@@ -13,9 +13,9 @@ Until that automation lands:
 
 ## Contents
 
-- **Composites** — `prd-to-spec.js`, `spec-to-deploy.js`, `bug-fix.js`, `infra-change.js`: full pipelines stitched from the pieces below.
+- **Composites** — `prd-to-spec.js`, `task-to-deploy.js`, `bug-fix.js`, `infra-change.js`: full pipelines stitched from the pieces below.
 - **Front-ends & phases** — `prd-validation.js`, `architecture.js`, `trd-authoring.js`, `spec-authoring.js`, `task-decomposition.js`, `spec-freshness.js`, `tdd-red.js`, `tdd-green.js`, `tdd-refactor.js`, `integration.js`, `adversarial.js`, `deploy.js`, `documentation.js`, `infra-intent.js`.
-- **Routing & gates** — `route-bead.js`, `bug-triage.js`, `gate-enforce.js`, `gate-constitutional.js`.
+- **Routing & gates** — `route-build.js`, `route-elaboration.js`, `bug-triage.js`, `gate-enforce.js`, `gate-constitutional.js`.
 - **Docs** — `ROUTING.md` (how a bead is routed to a composite), `../AGENT-TEAMS-WORKFORCE.md` (the full workforce/pipeline reference).
 
 Workflows are addressed **by name**, never by number.

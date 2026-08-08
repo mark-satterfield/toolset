@@ -14,7 +14,7 @@ procedure. They differ only in which face you walked in holding. Yours is the
 document; the Epic is the other face, and you resolve it below.
 
 This is also the entry the bead router cannot provide: a PRD is a **file**, so
-`bd ready` never returns one and `route-bead` never sees it.
+`bd ready` never returns one and neither router ever sees it.
 
 ## 1. Locate the PRD
 

@@ -34,7 +34,7 @@ const trdPath = a.trdPath || '(TRD path not provided)'
 const MAX_LOOPS = a.maxLoops || 2
 
 if (!prd.id && !prd.path && !prd.content) {
-  log('⚠ no PRD supplied (id/path/content all empty) — running in dry/demo mode')
+  return { ok: false, stage: 'input', error: 'no PRD supplied (id/path/content all empty) — refusing to run without a work item' }
 }
 
 const prdRef = prd.path || prd.id || '(inline content)'

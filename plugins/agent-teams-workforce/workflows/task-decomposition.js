@@ -23,10 +23,10 @@ const story = a.story || {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
 const specRef = spec.id || spec.title || '(unspecified spec)'
 if (!spec.title && !spec.description && !spec.id) {
-  log('⚠ no spec supplied — running in dry/demo mode')
+  return { ok: false, stage: 'input', error: 'no spec supplied — refusing to run without a work item' }
 }
 // A Story is created alongside its Spec, upstream of here. Without it the emitted
-// tasks are parentless, and route-bead will (correctly) refuse to work a Task that
+// tasks are parentless, and route-build will (correctly) refuse to work a Task that
 // has no parent Story.
 //
 // The Story has no bd id until the caller writes it, so before emission it is
@@ -353,7 +353,7 @@ const orderIndex = {}
 // Every emitted bead is a task parented to the Story this Spec pairs with.
 // `type` is forced rather than copied: the schema already constrains it, and a
 // task set that silently carried anything else would corrupt the hierarchy
-// route-bead depends on.
+// route-build depends on.
 const beadSet = tasks
   .map((t) => ({
     key: t.key,

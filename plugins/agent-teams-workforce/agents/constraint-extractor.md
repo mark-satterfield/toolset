@@ -9,10 +9,9 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
-maxTurns: 50
+maxTurns: 12
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
 effort: medium
-isolation: worktree
 color: blue
 ---
 

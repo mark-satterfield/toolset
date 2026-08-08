@@ -31,19 +31,38 @@ workflow dispatch guard.
 
 ## 3. Route it
 
+There are two routers, split by the kind of work. Pick by the bead's type — do not
+guess, and do not send a bead to both.
+
+**Task, Bug, or Infra — DEVELOPMENT work:**
+
 ```
-Workflow({scriptPath: "$ROOT/workflows/route-bead.js",
+Workflow({scriptPath: "$ROOT/workflows/route-build.js",
   args: {bead: {id, type, labels, title, description,
-                parentType, ancestorTypes, childCount},
+                parentType, ancestorTypes}}})
+```
+
+Supply `parentType` and `ancestorTypes` from the parent chain. Without them a Task
+cannot be judged workable and will skip. There is no `humanInitiated` flag here and
+that is deliberate: a Task under a Story under an Epic was already authorised when
+someone chose to elaborate that Epic. This is what lets an unattended build loop run.
+
+**Epic, Story, or Feature — ELABORATION work:**
+
+```
+Workflow({scriptPath: "$ROOT/workflows/route-elaboration.js",
+  args: {bead: {id, type, labels, title, description,
+                parentType, ancestorTypes},
          humanInitiated: true}})
 ```
 
-Supply `parentType`, `ancestorTypes`, and `childCount` from the parent chain. Without
-them a Task cannot be judged workable and will skip.
-
 `humanInitiated: true` is correct here and **only** here: a person typed this command.
-Existence is not readiness — an Epic or Story sitting there with no children is not a
-request to build it. An unattended sweep must leave the flag unset and take the skip.
+Existence is not readiness — an Epic sitting there is not a request to elaborate it.
+An unattended sweep must leave the flag unset and take the skip.
+
+Do **not** pass `childCount`. Neither router reads it. An Epic that already has
+Stories can still need working, because its PRD may have moved on and the beads
+beneath it drifted — treating "has children" as "done" is how that drift goes unseen.
 
 The router returns `{action, composite, reason}`:
 

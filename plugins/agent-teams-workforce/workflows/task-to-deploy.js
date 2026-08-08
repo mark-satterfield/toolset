@@ -1,5 +1,5 @@
 export const meta = {
-  name: 'spec-to-deploy',
+  name: 'task-to-deploy',
   description:
     'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
   phases: [
@@ -10,6 +10,7 @@ export const meta = {
     { title: 'Integration' },
     { title: 'Adversarial' },
     { title: 'Deploy-to-dev' },
+    { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
 
@@ -25,7 +26,7 @@ export const meta = {
 //   maxLoops?: number,           // bounded retries per gate (default 3)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-const spec = a.spec || {}
+const bead = a.bead || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
 // This was 3, and nested minis carried their own bound of 2 on top, so a single
@@ -37,20 +38,26 @@ const spec = a.spec || {}
 //
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
-if (!spec.id) log('⚠ no spec.id supplied — running in dry/demo mode')
+if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
 
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
 // mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
-// finally so it runs on success, early-return, and throw alike.
+// finally so it runs on success, early-return, and throw alike.//
+// It gets its OWN phase, and that is load-bearing. This agent used to be tagged
+// `phase: 'Deploy-to-dev'`, and because the finally runs on every exit path, a
+// run that died at an early gate still ticked the terminal phase green — the
+// progress panel reported a deploy for a run that never built anything.
+// Telemetry must never be able to paint a work phase complete, so it reports
+// under a phase that claims nothing about the work.
 const runLedger = []
 async function persistRun(outcome) {
   if (!runLedger.length) return
   try {
     await agent(
-      `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'spec-to-deploy', bead: null, subject: spec.id || null, outcome, runLedger })}`,
+      `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'task-to-deploy', bead: null, subject: bead.id || null, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-to-dev',
+        phase: 'Run Ledger',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -99,6 +106,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     })
 
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    // Announce the START of the attempt. The progress panel cannot tick this phase:
+    // its work happens inside a nested workflow(), whose agents the engine puts in
+    // their own "▸ <mini>" group rather than counting toward the parent phase. So
+    // without this line a phase that is actively running reads as "Not started yet",
+    // and only its verdict — logged below, after the fact — ever proves it ran.
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
     const artifact = await phaseFn(feedback)
     // A phase may report that its work was ALREADY DONE — Red finding the contract
     // satisfied by passing tests, for instance. There is nothing for the gate to
@@ -138,7 +151,7 @@ let result
 try {
   result = await (async () => {
 phase('Spec Freshness')
-log(`Validating freshness of ${spec.id || '(no id)'} — ${spec.title || ''}`)
+log(`Validating freshness of ${bead.id || '(no id)'} — ${bead.title || ''}`)
 const freshness = await gateLoop({
   gate: '1', phaseName: 'Spec Freshness',
   criteria: [
@@ -150,7 +163,7 @@ const freshness = await gateLoop({
   phaseFn: () => workflow('agent-teams-workforce:spec-freshness', { spec }),
 })
 if (freshness.artifact && freshness.artifact.ledger) runLedger.push(freshness.artifact.ledger)
-if (!freshness.ok) return { ok: false, stage: 'spec-freshness', spec: spec.id, detail: freshness }
+if (!freshness.ok) return { ok: false, stage: 'spec-freshness', bead: bead.id, detail: freshness }
 
 // The fresh, build-ready contract every downstream tail mini consumes. It carries
 // the spec's repo path and acceptance criteria so Red/Green/etc. thread correctly.
@@ -161,22 +174,22 @@ if (!freshness.ok) return { ok: false, stage: 'spec-freshness', spec: spec.id, d
 // mean there is a delivery chain to verify. Anything not structurally evident must
 // be declared by the spec; this does not infer surfaces from file paths or names.
 // An empty result means unit tests only, which is correct for internal-only work.
-const declaredSurfaces = Array.isArray(spec.surfaces) ? spec.surfaces : []
+const declaredSurfaces = Array.isArray(bead.surfaces) ? bead.surfaces : []
 const structuralSurfaces = [
-  spec.apiSpec ? 'api-contract' : null,
-  Array.isArray(spec.eventContracts) && spec.eventContracts.length ? 'event-chain' : null,
+  bead.apiSpec ? 'api-contract' : null,
+  Array.isArray(bead.eventContracts) && bead.eventContracts.length ? 'event-chain' : null,
 ].filter(Boolean)
 const contractSurfaces = [...new Set([...declaredSurfaces, ...structuralSurfaces])]
 
 const contract = {
   spec,
-  repoPath: spec.repoPath || null,
-  acceptanceCriteria: Array.isArray(spec.acceptanceCriteria) ? spec.acceptanceCriteria : [],
+  repoPath: bead.repoPath || null,
+  acceptanceCriteria: Array.isArray(bead.acceptanceCriteria) ? bead.acceptanceCriteria : [],
   surfaces: contractSurfaces,
   // Pyramid shape, coverage threshold, and environment matrix belong to the spec,
   // not to each task built from it. Carried when the spec states one; absent when
   // it does not — tdd-red does not invent a per-task substitute.
-  testStrategy: spec.testStrategy || null,
+  testStrategy: bead.testStrategy || null,
   freshness: freshness.artifact,
 }
 if (contractSurfaces.length) log(`Contract surfaces: ${contractSurfaces.join(', ')} — specialist test writers will be derived from these`)
@@ -199,14 +212,14 @@ const red = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
-if (!red.ok) return { ok: false, stage: 'red', spec: spec.id, detail: red }
+if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
 // Red found the contract already encoded by PASSING tests: the behavior exists.
 // Green would be asked to make a failing test pass when none fails, so the run
 // ends here — successfully, with nothing built. Closing the work item is a human
 // call, not something this composite does on its own.
 if (red.alreadySatisfied) {
   return {
-    ok: true, stage: 'red', spec: spec.id, alreadySatisfied: true, built: false,
+    ok: true, stage: 'red', bead: bead.id, alreadySatisfied: true, built: false,
     reason: 'the spec contract is already satisfied by passing tests — no Red is obtainable and nothing was authored or changed',
     detail: red.artifact,
   }
@@ -229,7 +242,7 @@ const green = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
 })
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
-if (!green.ok) return { ok: false, stage: 'green', spec: spec.id, detail: green }
+if (!green.ok) return { ok: false, stage: 'green', bead: bead.id, detail: green }
 
 // Documentation runs ALONGSIDE the rest of the tail — started here (after Green),
 // awaited before deploy.
@@ -239,7 +252,7 @@ const docTrack = workflow('agent-teams-workforce:documentation', { contract, gre
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
 async function failAfterDoc(stage, detail) {
   await Promise.allSettled([docTrack])
-  return { ok: false, stage, spec: spec.id, detail }
+  return { ok: false, stage, bead: bead.id, detail }
 }
 
 // ── Refactor (Gate 2c) ────────────────────────────────────────────────────────
@@ -308,11 +321,11 @@ const deployReady = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', spec: spec.id, detail: deployReady }
+if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', bead: bead.id, detail: deployReady }
 
 return {
   ok: true,
-  spec: spec.id,
+  bead: bead.id,
   stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-to-dev'],
   note: 'DEPLOYED TO DEV and smoke-checked against the deployed endpoints. Outward-facing qa/prod rollout is a separate human-gated action and did not happen here.',
   contract,

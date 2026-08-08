@@ -1,8 +1,8 @@
 # Unattended-mode routing policy
 
 How `/loop` drains the ready queue: each tick claims the next ready bead, asks
-[`route-bead`](route-bead.js) which composite owns it, runs that composite, reports,
-and moves on. This file is the human-readable policy; `route-bead.js` is its
+the router that owns its kind of work — [`route-build`](route-build.js) for a Task or Bug, [`route-elaboration`](route-elaboration.js) for an Epic, Story, or feature — which composite owns it, runs that composite, reports,
+and moves on. This file is the human-readable policy; each router is its
 executable form. Keep them in sync — edit both when the policy changes.
 
 ## The four composites
@@ -10,13 +10,13 @@ executable form. Keep them in sync — edit both when the policy changes.
 | Composite | Front-end | For |
 |---|---|---|
 | `prd-to-spec` | prd-validation → architecture → trd-authoring → spec-authoring → task-decomposition | a NEW feature with no implementation-ready contract yet |
-| `spec-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
+| `task-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior |
 | `infra-change` | infra-intent → shared tail (subset) | an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing) |
 
 ## Type / label → composite
 
-Routing is **deterministic first**: `route-bead` decides from `bead.type` and
+Routing is **deterministic first**: each router decides from `bead.type` and
 `bead.labels` alone, with no agent in the loop. The **first matching rule wins**, so
 the table is ordered. Labels can override the base type — an explicitly-labelled
 bead is never mis-typed.
@@ -25,7 +25,7 @@ bead is never mis-typed.
 |---|---|---|
 | 1 | type `bug`; or label `bug` / `defect` / `regression` / `hotfix` | `bug-fix` |
 | 2 | type `infra` / `infrastructure`; or label `infra` / `infrastructure` / `cdk` / `iac` / `provisioning` | `infra-change` |
-| 3 | label `spec` / `spec-ready` / `implementation` / `implement` / `spec-to-deploy` | `spec-to-deploy` |
+| 3 | label `spec` / `spec-ready` / `implementation` / `implement` / `task-to-deploy` | `task-to-deploy` |
 | 4 | type `feature` / `epic` / `story`; or label `feature` / `prd` / `requirement` / `prd-to-spec` | `prd-to-spec` |
 | 5 | type `chore` / `docs` / `task` / `research` / `spike` | **SKIP** |
 | 6 | anything else (unknown / unlabelled) | ambiguity classification, else **SKIP** |
@@ -56,7 +56,7 @@ ambiguous beads then SKIP without spawning an agent.
 
 ## What `/loop` skips — and that skips are reported, never force-fit
 
-A SKIP is a `null` composite from `route-bead`, carrying a `reason`. `/loop`
+A SKIP is a `null` composite from either router, carrying a `reason`. `/loop`
 **reports every skip** (bead id + reason) and moves to the next ready bead. It
 does **not** force an unmatched bead into the nearest-looking composite — a
 mis-route costs more than a skip. Beads are skipped when they are:
@@ -68,7 +68,7 @@ mis-route costs more than a skip. Beads are skipped when they are:
 
 A skipped bead is left in the ready queue (its status is untouched). The operator
 sees the reported reason and decides: relabel it so it routes, handle it manually,
-or leave it. Routing is **advisory triage**, not a state mutation — `route-bead`
+or leave it. Routing is **advisory triage**, not a state mutation — the routers
 reads a bead and returns a decision; it never closes, claims, or relabels.
 
 To make a skipped bead route, give it a type/label from the table above — e.g.
@@ -83,7 +83,7 @@ composite completes and stops on a queue condition, not a clock. One tick:
 1. **Check the queue.** Run `bd ready`. If it is empty, **stop** — the loop is done.
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
    (`bd update --status` / claim), so a second runner can't grab the same bead.
-3. **Route it.** Call `route-bead` with `{ bead }`.
+3. **Route it.** Call `route-build` with `{ bead }` for a Task, Bug, or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. Neither reads `childCount`.
    - composite is non-null → run that composite on-demand, dispatched by path
      (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
    - composite is null → **report the skip** (id + reason) and leave the bead's
@@ -100,7 +100,7 @@ operator). The loop ends only when no claimable, routable work remains.
 
 - **On-demand:** `Workflow({ scriptPath: '.../workflows/bug-fix.js', args: { bead } })`
   (etc.) for a chosen bead — the operator picks the composite.
-- **Unattended:** `/loop` self-paces over `bd ready`, using `route-bead` to pick
+- **Unattended:** `/loop` self-paces over `bd ready`, using `route-build` to pick
   the composite per bead. Same composites, same minis — only the selection differs.
 
 ### Dispatch by path, not by name

@@ -8,10 +8,12 @@
 //
 // A Story is scoped to one repo; a Task to one agent's work within one repo.
 // ONLY a Task or a Bug is workable, and a Task only with a parent Story and an
-// ancestor Epic. Epics and Stories are containers: never worked, only decomposed.
+// ancestor Epic. Epics and Stories are containers: never worked, and NEVER
+// decomposed — nothing decomposes a bead. The FILE chain decomposes (PRD -> TRD
+// -> Spec) and the beads are what that chain deposits beneath them.
 //
 // These tests pin that hierarchy at the three places it can be violated —
-// routing (route-bead), decomposition (task-decomposition), and emission
+// routing (route-build + route-elaboration), decomposition (task-decomposition), and emission
 // (prd-to-spec) — because every violation observed so far was silent: a
 // container dispatched as work, a second Epic minted underneath one that
 // already existed, a parentless Task handed to an implementer with no Spec.
@@ -24,13 +26,30 @@ import { runWorkflowScript, readWorkflowSource } from './helpers/run-workflow.mj
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
-const routeBead = path.join(WORKFLOWS, 'route-bead.js')
+const routeBuild = path.join(WORKFLOWS, 'route-build.js')
+const routeElaboration = path.join(WORKFLOWS, 'route-elaboration.js')
 const taskDecomposition = path.join(WORKFLOWS, 'task-decomposition.js')
 
-/** Runs route-bead deterministically (no classifier agent). */
+/**
+ * Runs the BUILD router deterministically (no classifier agent). Development
+ * work only: a Task or a Bug. There is no humanInitiated gate here — a Task
+ * under a Story under an Epic was already authorised upstream, which is what
+ * lets an unattended build loop run.
+ */
 function route(bead) {
-  return runWorkflowScript(routeBead, {
+  return runWorkflowScript(routeBuild, {
     args: { bead, allowAmbiguityAgent: false },
+  }).then((r) => r.result)
+}
+
+/**
+ * Runs the ELABORATION router deterministically. Document-side work: an Epic,
+ * a Story, or a feature. Defaults to an UNATTENDED sweep (humanInitiated
+ * false), which is the case that must never start work on its own.
+ */
+function routeElab(bead, humanInitiated = false) {
+  return runWorkflowScript(routeElaboration, {
+    args: { bead, allowAmbiguityAgent: false, humanInitiated },
   }).then((r) => r.result)
 }
 
@@ -45,7 +64,7 @@ test('a Bug is workable standing alone — it needs no parent', async () => {
 test('a Task under a Story under an Epic is workable', async () => {
   const r = await route({ type: 'task', parentType: 'story', ancestorTypes: ['story', 'epic'] })
   assert.equal(r.action, 'work')
-  assert.equal(r.composite, 'spec-to-deploy')
+  assert.equal(r.composite, 'task-to-deploy')
 })
 
 test('a provisioning Task with a full hierarchy routes to infra-change', async () => {
@@ -72,30 +91,39 @@ test('a Task under a Story but with no ancestor Epic is NOT workable', async () 
   assert.match(r.reason, /Epic/i)
 })
 
-// ── Routing: containers are decomposed, never worked ──────────────────────────
+// ── Routing: containers are never worked and never decomposed ────────────────
+// A container with no children does not get broken up — its DOCUMENT needs
+// elaborating (an Epic needs its PRD taken to TRD and Spec; a Story needs its
+// Spec decomposed into Tasks). Elaboration is human-initiated, so an unattended
+// sweep skips it rather than force-fitting work that was never authorised.
 
 for (const container of ['epic', 'story']) {
-  test(`an empty ${container} is decomposed, not worked`, async () => {
-    const r = await route({ type: container, childCount: 0 })
-    assert.equal(r.action, 'decompose')
+  test(`an unattended sweep does not elaborate a ${container} — that is a human's call`, async () => {
+    const r = await routeElab({ type: container })
+    assert.equal(r.action, 'skip')
+    assert.match(r.reason, /human/i)
+  })
+
+  test(`a human-initiated run works a ${container} via elaboration, not development`, async () => {
+    const r = await routeElab({ type: container }, true)
+    assert.equal(r.action, 'elaborate')
     assert.equal(r.composite, 'prd-to-spec')
   })
 
-  test(`a populated ${container} is skipped — the work lives in its descendants`, async () => {
-    const r = await route({ type: container, childCount: 4 })
-    assert.equal(r.action, 'skip')
-    assert.equal(r.composite, null)
+  test(`a ${container} that ALREADY has children is still workable — the document above it may have moved on`, async () => {
+    const r = await routeElab({ type: container, childCount: 99 }, true)
+    assert.equal(
+      r.action,
+      'elaborate',
+      `${container} was refused because it has children — "has children" is not "in sync"`,
+    )
   })
 
-  test(`a ${container} is never dispatched as work, whatever its child count`, async () => {
-    for (const childCount of [0, 1, 99, undefined]) {
-      const r = await route({ type: container, childCount })
-      assert.notEqual(
-        r.action,
-        'work',
-        `${container} with childCount=${childCount} was dispatched as work — containers have no single repo, no single agent's scope, and no contract`,
-      )
-    }
+  test(`the BUILD router never dispatches a ${container} as development work`, async () => {
+    const r = await route({ type: container })
+    assert.equal(r.action, 'skip')
+    assert.equal(r.composite, null)
+    assert.match(r.reason, /route-elaboration/, 'the skip must name the router that owns it')
   })
 }
 
@@ -165,7 +193,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
     assert.equal(
       bead.parentStoryId,
       'ssbd-story-1',
-      'every emitted task must be parented to the Story, or route-bead will refuse to work it',
+      'every emitted task must be parented to the Story, or route-build will refuse to work it',
     )
   }
 })
@@ -173,7 +201,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
 test('a Story identified only by `key` still parents its tasks', async () => {
   // Before bd writes them, a Story has no id — only the local key the composite
   // assigned. Reading `story.id` alone yields parentStoryId: null on every task,
-  // and route-bead then refuses to work any of them.
+  // and route-build then refuses to work any of them.
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
@@ -273,7 +301,7 @@ test('a feature bead is a REQUEST — it is skipped, not auto-promoted', async (
   // Promoting a feature to a PRD and an Epic decides that it is worth building,
   // and now. A loop that promotes every feature bead it finds has decided the
   // roadmap, which is not a call this pipeline has the standing to make.
-  const r = await route({ type: 'feature' })
+  const r = await routeElab({ type: 'feature' })
   assert.equal(r.action, 'skip')
   assert.equal(r.composite, null)
   assert.match(r.reason, /human decision/i)
@@ -282,7 +310,7 @@ test('a feature bead is a REQUEST — it is skipped, not auto-promoted', async (
 
 test('a bead labelled prd/requirement is treated the same way', async () => {
   for (const label of ['prd', 'requirement', 'feature']) {
-    const r = await route({ type: 'chore', labels: [label] })
+    const r = await routeElab({ type: 'chore', labels: [label] })
     assert.equal(r.action, 'skip', `label "${label}" must not auto-promote`)
   }
 })
@@ -308,7 +336,7 @@ test('the Red phase forbids asserting against committed build artifacts', () => 
   assert.match(red, /ASSERT AGAINST WHAT THE CODE PRODUCES, NOT A COMMITTED ARTIFACT/,
     'the writer prompt must forbid testing against checked-in build output')
 
-  for (const composite of ['bug-fix.js', 'spec-to-deploy.js', 'infra-change.js']) {
+  for (const composite of ['bug-fix.js', 'task-to-deploy.js', 'infra-change.js']) {
     const src = readWorkflowSource(path.join(WORKFLOWS, composite))
     assert.match(src, /freshly generated artifacts, not checked-in build output/,
       `${composite}: the Red gate must check this, not only the writer prompt — a prompt is advice, a gate criterion is checked`)

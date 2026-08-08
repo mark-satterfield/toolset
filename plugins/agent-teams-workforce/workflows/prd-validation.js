@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. A read-only validation lead fans the raw PRD out to eight independent analysts in parallel (ambiguity, completeness, conflict, NFRs, constraints, dependency graph, domain boundaries, requirements clarification), then aggregates their findings into one validated-PRD package. A ninth, BRD traceability, is opt-in and runs only when args.brd is supplied. Read-only: it judges and packages the PRD but authors no PRD content.',
+    'Leaf mini — PRD Validation. A read-only validation lead fans the raw PRD out to six independent analysts in parallel (ambiguity, completeness, conflict, constraints, domain boundaries, requirements clarification), then aggregates their findings into one validated-PRD package. A seventh, BRD traceability, is opt-in and runs only when args.brd is supplied. Read-only: it judges and packages the PRD but authors no PRD content.',
   phases: [
     { title: 'Validate', detail: 'parallel independent analysts inspect the raw PRD' },
     { title: 'Aggregate', detail: 'read-only lead consolidates findings into one package' },
@@ -31,7 +31,7 @@ if (!prdBody) {
     ambiguities: [],
     conflicts: [],
     completenessGaps: [],
-    nfrs: [],
+    nfrs: null,
     constraints: [],
     dependencyGraph: null,
     boundaryFindings: [],
@@ -65,9 +65,7 @@ const [
   ambiguity,
   completeness,
   conflict,
-  nfr,
   constraint,
-  dependency,
   boundary,
   clarification,
   traceability,
@@ -91,7 +89,7 @@ ${prdBlock}`,
     ),
   () =>
     agent(
-      `You are an INDEPENDENT validator. Inspect the PRD for completeness of the WHAT: each requirement should name an actor, a trigger, and an observable user outcome, with acceptance criteria expressed as observable behavior. Flag missing user-observable paths — cancel, error, empty/limit states — described as behavior. Do NOT flag acceptance criteria for lacking mechanism, numeric thresholds, or unit-test precision; observable-behavior acceptance criteria are complete at this altitude. Do NOT author the missing content. For each gap, name the location, what observable behavior is missing, and its severity.
+      `You are an INDEPENDENT validator. Inspect the PRD for completeness of the WHAT: each requirement should name an actor, a trigger, and an observable user outcome, with acceptance criteria expressed as observable behavior. Flag missing user-observable paths — cancel, error, empty/limit states — described as behavior. Do NOT flag acceptance criteria for lacking mechanism, numeric thresholds, or unit-test precision; observable-behavior acceptance criteria are complete at this altitude. Do NOT author the missing content. For each gap, name the location, what observable behavior is missing, and its severity. This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. A requirement owned by a sibling is NOT a gap in this PRD — do not report it as missing. The product is built ITERATIVELY. A PRD is a business requirement, not a finished description of its feature area. Anything this PRD does not cover may legitimately arrive later as its own PRD, and its absence today is scheduling, NOT a defect. Report such an absence at INFO severity only, named as a candidate future PRD — never as a blocker and never as major.
 
 ${prdBlock}`,
       {
@@ -108,7 +106,7 @@ ${prdBlock}`,
     ),
   () =>
     agent(
-      `You are an INDEPENDENT validator. Detect mutually contradictory requirements in the PRD below — pairs (or sets) whose WHAT cannot both hold. Do NOT manufacture conflicts from absent implementation mechanism. Do NOT resolve them by editing the PRD. For each conflict, cite the two (or more) requirements in tension, explain the contradiction, and rate its severity.
+      `You are an INDEPENDENT validator. Detect mutually contradictory requirements in the PRD below — pairs (or sets) whose WHAT cannot both hold. Do NOT manufacture conflicts from absent implementation mechanism. Do NOT resolve them by editing the PRD. For each conflict, cite the two (or more) requirements in tension, explain the contradiction, and rate its severity. This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. A requirement that states what this PRD's behavior means for behavior a sibling owns is a CONTRACT with that sibling, not a contradiction. Do not report a cross-PRD contract as a conflict.
 
 ${prdBlock}`,
       {
@@ -133,39 +131,6 @@ ${prdBlock}`,
                 },
               },
             },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `You are an INDEPENDENT analyst. Identify the quality attributes the feature's WHAT implies the product must honor — for example security, privacy of user data, accessibility, resistance to automated abuse. For each, report whether the PRD NAMES that quality intent (here the 'testable' field means: is the intent stated as an outcome the user would notice — NOT whether it is quantified). Flag, as missingNfrs, ONLY a quality the user would plainly expect that the PRD does not name at all — for example, the feature handles personal data but states no privacy intent. Do NOT flag missing numeric targets, latency/throughput/availability budgets, SLOs, rate-limit numbers, or any quantification; those are defined downstream in the spec or architecture. Do NOT author the PRD.
-
-${prdBlock}`,
-      {
-        label: 'validate:nfr',
-        phase: 'Validate',
-        agentType: 'agent-teams-workforce:nfr-analyst',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['nfrs', 'missingNfrs'],
-          properties: {
-            nfrs: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['category', 'requirement', 'testable'],
-                properties: {
-                  category: { type: 'string' },
-                  requirement: { type: 'string' },
-                  testable: { type: 'boolean' },
-                  note: { type: 'string' },
-                },
-              },
-            },
-            missingNfrs: { type: 'array', items: { type: 'string' } },
           },
         },
       }
@@ -204,52 +169,7 @@ ${prdBlock}`,
     ),
   () =>
     agent(
-      `You are an INDEPENDENT analyst. Extract inter-requirement and external dependencies from the PRD below as a graph. Nodes are requirements or external systems; edges are "depends-on" relationships. Naming a dependency is sufficient at this altitude — do NOT treat a dependency as a defect for being unbuilt, in-progress, or lacking fallback mechanics (those are spec or delivery concerns). Do NOT author the PRD. Identify any cycles among requirements.
-
-${prdBlock}`,
-      {
-        label: 'validate:dependency-graph',
-        phase: 'Validate',
-        agentType: 'agent-teams-workforce:dependency-graph-extractor',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['nodes', 'edges', 'cycles'],
-          properties: {
-            nodes: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['id', 'kind'],
-                properties: {
-                  id: { type: 'string' },
-                  kind: { type: 'string', enum: ['requirement', 'external'] },
-                  label: { type: 'string' },
-                },
-              },
-            },
-            edges: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['from', 'to'],
-                properties: {
-                  from: { type: 'string' },
-                  to: { type: 'string' },
-                  relation: { type: 'string' },
-                },
-              },
-            },
-            cycles: { type: 'array', items: { type: 'array', items: { type: 'string' } } },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `You are an INDEPENDENT validator. Validate that the requirements in the PRD below respect feature / bounded-context boundaries — no requirement makes this feature own behavior that another feature or service owns, and each requirement sits in exactly one context. Do NOT author the PRD. Flag boundary violations with the requirement and the boundary it crosses.
+      `You are an INDEPENDENT validator. Validate that the requirements in the PRD below respect feature / bounded-context boundaries — no requirement makes this feature own behavior that another feature or service owns, and each requirement sits in exactly one context. Do NOT author the PRD. Flag boundary violations with the requirement and the boundary it crosses. This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. Naming behavior a sibling owns, and stating what this PRD's behavior means for it, is the correct structure of the set — not scope creep and not a boundary violation. Flag a violation only where this PRD claims to OWN behavior a sibling owns.
 
 Bounded-context / service-boundary notes:
 ${context}
@@ -379,9 +299,8 @@ const aggregateInput = {
   ambiguities: ambiguity.ambiguities,
   completenessGaps: completeness.completenessGaps,
   conflicts: conflict.conflicts,
-  nfrs: nfr,
   constraints: constraint.constraints,
-  dependencyGraph: dependency,
+  dependencyGraph: null,
   boundaryFindings: boundary.boundaryFindings,
   clarifications: clarification.clarifications,
   traceability: traceability,
@@ -432,8 +351,8 @@ const ledger = {
   beadId: null,
   subject: prdId || null,
   chosen: [
-    'ambiguity-detector', 'completeness-checker', 'requirements-conflict-detector', 'nfr-analyst',
-    'constraint-extractor', 'dependency-graph-extractor', 'domain-boundary-validator', 'requirements-clarifier',
+    'ambiguity-detector', 'completeness-checker', 'requirements-conflict-detector',
+    'constraint-extractor', 'domain-boundary-validator', 'requirements-clarifier',
     ...(brd ? ['brd-traceability-auditor'] : []),
     'prd-validation-lead',
   ],
@@ -456,9 +375,9 @@ return {
   ambiguities: ambiguity.ambiguities,
   conflicts: conflict.conflicts,
   completenessGaps: completeness.completenessGaps,
-  nfrs: nfr.nfrs,
+  nfrs: null,
   constraints: constraint.constraints,
-  dependencyGraph: dependency,
+  dependencyGraph: null,
   boundaryFindings: boundary.boundaryFindings,
   clarifications: clarification.clarifications,
   traceability,

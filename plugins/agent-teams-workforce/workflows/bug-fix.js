@@ -10,6 +10,7 @@ export const meta = {
     { title: 'Integration' },
     { title: 'Adversarial' },
     { title: 'Deploy-to-dev' },
+    { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
 
@@ -41,7 +42,7 @@ const bead = a.bead || {}
 //
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
-if (!bead.id) log('⚠ no bead.id supplied — running in dry/demo mode')
+if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`
 // on its artifact; the composite collects them and persists ONCE via run-ledger-writer
@@ -55,7 +56,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'bug-fix', bead: { id: bead.id || null, title: bead.title || null }, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-to-dev',
+        phase: 'Run Ledger',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -104,6 +105,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     })
 
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    // Announce the START of the attempt. The progress panel cannot tick this phase:
+    // its work happens inside a nested workflow(), whose agents the engine puts in
+    // their own "▸ <mini>" group rather than counting toward the parent phase. So
+    // without this line a phase that is actively running reads as "Not started yet",
+    // and only its verdict — logged below, after the fact — ever proves it ran.
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
     const artifact = await phaseFn(feedback)
     // A phase may report that its work was ALREADY DONE — Red finding the contract
     // satisfied by passing tests, for instance. There is nothing for the gate to

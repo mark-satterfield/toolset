@@ -25,7 +25,7 @@ const sadPath = a.sadPath || 'tech/architecture/arch42/ (skillspoke-docs vault)'
 const repo = d.repoPath || '(repo path not provided — ask before editing files)'
 const MAX_SAD_LOOPS = a.maxLoops || 2
 const upstream = a.feedback ? `\nUpstream gate feedback to fold in:\n${a.feedback}` : ''
-if (!d.title) log('⚠ no decision.title supplied — running in dry/demo mode')
+if (!d.title) return { ok: false, stage: 'input', error: 'no decision.title supplied — refusing to run without a work item' }
 
 const decisionHeader = `Architecture decision ${d.id || ''}: ${d.title || '(untitled)'}
 Context: ${d.context || 'n/a'}

@@ -9,6 +9,7 @@ export const meta = {
     { title: 'Integration' },
     { title: 'Adversarial' },
     { title: 'Deploy-to-dev' },
+    { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
 
@@ -33,11 +34,17 @@ const RUN_ADVERSARIAL = a.runAdversarial === true
 //
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
-if (!bead.id) log('⚠ no bead.id supplied — running in dry/demo mode')
+if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
 
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
 // mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
-// finally so it runs on success, early-return, and throw alike.
+// finally so it runs on success, early-return, and throw alike.//
+// It gets its OWN phase, and that is load-bearing. This agent used to be tagged
+// `phase: 'Deploy-to-dev'`, and because the finally runs on every exit path, a
+// run that died at an early gate still ticked the terminal phase green — the
+// progress panel reported a deploy for a run that never built anything.
+// Telemetry must never be able to paint a work phase complete, so it reports
+// under a phase that claims nothing about the work.
 const runLedger = []
 async function persistRun(outcome) {
   if (!runLedger.length) return
@@ -46,7 +53,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'infra-change', bead: { id: bead.id || null, title: bead.title || null }, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Deploy-to-dev',
+        phase: 'Run Ledger',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -105,6 +112,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   let gateFeedback = ''
   let artifact
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    // Announce the START of the attempt. The progress panel cannot tick this phase:
+    // its work happens inside a nested workflow(), whose agents the engine puts in
+    // their own "▸ <mini>" group rather than counting toward the parent phase. So
+    // without this line a phase that is actively running reads as "Not started yet",
+    // and only its verdict — logged below, after the fact — ever proves it ran.
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
     const feedback = [seed, gateFeedback].filter(Boolean).join('\n')
     artifact = await phaseFn(feedback)
     // A phase may report that its work was ALREADY DONE — Red finding the contract

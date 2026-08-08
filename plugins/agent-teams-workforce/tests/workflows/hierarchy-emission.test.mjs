@@ -4,7 +4,7 @@
 // with the PRD (backfilling one when an older PRD predates the concept), fans
 // spec authoring out per repo so each Story is scoped to exactly one, and
 // decomposes each Story into its own tasks. A flat bead set loses every parent
-// link, and route-bead then refuses to work any of it.
+// link, and route-build then refuses to work any of it.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'

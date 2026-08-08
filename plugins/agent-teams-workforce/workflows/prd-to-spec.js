@@ -11,6 +11,7 @@ export const meta = {
     { title: 'Spec Authoring', detail: 'once per repo — a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
     { title: 'Emit Beads', detail: 'surface the full Epic → Story → Task hierarchy plus the flat task bead set' },
+    { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
 
@@ -50,11 +51,18 @@ const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.
 // whole span; null is filtered out rather than minted into a repo-less Story, which
 // the work-item hierarchy forbids.
 const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => r != null)
-if (!a.request && !a.prd) log('⚠ neither request nor prd supplied — running in dry/demo mode')
+if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither request nor prd supplied — refusing to run without a work item' }
 
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
 // mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
 // finally so it runs on success, early-return, and throw alike.
+//
+// It gets its OWN phase, and that is load-bearing. This agent used to be tagged
+// `phase: 'Emit Beads'`, and because the finally runs on every exit path, a run
+// that died at Gate 1 still ticked the terminal phase green — the progress panel
+// reported a full Epic → Story → Task emission for a run that never reached
+// Architecture. Telemetry must never be able to paint a work phase complete, so
+// it reports under a phase that claims nothing about the work.
 const runLedger = []
 async function persistRun(outcome) {
   if (!runLedger.length) return
@@ -63,7 +71,7 @@ async function persistRun(outcome) {
       `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, runLedger })}`,
       {
         label: 'ledger:persist',
-        phase: 'Emit Beads',
+        phase: 'Run Ledger',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -112,6 +120,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     })
 
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    // Announce the START of the attempt. The progress panel cannot tick this phase:
+    // its work happens inside a nested workflow(), whose agents the engine puts in
+    // their own "▸ <mini>" group rather than counting toward the parent phase. So
+    // without this line a phase that is actively running reads as "Not started yet",
+    // and only its verdict — logged below, after the fact — ever proves it ran.
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
     const artifact = await phaseFn(feedback)
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
@@ -170,9 +184,8 @@ const validation = await gateLoop({
   gate: 'G1', phaseName: 'PRD Validation',
   criteria: [
     'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)',
-    'Every requirement states an actor, a trigger, and an observable user outcome, with acceptance criteria expressed as observable behavior — mechanism/HOW (algorithms, thresholds, schemas, quantified NFRs) is out of scope at PRD altitude and is defined later in the spec',
-    'Quality intent the feature implies (privacy, security, accessibility, abuse-resistance) is named where the WHAT requires it, WITHOUT demanding quantified targets, SLOs, or implementation detail',
-    'Scope is bounded: each requirement sits in one feature/context and its external dependencies are named (dependency readiness and fallback mechanics are spec/delivery concerns, not PRD defects)',
+    'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.',
+    'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.',
   ],
   escalateTargets: ['prd-creation'],
   phaseFn: (feedback) =>
@@ -278,7 +291,7 @@ const trdAuthoring = await gateLoop({
   gate: 'G2b', phaseName: 'TRD Authoring',
   criteria: [
     'The TRD derives only from the PRD and the SAD source extract (no invented requirements)',
-    'Every PRD requirement maps to a TRD entry and back (bidirectional traceability holds)',
+    'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.',
     'The TRD validator and traceability verifier both pass',
   ],
   escalateTargets: ['architecture', 'prd-validation'],
@@ -477,7 +490,7 @@ for (const pair of specPairs) {
     criteria: [
       'Tasks are atomic and each traces to a spec element',
       'The dependency DAG is acyclic and sequencing is valid',
-      'Every task is WSJF-scored and the scoring passed independent review',
+      'Every task is WSJF-scored. The score is a prioritization aid, NOT a correctness gate — do NOT block emission on the value of a score or on review of it.',
       'Beads format validates for every emitted task',
     ],
     escalateTargets: ['spec-authoring'],
