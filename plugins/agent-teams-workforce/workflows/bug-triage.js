@@ -22,7 +22,19 @@ Deliver:
 - reproduction: the minimal, concrete steps/conditions that trigger the defect.
 - rootCause: the precise mechanism and code location (file:line where possible).
 - affectedFiles: the files that must change to fix it (paths).
-- blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.`,
+- blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.
+- surfaces: which surfaces from the CLOSED SET below the fix actually touches. This decides which specialist test writers run downstream, so it is a real decision, not a label:
+    api-contract           a published REST/GraphQL/event schema that consumers depend on
+    event-chain            the event API -> EventBridge -> SQS -> Lambda delivery path
+    auth                   authentication, authorization, or permission evaluation
+    performance            a stated performance budget or latency/throughput requirement
+    web-ui                 web user interface
+    ios                    native iOS
+    android                native Android
+    cross-platform-mobile  React Native or other cross-platform mobile
+    ml                     matching, recommendation, ranking, or embeddings
+    data-pipeline          ETL, CDC, or stream processing
+  Return ONLY surfaces the CHANGE touches — not surfaces the surrounding code happens to sit near. Return an empty list when the fix is confined to internal logic, which is the common case. Each surface you name costs a full additional test-authoring agent; each one you omit leaves that surface with no specialist coverage.`,
   {
     label: 'triage:diagnosis',
     phase: 'Triage',
@@ -30,12 +42,30 @@ Deliver:
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['reproduction', 'rootCause', 'affectedFiles', 'blastRadius'],
+      required: ['reproduction', 'rootCause', 'affectedFiles', 'blastRadius', 'surfaces'],
       properties: {
         reproduction: { type: 'string' },
         rootCause: { type: 'string' },
         affectedFiles: { type: 'array', items: { type: 'string' } },
         blastRadius: { type: 'string' },
+        surfaces: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: [
+              'api-contract',
+              'event-chain',
+              'auth',
+              'performance',
+              'web-ui',
+              'ios',
+              'android',
+              'cross-platform-mobile',
+              'ml',
+              'data-pipeline',
+            ],
+          },
+        },
       },
     },
   }
@@ -152,5 +182,8 @@ return {
   rootCause: analysis.rootCause,
   affectedFiles: analysis.affectedFiles,
   blastRadius: analysis.blastRadius,
+  // Consumed by tdd-red to DERIVE its test writers. Empty means unit tests only,
+  // which is the correct answer for a fix confined to internal logic.
+  surfaces: analysis.surfaces || [],
   acceptanceCriteria: contract.acceptanceCriteria,
 }

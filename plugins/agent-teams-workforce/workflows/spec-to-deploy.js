@@ -71,7 +71,7 @@ async function persistRun(outcome) {
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
   // Every adjudication goes to the ledger. Without the verdict and its per-criterion
   // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
@@ -100,8 +100,16 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
 
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
+    // A phase may report that its work was ALREADY DONE — Red finding the contract
+    // satisfied by passing tests, for instance. There is nothing for the gate to
+    // judge and no rework that could change the answer, so gating it would fail a
+    // criterion nothing can meet and burn the entire loop budget proving it.
+    if (artifact && artifact.alreadySatisfied === true) {
+      log(`${phaseName}: ALREADY SATISFIED — nothing to build; gate ${gate} skipped`)
+      return { ok: true, artifact, alreadySatisfied: true }
+    }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -146,12 +154,32 @@ if (!freshness.ok) return { ok: false, stage: 'spec-freshness', spec: spec.id, d
 
 // The fresh, build-ready contract every downstream tail mini consumes. It carries
 // the spec's repo path and acceptance criteria so Red/Green/etc. thread correctly.
+// Surfaces DECIDE which specialist test writers tdd-red runs, so they are derived
+// here rather than re-judged per task. Two sources, both evidence rather than guess:
+// an explicit list the spec declares, and the structure of the authored spec set
+// itself — an API spec means there is an API contract to verify, event contracts
+// mean there is a delivery chain to verify. Anything not structurally evident must
+// be declared by the spec; this does not infer surfaces from file paths or names.
+// An empty result means unit tests only, which is correct for internal-only work.
+const declaredSurfaces = Array.isArray(spec.surfaces) ? spec.surfaces : []
+const structuralSurfaces = [
+  spec.apiSpec ? 'api-contract' : null,
+  Array.isArray(spec.eventContracts) && spec.eventContracts.length ? 'event-chain' : null,
+].filter(Boolean)
+const contractSurfaces = [...new Set([...declaredSurfaces, ...structuralSurfaces])]
+
 const contract = {
   spec,
   repoPath: spec.repoPath || null,
   acceptanceCriteria: Array.isArray(spec.acceptanceCriteria) ? spec.acceptanceCriteria : [],
+  surfaces: contractSurfaces,
+  // Pyramid shape, coverage threshold, and environment matrix belong to the spec,
+  // not to each task built from it. Carried when the spec states one; absent when
+  // it does not — tdd-red does not invent a per-task substitute.
+  testStrategy: spec.testStrategy || null,
   freshness: freshness.artifact,
 }
+if (contractSurfaces.length) log(`Contract surfaces: ${contractSurfaces.join(', ')} — specialist test writers will be derived from these`)
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
 phase('Red')
@@ -163,11 +191,26 @@ const red = await gateLoop({
     'The test fails for the intended reason',
     'No production code changed yet',
   ],
+  checks: [
+    { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
+    { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+  ],
   escalateTargets: ['spec-freshness'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return { ok: false, stage: 'red', spec: spec.id, detail: red }
+// Red found the contract already encoded by PASSING tests: the behavior exists.
+// Green would be asked to make a failing test pass when none fails, so the run
+// ends here — successfully, with nothing built. Closing the work item is a human
+// call, not something this composite does on its own.
+if (red.alreadySatisfied) {
+  return {
+    ok: true, stage: 'red', spec: spec.id, alreadySatisfied: true, built: false,
+    reason: 'the spec contract is already satisfied by passing tests — no Red is obtainable and nothing was authored or changed',
+    detail: red.artifact,
+  }
+}
 
 // ── Green (Gate 2b) ───────────────────────────────────────────────────────────
 phase('Green')
@@ -177,6 +220,10 @@ const green = await gateLoop({
     'The previously-failing test now passes',
     'No other tests regressed',
     'The change is minimal and the test was not weakened',
+  ],
+  checks: [
+    { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
+    { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
   ],
   escalateTargets: ['spec-freshness', 'red'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-bead',
   description:
-    'Leaf mini — Unattended-mode bead router for the agentic SDLC. Enforces the work-item hierarchy: PRD→Epic, Spec→Story, Story→Task, and Bug standing alone. ONLY a Task or a Bug is workable, and a Task only when it has a parent Story and a grandparent Epic. Epics and Stories are containers — they are never worked, only DECOMPOSED into the next level down. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite), "decompose" (dispatch the composite that creates the next level), or "skip" (with the reason). Pure routing logic; it authors nothing and force-fits nothing.',
+    'Leaf mini — bead router for the agentic SDLC. Enforces the work-item hierarchy: a PRD and its Epic are ONE item in two representations, as are a Spec and its Story; Epic → Story → Task; a Bug stands alone. ONLY a Task or a Bug is workable, and a Task only when it has a parent Story and a grandparent Epic. Nothing decomposes an Epic or a Story: the FILE side is what decomposes (PRD → TRD → Spec), and the beads are what that chain deposits, so an Epic or Story with no children needs its document ELABORATED, not itself broken up. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite), "elaborate" (run the next document stage, which deposits the beads beneath this one), or "skip" (with the reason). Elaboration requires an explicit human-initiated invocation — existence is not readiness — so an unattended sweep gets "skip" and a reason. Pure routing logic; it authors nothing and force-fits nothing.',
   phases: [
     { title: 'Classify', detail: 'hierarchy + workability rules; never force-fit' },
   ],
@@ -22,11 +22,16 @@ export const meta = {
 //     childCount?:  number,          // how many children this bead already has
 //   },
 //   allowAmbiguityAgent?: boolean,   // default true
+//   humanInitiated?: boolean,        // default FALSE. Set ONLY when a person invoked this
+//                                    // run (e.g. /work-bead). Elaborating an Epic's or a
+//                                    // Story's document starts build work, and that is a
+//                                    // product decision; an unattended sweep leaves this
+//                                    // unset and gets a skip with the command to run.
 // }
 //
 // Returns: {
 //   bead,
-//   action,      // 'work' | 'decompose' | 'skip'
+//   action,      // 'work' | 'elaborate' | 'skip'
 //   composite,   // 'prd-to-spec' | 'spec-to-deploy' | 'bug-fix' | 'infra-change' | null
 //   reason,
 //   ruledBy?,    // 'deterministic' | 'ambiguity-detector'
@@ -34,6 +39,15 @@ export const meta = {
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
 const allowAmbiguityAgent = a.allowAmbiguityAgent !== false
+
+// Existence is NOT readiness. A PRD, an Epic, or a Story sitting there with no
+// children is not a request to build it — running a pipeline is, and that is a
+// product decision a person makes. So elaboration is gated on the caller stating
+// that a human initiated this run. An unattended sweep leaves the flag unset and
+// receives a skip, exactly as a `feature` bead already does. Putting the gate here
+// rather than in each caller is deliberate: a rule every future caller has to
+// remember is not a rule.
+const humanInitiated = a.humanInitiated === true
 
 const norm = (v) => String(v || '').trim().toLowerCase()
 const type = norm(bead.type)
@@ -52,7 +66,7 @@ function route(action, composite, reason, ruledBy) {
   return { bead, action, composite, reason, ruledBy: ruledBy || 'deterministic' }
 }
 const work = (composite, reason) => route('work', composite, reason)
-const decompose = (composite, reason) => route('decompose', composite, reason)
+const elaborate = (composite, reason) => route('elaborate', composite, reason)
 const skip = (reason) => route('skip', null, reason)
 
 // Which build-and-ship composite a workable item belongs to. Infra beats the
@@ -73,9 +87,12 @@ function workComposite() {
 //   within one repo. ONLY a Task or a Bug is workable; a Task only when it has
 //   a parent Story and a grandparent Epic.
 //
-//   Epics and Stories are never worked. An Epic with no Stories needs
-//   decomposing; a Story with no Tasks needs decomposing. Once decomposed they
-//   are inert containers and the work lives in their descendants.
+//   A PRD and its Epic are ONE item in two representations, created together, as
+//   are a Spec and its Story. The FILE side is what decomposes; the beads are what
+//   that chain deposits. So nothing "decomposes an Epic" or "decomposes a Story" —
+//   an Epic with no Stories needs its PRD elaborated into a TRD and Spec(s), and a
+//   Story with no Tasks needs its SPEC decomposed. Once that has happened they are
+//   inert containers and the work lives in their descendants.
 function deterministicRoute() {
   // 1) BUG — workable on its own. No parent required: a defect in existing
   //    behavior is its own contract, manufactured by bug-triage.
@@ -83,39 +100,53 @@ function deterministicRoute() {
     return work('bug-fix', `bug is workable standing alone (type="${type || 'n/a'}"${labelTail}) → bug-fix`)
   }
 
-  // 2) EPIC — a container, never worked. Decompose it if it has no Stories yet.
+  // 2) EPIC — the bead face of a PRD, never worked. An Epic with no Stories does
+  //    not get "decomposed": its PRD gets elaborated into a TRD and Specs, and the
+  //    Stories are what that chain deposits underneath it.
   if (type === 'epic' || hasLabel('epic')) {
     if (childCount === 0) {
-      return decompose(
+      if (!humanInitiated) {
+        return skip(
+          `epic has no Stories yet, but elaborating its PRD is a decision about whether to build this, and now — a human's call, not a sweep's. → SKIP. To build it: /agent-teams-workforce:work-bead ${bead.id || '<epic-id>'}, or /agent-teams-workforce:start-prd`,
+        )
+      }
+      return elaborate(
         'prd-to-spec',
-        `epic has no Stories yet → prd-to-spec, to produce the TRD/Spec and the Story + Task beads beneath it`,
+        `epic has no Stories yet and the run is human-initiated → prd-to-spec, which elaborates its PRD into the TRD and Spec(s) and deposits the Story + Task beads beneath it`,
       )
     }
     if (childCount === null) {
       return skip(
-        `epic is a container and is never worked directly; childCount was not supplied, so whether it still needs decomposing cannot be determined → SKIP (supply bead.childCount to route epics)`,
+        `epic is the bead face of a PRD and is never worked directly; childCount was not supplied, so whether its PRD still needs elaborating cannot be determined → SKIP (supply bead.childCount to route epics)`,
       )
     }
     return skip(
-      `epic already has ${childCount} child Story/Stories — it is a container, and the work lives in its descendants → SKIP (route its Tasks instead)`,
+      `epic already has ${childCount} child Story/Stories — its PRD has been elaborated and the work lives in its descendants → SKIP (route its Tasks instead)`,
     )
   }
 
-  // 3) STORY — a container, never worked. Decompose it if it has no Tasks yet.
+  // 3) STORY — the bead face of a Spec, never worked. A Story with no Tasks does
+  //    not get "decomposed" either: its SPEC is what decomposes into tasks, and
+  //    they are parented to the Story.
   if (type === 'story' || hasLabel('story')) {
     if (childCount === 0) {
-      return decompose(
+      if (!humanInitiated) {
+        return skip(
+          `story has no Tasks yet, but decomposing its Spec starts build work — a human's call, not a sweep's. → SKIP. To build it: /agent-teams-workforce:work-bead ${bead.id || '<story-id>'}`,
+        )
+      }
+      return elaborate(
         'prd-to-spec',
-        `story has no Tasks yet → prd-to-spec, whose task-decomposition phase emits the Task beads beneath it`,
+        `story has no Tasks yet and the run is human-initiated → prd-to-spec, whose task-decomposition phase decomposes this Story's Spec into Task beads parented to it`,
       )
     }
     if (childCount === null) {
       return skip(
-        `story is a container and is never worked directly; childCount was not supplied, so whether it still needs decomposing cannot be determined → SKIP (supply bead.childCount to route stories)`,
+        `story is the bead face of a Spec and is never worked directly; childCount was not supplied, so whether its Spec still needs decomposing cannot be determined → SKIP (supply bead.childCount to route stories)`,
       )
     }
     return skip(
-      `story already has ${childCount} child Task(s) — it is a container, and the work lives in its Tasks → SKIP (route its Tasks instead)`,
+      `story already has ${childCount} child Task(s) — its Spec has been decomposed and the work lives in its Tasks → SKIP (route its Tasks instead)`,
     )
   }
 
@@ -138,7 +169,7 @@ function deterministicRoute() {
       .filter(Boolean)
       .join(' and ')
     return skip(
-      `task is missing its ${missing}; a Task without a Story has no Spec and therefore no contract to build against → SKIP (attach it to a Story under an Epic, or decompose the Epic first)`,
+      `task is missing its ${missing}; a Task without a Story has no Spec and therefore no contract to build against → SKIP (attach it to a Story under an Epic, or elaborate the Epic's PRD first)`,
     )
   }
 
@@ -253,9 +284,11 @@ if (kind === 'bug') {
   final = work('bug-fix', `classified as a bug: ${agentReason} → bug-fix`)
 } else if (kind === 'epic' || kind === 'story') {
   final =
-    childCount === 0
-      ? decompose('prd-to-spec', `classified as an ${kind} with no children: ${agentReason} → prd-to-spec to decompose it`)
-      : skip(`classified as an ${kind} — a container, never worked directly: ${agentReason} → SKIP (route its descendants instead)`)
+    childCount !== 0
+      ? skip(`classified as an ${kind} — the bead face of a document, never worked directly: ${agentReason} → SKIP (route its descendants instead)`)
+      : humanInitiated
+        ? elaborate('prd-to-spec', `classified as an ${kind} with no children and the run is human-initiated: ${agentReason} → prd-to-spec, which elaborates its document and deposits the beads beneath it`)
+        : skip(`classified as an ${kind} with no children: ${agentReason}. Elaborating its document is a decision to build, which is a human's call, not a sweep's → SKIP (invoke /agent-teams-workforce:work-bead ${bead.id || '<id>'} to proceed)`)
 } else if (kind === 'task') {
   const hasStoryParent = parentType === 'story' || ancestorTypes.includes('story')
   const hasEpicAncestor = ancestorTypes.includes('epic')
@@ -266,7 +299,9 @@ if (kind === 'bug') {
 } else if (kind === 'infra') {
   final = work('infra-change', `classified as an infrastructure change: ${agentReason} → infra-change`)
 } else {
-  final = decompose('prd-to-spec', `classified as feature-shaped work with no hierarchy yet: ${agentReason} → prd-to-spec`)
+  final = humanInitiated
+    ? elaborate('prd-to-spec', `classified as feature-shaped work with no hierarchy yet and the run is human-initiated: ${agentReason} → prd-to-spec`)
+    : skip(`classified as feature-shaped work with no hierarchy yet: ${agentReason}. Promoting it to a PRD and an Epic is a human's call → SKIP (/agent-teams-workforce:start-prd)`)
 }
 
 final.ruledBy = 'ambiguity-detector'

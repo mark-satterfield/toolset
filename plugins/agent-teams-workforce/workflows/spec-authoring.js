@@ -34,7 +34,7 @@ export const meta = {
 // Story are created together; nothing here writes to .beads — the caller writes it with bd):
 //   story: {
 //     key:           string,   // stable local key ("S1") — parent links in the bead set are by key
-//     type:          'story',  // literal — a Story is a container, never worked, only decomposed
+//     type:          'story',  // literal — the bead face of the Spec; a container, never worked (its SPEC is what decomposes)
 //     title:         string,
 //     description:   string,
 //     repoPath:      string,   // the single repo this Story covers — copied from args.repoPath
@@ -432,7 +432,7 @@ async function main(a) {
   }
 
   const storyDraft = await agent(
-    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, only decomposed downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}`,
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',

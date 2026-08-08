@@ -76,7 +76,7 @@ async function persistRun(outcome) {
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
   // Every adjudication goes to the ledger. Without the verdict and its per-criterion
   // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
@@ -105,8 +105,16 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
 
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
+    // A phase may report that its work was ALREADY DONE — Red finding the contract
+    // satisfied by passing tests, for instance. There is nothing for the gate to
+    // judge and no rework that could change the answer, so gating it would fail a
+    // criterion nothing can meet and burn the entire loop budget proving it.
+    if (artifact && artifact.alreadySatisfied === true) {
+      log(`${phaseName}: ALREADY SATISFIED — nothing to build; gate ${gate} skipped`)
+      return { ok: true, artifact, alreadySatisfied: true }
+    }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -206,6 +214,10 @@ const red = await gateLoop({
     'The test asserts the real post-fix behavior, not merely that a symbol is absent. Once the capability exists the test must still be meaningful — it must exercise the behavior (the raise, the log record, the persistence call), not just that an import now succeeds.',
     'No production code was changed to manufacture the failure',
   ],
+  checks: [
+    { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
+    { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+  ],
   escalateTargets: ['triage'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
 })
@@ -234,11 +246,27 @@ let escalations = 0
 for (;;) {
   if (redResult.artifact && redResult.artifact.ledger) runLedger.push(redResult.artifact.ledger)
   if (!redResult.ok) return { ok: false, stage: 'red', bead: bead.id, detail: redResult }
+  // Red found the expected behavior already asserted by PASSING tests: this defect
+  // is already fixed, or was never real. Green would be asked to make a failing test
+  // pass when none fails, and the Red⇄Green escalation below would ping-pong over a
+  // test nobody can legitimately make fail. The run ends here — successfully, with
+  // nothing built. Closing the bug is a human call.
+  if (redResult.alreadySatisfied) {
+    return {
+      ok: true, stage: 'red', bead: bead.id, alreadySatisfied: true, built: false,
+      reason: 'the expected behavior is already asserted by passing tests — the defect is already fixed or was never reproducible; no Red is obtainable and nothing was authored or changed',
+      detail: redResult.artifact,
+    }
+  }
 
   phase('Green')
   green = await gateLoop({
     gate: '2b', phaseName: 'TDD Green',
     criteria: ['The previously-failing test now passes', 'No other tests regressed', 'The change is minimal and the test was not weakened'],
+    checks: [
+      { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
+      { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
+    ],
     escalateTargets: ['triage', 'red'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: redResult.artifact, implementer: a.implementer, feedback }),
   })
@@ -263,6 +291,13 @@ for (;;) {
       'The test asserts the real post-fix behavior, not merely that a symbol is absent.',
       'No production code was changed to manufacture the failure',
       'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.',
+    ],
+    // Same deterministic pair as the first Red gate — a phase that did not obtain
+    // Red, or obtained it without capturing executed output, is rejected without
+    // consulting the adjudicator at all.
+    checks: [
+      { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
+      { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
     ],
     escalateTargets: ['triage'],
     phaseFn: (feedback) =>

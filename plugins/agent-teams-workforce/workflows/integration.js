@@ -1,7 +1,7 @@
 export const meta = {
   name: 'integration',
   description:
-    'Shared-tail mini — Integration Testing. A read-only integration-testing-lead SELECTS which integration/E2E/contract suites to run against the contract\'s surfaces (provisioning the test environment first when one is needed), the script runs the selected suites in parallel across the event chain, and on failure an independent root-cause-analyst classifies where it must escalate (code / test / environment / architecture) after the flaky-test-detector confirms intermittent failures.',
+    'Shared-tail mini — Integration Testing. Suites are DERIVED from the surfaces the contract declares — each suite exists to exercise a boundary, so a contract declaring no cross-service, event-chain, or data-pipeline surface reports that no suite applies and the phase is skipped; an UNDECLARED surface list means unknown, not empty, and falls back to a read-only integration-testing-lead that selects them (provisioning the test environment first when one is needed). A caller may name suites outright and wins over both. The script runs the selected suites in parallel across the event chain, and on failure an independent root-cause-analyst classifies where it must escalate (code / test / environment / architecture) after the flaky-test-detector confirms intermittent failures.',
   phases: [{ title: 'Integration', detail: 'select + run suites; classify failures' }],
 }
 
@@ -27,17 +27,57 @@ Change under test: ${changeUnderTest}`
 
 phase('Integration')
 
-// integration-testing-lead SELECTS the suites whose surfaces the change touches — a
-// READ-ONLY router that runs no tests and writes nothing. A caller may pre-specify
-// args.suites to skip selection. args.provisionEnv (or the lead's verdict) decides
-// whether the test environment must be provisioned/reset first.
+// ── Suite selection, in precedence order: caller → surfaces → the lead ─────────
+//
+// Surfaces DERIVE the suite set when the contract declares them. Each integration
+// suite exists to exercise a boundary; if the contract states the change crosses no
+// such boundary, there is no boundary for that suite to exercise. This is a lookup
+// over an upstream-declared enum, not an inference from file names.
+//
+// An UNDECLARED surface list (not an array) means unknown, not empty, and falls
+// through to the lead exactly as before — a contract that never considered the
+// question must not silently skip integration testing. A DECLARED empty list is a
+// positive statement of internal-only work, and the phase reports that no suite
+// applies rather than running the backend default against a change that has no
+// backend surface. Callers with their own answer still pass args.suites and win
+// outright; infra does exactly that.
+const SURFACE_SUITES = {
+  'event-chain': ['aws-integration-test-runner', 'event-flow-tester'],
+  'api-contract': ['cross-service-contract-tester'],
+  'data-pipeline': ['data-consistency-checker'],
+}
+const declaredSurfaces = Array.isArray(c.surfaces) ? c.surfaces : null
+
 let suites
 let provisionEnv = a.provisionEnv === true
 let selectionMode
 if (Array.isArray(a.suites) && a.suites.length) {
   suites = a.suites.filter((s) => SUITE_AGENTS[s])
-  selectionMode = 'selected'
+  selectionMode = 'caller-specified'
+} else if (declaredSurfaces) {
+  suites = [...new Set(declaredSurfaces.flatMap((s) => SURFACE_SUITES[s] || []))].filter((s) => SUITE_AGENTS[s])
+  selectionMode = 'derived'
+  if (!suites.length) {
+    log(
+      `Integration: the contract declares no cross-boundary surface (${declaredSurfaces.length ? declaredSurfaces.join(', ') : 'none'}) — no integration suite applies; skipping`
+    )
+    return {
+      suites: [],
+      provisionEnv: false,
+      results: [],
+      passed: true,
+      alreadySatisfied: true,
+      reason:
+        'the contract declares no cross-service, event-chain, or data-pipeline surface, so no integration suite has a boundary to exercise; unit coverage from Red/Green stands',
+      ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'no-applicable-suite', ok: true },
+    }
+  }
+  provisionEnv = true
+  log(`Integration suites derived from surfaces [${declaredSurfaces.join(', ')}]: ${suites.join(', ')}`)
 } else {
+  // No caller answer and no declared surfaces — the READ-ONLY integration-testing-lead
+  // routes. It runs no tests and writes nothing; its verdict also decides whether the
+  // test environment must be provisioned or reset before the suites run.
   const menu = Object.entries(SUITE_AGENTS)
     .map(([name, why]) => `  - ${name}: ${why}`)
     .join('\n')

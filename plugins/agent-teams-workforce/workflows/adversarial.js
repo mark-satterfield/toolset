@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial',
   description:
-    'Shared-tail mini — Adversarial Validation (feeds the constitutional Gate 4). Two attack lanes run concurrently against the change in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adversarial-critique-adjudicator referees severity. Security findings are constitutive and cannot be downgraded by implementers.',
+    'Shared-tail mini — Adversarial Validation (feeds the constitutional Gate 4). Attackers run concurrently against the change in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adversarial-critique-adjudicator referees severity. The lane set is DERIVED from the surfaces the contract declares — most attack classes need a surface to attack — over a BASELINE of data-exposure and dependency-CVE scanning that always runs and that no surface list can remove, because those apply to any code change. An undeclared surface list means unknown, not empty, and runs every lane; a caller-supplied trimmedScope wins. Security findings are constitutive and cannot be downgraded by implementers.',
   phases: [
     { title: 'Attack', detail: 'access-control + data-integrity and infra + exposure lanes (concurrent)' },
     { title: 'Adjudicate', detail: 'referee severity; classify constitutive vs competitive' },
@@ -58,9 +58,53 @@ const infraLane = [
 // than silently skip security validation.
 const allAttackers = [...accessLane, ...infraLane]
 const requested = Array.isArray(a.trimmedScope) ? allAttackers.filter((n) => a.trimmedScope.includes(n)) : []
-const attackers = requested.length ? requested : allAttackers
 if (Array.isArray(a.trimmedScope) && a.trimmedScope.length && !requested.length) {
   log(`⚠ trimmedScope matched no known attacker (${a.trimmedScope.join(', ')}) — running all lanes`)
+}
+
+// ── Surface-derived lane selection ────────────────────────────────────────────
+//
+// Most attack classes need a surface to attack. Auth bypass needs an auth surface;
+// injection needs an input boundary; DoS resilience needs a stated load budget.
+// Running all nine against a change that touches none of them buys nothing and is
+// most of this phase's cost.
+//
+// The BASELINE is never empty and is not derived: data exposure and dependency CVEs
+// apply to any code change at all — a fix confined to internal logic can still leak a
+// field into a log or pull a vulnerable transitive package. Security findings are
+// constitutive here, so the floor never drops to zero and no surface list can remove it.
+//
+// As everywhere else, an UNDECLARED surface list means unknown, not empty, and runs
+// every lane. Only a contract that positively declares its surfaces gets a narrowed set.
+const BASELINE_ATTACKERS = ['data-exposure-scanner', 'dependency-cve-auditor']
+const SURFACE_ATTACKERS = {
+  auth: ['auth-bypass-tester', 'permission-escalation-tester'],
+  'api-contract': ['injection-attack-tester', 'contract-violation-tester'],
+  'event-chain': ['race-condition-tester', 'contract-violation-tester'],
+  'web-ui': ['injection-attack-tester'],
+  performance: ['dos-resilience-tester'],
+  'data-pipeline': ['race-condition-tester'],
+}
+const declaredSurfaces = Array.isArray(c.surfaces) ? c.surfaces : null
+
+let attackers
+let laneMode
+if (requested.length) {
+  attackers = requested
+  laneMode = 'trimmed-by-caller'
+} else if (declaredSurfaces) {
+  attackers = [
+    ...new Set([...BASELINE_ATTACKERS, ...declaredSurfaces.flatMap((s) => SURFACE_ATTACKERS[s] || [])]),
+  ].filter((n) => allAttackers.includes(n))
+  laneMode = 'derived-from-surfaces'
+  log(
+    `Adversarial lanes derived from surfaces [${declaredSurfaces.join(', ') || 'none'}]: ${attackers.join(', ')} ` +
+      `(baseline ${BASELINE_ATTACKERS.join(' + ')} always runs)`
+  )
+} else {
+  attackers = allAttackers
+  laneMode = 'all-lanes'
+  log('Adversarial: contract declares no surface list — running every lane')
 }
 
 phase('Attack')
@@ -111,4 +155,13 @@ ${findings.length ? JSON.stringify(findings, null, 2) : '(none reported)'}`,
   }
 )
 
-return { findings, adjudication }
+return {
+  findings,
+  adjudication,
+  // Which lanes actually ran, and why. Without this a run that narrowed its attack
+  // set is indistinguishable from one that ran everything, and "we tested for that"
+  // becomes unfalsifiable after the fact.
+  attackers,
+  laneMode,
+  surfaces: declaredSurfaces,
+}

@@ -17,7 +17,7 @@ export const meta = {
 //   ok, request, intakeBrief, persona, okrs, prd, alignmentVerdict, scope, decision, note,
 //   epic: {                    // the Epic created together with the PRD — the caller writes it with bd
 //     key:         'E1',       // stable local key; downstream parent links reference it
-//     type:        'epic',     // literal — an Epic is a container, decomposed but never worked
+//     type:        'epic',     // literal — the bead face of the PRD; a container, never worked and never itself decomposed
 //     title:       string,     // the PRD's title
 //     description: string,     // one-paragraph scope statement derived from the PRD
 //     prdRef:      string,     // the PRD's id (falls back to its title) — the pairing is the point

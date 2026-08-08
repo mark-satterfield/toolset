@@ -1,16 +1,16 @@
 export const meta = {
   name: 'tdd-red',
   description:
-    'Shared-tail mini — TDD Red. A read-only test-design-lead selects the test writers the contract surfaces need (unit always) and the test-strategy-decider rules the strategy; the selected writers author the failing tests concurrently and confirm they fail for the intended reason, then an independent coverage reviewer checks them against the acceptance criteria. Writes tests only — no production code.',
+    'Shared-tail mini — TDD Red. Discovery is a LOOKUP that runs nothing: it reports which acceptance criteria already have a covering test, and writers are DERIVED from the contract\'s declared surfaces (unit always) rather than routed by an agent, with the test strategy inherited from the spec rather than re-ruled per task. Execution happens at Red confirmation only — the writers run what they author, and existing tests are executed just once, under a three-way verdict: red (reuse), already-satisfied (the behavior exists, nothing is authored and the phase reports up), or not-encoded (author against them). An independent coverage reviewer then checks the result against the acceptance criteria. Writes tests only — no production code.',
   phases: [{ title: 'Red', detail: 'author + confirm a failing test' }],
 }
 
 // args: {
 //   contract:    <bug-triage output or spec contract>,
 //   feedback?:   string,     // gate feedback from a previous attempt
-//   skipSurvey?: boolean,    // force fresh authoring, bypassing existing-test reuse.
-//                            // Use when the tests on disk are known bad — a survey
-//                            // would otherwise report them as satisfying Red.
+//   skipDiscovery?: boolean, // force fresh authoring, bypassing existing-test reuse.
+//                            // Use when the tests on disk are known bad — discovery
+//                            // would otherwise report them as covering the contract.
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
@@ -27,60 +27,52 @@ Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 Acceptance criteria to encode as tests:
 ${ac.length ? ac.map((x, i) => `${i + 1}. GIVEN ${x.given} WHEN ${x.when} THEN ${x.then}`).join('\n') : '(none — derive minimal coverage from the reproduction)'}`
 
-// test-design-lead (READ-ONLY) selects which test writers the contract's surfaces need;
-// unit is always included. It writes no tests — it routes.
-const selection = await agent(
-  `You are the test-design-lead — a READ-ONLY router. Do NOT write tests. Select which test writers this work needs based on the surfaces in the contract below. ALWAYS include tdd-unit-test-generator. Add ONLY those that match a real surface: consumer-driven-contract-test-writer (API/event contracts), aws-integration-test-writer (event API→EventBridge→SQS→Lambda chain), security-test-case-designer (auth/authz/abuse surface), performance-benchmark-writer (stated performance NFRs), playwright-e2e-web-test-writer (web UI), xcuitest-writer (iOS), espresso-test-writer (Android), mobile-e2e-test-writer (React Native / cross-platform), ml-evaluation-tester (ML/matching/recommendation), data-pipeline-test-writer (ETL/CDC/data pipeline). Return the chosen writer agent names.
+// ── Writers: DERIVED from the contract's surfaces, not decided here ────────────
+//
+// Which surfaces a change touches is a semantic judgment, and it is made ONCE
+// upstream by the agent that already reads the code — bug-triage's diagnostician,
+// or spec authoring. It is not re-made here: a per-task routing turn cost a full
+// subagent round-trip to answer a question the contract already answers, and for
+// unit-only work the answer was fixed in advance anyway, since the unit generator
+// is force-included regardless of what came back.
+//
+// The mapping below is a lookup, not a guess. Each surface is an upstream-declared
+// enum value, so no keyword matching is inferring meaning from file paths here.
+const SURFACE_WRITERS = {
+  'api-contract': 'consumer-driven-contract-test-writer',
+  'event-chain': 'aws-integration-test-writer',
+  auth: 'security-test-case-designer',
+  performance: 'performance-benchmark-writer',
+  'web-ui': 'playwright-e2e-web-test-writer',
+  ios: 'xcuitest-writer',
+  android: 'espresso-test-writer',
+  'cross-platform-mobile': 'mobile-e2e-test-writer',
+  ml: 'ml-evaluation-tester',
+  'data-pipeline': 'data-pipeline-test-writer',
+}
+const surfaces = (Array.isArray(c.surfaces) ? c.surfaces : []).map((s) => String(s || '').trim().toLowerCase())
+const surfaceWriters = surfaces.map((s) => SURFACE_WRITERS[s]).filter(Boolean)
+// Unit is unconditional: every contract has behavior to assert, whatever it touches.
+const writersFinal = ['tdd-unit-test-generator', ...new Set(surfaceWriters)]
+const selectionMode = surfaceWriters.length ? 'derived' : 'unit-only'
+if (surfaces.length && !surfaceWriters.length) {
+  log(`⚠ contract declared surfaces [${surfaces.join(', ')}] that map to no writer — authoring unit tests only`)
+}
+log(`Red writers (${selectionMode}): ${writersFinal.join(', ')}`)
 
-Work within the repository at: ${repo}
+// ── Strategy: INHERITED from the contract, never ruled per task ────────────────
+//
+// Pyramid shape, coverage threshold, and environment matrix are properties of the
+// Story or the repository, not of one task. Ruling them per task did not just cost
+// a turn — it let two tasks in the same Story inherit different thresholds, which
+// is worse than not deciding at all. The decision still happens under the doctrine,
+// once, where the Spec is authored; here it is only carried.
+const strategy = c.testStrategy || null
+const strategyBlock = strategy
+  ? `\nTest strategy (inherited from the spec): pyramid=${strategy.pyramid || 'n/a'}; coverageThreshold=${strategy.coverageThreshold || 'n/a'}; envMatrix=${(strategy.envMatrix || []).join(', ') || 'n/a'}`
+  : ''
 
-${taskBlock}`,
-  {
-    label: 'red:select-writers',
-    phase: 'Red',
-    agentType: 'agent-teams-workforce:test-design-lead',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['writers'],
-      properties: {
-        writers: { type: 'array', items: { type: 'string' } },
-        rationale: { type: 'string' },
-      },
-    },
-  }
-)
-const picked = selection && Array.isArray(selection.writers) ? selection.writers.filter(Boolean) : []
-const writers = picked.includes('tdd-unit-test-generator') ? picked : ['tdd-unit-test-generator', ...picked]
-const writersFinal = writers.length ? writers : ['tdd-unit-test-generator']
-const selectionMode = picked.length ? 'selected' : 'default'
-
-// test-strategy-decider RULES the strategy (pyramid shape, coverage threshold, env
-// matrix) that frames how the writers author — a decision, not analysis or authoring.
-const strategy = await agent(
-  `You are the test-strategy-decider. Rule the test strategy for this work: pyramid shape (unit/integration/e2e balance), coverage threshold, and the environment matrix needed. You ONLY rule — do not author tests. Selected test writers: ${writersFinal.join(', ')}.
-
-${taskBlock}`,
-  {
-    label: 'red:strategy',
-    phase: 'Red',
-    agentType: 'agent-teams-workforce:test-strategy-decider',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['pyramid', 'coverageThreshold'],
-      properties: {
-        pyramid: { type: 'string' },
-        coverageThreshold: { type: 'string' },
-        envMatrix: { type: 'array', items: { type: 'string' } },
-        rationale: { type: 'string' },
-      },
-    },
-  }
-)
-const strategyBlock = `Test strategy (decided): pyramid=${strategy && strategy.pyramid}; coverageThreshold=${strategy && strategy.coverageThreshold}; envMatrix=${(strategy && strategy.envMatrix || []).join(', ') || 'n/a'}`
-
-// ── Survey: is the contract ALREADY encoded? ───────────────────────────────────
+// ── Discovery: is the contract ALREADY encoded? ────────────────────────────────
 //
 // Red is idempotent. A run that was interrupted, or re-dispatched after a gate
 // loop, may find its tests already on disk from the previous attempt — they are
@@ -88,61 +80,136 @@ const strategyBlock = `Test strategy (decided): pyramid=${strategy && strategy.p
 // them wastes the most expensive phase in the pipeline and, worse, a second
 // writer pass produces a parallel file covering the same behavior.
 //
-// This is the "already done" claim again, and the same rule applies: an assertion
-// may not skip work. But here the evidence is EXECUTABLE — the surveyor runs the
-// tests and captures the failing output. That is a stronger check than any
-// citation, because a test that does not exist cannot produce a failure, and a
-// test that no longer fails is not Red however confidently anyone describes it.
-const survey = a.skipSurvey === true
+// The only decision at this point is AUTHOR or DON'T AUTHOR, and existence alone
+// settles it. So this step RUNS NOTHING — it is a lookup. Whether a found test is
+// actually Red is a different question, and it is answered by execution at Red
+// confirmation: the writers run what they author, and the branch just below runs
+// what discovery found. Executing here would re-answer, minutes early, what the
+// next step answers regardless, and every first attempt would pay for it to guard
+// a stale-test case that almost never fires. Deferred, the common case pays
+// nothing and the rare case pays one loop.
+const discovery = a.skipDiscovery === true
   ? null
   : await agent(
-      `Before any test is written, establish what the repository ALREADY has. You are READ-ONLY for production code; you may RUN tests. Work within the repository at: ${repo}
+      `Before any test is written, establish what the repository ALREADY has. This is a LOOKUP, not an evaluation. Work within the repository at: ${repo}
 
-Find the tests that already encode the contract below — a previous attempt at this same work may have written them, or they may predate it. Then RUN them and capture what happens.
+Locate the test files that already encode the contract below — a previous attempt at this same work may have written them, or they may predate it. Search by the bead id, by the module under test, and by the behavior each criterion names.
 
-Report per acceptance criterion whether it is already covered. Set alreadyRed=true ONLY if every criterion is covered AND the covering tests currently FAIL for the intended product reason. Capture the failing output verbatim as evidence — a claim of coverage with no executed output is not evidence, and a test that passes is not Red no matter what it is named.
+COVERING THE CODE IS NOT ENCODING THE CONTRACT. A module usually has tests already; that does not mean this contract is encoded. The question is whether a test asserts the EXPECTED behavior stated in the criteria below — not whether the file under change is touched by some test. On a defect these come apart hardest: the existing tests assert the CURRENT behavior, which is the behavior being changed. Treat a criterion as covered only when an existing test would have to change for the criterion to be met.
 
-List in gaps the criteria that are uncovered or whose covering test does not fail for the right reason. Those, and only those, will be authored.
+DO NOT RUN ANYTHING. Do not invoke a test runner, a build, or a synth. Whether these tests currently pass or fail is not your question and you must not go looking — that is settled downstream by executing them. Report only what EXISTS.
+
+List in gaps every acceptance criterion that has no covering test file. Those, and only those, will be authored.
 
 ${taskBlock}`,
       {
-        label: 'red:survey',
+        label: 'red:discovery',
         phase: 'Red',
+        effort: 'low',
         agentType: 'agent-teams-workforce:test-coverage-gap-reviewer',
         schema: {
           type: 'object',
           additionalProperties: false,
-          required: ['alreadyRed', 'existingTestFiles', 'gaps', 'evidence'],
+          required: ['existingTestFiles', 'gaps'],
           properties: {
-            alreadyRed: { type: 'boolean' },
             existingTestFiles: { type: 'array', items: { type: 'string' } },
             gaps: { type: 'array', items: { type: 'string' } },
-            evidence: { type: 'string' },
+            notes: { type: 'string' },
           },
         },
       }
     )
 
-// Reuse requires executed evidence, not a claim. Anything less authors the tests.
-const reusable = !!(survey && survey.alreadyRed === true && String(survey.evidence || '').trim())
-if (reusable) {
-  log(`Red already satisfied by existing tests: ${(survey.existingTestFiles || []).join(', ') || '(none named)'} — skipping the writers`)
-  return {
-    testFiles: survey.existingTestFiles || [],
-    redConfirmed: true,
-    evidence: survey.evidence,
-    reusedExistingTests: true,
-    strategy,
-    coverage: { gaps: [], reviewed: 'survey' },
-    ledger: { phase: 'red', chosen: writersFinal, mode: 'reused', ok: true },
+const foundFiles = (discovery && discovery.existingTestFiles) || []
+const openGaps = (discovery && discovery.gaps) || []
+
+// Every criterion already has a covering file, so there is nothing to author —
+// but "it exists" is not "it is Red". THIS is where execution belongs, and it is
+// the only place Red gets executed before authoring.
+//
+// The verdict is THREE-WAY, not a boolean, because the two non-red outcomes need
+// opposite responses. Tests that pass while genuinely encoding this contract mean
+// the expected behavior is ALREADY PRESENT — the defect is fixed, or was never
+// real. There is no failing test to write, and sending that to the writers asks
+// them to manufacture a red, which they can only do by asserting something false.
+// That case ends the phase and reports upward. Only a contract that turns out NOT
+// to be encoded — discovery saw neighbouring tests and over-claimed, or the
+// failure is an unrelated harness break — goes on to authoring.
+if (foundFiles.length && !openGaps.length) {
+  const confirmation = await agent(
+    `Discovery reports that existing tests already encode every acceptance criterion below. RUN THEM — only these files, never the wider suite — and rule on what you observe:
+${foundFiles.join('\n')}
+
+Return exactly one verdict:
+
+- "red": they FAIL, and the failures are the intended product failures for the criteria below. The contract is encoded and not yet satisfied.
+- "already-satisfied": they PASS, and they genuinely assert the expected behavior in the criteria below. The behavior already exists — the defect is already fixed, or was never real. Rule this ONLY when the passing assertions actually match the criteria; it stops the work.
+- "not-encoded": they do NOT actually assert the expected behavior in the criteria (they cover the same module or the current behavior instead), or they fail for an unrelated reason — an import error, a missing fixture, a broken harness. Discovery over-claimed and the contract still needs authoring.
+
+Capture the executed output verbatim as evidence; a verdict with no output is not evidence. Do NOT write or repair any test.
+
+${taskBlock}`,
+    {
+      label: 'red:confirm-existing',
+      phase: 'Red',
+      agentType: 'agent-teams-workforce:test-coverage-gap-reviewer',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['verdict', 'evidence'],
+        properties: {
+          verdict: { type: 'string', enum: ['red', 'already-satisfied', 'not-encoded'] },
+          evidence: { type: 'string' },
+          staleFiles: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+
+  // A verdict without executed output is a claim, and a claim may not skip work.
+  const evidenced = !!(confirmation && String(confirmation.evidence || '').trim())
+  const verdict = evidenced ? confirmation.verdict : 'not-encoded'
+
+  if (verdict === 'red') {
+    log(`Red already satisfied by existing tests: ${foundFiles.join(', ')} — skipping the writers`)
+    return {
+      testFiles: foundFiles,
+      redConfirmed: true,
+      evidence: confirmation.evidence,
+      reusedExistingTests: true,
+      strategy,
+      coverage: { gaps: [], reviewed: 'discovery+confirmation' },
+      ledger: { phase: 'red', chosen: writersFinal, mode: 'reused', ok: true },
+    }
   }
+
+  if (verdict === 'already-satisfied') {
+    log(`Contract ALREADY SATISFIED by passing tests: ${foundFiles.join(', ')} — no Red is obtainable and nothing is authored`)
+    return {
+      testFiles: foundFiles,
+      redConfirmed: false,
+      alreadySatisfied: true,
+      evidence: confirmation.evidence,
+      reusedExistingTests: true,
+      strategy,
+      coverage: { gaps: [], reviewed: 'discovery+confirmation' },
+      ledger: { phase: 'red', chosen: writersFinal, mode: 'already-satisfied', ok: true },
+    }
+  }
+
+  log(
+    'Red confirmation: existing tests do NOT encode this contract' +
+      `${evidenced ? `: ${String(confirmation.evidence).slice(0, 200)}` : ' (no executed evidence returned — treated as unencoded)'}. Writers will author against them.`
+  )
 }
-if (survey && (survey.existingTestFiles || []).length) {
-  log(`Red survey: ${survey.existingTestFiles.length} existing test file(s) found; ${survey.gaps.length} gap(s) remain — writers will EXTEND, not replace`)
+if (foundFiles.length && openGaps.length) {
+  log(`Red discovery: ${foundFiles.length} existing test file(s) found; ${openGaps.length} gap(s) remain — writers will EXTEND, not replace`)
 }
-const gapBlock = survey && survey.gaps && survey.gaps.length
-  ? `\n\nThese criteria are the ONLY ones still needing coverage — the rest are already encoded by the existing tests listed below, which you must extend rather than duplicate:\nGaps: ${survey.gaps.join('; ')}\nExisting test files: ${(survey.existingTestFiles || []).join(', ') || 'none'}`
-  : ''
+const gapBlock = openGaps.length
+  ? `\n\nThese criteria are the ONLY ones still needing coverage — the rest are already encoded by the existing tests listed below, which you must extend rather than duplicate:\nGaps: ${openGaps.join('; ')}\nExisting test files: ${foundFiles.join(', ') || 'none'}`
+  : foundFiles.length
+    ? `\n\nEvery criterion already has a covering test in the files below, but they were RUN and are NOT Red — stale, wrong, or failing for an unrelated reason. Fix the coverage by extending these files; do NOT create parallel ones:\n${foundFiles.join(', ')}`
+    : ''
 
 // Each selected writer authors its tests and confirms Red — different test files, so
 // they run concurrently (unlike production-code writers).
@@ -208,10 +275,13 @@ Authored test files: ${testFiles.join(', ') || 'none'}`,
   }
 )
 
+// test-design-lead and test-strategy-decider no longer run here: writers are
+// derived from the contract's declared surfaces and the strategy is inherited
+// from the spec, so neither is a choice this phase makes.
 const ledger = {
   phase: 'red',
   beadId: (c.bead && c.bead.id) || null,
-  chosen: [...writersFinal, 'test-design-lead', 'test-strategy-decider', 'test-coverage-gap-reviewer'],
+  chosen: [...writersFinal, 'test-coverage-gap-reviewer'],
   mode: selectionMode,
   ok: redConfirmed,
 }
@@ -221,6 +291,7 @@ return {
   redConfirmed,
   evidence,
   writers: writersFinal,
+  surfaces,
   strategy,
   coverageGaps: (coverage && coverage.gaps) || [],
   ledger,

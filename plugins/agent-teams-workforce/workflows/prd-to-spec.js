@@ -1,11 +1,11 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are created together (an Epic is backfilled for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and each Story decomposes into tasks only. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. One level only: this composite calls minis and gates, never another composite.',
+    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and each Story's SPEC decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. One level only: this composite calls minis and gates, never another composite.',
   phases: [
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
     { title: 'PRD Validation' },
-    { title: 'Epic', detail: 'ensure the Epic exists — minted with the PRD, supplied by the caller, or backfilled for an existing PRD' },
+    { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
     { title: 'Architecture' },
     { title: 'TRD Authoring', detail: 'once per PRD — the TRD is per-PRD, never fanned out per repo' },
     { title: 'Spec Authoring', detail: 'once per repo — a Spec and its Story are created together, one Story per repo' },
@@ -28,7 +28,7 @@ export const meta = {
 //   repoPath?: string,            // owning service/repo for downstream artifacts
 //   repos?: string[],             // every repo this PRD spans — one Story (one spec pass) per repo;
 //                                 // defaults to [repoPath] so the single-repo case is unchanged
-//   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — skips backfill
+//   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — ADOPTED, and it wins over any Epic prd-creation mints
 //   trdPath?: string,             // where the TRD lives/should be written
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
 // }
@@ -84,7 +84,7 @@ async function persistRun(outcome) {
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow }) {
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
   // Every adjudication goes to the ledger. Without the verdict and its per-criterion
   // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
@@ -114,7 +114,7 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const artifact = await phaseFn(feedback)
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -189,19 +189,24 @@ if (validation.artifact && validation.artifact.ledger) runLedger.push(validation
 if (!validation.ok) return { ok: false, stage: 'prd-validation', detail: validation, prd }
 const validatedPrd = (validation.artifact && validation.artifact.validatedPrd) || prd
 
-// ── Epic (create / accept / backfill) ───────────────────────────────────────────
-// A PRD and its Epic are created at the same time, so past this point an Epic must
-// exist. It arrives one of three ways: prd-creation minted it alongside the PRD;
-// the caller already holds one (args.epic); or the PRD predates the pairing rule
-// and the Epic is BACKFILLED here — derived from the validated PRD the same way
-// prd-creation derives one from the PRD it authors, nothing invented.
+// ── Epic (adopt / mint) ─────────────────────────────────────────────────────────
+// A PRD and its Epic are ONE work item in two representations — the document and
+// the bead — so past this point both faces must exist. Either the caller already
+// holds the Epic, or prd-creation minted the pair together, or only the PRD exists
+// and its bead face is MINTED here from the validated PRD. Minting completes the
+// representation; it derives nothing the PRD does not already state.
+//
+// A CALLER-SUPPLIED EPIC WINS, and that ordering is load-bearing. This used to test
+// prd-creation's Epic first, so a caller that passed an existing Epic *and* a raw
+// request got the freshly minted one and its own was silently discarded — two Epic
+// beads for one PRD, which is precisely the pairing rule breaking at the point it
+// most needs to hold. The Epic-without-a-PRD entry hits exactly that combination:
+// it passes the existing Epic and supplies the bead's content as the request so the
+// PRD document gets authored.
 phase('Epic')
 let epic
 let epicPath
-if (creation && creation.epic) {
-  epic = creation.epic
-  epicPath = 'epic-created'
-} else if (a.epic) {
+if (a.epic) {
   // A caller-supplied Epic is adopted rather than re-minted, but it still has to
   // leave here as a well-formed epic bead spec — a caller that passed only a key
   // and a title would otherwise put an untyped object into the hierarchy.
@@ -211,6 +216,12 @@ if (creation && creation.epic) {
     type: 'epic',
   }
   epicPath = 'epic-supplied'
+  if (creation && creation.epic) {
+    log('Epic supplied by the caller AND minted by prd-creation — adopting the caller\'s and discarding the mint; one PRD has exactly one Epic')
+  }
+} else if (creation && creation.epic) {
+  epic = creation.epic
+  epicPath = 'epic-created'
 } else {
   epic = {
     key: 'E1',
@@ -223,11 +234,11 @@ if (creation && creation.epic) {
       '',
     prdRef: prd.path || prd.id || prd.title || null,
   }
-  epicPath = 'epic-backfilled'
+  epicPath = 'epic-minted'
 }
 log(
   `Epic ${epic.key || '(no key)'} via ${epicPath}${
-    epicPath === 'epic-backfilled' ? ` — derived from existing PRD ${epic.prdRef || '(unreferenced)'}` : ''
+    epicPath === 'epic-minted' ? ` — bead face minted for existing PRD ${epic.prdRef || '(unreferenced)'}` : ''
   }`
 )
 
@@ -552,7 +563,7 @@ return {
     'task-decomposition',
     'emit-beads',
   ],
-  note: 'PRD validated, Epic ensured (created/supplied/backfilled), architecture ruled into the SAD, TRD authored once per PRD, a (spec, story) pair authored per repo, tasks decomposed/sequenced/WSJF-scored per Story and Beads-format valid. Emit the hierarchy via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.',
+  note: 'PRD validated, Epic ensured (supplied/created/minted), architecture ruled into the SAD, TRD authored once per PRD, a (spec, story) pair authored per repo, tasks decomposed/sequenced/WSJF-scored per Story and Beads-format valid. Emit the hierarchy via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.',
   hierarchy,
   beadSet,
   results: {

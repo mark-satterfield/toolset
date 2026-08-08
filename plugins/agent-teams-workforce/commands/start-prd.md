@@ -1,16 +1,20 @@
 ---
 description: "Start a PRD at the top of the pipeline — Epic, TRD, Spec+Story per repo, Tasks"
 argument-hint: "<prd-path-or-title> [repo,repo,...]"
-allowed-tools: [Bash, Read, Glob, Workflow]
+allowed-tools: [Bash, Read, Glob, Skill, Workflow]
 ---
 
 # Start a PRD
 
 Take `$ARGUMENTS` from a PRD document to an emitted Epic → Story → Task hierarchy.
 
-This is the entry point the bead router cannot provide: a PRD is a **file**, so
-`bd ready` never returns one and `route-bead` never sees it. Everything downstream
-of here is bead-driven; this step is what creates the beads.
+A PRD and its Epic are **one work item in two representations**, so this command
+and `/agent-teams-workforce:work-bead <epic-id>` are two doors into the same
+procedure. They differ only in which face you walked in holding. Yours is the
+document; the Epic is the other face, and you resolve it below.
+
+This is also the entry the bead router cannot provide: a PRD is a **file**, so
+`bd ready` never returns one and `route-bead` never sees it.
 
 ## 1. Locate the PRD
 
@@ -26,74 +30,30 @@ not, do not wait — the vault is a plain git repo of markdown, so read it off d
 Read the PRD. Extract `title` and `body`. Stop and report if you cannot find it —
 do not invent a PRD from the title.
 
-## 2. Decide the repo span
-
-A Story is scoped to one repo, so `prd-to-spec` runs spec authoring once per repo
-and the span has to be known before it starts.
-
-- Second argument given → use it, comma-separated.
-- Not given → derive candidates from the PRD: which services does it name? Check
-  them against the actual repos on disk. State what you derived and what you are
-  running with.
-- Genuinely single-service → one repo. That is the common case; do not inflate it.
-
-Getting this wrong is recoverable but wasteful: a missing repo means a Story that
-never existed, and re-running costs the whole front-end.
-
-## 3. Check for an existing Epic
+## 2. Resolve the other face — the Epic
 
 ```bash
 bd list --type epic | grep -i "<prd title>"
 ```
 
-- Found → pass it as `epic` so it is adopted rather than duplicated.
-- Not found → pass nothing. `prd-to-spec` backfills one from the validated PRD.
-  Most PRDs here predate the hierarchy, so backfill is the normal path.
-
-## 4. Dispatch
+- Found → adopt it. Pass it through; it is not re-minted.
+- Not found → **mint it** from the PRD. The Epic is a container: title and
+  description from the PRD, no acceptance criteria, no WSJF score, no repo scope
+  (one Epic may span repos).
 
 ```bash
-ls -d ~/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/*/ | sort -V | tail -1
+bd create --type epic --title "<prd title>" --description "<prd summary>"
 ```
 
-```
-Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
-  prd:      {id, title, body, repoPath},
-  repos:    ["/path/to/repo-a", "/path/to/repo-b"],
-  repoPath: "/path/to/repo-a",
-  epic:     <only when step 3 found one>,
-  brd:      <BRD objectives text, when there is one>,
-  sadPath:  <arc42 SAD location, when known>
-}})
-```
+Minting completes the pair. It is not what authorizes the build — your invoking
+this command is.
 
-`scriptPath`, never a bare `name` — name dispatch resolves against the
-session-start snapshot and is refused by the workflow dispatch guard.
+## 3. Hand off
 
-Without `brd` the traceability audit has nothing to audit against and every
-requirement reads as an orphan. Supply it when one exists; note its absence when
-it does not.
+Invoke the `elaborate-prd-epic` skill with the resolved pair, the repo span from
+the second argument if given, and the BRD and SAD paths when they exist. It owns
+the repo span, the `prd-to-spec` dispatch, writing the hierarchy into beads, and
+the report.
 
-## 5. Write the hierarchy into beads
-
-The composite returns `hierarchy: {epic, stories, tasks, storyDependencies}` and
-does **not** touch `.beads`. Links are by local key (`E1`, `S1`), not bead id, so
-write top-down and record each real id as you go:
-
-1. `bd create` the Epic. Record its id against `epic.key`.
-2. `bd create` each Story in `buildOrderIndex` order, parent = the Epic's real id
-   (mapped from `parentEpicKey`). Record each id against its key.
-3. Add Story dependencies: each Story's `dependsOn` lists keys that must land
-   first — translate to ids.
-4. `bd create` each Task, parent = its Story's real id (from `parentStoryId`).
-
-Get step 2 or 4 wrong and every Task is parentless, which `route-bead` will refuse
-to work — correctly, because a Task with no Story has no Spec to build against.
-
-## 6. Report
-
-- Epic: created or backfilled or adopted
-- Stories: how many, and which repo each covers
-- Tasks: how many, and the story-dependency edge count
-- Any gate that blocked, with its feedback verbatim
-- The exact next command: `/agent-teams-workforce:work-bead <first task id>`
+Do not re-implement any of that here. If it needs to change, change it there so
+both doors change together.

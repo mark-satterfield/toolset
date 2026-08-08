@@ -1,7 +1,7 @@
 ---
 description: "Route one bead to the composite that owns it and dispatch it, by path"
 argument-hint: "<bead-id>"
-allowed-tools: [Bash, Read, Workflow]
+allowed-tools: [Bash, Read, Skill, Workflow]
 ---
 
 # Work a bead
@@ -34,24 +34,34 @@ workflow dispatch guard.
 ```
 Workflow({scriptPath: "$ROOT/workflows/route-bead.js",
   args: {bead: {id, type, labels, title, description,
-                parentType, ancestorTypes, childCount}}})
+                parentType, ancestorTypes, childCount},
+         humanInitiated: true}})
 ```
 
 Supply `parentType`, `ancestorTypes`, and `childCount` from the parent chain. Without
 them a Task cannot be judged workable and will skip.
 
+`humanInitiated: true` is correct here and **only** here: a person typed this command.
+Existence is not readiness — an Epic or Story sitting there with no children is not a
+request to build it. An unattended sweep must leave the flag unset and take the skip.
+
 The router returns `{action, composite, reason}`:
 
 | action | What to do |
 | --- | --- |
-| `work` | Dispatch that composite (step 4) |
-| `decompose` | Dispatch that composite — it builds the hierarchy beneath this bead |
+| `work` | Dispatch that composite (step 3b, then 4) |
+| `elaborate` | **Go to step 5.** No worktree, no composite dispatch from here. |
 | `skip` | **Stop.** Report the id and the reason. Do not dispatch anything. |
 
 A skip is an outcome, not an obstacle. Never relabel a bead to make it routable —
 a Task that skips for a missing Story needs a Story, not a new label.
 
-## 3b. Establish the worktree FIRST
+## 3b. Establish the worktree FIRST — `work` only
+
+Skip this entire step for an `elaborate`. That path authors documents and returns
+bead specifications; it writes no code, so there is no feature branch for it to land
+on and no tree for two runs to collide in.
+
 
 Every writing phase edits the tree it is given, and nothing in the workflows creates
 one — while `deploy.js` requires the work to be on a feature branch in a worktree.
@@ -107,17 +117,38 @@ see the first one's tests and re-authors them.
 Pass `$WT` as `repoPath` to the composite, not `$REPO`. Everything downstream
 inherits it.
 
-## 4. Dispatch
+## 4. Dispatch — `work` only
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: {id, title, description, repoPath: "$WT"}}})
 ```
 
-For `prd-to-spec`, pass `{prd, repoPath, repos}` instead — and `repos` as every
-repo the PRD spans, so one Story is created per repo.
+Then go to step 6.
 
-## 5. Report
+## 5. Elaborate — `elaborate` only
+
+The bead is an Epic or a Story: the tracker face of a document. Nothing decomposes
+it. Its **document** is what decomposes, and the beads beneath it are what that
+chain deposits.
+
+Resolve the other face — the PRD (for an Epic) or the Spec (for a Story):
+
+```bash
+ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
+```
+
+- Found → read it and extract `title` and `body`.
+- Not found → **mint it** from the bead's title and description, authored to the
+  PRD template. Minting completes the pair; it is not what authorizes the build —
+  your invoking this command is.
+
+Then invoke the `elaborate-prd-epic` skill with the resolved pair. It owns the repo
+span, the `prd-to-spec` dispatch, writing the returned hierarchy into beads with
+`bd`, and the report. `/agent-teams-workforce:start-prd` hands off to the same
+skill from the other door — do not re-implement any of it here.
+
+## 6. Report
 
 Five lines, no more:
 

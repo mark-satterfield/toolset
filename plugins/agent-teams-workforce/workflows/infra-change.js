@@ -95,7 +95,7 @@ function recordGate(gate, phaseName, attempt, verdict, extra) {
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, gateWorkflow, initialFeedback }) {
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow, initialFeedback }) {
   // Seed EVERY attempt with findings already known from a previous run. Without this a
   // re-dispatch after a gate failure starts blind and must spend a full expensive attempt
   // rediscovering what the prior gate already proved — which on infra-intent is the single
@@ -107,8 +107,16 @@ async function gateLoop({ gate, phaseName, criteria, escalateTargets, phaseFn, g
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     const feedback = [seed, gateFeedback].filter(Boolean).join('\n')
     artifact = await phaseFn(feedback)
+    // A phase may report that its work was ALREADY DONE — Red finding the contract
+    // satisfied by passing tests, for instance. There is nothing for the gate to
+    // judge and no rework that could change the answer, so gating it would fail a
+    // criterion nothing can meet and burn the entire loop budget proving it.
+    if (artifact && artifact.alreadySatisfied === true) {
+      log(`${phaseName}: ALREADY SATISFIED — nothing to build; gate ${gate} skipped`)
+      return { ok: true, artifact, alreadySatisfied: true }
+    }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(gate, phaseName, attempt, null, { terminal: 'no-verdict' })
@@ -179,6 +187,10 @@ const tailContract = {
   repoPath: bead.repoPath || null,
   affectedStacks: intent.affectedStacks || [],
   provisioningIntent: intent.provisioningIntent || null,
+  // Infra is verified by synth assertions, not by specialist surface writers. The
+  // empty list is a positive statement — unit/synth coverage only — not an omission.
+  surfaces: [],
+  testStrategy: null,
   acceptanceCriteria: [
     {
       given: `the provisioning intent for ${bead.title || 'this infra change'} on stacks ${(intent.affectedStacks || []).join(', ') || '(affected stacks)'}`,
@@ -198,11 +210,25 @@ const red = await gateLoop({
     'The assertion fails for the intended reason (the intent is not yet expressed in CDK)',
     'No production CDK code changed yet — tests/assertions only',
   ],
+  checks: [
+    { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
+    { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+  ],
   escalateTargets: ['infra-intent'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
+// Red found the provisioning intent already asserted by PASSING checks: the infra
+// already expresses it. Green would be asked to make a failing assertion pass when
+// none fails, so the run ends here — successfully, with nothing changed.
+if (red.alreadySatisfied) {
+  return {
+    ok: true, stage: 'red', bead: bead.id, alreadySatisfied: true, built: false,
+    reason: 'the provisioning intent is already expressed and asserted by passing checks — no Red is obtainable and nothing was authored or changed',
+    detail: red.artifact,
+  }
+}
 
 // ── Green (Gate 2b) — make synth/test pass via the CDK stack author ──────────────
 phase('Green')
@@ -240,7 +266,11 @@ const integration = await gateLoop({
     'Cross-stack SSM references resolve (no CloudFormation exports)',
   ],
   escalateTargets: ['green', 'red', 'infra-intent'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract: tailContract, green: green.artifact, feedback }),
+  // Infra declares surfaces: [] because it needs no specialist TEST WRITERS, but it
+  // absolutely needs integration verification — a provisioned stack has to be exercised.
+  // Naming the suite explicitly stops the surface-derived selection from reading that
+  // empty list as "no integration applies" and skipping the phase.
+  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract: tailContract, green: green.artifact, suites: ['aws-integration-test-runner'], feedback }),
 })
 if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
 if (!integration.ok) return await failAfterDoc('integration', integration)

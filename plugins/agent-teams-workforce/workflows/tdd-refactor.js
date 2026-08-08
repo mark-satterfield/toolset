@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    'Shared-tail mini — TDD Refactor. complexity-analyzer advises (read-only), then a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
+    'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. Otherwise a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving cleanup + optimizer selection + independent review' }],
 }
 
@@ -36,6 +36,45 @@ Changed files from the fix: ${changedFromGreen}`,
     },
   }
 )
+
+// ── Nothing to refactor? Then the phase is done here. ─────────────────────────
+//
+// The analyzer is advisory and READ-ONLY, so an empty recommendation list is a
+// real finding: this change carries no complexity, duplication, or cleanup worth
+// making. Everything below — the optimizer router, the refactoring specialist,
+// each selected optimizer, the independent correctness reviewer, and the gate
+// that judges them — is then pure cost. That is roughly six turns of quality work
+// spent on code that has just passed its tests and that the only agent qualified
+// to assess it says needs nothing. For a one-line fix it was the largest unearned
+// expense in the tail.
+//
+// Two guards on the exit. A NULL analysis means UNKNOWN, not "nothing", and must
+// never skip — an analyzer that died is not an analyzer that approved. And a
+// re-run carrying gate feedback is rework that was explicitly demanded, so it
+// proceeds no matter what the analyzer returns; skipping there would ignore the
+// gate and loop until the budget is gone.
+const recommendations =
+  complexity && Array.isArray(complexity.recommendations)
+    ? complexity.recommendations.filter((r) => String(r || '').trim())
+    : null
+if (recommendations && !recommendations.length && !a.feedback) {
+  log('Refactor: complexity analysis found nothing to do — skipping optimizer selection, the refactorer, and the review')
+  return {
+    refactor: null,
+    optimizers: [],
+    complexityAnalysis: complexity,
+    review: null,
+    changedFiles: [],
+    alreadySatisfied: true,
+    ledger: {
+      phase: 'refactor',
+      beadId: (c.bead && c.bead.id) || null,
+      chosen: ['complexity-analyzer'],
+      mode: 'nothing-to-refactor',
+      ok: true,
+    },
+  }
+}
 
 // 2) SELECTION — code-quality-lead is a READ-ONLY router. It selects the FEWEST optimizers
 // whose specialty matches what changed (Lambda hot paths, DynamoDB access, frontend, style,
