@@ -5,7 +5,13 @@ export const meta = {
   phases: [{ title: 'Red', detail: 'author + confirm a failing test' }],
 }
 
-// args: { contract: <bug-triage output or spec contract>, feedback?: string }
+// args: {
+//   contract:    <bug-triage output or spec contract>,
+//   feedback?:   string,     // gate feedback from a previous attempt
+//   skipSurvey?: boolean,    // force fresh authoring, bypassing existing-test reuse.
+//                            // Use when the tests on disk are known bad — a survey
+//                            // would otherwise report them as satisfying Red.
+// }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
@@ -74,6 +80,70 @@ ${taskBlock}`,
 )
 const strategyBlock = `Test strategy (decided): pyramid=${strategy && strategy.pyramid}; coverageThreshold=${strategy && strategy.coverageThreshold}; envMatrix=${(strategy && strategy.envMatrix || []).join(', ') || 'n/a'}`
 
+// ── Survey: is the contract ALREADY encoded? ───────────────────────────────────
+//
+// Red is idempotent. A run that was interrupted, or re-dispatched after a gate
+// loop, may find its tests already on disk from the previous attempt — they are
+// real files, committed at deploy and inherited by every later run. Regenerating
+// them wastes the most expensive phase in the pipeline and, worse, a second
+// writer pass produces a parallel file covering the same behavior.
+//
+// This is the "already done" claim again, and the same rule applies: an assertion
+// may not skip work. But here the evidence is EXECUTABLE — the surveyor runs the
+// tests and captures the failing output. That is a stronger check than any
+// citation, because a test that does not exist cannot produce a failure, and a
+// test that no longer fails is not Red however confidently anyone describes it.
+const survey = a.skipSurvey === true
+  ? null
+  : await agent(
+      `Before any test is written, establish what the repository ALREADY has. You are READ-ONLY for production code; you may RUN tests. Work within the repository at: ${repo}
+
+Find the tests that already encode the contract below — a previous attempt at this same work may have written them, or they may predate it. Then RUN them and capture what happens.
+
+Report per acceptance criterion whether it is already covered. Set alreadyRed=true ONLY if every criterion is covered AND the covering tests currently FAIL for the intended product reason. Capture the failing output verbatim as evidence — a claim of coverage with no executed output is not evidence, and a test that passes is not Red no matter what it is named.
+
+List in gaps the criteria that are uncovered or whose covering test does not fail for the right reason. Those, and only those, will be authored.
+
+${taskBlock}`,
+      {
+        label: 'red:survey',
+        phase: 'Red',
+        agentType: 'agent-teams-workforce:test-coverage-gap-reviewer',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['alreadyRed', 'existingTestFiles', 'gaps', 'evidence'],
+          properties: {
+            alreadyRed: { type: 'boolean' },
+            existingTestFiles: { type: 'array', items: { type: 'string' } },
+            gaps: { type: 'array', items: { type: 'string' } },
+            evidence: { type: 'string' },
+          },
+        },
+      }
+    )
+
+// Reuse requires executed evidence, not a claim. Anything less authors the tests.
+const reusable = !!(survey && survey.alreadyRed === true && String(survey.evidence || '').trim())
+if (reusable) {
+  log(`Red already satisfied by existing tests: ${(survey.existingTestFiles || []).join(', ') || '(none named)'} — skipping the writers`)
+  return {
+    testFiles: survey.existingTestFiles || [],
+    redConfirmed: true,
+    evidence: survey.evidence,
+    reusedExistingTests: true,
+    strategy,
+    coverage: { gaps: [], reviewed: 'survey' },
+    ledger: { phase: 'red', chosen: writersFinal, mode: 'reused', ok: true },
+  }
+}
+if (survey && (survey.existingTestFiles || []).length) {
+  log(`Red survey: ${survey.existingTestFiles.length} existing test file(s) found; ${survey.gaps.length} gap(s) remain — writers will EXTEND, not replace`)
+}
+const gapBlock = survey && survey.gaps && survey.gaps.length
+  ? `\n\nThese criteria are the ONLY ones still needing coverage — the rest are already encoded by the existing tests listed below, which you must extend rather than duplicate:\nGaps: ${survey.gaps.join('; ')}\nExisting test files: ${(survey.existingTestFiles || []).join(', ') || 'none'}`
+  : ''
+
 // Each selected writer authors its tests and confirms Red — different test files, so
 // they run concurrently (unlike production-code writers).
 const RED_SCHEMA = {
@@ -99,7 +169,7 @@ A second file covering the same behavior is worse than no test at all — the su
 
 ${taskBlock}
 
-${strategyBlock}
+${strategyBlock}${gapBlock}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
 Deliver: the test file paths you created/modified, whether Red is confirmed, and the captured failing output as evidence.`,
