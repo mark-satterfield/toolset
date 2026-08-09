@@ -15,6 +15,8 @@ sizing:
 behavior: [bloom-hover, transform-transition, reduced-motion]
 accessibility: [focus-visible-ring, disabled-inherited]
 token_bindings:
+  - --button-primary-bg
+  - --button-primary-text
   - --accent-primary
   - --focus-ring
 shell_component: false
@@ -29,6 +31,7 @@ State props: `rest` | `hover`.
 
 ## Determinations
 
+- The `::before` fill is `--button-primary-bg` and the label is `--button-primary-text`. The two are one slot pair (`foundations/implementation.md` §6.3): a variant that paints the fill without binding the label leaves the label inheriting `--text-primary`, which fails contrast against its own fill.
 - `height: 44px`; `min-width: 6rem`; `padding: 0 20px`; `::before` radius `var(--radius-md)` — calibrates to 9.6px at the captured surface (ladder default 12px, `foundations/layout.md` §11.7).
 - The 44px height meets the WCAG 2.5.5 (AAA) target size — this is the high-pointer-error conversion variant of the button base (`libraries/components/button.md`).
 

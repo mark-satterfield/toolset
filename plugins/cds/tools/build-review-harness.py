@@ -308,14 +308,22 @@ function collectRegions() {
     }
   }
   const wf = RVW.wireframe || [];
-  const mapped = wf.length > 0 && wf.length === regions.length;
+  // A View's regions include the Shell's Sections (header, footer, nav), which a
+  // Page's wireframe sidecar never describes. Map the sidecar onto the Page's
+  // Sections and leave the Shell's regions generically labelled, so a View maps
+  // as well as a bare Page HTML does. Requiring an exact match against every
+  // structural region made a View fall back to Region 1..N in every case.
+  const pageRegions = regions.filter(r => r.tag === 'section');
+  const mapped = wf.length > 0 && wf.length === pageRegions.length;
+  const wfFor = new Map();
+  if (mapped) pageRegions.forEach((r, n) => wfFor.set(r, wf[n]));
   const tagTotals = {};
   regions.forEach(r => { tagTotals[r.tag] = (tagTotals[r.tag] || 0) + 1; });
   const tagSeen = {};
   regions.forEach((r, i) => {
     r.index = i;
     r.num = i + 1;
-    r.wf = mapped ? wf[i] : null;
+    r.wf = wfFor.get(r) || null;
     tagSeen[r.tag] = (tagSeen[r.tag] || 0) + 1;
     r.shellOrdinal = (!r.wf && r.tag !== 'section' && tagTotals[r.tag] > 1) ? tagSeen[r.tag] : 0;
     r.el.setAttribute('data-rvw-region', String(i));

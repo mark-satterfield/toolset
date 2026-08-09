@@ -28,7 +28,7 @@ check: |
 | Section padding | the `--section-pad-*` scale |
 | Radius (where containers round) | the `--radius-*` scale |
 
-**Combine freely.** Every Section is a fresh composition decision; no combination repeats across adjacent Sections. Unless a Shape is intentionally centered, alternate its alignment — a two-column Shape mirrors its text/visual sides relative to the previous two-column Section.
+**Combine freely.** Every Section is a fresh composition decision; no combination repeats across adjacent Sections. Alignment is not a free variable: it follows the Section's content per `libraries/shapes/CONVENTIONS.md` (Heading alignment registers), so variety is carried by the other dimensions when two adjacent Sections both read left. A two-column Shape does mirror its text/visual sides relative to the previous two-column Section.
 
 **Theme and background are NOT variety dimensions.** The principal theme stays constant for the whole page; grounds follow `ground-alternation`; theme islands are declared on the Page.
 
