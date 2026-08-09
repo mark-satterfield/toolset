@@ -58,6 +58,19 @@ composition_notes: []          # cross-section notes (e.g. cross-promo may embed
 
 A Section never contains its own layout — layout always lives in a Shape in the ShapeLibrary so it stays shareable across Pages. A Section either names its Shape (eager) or carries the content signals its rule needs (lazy).
 
+#### Universal Section slots
+
+Two optional slots are available on **every** Section, whatever Shape it receives, without being declared in any entry:
+
+```yaml
+eyebrow: <text>                # a short label line above the Section's heading
+media:   {src, alt, kind}      # one image, illustration, or embed belonging to the whole Section
+```
+
+Both are supplied-or-absent — present when the brief carries one, rendered as nothing when it does not — and neither alters the receiving Shape's layout contract. Default placement: the eyebrow directly above the Section's heading at the caption type role; the media after the heading stack and before the Shape's own content. A Shape that places either slot differently states that placement in its own Determinations (`libraries/shapes/CONVENTIONS.md`, Universal Section slots).
+
+A Section entry lists these only to constrain them — to mark one required, or to name a non-default placement. An entry that says nothing about them accepts both at their defaults.
+
 ### page
 
 ```yaml

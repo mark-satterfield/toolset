@@ -22,9 +22,13 @@ Shape-level behavior — the logo-marquee scroll, card-carousel paging/prev-next
 
 numbered-steps step rows wrap onto additional grid rows when the step count exceeds 3 and stack to a single column below the tablet breakpoint, per the numbered-steps determinations.
 
-## Eyebrows are deny-by-default
+## Universal Section slots
 
-Enforced as the landing page-family constraint `rules/page-constraints/eyebrow-scope.md`. A section-level eyebrow — a short label line above a Section's heading — is authorized in exactly two places: the optional eyebrow in heading-strip (the standalone heading strip), and the per-card tag/pill inside tagged-card-grid and resource-grid. No other Shape carries a section-level eyebrow. A hero (centered-stack, split-text-media, centered-affordance, sub-hero-split), a card-grid heading (card-grid), a workflow (numbered-steps), a CTA panel (banner-strip, cta-panel, cta-newsletter), and every other Shape begin directly with the heading — no kicker above it. When a label genuinely must precede a content unit, model it as its own heading-strip Section rather than decorating an adjacent Section's heading.
+Every Shape accepts two optional Section-level slots ahead of its own: `eyebrow` — a short label line above the Section's heading — and `media` — one image, illustration, or embed belonging to the Section as a whole. Both are supplied-or-absent: a Shape renders the slot when the content carries it and renders nothing when it does not, and neither slot changes the Shape's layout contract. The universal slots are declared once in `libraries/FORMAT.md`; a Shape entry names them only to state a placement that differs from the default.
+
+Default placement is the heading stack: the eyebrow sits directly above the Section's heading at the caption role, and the media sits after the heading stack and before the Shape's own content. A Shape whose composition requires otherwise — a per-card tag inside tagged-card-grid and resource-grid, the subjects line in article-header, a hero whose media is already a declared column — states its placement in its own Determinations.
+
+An eyebrow is content, not decoration: it appears because the brief supplies one and is omitted because the brief does not. Splitting a supplied eyebrow into its own Section is a composition error — the eyebrow, the heading, and the content they introduce are one Section. The standalone `section-header` Section remains available for a label that genuinely introduces a *run* of following Sections rather than the content beneath it.
 
 ## Heading alignment registers
 

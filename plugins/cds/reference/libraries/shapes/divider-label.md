@@ -21,4 +21,4 @@ A hairline rule spanning the section, interrupted by a centered label; a transit
 - The label and its rule sit in the centered register as one symmetric row; the gap between the label and each rule segment is `--sp-1`.
 - Vertical padding uses `--section-pad-small`, matching the narrow rhythm of a section label.
 - The `rule-both-sides` variant runs the hairline to the left and right of the centered label; the `rule-trailing` variant left-aligns the label with a single hairline running to its right.
-- The label carries no section-level eyebrow; the standalone-heading eyebrow site is heading-strip's, per `rules/page-constraints/eyebrow-scope.md`.
+- The label is itself the Section's label line, so a supplied eyebrow renders as that label rather than above it — this Shape's non-default eyebrow placement (`libraries/shapes/CONVENTIONS.md`, Universal Section slots).

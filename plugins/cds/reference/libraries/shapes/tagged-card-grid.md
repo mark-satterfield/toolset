@@ -19,4 +19,4 @@ card-grid plus an eyebrow tag/pill above each card title. The tag/pill sits abov
 
 - Tags use the Outline pill badge spec from the components library (caption type, sentence case, `--radius-xs` corners). Styling is uniform across cards — one consistent neutral pill rather than color-per-category, so the grid reads as one set.
 - The tag sits `--sp-0-75` above the title. All other layout — column policy, gaps, card specs, entry stagger — inherits card-grid.
-- The per-card tag/pill is an authorized eyebrow site under `rules/page-constraints/eyebrow-scope.md`.
+- The per-card tag/pill is this Shape's non-default eyebrow placement: the label rides each card rather than the Section heading (`libraries/shapes/CONVENTIONS.md`, Universal Section slots). A Section-level eyebrow supplied alongside it still renders above the Section heading.

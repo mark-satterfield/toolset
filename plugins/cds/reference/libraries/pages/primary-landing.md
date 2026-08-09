@@ -20,9 +20,9 @@ sections:
   - { section: resource-directory, required: false }
   - { section: cross-promo, required: false, notes: "may embed inside trust-detail — see cross-promo composition notes" }
   - { section: sub-hero, required: false }
-  - { section: final-cta, required: false, notes: "omitted entirely when page_meta.buying_mode == browse; dark variant is a named theme island" }
+  - { section: final-cta, required: false, notes: "omitted entirely when page_meta.buying_mode == browse; takes the footer ground with a light hairline seam — see the Section entry" }
   - { section: section-header, required: false, notes: "standalone label preceding another content unit; may appear multiple times" }
-constraints: [ground-alternation, variety-principle, eyebrow-scope]
+constraints: [ground-alternation, variety-principle]
 ---
 
 # Primary Landing Page
@@ -33,7 +33,7 @@ This Page is content Sections only; topbar and footer belong to the user's Shell
 
 ## Theme islands
 
-Pricing (pricing) → `clarity`. A dark Final CTA (final-cta) → its declared island. Islands apply on top of the scheduled ground per `ground-alternation`. The hero uses `default`; feature blocks stay on the principal theme — grounds alternate per `ground-alternation`, never as a theme rotation.
+Pricing (pricing) → `clarity`. Final CTA (final-cta) → the island the Shell's footer wears, so the closing Section and the footer share one ground across the seam (`libraries/sections/final-cta.md`). Islands apply on top of the scheduled ground per `ground-alternation`. The hero uses `default`; feature blocks stay on the principal theme — grounds alternate per `ground-alternation`, never as a theme rotation.
 
 ## Register rules
 

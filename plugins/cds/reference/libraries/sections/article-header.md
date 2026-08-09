@@ -16,7 +16,7 @@ The three-line header opening an editorial-detail Page: subjects line, title, da
 
 ## Content
 
-- `eyebrow` — the subjects line, this Section's declared eyebrow slot (the editorial exception named in `rules/page-constraints/eyebrow-scope.md`). Body 3 with the `.bold` modifier (the role's documented editorial-eyebrow weight range, 500–700), sentence case.
+- `eyebrow` — the subjects line: this Section binds the universal eyebrow slot (`libraries/FORMAT.md`, Universal Section slots) to the subjects position above the title. Body 3 with the `.bold` modifier (the role's documented editorial-eyebrow weight range, 500–700), sentence case.
 - `title` — the article h1 at the editorial Headline 1 role (`text-wrap: balance`).
 - `meta` — the date, Body 3 agate at `--text-tertiary`.
 
