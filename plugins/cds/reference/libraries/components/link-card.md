@@ -15,7 +15,6 @@ token_bindings:
   - --text-primary
   - --text-secondary
   - --border-subtle
-shell_component: false
 composite: false
 ---
 

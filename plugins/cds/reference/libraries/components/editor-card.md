@@ -22,7 +22,6 @@ accessibility:
   - "badge <label> for= the textbox id; content role=textbox contenteditable"
   - "trailing actions are standalone tab-focusable buttons"
 token_bindings: [--surface-raised, --border-subtle, --text-primary, --text-tertiary, --focus-ring, --typeface-sans]
-shell_component: false
 composite: false
 ---
 

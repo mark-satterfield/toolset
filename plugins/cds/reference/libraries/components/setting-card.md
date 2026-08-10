@@ -22,7 +22,6 @@ accessibility:
   - "switch aria-labelledby points at the title id"
   - "Space/Enter toggle; Tab focuses the switch"
 token_bindings: [--text-primary, --text-tertiary, --border-subtle, --accent-primary, --switch-active-bg, --surface-tertiary, --surface-raised, --focus-ring]
-shell_component: false
 composite: false
 ---
 

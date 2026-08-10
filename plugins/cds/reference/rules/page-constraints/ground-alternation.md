@@ -15,7 +15,7 @@ check: |
 
 # Ground alternation
 
-Section grounds follow a strict, position-determined alternation. The alternation index starts at **1 on the first content Section** in document order and increments by 1 for every following content Section. The Shell's Sections (topbar, footer) live in the Shell, not in the Page, so they are excluded from the alternation index: the topbar carries the page ground via `--nav-bg` (= `surface-primary`) and the footer uses its named theme island. Every Section of the Page counts, including section-header heading strips.
+Section grounds follow a strict, position-determined alternation. The alternation index starts at **1 on the first content Section** in document order and increments by 1 for every following content Section. The Shell's Sections (`top-nav`, `site-footer`) live in the Shell, not in the Page, so they are excluded from the alternation index: the top-nav carries the page ground via `--nav-bg` (= `surface-primary`) and the site-footer uses its named theme island. Every Section of the Page counts, including section-header heading strips.
 
 1. Odd-indexed Sections (1, 3, 5, …): `surface-primary`.
 2. Even-indexed Sections (2, 4, 6, …): `surface-secondary`.

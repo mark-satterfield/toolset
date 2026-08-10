@@ -4,6 +4,10 @@ description: Opens ANY generated output — a Shell, a Page HTML, a View, an iso
 allowed-tools: Read, Bash, Glob
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Builds a self-contained review harness beside any composed output by running `tools/build-review-harness.py`, opens it in the user's browser, and tells the user how to comment and copy the assembled change request back. The harness embeds the artifact in an iframe exactly as shipped (light/dark toggle intact), maps the wireframe sidecar's Section blocks onto the artifact's top-level structural regions so hovering shows each region's Building Blocks identity, lets the user pin numbered comments with quick tags, and assembles one natural-language change request grouped by region with a copy button. The pasted request routes back to the composer that owns the artifact — this skill is the human-review step of the compose → review → iterate loop, not a composer.

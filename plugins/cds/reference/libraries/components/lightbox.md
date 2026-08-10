@@ -13,7 +13,6 @@ sizing:
 behavior: [display-toggle-mount, backdrop-blur]
 accessibility: [native-video-controls, caption-tracks, escape-close]
 token_bindings: []
-shell_component: false
 composite: false
 ---
 

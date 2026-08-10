@@ -4,6 +4,10 @@ description: Produces one DESIGN.md file — the map of the live Configurable De
 allowed-tools: Read, Write, Bash, Glob
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Reads the live design system — the elements YAML, the catalog (reference trees overlaid by project extensions), and the generated stylesheet manifest — and emits a single `DESIGN.md` file that describes the whole system in one place. DESIGN.md is the map, not a copy of everything: it states the color/typography/geometry/motion values and enumerates the Building Blocks with one-line purposes and their contracts, and it cites each library entry by path for the depth. It is written to the DESIGN.md convention (below) so a tool that consumes DESIGN.md the way AGENTS.md is consumed can follow the design system without loading the plugin.

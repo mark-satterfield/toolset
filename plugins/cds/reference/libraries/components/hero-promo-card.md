@@ -19,7 +19,6 @@ token_bindings:
   - --surface-raised
   - --text-primary
   - --accent-heroes
-shell_component: false
 composite: false
 ---
 

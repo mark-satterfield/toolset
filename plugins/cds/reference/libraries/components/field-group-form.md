@@ -20,7 +20,6 @@ behavior:
 accessibility:
   - "invalid fields: --error-text border + aria-live=polite helper sentence"
 token_bindings: [--surface-raised, --border-subtle, --error-text, --text-primary, --text-secondary, --typeface-sans]
-shell_component: false
 composite: true
 ---
 

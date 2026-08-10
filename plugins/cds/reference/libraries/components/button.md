@@ -24,7 +24,6 @@ token_bindings:
   - --text-primary
   - --surface-primary
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

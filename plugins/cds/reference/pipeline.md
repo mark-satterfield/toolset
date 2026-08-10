@@ -11,14 +11,40 @@ The working catalog is the plugin's `reference/libraries/` + `reference/rules/` 
 1. **Resolve the Page.** A named Page entry (halt `PAGE_UNKNOWN:{name}` only when a named Page exists in neither source), or an ad-hoc Page the user describes Section by Section. Every Page carries a **page family** (landing, app, editorial, docs, auth): stated plainly, obvious from the prompt, or the skill asks. The page family selects the typography and motion register and scopes the Page-Level Aesthetic Constraints.
 2. **Resolve each Section in order.**
    - **Eager** — the Section names its Shape (`shape:` frontmatter, or the user names one): populate that Shape from the ShapeLibrary with the content.
-   - **Lazy** — no Shape named: run the Section's Shape Selection Rule (`shape-selection-rule`) over the content contract signals + `page_meta`; take candidates in order (primary, alternates, default); validate each against the Page's Page-Level Aesthetic Constraints (`page-constraint` entries) in the post-selection rejection loop; apply the first survivor.
-   - All candidates rejected → **fallback generation**: the composer constructs a layout that fits the content and satisfies the constraints, and the decisions sidecar records the layout as fallback-generated. Halt `SECTION_TYPE_UNKNOWN:{id}` only when the Section id itself exists in neither source.
+   - **Lazy** — no Shape named: run the Shape-assignment waterfall below.
+   - Halt `SECTION_TYPE_UNKNOWN:{id}` only when the Section id itself exists in neither source.
+
+### The Shape-assignment waterfall
+
+Four rungs, tried in order. **A rung is reached only when every rung above it produced nothing**, and a survivor from a higher rung is never displaced by a lower one — the rule is the Section's own declared intent, and the library is the accumulated intent of the whole system. Building from scratch is the last resort, not the fallback for mild inconvenience.
+
+**Rung 1 — the Section's own rule.** Run the Section's Shape Selection Rule (`shape-selection-rule`) over its content-contract signals + `page_meta`; take candidates in order (primary, alternates, default); validate each against the Page's Page-Level Aesthetic Constraints (`page-constraint` entries) in the post-selection rejection loop. The first survivor is applied and the waterfall ends.
+
+**Rung 2 — any other Shape in the library, unmodified.** The rule's candidates are all rejected, but the ShapeLibrary is larger than any one rule's table. Consider every remaining Shape in the resolved library (plugin ∪ extensions). A Shape is **eligible** when all four hold:
+
+- its `page_family` is the Page's family or `shared`;
+- every slot it declares `required: true` has content to fill;
+- every piece of the Section's content lands in one of its slots — an arrangement that drops content is not a fit;
+- it survives the same Page-Level Aesthetic Constraints rejection loop.
+
+Among the eligible Shapes, apply the **closest fit**: fewest unfilled optional slots first, then fewest slots overall (the simplest arrangement that still holds everything), then the earliest name alphabetically so the choice is deterministic. Record the outcome as **library-sourced**, naming the Shape and what made it fit.
+
+**Rung 3 — the closest library Shape, adapted.** No Shape fits unmodified. Take the closest-fitting eligible-but-for-one-thing Shape and apply the smallest modification that makes it fit. A modification is bounded:
+
+- It **may** select a declared `variant`, leave an optional slot unfilled, or set a value the Shape's Determinations leave open.
+- It **may not** change the Shape's arrangement contract — its slot set, the relative positions of those slots, or any Determination stated as definitive. A change that crosses that line is not that Shape any more, and claiming it is misreports what was built.
+
+Record the outcome as **library-adapted**, naming the base Shape, the modification, and why that base was closest. When the needed change crosses the line, do not stretch the record to fit: that change is a new Shape belonging in `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, and the run drops to rung 4 while the sidecar says so.
+
+**Rung 4 — fallback generation.** Nothing in the library fits, modified or not. The composer constructs a layout that fits the content and satisfies the constraints. Record the outcome as **fallback-generated**, listing the rungs already tried and why each produced nothing.
+
+Rung 3 and rung 4 outcomes are the system reporting a gap in itself. A Section that keeps landing there wants a Shape the library does not carry yet; the decisions sidecar is where that pattern becomes visible.
 3. **Resolve the Shell** (View composition only). A stored Shell is resolved **by name** from `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` (unset → a `shells/` directory that is a sibling of the mocks directory). Unnamed with exactly one stored Shell → use it; unnamed with several → one clarifying ask. Halt `SHELL_UNKNOWN:{name}` only when a named Shell exists nowhere in that area.
 4. **Stylesheet freshness (silent).** Compare the `cds_hash.py` semantic fingerprints (elements YAML, reference tree, extensions tree) against `manifest.json`; on mismatch invoke the internal `generate-css` machinery and proceed — never halt for staleness, never mention staleness or regeneration to the human, never instruct the human to run anything. Halt `STYLESHEETS_REGEN_FAILED:{inner}` only if that regeneration itself fails. The human-facing guarantee: what you see is always built from the current system.
 5. **Assemble** per the output (below).
 6. **Emit sidecars and the state record** — every composer, every run:
    - `<basename>.wireframe.txt` — one block per Section: `ID · section · shape · ground`, ASCII arrangement sketch.
-   - `<basename>.decisions.md` — per Section: chosen shape, rule row that fired, alternates rejected and by which constraint, ground assignment, width, motion notes, fallback-generated flag.
+   - `<basename>.decisions.md` — per Section: chosen shape, the **resolution rung** that produced it (`eager` | `rule-candidate` | `library-sourced` | `library-adapted` | `fallback-generated`), the rule row that fired, alternates rejected and by which constraint, ground assignment, width, and motion notes. A `library-sourced` record names the Shape and what made it fit; a `library-adapted` record additionally names the base Shape and the modification applied; a `fallback-generated` record lists the rungs already tried and why each produced nothing.
    - State record (shared schema, unchanged): brief_snapshot, sections, sidecar paths, run-mode `generate|update`, update_source, per-section preserved flags; last 10 retained; consumed by `package-change` and by iteration.
    - The deliverable itself stays metadata-free — reasoning lives in the sidecars, never in the artifact.
 

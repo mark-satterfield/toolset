@@ -12,7 +12,7 @@ constraints: []
 
 # Documentation Page
 
-Long-form reference content: legibility and stability. Closest in style to editorial, with optional side navigation. This Page is content Sections only, in the fixed order above: title → body; topbar, footer, and any outer offset belong to the user's Shell. In-page anchor links scroll smoothly.
+Long-form reference content: legibility and stability. Closest in style to editorial, with optional side navigation. This Page is content Sections only, in the fixed order above: title → body; the top-nav and site-footer Sections, and any outer offset, belong to the user's Shell. In-page anchor links scroll smoothly.
 
 ## Theme
 

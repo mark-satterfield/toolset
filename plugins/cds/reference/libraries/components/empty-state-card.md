@@ -18,7 +18,6 @@ accessibility: []
 token_bindings:
   - --surface-raised
   - --text-tertiary
-shell_component: false
 composite: false
 ---
 

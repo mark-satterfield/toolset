@@ -18,7 +18,6 @@ accessibility:
   - "per-row controls: role=radiogroup with labelled role=radio glyph buttons"
   - "group collapse via <summary> (aria-expanded, aria-controls)"
 token_bindings: [--text-primary, --text-tertiary, --surface-tertiary]
-shell_component: false
 composite: true
 ---
 

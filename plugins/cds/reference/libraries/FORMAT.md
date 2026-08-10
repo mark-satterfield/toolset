@@ -27,9 +27,6 @@ sizing: {}                     # dimension contract: token refs and derivation f
 behavior: []                   # interaction contracts: events, states, keyboard
 accessibility: []              # ARIA pattern, focus, contrast obligations
 token_bindings: []             # role tokens the component consumes (semantic vocabulary only)
-shell_component: false         # true for Components that typically realize a Shell's Sections
-                               # (topbar, footer, rail, drawer, skip-links, switcher, account-row);
-                               # consulted by compose-shell when the user composes a Shell
 composite: false               # true for multi-component compositions (modal-with-form, field-group, destructive-zone)
 content_defaults: {}           # declared example content (e.g. the footer's default column IA); supplied content overrides
 ```
@@ -54,9 +51,21 @@ shape: shape-name              # eager Shape assignment: the Shape, by name, fro
 content_contract: {}           # the typed signals this section's rule consumes (the completed content_meta fields relevant to it)
 theme: default                 # theme class or `scheduled` (takes the constraint-assigned ground)
 composition_notes: []          # cross-section notes (e.g. cross-promo may embed inside trust-detail)
+shell_edge: block-start | block-end | inline-start | inline-end
+                               # ONLY on a Section of a ShellDefinition: the canvas edge this Section
+                               # is pinned to, framing the vacant space a Page nests into. Absent on
+                               # a Page's Sections, which flow in sequence rather than pin.
+variants: []                   # named variants of the Section's own surface
+sizing: {}                     # the Frame's own dimension contract: token refs and derivation
+                               # formulas only — no bare px (see the Dimension rule below)
+behavior: []                   # the surface's own interaction contracts (states, scroll, overflow)
+accessibility: []              # the Frame's landmark, focus, and keyboard obligations
+token_bindings: []             # role tokens the Frame's own surface consumes
 ```
 
 A Section never contains its own layout — layout always lives in a Shape in the ShapeLibrary so it stays shareable across Pages. A Section either names its Shape (eager) or carries the content signals its rule needs (lazy).
+
+A Section is a Frame, and a Frame is a DesignElement with its own dimensions and properties (`reference/model/entity-catalog.md`). The division is exact: **the Section owns its surface** — height or width, ground, pinning, border, overflow, landmark, scroll behavior — and **the Shape owns the arrangement of what sits inside it**. A region of a frame whose contents vary between sites is one Section with several Shapes, never one Component with optional slots; variability is handled by selecting a different Shape, never by leaving positions open. Because Frame contains Frame, a Section can contain a Section.
 
 #### Universal Section slots
 
@@ -86,7 +95,7 @@ A Page is one or more Sections in sequence; it nests inside the vacant space of 
 section: hero                  # the Section this rule serves, by name (one file per section)
 signals: []                    # content_contract fields consulted
 table: []                      # ordered rows: {when: predicate over signals+page_meta, primary: shape, alternates: [shapes]}
-default: shape-name            # fallback candidate before agent generation
+default: shape-name            # last candidate of rung 1, before the waterfall descends
 ```
 
 `page_meta` is shared: `buying_mode: commit|browse`, `position_in_page: top|mid|late`.
@@ -98,7 +107,7 @@ applies_to: {page_families: [], pages: []}   # scoping; a page-family default ov
 check: |                       # the validator statement, written as a decidable rule over the accumulating page
 ```
 
-Constraints run as a post-selection rejection loop: candidate shape → validate → reject → next candidate → exhausted → fallback generation (recorded in the decisions sidecar).
+Constraints run as a post-selection rejection loop: candidate shape → validate → reject → next candidate. Exhausting a rule's candidates does not mean generating a layout — it drops to the next rung of the Shape-assignment waterfall (`reference/pipeline.md`), which searches the rest of the library before anything is built from scratch. Every outcome is recorded in the decisions sidecar.
 
 ## Body
 

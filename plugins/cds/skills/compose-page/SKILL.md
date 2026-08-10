@@ -4,6 +4,10 @@ description: Composes a Page — one or more Sections in sequence — and emits 
 allowed-tools: Read, Write, Bash, Glob
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Composes a **Page** per the shared build pipeline (`../../reference/pipeline.md`) and emits **Page HTML** at a resolved output path: the Page's realized Frames, without any shell. The output inlines the generated stylesheet set and the theming + color-mode scripts so it opens in any browser with no external assets. This skill owns Page composition and its discovery; catalog resolution, the resolution stages, run-modes, sidecars, and compliance are defined once in the pipeline and cited here — never restated.
@@ -49,7 +53,7 @@ Runs in this exact order.
 
 ## Pipeline
 
-Execute the shared build pipeline (`../../reference/pipeline.md`) with the resolved render target. The pipeline defines catalog resolution, the Page → per-Section resolution stages (eager and lazy Shape assignment, the PageLevelAestheticConstraints rejection loop, and fallback generation for a known Section whose candidates are all rejected), the silent stylesheet-freshness stage, run-modes, sidecar emission, and the state record. This skill adds only the Page HTML render specifics:
+Execute the shared build pipeline (`../../reference/pipeline.md`) with the resolved render target. The pipeline defines catalog resolution, the Page → per-Section resolution stages (eager and lazy Shape assignment, the PageLevelAestheticConstraints rejection loop, and the four-rung Shape-assignment waterfall that searches the rest of the ShapeLibrary — unmodified, then adapted — before anything is generated from scratch), the silent stylesheet-freshness stage, run-modes, sidecar emission, and the state record. This skill adds only the Page HTML render specifics:
 
 - **Assembly.** Emit a single self-contained HTML file at the resolved output path. The `<head>` inlines `tokens.css`, `components.css`, `themes.css` (from `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`) inside one `<style>` block, then inlines the theming + color-mode scripts from `../../reference/foundations/implementation.md`. Asset references in supplied content inline as a `data:` URI when readable from disk; an absolute URL or unreadable path is used verbatim with a warning to the caller. The HTML carries no agent-side metadata — no decision logs, provenance comments, or structural maps (the reasoning lives in the sidecars).
 - **Build every Component to its `libraries/components/<name>.md` entry.** Layout, sizing, spacing, radius, and container width resolve from the generated tokens the entry's `token_bindings` name; the page block consumes them and declares no geometry of its own. A page-block override of a system geometry token is an `audit-against-system` finding (`../../reference/compliance.md`). A section wrapper's `max-width` is a `--container-*` width (`≥` the page width), never a `--column-*` reading width. If a needed dimension has no token, the gap belongs in the YAML `geometry:` block (STOP `MISSING_SPEC` and surface it), not in a page override.
@@ -67,7 +71,7 @@ When an iteration request targets a value, determine what actually holds it: **t
 - `WRONG_SKILL:{name}` — the request belongs to a different skill (`compose-shell` for Shell composition, `compose-view` for a Page inside a Shell); the caller must re-invoke the correct skill or slash command.
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the pipeline's freshness stage found the set stale or missing and the auto-invoked `generate-css` itself halted; the inner code is surfaced verbatim.
 - `PAGE_UNKNOWN:{name}` — the requested named Page resolves in neither the reference nor the extensions.
-- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the Page sequence resolves in neither the reference nor the extensions. (A *known* Section whose Shape candidates are all rejected is not a halt — the pipeline fallback-generates a fitting layout and records it in the decisions sidecar.)
+- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the Page sequence resolves in neither the reference nor the extensions. (A *known* Section whose rule candidates are all rejected is not a halt — the pipeline descends the Shape-assignment waterfall, reusing a library Shape where one fits and generating only as a last resort, and records the rung it landed on in the decisions sidecar.)
 - `MISSING_SPEC` — a required spec is too thin to render and is absent from both the reference and the extensions (name the gap).
 - `MISSING_COMPONENT:{name}` — a required Component is defined in neither reference nor extensions.
 - `UPDATE_SOURCE_UNREADABLE` — the existing artifact supplied for a brownfield update cannot be read or parsed.

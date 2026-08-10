@@ -15,7 +15,7 @@ constraints: []
 
 # Editorial Detail Page
 
-Long-form article reading: legibility, scannability, and a quiet, confident tone. Structurally the simplest Page after authentication. This Page is content Sections only, in the fixed order above; topbar and footer belong to the user's Shell.
+Long-form article reading: legibility, scannability, and a quiet, confident tone. Structurally the simplest Page after authentication. This Page is content Sections only, in the fixed order above; the top-nav and site-footer Sections belong to the user's Shell.
 
 ## Theme
 

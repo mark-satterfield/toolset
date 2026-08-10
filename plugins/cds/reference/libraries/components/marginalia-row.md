@@ -21,7 +21,6 @@ token_bindings:
   - --border-subtle
   - --text-tertiary
   - --text-primary
-shell_component: false
 composite: false
 ---
 

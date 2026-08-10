@@ -4,7 +4,6 @@ name: mobile-drawer
 page_family: shared
 aliases: [hamburger menu, mobile nav, mobile menu, nav drawer, drawer]
 status: stable
-shell_component: true
 composite: false
 slots:
   - { name: hamburger, required: true, accepts: [button] }

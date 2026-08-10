@@ -11,7 +11,6 @@ behavior:
 accessibility:
   - "removes no focus affordance; the foundation :focus-visible ring still applies"
 token_bindings: []
-shell_component: false
 composite: false
 ---
 

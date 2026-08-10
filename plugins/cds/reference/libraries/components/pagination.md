@@ -13,7 +13,6 @@ behavior: [disabled-boundary-links]
 accessibility: [nav-landmark, decorative-indicator, disabled-semantics]
 token_bindings:
   - --text-tertiary
-shell_component: false
 composite: false
 ---
 

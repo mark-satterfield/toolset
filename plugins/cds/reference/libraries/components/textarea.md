@@ -22,7 +22,6 @@ token_bindings:
   - --text-secondary
   - --error-text
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

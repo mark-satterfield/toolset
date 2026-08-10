@@ -18,7 +18,6 @@ token_bindings:
   - --text-primary
   - --text-tertiary
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

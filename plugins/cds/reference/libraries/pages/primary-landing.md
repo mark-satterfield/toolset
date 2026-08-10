@@ -29,7 +29,7 @@ constraints: [ground-alternation, variety-principle]
 
 The longest Page in the system: introduces the product, demonstrates it, and closes on a conversion moment. The `sections` list is the typical order when a Section is present — which Sections appear is a content decision; the order above governs when they do.
 
-This Page is content Sections only; topbar and footer belong to the user's Shell.
+This Page is content Sections only; the top-nav and site-footer Sections belong to the user's Shell.
 
 ## Theme islands
 

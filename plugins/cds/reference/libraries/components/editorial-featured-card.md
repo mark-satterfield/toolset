@@ -20,7 +20,6 @@ token_bindings:
   - --tile-ground-1
   - --tile-ground-2
   - --tile-ground-3
-shell_component: false
 composite: false
 ---
 

@@ -5,10 +5,10 @@ page_family: landing
 aliases: [carousel, card slider, horizontal scroller]
 status: stable
 slots:
-  - { name: cards, required: true, accepts: [card] }
+  - { name: cards, required: true, accepts: [card, quote-card, media-header-card, action-card] }
   - { name: controls, required: true, accepts: [prev-button, next-button] }
   - { name: pagination, required: false, accepts: [pagination-indicator] }
-variants: [with-pagination-dots, without-pagination-dots, auto-advance-on, auto-advance-off]
+variants: [with-pagination-dots, without-pagination-dots, auto-advance-on, auto-advance-off, controls-below-centered, controls-flanking]
 self_contained: true
 content_defaults: {}
 ---
@@ -21,6 +21,8 @@ A single horizontal row of cards exceeding the viewport width, with prev/next ar
 
 - Card width derives from the container: cards are a fixed width sized so roughly 3 fit within `--container-marketing-primary` at desktop, with the next card peeking ~10% to signal overflow. Inter-card gap is `--sp-1-5`.
 - Scroll snaps card-by-card (`scroll-snap-type: x mandatory`, `scroll-snap-align: start`). Auto-advance is off by default; when on, it pauses on hover and on focus within the carousel, and is suppressed under `prefers-reduced-motion: reduce`.
+- The visible window is the count of whole cards the row shows at once; the peeking next card is the signal that the list continues past it. Changing the window is a card-width change, not a different arrangement.
+- Control placement: `controls-below-centered` (default) sets the prev and next buttons on either side of the pagination dots in one centered row beneath the cards, so the arrows and the position indicator read as one control group. `controls-flanking` sets them at the row's inline edges, vertically centered on the cards.
 - Prev/next controls carry `aria-label` and are disabled (with `aria-disabled`) at the start/end. Below the tablet breakpoint (`foundations/responsive.md` §17.1) the row is finger-scrollable and the arrows hide.
 
 ## Self-containment

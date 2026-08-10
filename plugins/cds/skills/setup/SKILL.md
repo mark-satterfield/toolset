@@ -3,6 +3,7 @@ name: setup
 description: User-invoked only via the /cds:setup slash command — not triggered by natural language. Guides a step-by-step walkthrough to capture CUSTOMIZABLE_DESIGN_SYSTEM_* environment variable values (elements path, install mode, optional output directories) and writes them to the env block of the appropriate settings.json (global ~/.claude/settings.json or project .claude/settings.local.json). Idempotent — safe to re-run to update existing values. Does not generate CSS, mocks, Shells, or Views.
 allowed-tools: Read, Write, Edit, Bash, Glob
 disable-model-invocation: true
+entity_catalog_read: not-applicable   # captures env-var values only; resolves no Building Blocks term
 ---
 
 # `/cds:setup`

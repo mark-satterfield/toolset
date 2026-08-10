@@ -4,6 +4,10 @@ description: Bundles an approved CDS change into a single hand-off package the a
 allowed-tools: Read, Write, Bash, Glob
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Assembles everything an approved change needs to reach the application repository into one self-describing bundle directory. It generates nothing new about the design — it reads the state record a prior composer run (`compose-page`, `compose-shell`, `compose-view`) wrote (the deterministic spine), confirms the stylesheet set is current, derives a build spec from the recorded sections, and copies the artifacts together with a `README` index. This is the hand-off boundary: after this skill runs, the app-repo developer agent builds from the bundle alone.

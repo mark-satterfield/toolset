@@ -23,11 +23,22 @@ The model is defined normatively in `reference/model/entity-catalog.md` and `ref
 
 - **Component** — the smallest CDS-aware unit, built from Elements (raw HTML tags — a concept only, never configured). Carries sizing rules, behavior contracts, accessibility contracts, and token bindings. A catalog entry is a Component Definition; realized on a page it becomes HTML, CSS, and TypeScript. Lives in the **ComponentLibrary**.
 - **Shape** — a template layout for positioning and the proportional and other geospatial properties of Components and Elements. Shapes have no dimensions of their own; variability is handled by selecting a different Shape, never by leaving positions open. Lives in the **ShapeLibrary** — Sections point to Shapes so every layout is shareable.
-- **Frame** — the abstract container: themeable, and assigned a Shape either **eagerly** (a predefined Shape supplied up front) or **lazily** (resolved at build time by the Rule Engine from the content). **Section**, **Page**, and **ShellDefinition** are the concrete Frames:
-  - **Section** — a single region of a page. Its layout is always a Shape in the ShapeLibrary (`shape:` frontmatter = eager; absent = lazy via its ShapeSelectionRule).
+- **Frame** — the abstract container: themeable, and assigned a Shape either **eagerly** (a predefined Shape supplied up front) or **lazily** (resolved at build time by the Rule Engine from the content). **Section**, **Page**, and **ShellDefinition** are the concrete Frames. A Frame contains Frames, so a Section can contain a Section:
+  - **Section** — a single region. It owns its own surface (dimensions, ground, pinning, landmark); its layout is always a Shape in the ShapeLibrary (`shape:` frontmatter = eager; absent = lazy via its ShapeSelectionRule).
   - **Page** — one or more Sections in sequence; nests inside the vacant space of a Shell. Every Page carries a **page family** (landing, app, editorial, docs, auth) that selects its typography and motion register and scopes its constraints — stated plainly, obvious from the prompt, or the skill asks.
-  - **ShellDefinition** — the blueprint of a site's repeating portions (menus pinned to canvas edges, a common footer). It carries real content. Its stored output is the **Shell**. The plugin ships no shells — every Shell is composed by you.
+  - **ShellDefinition** — the blueprint of a site's repeating portions. **It is defined in terms of Frames, not Components:** its regions are the Section entries that declare a `shell_edge:` — `top-nav` (block-start), `left-rail` (inline-start), `site-footer` (block-end) — each pinned to a canvas edge around the vacant space. It carries real content. Its stored output is the **Shell**. The plugin ships no shells — every Shell is composed by you.
+
+**A region of a frame is a Section; what fills it is a Shape.** A top bar carrying a mark alone, one carrying a mark and a menu, and one carrying a mark, a menu, and a sign-in button are three Shapes over the one `top-nav` Section — never one Component with optional slots, and never three near-identical nav Components. The same holds for `rail-*` over `left-rail` and `footer-*` over `site-footer`. Components (`logo`, `horizontal-menu`, `vertical-menu`, `account-row`, `dropdown-panel`, `mobile-drawer`, …) appear only where a Shape places them. `test/checks/check_frame_regions.py` enforces this.
 - **Rules** — a **ShapeSelectionRule** per lazily-assigned Section (content signals → an ordered list of eligible Shapes) and **PageLevelAestheticConstraint** entries (post-selection validators run as a rejection loop over the accumulating page).
+
+**The Shape-assignment waterfall.** When a lazily-assigned Section's Shape is resolved, four rungs are tried in order, and a rung is reached only when everything above it produced nothing:
+
+1. **The Section's own rule** — its candidates (primary, alternates, default), each validated against the page constraints.
+2. **Any other library Shape, unmodified** — the ShapeLibrary is larger than one rule's table, so every remaining Shape whose slots fit the content and that survives the constraints is considered, and the closest fit is applied.
+3. **The closest library Shape, adapted** — used with the smallest stated modification, bounded to what its variants and open values allow. A change that would alter the Shape's arrangement contract is not an adaptation; that is a new Shape for your extensions dir.
+4. **Generated from scratch** — only when nothing in the library fits, modified or not.
+
+The decisions sidecar records which rung produced each Section's layout. Full definition: `reference/pipeline.md`.
 - **Outputs** — **CSS** (the stylesheet set), **Page HTML** (the content region on its own), **Shell** (stored for reuse), **View** (the Page HTML nested inside the Shell — the thing a visitor would see).
 
 Each Building Block is one `.md` file (typed YAML frontmatter + body) under `reference/libraries/{components,shapes,sections,pages}/` and `reference/rules/{shape-selection,page-constraints}/`. Entry format is `reference/libraries/FORMAT.md`.
@@ -182,7 +193,7 @@ Drop `*.md` entries into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, which **m
 Beside the metadata-free deliverable, the pipeline writes two sidecars on **every** run:
 
 - `<basename>.wireframe.txt` — one block per Section (`ID · section · shape · ground`) with an ASCII arrangement sketch.
-- `<basename>.decisions.md` — per Section: the chosen shape, the rule row that fired, alternates rejected and by which constraint, the ground assignment, width, motion notes, and the fallback-generated flag.
+- `<basename>.decisions.md` — per Section: the chosen shape, the resolution rung that produced it, the rule row that fired, alternates rejected and by which constraint, the ground assignment, width, and motion notes.
 
 The deliverable itself stays clean — the reasoning lives in the sidecars, never in the artifact. The pipeline also writes a deterministic **state record** (the `brief_snapshot` + resolved `sections`) that `package-change` and iteration consume.
 
@@ -226,7 +237,8 @@ Matching uses strict `output_path` equality. A fresh output path starts fresh; a
 - It will not embed metadata inside a deliverable. Composed HTML is clean; reasoning lives in the sidecars.
 - It will not ship shells. Every Shell is composed by you, from your content, via `compose-shell`.
 - It will not invent catalog entries. New colors, roles, or themes are your work in the elements YAML; new Building Blocks go in your extensions dir. An **unknown** Page, Section, Component, or stored Shell name halts (`PAGE_UNKNOWN`, `SECTION_TYPE_UNKNOWN`, `MISSING_COMPONENT`, `SHELL_UNKNOWN`) rather than guessing.
-- It will **not** halt when a *known* lazily-assigned Section's Shape candidates are all rejected by the PageLevelAestheticConstraints. Instead the composer **fallback-generates** a layout that fits the content and satisfies the constraints, and records it as fallback-generated in the decisions sidecar. The "no best guess" principle lives at the catalog boundary — unknown entries — not at the composition boundary.
+- It will **not** halt when a *known* lazily-assigned Section's rule candidates are all rejected by the PageLevelAestheticConstraints. Instead it descends the Shape-assignment waterfall (above) and records the rung it landed on. The "no best guess" principle lives at the catalog boundary — unknown entries — not at the composition boundary.
+- It will **not** build a layout from scratch while one in the library would have fitted. Generation is the last rung, not the fallback for mild inconvenience.
 
 ### Halt codes you may see
 
@@ -266,7 +278,7 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 
 **"`compose-view` halted with `SHELL_UNKNOWN:main`."** No stored Shell named `main` exists in your shells area. Compose it first: `/cds:compose-shell`.
 
-**"A Section's layout says it was fallback-generated."** That is not an error. A known lazily-assigned Section whose Shape candidates were all rejected by the PageLevelAestheticConstraints gets a composer-generated layout that fits — the decisions sidecar records exactly which candidates were rejected and why.
+**"A Section's layout says it was library-sourced / library-adapted / fallback-generated."** None of those is an error — they are the lower rungs of the Shape-assignment waterfall, and the sidecar names which one ran and why. *library-sourced* means the Section's own rule offered nothing that survived, so a Shape from elsewhere in the library was used unmodified. *library-adapted* means the closest library Shape was used with a stated modification. *fallback-generated* means nothing in the library fitted and the layout was built from scratch. A Section that repeatedly lands on the last two is telling you the library is missing an entry — add it to your extensions dir.
 
 **"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the catalog. Add its entry under your extensions dir's `libraries/components/` to enable it.
 

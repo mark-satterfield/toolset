@@ -94,7 +94,7 @@ The YAML file enumerates a fixed set of input areas. Each row is a single mappin
 - **Primary Sans** — used for UI, nav, body sans, and application surfaces.
 - **Editorial Serif** — used for editorial prose and expressive headings.
 - **System Mono** — used for code and technical labels.
-- **Geometry** — the `geometry:` block: spacing scale, radius scale, section-padding scale, container widths per surface, and component-level sizing (e.g. topbar bar/logo height). Each entry maps a length/clamp/keyword to a system token the components consume.
+- **Geometry** — the `geometry:` block: spacing scale, radius scale, section-padding scale, container widths per surface, and per-entry sizing (e.g. the top-nav Section's bar height and mark height). Each entry maps a length/clamp/keyword to a system token the components consume.
 - **Motion** — the `motion:` block: easing curves, durations, and entrance-pattern parameters (reveal, card stagger, fade). Each entry maps a curve/time/parameter to a system token; the entrance patterns are emitted as keyframes + classes (`foundations/motion.md`).
 
 Geometry and motion are **first-class configurable element sets**, peers to color and type. They are emitted as global tokens (not theme-bound roles — they do not change on the light/dark flip), so a component reads `var(--topbar-height)` or `var(--ease-in-out)` the same way it reads a role, and the design system — never a page — owns those values.

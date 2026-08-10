@@ -66,3 +66,16 @@ For every editorial featured card, place a centered SVG illustration on a satura
 ```
 
 The SVG inside picks up the tile's `color` value, so a single mark can recolor cleanly per tile. Because the grounds are theme-bound, a light theme can fill them from soft `pastel` colors while a dark theme fills the same roles from deep `stronger` colors — without the tile markup changing.
+
+## §16.5 Animated media
+
+An illustration, pictogram, or mascot may animate. Whatever the format — an animated SVG, an animated GIF, or a looping video — one contract binds, because the reader's control over motion does not depend on how the motion was encoded.
+
+- **A static frame is supplied alongside the animation.** It is the same artwork at rest, usually the animation's first frame, and it is what renders whenever the animation does not.
+- **Motion is gated on preference.** The animated source renders only inside `@media (prefers-reduced-motion: no-preference)`; under `reduce`, the static frame renders in its place. A GIF cannot be paused by CSS, so a GIF is swapped for its static frame rather than merely having a transition suppressed. (WCAG 2.3.3, and the global gate in `foundations/motion.md` §15.5.)
+- **Anything running longer than five seconds carries a control.** Motion that auto-plays and continues past five seconds is pausable, stoppable, or hideable by the reader through a visible control (WCAG 2.2.2). A short loop that completes within five seconds needs none.
+- **Nothing flashes.** No animated asset flashes more than three times per second (WCAG 2.3.1).
+- **The layout does not move with the artwork.** The animated and static sources occupy one box of identical dimensions, declared by the placing Shape or Component, so switching between them reflows nothing.
+- **The animation carries no information of its own.** It decorates a heading or a tile; anything the reader must know is in the surrounding text. An animated asset is `aria-hidden` unless it is the only carrier of its meaning, in which case it takes a text alternative describing what it shows.
+
+Format follows §16.3: `.svg` for animated line art and pictograms, `.webp` for animated photographic or screenshot content, `.gif` only where a source asset arrives in that form.

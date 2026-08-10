@@ -34,4 +34,4 @@ check: |
 
 ## As a validator
 
-Reject a Shape candidate whose rendered dimensions would repeat the immediately preceding Section's combination (same structural pattern + same alignment + same density). On rejection the rule engine tries the next candidate; on exhaustion the composer fallback-generates a layout that satisfies the variety dimensions.
+Reject a Shape candidate whose rendered dimensions would repeat the immediately preceding Section's combination (same structural pattern + same alignment + same density). On rejection the rule engine tries the next candidate; on exhaustion the Shape-assignment waterfall (`reference/pipeline.md`) descends a rung, and this constraint applies unchanged to every candidate it surfaces — a library-sourced or adapted Shape is validated against the variety dimensions exactly as a rule candidate is.

@@ -13,7 +13,7 @@ constraints: []
 
 # Resource Index Page
 
-An index of editorial or feature entries: a featured-lead pattern with a publication list below. This Page is content Sections only, in the fixed order above: index header → featured grid → publication list; topbar and footer belong to the user's Shell.
+An index of editorial or feature entries: a featured-lead pattern with a publication list below. This Page is content Sections only, in the fixed order above: index header → featured grid → publication list; the top-nav and site-footer Sections belong to the user's Shell.
 
 ## Theme
 

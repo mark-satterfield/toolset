@@ -4,7 +4,6 @@ name: workspace-switcher
 page_family: app
 aliases: [workspace picker, org switcher, team switcher]
 status: stable
-shell_component: true
 composite: false
 slots:
   - { name: wrapper, required: true, accepts: [trigger, collapse-toggle] }
@@ -93,7 +92,7 @@ A control at the top of the rail letting the user switch between workspaces in t
 
 ## Panel contents
 
-The popover is a `role="dialog"` listing the organization's workspaces. Its layout, top to bottom: a search-input component (shown only when more than ~7 workspaces exist), a list of workspace rows (each row reusing the left-rail nav-row geometry — 36px height, 8px radius, `aria-current="true"` on the active workspace), and a "Create workspace" row pinned to the bottom rendered as a Tertiary button with a leading plus glyph. The panel follows the dropdown-panel lift-and-scale open vocabulary and the modal-dialog focus-trap contract.
+The popover is a `role="dialog"` listing the organization's workspaces. Its layout, top to bottom: a search-input component (shown only when more than ~7 workspaces exist), a list of workspace rows (the rows are a vertical-menu Component, `libraries/components/vertical-menu.md`, carrying `aria-current="true"` on the active workspace), and a "Create workspace" row pinned to the bottom rendered as a Tertiary button with a leading plus glyph. The panel follows the dropdown-panel lift-and-scale open vocabulary and the modal-dialog focus-trap contract.
 
 ## Leading workspace-color dot
 

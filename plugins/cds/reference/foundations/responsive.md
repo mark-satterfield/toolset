@@ -6,7 +6,7 @@
 |---|---:|---|
 | Mobile narrow | `< 480px` | Single-column. Section padding drops to 56px top/bottom. 2-column grid. Drawer-style mobile nav. Reading column at 100% width minus side gutter. |
 | Mobile wide | `480–700px` | Single-column. Drawer-style mobile nav. Editorial reading column at full width. |
-| Tablet | `700–1024px` | 12-column grid activates. Editorial reading column at 640px centered. Desktop topbar appears. |
+| Tablet | `700–1024px` | 12-column grid activates. Editorial reading column at 640px centered. The desktop top-nav Section appears. |
 | Desktop | `1024–1440px` | Full container at 1192–1400px max. The application Shell's Sections all show. |
 | Wide desktop | `> 1440px` | Container caps at 1440px (marketing) or 1400px (editorial). Outer page gutter grows. Long-form pages hold the `--docs-outer-offset` gutter on each outer side. |
 
@@ -30,6 +30,6 @@ Below the tablet breakpoint:
 
 ## §17.4 Mobile navigation
 
-- Replace the desktop topbar's right-aligned link group with a hamburger trigger.
+- Replace the desktop top-nav's end-aligned link group with a hamburger trigger.
 - The hamburger opens the drawer per the navigation system's mobile-drawer rules.
-- The "primary action" CTA (e.g., the brand-button conversion link) remains visible in the topbar to the left of the hamburger.
+- The "primary action" CTA (e.g., the brand-button conversion link) remains visible in the top-nav to the left of the hamburger.

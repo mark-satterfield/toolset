@@ -23,7 +23,6 @@ token_bindings:
   - --surface-raised
   - --text-primary
   - --text-tertiary
-shell_component: false
 composite: false
 ---
 

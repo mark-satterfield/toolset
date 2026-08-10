@@ -19,7 +19,6 @@ token_bindings:
   - --button-primary-text
   - --accent-primary
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

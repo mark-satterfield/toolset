@@ -18,7 +18,6 @@ accessibility: [region-role, natural-tab-order]
 token_bindings:
   - --text-primary
   - --text-secondary
-shell_component: false
 composite: false
 ---
 

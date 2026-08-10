@@ -1,5 +1,20 @@
 # Building Blocks — Entity Catalog
 
+**Normative. Read this file IN FULL — every row, every column — before resolving a single term against it.** It is not skimmed, scanned, sampled, or summarized, and it is never paraphrased into another file. Every skill, command, and sub-agent in this plugin reads it completely, first, on every run. It is not a name/definition list: the columns carry the meaning.
+
+## How to read this catalog
+
+The catalog is written with OOP semantics, deliberately, to remove ambiguity. Read the columns as follows.
+
+- **Type** — the interfaces the entity implements. `Archetype` = a blueprint that instances are stamped from. `Group` = it bundles multiple DesignElements.
+- **Extends** — the supertype. **Inheritance is transitive and load-bearing.** A Section extends Frame, Frame extends DesignElement, and Frame contains DesignElements — therefore **a Section can contain a Section**. Follow the chain to its end before concluding that something is not permitted.
+- **Construct** — `Abstract` or `Concrete`, chosen deliberately per entity, never incidentally. An Abstract entity is never instantiated directly; a Concrete subtype is.
+- **Contains** — what an entity is permitted to hold. **`Contains` does not mean "is a container."** Infer no wrapper element, no nesting chrome, and no container semantics from this column. It is a permitted-membership list and nothing more.
+- **Category** — the role the entity plays in the model.
+- **Description** — definitive. **`Can`, `may`, and `typically` grant permission; they never impose obligation.** Do not read `may` as `must`, and do not read an unexercised permission as a gap. A Section is themable — a nested Section need not be assigned a theme of its own, because it inherits its parent's.
+
+Where a capability is stated, enforce the capability; do not enumerate a closed list of the cases it covers.
+
 ## Entities
 
 | Name | Type | Extends | Construct | Contains | Category | Description |
@@ -10,9 +25,9 @@
 | Element | | | Concrete | | Leaf (HTML) | A raw HTML tag: `div`, `span`, `table`, `row`, `button`, `img`. No CDS awareness. Not a DesignElement. |
 | Component | Archetype, Group | DesignElement | Concrete | HTML Elements | Entity | A reusable unit of UI built from browser-native building blocks. It encapsulates its own markup, style, and behavior, and defines sizing rules, behavior contracts, accessibility contracts, and token bindings. The smallest unit that carries CDS awareness. It is itself the definition (unrealized); once realized on a page it becomes HTML, CSS, and TypeScript. |
 | ComponentLibrary | | | Concrete | A list of Components | Library | An array list of pre-configured Components |
-| Shape | Archetype, Group | | Concrete | Components, HTML Elements | Entity | A Shape is primarily a template layout for positioning, and other proportional and geospatial properties of Components and Elements. While CDS may already pre-define most component's with style and other properties. The shape may also provide property values that are not strictly geospatial in nature. |
+| Shape | Archetype, Group | | Concrete | Components, HTML Elements | Entity | A Shape is primarily a template layout for positioning, and other proportional and geospatial properties of Components and Elements. While CDS may already pre-define most component's with style and other properties. The shape may also provide property values that are not strictly geospatial in nature. A Shape's arrangement is one of: STATIC (a fixed set of distinct parts, e.g. a label and button pair for search); ORDERED (a repeated part over a collection, e.g. a scrolling list). Variability is handled by selecting a different Shape, not by leaving positions open. In OOP terms, an abstract class. |
 | ShapeLibrary | | | Concrete | Shapes | Library | An array list of pre-configured Shapes |
-| Frame | Archetype, Group | DesignElement | Abstract | Frames, Components, HTML Elements | Base container | A Frame is a container used to group elements together. It is a distinct DesignElement with its own dimensions and properties. The content-bearing unit of page construction: a realized Shape including content, plus a theme. A Frame is assigned a Shape either eagerly (a predefined Shape supplied up front) or lazily (resolved at build time by the Rule Engine from the Section's content). "Deterministic" vs "dynamic" is only when the Shape becomes realized — Rules for some pages are scoped to a type. |
+| Frame | Archetype, Group | DesignElement | Abstract | Frames, Components, HTML Elements | Base container | A Frame is a container used to group elements together. It is a distinct DesignElement with its own dimensions and properties. The content-bearing unit of page construction: a realized Shape including content, plus it is themable. A Frame is assigned a Shape either eagerly (a predefined Shape supplied up front) or lazily (resolved at build time by the Rule Engine from the Section's content). "Deterministic" vs "dynamic" is only when the Shape becomes realized — Rules for some pages are scoped to a type. |
 | Page | Archetype | Frame | Concrete | Frames | Entity | The blueprint or configuration of a Page. A page is what ultimately nests inside the vacant space in a ShellDefinition. A page is described in terms of one or more sections (frames). It may be a single section. Many pages are vertical scrolling with sections appearing sequentially. For each shell, there are usually many pages. |
 | Section | Archetype | Frame | Concrete | Frames, Components, HTML Elements | Entity | The blueprint or configuration of a Section — a single region of a page. Like any Frame, it is assigned a Shape (eagerly or lazily) and holds its content. A Page is described as one or more Sections in sequence (for example: an editorial hero, a posts crawl, a news index, a call to action). |
 | ShellDefinition | Archetype | Frame | Concrete | Sections | Entity | The blueprint or configuration for a shell is the repeating portions of a web site that do not change as pages change. Typically, a shell is composed of a menu, or menus pinned to one or more edges of the canvas, and maybe a common footer or status pinned to the bottom of the canvas, or appended to the bottom of that Page contents. |

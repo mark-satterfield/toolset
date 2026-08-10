@@ -4,7 +4,6 @@ name: account-row
 page_family: app
 aliases: [user menu, account menu, profile row, user row]
 status: stable
-shell_component: true
 composite: false
 slots:
   - { name: avatar, required: true, accepts: [initial, image, icon-glyph] }

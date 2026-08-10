@@ -12,13 +12,24 @@ Reads the decisions sidecar the pipeline already emits beside every composed
 output (`<basename>.decisions.md`), so it verifies what a composer actually did
 rather than re-deriving intent from markup.
 
-PROPERTY 1 — a rendered Shape is one its Section's rule offers.
-    For each Section recorded in a decisions sidecar, the recorded Shape MUST
-    be either (a) a candidate in that Section's shape-selection rule (a
-    `primary:`, an `alternates:` entry, or the `default:`), (b) the Section's
-    eager `shape:` frontmatter, or (c) explicitly recorded as
-    fallback-generated. A Shape from outside that set means the composer
-    reached past the rules.
+PROPERTY 1 — a rendered Shape came from a rung of the waterfall, and says which.
+    The Shape-assignment waterfall (`reference/pipeline.md`) has four rungs: the
+    Section's own rule, then any other library Shape unmodified, then the closest
+    library Shape adapted, then generation from scratch. For each Section recorded
+    in a decisions sidecar, the recorded Shape MUST be one of:
+      (a) a candidate in that Section's shape-selection rule (a `primary:`, an
+          `alternates:` entry, or the `default:`) — rung 1;
+      (b) the Section's eager `shape:` frontmatter;
+      (c) a Shape recorded as library-sourced or library-adapted — rungs 2 and 3;
+      (d) recorded as fallback-generated — rung 4.
+    A Shape from outside the rule's candidate set that claims NO rung means the
+    composer reached past the rules silently, which is the failure this catches.
+
+PROPERTY 3 — a library-sourced or library-adapted Shape is a real Shape.
+    Rungs 2 and 3 exist to reuse the library, so a record claiming either MUST
+    name a Shape that has an entry in `reference/libraries/shapes/`. Only rung 4
+    may produce a layout with no entry behind it — that is what makes it the last
+    resort rather than an escape hatch with a nicer label.
 
 PROPERTY 2 — a self-contained Shape carried its behavior.
     A Shape whose entry declares `self_contained: true` owns its own scoped
@@ -50,6 +61,8 @@ OUTPUT_ROOTS = (os.path.join("plugins", "cds", "test", "visual-proof-out"),)
 NON_ENTRY = {"FORMAT.md", "CONVENTIONS.md"}
 
 FALLBACK_MARKERS = ("fallback-generated", "fallback generation")
+# Rungs 2 and 3: the composer reached past the rule's table into the library.
+LIBRARY_RUNG_MARKERS = ("library-sourced", "library-adapted")
 
 
 def _frontmatter(text):
@@ -96,16 +109,19 @@ def _catalog(repo_root):
                 candidates.setdefault(name, set()).add(eager.group(1))
 
     self_contained = set()
+    known_shapes = set()
     shapes_dir = os.path.join(base, SHAPES_LIB)
     if os.path.isdir(shapes_dir):
         for basename in sorted(os.listdir(shapes_dir)):
             if not basename.endswith(".md") or basename in NON_ENTRY:
                 continue
             front = _frontmatter(_read(os.path.join(shapes_dir, basename)))
+            name_match = re.search(r"^name:\s*(\S+)\s*$", front, re.MULTILINE)
+            name = name_match.group(1) if name_match else basename[:-3]
+            known_shapes.add(name)
             if re.search(r"^self_contained:\s*true\s*$", front, re.MULTILINE):
-                name_match = re.search(r"^name:\s*(\S+)\s*$", front, re.MULTILINE)
-                self_contained.add(name_match.group(1) if name_match else basename[:-3])
-    return candidates, self_contained
+                self_contained.add(name)
+    return candidates, self_contained, known_shapes
 
 
 def _sidecars(repo_root):
@@ -135,7 +151,7 @@ def _recorded_sections(text):
 
 def run(repo_root):
     failures = []
-    candidates, self_contained = _catalog(repo_root)
+    candidates, self_contained, known_shapes = _catalog(repo_root)
 
     for sidecar in _sidecars(repo_root):
         rel = os.path.relpath(sidecar, repo_root)
@@ -147,14 +163,30 @@ def run(repo_root):
             if any(marker in block.lower() for marker in FALLBACK_MARKERS):
                 continue  # fallback generation is a recorded, legal outcome
 
-            offered = candidates.get(section)
-            if offered is None:
-                continue  # Section not in the catalog; check_shape_conformance owns that
-            if shape not in offered:
-                failures.append(
-                    f"{rel}: section '{section}' rendered with shape '{shape}', which its rule does "
-                    f"not offer (candidates: {', '.join(sorted(offered)) or 'none'})"
-                )
+            lowered = block.lower()
+            from_library_rung = any(m in lowered for m in LIBRARY_RUNG_MARKERS)
+
+            if from_library_rung:
+                # PROPERTY 3 — rungs 2 and 3 reuse the library, so the Shape must exist.
+                if known_shapes and shape not in known_shapes:
+                    failures.append(
+                        f"{rel}: section '{section}' records shape '{shape}' as reached through "
+                        f"the library rung of the waterfall, but no entry for it exists in "
+                        f"reference/libraries/shapes/ — only fallback generation may produce a "
+                        f"layout with no entry behind it"
+                    )
+            else:
+                offered = candidates.get(section)
+                if offered is None:
+                    continue  # Section not in the catalog; check_shape_conformance owns that
+                if shape not in offered:
+                    failures.append(
+                        f"{rel}: section '{section}' rendered with shape '{shape}', which its rule "
+                        f"does not offer (candidates: {', '.join(sorted(offered)) or 'none'}) and "
+                        f"which claims no rung of the Shape-assignment waterfall. Record it as "
+                        f"library-sourced, library-adapted, or fallback-generated "
+                        f"(reference/pipeline.md)."
+                    )
 
             if shape in self_contained and artifact_html:
                 body = artifact_html[artifact_html.find("<body") :]

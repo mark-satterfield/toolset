@@ -12,7 +12,7 @@ constraints: []
 
 # Conversion / Authentication Page
 
-A single-action conversion surface: one prominent input and two-to-three secondary actions. This Page is content Sections only, in the fixed order above: marketing headline → card. Any topbar or footer belongs to the user's Shell.
+A single-action conversion surface: one prominent input and two-to-three secondary actions. This Page is content Sections only, in the fixed order above: marketing headline → card. Any top-nav or site-footer Section belongs to the user's Shell.
 
 ## Theme
 

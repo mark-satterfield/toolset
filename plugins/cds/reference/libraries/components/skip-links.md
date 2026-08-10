@@ -4,7 +4,6 @@ name: skip-links
 page_family: shared
 aliases: [skip to content, skip navigation, bypass links]
 status: stable
-shell_component: true
 composite: false
 slots:
   - { name: skip-link, required: true, accepts: [in-page-anchor] }

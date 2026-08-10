@@ -18,4 +18,4 @@ The heading of a resource-index page: a single-word or short-phrase page h1. Its
 
 - `title` — the page h1 at the editorial Headline 1 role; a single word or a short phrase. No dek, no eyebrow, no supporting line.
 
-The Section sits directly beneath the topbar.
+The Section sits directly beneath the Shell's top-nav Section.

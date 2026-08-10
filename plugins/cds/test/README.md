@@ -17,10 +17,10 @@ whatever elements YAML is supplied — nothing is hardcoded.
    `check_consistency`, `check_links`, `check_nav_dropdown`, `check_reference`,
    `check_reference_prose`, `check_schema`, `check_semantic_hash`,
    `check_shape_alignment`, `check_structure`, `check_token_coverage`,
-   `check_topbar_nav` — covering schema validity, structure, internal links,
+   `check_top_nav` — covering schema validity, structure, internal links,
    Building Blocks reference integrity (shape/component frontmatter, bare-role
    tokens, `from_palette`, scope tags), reference prose discipline, the semantic
-   hash, shape-name integrity, token coverage, and topbar/dropdown nav contracts.
+   hash, shape-name integrity, token coverage, and top-nav/dropdown nav contracts.
 2. **`../validation/lint-elements.py`** asserts properties: schema validity, every
    `var()` chain resolves, aliases target concrete themes, `from_palette` bindings
    land in allowed palettes, every required role is covered in every mode.

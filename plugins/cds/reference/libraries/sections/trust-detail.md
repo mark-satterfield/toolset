@@ -14,4 +14,4 @@ composition_notes:
 
 # Trust Detail
 
-Security, governance, deployment, and controls. The Shape pick keys on the composite signal — multiple controls, each carrying a supporting visual — via `rules/shape-selection/trust-detail.md`.
+Security, governance, deployment, and controls. The Shape pick keys on the composite signal — multiple controls, and whether each carries a supporting visual — via `rules/shape-selection/trust-detail.md`. Controls stated as title-and-explanation with no visual read as a specification rather than a showcase.

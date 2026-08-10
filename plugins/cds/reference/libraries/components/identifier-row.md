@@ -20,7 +20,6 @@ accessibility:
   - "copy button aria-label joins action + identifier name"
   - "value wrapped in <code>; aria-live=polite copy announcement"
 token_bindings: [--text-primary, --text-secondary, --font-mono, --focus-ring]
-shell_component: false
 composite: false
 ---
 

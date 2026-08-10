@@ -4,6 +4,10 @@ description: Answers informational questions about this design system's class na
 allowed-tools: Read, Glob, Grep
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Loads the reference content the author needs to write non-UI code (handlers, data layer, state, business logic) that interacts cleanly with surfaces the plugin generates. Returns a structured markdown response — never a code artifact. The author writes the code; this skill makes sure they bind against the right class names, token names, event hooks, and ARIA contracts.
@@ -27,9 +31,9 @@ This skill does **not** consume any `CUSTOMIZABLE_DESIGN_SYSTEM_*` env var that 
 ## Pipeline
 
 1. **Confirm rendering context.** App-embedded code must not assume a theme controller is present; standalone surfaces have one inlined.
-2. **Identify the Page context** from `../../reference/libraries/pages/`. If the surface is in-app, load the matching app-family Page entry. Any Shell around it is user-composed (`compose-shell`) and stored in `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` — the plugin ships no Shell catalog, so Shell contracts are surfaced from the Component entries that realize a Shell's Sections (`shell_component: true` in `../../reference/libraries/components/*.md`), never read off generated HTML.
+2. **Identify the Page context** from `../../reference/libraries/pages/`. If the surface is in-app, load the matching app-family Page entry. Any Shell around it is user-composed (`compose-shell`) and stored in `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` — the plugin ships no Shell catalog, so Shell contracts are surfaced from the Section entries that declare a `shell_edge:` in `../../reference/libraries/sections/*.md` plus the Shapes those Sections receive, never read off generated HTML.
 3. **Load the catalog set for the category** (plugin ∪ extensions, per `../../reference/pipeline.md`). Always: the surface's `libraries/pages/` entry, `foundations/layout.md`, `foundations/typography.md`, `foundations/accessibility.md`, and `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`. Plus category-specific entries:
-   - **Shell surfaces** → the `../../reference/libraries/components/*.md` entries marked `shell_component: true` (topbar, footer, left-rail, mobile-drawer, skip-links, workspace-switcher, account-row) — these carry the contracts for a Shell's persistent Sections.
+   - **Shell surfaces** → the `../../reference/libraries/sections/*.md` entries declaring a `shell_edge:` (`top-nav`, `left-rail`, `site-footer`) for each region's surface contract, the `bar-*` / `rail-*` / `footer-*` entries in `../../reference/libraries/shapes/` for its arrangement, and the Component entries those Shapes place (`logo`, `horizontal-menu`, `vertical-menu`, `mobile-drawer`, `skip-links`, `workspace-switcher`, `account-row`, `dropdown-panel`) for the pieces.
    - **Modals / drawers / side panels** → `../../reference/libraries/components/{dialog,mobile-drawer,modal-with-form,dropdown-panel}.md` (and siblings) + `foundations/accessibility.md` (focus trap, dismissal, ARIA).
    - **Forms** → the input-family entries under `../../reference/libraries/components/` + `foundations/accessibility.md` (label / error / live-region contracts).
    - **Tables / card grids** → `../../reference/libraries/components/*.md` + the relevant `../../reference/libraries/shapes/*.md` entries.

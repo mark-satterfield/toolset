@@ -18,7 +18,6 @@ accessibility:
   - "parent aria-checked=mixed when partially checked"
   - "child accessible name joins human label + code identifier"
 token_bindings: [--text-primary, --text-tertiary, --font-mono]
-shell_component: false
 composite: true
 ---
 

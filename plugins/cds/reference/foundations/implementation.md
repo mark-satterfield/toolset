@@ -253,20 +253,22 @@ Components consume **role variables** (for color) and **geometry / motion tokens
 }
 ```
 
-Component-level geometry resolves the same way — the topbar bar and its logo both read system tokens, so the logo scales with the bar and no page hardcodes a height:
+Frame-level and Component-level geometry resolve the same way — the `top-nav` Section's surface and the `logo` Component it places both read system tokens, so the mark scales with the bar and no page hardcodes a height:
 
 ```css
-.topbar { height: var(--topbar-height); }
-.topbar-logo,
-.topbar-logo img,
-.topbar-logo svg { height: var(--topbar-logo-height); width: auto; }
+.top-nav { height: var(--topbar-height); }
+.logo,
+.logo img,
+.logo svg { height: var(--topbar-logo-height); width: auto; }
 ```
+
+The class name mirrors the entry's `name`; the token name mirrors its `geometry.components.<component>.<property>` key in the elements YAML. The two are independent — the `--topbar-*` token names are the configured geometry keys and are unaffected by which entry consumes them.
 
 ---
 
 ### §8.4 Geometry and motion token emission
 
-Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `libraries/components/topbar.md` for component geometry such as the 84px topbar and 40px logo height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
+Geometry and motion are configurable element sets in the elements YAML (`geometry:`, `motion:`), peers to the color catalog. §8.4 holds only the **pattern** for emitting them; the **reference ships the values** (`foundations/layout.md §11` for spacing/radius/section-padding/containers, `foundations/motion.md §15` for easing/durations/patterns, `libraries/sections/top-nav.md` for that Section's surface geometry such as the 84px bar height and 40px mark height), and an optional `geometry:`/`motion:` YAML row overrides the reference value for its key. The generator must not hardcode token lists — it emits the reference set and applies any YAML overrides per the `$conventions` patterns.
 
 **Geometry tokens.** For every entry under `geometry.spacing` / `radius` / `section_padding` / `containers` / `columns`, emit one `:root` custom property using the matching `$conventions` pattern (`--sp-{key}`, `--radius-{key}`, `--section-pad-{key}`, `--container-{key}`, `--column-{key}`) with the row's `value` verbatim. For every `geometry.components.<component>.<property>`, emit `--{component}-{property}`. When a token carries a `mobile_floor`, emit a re-declaration at `:root` inside `@media (max-width: <max_width>)`:
 

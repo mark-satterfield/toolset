@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 check_nav_dropdown — a rendered nav dropdown trigger is well-formed
-(reference/libraries/components/dropdown-panel.md, opened from a topbar
-primary-nav trigger per components/topbar.md).
+(reference/libraries/components/dropdown-panel.md, opened from a top-nav
+primary-nav trigger per sections/top-nav.md).
 
 Dropdown panels are fully specified in components/dropdown-panel.md (flat / mega
-/ lift-and-scale) and a topbar `primary-nav` item may be a dropdown trigger
-(components/topbar.md). When the rendered landing sample includes such a trigger,
+/ lift-and-scale) and a top-nav menu item may be a dropdown trigger
+(sections/top-nav.md). When the rendered landing sample includes such a trigger,
 it MUST carry the ARIA contract — otherwise the dropdown is keyboard- and
 screen-reader-broken.
 

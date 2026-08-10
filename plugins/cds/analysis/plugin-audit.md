@@ -35,7 +35,7 @@ One authoring verb — compose — covers Shells, Pages, and Views. `review` ope
 
 ## 4. Machinery
 
-`tools/build-review-harness.py`, `lib/cds_hash.py`, `validation/lint-elements.py`, `validation/customizable-design-elements.schema.json`, `tools/migrate-elements.py`, and `tools/check-values-parity.py` survive as-is (only prose comments naming renamed skills were updated). The `shell_component:` frontmatter key is retained: under the current model it accurately marks Components that realize a Shell's Sections, and `compose-shell` consults it.
+`tools/build-review-harness.py`, `lib/cds_hash.py`, `validation/lint-elements.py`, `validation/customizable-design-elements.schema.json`, `tools/migrate-elements.py`, and `tools/check-values-parity.py` survive as-is (only prose comments naming renamed skills were updated). The `shell_component:` frontmatter key is retired: a Shell is defined in terms of Frames, so its regions are Section entries declaring a `shell_edge:`, and `compose-shell` consults those.
 
 Environment contract: `CUSTOMIZABLE_DESIGN_SYSTEM_{ELEMENTS, INSTALL_MODE, STYLESHEETS_DIR, MOCKS_DIR, SHELLS_DIR, EXTENSIONS_DIR, ASSETS_DIR, DESIGN_MD_PATH, PACKAGE_DIR}`. The two variables retired with the deleted in-app composer are not part of the contract; values present in a user's settings are ignored.
 

@@ -4,7 +4,6 @@ name: dropdown-panel
 page_family: shared
 aliases: [dropdown, nav dropdown, mega menu, flyout menu]
 status: stable
-shell_component: true
 composite: false
 slots:
   - { name: trigger, required: true, accepts: [nav-link, button] }

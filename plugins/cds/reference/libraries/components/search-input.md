@@ -16,7 +16,6 @@ token_bindings:
   - --surface-raised
   - --border-subtle
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

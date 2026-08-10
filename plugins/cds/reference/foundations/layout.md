@@ -96,7 +96,7 @@ The Min and Max columns above are the values at the 320px and 1440px viewport an
 
 Apply the same `clamp()` pattern (per §11) to `--section-pad-small`, `--section-pad-large`, and `--section-pad-page-top`. Use the mobile-floor `@media` override only on major section-padding tokens, and only when the 320px-anchor floor is too generous for the narrow-mobile content density.
 
-The mobile floor is declared in the YAML as the token's `mobile_floor` (e.g. `geometry.section_padding.main.mobile_floor: { max_width: "480px", value: "56px" }`). `generate-css` emits it by re-declaring the token at `:root` inside `@media (max-width: <max_width>)`, so every consumer of `var(--section-pad-main)` inherits the floor with no per-component media query. Any geometry token may carry a `mobile_floor` the same way (e.g. the topbar bar height, §components).
+The mobile floor is declared in the YAML as the token's `mobile_floor` (e.g. `geometry.section_padding.main.mobile_floor: { max_width: "480px", value: "56px" }`). `generate-css` emits it by re-declaring the token at `:root` inside `@media (max-width: <max_width>)`, so every consumer of `var(--section-pad-main)` inherits the floor with no per-component media query. Any geometry token may carry a `mobile_floor` the same way (e.g. the top-nav bar height, §components).
 
 ## §11.4 Spacing scale
 

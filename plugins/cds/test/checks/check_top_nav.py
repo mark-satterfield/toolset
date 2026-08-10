@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-check_topbar_nav — the topbar nav stays right-aligned
-(reference/libraries/components/topbar.md).
+check_top_nav — the top-nav bar keeps its nav right-aligned
+(reference/libraries/sections/top-nav.md).
 
-A recurring regression: the compose step improvises the topbar with
+A recurring regression: the compose step improvises the bar with
 `justify-content: space-between` across logo / nav / CTA, which strands the
-`primary-nav` cluster in the CENTER. components/topbar.md is explicit that the
-nav is "a cluster of nav links, right-aligned" — logo alone at the left, the
+nav cluster in the CENTER. sections/top-nav.md is explicit that the
+nav is a cluster grouped at the END of the row — logo alone at the left, the
 nav cluster + conversion CTA grouped at the right. This check makes that
 contract enforceable instead of eyeball-only.
 
-PROPERTY — topbar nav is right-aligned, never centered.
-    In the rendered landing sample, the `class="topbar"` header MUST NOT use a
+PROPERTY — the top-nav's nav cluster is end-aligned, never centered.
+    In the rendered landing sample, the `class="top-nav"` header MUST NOT use a
     distributing/centering `justify-content` (`space-between`, `center`,
     `space-around`, `space-evenly`) — those push the nav off the right edge — and
     MUST carry a positive right-alignment mechanism: `margin-left`/
@@ -20,7 +20,7 @@ PROPERTY — topbar nav is right-aligned, never centered.
 
 Render-dependent: if the landing sample is not built, the check skips cleanly
 (artifact EXISTENCE is run-tests.sh tier 3's job; this guards CORRECTNESS when
-present). No class name, theme, or count is hardcoded beyond the topbar contract.
+present). No class name, theme, or count is hardcoded beyond the top-nav contract.
 
 Entry point:
     run(repo_root) -> list[str]   # empty list == passed (or skipped)
@@ -47,10 +47,10 @@ def run(repo_root):
     with open(path, encoding="utf-8") as f:
         html = f.read()
 
-    # Locate the topbar header element (its open tag may span multiple lines).
-    m = re.search(r'<header\b[^>]*class="[^"]*\btopbar\b[^"]*"[^>]*>', html, re.S)
+    # Locate the top-nav header element (its open tag may span multiple lines).
+    m = re.search(r'<header\b[^>]*class="[^"]*\btop-nav\b[^"]*"[^>]*>', html, re.S)
     if not m:
-        # No topbar in this sample — nothing to assert.
+        # No top-nav in this sample — nothing to assert.
         return []
 
     header_tag = " ".join(m.group(0).split())
@@ -59,11 +59,11 @@ def run(repo_root):
     jc = re.search(r"justify-content:\s*([a-z-]+)", header_tag)
     jc_val = jc.group(1) if jc else None
 
-    # 1) The topbar row must not center/distribute its children.
+    # 1) The top-nav row must not center/distribute its children.
     if jc_val in _CENTERING:
         failures.append(
-            f"{_REL}: topbar header uses `justify-content: {jc_val}`, which "
-            f"strands the nav in the middle. components/topbar.md requires the "
+            f"{_REL}: top-nav header uses `justify-content: {jc_val}`, which "
+            f"strands the nav in the middle. sections/top-nav.md requires the "
             f"primary-nav right-aligned (logo left; nav + CTA grouped right) — "
             f"use `margin-inline-start: auto` on the nav or "
             f"`justify-content: flex-end` on the header.")
@@ -82,9 +82,9 @@ def run(repo_root):
     )
     if not right_aligned:
         failures.append(
-            f"{_REL}: topbar has no right-alignment mechanism for the nav "
+            f"{_REL}: top-nav has no right-alignment mechanism for the nav "
             f"(expected `margin-inline-start: auto` on the nav, or "
-            f"`justify-content: flex-end` on the header). components/topbar.md "
+            f"`justify-content: flex-end` on the header). sections/top-nav.md "
             f"requires the primary-nav cluster right-aligned.")
 
     return failures

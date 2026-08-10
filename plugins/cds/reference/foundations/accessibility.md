@@ -40,7 +40,7 @@ Tokens for focus (calibrated to the table above):
 
 ## §18.4 Reduced motion
 
-Respect `prefers-reduced-motion: reduce` globally per motion.md §15.5. Override specific animations to `none` inside the media query. The framework already lists reduced-motion overrides for the topbar entrance animation, card-stagger entrance, tab-panel swap, and the mobile drawer footer.
+Respect `prefers-reduced-motion: reduce` globally per motion.md §15.5. Override specific animations to `none` inside the media query. The framework already lists reduced-motion overrides for the top-nav entrance animation, card-stagger entrance, tab-panel swap, and the mobile drawer footer.
 
 ## §18.5 Color and weight floor for readable text
 

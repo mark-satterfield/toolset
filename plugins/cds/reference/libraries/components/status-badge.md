@@ -18,7 +18,6 @@ token_bindings:
   - --text-primary
   - --text-inverse
   - --text-tertiary
-shell_component: false
 composite: false
 ---
 

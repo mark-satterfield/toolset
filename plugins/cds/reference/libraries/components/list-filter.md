@@ -21,7 +21,6 @@ accessibility:
   - "visually-hidden label or aria-label matching the placeholder"
   - "Escape clears the focused input"
 token_bindings: [--surface-raised, --border-subtle, --border-strong, --focus-ring, --text-primary, --text-tertiary, --typeface-sans]
-shell_component: false
 composite: false
 ---
 

@@ -4,6 +4,10 @@ description: Produces a View — one Page's HTML nested inside a stored Shell �
 allowed-tools: Read, Write, Bash, Glob
 ---
 
+## Read the model first
+
+Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+
 ## What this skill does
 
 Produces a **View** per the shared build pipeline (`../../reference/pipeline.md`): the combination of a generated Page HTML nested inside a stored **Shell** — the Page fills the Shell's vacant space. The Shell is resolved **by name** from `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` (the output area `compose-shell` stores into). The View is one self-contained HTML file, the thing a person opens and looks at.

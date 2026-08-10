@@ -14,4 +14,4 @@ default: stacked-quotes
 
 # Shape selection — Validation Block
 
-The pick scales with the quote set: a single big-metric quote leads as a feature, a small qualitative set stacks, and a large metric-and-logo set swipes. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`); if every candidate is rejected, the composer falls back to agent-generated layout and records that in the decisions sidecar.
+The pick scales with the quote set: a single big-metric quote leads as a feature, a small qualitative set stacks, and a large metric-and-logo set swipes. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`). This table is rung 1 of the Shape-assignment waterfall; what happens when every candidate is rejected — the library search, the adapted Shape, and only then generation from scratch — is defined once, in `reference/pipeline.md`.

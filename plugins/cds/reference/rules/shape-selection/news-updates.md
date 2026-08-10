@@ -14,4 +14,4 @@ default: card-grid
 
 # Shape selection — News / Updates
 
-Rows are ordered most-specific first: an emphasis item (one featured leading secondary cards) takes precedence over the count thresholds. In the emphasis row, the `card-grid` alternate is its 3-card strip variant. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`); if every candidate is rejected, the composer falls back to agent-generated layout and records that in the decisions sidecar.
+Rows are ordered most-specific first: an emphasis item (one featured leading secondary cards) takes precedence over the count thresholds. In the emphasis row, the `card-grid` alternate is its 3-card strip variant. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`). This table is rung 1 of the Shape-assignment waterfall; what happens when every candidate is rejected — the library search, the adapted Shape, and only then generation from scratch — is defined once, in `reference/pipeline.md`.

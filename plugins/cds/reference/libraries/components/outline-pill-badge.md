@@ -17,7 +17,6 @@ token_bindings:
   - --text-tertiary
   - --border-strong
   - --focus-ring
-shell_component: false
 composite: false
 ---
 

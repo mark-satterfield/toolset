@@ -15,7 +15,6 @@ behavior:
 accessibility:
   - "inherits the destructive-button contract, including the destructive focus ring"
 token_bindings: [--border-subtle, --button-destructive-bg, --button-destructive-text]
-shell_component: false
 composite: true
 ---
 

@@ -15,7 +15,6 @@ behavior:
 accessibility:
   - "inherits the setting-card and destructive-button contracts"
 token_bindings: [--border-subtle, --button-destructive-bg, --button-destructive-text, --text-tertiary]
-shell_component: false
 composite: true
 ---
 

@@ -13,4 +13,4 @@ default: tagged-card-grid
 
 # Shape selection — Use-Case Routing
 
-A small role- or discipline-tagged set reads as a tagged grid; five or more categories that each carry sub-items spread into tag columns. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`); if every candidate is rejected, the composer falls back to agent-generated layout and records that in the decisions sidecar.
+A small role- or discipline-tagged set reads as a tagged grid; five or more categories that each carry sub-items spread into tag columns. Candidates are tried in order (primary, then alternates, then `default`) against the Page-Level Aesthetic Constraints (`reference/rules/page-constraints/`). This table is rung 1 of the Shape-assignment waterfall; what happens when every candidate is rejected — the library search, the adapted Shape, and only then generation from scratch — is defined once, in `reference/pipeline.md`.
