@@ -20,7 +20,7 @@ behavior:
 accessibility:
   - "landmark: <nav aria-label=\"Main navigation\"> wrapping the rail; the rail element it wraps does not redeclare a role"
   - "the rail contributes no keyboard semantics of its own — each piece the Shape places carries its own contract"
-token_bindings: [--surface-secondary, --border-subtle, --text-primary, --app-shell-rail-width, --topbar-logo-height, --sp-0-75]
+token_bindings: [--surface-secondary, --surface-tertiary, --text-primary, --app-shell-rail-width, --topbar-logo-height, --sp-0-75]
 ---
 
 # Left rail
@@ -40,7 +40,7 @@ Lazy by default: the Shape resolves at build time from `carries_mark` and `carri
 - Rail outer container: `position: fixed`, pinned to the inline-start and block-start edges; width `var(--app-shell-rail-width)`; `height: 100vh`.
 - Rail padding: `var(--sp-0-75)` on all sides.
 - Rail ground: `var(--surface-secondary)` — the elevated rail ground.
-- Rail border on the inline-end edge: `0.5px solid var(--border-subtle)` — a hairline at low alpha (`foundations/layout.md` §11.9); the alpha is encoded in the role binding for dark themes.
+- Rail border on the inline-end edge: `1px solid var(--surface-tertiary)` — the same role the vertical menu's current item paints its ground with (`libraries/components/vertical-menu.md`), so the seam between the rail and the content region and the selected row in the menu read as one decision rather than two. It is a surface role, not an ink role: the edge is a change of stratum, never a drawn line, and a rail edge dark enough to read as a rule has overstated a boundary the ground change already makes.
 - Rail box-shadow: `inset -4px 0px 6px -4px color-mix(in srgb, var(--text-primary) 4%, transparent)` at the `lg` breakpoint and above — the §11.8 shadow idiom, mixed from the theme's ink rather than from an absolute; below `lg` the inset is replaced by the §11.8 modal-lift stack.
 - Rail `overflow: hidden`; a scrolling region within the received Shape handles its own overflow.
 - The rail is a flex column, so a Shape may anchor a piece to either end.

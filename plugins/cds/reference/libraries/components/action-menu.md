@@ -43,11 +43,13 @@ An item is a leading glyph, a label, and one optional trailing affordance:
 - a **shortcut hint** (`libraries/components/shortcut-hint.md`) when the item performs its action immediately, or
 - a **chevron** when the item opens a submenu.
 
-An item carries at most one trailing affordance. A row that both fires immediately and opens a submenu describes two different contracts to the user.
+An item carries at most one trailing affordance — a shortcut hint, a submenu chevron, or a toggle's check glyph. A row that both fires immediately and opens a submenu describes two different contracts to the user.
+
+A **toggle** item is the third case: it sets a capability on or off rather than performing an action, so it keeps the menu open, and its check glyph is what carries the state. Its state is never carried by ink or ground alone (WCAG 1.4.1).
 
 ## Variants
 
-- `item-kind`: `command` (default — activates and closes the menu) | `submenu` (opens a nested panel on hover, Enter, Space, or the inline-end arrow key) | `disabled` (ink drops to `--text-tertiary`, no hover, `aria-disabled="true"`, still focusable so its presence is discoverable).
+- `item-kind`: `command` (default — activates and closes the menu) | `submenu` (opens a nested panel on hover, Enter, Space, or the inline-end arrow key) | `toggle` (carries persistent on/off state: a trailing check glyph when on, `role="menuitemcheckbox"` with `aria-checked`, and the menu stays open on activation so several may be set in one visit) | `disabled` (ink drops to `--text-tertiary`, no hover, `aria-disabled="true"`, still focusable so its presence is discoverable).
 - `header`: `absent` (default) | `present` — one non-interactive line at the panel's block-start identifying whose menu this is (an account identifier, a record name).
 
 ## Determinations
@@ -58,11 +60,11 @@ An item carries at most one trailing affordance. A row that both fires immediate
 - Hover paints the theme's hover stratum — one step above the panel ground — over `var(--duration-100)` `var(--ease-in-out)`.
 - The header line is set at the compact body size in `var(--text-secondary)` and never paints a hover state.
 - Dividers are a hairline `var(--border-subtle)` rule inset to the panel's padding, with `var(--sp-0-5)` above and below. They group items; they do not label them.
-- The trailing shortcut hint and the trailing chevron occupy the same trailing column, so items align whichever they carry.
+- The trailing shortcut hint, the trailing chevron, and a toggle's check glyph occupy the same trailing column, so items align whichever they carry.
 
 ## Accessibility
 
-- The panel is `role="menu"` and each item is `role="menuitem"`. A submenu item adds `aria-haspopup="menu"` and `aria-expanded`.
+- The panel is `role="menu"` and each item is `role="menuitem"`. A submenu item adds `aria-haspopup="menu"` and `aria-expanded`; a toggle item is `role="menuitemcheckbox"` carrying `aria-checked`.
 - Arrow keys cycle with wrap; Home and End jump to the ends; typing a character moves to the next item starting with it. Enter and Space activate. Escape closes the panel and returns focus to the trigger that opened it.
 - The inline-end arrow key opens a submenu and moves focus into it; the inline-start arrow key closes it and returns focus to the parent item.
 - Dividers carry `role="separator"` and are not focusable. The header carries no role and is not focusable — it names the menu, so the trigger's `aria-label` or the menu's `aria-label` carries the same identity for a screen reader.
