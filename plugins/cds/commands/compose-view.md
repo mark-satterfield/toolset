@@ -20,4 +20,4 @@ Invoke the `compose-view` skill in this plugin. Load and execute `skills/compose
 - One Shell serves many Pages. Editing the Shell (`/cds:compose-shell`) re-frames every View regenerated afterward.
 - **SPA variant:** one stored Shell + N Pages with a client-side switcher showing one at a time — the same mechanism as the color-mode toggle; no routing code.
 - Stylesheet freshness is automatic and silent; the CSS inlined into the View is always current.
-- Halt codes the user may see: `WRONG_SKILL`, `SHELL_UNKNOWN`, `STYLESHEETS_REGEN_FAILED`, `PAGE_UNKNOWN`, `TARGET_UNREADABLE`, `OUTPUT_PATH_UNRESOLVABLE`, `COMPLIANCE_UNSATISFIABLE`, `ELEMENTS_YAML_UNSET`.
+- Halt codes the user may see: `WRONG_SKILL`, `SHELL_UNKNOWN`, `STYLESHEETS_REGEN_FAILED`, `TARGET_UNREADABLE`, `OUTPUT_PATH_UNRESOLVABLE`, `COMPLIANCE_UNSATISFIABLE`, `ELEMENTS_YAML_UNSET`.

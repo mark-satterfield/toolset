@@ -30,11 +30,11 @@ token_bindings: [--surface-raised, --border-subtle, --text-primary, --text-secon
 
 # Account row
 
-A row anchored to the bottom of the rail (or sidebar) showing the current user's identity, role/org, and an expandable menu trigger for account actions. Fills the left-rail's `account` slot within the Shell's persistent rail Section.
+A row anchored to the block-end of a rail showing the current user's identity, role/org, and an expandable menu trigger for account actions. Placed by a `rail-*` Shape within a Section pinned to an inline edge.
 
 ## Variants
 
-- `variant`: `full` (avatar + name + role + caret, standard rail) | `compact` (avatar only, narrow mini-rail) | `footer-strip` (horizontal strip with link + identity pills at the bottom of an app-Shell form sidebar).
+- `variant`: `full` (avatar + name + role + caret, standard rail) | `compact` (avatar only, for a rail in its `collapsed` presentation — `libraries/sections/side-rail.md`) | `footer-strip` (horizontal strip with link + identity pills at the bottom of an app-Shell form sidebar).
 - `state`: `rest` | `hover` | `menu-open` (`data-state="open"`).
 - The `caret` slot is required in the `full` variant only; the `compact` and `footer-strip` variants have no caret.
 

@@ -52,8 +52,6 @@ When a skill STOPs with a halt code, propagate the STOP message verbatim to the 
 - `MISSING_SPEC`
 - `MISSING_COMPONENT:{name}`
 - `SHELL_UNKNOWN:{name}`
-- `PAGE_UNKNOWN:{name}`
-- `SECTION_TYPE_UNKNOWN:{id}`
 - `STYLESHEETS_REGEN_FAILED`
 - `UPDATE_SOURCE_UNREADABLE`
 - `UPDATE_TARGET_AMBIGUOUS`

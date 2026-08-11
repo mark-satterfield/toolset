@@ -36,7 +36,7 @@ token_bindings: [--border-subtle, --surface-secondary, --text-primary, --text-te
 
 # Workspace switcher
 
-A control at the top of the rail letting the user switch between workspaces in the current organization. Fills the left-rail's `workspace-switcher` slot within the Shell's persistent rail Section.
+A control at the top of the rail letting the user switch between workspaces in the current organization. Placed by a `rail-*` Shape within a Section pinned to an inline edge.
 
 ## Variants
 

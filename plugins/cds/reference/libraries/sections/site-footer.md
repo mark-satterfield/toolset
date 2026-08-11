@@ -4,7 +4,10 @@ name: site-footer
 page_family: shared
 aliases: [footer, site footer, footer grid, footer navigation, page footer]
 status: stable
-shell_edge: block-end
+pins_to: [block-end]
+extent:
+  size: "intrinsic — the footer is as tall as the Shape it receives makes it"
+  resizable: false
 content_contract:
   column_count: "integer — the number of nav columns the frame offers"
   carries_brand_island: "true | false — a mark and its line presented as their own block"

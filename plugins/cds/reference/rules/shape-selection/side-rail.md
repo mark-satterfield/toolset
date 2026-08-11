@@ -1,7 +1,7 @@
 ---
 kind: shape-selection-rule
-name: left-rail
-section: left-rail
+name: side-rail
+section: side-rail
 page_family: app
 status: stable
 signals: [carries_mark, carries_account]
@@ -13,9 +13,9 @@ table:
 default: rail-nav-only
 ---
 
-# Shape selection — Left rail
+# Shape selection — Side rail
 
-The rail always carries a menu; what varies is whether the mark sits at its block-start edge and whether an account row anchors its block-end edge. Both signals are frame-level facts — a frame whose mark lives in the top-nav Section reports `carries_mark: false` here, so the mark is never rendered twice.
+The rail always carries a menu; what varies is whether the mark sits at its block-start edge and whether an account row anchors its block-end edge. Both signals are frame-level facts — a frame whose mark lives in a pinned block-start Section reports `carries_mark: false` here, so the mark is never rendered twice.
 
 Every combination has its own named Shape, so the rail is never rendered with an arrangement that leaves a position open.
 

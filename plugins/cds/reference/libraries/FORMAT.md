@@ -51,10 +51,13 @@ shape: shape-name              # eager Shape assignment: the Shape, by name, fro
 content_contract: {}           # the typed signals this section's rule consumes (the completed content_meta fields relevant to it)
 theme: default                 # theme class or `scheduled` (takes the constraint-assigned ground)
 composition_notes: []          # cross-section notes (e.g. cross-promo may embed inside trust-detail)
-shell_edge: block-start | block-end | inline-start | inline-end
-                               # ONLY on a Section of a ShellDefinition: the canvas edge this Section
-                               # is pinned to, framing the vacant space a Page nests into. Absent on
-                               # a Page's Sections, which flow in sequence rather than pin.
+pins_to: []                    # the canvas edges this Section MAY pin to, from
+                               # {block-start, block-end, inline-start, inline-end}. The
+                               # ShellDefinition picks one per instance — placement is the Shell's
+                               # decision, never the catalog's. Absent on a Section that flows in
+                               # sequence rather than pinning.
+extent: {}                     # the pinned Section's cross-axis size: {size, min, max, resizable}
+                               # — token refs or derivation formulas only
 variants: []                   # named variants of the Section's own surface
 sizing: {}                     # the Frame's own dimension contract: token refs and derivation
                                # formulas only — no bare px (see the Dimension rule below)
@@ -65,7 +68,17 @@ token_bindings: []             # role tokens the Frame's own surface consumes
 
 A Section never contains its own layout — layout always lives in a Shape in the ShapeLibrary so it stays shareable across Pages. A Section either names its Shape (eager) or carries the content signals its rule needs (lazy).
 
-A Section is a Frame, and a Frame is a DesignElement with its own dimensions and properties (`reference/model/entity-catalog.md`). The division is exact: **the Section owns its surface** — height or width, ground, pinning, border, overflow, landmark, scroll behavior — and **the Shape owns the arrangement of what sits inside it**. A region of a frame whose contents vary between sites is one Section with several Shapes, never one Component with optional slots; variability is handled by selecting a different Shape, never by leaving positions open. Because Frame contains Frame, a Section can contain a Section.
+## A Section entry is a preset, never a required type
+
+**A Section is not a type that must be declared before it can be used.** It is a Frame with attributes: where it sits, how big it is on its fixed axis, what theme it carries, and which Shape it receives. A Page or a Shell may name a Section the catalog has never seen, and the composer builds it from those attributes and resolves its Shape through the waterfall (`reference/pipeline.md`). Nothing halts.
+
+What the entries under `sections/` are, therefore, is **pre-configured Sections** — Archetypes in the entity model's sense, blueprints instances are stamped from. They exist so the common cases carry the system's own answers for ground, sizing, landmark, and behaviour instead of being re-decided per site. They do not exist to constrain what a Section may be.
+
+This is why there is no such entity as a rail, a top bar, or a footer. Each is a Section pinned to an edge with a size on its fixed axis. `side-rail`, `top-nav`, and `site-footer` are the presets for the three arrangements that recur; a Section pinned to the inline-end edge needs no new entry, because it is the same Section pinned elsewhere.
+
+The catalog boundary — where an unknown name halts rather than being guessed at — sits at **Components**, whose markup, sizing, ARIA, and token bindings would have to be fabricated, and at **stored Shells**, which are files that either exist or do not.
+
+A Section is a Frame, and a Frame is a DesignElement with its own dimensions and properties (`reference/model/entity-catalog.md`). The division is exact: **the Section owns its surface** — height or width, ground, pinning, border, overflow, landmark, scroll behavior — and **the Shape owns the arrangement of what sits inside it**. A region of a frame whose contents vary between sites is one Section with several Shapes, never one Component with optional slots; variability is handled by selecting a different Shape, never by leaving positions open. A region that differs only in which edge it pins to is the same Section with a different `pins_to` value. Because Frame contains Frame, a Section can contain a Section.
 
 #### Universal Section slots
 

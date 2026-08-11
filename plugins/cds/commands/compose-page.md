@@ -26,4 +26,4 @@ Invoke the `compose-page` skill in this plugin. Load and execute `skills/compose
 - Beside the HTML the pipeline writes two sidecars — `<basename>.wireframe.txt` and `<basename>.decisions.md`. The emitted HTML inlines the stylesheet set and stays metadata-free.
 - Update mode: supply an existing HTML file (or a Figma reference) to apply the change to it as a region-scoped edit instead of regenerating from scratch.
 - To see the composed Page inside a Shell, follow with `/cds:compose-view`.
-- Halt codes the user may see: `WRONG_SKILL`, `STYLESHEETS_REGEN_FAILED`, `PAGE_UNKNOWN`, `SECTION_TYPE_UNKNOWN`, `MISSING_SPEC`, `MISSING_COMPONENT`, `UPDATE_SOURCE_UNREADABLE`, `UPDATE_TARGET_AMBIGUOUS`, `OUTPUT_PATH_UNRESOLVABLE`, `ARTWORK_UNRESOLVABLE`, `COMPLIANCE_UNSATISFIABLE`, `ELEMENTS_YAML_UNSET`.
+- Halt codes the user may see: `WRONG_SKILL`, `STYLESHEETS_REGEN_FAILED`, `MISSING_SPEC`, `MISSING_COMPONENT`, `UPDATE_SOURCE_UNREADABLE`, `UPDATE_TARGET_AMBIGUOUS`, `OUTPUT_PATH_UNRESOLVABLE`, `ARTWORK_UNRESOLVABLE`, `COMPLIANCE_UNSATISFIABLE`, `ELEMENTS_YAML_UNSET`.

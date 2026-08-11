@@ -48,7 +48,6 @@ The compliance pass runs `[scope: standalone]` + `[scope: both]`.
 - `WRONG_SKILL:{name}` — the request belongs to `compose-page` or `compose-shell`.
 - `SHELL_UNKNOWN:{name}` — no stored Shell of that name exists in the shells area.
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the freshness stage's auto-invoked `generate-css` halted; inner code surfaced verbatim.
-- `PAGE_UNKNOWN:{name}` — a named catalog Page (for a fresh composition) resolves in neither the reference nor the extensions.
 - `TARGET_UNREADABLE` — a supplied Page HTML path cannot be read.
 - `OUTPUT_PATH_UNRESOLVABLE` — no output path provided and none discoverable.
 - `COMPLIANCE_UNSATISFIABLE` — a compliance rule cannot be satisfied without violating a reference spec.

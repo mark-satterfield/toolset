@@ -70,8 +70,6 @@ When an iteration request targets a value, determine what actually holds it: **t
 
 - `WRONG_SKILL:{name}` — the request belongs to a different skill (`compose-shell` for Shell composition, `compose-view` for a Page inside a Shell); the caller must re-invoke the correct skill or slash command.
 - `STYLESHEETS_REGEN_FAILED:{inner-code}` — the pipeline's freshness stage found the set stale or missing and the auto-invoked `generate-css` itself halted; the inner code is surfaced verbatim.
-- `PAGE_UNKNOWN:{name}` — the requested named Page resolves in neither the reference nor the extensions.
-- `SECTION_TYPE_UNKNOWN:{id}` — a Section id in the Page sequence resolves in neither the reference nor the extensions. (A *known* Section whose rule candidates are all rejected is not a halt — the pipeline descends the Shape-assignment waterfall, reusing a library Shape where one fits and generating only as a last resort, and records the rung it landed on in the decisions sidecar.)
 - `MISSING_SPEC` — a required spec is too thin to render and is absent from both the reference and the extensions (name the gap).
 - `MISSING_COMPONENT:{name}` — a required Component is defined in neither reference nor extensions.
 - `UPDATE_SOURCE_UNREADABLE` — the existing artifact supplied for a brownfield update cannot be read or parsed.

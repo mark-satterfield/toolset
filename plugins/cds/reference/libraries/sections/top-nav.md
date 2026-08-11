@@ -4,7 +4,10 @@ name: top-nav
 page_family: shared
 aliases: [topbar, top bar, nav, nav bar, top nav, menu bar, header nav, site header]
 status: stable
-shell_edge: block-start
+pins_to: [block-start]
+extent:
+  size: "var(--topbar-height)"
+  resizable: false
 content_contract:
   carries_mark: "true | false"
   nav_item_count: "integer — top-level navigational items the frame offers"

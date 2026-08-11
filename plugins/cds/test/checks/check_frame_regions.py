@@ -15,17 +15,19 @@ mark alone and a bar carrying a mark, a menu, and an action are two Shapes over
 ONE Section, never one Component with optional slots.
 
 PROPERTY 1 — no Component claims to be a region of a frame.
-    No entry under `reference/libraries/components/` may declare `shell_edge:` or
-    the retired `shell_component:` key. Pinning to a canvas edge is a Frame
-    property.
+    No entry under `reference/libraries/components/` may declare `pins_to:` or the
+    retired `shell_edge:` / `shell_component:` keys. Pinning to a canvas edge is a
+    Frame property.
 
-PROPERTY 2 — a shell Section pins to a real edge and owns a surface.
-    Every Section declaring `shell_edge:` MUST use a value from the closed set
-    {block-start, block-end, inline-start, inline-end}, and MUST declare at least
-    one of `sizing:` / `token_bindings:` — the Frame owns its own dimensions and
-    properties.
+PROPERTY 2 — a pinned Section names real edges and owns a surface.
+    Every Section declaring `pins_to:` MUST name one or more edges from the closed
+    set {block-start, block-end, inline-start, inline-end}, and MUST declare at
+    least one of `sizing:` / `token_bindings:` — the Frame owns its own dimensions
+    and properties. `pins_to` is the set of edges the Section MAY pin to; the
+    ShellDefinition picks one per instance, because placement is the Shell's
+    decision and never the catalog's.
 
-PROPERTY 3 — a shell Section declares no slots of its own.
+PROPERTY 3 — a pinned Section declares no slots of its own.
     Contents come from the Shape it receives. A `slots:` block on a shell Section
     is the optional-slot anti-pattern reappearing one level up.
 
@@ -55,6 +57,7 @@ SHAPE_RULES_DIR = os.path.join("reference", "rules", "shape-selection")
 
 NON_ENTRY = {"FORMAT.md", "CONVENTIONS.md"}
 EDGES = {"block-start", "block-end", "inline-start", "inline-end"}
+EDGE_LIST = re.compile(r"[A-Za-z-]+")
 
 SLOT_NAME = re.compile(r"\{\s*name:\s*([A-Za-z0-9_-]+)")
 
@@ -112,7 +115,7 @@ def run(repo_root):
     # PROPERTY 1
     for name, text in components.items():
         fm = _frontmatter(text)
-        for key in ("shell_edge", "shell_component"):
+        for key in ("pins_to", "shell_edge", "shell_component"):
             if re.search(rf"^{key}:", fm, re.M):
                 failures.append(
                     f"components/{name}.md: declares `{key}:` — a region of a "
@@ -123,27 +126,32 @@ def run(repo_root):
     shell_sections = {}
     for name, text in sections.items():
         fm = _frontmatter(text)
-        m = re.search(r"^shell_edge:\s*(\S+)", fm, re.M)
+        m = re.search(r"^pins_to:\s*\[([^\]]*)\]", fm, re.M)
         if not m:
             continue
-        edge = m.group(1).strip()
+        edges = [e for e in EDGE_LIST.findall(m.group(1))]
         shell_sections[name] = fm
 
         # PROPERTY 2
-        if edge not in EDGES:
+        if not edges:
             failures.append(
-                f"sections/{name}.md: shell_edge `{edge}` is not one of "
-                f"{sorted(EDGES)}")
+                f"sections/{name}.md: `pins_to:` names no edge — a pinned Section "
+                "must name at least one edge it may pin to")
+        for edge in edges:
+            if edge not in EDGES:
+                failures.append(
+                    f"sections/{name}.md: pins_to edge `{edge}` is not one of "
+                    f"{sorted(EDGES)}")
         if not (_block(fm, "sizing") or _block(fm, "token_bindings")):
             failures.append(
-                f"sections/{name}.md: pins to `{edge}` but declares neither "
+                f"sections/{name}.md: pins to {edges} but declares neither "
                 "`sizing:` nor `token_bindings:` — a Frame owns its own "
                 "dimensions and properties")
 
         # PROPERTY 3
         if _block(fm, "slots"):
             failures.append(
-                f"sections/{name}.md: declares `slots:` — a shell Section's "
+                f"sections/{name}.md: declares `slots:` — a pinned Section's "
                 "contents are the contract of the Shape it receives. Optional "
                 "slots on the region are the anti-pattern Shapes exist to replace.")
 

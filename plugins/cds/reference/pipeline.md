@@ -6,13 +6,15 @@ The one composition pipeline every composer executes. `compose-page` renders a *
 
 The working catalog is the plugin's `reference/libraries/` + `reference/rules/` trees overlaid with the project's `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` (same tree structure: `libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). A project entry whose `kind` and basename match a plugin entry replaces it wholesale; project-only entries extend the catalog. User-facing words resolve against entry names and their `aliases:` frontmatter in context; a word that resolves to nothing is asked about, never guessed.
 
+**Where the catalog boundary sits.** An unknown name halts only where composing past it would mean fabricating a contract: a **Component** (its markup, sizing, ARIA, and token bindings) and a **stored Shell** (a file that exists or does not). Pages and Sections are Frames — a Page is Sections in sequence, a Section is a surface plus a Shape — so an unrecognised one is composed from its attributes and the Shape-assignment waterfall rather than halted on.
+
 ## Stages
 
-1. **Resolve the Page.** A named Page entry (halt `PAGE_UNKNOWN:{name}` only when a named Page exists in neither source), or an ad-hoc Page the user describes Section by Section. Every Page carries a **page family** (landing, app, editorial, docs, auth): stated plainly, obvious from the prompt, or the skill asks. The page family selects the typography and motion register and scopes the Page-Level Aesthetic Constraints.
+1. **Resolve the Page.** A named Page entry when the catalog carries one, or an ad-hoc Page the user describes Section by Section. A Page the catalog has never seen is composed from the Sections named for it — a Page entry is a preset, not a required type, and an unrecognised Page name never halts. Every Page carries a **page family** (landing, app, editorial, docs, auth): stated plainly, obvious from the prompt, or the skill asks. The page family selects the typography and motion register and scopes the Page-Level Aesthetic Constraints.
 2. **Resolve each Section in order.**
    - **Eager** — the Section names its Shape (`shape:` frontmatter, or the user names one): populate that Shape from the ShapeLibrary with the content.
    - **Lazy** — no Shape named: run the Shape-assignment waterfall below.
-   - Halt `SECTION_TYPE_UNKNOWN:{id}` only when the Section id itself exists in neither source.
+   - A Section the catalog has never seen is composed from its own attributes — where it pins, its extent, its theme — and resolves its Shape through the waterfall below. It never halts. Section entries are pre-configured Sections, not a closed set of permitted ones (`libraries/FORMAT.md`).
 
 ### The Shape-assignment waterfall
 
