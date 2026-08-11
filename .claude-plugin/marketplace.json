@@ -109,7 +109,7 @@
     {
       "name": "cds",
       "description": "Configurable Design System \u2014 a brand-neutral design-system plugin with skills that generate stylesheets, mocks, and framework-native component code for any host project.",
-      "version": "0.9.0",
+      "version": "0.9.1",
       "author": {
         "name": "mark-satterfield"
       },
