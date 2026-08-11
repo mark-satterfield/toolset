@@ -1,7 +1,6 @@
 ---
 kind: component
 name: shortcut-hint
-page_family: app
 aliases: [keyboard shortcut, shortcut chip, hotkey hint, key hint, accelerator]
 status: stable
 slots:

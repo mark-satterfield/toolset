@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: split-text-media
-page_family: landing
 aliases: [two-column hero, text and image side by side]
 status: stable
 slots:

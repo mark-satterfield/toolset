@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: kanban-board
-page_family: app
 aliases: [board, pipeline board, stage columns, tracking board, swimlanes]
 status: stable
 slots:

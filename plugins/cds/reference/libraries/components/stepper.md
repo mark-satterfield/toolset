@@ -1,7 +1,6 @@
 ---
 kind: component
 name: stepper
-page_family: app
 aliases: [progress steps, wizard steps, step indicator, numbered steps]
 status: stable
 slots:

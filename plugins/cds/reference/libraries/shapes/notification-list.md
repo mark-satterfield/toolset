@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: notification-list
-page_family: app
 aliases: [notification center, inbox, alerts list, notification panel, activity inbox]
 status: stable
 slots:

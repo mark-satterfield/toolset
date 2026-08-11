@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: record-detail
-page_family: app
 aliases: [skill detail, library record viewer, document detail view]
 status: stable
 slots:

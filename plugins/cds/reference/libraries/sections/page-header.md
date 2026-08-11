@@ -1,7 +1,6 @@
 ---
 kind: section
 name: page-header
-page_family: app
 aliases: [page heading, greeting header, screen title]
 status: stable
 shape: heading-action-row

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: prompt-and-templates
-page_family: app
 aliases: [quickstart body, prompt and template picker, create-or-browse body]
 status: stable
 shape: prompt-templates-split

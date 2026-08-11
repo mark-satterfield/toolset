@@ -1,7 +1,6 @@
 ---
 kind: section
 name: sub-hero
-page_family: landing
 aliases: [sub-hero, secondary hero, mid-page CTA, mid-page hero]
 status: stable
 content_contract:

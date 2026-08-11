@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: logo-marquee
-page_family: landing
 aliases: [logo ticker, scrolling logos, logo wall, marquee]
 status: stable
 slots:
@@ -11,16 +10,12 @@ self_contained: true
 content_defaults: {}
 ---
 
-# logo-marquee — Marquee strip
+# logo-marquee — Marquee strip of marks
 
-A continuously scrolling single full-width horizontal row of logos/icons; items may duplicate to fill the loop.
+A continuously scrolling full-width row whose repeated item is a single mark — a logo or an icon — with nothing beside it. The marquee family's scroll, self-containment, and item-separation contracts bind (`libraries/shapes/CONVENTIONS.md`, Marquee strips).
 
 ## Determinations
 
-- The item set duplicates to fill at least two viewport widths so the loop is seamless. Default scroll direction is right-to-left.
-- Scroll completes one full loop in ~40s (a calm, non-distracting speed); item-to-item spacing is `--sp-4`. The strip pauses on hover.
-- The animation is purely decorative: it is gated behind `prefers-reduced-motion: no-preference` and the strip renders as a static, wrapped row under reduced motion.
-
-## Self-containment
-
-This scroll is shape-level animation, not a component-family style, so the generated component stylesheet does not define it. The shape fragment must therefore be self-contained: it carries its own scoped `<style>` with the keyframes. Under `@media (prefers-reduced-motion: no-preference)` the `.cds-marquee__track` is `flex-wrap: nowrap` and runs a `transform: translateX(-50%)` loop over the duplicated item set for the ~40s duration; the reduced-motion baseline is `flex-wrap: wrap`, static. A fragment that only sets `flex-wrap: wrap` and defers keyframes to "the stylesheet" is broken — the strip will never scroll.
+- The repeated item is one mark at `height: var(--icon-size-feature); width: auto`, so marks of differing proportion sit on a common optical height rather than a common width.
+- Item-to-item spacing is `--sp-4`. Marks are discrete objects, so the strip carries no dividers between them.
+- A mark that carries meaning beyond decoration takes an `alt` naming its organization; a mark repeated purely as texture is `aria-hidden`.

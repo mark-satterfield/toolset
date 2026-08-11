@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: prompt-artifact
-page_family: landing
 aliases: [prompt and response demo, input/output panel, AI demo panel]
 status: stable
 slots:

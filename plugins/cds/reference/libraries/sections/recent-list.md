@@ -1,7 +1,6 @@
 ---
 kind: section
 name: recent-list
-page_family: app
 aliases: [recently created, recent items card, recent activity list]
 status: stable
 shape: list-empty-state

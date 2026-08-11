@@ -1,7 +1,6 @@
 ---
 kind: page-constraint
 name: variety-principle
-page_family: landing
 status: stable
 applies_to: { page_families: [landing], pages: [] }
 check: |

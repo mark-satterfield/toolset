@@ -1,7 +1,6 @@
 ---
 kind: section
 name: filter-strip
-page_family: app
 aliases: [filter chip row, filter bar, query chips]
 status: stable
 shape: chip-row

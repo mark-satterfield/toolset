@@ -22,9 +22,8 @@ Four rungs, tried in order. **A rung is reached only when every rung above it pr
 
 **Rung 1 — the Section's own rule.** Run the Section's Shape Selection Rule (`shape-selection-rule`) over its content-contract signals + `page_meta`; take candidates in order (primary, alternates, default); validate each against the Page's Page-Level Aesthetic Constraints (`page-constraint` entries) in the post-selection rejection loop. The first survivor is applied and the waterfall ends.
 
-**Rung 2 — any other Shape in the library, unmodified.** The rule's candidates are all rejected, but the ShapeLibrary is larger than any one rule's table. Consider every remaining Shape in the resolved library (plugin ∪ extensions). A Shape is **eligible** when all four hold:
+**Rung 2 — any other Shape in the library, unmodified.** The rule's candidates are all rejected, but the ShapeLibrary is larger than any one rule's table. Consider every remaining Shape in the resolved library (plugin ∪ extensions) — every Shape, on every Page, because a Shape is an arrangement and carries no page family of its own (`libraries/FORMAT.md`). A Shape is **eligible** when all three hold:
 
-- its `page_family` is the Page's family or `shared`;
 - every slot it declares `required: true` has content to fill;
 - every piece of the Section's content lands in one of its slots — an arrangement that drops content is not a fit;
 - it survives the same Page-Level Aesthetic Constraints rejection loop.

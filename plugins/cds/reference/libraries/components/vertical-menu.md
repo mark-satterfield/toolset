@@ -1,7 +1,6 @@
 ---
 kind: component
 name: vertical-menu
-page_family: shared
 aliases: [vertical nav, menu list, nav list, sidebar menu, stacked menu]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: faq
-page_family: landing
 aliases: [FAQ, frequently asked questions, questions section]
 status: stable
 content_contract:

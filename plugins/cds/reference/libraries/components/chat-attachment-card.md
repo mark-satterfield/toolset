@@ -1,7 +1,6 @@
 ---
 kind: component
 name: chat-attachment-card
-page_family: app
 aliases: [attachment, file card, output card, produced file, inline file]
 status: stable
 slots:

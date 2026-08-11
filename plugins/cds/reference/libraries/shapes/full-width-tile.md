@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: full-width-tile
-page_family: editorial
 aliases: [tinted tile, illustration tile layout, spanning tile]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-mark-nav-cta
-page_family: shared
 aliases: [full top nav, marketing nav bar, logo menu and button, standard site header]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: article-header
-page_family: editorial
 aliases: [article header, post header, article hero]
 status: stable
 shape: title-meta-stack

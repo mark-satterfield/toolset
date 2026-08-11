@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: chat-with-context-panel
-page_family: app
 aliases: [chat with sidebar, conversation with outputs, chat and artifacts, transcript with context]
 status: stable
 slots:

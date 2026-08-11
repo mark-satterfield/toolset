@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-mark-nav
-page_family: shared
 aliases: [logo and menu, docs nav bar, branded nav without action, mark with menu]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: trust-detail
-page_family: landing
 aliases: [security section, trust and security, compliance section, governance section]
 status: stable
 content_contract:

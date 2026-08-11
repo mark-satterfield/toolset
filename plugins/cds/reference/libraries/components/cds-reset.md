@@ -1,7 +1,6 @@
 ---
 kind: component
 name: cds-reset
-page_family: app
 aliases: [style reset, reset utility, control reset]
 status: stable
 slots: []
@@ -16,7 +15,7 @@ composite: false
 
 # cds-reset
 
-A utility class that neutralizes user-agent and host-cascade styling on interactive primitives (`button`, `input`, `a`, and wrapper `div`s) inside components of the `app` page family, so the component's own contract fully determines rendering. The structural skeletons of those Components apply it to wrappers and inner triggers whose visual styling is owned by the component (filter chip, period picker, toggle switch, and peers).
+A utility class that neutralizes user-agent and host-cascade styling on interactive primitives (`button`, `input`, `a`, and wrapper `div`s) inside components whose own contract must fully determine rendering. The structural skeletons of those Components apply it to wrappers and inner triggers whose visual styling is owned by the component (filter chip, period picker, toggle switch, and peers).
 
 ## Declaration
 

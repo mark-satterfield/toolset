@@ -1,7 +1,6 @@
 ---
 kind: section
 name: top-nav
-page_family: shared
 aliases: [topbar, top bar, nav, nav bar, top nav, menu bar, header nav, site header]
 status: stable
 pins_to: [block-start]

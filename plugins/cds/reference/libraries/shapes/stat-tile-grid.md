@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: stat-tile-grid
-page_family: app
 aliases: [stat row, metric tile row, tile grid, kpi grid]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: activity-card
-page_family: app
 aliases: [usage card, token volume card, activity summary card]
 status: stable
 shape: full-width-card

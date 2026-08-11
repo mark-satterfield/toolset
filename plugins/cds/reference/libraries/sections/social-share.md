@@ -1,7 +1,6 @@
 ---
 kind: section
 name: social-share
-page_family: editorial
 aliases: [share row, social share, share links]
 status: stable
 shape: icon-link-row

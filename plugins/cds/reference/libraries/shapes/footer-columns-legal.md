@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: footer-columns-legal
-page_family: shared
 aliases: [footer grid, multi-column footer, link columns and copyright]
 status: stable
 slots:

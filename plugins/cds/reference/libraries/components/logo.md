@@ -1,7 +1,6 @@
 ---
 kind: component
 name: logo
-page_family: shared
 aliases: [brand mark, wordmark, logotype, mark, brand logo]
 status: stable
 slots:

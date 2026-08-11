@@ -1,7 +1,6 @@
 ---
 kind: section
 name: illustration-tile
-page_family: editorial
 aliases: [featured illustration, article illustration, hero image tile]
 status: stable
 shape: full-width-tile

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: faq-card-grid
-page_family: landing
 aliases: [FAQ cards, question card grid, card FAQ]
 status: stable
 slots:

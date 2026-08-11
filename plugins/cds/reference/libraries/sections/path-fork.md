@@ -1,7 +1,6 @@
 ---
 kind: section
 name: path-fork
-page_family: landing
 aliases: [path fork, choose your path, self-serve vs assisted, buy or talk to sales]
 status: stable
 content_contract:

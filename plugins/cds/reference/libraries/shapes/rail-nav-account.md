@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: rail-nav-account
-page_family: app
 aliases: [rail with account, unbranded sidebar with account, rows and account]
 status: stable
 slots:

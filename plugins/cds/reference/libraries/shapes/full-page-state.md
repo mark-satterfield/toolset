@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: full-page-state
-page_family: shared
 aliases: [blocking state, error page, unrecoverable state, full-page error, offline state]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: voice-input-control
-page_family: app
 aliases: [microphone button, voice mode, dictation control, speech input, mic]
 status: stable
 slots:

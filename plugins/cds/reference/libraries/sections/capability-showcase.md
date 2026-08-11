@@ -1,7 +1,6 @@
 ---
 kind: section
 name: capability-showcase
-page_family: landing
 aliases: [features, feature grid, capabilities, what it does, feature showcase]
 status: stable
 content_contract:

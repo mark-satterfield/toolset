@@ -1,7 +1,6 @@
 ---
 kind: section
 name: info-note
-page_family: app
 aliases: [info footer, disclaimer strip, helper note]
 status: stable
 shape: note-strip

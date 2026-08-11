@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: chip-row
-page_family: app
 aliases: [chip strip, chip bar, horizontal chip row]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: full-width-card
-page_family: app
 aliases: [spanning card, promo card layout, summary card layout]
 status: stable
 slots:

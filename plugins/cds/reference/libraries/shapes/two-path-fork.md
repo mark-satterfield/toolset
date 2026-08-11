@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: two-path-fork
-page_family: landing
 aliases: [path picker, choice cards, dual path cards]
 status: stable
 slots:

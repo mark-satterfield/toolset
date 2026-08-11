@@ -1,7 +1,6 @@
 ---
 kind: component
 name: stat-card
-page_family: app
 aliases: [stat card, application stat card, stat tile, KPI card, metric card]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: inverted-pill-badge
-page_family: shared
 aliases: [inverted pill, filled badge, counter badge, emphasis badge]
 status: stable
 slots:

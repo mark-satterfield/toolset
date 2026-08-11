@@ -1,7 +1,6 @@
 ---
 kind: section
 name: hero-promo
-page_family: app
 aliases: [promo card, hero promotional card, upgrade banner card]
 status: stable
 shape: full-width-card

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: index-header
-page_family: editorial
 aliases: [index heading, listing page title]
 status: stable
 shape: title-meta-stack

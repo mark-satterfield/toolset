@@ -1,7 +1,6 @@
 ---
 kind: component
 name: timeline-entry
-page_family: app
 aliases: [activity entry, event row, history entry, audit entry, log entry]
 status: stable
 slots:

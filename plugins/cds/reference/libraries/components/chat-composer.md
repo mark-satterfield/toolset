@@ -1,7 +1,6 @@
 ---
 kind: component
 name: chat-composer
-page_family: app
 aliases: [message input, chat input, prompt box, composer, message box]
 status: stable
 slots:

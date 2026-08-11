@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: step-indicator-row
-page_family: app
 aliases: [stepper row, wizard step row, progress step strip]
 status: stable
 slots:

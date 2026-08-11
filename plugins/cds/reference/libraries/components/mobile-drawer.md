@@ -1,7 +1,6 @@
 ---
 kind: component
 name: mobile-drawer
-page_family: shared
 aliases: [hamburger menu, mobile nav, mobile menu, nav drawer, drawer]
 status: stable
 composite: false

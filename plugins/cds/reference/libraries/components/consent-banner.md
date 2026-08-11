@@ -1,7 +1,6 @@
 ---
 kind: component
 name: consent-banner
-page_family: shared
 aliases: [consent banner, cookie banner, cookie consent]
 status: stable
 slots:

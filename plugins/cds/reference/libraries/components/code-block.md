@@ -1,7 +1,6 @@
 ---
 kind: component
 name: code-block
-page_family: shared
 aliases: [code block, code snippet, terminal block]
 status: stable
 slots:

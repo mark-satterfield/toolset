@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: command-palette
-page_family: app
 aliases: [command palette, search palette, quick switcher, cmd-k overlay]
 status: stable
 slots:

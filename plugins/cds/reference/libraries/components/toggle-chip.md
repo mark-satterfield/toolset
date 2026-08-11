@@ -1,7 +1,6 @@
 ---
 kind: component
 name: toggle-chip
-page_family: shared
 aliases: [filter toggle, chip toggle, facet toggle, tag filter, multi-select chip]
 status: stable
 slots:

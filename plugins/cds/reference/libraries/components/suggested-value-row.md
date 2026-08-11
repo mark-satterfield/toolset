@@ -1,7 +1,6 @@
 ---
 kind: component
 name: suggested-value-row
-page_family: app
 aliases: [inferred field, suggested field, review row, accept or reject row, extracted value]
 status: stable
 slots:

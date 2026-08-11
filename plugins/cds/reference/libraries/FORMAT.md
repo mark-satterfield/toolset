@@ -9,13 +9,11 @@ Terminology is the Building Blocks vocabulary defined in `reference/model/entity
 ```yaml
 kind: component | shape | section | page | shape-selection-rule | page-constraint
 name: kebab-case-name          # basename of the file (e.g. hero.md → hero); the entry is cited by this name everywhere
-page_family: landing | editorial | docs | auth | app | shared
-                               # the page family this entry serves; shared = all families.
-                               # The page family selects the typography and motion register and scopes
-                               # which Page-Level Aesthetic Constraints apply (see entity-catalog.md).
 aliases: []                    # searchable synonyms this entry answers to (never a routing decision)
 status: stable | draft
 ```
+
+**Only a Page declares a page family.** The page family is the classification a Page carries (`reference/model/entity-catalog.md`), and everything the Page contains inherits it by containment — a Section, and the Shape and Components that Section receives, exactly as a nested Section inherits its parent's theme rather than declaring its own. A Shape is an arrangement and a Component is a unit: neither has a typography or motion register of its own to select, so neither is classified by family and neither is ever ineligible because of one. Every Shape in the library is a candidate on every Page (`reference/pipeline.md`, rung 2).
 
 ## Per-kind frontmatter
 
@@ -96,6 +94,10 @@ A Section entry lists these only to constrain them — to mark one required, or 
 ### page
 
 ```yaml
+page_family: landing | editorial | docs | auth | app
+                               # the classification this Page carries — the only kind that declares one.
+                               # It selects the typography and motion register and scopes which
+                               # Page-Level Aesthetic Constraints apply (see entity-catalog.md).
 sections: []                   # ordered: {section, required, notes} — each names a Section by name
 constraints: []                # page-constraint refs applying to this Page
 ```

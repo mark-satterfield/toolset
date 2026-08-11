@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: pictogram-subcards
-page_family: landing
 aliases: [animated icon with cards, feature spotlight with sub-cards]
 status: stable
 slots:

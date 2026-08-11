@@ -1,7 +1,6 @@
 ---
 kind: section
 name: kpi-summary
-page_family: app
 aliases: [KPI row, KPI grid, stat row, metrics row, summary tiles]
 status: stable
 shape: stat-tile-grid

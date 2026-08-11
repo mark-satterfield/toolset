@@ -1,7 +1,6 @@
 ---
 kind: component
 name: modal-with-form
-page_family: app
 aliases: [creation modal, form dialog, modal form]
 status: stable
 slots:

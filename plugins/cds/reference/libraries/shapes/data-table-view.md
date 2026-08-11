@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: data-table-view
-page_family: app
 aliases: [table screen, records view, list view, opportunities table, data grid view]
 status: stable
 slots:

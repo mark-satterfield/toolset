@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: banner-strip
-page_family: landing
 aliases: [CTA strip, banner, announcement band]
 status: stable
 slots:

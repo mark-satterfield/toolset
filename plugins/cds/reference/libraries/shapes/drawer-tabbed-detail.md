@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: drawer-tabbed-detail
-page_family: app
 aliases: [record drawer, tabbed detail panel, detail drawer contents, record inspector]
 status: stable
 slots:

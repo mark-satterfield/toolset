@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: editor-card-stack
-page_family: app
 aliases: [composition surface, prompt builder, message-flow composer]
 status: stable
 slots:

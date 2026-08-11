@@ -1,7 +1,6 @@
 ---
 kind: component
 name: feature-card
-page_family: landing
 aliases: [feature card, marginalia card, hairline card]
 status: stable
 slots:

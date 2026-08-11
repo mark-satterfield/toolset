@@ -1,7 +1,6 @@
 ---
 kind: component
 name: icon-glyphs
-page_family: shared
 aliases: [icon, glyph, system icon, ui glyph]
 status: stable
 slots: []

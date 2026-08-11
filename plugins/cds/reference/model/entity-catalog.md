@@ -42,7 +42,7 @@ Where a capability is stated, enforce the capability; do not enumerate a closed 
 | DesignTokenLibrary | | | Concrete | DesignTokens | Library | An array list of pre-configured Design Tokens. |
 | PageLevelAestheticConstraint | | | Concrete | | Rule | A post-selection validator enforcing coherence across a page (alternating backgrounds, avoiding repeated visual weight). A rejection loop, not a filter. |
 | PageLevelAestheticConstraints | | | Concrete | PageLevelAestheticConstraint | Rule set | An array list of PageLevelAestheticConstraint. |
-| PageFamily | | | Concrete | | Classifier | The classification a Page carries: landing, app, editorial, docs, or auth. Supplied when a page is composed — stated plainly or obvious from the prompt, otherwise the skill asks. The page family selects the typography and motion register and scopes which PageLevelAestheticConstraints apply. Catalog entries may declare the page family they serve (`shared` = all families). |
+| PageFamily | | | Concrete | | Classifier | The classification a Page carries: landing, app, editorial, docs, or auth. Supplied when a page is composed — stated plainly or obvious from the prompt, otherwise the skill asks. The page family selects the typography and motion register and scopes which PageLevelAestheticConstraints apply. **The Page alone carries it.** Everything the Page contains inherits it by containment — a Section, and the Shape and Components that Section receives, are never classified by family and are never made ineligible by one, exactly as a nested Section inherits its parent's theme rather than declaring its own. |
 
 ## Outputs (generated files)
 

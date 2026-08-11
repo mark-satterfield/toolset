@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: centered-card
-page_family: auth
 aliases: [floating card, single centered card, conversion card layout]
 status: stable
 slots:

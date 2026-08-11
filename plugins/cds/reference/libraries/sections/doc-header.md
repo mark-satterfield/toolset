@@ -1,7 +1,6 @@
 ---
 kind: section
 name: doc-header
-page_family: docs
 aliases: [document title, doc title block, legal page header]
 status: stable
 shape: title-meta-stack

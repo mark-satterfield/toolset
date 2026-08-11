@@ -1,7 +1,6 @@
 ---
 kind: section
 name: featured-grid
-page_family: editorial
 aliases: [featured section, featured lead, lead grid]
 status: stable
 shape: lead-side-grid

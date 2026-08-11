@@ -1,7 +1,6 @@
 ---
 kind: component
 name: action-card
-page_family: shared
 aliases: [resource card, card with buttons, feature card with actions, glyph card, multi-action card]
 status: stable
 slots:

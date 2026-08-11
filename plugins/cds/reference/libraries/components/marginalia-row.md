@@ -1,7 +1,6 @@
 ---
 kind: component
 name: marginalia-row
-page_family: editorial
 aliases: [marginalia row, marginalia, TOC row pattern]
 status: stable
 slots:

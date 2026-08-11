@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: sub-hero-split
-page_family: landing
 aliases: [mid-page hero, secondary hero, video CTA split]
 status: stable
 slots:

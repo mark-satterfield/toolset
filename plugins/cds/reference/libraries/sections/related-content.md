@@ -1,7 +1,6 @@
 ---
 kind: section
 name: related-content
-page_family: editorial
 aliases: [related content, related articles, read next]
 status: stable
 shape: card-grid

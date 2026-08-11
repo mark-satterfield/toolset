@@ -1,7 +1,6 @@
 ---
 kind: component
 name: toast
-page_family: shared
 aliases: [toast, snackbar, transient notice, auto-dismiss message, flash message]
 status: stable
 slots:

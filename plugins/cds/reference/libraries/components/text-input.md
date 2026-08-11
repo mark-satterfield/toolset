@@ -1,7 +1,6 @@
 ---
 kind: component
 name: text-input
-page_family: shared
 aliases: [text input, standard text input, input, form field]
 status: stable
 slots:

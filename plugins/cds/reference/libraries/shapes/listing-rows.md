@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: listing-rows
-page_family: editorial
 aliases: [row list with column headers, entry rows, chronological row list]
 status: stable
 slots:

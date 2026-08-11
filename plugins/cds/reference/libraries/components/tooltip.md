@@ -1,7 +1,6 @@
 ---
 kind: component
 name: tooltip
-page_family: shared
 aliases: [tooltip, hover hint, info bubble, help bubble, info tip]
 status: stable
 slots:

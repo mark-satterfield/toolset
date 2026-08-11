@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: accordion
-page_family: landing
 aliases: [FAQ list, expandable list, collapsible list]
 status: stable
 slots:

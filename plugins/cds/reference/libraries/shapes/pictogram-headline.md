@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: pictogram-headline
-page_family: shared
 aliases: [icon over headline, pictogram header, illustrated section title, mascot headline, animated icon heading]
 status: stable
 slots:

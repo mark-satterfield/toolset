@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: rate-table
-page_family: landing
 aliases: [rates table, usage pricing table, rate card]
 status: stable
 slots:

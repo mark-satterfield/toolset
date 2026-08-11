@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: rail-mark-nav-account
-page_family: app
 aliases: [branded rail, rail with logo and account, app sidebar with brand]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: coverage-checklist
-page_family: app
 aliases: [topic coverage, completeness checklist, progress checklist, covered items, checklist]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: article-body
-page_family: editorial
 aliases: [article body, post body, article content]
 status: stable
 shape: reading-column

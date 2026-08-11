@@ -1,7 +1,6 @@
 ---
 kind: component
 name: auth-primary-cta
-page_family: auth
 aliases: [authentication primary CTA, sign-up button, bloom button, conversion CTA]
 status: stable
 slots:

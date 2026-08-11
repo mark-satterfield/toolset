@@ -1,7 +1,6 @@
 ---
 kind: section
 name: section-header
-page_family: landing
 aliases: [eyebrow, section header, kicker, section label, heading strip]
 status: stable
 content_contract:

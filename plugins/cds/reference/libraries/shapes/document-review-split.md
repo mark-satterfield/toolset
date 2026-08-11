@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: document-review-split
-page_family: app
 aliases: [document review, preview and rationale, review pane, draft review, side-by-side review]
 status: stable
 slots:

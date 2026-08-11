@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: cta-newsletter
-page_family: landing
 aliases: [newsletter signup, email capture, subscribe section]
 status: stable
 slots:

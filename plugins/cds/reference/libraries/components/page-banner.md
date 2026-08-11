@@ -1,7 +1,6 @@
 ---
 kind: component
 name: page-banner
-page_family: shared
 aliases: [banner, page alert, persistent notice, system banner, notification bar]
 status: stable
 slots:

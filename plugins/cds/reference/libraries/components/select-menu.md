@@ -1,7 +1,6 @@
 ---
 kind: component
 name: select-menu
-page_family: app
 aliases: [picklist, select, single-select, option list, listbox, chooser, group-by picker]
 status: stable
 slots:

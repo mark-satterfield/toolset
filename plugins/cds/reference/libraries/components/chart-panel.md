@@ -1,7 +1,6 @@
 ---
 kind: component
 name: chart-panel
-page_family: app
 aliases: [chart card, metric chart, graph panel, trend card, analytics card]
 status: stable
 slots:

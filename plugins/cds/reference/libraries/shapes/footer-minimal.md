@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: footer-minimal
-page_family: shared
 aliases: [single-row footer, legal row only, bare footer, compact footer]
 status: stable
 slots:

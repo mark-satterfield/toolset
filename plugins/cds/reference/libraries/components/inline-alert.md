@@ -1,7 +1,6 @@
 ---
 kind: component
 name: inline-alert
-page_family: shared
 aliases: [field error, validation message, inline message, field-level alert, form error]
 status: stable
 slots:

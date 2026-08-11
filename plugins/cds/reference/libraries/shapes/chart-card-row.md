@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: chart-card-row
-page_family: app
 aliases: [chart row, chart card columns, panel row]
 status: stable
 slots:

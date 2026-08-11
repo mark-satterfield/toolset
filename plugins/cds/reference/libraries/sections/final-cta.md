@@ -1,7 +1,6 @@
 ---
 kind: section
 name: final-cta
-page_family: landing
 aliases: [final CTA, closing CTA, bottom call to action, closing conversion section]
 status: stable
 content_contract:

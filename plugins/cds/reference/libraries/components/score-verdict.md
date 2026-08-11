@@ -1,7 +1,6 @@
 ---
 kind: component
 name: score-verdict
-page_family: shared
 aliases: [match score, fit verdict, score badge, assessment result, rating verdict]
 status: stable
 slots:

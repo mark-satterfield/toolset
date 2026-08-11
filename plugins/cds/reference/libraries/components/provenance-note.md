@@ -1,7 +1,6 @@
 ---
 kind: component
 name: provenance-note
-page_family: shared
 aliases: [source note, data source, attribution line, freshness note, sourced from]
 status: stable
 slots:

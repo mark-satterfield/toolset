@@ -1,7 +1,6 @@
 ---
 kind: component
 name: detail-row
-page_family: shared
 aliases: [feature row, icon detail row, titled description row, spec row, two-column row]
 status: stable
 slots:

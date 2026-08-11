@@ -1,7 +1,6 @@
 ---
 kind: component
 name: account-row
-page_family: app
 aliases: [user menu, account menu, profile row, user row]
 status: stable
 composite: false

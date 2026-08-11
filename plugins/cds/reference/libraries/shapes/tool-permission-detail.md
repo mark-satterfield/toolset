@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: tool-permission-detail
-page_family: app
 aliases: [connector permissions, integration permission editor, scope editor]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: labeled-detail-rows
-page_family: shared
 aliases: [feature rows, spec list, capability rows, rule-separated rows, two-column detail list]
 status: stable
 slots:

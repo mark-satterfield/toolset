@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: modal-over-list
-page_family: app
 aliases: [creation modal, modal over page, grouped-checkbox form modal]
 status: stable
 slots:

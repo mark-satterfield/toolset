@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-nav-only
-page_family: shared
 aliases: [menu-only bar, nav without logo, unbranded header, section nav bar]
 status: stable
 slots:

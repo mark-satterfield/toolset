@@ -1,7 +1,6 @@
 ---
 kind: component
 name: quote-card
-page_family: shared
 aliases: [testimonial card, quote panel, customer quote, logo quote card]
 status: stable
 slots:

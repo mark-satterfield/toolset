@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-mark-cta
-page_family: shared
 aliases: [logo and button, mark with single action, conversion header]
 status: stable
 slots:

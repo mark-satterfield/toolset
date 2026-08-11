@@ -1,7 +1,6 @@
 ---
 kind: component
 name: notification-row
-page_family: app
 aliases: [notification, alert row, inbox row, message row, notice row]
 status: stable
 slots:

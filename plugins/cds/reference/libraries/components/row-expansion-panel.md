@@ -1,7 +1,6 @@
 ---
 kind: component
 name: row-expansion-panel
-page_family: app
 aliases: [inline expand, row detail, expanded row, preview panel, row disclosure]
 status: stable
 slots:

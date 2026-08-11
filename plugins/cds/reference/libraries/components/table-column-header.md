@@ -1,7 +1,6 @@
 ---
 kind: component
 name: table-column-header
-page_family: app
 aliases: [column header, sortable header, table header cell, column sort control]
 status: stable
 slots:

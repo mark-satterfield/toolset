@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: activity-timeline
-page_family: app
 aliases: [activity log, history, audit trail, event log, state history]
 status: stable
 slots:

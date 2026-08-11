@@ -1,7 +1,6 @@
 ---
 kind: component
 name: data-table
-page_family: app
 aliases: [table, data grid, records table, list table, tabular view, grid]
 status: stable
 slots:

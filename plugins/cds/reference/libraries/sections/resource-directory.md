@@ -1,7 +1,6 @@
 ---
 kind: section
 name: resource-directory
-page_family: landing
 aliases: [resources, resource library, docs and guides, content library]
 status: stable
 content_contract:

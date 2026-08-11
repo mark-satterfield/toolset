@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: title-meta-stack
-page_family: shared
 aliases: [page header stack, title block, header stack, eyebrow title meta]
 status: stable
 slots:

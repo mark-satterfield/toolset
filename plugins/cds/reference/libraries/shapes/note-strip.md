@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: note-strip
-page_family: app
 aliases: [helper strip, footnote row, caption strip]
 status: stable
 slots:

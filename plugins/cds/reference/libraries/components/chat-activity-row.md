@@ -1,7 +1,6 @@
 ---
 kind: component
 name: chat-activity-row
-page_family: app
 aliases: [tool call row, activity summary, work summary, collapsed detail, process row]
 status: stable
 slots:

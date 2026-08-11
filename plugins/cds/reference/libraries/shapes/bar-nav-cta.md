@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-nav-cta
-page_family: shared
 aliases: [menu and button, unbranded nav with action, nested surface nav]
 status: stable
 slots:

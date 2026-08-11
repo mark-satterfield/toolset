@@ -1,7 +1,6 @@
 ---
 kind: section
 name: doc-body
-page_family: docs
 aliases: [document body, reference body, legal body]
 status: stable
 shape: reading-column

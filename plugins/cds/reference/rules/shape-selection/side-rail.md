@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: side-rail
 section: side-rail
-page_family: app
 status: stable
 signals: [carries_mark, carries_account]
 table:

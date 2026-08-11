@@ -1,7 +1,6 @@
 ---
 kind: component
 name: outline-pill-badge
-page_family: shared
 aliases: [badge, pill, tag, outline badge, label badge]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: diagnostic-detail
-page_family: shared
 aliases: [more info modal, diagnostic modal, error detail, technical detail, support detail]
 status: stable
 slots:

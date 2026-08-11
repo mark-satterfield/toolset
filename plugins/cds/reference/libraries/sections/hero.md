@@ -1,7 +1,6 @@
 ---
 kind: section
 name: hero
-page_family: landing
 aliases: [hero, hero section, above the fold]
 status: stable
 content_contract:

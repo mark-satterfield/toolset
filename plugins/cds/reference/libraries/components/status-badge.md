@@ -1,7 +1,6 @@
 ---
 kind: component
 name: status-badge
-page_family: shared
 aliases: [status badge, state indicator, status pill]
 status: stable
 slots:

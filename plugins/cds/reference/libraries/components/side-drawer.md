@@ -1,7 +1,6 @@
 ---
 kind: component
 name: side-drawer
-page_family: app
 aliases: [drawer, side panel, detail drawer, slide-over, edge panel, off-canvas panel]
 status: stable
 slots:

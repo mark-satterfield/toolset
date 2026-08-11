@@ -1,7 +1,6 @@
 ---
 kind: section
 name: side-rail
-page_family: app
 aliases: [sidebar, rail, nav rail, app rail, left nav, right nav, side nav, left rail, right rail]
 status: stable
 pins_to: [inline-start, inline-end]

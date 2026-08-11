@@ -1,7 +1,6 @@
 ---
 kind: component
 name: lightbox
-page_family: shared
 aliases: [lightbox, video dialog, media modal, video lightbox]
 status: stable
 slots:

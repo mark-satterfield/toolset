@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: lead-plus-carousel
-page_family: landing
 aliases: [featured card with carousel, lead story with more]
 status: stable
 slots:

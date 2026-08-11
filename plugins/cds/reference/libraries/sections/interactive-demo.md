@@ -1,7 +1,6 @@
 ---
 kind: section
 name: interactive-demo
-page_family: landing
 aliases: [demo, interactive demo, try it, product preview, see it in action]
 status: stable
 content_contract:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: template-gallery
-page_family: app
 aliases: [example gallery, prompt library gallery, template showcase]
 status: stable
 slots:

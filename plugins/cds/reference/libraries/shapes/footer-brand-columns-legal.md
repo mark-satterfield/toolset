@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: footer-brand-columns-legal
-page_family: shared
 aliases: [brand footer, logo and columns footer, footer with tagline]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: conversion-headline
-page_family: auth
 aliases: [auth headline, sign-in headline, marketing headline]
 status: stable
 shape: centered-headline

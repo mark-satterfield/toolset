@@ -1,7 +1,6 @@
 ---
 kind: component
 name: button
-page_family: shared
 aliases: [button, primary button, secondary button, tertiary button, CTA]
 status: stable
 slots:

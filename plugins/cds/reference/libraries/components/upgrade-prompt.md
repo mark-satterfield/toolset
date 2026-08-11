@@ -1,7 +1,6 @@
 ---
 kind: component
 name: upgrade-prompt
-page_family: shared
 aliases: [paywall prompt, gated feature, plan prompt, upsell, entitlement prompt]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: chart-panels
-page_family: app
 aliases: [chart panel, chart row, chart cards, time-series panel]
 status: stable
 shape: chart-card-row

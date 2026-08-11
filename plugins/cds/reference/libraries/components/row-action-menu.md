@@ -1,7 +1,6 @@
 ---
 kind: component
 name: row-action-menu
-page_family: app
 aliases: [row actions, per-row menu, record actions, inline actions, quick actions]
 status: stable
 slots:

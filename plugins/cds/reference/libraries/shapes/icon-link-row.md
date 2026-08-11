@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: icon-link-row
-page_family: editorial
 aliases: [share row layout, link icon row, inline icon row]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: heading-action-row
-page_family: app
 aliases: [page heading row, title with actions, heading with right cluster]
 status: stable
 slots:

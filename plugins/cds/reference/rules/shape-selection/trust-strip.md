@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: trust-strip
 section: trust-strip
-page_family: landing
 status: stable
 signals: [item_count]
 table:

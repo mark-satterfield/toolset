@@ -1,7 +1,6 @@
 ---
 kind: component
 name: horizontal-menu
-page_family: shared
 aliases: [horizontal nav, nav links, menu row, inline menu, top nav links]
 status: stable
 slots:

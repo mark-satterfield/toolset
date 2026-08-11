@@ -1,7 +1,6 @@
 ---
 kind: component
 name: template-gallery-card
-page_family: app
 aliases: [template entry, example card, prompt template card, template gallery entry]
 status: stable
 slots:

@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: trust-detail
 section: trust-detail
-page_family: landing
 status: stable
 signals: [item_count, has_visual_per_item]
 table:

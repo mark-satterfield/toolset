@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: setting-card-stack
-page_family: app
 aliases: [stacked setting cards, preference cards, privacy settings stack]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: project-picker-gallery
-page_family: app
 aliases: [project picker, recent projects gallery, file picker, new-prototype gallery]
 status: stable
 slots:

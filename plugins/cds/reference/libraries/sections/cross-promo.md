@@ -1,7 +1,6 @@
 ---
 kind: section
 name: cross-promo
-page_family: landing
 aliases: [cross-promo, promo banner, product plug, inline promotion]
 status: stable
 content_contract:

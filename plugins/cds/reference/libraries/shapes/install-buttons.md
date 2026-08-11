@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: install-buttons
-page_family: landing
 aliases: [download buttons, platform downloads, app download row]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: media-header-card
-page_family: shared
 aliases: [tinted header card, model card, illustrated card, banner card, header-image card]
 status: stable
 slots:

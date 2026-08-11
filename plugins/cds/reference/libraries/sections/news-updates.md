@@ -1,7 +1,6 @@
 ---
 kind: section
 name: news-updates
-page_family: landing
 aliases: [news, updates, changelog section, announcements, releases]
 status: stable
 content_contract:

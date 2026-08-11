@@ -1,7 +1,6 @@
 ---
 kind: component
 name: saved-view-bar
-page_family: app
 aliases: [saved views, view switcher, named views, view tabs, viewsets]
 status: stable
 slots:

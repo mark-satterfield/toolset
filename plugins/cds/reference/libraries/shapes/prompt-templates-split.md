@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: prompt-templates-split
-page_family: app
 aliases: [quickstart two-column, create-or-browse split, prompt plus template gallery]
 status: stable
 slots:

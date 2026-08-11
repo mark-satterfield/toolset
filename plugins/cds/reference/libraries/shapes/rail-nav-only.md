@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: rail-nav-only
-page_family: app
 aliases: [bare rail, rows-only sidebar, minimal rail]
 status: stable
 slots:

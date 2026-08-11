@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: score-breakdown
-page_family: shared
 aliases: [scorecard, score detail, contribution breakdown, why this score, assessment detail]
 status: stable
 slots:

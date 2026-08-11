@@ -1,7 +1,6 @@
 ---
 kind: component
 name: kanban-card
-page_family: app
 aliases: [board card, pipeline card, draggable card, stage card]
 status: stable
 slots:

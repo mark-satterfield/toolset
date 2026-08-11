@@ -1,7 +1,6 @@
 ---
 kind: section
 name: pricing
-page_family: landing
 aliases: [pricing, plans, pricing table, tiers, rates]
 status: stable
 content_contract:

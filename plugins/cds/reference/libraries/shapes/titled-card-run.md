@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: titled-card-run
-page_family: shared
 aliases: [card group with heading, titled card row, section with see-more link, grouped cards]
 status: stable
 slots:

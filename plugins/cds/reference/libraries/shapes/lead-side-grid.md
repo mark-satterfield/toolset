@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: lead-side-grid
-page_family: editorial
 aliases: [featured lead grid, lead plus side stack, lead with side column]
 status: stable
 slots:

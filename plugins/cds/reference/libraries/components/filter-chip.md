@@ -1,7 +1,6 @@
 ---
 kind: component
 name: filter-chip
-page_family: app
 aliases: [filter pill, facet picker, filter dropdown chip]
 status: stable
 slots:

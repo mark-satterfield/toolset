@@ -1,7 +1,6 @@
 ---
 kind: component
 name: kebab-menu
-page_family: app
 aliases: [kebab menu, overflow menu, 3-dot menu, more actions]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: section
 name: validation-block
-page_family: landing
 aliases: [testimonials, customer quotes, social proof, validation block]
 status: stable
 content_contract:

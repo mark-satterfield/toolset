@@ -1,7 +1,6 @@
 ---
 kind: component
 name: field-group-form
-page_family: app
 aliases: [address form, multi-column form row, field group, form row]
 status: stable
 slots:

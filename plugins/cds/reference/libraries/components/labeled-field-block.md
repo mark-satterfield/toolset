@@ -1,7 +1,6 @@
 ---
 kind: component
 name: labeled-field-block
-page_family: app
 aliases: [labeled field, field block, titled input, input with instructions, field with actions]
 status: stable
 slots:

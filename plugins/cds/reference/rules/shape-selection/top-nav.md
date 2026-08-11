@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: top-nav
 section: top-nav
-page_family: shared
 status: stable
 signals: [carries_mark, nav_item_count, conversion_action_count]
 table:

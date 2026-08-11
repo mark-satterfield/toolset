@@ -1,7 +1,6 @@
 ---
 kind: component
 name: catalog-card
-page_family: shared
 aliases: [catalog card, grid card, badge card]
 status: stable
 slots:

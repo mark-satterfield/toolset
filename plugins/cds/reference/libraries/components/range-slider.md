@@ -1,7 +1,6 @@
 ---
 kind: component
 name: range-slider
-page_family: app
 aliases: [slider, time slider, scrubber, range control, value slider]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: confidence-indicator
-page_family: shared
 aliases: [confidence band, certainty indicator, reliability indicator, confidence level]
 status: stable
 slots:

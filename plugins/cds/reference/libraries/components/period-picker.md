@@ -1,7 +1,6 @@
 ---
 kind: component
 name: period-picker
-page_family: app
 aliases: [date range picker, time period selector, range chip]
 status: stable
 slots:

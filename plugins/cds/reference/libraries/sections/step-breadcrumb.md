@@ -1,7 +1,6 @@
 ---
 kind: section
 name: step-breadcrumb
-page_family: app
 aliases: [stepper, step indicator, multi-step breadcrumb, wizard steps]
 status: stable
 shape: step-indicator-row

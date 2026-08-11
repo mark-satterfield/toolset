@@ -1,7 +1,6 @@
 ---
 kind: component
 name: editor-card
-page_family: app
 aliases: [prompt turn card, message editor card, rich-text turn card, role-badged editor]
 status: stable
 slots:

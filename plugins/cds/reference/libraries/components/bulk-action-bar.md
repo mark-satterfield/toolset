@@ -1,7 +1,6 @@
 ---
 kind: component
 name: bulk-action-bar
-page_family: app
 aliases: [selection bar, batch actions, bulk operations, multi-select toolbar, selection toolbar]
 status: stable
 slots:

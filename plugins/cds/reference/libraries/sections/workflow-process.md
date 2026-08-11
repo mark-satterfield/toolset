@@ -1,7 +1,6 @@
 ---
 kind: section
 name: workflow-process
-page_family: landing
 aliases: [how it works, steps, process, workflow, getting started steps]
 status: stable
 content_contract:

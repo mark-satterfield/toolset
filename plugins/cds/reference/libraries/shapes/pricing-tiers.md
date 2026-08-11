@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: pricing-tiers
-page_family: landing
 aliases: [pricing cards, pricing table, plan cards, tier comparison]
 status: stable
 slots:

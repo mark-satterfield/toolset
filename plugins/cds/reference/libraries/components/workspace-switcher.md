@@ -1,7 +1,6 @@
 ---
 kind: component
 name: workspace-switcher
-page_family: app
 aliases: [workspace picker, org switcher, team switcher]
 status: stable
 composite: false

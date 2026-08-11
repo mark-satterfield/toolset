@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: code-block-content
-page_family: app
 aliases: [code block as content, API template empty state, snippet-first screen]
 status: stable
 slots:

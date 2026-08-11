@@ -1,7 +1,6 @@
 ---
 kind: component
 name: action-menu
-page_family: app
 aliases: [popup menu, account menu, user menu, context menu, command menu, overflow actions]
 status: stable
 slots:

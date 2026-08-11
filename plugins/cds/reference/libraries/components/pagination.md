@@ -1,7 +1,6 @@
 ---
 kind: component
 name: pagination
-page_family: editorial
 aliases: [pagination, pager, prev-next]
 status: stable
 slots:

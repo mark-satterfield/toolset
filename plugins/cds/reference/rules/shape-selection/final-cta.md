@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: final-cta
 section: final-cta
-page_family: landing
 status: stable
 signals: [has_newsletter_capture, has_download_upgrade_path]
 table:

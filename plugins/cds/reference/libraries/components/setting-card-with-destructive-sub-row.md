@@ -1,7 +1,6 @@
 ---
 kind: component
 name: setting-card-with-destructive-sub-row
-page_family: app
 aliases: [setting with delete row, preference card with destructive action]
 status: stable
 slots:

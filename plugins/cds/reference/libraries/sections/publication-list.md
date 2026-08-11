@@ -1,7 +1,6 @@
 ---
 kind: section
 name: publication-list
-page_family: editorial
 aliases: [publication list, article list, post index, archive list]
 status: stable
 shape: listing-rows

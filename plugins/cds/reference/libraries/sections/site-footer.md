@@ -1,7 +1,6 @@
 ---
 kind: section
 name: site-footer
-page_family: shared
 aliases: [footer, site footer, footer grid, footer navigation, page footer]
 status: stable
 pins_to: [block-end]

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: faq-two-column
-page_family: landing
 aliases: [two-column FAQ, question rail, indexed FAQ]
 status: stable
 slots:

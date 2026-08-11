@@ -1,7 +1,6 @@
 ---
 kind: component
 name: action-row-button
-page_family: app
 aliases: [row button, full-width action row, new-item row, list action row, command row]
 status: stable
 slots:

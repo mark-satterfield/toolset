@@ -1,7 +1,6 @@
 ---
 kind: component
 name: setting-card
-page_family: app
 aliases: [preference card, settings card, settings row]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: bar-mark-only
-page_family: shared
 aliases: [logo-only bar, mark-only bar, brand bar, logo bar, bare header]
 status: stable
 slots:

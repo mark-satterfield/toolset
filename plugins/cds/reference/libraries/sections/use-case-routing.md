@@ -1,7 +1,6 @@
 ---
 kind: section
 name: use-case-routing
-page_family: landing
 aliases: [use cases, who it's for, personas, for teams, audience routing]
 status: stable
 content_contract:

@@ -1,7 +1,6 @@
 ---
 kind: component
 name: approval-mode-permission-control
-page_family: app
 aliases: [tool permissions, permission editor, policy control, approval-mode control]
 status: stable
 slots:

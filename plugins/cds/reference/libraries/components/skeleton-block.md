@@ -1,7 +1,6 @@
 ---
 kind: component
 name: skeleton-block
-page_family: shared
 aliases: [skeleton, loading placeholder, shimmer, content placeholder, loading block]
 status: stable
 slots:

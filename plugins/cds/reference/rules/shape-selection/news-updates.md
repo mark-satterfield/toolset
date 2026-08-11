@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: news-updates
 section: news-updates
-page_family: landing
 status: stable
 signals: [item_count, has_emphasis_item]
 table:

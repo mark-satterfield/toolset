@@ -1,7 +1,6 @@
 ---
 kind: section
 name: conversion-card
-page_family: auth
 aliases: [auth card, sign-in card, login card, sign-up card]
 status: stable
 shape: centered-card

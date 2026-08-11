@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: comparison-matrix
-page_family: shared
 aliases: [feature comparison, compare plans, comparison table, competitor comparison, plan matrix, feature matrix]
 status: stable
 slots:

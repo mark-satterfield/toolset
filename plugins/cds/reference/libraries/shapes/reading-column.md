@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: reading-column
-page_family: shared
 aliases: [reading column, prose column, centered reading column, long-form column]
 status: stable
 slots:

@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: chat-transcript
-page_family: app
 aliases: [conversation, chat view, message list, thread, chat panel]
 status: stable
 slots:

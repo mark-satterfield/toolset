@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: cta-panel
-page_family: landing
 aliases: [call to action, CTA band, final CTA, conversion band]
 status: stable
 slots:

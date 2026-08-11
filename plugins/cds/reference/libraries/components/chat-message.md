@@ -1,7 +1,6 @@
 ---
 kind: component
 name: chat-message
-page_family: app
 aliases: [message, chat turn, conversation turn, message bubble, reply]
 status: stable
 slots:

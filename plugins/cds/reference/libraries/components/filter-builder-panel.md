@@ -1,7 +1,6 @@
 ---
 kind: component
 name: filter-builder-panel
-page_family: app
 aliases: [filter builder, advanced filter, condition builder, query builder, filter panel]
 status: stable
 slots:

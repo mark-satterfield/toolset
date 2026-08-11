@@ -2,7 +2,6 @@
 kind: shape-selection-rule
 name: site-footer
 section: site-footer
-page_family: shared
 status: stable
 signals: [column_count, carries_brand_island]
 table:

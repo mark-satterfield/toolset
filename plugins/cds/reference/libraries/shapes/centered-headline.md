@@ -1,7 +1,6 @@
 ---
 kind: shape
 name: centered-headline
-page_family: auth
 aliases: [centered marketing headline, standalone headline]
 status: stable
 slots:

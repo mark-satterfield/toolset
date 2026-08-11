@@ -1,7 +1,6 @@
 ---
 kind: section
 name: trust-strip
-page_family: landing
 aliases: [trust strip, logo strip, logo bar, customer logos, logo wall]
 status: stable
 content_contract:
