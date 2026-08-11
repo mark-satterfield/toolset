@@ -105,17 +105,17 @@ No build step and no npm scripts — plugins are plain Markdown/YAML. They are d
 
 `package.json` declares `plugins/*` as workspaces.
 
-<!-- BEGIN AGENT TEAMS WORKFORCE: v:5.2.0 hash:8d5f64f -->
+<!-- BEGIN AGENT TEAMS WORKFORCE: v:5.2.1 hash:bd363e8 -->
 
 ## Instructions for Agent Teams Workforce
 
 This project uses an agentic framework names "Agent Teams Workforce" to...
 
 These instructions will be loaded into the contect window at session start.
-@/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.0/AGENT-INSTRUCTIONS.md`
+@/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-INSTRUCTIONS.md`
 
 | Question about this:                                         | Find it here:                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.0/AGENT-TEAMS-WORKFORCE.md](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.0/AGENT-TEAMS-WORKFORCE.md) |
-| Useful commands                                              | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.0/commands](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.0/commands) |
+| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-TEAMS-WORKFORCE.md](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-TEAMS-WORKFORCE.md) |
+| Useful commands                                              | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/commands](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/commands) |
 <!-- END AGENT TEAMS WORKFORCE -->
