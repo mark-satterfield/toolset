@@ -38,7 +38,7 @@ OUT = os.path.join(HERE, "visual-proof-out")
 STYLES = os.path.join(OUT, "styles")
 COMPONENTS = os.path.join(OUT, "components")
 SHAPES = os.path.join(OUT, "shapes")
-# The shape catalog's single source of truth: the Building Blocks shape library
+# The single source of truth for shapes: the Building Blocks shape library
 # <plugin>/reference/libraries/shapes/ (one entry per file, typed frontmatter).
 REFERENCE = os.path.abspath(os.path.join(HERE, "..", "reference"))
 SHAPES_LIB = os.path.join(REFERENCE, "libraries", "shapes")
@@ -96,7 +96,7 @@ def discover_modes():
 def discover_shapes():
     """(name, description) for every Shape in the reference/libraries/shapes/
     library, ordered by entry filename. Single source of truth — no duplicated
-    catalog lives in this viewer, and the retired S0-S28 ids cannot reappear
+    shape list lives in this viewer, and the retired S0-S28 ids cannot reappear
     because only the semantic names are in the reference.
 
     The name is the frontmatter `name:`; the description is the tail of the body
@@ -255,7 +255,7 @@ def build_shapes():
                      '<span class="nm">%s</span></div>%s</section>'
                      % (html.escape(sid), html.escape(nm), read(f)))
     return page("CDS — shapes (%d)" % len(files),
-                "Every pre-defined shape, rendered with sample content. A shape is an organized arrangement of components for one landing-page section; each is identified by a semantic name describing its composition.",
+                "Every pre-defined shape, rendered with sample content. A Shape is a template layout positioning Components and Elements inside one Frame — any Section, on any page family, or a Shell region; each is identified by a semantic name describing its arrangement.",
                 "shapes", "".join(items)), len(files)
 
 
@@ -292,8 +292,19 @@ def main():
         f.write(shape_html)
     with open(os.path.join(OUT, "index.html"), "w", encoding="utf-8") as f:
         f.write(build_index(ncomp, nshape))
-    print("assembled: components.html (%d), shapes.html (%d), index.html — themes=%d modes=%d shapes-cataloged=%d"
+    print("assembled: components.html (%d), shapes.html (%d), index.html — themes=%d modes=%d shapes-listed=%d"
           % (ncomp, nshape, len(THEMES), len(MODES), len(SHAPE_ORDER)))
+
+    # Coverage against the live library. The galleries render whatever fragments
+    # are on disk, so a partial or stale regeneration would otherwise look
+    # identical to a complete one. Report the shortfall rather than hide it.
+    comp_lib = os.path.join(REFERENCE, "libraries", "components")
+    n_comp_lib = len([f for f in os.listdir(comp_lib)
+                      if f.endswith(".md") and f not in _LIB_NON_ENTRIES]) if os.path.isdir(comp_lib) else 0
+    if ncomp < n_comp_lib or nshape < len(SHAPE_ORDER):
+        print("  ! partial render proof: components %d/%d, shapes %d/%d — "
+              "regenerate with the cds-render-proof workflow to cover the rest"
+              % (ncomp, n_comp_lib, nshape, len(SHAPE_ORDER)))
 
 
 if __name__ == "__main__":

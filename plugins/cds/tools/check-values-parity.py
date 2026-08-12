@@ -61,7 +61,7 @@ def load(path):
 
 
 def token_map(data):
-    """Every catalog color node, keyed by its emitted `--color-{group}-{key}`."""
+    """Every color-catalog node, keyed by its emitted `--color-{group}-{key}`."""
     cc = data["color_catalog"]
     groups = {"common_colors": cc["common_colors"], **cc["palettes"]}
     tok = {}
@@ -192,20 +192,20 @@ def compare(old, new, sanctioned):
             else "semantic alias"
         old_hex, old_err = resolve(token, old_tok)
         if old_err:
-            failures.append(f"[catalog] OLD {token} unresolvable: {old_err}")
+            failures.append(f"[color-catalog] OLD {token} unresolvable: {old_err}")
             continue
         if token not in new_tok:
             failures.append(
-                f"[catalog] {kind} {token} ({old_hex}) is absent from NEW"
+                f"[color-catalog] {kind} {token} ({old_hex}) is absent from NEW"
             )
             continue
         new_hex, new_err = resolve(token, new_tok)
         if new_err:
-            failures.append(f"[catalog] NEW {token} unresolvable: {new_err}")
+            failures.append(f"[color-catalog] NEW {token} unresolvable: {new_err}")
             continue
         if old_hex != new_hex:
             failures.append(
-                f"[catalog] {kind} {token}: OLD {old_hex} != NEW {new_hex}"
+                f"[color-catalog] {kind} {token}: OLD {old_hex} != NEW {new_hex}"
             )
 
     # 2. Roles: every OLD role key exists in NEW.

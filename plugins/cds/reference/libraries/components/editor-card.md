@@ -91,7 +91,7 @@ A `collapsed` card shows only the role badge and a single-line preview of the co
 
 The empty editor renders placeholder text via the editor's placeholder extension as a `::before` pseudo-element on the first empty block, in `--text-tertiary` at the content size; it also carries `aria-placeholder` on the `role="textbox"` element so screen readers announce it.
 
-## Trailing-action catalog
+## Trailing-action options
 
 Four trailing actions: Delete, Info, Expand, Reorder — each an icon button. Reorder is a drag handle (`cursor: grab`) that initiates row reordering; it carries `aria-label="Reorder turn"` and exposes keyboard reordering via Arrow Up/Down while focused (with `aria-grabbed` toggling).
 

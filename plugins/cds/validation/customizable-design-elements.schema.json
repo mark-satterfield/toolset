@@ -330,7 +330,7 @@
       "properties": {
         "common_colors": {
           "$ref": "#/$defs/Palette",
-          "description": "Catalog-wide foundational colors that don't belong to any single palette (typically white and black)."
+          "description": "Foundational colors that don't belong to any single palette (typically white and black)."
         },
         "palettes": {
           "type": "object",
@@ -423,7 +423,7 @@
       "properties": {
         "typeface": {
           "$ref": "#/$defs/Func",
-          "description": "Reference to a typeface in the typefaces catalog (e.g., { var: '--typeface-host-grotesk' })."
+          "description": "Reference to a typeface in the `typefaces` map (e.g., { var: '--typeface-host-grotesk' })."
         },
         "fallback": {
           "type": "string",

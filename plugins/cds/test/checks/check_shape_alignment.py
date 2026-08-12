@@ -80,7 +80,7 @@ def _entry_files(dir_path):
     ]
 
 
-def _shape_catalog(plugin):
+def _shape_library(plugin):
     """The authoritative shape-name set: frontmatter `name:` of each entry in
     reference/libraries/shapes/."""
     names = set()
@@ -101,8 +101,8 @@ def run(repo_root):
     shapes_lib = os.path.join(plugin, SHAPES_LIB)
     if not os.path.isdir(shapes_lib):
         return [f"shape library not found at {shapes_lib}"]
-    catalog = _shape_catalog(plugin)
-    if not catalog:
+    library = _shape_library(plugin)
+    if not library:
         return [
             f"could not parse any shape names from frontmatter in {SHAPES_LIB}"
         ]
@@ -131,18 +131,18 @@ def run(repo_root):
             if not fn.endswith(".html"):
                 continue
             base = fn[:-len(".html")]
-            # 1b: fragment filenames must be catalog names (not S#, not typos)
-            if base not in catalog:
+            # 1b: fragment filenames must be library names (not S#, not typos)
+            if base not in library:
                 failures.append(
                     f"{SHAPES_DIR}/{fn}: fragment basename '{base}' is not a "
                     f"shape in the {SHAPES_LIB} library.")
 
-    # --- PROPERTY 1c: every data-shape in the sample is a catalog name ---
+    # --- PROPERTY 1c: every data-shape in the sample is a library name ---
     landing_path = os.path.join(plugin, LANDING_HTML)
     if os.path.exists(landing_path):
         landing = _read(landing_path)
         for val in sorted(set(re.findall(r'data-shape="([^"]+)"', landing))):
-            if val not in catalog:
+            if val not in library:
                 failures.append(
                     f"{LANDING_HTML}: data-shape=\"{val}\" is not a shape in the "
                     f"{SHAPES_LIB} library.")

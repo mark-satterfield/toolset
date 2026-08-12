@@ -78,7 +78,7 @@ Define the palette, role slots, themes, and component classes in this order. Loa
 
 ### §8.1 Palette and root
 
-The palette (defined by `customizable-design-elements.yaml`, resolved via `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`) is the canonical source of color values. §8.1 holds only the **pattern** for emitting it as CSS — the YAML rows are the source of truth. The catalog has two tiers and they emit differently:
+The palette (defined by `customizable-design-elements.yaml`, resolved via `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS`) is the canonical source of color values. §8.1 holds only the **pattern** for emitting it as CSS — the YAML rows are the source of truth. The color catalog has two tiers and they emit differently:
 
 1. **Primitive palettes** (every ramp + every discrete palette whose rows carry a `hex`): emit `<token>: <hex>;`.
 2. **Semantic palettes** (every discrete palette whose rows are aliases — a `{ var: ... }` value): emit `<token>: var(<referenced token>);`. Emit these **after** the primitives so the referenced tokens already exist.
@@ -253,16 +253,30 @@ Components consume **role variables** (for color) and **geometry / motion tokens
 }
 ```
 
-Frame-level and Component-level geometry resolve the same way — the `top-nav` Section's surface and the `logo` Component it places both read system tokens, so the mark scales with the bar and no page hardcodes a height:
+Geometry resolves at three levels, and which level owns a value follows from `model/data-model.mermaid`: a Component carries what is intrinsic to it, a Frame carries `+geometry` — its own dimension — and a Shape is the only class carrying `+proportions`, the sizes of the parts it arranges. So a bar's height is the Frame's, and the height of the mark inside that bar is the placing Shape's. The `logo` class carries the aspect-preserving rule and no height at all:
 
 ```css
-.top-nav { height: var(--topbar-height); }
+/* 1. Component — intrinsic only. Holds wherever the mark is placed. */
 .logo,
 .logo img,
-.logo svg { height: var(--topbar-logo-height); width: auto; }
+.logo svg { width: auto; }                    /* never distort the mark */
+
+/* 2. Frame — its own dimension, not its contents'. */
+.top-nav   { height: var(--topbar-height); }
+.side-rail { inline-size: var(--app-shell-rail-width); }
+
+/* 3. Shape — the proportions of the parts it arranges. Emitted last, so a
+      Shape wins over a Frame at equal specificity. */
+.shape-bar-mark-nav .logo  { height: var(--topbar-logo-height); width: auto; }
+.shape-rail-mark-nav .logo { height: var(--rail-mark-height);   width: auto; }
+.shape-quote-swiper .logo  { height: var(--logo-carousel-mark-height); width: auto; }
 ```
 
-The class name mirrors the entry's `name`; the token name mirrors its `geometry.components.<component>.<property>` key in the elements YAML. The two are independent — the `--topbar-*` token names are the configured geometry keys and are unaffected by which entry consumes them.
+A rail is not a bar and takes no measurement from one — a Shell carrying its mark in the rail may have no bar at all. A customer logo in a quote carousel is not a brand mark in a Shell and shares nothing with either. A Shape that declares no `sizing` leaves every part to its Component's intrinsic rules.
+
+**Precedence, lowest to highest: Component, then Frame, then Shape.** The Shape wins because it is the most specific statement about that part in that arrangement — it is what knows the mark sits beside a menu and a conversion action. Emission order in `components.css` carries the precedence, so the levels never need `!important` to resolve.
+
+The class name mirrors the entry's `name`; the token name mirrors its `geometry.components.<component>.<property>` key in the elements YAML. The two are independent — the token names are the configured geometry keys and are unaffected by which entry consumes them.
 
 ---
 
@@ -280,6 +294,8 @@ Geometry and motion are configurable element sets in the elements YAML (`geometr
   --column-wide: 1192px;
   --topbar-height: 84px;
   --topbar-logo-height: 40px;
+  --rail-mark-height: 40px;
+  --footer-mark-height: 40px;
 }
 @media (max-width: 480px) {
   :root { --section-pad-main: 56px; --topbar-height: 64px; }  /* from each token's mobile_floor */

@@ -13,7 +13,7 @@ aliases: []                    # searchable synonyms this entry answers to (neve
 status: stable | draft
 ```
 
-**Only a Page declares a page family.** The page family is the classification a Page carries (`reference/model/entity-catalog.md`), and everything the Page contains inherits it by containment — a Section, and the Shape and Components that Section receives, exactly as a nested Section inherits its parent's theme rather than declaring its own. A Shape is an arrangement and a Component is a unit: neither has a typography or motion register of its own to select, so neither is classified by family and neither is ever ineligible because of one. Every Shape in the library is a candidate on every Page (`reference/pipeline.md`, rung 2).
+**`page_family:` appears on Page entries and on no other kind.** What a page family is, and why containment carries it, is the catalog's (`reference/model/entity-catalog.md`, PageFamily) — read it there. The consequence for this format: a Shape, Section, or Component entry never declares one, and is therefore never made ineligible by one. Every Shape in the library is a candidate on every Page (`reference/pipeline.md`, rung 2).
 
 ## Per-kind frontmatter
 
@@ -33,12 +33,31 @@ content_defaults: {}           # declared example content (e.g. the footer's def
 
 ```yaml
 slots: []                      # {name, required, accepts}
+sizing: {}                     # the PROPORTIONS OF THE PARTS this Shape arranges, keyed by slot
+                               # name — token refs or derivation formulas only, no bare px (see the
+                               # Dimension rule below). This is the Shape's `+proportions` attribute
+                               # (`model/data-model.mermaid`): how big each arranged part is relative
+                               # to the arrangement. It is NOT the Frame's own dimension.
 variants: []                   # named variants
 self_contained: false          # true ⇒ the fragment carries its own scoped <style> + IIFE <script> implementing the ARIA contract (load-bearing; a fragment deferring behavior to "the stylesheet" is broken)
 content_defaults: {}           # declared example content for drafted-mode scaffolds (e.g. rate-table default columns); supplied content overrides — the layout contract itself is content-free
 ```
 
 A Shape is a layout template — it positions Components and Elements and carries their proportional and other geospatial properties. It is not a DesignElement and has no dimensions of its own; when a Shape is applied to a Frame, the Components become realized.
+
+#### Who owns a dimension
+
+`model/data-model.mermaid` assigns the attributes, and the split follows from it exactly:
+
+| The attribute | Belongs to | Because |
+| --- | --- | --- |
+| A Component's intrinsic rules — a minimum height, a content-driven width, an aspect ratio it must not distort | the **Component**, in its `sizing` | These hold wherever the Component is placed. They are properties of the thing itself. |
+| A Frame's own dimension — how tall the bar is, how wide the rail is | the **Frame**, in its `sizing`/`extent` | `Frame` extends `DesignElement`, which carries `+geometry`. That geometry is the Frame's own, not its contents'. |
+| How big an arranged part is inside the arrangement — the mark in the bar, the thumbnail in the row | the **Shape**, in its `sizing` | `Shape` is the only class carrying `+proportions`, and an arranged part's size is a proportion of the arrangement. The Shape is what knows the mark sits beside a menu and a conversion action; the Frame does not. |
+
+**Precedence, lowest to highest:** the Component's intrinsic rules, then the Frame's own geometry, then the Shape's proportions for the parts it arranges. A Shape's value wins because the Shape is the most specific statement about that part in that arrangement.
+
+A Component therefore never fixes a dimension that a Shape would need to vary. Fixing one removes the arrangement's degree of freedom: a Shape built to fill its Frame needs a part that can absorb the difference, and a Shape with every part rigid can only under-fill or overflow. A Component states its floor and its intrinsic behaviour; the Shape resolves the rest.
 
 ### section
 
@@ -52,7 +71,7 @@ composition_notes: []          # cross-section notes (e.g. cross-promo may embed
 pins_to: []                    # the canvas edges this Section MAY pin to, from
                                # {block-start, block-end, inline-start, inline-end}. The
                                # ShellDefinition picks one per instance — placement is the Shell's
-                               # decision, never the catalog's. Absent on a Section that flows in
+                               # decision, never the library's. Absent on a Section that flows in
                                # sequence rather than pinning.
 extent: {}                     # the pinned Section's cross-axis size: {size, min, max, resizable}
                                # — token refs or derivation formulas only
@@ -68,13 +87,13 @@ A Section never contains its own layout — layout always lives in a Shape in th
 
 ## A Section entry is a preset, never a required type
 
-**A Section is not a type that must be declared before it can be used.** It is a Frame with attributes: where it sits, how big it is on its fixed axis, what theme it carries, and which Shape it receives. A Page or a Shell may name a Section the catalog has never seen, and the composer builds it from those attributes and resolves its Shape through the waterfall (`reference/pipeline.md`). Nothing halts.
+**A Section is not a type that must be declared before it can be used.** It is a Frame with attributes: where it sits, how big it is on its fixed axis, what theme it carries, and which Shape it receives. A Page or a Shell may name a Section the library has never seen, and the composer builds it from those attributes and resolves its Shape through the waterfall (`reference/pipeline.md`). Nothing halts.
 
 What the entries under `sections/` are, therefore, is **pre-configured Sections** — Archetypes in the entity model's sense, blueprints instances are stamped from. They exist so the common cases carry the system's own answers for ground, sizing, landmark, and behaviour instead of being re-decided per site. They do not exist to constrain what a Section may be.
 
 This is why there is no such entity as a rail, a top bar, or a footer. Each is a Section pinned to an edge with a size on its fixed axis. `side-rail`, `top-nav`, and `site-footer` are the presets for the three arrangements that recur; a Section pinned to the inline-end edge needs no new entry, because it is the same Section pinned elsewhere.
 
-The catalog boundary — where an unknown name halts rather than being guessed at — sits at **Components**, whose markup, sizing, ARIA, and token bindings would have to be fabricated, and at **stored Shells**, which are files that either exist or do not.
+The library boundary — where an unknown name halts rather than being guessed at — sits at **Components**, whose markup, sizing, ARIA, and token bindings would have to be fabricated, and at **stored Shells**, which are files that either exist or do not.
 
 A Section is a Frame, and a Frame is a DesignElement with its own dimensions and properties (`reference/model/entity-catalog.md`). The division is exact: **the Section owns its surface** — height or width, ground, pinning, border, overflow, landmark, scroll behavior — and **the Shape owns the arrangement of what sits inside it**. A region of a frame whose contents vary between sites is one Section with several Shapes, never one Component with optional slots; variability is handled by selecting a different Shape, never by leaving positions open. A region that differs only in which edge it pins to is the same Section with a different `pins_to` value. Because Frame contains Frame, a Section can contain a Section.
 
@@ -121,6 +140,8 @@ default: shape-name            # last candidate of rung 1, before the waterfall 
 applies_to: {page_families: [], pages: []}   # scoping; a page-family default overridable per Page
 check: |                       # the validator statement, written as a decidable rule over the accumulating page
 ```
+
+**A page family with no constraint scoped to it has none, and that is complete.** Constraints exist only where someone wrote one; a family without any is not unfinished, not degraded, and not a gap to report or ask about. A Page whose family matches no `applies_to` entry simply runs no rejection loop, and rung 1 of the waterfall accepts its rule's first candidate.
 
 Constraints run as a post-selection rejection loop: candidate shape → validate → reject → next candidate. Exhausting a rule's candidates does not mean generating a layout — it drops to the next rung of the Shape-assignment waterfall (`reference/pipeline.md`), which searches the rest of the library before anything is built from scratch. Every outcome is recorded in the decisions sidecar.
 

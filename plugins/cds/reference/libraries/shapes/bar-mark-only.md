@@ -5,6 +5,8 @@ aliases: [logo-only bar, mark-only bar, brand bar, logo bar, bare header]
 status: stable
 slots:
   - { name: mark, required: true, accepts: [logo] }
+sizing:
+  mark: "height var(--topbar-logo-height); width auto — the mark's height in the bar, tracking var(--topbar-height) so the two scale together"
 variants: []
 self_contained: false
 content_defaults: {}

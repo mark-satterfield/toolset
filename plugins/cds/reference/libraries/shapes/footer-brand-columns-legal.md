@@ -8,6 +8,8 @@ slots:
   - { name: columns, required: true, accepts: [link-column] }
   - { name: social, required: false, accepts: [social-share-row] }
   - { name: legal, required: true, accepts: [copyright-line, link, locale-control] }
+sizing:
+  brand: "height var(--footer-mark-height); width auto — the mark's height in the brand island"
 variants: []
 self_contained: false
 content_defaults: {}
@@ -20,7 +22,7 @@ A brand island — the mark with a single line beneath it — set against a grid
 ## Determinations
 
 - One row on the 12-column grid (`foundations/layout.md` §11): `brand` takes the leading columns, `columns` takes the remainder as its own sub-grid of 3–5 link columns.
-- `brand` is the mark at the Section's mark height with one line of text beneath it, stacked and start-aligned. The line is content the frame supplies; the island renders the mark alone when it does not.
+- `brand` is the mark at this Shape's `sizing.brand` height with one line of text beneath it, stacked and start-aligned. The line is content the frame supplies; the island renders the mark alone when it does not.
 - Below the tablet breakpoint the brand island moves above the column grid and both run full width; the columns collapse to 2, and to 1 below the mobile-narrow breakpoint (`foundations/responsive.md` §17.1).
 - Each column is a heading followed by its links, stacked. The heading is the column's `<h3>`.
 - `social`, when the content supplies it, is a single row beneath the brand island within its block.

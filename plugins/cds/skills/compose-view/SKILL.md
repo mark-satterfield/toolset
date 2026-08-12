@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Bash, Glob
 
 ## Read the model first
 
-Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+Before anything else in this run, read `../../reference/model/entity-catalog.md` **in full** — every row and every column of both tables, plus its "How to read this catalog" rules. Those rules are stated in that file and are deliberately not repeated here: the catalog is the only description of the model, and a second copy would be a second thing to keep true. It is normative and it is not skimmable. Resolve no Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — from memory, from a summary, or from training data; only from that file, read this run.
 
 ## What this skill does
 
@@ -34,7 +34,7 @@ Produces a **View** per the shared build pipeline (`../../reference/pipeline.md`
 
 ## Pipeline
 
-Execute the shared build pipeline (`../../reference/pipeline.md`) — catalog resolution and per-Section stages apply when a Page must be composed fresh; the silent stylesheet-freshness stage always runs. This skill adds the View render specifics:
+Execute the shared build pipeline (`../../reference/pipeline.md`) — library resolution and per-Section stages apply when a Page must be composed fresh; the silent stylesheet-freshness stage always runs. This skill adds the View render specifics:
 
 - **Assembly.** Nest the Page HTML's content into the stored Shell's vacant space and emit one self-contained HTML file: stylesheet set and theming + color-mode scripts inlined once in the `<head>`, no duplicated machinery from the two sources.
 - **SPA variant.** Nest N Pages; emit a client-side switcher (same mechanism as the color-mode toggle — a `data-` attribute on the root, a small inline script, CSS visibility rules) showing one Page at a time in the vacant space. No routing code, no URL handling.
@@ -52,6 +52,7 @@ The compliance pass runs `[scope: standalone]` + `[scope: both]`.
 - `OUTPUT_PATH_UNRESOLVABLE` — no output path provided and none discoverable.
 - `COMPLIANCE_UNSATISFIABLE` — a compliance rule cannot be satisfied without violating a reference spec.
 - `ELEMENTS_YAML_UNSET` — `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` not set.
+- `REVIEW_HARNESS_FAILED` — the review harness the pipeline emits beside the deliverable (pipeline stage 6) could not be built; surface the builder's stderr verbatim.
 
 Halt surface format:
 

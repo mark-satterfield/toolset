@@ -25,7 +25,7 @@ PROPERTY 2 — a pinned Section names real edges and owns a surface.
     least one of `sizing:` / `token_bindings:` — the Frame owns its own dimensions
     and properties. `pins_to` is the set of edges the Section MAY pin to; the
     ShellDefinition picks one per instance, because placement is the Shell's
-    decision and never the catalog's.
+    decision and never the library's.
 
 PROPERTY 3 — a pinned Section declares no slots of its own.
     Contents come from the Shape it receives. A `slots:` block on a shell Section
@@ -39,7 +39,7 @@ PROPERTY 4 — the Shape set a shell Section can receive is a real partition.
     Shape" degenerates back into "make the slot optional".
 
 Nothing is hardcoded but the closed edge vocabulary: the Sections, their rules,
-and their Shapes are all discovered from the catalog, so a new shell region is
+and their Shapes are all discovered from the library, so a new shell region is
 covered the day it lands.
 
 Entry point:

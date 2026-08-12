@@ -344,12 +344,6 @@ function badgeLabel(r) {
   return 'Region ' + r.num;
 }
 
-function promptPhrase(r) {
-  if (r.wf) return 'In Section "' + r.wf.id + '"' + (r.wf.shape ? ' (Shape "' + r.wf.shape + '")' : '');
-  if (r.tag !== 'section') return 'In the Shell ' + r.tag + (r.shellOrdinal ? ' ' + r.shellOrdinal : '');
-  return 'In Region ' + r.num;
-}
-
 function injectFrameStyle() {
   const style = frameDoc.createElement('style');
   style.textContent = [
@@ -408,7 +402,7 @@ function wireFrameEvents() {
     if (!el) return;
     e.preventDefault();
     e.stopPropagation();
-    addComment(Number(el.getAttribute('data-rvw-region')), e.pageX, e.pageY);
+    addComment(Number(el.getAttribute('data-rvw-region')), e.pageX, e.pageY, regionPercent(el, e.pageX, e.pageY));
   }, true);
   frameDoc.addEventListener('keydown', e => { if (e.key === 'Escape') dismissActive(); });
 }
@@ -417,8 +411,26 @@ function sortedComments() {
   return state.comments.slice().sort((a, b) => a.regionIndex - b.regionIndex || a.id - b.id);
 }
 
-function addComment(regionIndex, x, y) {
-  const comment = { id: state.nextId++, regionIndex, x, y, text: '', tags: [] };
+// Where the pin sits inside its own region, as whole percentages. Stored at pin
+// time because the copied change request is read by an agent that cannot see the
+// screen: when a Section holds several elements, the position is the only thing
+// that resolves a deictic comment ("this is too far left") to one of them.
+function regionPercent(el, pageX, pageY) {
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const clamp = v => Math.min(100, Math.max(0, Math.round(v)));
+  return {
+    px: clamp(((pageX - (rect.left + frameWin.scrollX)) / rect.width) * 100),
+    py: clamp(((pageY - (rect.top + frameWin.scrollY)) / rect.height) * 100),
+  };
+}
+
+function addComment(regionIndex, x, y, pct) {
+  const comment = {
+    id: state.nextId++, regionIndex, x, y,
+    px: pct ? pct.px : null, py: pct ? pct.py : null,
+    text: '', tags: [],
+  };
   state.comments.push(comment);
   state.activeId = comment.id;
   renderAll();
@@ -530,22 +542,41 @@ function renderCards() {
   });
 }
 
+// The region heading carries the same Section identity the reviewer saw on hover,
+// so a comment in the copied text and a pin on the screen name the same thing.
+function promptHeading(index) {
+  const region = regions[index];
+  return region ? badgeLabel(region) : 'Region ' + (index + 1);
+}
+
+function pinLocator(c) {
+  if (typeof c.px !== 'number' || typeof c.py !== 'number') return '';
+  return ' at ' + c.px + '% across, ' + c.py + '% down';
+}
+
 function buildPrompt() {
   const byRegion = new Map();
-  for (const c of sortedComments()) {
-    if (!c.text.trim()) continue;
-    let item = c.text.trim().replace(/\\s+/g, ' ').replace(/[.;]+$/, '');
+  // Number every pin, empty ones included, so the numbers match the badges the
+  // reviewer sees; only then drop the pins that carry no comment.
+  sortedComments().forEach((c, i) => {
+    if (!c.text.trim()) return;
+    let item = '[' + (i + 1) + ']' + pinLocator(c) + ' \\u2014 '
+      + c.text.trim().replace(/\\s+/g, ' ').replace(/[.;]+$/, '');
     if (c.tags.length) item += ' (' + c.tags.join(', ') + ')';
     if (!byRegion.has(c.regionIndex)) byRegion.set(c.regionIndex, []);
     byRegion.get(c.regionIndex).push(item);
-  }
+  });
   if (byRegion.size === 0) return '';
-  const parts = ['Iterate on ' + RVW.mockPath + '.'];
+  const lines = [
+    'Iterate on ' + RVW.mockPath + '. Each [n] below is a numbered pin I placed on that '
+    + 'artifact, grouped under the region it sits in; the percentages give the pin\\u2019s '
+    + 'position within that region, so "this" in a comment means the element at that spot.',
+  ];
   for (const [index, items] of Array.from(byRegion.entries()).sort((a, b) => a[0] - b[0])) {
-    const region = regions[index];
-    parts.push((region ? promptPhrase(region) : 'In Region ' + (index + 1)) + ': ' + items.join('; ') + '.');
+    lines.push('', promptHeading(index) + ':');
+    for (const item of items) lines.push('  ' + item);
   }
-  return parts.join(' ');
+  return lines.join('\\n');
 }
 
 function renderPrompt() {

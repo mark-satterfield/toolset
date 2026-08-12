@@ -2,12 +2,12 @@
 """
 check_reference_prose — the reference is source, not a PM board.
 
-Reference files (the design-system catalog) must read like source code: they
+Reference files (the design-system library) must read like source code: they
 state what IS, never what is deferred, missing, or historical. Project
 management lives in other tools. This guard fails if PM / deferral / history
-prose re-enters the reference catalog.
+prose re-enters the reference library.
 
-PROPERTY — no PM prose in the reference catalog.
+PROPERTY — no PM prose in the reference library.
     Across plugins/cds/reference/**.md and plugins/cds/skills/*/reference/**.md,
     there is:
       * no heading-level PM section
@@ -20,7 +20,7 @@ Deliberately NOT flagged: the word "placeholder" — it is legitimate spec
 vocabulary in this corpus (input placeholders, the em-dash placeholder glyph).
 
 Config-agnostic: asserts the absence property over whatever reference files
-exist; hardcodes no filename, count, or section. Scopes to reference catalog
+exist; hardcodes no filename, count, or section. Scopes to reference library
 content only (not SKILL bodies, commands, or agents, which are instructions).
 
 Entry point:
@@ -46,7 +46,7 @@ _PM_INLINE = re.compile(
 
 
 def _reference_md_files(plugin_root):
-    """Reference-catalog markdown: reference/** and skills/*/reference/**."""
+    """Reference-library markdown: reference/** and skills/*/reference/**."""
     roots = [os.path.join(plugin_root, "reference")]
     skills = os.path.join(plugin_root, "skills")
     if os.path.isdir(skills):

@@ -6,6 +6,8 @@ status: stable
 slots:
   - { name: mark, required: true, accepts: [logo] }
   - { name: menu, required: true, accepts: [vertical-menu] }
+sizing:
+  mark: "height var(--rail-mark-height); width auto — the mark's height in the rail. A Shell carrying its mark here may have no bar at all, so this takes no measurement from one"
 variants: []
 self_contained: false
 content_defaults: {}

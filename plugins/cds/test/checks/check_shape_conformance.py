@@ -5,7 +5,7 @@ check_shape_conformance — the Shape a Section renders with is one the rules of
 Guards the property that makes the Shape Selection Rules load-bearing rather
 than advisory: a composer resolves a Section by taking candidates from that
 Section's rule, not by reaching for whatever layout is nearest to hand. Once
-broken, a Page renders a layout the catalog never offered and every downstream
+broken, a Page renders a layout the library never offered and every downstream
 audit still passes — the artifact is style-compliant and structurally wrong.
 
 Checked statically against whatever the repo currently declares. No shape list,
@@ -33,7 +33,7 @@ PROPERTY 3 — a rule's candidate set is non-empty.
 Composer-side conformance — that a *rendered* Section used a Shape from its
 own rule's candidate set — is verified against the decisions sidecar by
 `check_decisions_conformance.py`, which runs over composed output rather than
-over the catalog.
+over the library.
 
 Entry point:
     run(repo_root) -> list[str]   # empty list == all checks passed

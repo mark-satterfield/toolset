@@ -6,6 +6,8 @@ status: stable
 slots:
   - { name: quote-viewport, required: true, accepts: [quote, attribution, metric] }
   - { name: logo-carousel, required: true, accepts: [logo] }
+sizing:
+  logo-carousel: "height var(--logo-carousel-mark-height); width auto — the height of each customer logo in the carousel; a source's mark is not a brand mark in a Shell and shares no measurement with one"
 variants: [auto-advance-on, auto-advance-off, with-metric, without-metric]
 self_contained: true
 content_defaults: {}

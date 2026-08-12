@@ -6,7 +6,8 @@ status: stable
 slots:
   - { name: mark, required: true, accepts: [svg-glyph, asset-pair] }
 sizing:
-  height: "--topbar-logo-height; width auto. One height wherever the mark appears — a bar, a rail, a footer island — so the brand reads at one size across the build."
+  height: "intrinsic — the mark takes the mark height of the Section hosting it (that Section's sizing.mark-height). This entry fixes no height of its own."
+  width: "auto, from the height, so the mark's aspect ratio is never distorted"
 behavior:
   - "static; the mark never animates"
   - "an asset-pair mark swaps by colour-mode in CSS, with no JavaScript"
@@ -14,7 +15,7 @@ accessibility:
   - "the mark links to the site root and carries an accessible name naming the brand"
   - "a single-glyph mark paints via currentColor and inherits --text-primary"
   - "foundation focus ring on :focus-visible"
-token_bindings: [--text-primary, --topbar-logo-height, --focus-ring]
+token_bindings: [--text-primary, --focus-ring]
 composite: false
 ---
 
@@ -26,7 +27,8 @@ A multi-colour brand mark MAY instead declare an `assets.logo` light/dark image 
 
 ## Determinations
 
-- Renders at `height: var(--topbar-logo-height); width: auto`, so the mark holds one size wherever it is placed. The design system owns that height — a composed page never hardcodes it, and a page-block `<style>` re-declaring it is an audit violation.
+- This entry fixes no height. The mark renders at `width: auto` from whatever height it is given, so its aspect ratio is never distorted, and nothing else about its size is decided here.
+- How big the mark is belongs to the Section hosting it, which declares a `mark-height` in its own `sizing` and scopes it to the marks it holds. A bar, a rail, and a footer island therefore size their marks independently: a rail is not a bar and has no reason to inherit a bar's measurements.
 - Where the mark sits is the contract of the Shape placing it, never this entry's.
 - The mark is static: no scroll transition, no hover treatment, no entrance animation.
 

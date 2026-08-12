@@ -6,6 +6,8 @@ status: stable
 slots:
   - { name: mark, required: true, accepts: [logo] }
   - { name: nav, required: true, accepts: [horizontal-menu] }
+sizing:
+  mark: "height var(--topbar-logo-height); width auto — the mark's height in the bar, tracking var(--topbar-height) so the two scale together"
 variants: []
 self_contained: false
 content_defaults: {}

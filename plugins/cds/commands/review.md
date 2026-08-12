@@ -12,7 +12,7 @@ Invoke the `review` skill in this plugin. Load and execute `skills/review/SKILL.
 
 1. Load `skills/review/SKILL.md`.
 2. Treat `$ARGUMENTS` as the artifact path or a plain-language reference to it. If `$ARGUMENTS` is empty, resolve the most recent composer state record's `output_path` (compose-page, compose-shell, or compose-view); if none exists, ask the user which output to review.
-3. Run `tools/build-review-harness.py` via Bash to emit `<basename>.review.html` beside the artifact, then `open` it in the browser.
+3. Run `${CLAUDE_PLUGIN_ROOT}/tools/build-review-harness.py` via Bash to emit `<basename>.review.html` beside the artifact, then `open` it in the browser.
 4. Tell the user to hover regions (Section identity badges), click to pin comments, and press Copy — then paste the assembled change request back here. The pasted request routes to the composer that owns the artifact (`compose-page`, `compose-shell`, or `compose-view`) as an iteration against the same output path.
 
 ## Notes

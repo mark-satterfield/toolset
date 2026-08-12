@@ -7,6 +7,8 @@ slots:
   - { name: legal, required: true, accepts: [copyright-line, link, locale-control] }
   - { name: brand, required: false, accepts: [logo] }
   - { name: social, required: false, accepts: [social-share-row] }
+sizing:
+  brand: "height var(--footer-mark-height); width auto — the mark's height in the footer row"
 variants: []
 self_contained: false
 content_defaults: {}
@@ -18,7 +20,7 @@ A single row carrying the copyright line and a short run of legal links, optiona
 
 ## Determinations
 
-- One flex row. `brand`, when the content supplies it, sits at the start at the Section's mark height; `legal` sits at the end via `margin-inline-start: auto`.
+- One flex row. `brand`, when the content supplies it, sits at the start at this Shape's `sizing.brand` height; `legal` sits at the end via `margin-inline-start: auto`.
 - With no `brand`, `legal` runs the full width of the row and is start-aligned.
 - The row must NOT use `justify-content: space-between` — the copyright line and its links are one group and stay together.
 - `social`, when the content supplies it, joins the end of the row after the legal links.

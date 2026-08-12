@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-check_decisions_conformance — composed output used the catalog it claims to.
+check_decisions_conformance — composed output used the library it claims to.
 
 Guards the two composer-side properties that no other check covers, and that a
 style audit cannot see: a Page can satisfy every rule in `compliance.md` and
-still render a Shape the catalog never offered, or render a self-contained
+still render a Shape the library never offered, or render a self-contained
 Shape whose behavior was never emitted. Both failures are silent — the artifact
 looks finished and is structurally wrong.
 
@@ -40,7 +40,7 @@ PROPERTY 2 — a self-contained Shape carried its behavior.
     name.
 
 Scope: runs only where composed output exists. A repo with no decisions
-sidecars passes trivially — this check constrains composers, not the catalog.
+sidecars passes trivially — this check constrains composers, not the library.
 
 Entry point:
     run(repo_root) -> list[str]   # empty list == all checks passed
@@ -76,7 +76,7 @@ def _read(path):
     return open(path, encoding="utf-8").read()
 
 
-def _catalog(repo_root):
+def _library(repo_root):
     """candidates[section] -> set of offered shape names; self_contained shape set."""
     base = os.path.join(repo_root, PLUGIN_SUBPATH)
     candidates = {}
@@ -151,7 +151,7 @@ def _recorded_sections(text):
 
 def run(repo_root):
     failures = []
-    candidates, self_contained, known_shapes = _catalog(repo_root)
+    candidates, self_contained, known_shapes = _library(repo_root)
 
     for sidecar in _sidecars(repo_root):
         rel = os.path.relpath(sidecar, repo_root)
@@ -178,7 +178,7 @@ def run(repo_root):
             else:
                 offered = candidates.get(section)
                 if offered is None:
-                    continue  # Section not in the catalog; check_shape_conformance owns that
+                    continue  # Section not in the library; check_shape_conformance owns that
                 if shape not in offered:
                     failures.append(
                         f"{rel}: section '{section}' rendered with shape '{shape}', which its rule "

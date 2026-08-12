@@ -10,7 +10,7 @@ A brand-neutral design system you install in any project. CDS gives you a styles
 - **The same-named skills** the commands invoke. Eight also auto-route from natural-language phrasing (the model recognizes "compose my site's shell", "build me a landing page", "let me see it in the shell", "open it so I can comment", "audit this UI", "export the design system", "package this change", etc.). The `setup` skill carries `disable-model-invocation: true` and fires only from `/cds:setup`.
 - **One internal skill**, `generate-css` — the machinery that produces the CSS output (`tokens.css`, `components.css`, `themes.css`, `manifest.json`). It has no command and no natural-language trigger: every user-facing skill runs a silent stylesheet-freshness stage that invokes it when the inputs have moved, then proceeds. You never run it, and no agent will ever tell you to — what you see is always built from the current system.
 - **2 sub-agents** that bundle the right skills with an identity: `cds-ui-author` (for UI work), `cds-code-companion` (for non-UI code that touches UI).
-- **A reference tree** of every fixed design decision — the Building Blocks catalog (`reference/libraries/`), the composition rules (`reference/rules/`), the foundations (spacing, motion, type scales, accessibility, imagery), the shared build pipeline, the artwork contract, and the compliance rules — that the skills consult deterministically.
+- **A reference tree** of every fixed design decision — the Building Blocks library (`reference/libraries/`), the composition rules (`reference/rules/`), the foundations (spacing, motion, type scales, accessibility, imagery), the shared build pipeline, the artwork contract, and the compliance rules — that the skills consult deterministically.
 - **A schema** (2.0) for the one file you customize (`customizable-design-elements.yaml`).
 
 What you supply: the YAML. Optionally, environment variables for default paths.
@@ -19,19 +19,27 @@ What you supply: the YAML. Optionally, environment variables for default paths.
 
 ## The Building Blocks model
 
-The model is defined normatively in `reference/model/entity-catalog.md` and `reference/model/data-model.mermaid` — the only authority on its vocabulary. In brief:
+**The model is defined in `reference/model/entity-catalog.md`** (with `reference/model/data-model.mermaid`), and that file is the only authority on what each entity is, what it extends, what it may contain, and whether it is abstract or concrete. Read it there. This README does not restate it — a second description of the model is a second thing to keep true, and the copy is always the one that goes stale.
 
-- **Component** — the smallest CDS-aware unit, built from Elements (raw HTML tags — a concept only, never configured). Carries sizing rules, behavior contracts, accessibility contracts, and token bindings. A catalog entry is a Component Definition; realized on a page it becomes HTML, CSS, and TypeScript. Lives in the **ComponentLibrary**.
-- **Shape** — a template layout for positioning and the proportional and other geospatial properties of Components and Elements. Shapes have no dimensions of their own; variability is handled by selecting a different Shape, never by leaving positions open. Lives in the **ShapeLibrary** — Sections point to Shapes so every layout is shareable.
-- **Frame** — the abstract container: themeable, and assigned a Shape either **eagerly** (a predefined Shape supplied up front) or **lazily** (resolved at build time by the Rule Engine from the content). **Section**, **Page**, and **ShellDefinition** are the concrete Frames. A Frame contains Frames, so a Section can contain a Section:
-  - **Section** — a single region. It owns its own surface (dimensions, ground, pinning, landmark); its layout is always a Shape in the ShapeLibrary (`shape:` frontmatter = eager; absent = lazy via its ShapeSelectionRule). **A Section never needs pre-defining.** Name one the catalog has not seen and it composes from its attributes and the Shape waterfall. The entries under `libraries/sections/` are presets carrying the system's answers, not a closed set.
-  - **Page** — one or more Sections in sequence; nests inside the vacant space of a Shell. Every Page carries a **page family** (landing, app, editorial, docs, auth) that selects its typography and motion register and scopes its constraints — stated plainly, obvious from the prompt, or the skill asks.
-  - **ShellDefinition** — the blueprint of a site's repeating portions. **It is defined in terms of Frames, not Components:** its regions are the Section entries that declare a `pins_to:` — `top-nav` (block-start), `side-rail` (either inline edge), `site-footer` (block-end) — each pinned to a canvas edge around the vacant space. It carries real content. Its stored output is the **Shell**. The plugin ships no shells — every Shell is composed by you.
+What the README adds are the things the catalog does not cover: where each entity lives in this plugin, and how you drive it.
+
+| Entity | Where it lives here |
+|---|---|
+| Component (ComponentLibrary) | `reference/libraries/components/` |
+| Shape (ShapeLibrary) | `reference/libraries/shapes/` |
+| Section | `reference/libraries/sections/` |
+| Page | `reference/libraries/pages/` |
+| ShellDefinition / Shell | nowhere in the plugin — every Shell is composed by you and stored in `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` |
+| ShapeSelectionRule | `reference/rules/shape-selection/` (one per lazily-assigned Section) |
+| PageLevelAestheticConstraint | `reference/rules/page-constraints/` |
+| DesignToken (DesignTokenLibrary) | your elements YAML + `reference/foundations/`; emitted as CSS by `generate-css` |
+
+**A Page or a Section you name is never required to exist first.** Both are Frames, so an unrecognised name composes from its attributes and the Shape-assignment waterfall below. The entries under `libraries/{pages,sections}/` are presets carrying the system's answers, not a closed set of what you may compose. The one closed set is the **page family** — the five values the catalog defines, since each selects a typography and motion register that has to exist.
 
 **There is no such entity as a rail, a top bar, or a footer.** Each is a Section with attributes: which canvas edge it pins to (`pins_to`, chosen per instance by the Shell), its size on its fixed axis (`extent`), its theme, and the Shape it receives. `side-rail` pins to either inline edge — a rail on the right is the same Section pinned elsewhere, not a second entry.
 
 **A region of a frame is a Section; what fills it is a Shape.** A top bar carrying a mark alone, one carrying a mark and a menu, and one carrying a mark, a menu, and a sign-in button are three Shapes over the one `top-nav` Section — never one Component with optional slots, and never three near-identical nav Components. The same holds for `rail-*` over `side-rail` and `footer-*` over `site-footer`. Components (`logo`, `horizontal-menu`, `vertical-menu`, `account-row`, `dropdown-panel`, `mobile-drawer`, …) appear only where a Shape places them. `test/checks/check_frame_regions.py` enforces this.
-- **Rules** — a **ShapeSelectionRule** per lazily-assigned Section (content signals → an ordered list of eligible Shapes) and **PageLevelAestheticConstraint** entries (post-selection validators run as a rejection loop over the accumulating page).
+**Page-level aesthetic constraints are written where they are wanted, not everywhere.** A page family with no constraint entry scoped to it has none, and that is a complete, working state — nothing waits for them, nothing degrades without them, and their absence is never a gap to fill or a reason to ask. Today the shipped entries scope to `landing`; add entries under your extensions dir for any family you later want them on.
 
 **The Shape-assignment waterfall.** When a lazily-assigned Section's Shape is resolved, four rungs are tried in order, and a rung is reached only when everything above it produced nothing:
 
@@ -70,7 +78,7 @@ Prefix: `CUSTOMIZABLE_DESIGN_SYSTEM_` (underscores; not hyphens — POSIX env-va
 | `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` | Optional | Output directory for the generated CSS files | all skills (via the silent freshness stage) |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` | Optional | Default output directory for composed HTML outputs | `compose-page`, `compose-view` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` | Optional | The shells output area — one file per Shell, named per Shell. Unset → a `shells/` directory that is a sibling of the mocks directory, applied silently | `compose-shell` (stores), `compose-view` (resolves by name) |
-| `CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` | Optional | Project extensions dir — mirrors `reference/libraries/` + `reference/rules/`, read alongside and overriding the plugin catalog by name | composers, `export-design`, freshness fingerprint |
+| `CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` | Optional | Project extensions dir — mirrors `reference/libraries/` + `reference/rules/`, read alongside and overriding the plugin library by name | composers, `export-design`, freshness fingerprint |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_ASSETS_DIR` | Optional | Directory holding brand assets + the `artwork-manifest.yaml` | composers, `package-change` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_DESIGN_MD_PATH` | Optional | Default output path for the `DESIGN.md` export | `export-design` |
 | `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` | Optional | Default output root for `package-change` hand-off bundles | `package-change` |
@@ -154,13 +162,13 @@ Say it in plain language. The agent determines whether that is a change to *this
 
 > "Export the design system."
 
-`/cds:export-design` reads the live system (elements YAML + catalog + stylesheet manifest) and emits one `DESIGN.md` — the map of colors (palettes → roles → themes with real values), typography, geometry and motion summaries, the Building Blocks catalog with contracts and per-entry aliases, the rule summaries, the compliance essentials, and how to consume the class and token names. Any consumer — a human, or a tool that reads DESIGN.md the way AGENTS.md is read — can follow the system without opening the plugin. Regenerated, never hand-edited; deterministic given the same inputs.
+`/cds:export-design` reads the live system (elements YAML + library + stylesheet manifest) and emits one `DESIGN.md` — the map of colors (palettes → roles → themes with real values), typography, geometry and motion summaries, the Building Blocks library with contracts and per-entry aliases, the rule summaries, the compliance essentials, and how to consume the class and token names. Any consumer — a human, or a tool that reads DESIGN.md the way AGENTS.md is read — can follow the system without opening the plugin. Regenerated, never hand-edited; deterministic given the same inputs.
 
 ### Consult the design system while writing handlers
 
 > "I'm wiring the form-submit for the sign-up page. What classes, tokens, events, and ARIA contracts should I bind to?"
 
-`/cds:apply-design-system` loads the relevant catalog content into the calling agent's context as a structured response (`## Class names`, `## Token names`, `## Event hooks`, `## ARIA contracts`, `## Reference pointers`, `## Halt conditions`). No code is generated — your handler stays yours; CDS surfaces the contract you bind against.
+`/cds:apply-design-system` loads the relevant library content into the calling agent's context as a structured response (`## Class names`, `## Token names`, `## Event hooks`, `## ARIA contracts`, `## Reference pointers`, `## Halt conditions`). No code is generated — your handler stays yours; CDS surfaces the contract you bind against.
 
 ### Audit existing UI
 
@@ -178,7 +186,7 @@ No composer, no mockup, no CDS command required — the design system is simply 
 
 > "This is approved — package it for the app repo."
 
-`/cds:package-change` bundles everything the change needs to cross the boundary into one directory: the current stylesheet set, the approved artifact (a Page HTML, a Shell, or a View), a derived `build-spec.md` that cites the catalog entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in CDS" to "built in the app repo," and the only bridge outward — the plugin never pivots into app work.
+`/cds:package-change` bundles everything the change needs to cross the boundary into one directory: the current stylesheet set, the approved artifact (a Page HTML, a Shell, or a View), a derived `build-spec.md` that cites the library entries by path, the wireframe and decision-log sidecars, the artwork manifest and assets, and — for a brownfield change — the original-files snapshot and the region-scoped diff. This is the hand-off from "approved in CDS" to "built in the app repo," and the only bridge outward — the plugin never pivots into app work.
 
 ### Update an existing page (brownfield)
 
@@ -186,9 +194,9 @@ No composer, no mockup, no CDS command required — the design system is simply 
 
 Supply an existing file (from your repo or a Figma reference) and `compose-page` applies the change to the targeted region only, rewriting the standalone HTML byte-for-byte outside the region.
 
-### Extend the catalog without forking
+### Extend the library without forking
 
-Drop `*.md` entries into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, which **mirrors `reference/libraries/` + `reference/rules/` exactly** (`libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). The composers read them alongside the plugin catalog; a project entry whose `kind` + basename match a plugin entry **overrides it wholesale**, and project-only entries extend the catalog. A previously-halting Page or Section composes once you supply its entry — no plugin release required.
+Drop `*.md` entries into `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, which **mirrors `reference/libraries/` + `reference/rules/` exactly** (`libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). The composers read them alongside the plugin library; a project entry whose `kind` + basename match a plugin entry **overrides it wholesale**, and project-only entries extend the library. A previously-halting Page or Section composes once you supply its entry — no plugin release required.
 
 ### The sidecars (every composer, every run)
 
@@ -239,8 +247,8 @@ Matching uses strict `output_path` equality. A fresh output path starts fresh; a
 - It will not embed metadata inside a deliverable. Composed HTML is clean; reasoning lives in the sidecars.
 - It will not ship shells. Every Shell is composed by you, from your content, via `compose-shell`.
 - It will not invent a **Component** or a stored **Shell**. A Component's markup, sizing, ARIA, and token bindings would have to be fabricated, and a stored Shell is a file that exists or does not, so an unknown name for either halts (`MISSING_COMPONENT`, `SHELL_UNKNOWN`) rather than being guessed at.
-- It will **not** demand that a Page or a Section be pre-defined. Both are Frames — a Page is Sections in sequence, a Section is a surface that receives a Shape — so a name the catalog has never seen is composed from its attributes and the Shape-assignment waterfall. The entries under `libraries/{pages,sections}/` are presets carrying the system's own answers, not a closed set of what you may compose.
-- It will **not** halt when a *known* lazily-assigned Section's rule candidates are all rejected by the PageLevelAestheticConstraints. Instead it descends the Shape-assignment waterfall (above) and records the rung it landed on. The "no best guess" principle lives at the catalog boundary — unknown entries — not at the composition boundary.
+- It will **not** demand that a Page or a Section be pre-defined. Both are Frames — a Page is Sections in sequence, a Section is a surface that receives a Shape — so a name the library has never seen is composed from its attributes and the Shape-assignment waterfall. The entries under `libraries/{pages,sections}/` are presets carrying the system's own answers, not a closed set of what you may compose.
+- It will **not** halt when a *known* lazily-assigned Section's rule candidates are all rejected by the PageLevelAestheticConstraints. Instead it descends the Shape-assignment waterfall (above) and records the rung it landed on. The "no best guess" principle lives at the library boundary — unknown entries — not at the composition boundary.
 - It will **not** build a layout from scratch while one in the library would have fitted. Generation is the last rung, not the fallback for mild inconvenience.
 
 ### Halt codes you may see
@@ -277,13 +285,13 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 
 ## Troubleshooting
 
-**"I named a Page or Section the catalog does not have."** That composes. Both are Frames, so an unrecognised name is built from its attributes and its Shape rather than halted on. Add an entry under your `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/libraries/{pages,sections}/` when you want the system's answers applied every time instead of per composition.
+**"I named a Page or Section the library does not have."** That composes. Both are Frames, so an unrecognised name is built from its attributes and its Shape rather than halted on. Add an entry under your `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR/libraries/{pages,sections}/` when you want the system's answers applied every time instead of per composition.
 
 **"`compose-view` halted with `SHELL_UNKNOWN:main`."** No stored Shell named `main` exists in your shells area. Compose it first: `/cds:compose-shell`.
 
 **"A Section's layout says it was library-sourced / library-adapted / fallback-generated."** None of those is an error — they are the lower rungs of the Shape-assignment waterfall, and the sidecar names which one ran and why. *library-sourced* means the Section's own rule offered nothing that survived, so a Shape from elsewhere in the library was used unmodified. *library-adapted* means the closest library Shape was used with a stated modification. *fallback-generated* means nothing in the library fitted and the layout was built from scratch. A Section that repeatedly lands on the last two is telling you the library is missing an entry — add it to your extensions dir.
 
-**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the catalog. Add its entry under your extensions dir's `libraries/components/` to enable it.
+**"The skill stopped with `MISSING_COMPONENT:approval-mode-tool-control`."** The requested component is not in the library. Add its entry under your extensions dir's `libraries/components/` to enable it.
 
 **"My sub-agent is generating studio UI by hand instead of composing."** The sub-agent's system prompt mandates the compose skills, but Claude can drift. Re-spawn it, or remind it to invoke the compose skills rather than emit markup directly.
 
@@ -298,7 +306,7 @@ test/run-tests.sh /path/to/elements.yaml # or any valid config
 | The entity model (normative) | `reference/model/entity-catalog.md` + `reference/model/data-model.mermaid` |
 | Your design choices (palettes, typefaces, themes) | `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` |
 | The schema for your design choices | `validation/customizable-design-elements.schema.json` |
-| The Building Blocks catalog | `reference/libraries/{components,shapes,sections,pages}/` + `reference/libraries/FORMAT.md` |
+| The Building Blocks library | `reference/libraries/{components,shapes,sections,pages}/` + `reference/libraries/FORMAT.md` |
 | Composition rules (shape-selection, page constraints) | `reference/rules/{shape-selection,page-constraints}/` |
 | The shared build pipeline (all composers) | `reference/pipeline.md` |
 | Fixed design rules (spacing, motion, type scales, accessibility, imagery) | `reference/foundations/*.md` |

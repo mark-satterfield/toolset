@@ -16,7 +16,6 @@ composition_notes: []
 variants: [scroll-behavior, cta-adjacency]
 sizing:
   height: "var(--topbar-height) — geometry.components.topbar.height; calibrates to 84px at the desktop reference viewport, with a narrow-viewport floor (calibrates to 64px below 480px) declared as the token's mobile_floor"
-  mark-height: "var(--topbar-logo-height) — geometry.components.topbar.logo-height; tracks var(--topbar-height) so the mark scales with the bar; calibrates to 40px at the 84px reference bar height"
   action-height: "var(--topbar-action-height) — derived from var(--topbar-height); calibrates to 36px at the 84px reference bar height"
 behavior:
   - "scroll-behavior static at rest; the hide-on-scroll variant translates the bar off-screen on downward scroll and restores it on upward scroll"
@@ -25,14 +24,14 @@ accessibility:
   - "landmark: <header role=\"banner\">; the inner <nav aria-label=\"primary\"> is emitted ONLY when the received Shape fills a navigational or conversion slot"
   - "keyboard: sequential Tab order over whatever the Shape places, in source order; no arrow-key menubar semantics at the top level"
   - "hide-on-scroll is suppressed while focus is inside the bar (WCAG 2.4.11 Focus Not Obscured, AA)"
-token_bindings: [--nav-bg, --text-primary, --topbar-height, --topbar-logo-height, --topbar-action-height, --radius-sm]
+token_bindings: [--nav-bg, --text-primary, --topbar-height, --topbar-action-height, --radius-sm]
 ---
 
 # Top nav
 
 The Shell Section pinned to the block-start edge of the canvas: a fixed bar that frames the vacant space a Page nests into and does not participate in the Page's ground alternation.
 
-**This entry fixes the surface; the Shape fixes the arrangement.** Height, ground, pinning, mark sizing, landmark, and focus are the bar's own properties and live here. What the bar carries — a mark alone, a mark and a menu, a mark with a menu and a conversion action, a menu with no mark — and where each piece sits in the row is the contract of the Shape this Section receives from the ShapeLibrary (`libraries/shapes/`, the `bar-*` arrangements). A bar with different contents is a different Shape over this one Section, never an optional slot on a Component.
+**This entry fixes the surface; the Shape fixes the arrangement.** Height, ground, pinning, landmark, and focus are the bar's own properties and live here. How big each piece the bar carries is, on the other hand, is a proportion of the arrangement and belongs to the Shape (`libraries/FORMAT.md`, "Who owns a dimension"). What the bar carries — a mark alone, a mark and a menu, a mark with a menu and a conversion action, a menu with no mark — and where each piece sits in the row is the contract of the Shape this Section receives from the ShapeLibrary (`libraries/shapes/`, the `bar-*` arrangements). A bar with different contents is a different Shape over this one Section, never an optional slot on a Component.
 
 The pieces a `bar-*` Shape places carry their own contracts: `libraries/components/logo.md`, `libraries/components/horizontal-menu.md`, `libraries/components/button.md`, `libraries/components/dropdown-panel.md`, `libraries/components/mobile-drawer.md`.
 
@@ -50,7 +49,7 @@ Lazy by default: the Shape resolves at build time from `carries_mark`, `nav_item
 - `position: fixed; top: 0; z-index: 100`.
 - Ground = `--nav-bg`, the bar's dedicated navigation-ground role (a `from_palette: backgrounds` component role). It is bound per theme to the same ground as the Section directly beneath it — the page ground, `--surface-primary` — so the bar blends seamlessly into the first Section with no seam. The bar has no standalone color of its own.
 - Height = `var(--topbar-height)`. The narrow-viewport floor is the token's `mobile_floor`, emitted by re-declaring `--topbar-height` at `:root` inside `@media (max-width: 480px)`; the bar's height rule inherits it. Bar height is a single value across every surface within a build.
-- Mark sizing: a mark placed in the bar renders at `height: var(--topbar-logo-height); width: auto`, vertically centered, so the bar and the mark scale together. The design system owns that height — a composed page never hardcodes it, and a page-block `<style>` re-declaring it is an audit violation.
+- A mark placed in the bar is vertically centered. Its height is the placing `bar-*` Shape's `sizing`, not this entry's — the Shape is what knows the mark sits beside a menu and a conversion action, and the `logo` Component fixes no height of its own (`libraries/components/logo.md`).
 - No bottom border. No drop shadow. The bar blends into the page ground.
 - The bar is a single flex row. Which slots it carries, and where they sit within the row, is entirely the received Shape's contract.
 - Conversion button: `var(--topbar-action-height)` tall, mapped primary fill, mapped inverse text, radius `var(--radius-sm)` (calibrates to the captured 8–10px range).

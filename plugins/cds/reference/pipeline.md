@@ -2,19 +2,25 @@
 
 The one composition pipeline every composer executes. `compose-page` renders a **Page HTML** mock (or an isolated Section or Component), `compose-shell` renders and stores a **Shell**, `compose-view` renders a **View** (a Page HTML nested inside a stored Shell). The fourth output, **CSS**, is regenerated silently by the freshness stage. Skill files describe discovery and their output; the pipeline itself is defined here and only here.
 
-## Catalog resolution
+## Library resolution
 
-The working catalog is the plugin's `reference/libraries/` + `reference/rules/` trees overlaid with the project's `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` (same tree structure: `libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). A project entry whose `kind` and basename match a plugin entry replaces it wholesale; project-only entries extend the catalog. User-facing words resolve against entry names and their `aliases:` frontmatter in context; a word that resolves to nothing is asked about, never guessed.
+The working library is the plugin's `reference/libraries/` + `reference/rules/` trees overlaid with the project's `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR` (same tree structure: `libraries/{components,shapes,sections,pages}/`, `rules/{shape-selection,page-constraints}/`). A project entry whose `kind` and basename match a plugin entry replaces it wholesale; project-only entries extend the library. User-facing words resolve against entry names and their `aliases:` frontmatter in context; a word that resolves to nothing is asked about, never guessed.
 
-**Where the catalog boundary sits.** An unknown name halts only where composing past it would mean fabricating a contract: a **Component** (its markup, sizing, ARIA, and token bindings) and a **stored Shell** (a file that exists or does not). Pages and Sections are Frames — a Page is Sections in sequence, a Section is a surface plus a Shape — so an unrecognised one is composed from its attributes and the Shape-assignment waterfall rather than halted on.
+**How much of the library is read.** Entries are reached by name, one at a time — resolve the name, read that entry, stop. Reading a library directory end to end is never a prerequisite for composing, and never a prerequisite for editing something already composed: an iteration or a brownfield update reads only the entries the changed region binds to (its Section, the Shape that Section received per the `.decisions.md` sidecar, and the Components present in it), and leaves untouched Sections unresolved. One stage surveys the whole ShapeLibrary — rung 2 of the Shape-assignment waterfall below — and it tests entries by their declared slots rather than reading each one whole. Nothing else does.
+
+**Where the library boundary sits.** An unknown name halts only where composing past it would mean fabricating a contract: a **Component** (its markup, sizing, ARIA, and token bindings) and a **stored Shell** (a file that exists or does not). Pages and Sections are Frames — a Page is Sections in sequence, a Section is a surface plus a Shape — so an unrecognised one is composed from its attributes and the Shape-assignment waterfall rather than halted on.
 
 ## Stages
 
-1. **Resolve the Page.** A named Page entry when the catalog carries one, or an ad-hoc Page the user describes Section by Section. A Page the catalog has never seen is composed from the Sections named for it — a Page entry is a preset, not a required type, and an unrecognised Page name never halts. Every Page carries a **page family** (landing, app, editorial, docs, auth): stated plainly, obvious from the prompt, or the skill asks. The page family selects the typography and motion register and scopes the Page-Level Aesthetic Constraints.
+**Resolve once, emit everything.** A run resolves the Page, its Sections, their Shapes, and the content ONE time, and every artifact of that run is derived from that single resolution — the deliverable, both sidecars, the review harness, and the state record. Nothing is resolved twice because a second file is wanted, and no artifact of a run is produced by re-composing. If an artifact is missing after a run, it was not emitted; the fix is to emit it from the resolution already in hand, never to compose again.
+
+1. **Resolve the Page.** A named Page entry when the library carries one, or an ad-hoc Page the user describes Section by Section. A Page the library has never seen is composed from the Sections named for it — a Page entry is a preset, not a required type, and an unrecognised Page name never halts. Every Page carries a **page family** (landing, app, editorial, docs, auth): stated plainly, obvious from the prompt, or the skill asks. The page family selects the typography and motion register and scopes the Page-Level Aesthetic Constraints.
+
+   **The page family is the one closed set here.** Page names and Section names are open — they compose from attributes — but the five families are a classifier the model defines (`model/entity-catalog.md`, PageFamily), and each one resolves a register that must exist. A word offered as a page family that is not one of the five is therefore not a page family: ask which of the five it is, naming them. Never map it to the nearest family silently, and never carry a sixth.
 2. **Resolve each Section in order.**
    - **Eager** — the Section names its Shape (`shape:` frontmatter, or the user names one): populate that Shape from the ShapeLibrary with the content.
    - **Lazy** — no Shape named: run the Shape-assignment waterfall below.
-   - A Section the catalog has never seen is composed from its own attributes — where it pins, its extent, its theme — and resolves its Shape through the waterfall below. It never halts. Section entries are pre-configured Sections, not a closed set of permitted ones (`libraries/FORMAT.md`).
+   - A Section the library has never seen is composed from its own attributes — where it pins, its extent, its theme — and resolves its Shape through the waterfall below. It never halts. Section entries are pre-configured Sections, not a closed set of permitted ones (`libraries/FORMAT.md`).
 
 ### The Shape-assignment waterfall
 
@@ -43,9 +49,10 @@ Rung 3 and rung 4 outcomes are the system reporting a gap in itself. A Section t
 3. **Resolve the Shell** (View composition only). A stored Shell is resolved **by name** from `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` (unset → a `shells/` directory that is a sibling of the mocks directory). Unnamed with exactly one stored Shell → use it; unnamed with several → one clarifying ask. Halt `SHELL_UNKNOWN:{name}` only when a named Shell exists nowhere in that area.
 4. **Stylesheet freshness (silent).** Compare the `cds_hash.py` semantic fingerprints (elements YAML, reference tree, extensions tree) against `manifest.json`; on mismatch invoke the internal `generate-css` machinery and proceed — never halt for staleness, never mention staleness or regeneration to the human, never instruct the human to run anything. Halt `STYLESHEETS_REGEN_FAILED:{inner}` only if that regeneration itself fails. The human-facing guarantee: what you see is always built from the current system.
 5. **Assemble** per the output (below).
-6. **Emit sidecars and the state record** — every composer, every run:
+6. **Emit the sidecars, the review harness, and the state record** — every composer, every run. Four files land beside the deliverable, always, from the one resolution above; none of them is optional and none of them requires a second pass:
    - `<basename>.wireframe.txt` — one block per Section: `ID · section · shape · ground`, ASCII arrangement sketch.
    - `<basename>.decisions.md` — per Section: chosen shape, the **resolution rung** that produced it (`eager` | `rule-candidate` | `library-sourced` | `library-adapted` | `fallback-generated`), the rule row that fired, alternates rejected and by which constraint, ground assignment, width, and motion notes. A `library-sourced` record names the Shape and what made it fit; a `library-adapted` record additionally names the base Shape and the modification applied; a `fallback-generated` record lists the rungs already tried and why each produced nothing.
+   - `<basename>.review.html` — the visual review harness, built by running `python3 "${CLAUDE_PLUGIN_ROOT}/tools/build-review-harness.py" <deliverable> --wireframe <…> --decisions <…>` once the two sidecars are written. It is a deterministic script over files that already exist: it costs one Bash call, resolves nothing, and never re-reads the library. A non-zero exit halts `REVIEW_HARNESS_FAILED` with the script's stderr verbatim. The harness is a review artifact, not a deliverable — `package-change` never bundles it and `audit-against-system` never audits it.
    - State record (shared schema, unchanged): brief_snapshot, sections, sidecar paths, run-mode `generate|update`, update_source, per-section preserved flags; last 10 retained; consumed by `package-change` and by iteration.
    - The deliverable itself stays metadata-free — reasoning lives in the sidecars, never in the artifact.
 
@@ -60,6 +67,8 @@ Rung 3 and rung 4 outcomes are the system reporting a gap in itself. A Section t
 | View (SPA variant) | one stored Shell + N Pages with a client-side switcher showing one at a time (same mechanism as the color-mode toggle; no routing code) | `compose-view` |
 
 Every output is a self-contained HTML mock: it inlines the stylesheet set and theming scripts, and opens in a browser as-is.
+
+**A Page request produces Page HTML, and stops there.** The Page HTML is the default output and the whole output: composing a Page never also produces a View, and never wraps the Page in a Shell as a convenience. A View is a separate output the user asks for in their own words ("see it in the shell", "the full site view"), composed by `compose-view` against a Shell already stored. Working shell-first — compose the Shell once, then design Pages against it and look at them bare — is the normal order, not a special case: the Shell exists so Views *can* be produced later, not so every Page becomes one.
 
 ## Run-modes
 

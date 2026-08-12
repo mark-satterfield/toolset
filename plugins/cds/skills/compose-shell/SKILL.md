@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Bash, Glob
 
 ## Read the model first
 
-Read `../../reference/model/entity-catalog.md` **in full** before anything else in this skill — every row and every column of both tables, plus its "How to read this catalog" rules. It is normative and it is not skimmable: `Type`, `Extends`, `Construct`, and `Contains` carry meaning the descriptions alone do not; inheritance is transitive; `Contains` never implies "is a container"; `Abstract` and `Concrete` are deliberate; and `can` / `may` / `typically` never mean `must`. Do not proceed from a remembered or summarized version of it, and do not resolve any Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — until it has been read this run.
+Before anything else in this run, read `../../reference/model/entity-catalog.md` **in full** — every row and every column of both tables, plus its "How to read this catalog" rules. Those rules are stated in that file and are deliberately not repeated here: the catalog is the only description of the model, and a second copy would be a second thing to keep true. It is normative and it is not skimmable. Resolve no Building Blocks term — Element, Component, Shape, Frame, Section, Page, ShellDefinition, View, page family — from memory, from a summary, or from training data; only from that file, read this run.
 
 ## What this skill does
 
@@ -14,7 +14,7 @@ Composes a **Shell** per the shared build pipeline (`../../reference/pipeline.md
 
 A ShellDefinition is a Frame (entity model: `../../reference/model/entity-catalog.md`): it contains Sections — a menu or menus pinned to one or more edges of the canvas, and perhaps a common footer or status pinned to the bottom — around the **vacant space** a Page nests into. A Shell's Sections each pin to a canvas edge and receive a Shape like any Frame. **Which edge is the Shell's decision, taken per instance.** A Section entry's `pins_to:` lists the edges it may pin to; the Shell picks one. `side-rail` pins to either inline edge, so a rail on the right is that same Section placed elsewhere.
 
-**A Shell is defined in terms of Frames, not Components.** ShellDefinition contains Sections, and Section extends Frame — so every region of a Shell is a Section. **A Section never needs a catalog entry first.** Name a region the catalog has not seen and it composes from its attributes — its edge, its extent, its theme — and resolves its Shape through the waterfall. The entries under `sections/` are presets carrying the system's answers for the regions that recur; they are not a list of the regions you may have. Because Frame contains Frame, a Shell's Section may itself contain Sections; nest a Section, never reach for a Component to hold a sub-region.
+**A Shell is defined in terms of Frames, not Components.** ShellDefinition contains Sections, and Section extends Frame — so every region of a Shell is a Section. **A Section never needs a library entry first.** Name a region the library has not seen and it composes from its attributes — its edge, its extent, its theme — and resolves its Shape through the waterfall. The entries under `sections/` are presets carrying the system's answers for the regions that recur; they are not a list of the regions you may have. Because Frame contains Frame, a Shell's Section may itself contain Sections; nest a Section, never reach for a Component to hold a sub-region.
 
 The division is exact. The Section owns its surface — height or width, ground, pinning, landmark, scroll behavior. The Shape it receives owns the arrangement of what sits inside it. Components appear only where a Shape places them (`logo`, `horizontal-menu`, `vertical-menu`, `account-row`, `workspace-switcher`, `dropdown-panel`, `mobile-drawer`, `skip-links`), each carrying its own contract.
 
@@ -24,7 +24,7 @@ A top bar carrying a mark alone, a bar carrying a mark and a menu, and a bar car
 
 - **From caller (runtime):** plain-language request naming the Shell and describing its content (menu items, links, logo, footer content); a name for the Shell (asked for if not supplied — the name is the reuse key); optional edits to an existing stored Shell.
 - **From the generated stylesheet set** (at `$CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR`): `tokens.css`, `components.css`, `themes.css`, and `manifest.json`.
-- **From the catalog** — `../../reference/libraries/{components,shapes,sections}/` overlaid by `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, resolved per `../../reference/pipeline.md` (Catalog resolution). The Section entries declaring a `pins_to:` carry each region's surface contract, the `bar-*` / `rail-*` / `footer-*` Shapes carry the arrangements, and the Component entries they place carry the pieces; the `--app-shell-*` geometry tokens (`../../reference/foundations/layout.md` §11.10) size an application Shell's Sections.
+- **From the library** — `../../reference/libraries/{components,shapes,sections}/` overlaid by `$CUSTOMIZABLE_DESIGN_SYSTEM_EXTENSIONS_DIR`, resolved per `../../reference/pipeline.md` (Library resolution). The Section entries declaring a `pins_to:` carry each region's surface contract, the `bar-*` / `rail-*` / `footer-*` Shapes carry the arrangements, and the Component entries they place carry the pieces; the `--app-shell-*` geometry tokens (`../../reference/foundations/layout.md` §11.10) size an application Shell's Sections.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR`:** the shells output area. When unset, it defaults to a `shells/` directory that is a **sibling of the mocks directory** (`$CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR`). No ask at compose time — the default applies silently.
 - **From `$CUSTOMIZABLE_DESIGN_SYSTEM_INSTALL_MODE`:** decides whether state records go to `~/.claude/customizable-design-system/state/compose-shell/` (global) or `<project-root>/.claude/customizable-design-system/state/compose-shell/` (project).
 - **From `../../reference/compliance.md`:** the rule set the compliance pass runs.
@@ -40,7 +40,7 @@ A top bar carrying a mark alone, a bar carrying a mark and a menu, and a bar car
 
 ## Pipeline
 
-Execute the shared build pipeline (`../../reference/pipeline.md`): catalog resolution, per-Section Shape assignment (eager or lazy) for the Shell's Sections, the silent stylesheet-freshness stage, assembly, sidecars, and the state record. This skill adds only the Shell render specifics:
+Execute the shared build pipeline (`../../reference/pipeline.md`): library resolution, per-Section Shape assignment (eager or lazy) for the Shell's Sections, the silent stylesheet-freshness stage, assembly, sidecars, and the state record. This skill adds only the Shell render specifics:
 
 - **Assembly.** Emit one self-contained HTML file: the Shell's Sections realized around a clearly labeled **vacant space** placeholder (where a Page will nest). The `<head>` inlines the stylesheet set and the theming + color-mode scripts, so the stored Shell opens in a browser on its own.
 - **Show it.** Open or surface the emitted Shell for the user to look at, exactly as a composed Page is shown.
@@ -59,6 +59,7 @@ The compliance pass runs `[scope: standalone]` + `[scope: both]`.
 - `ARTWORK_UNRESOLVABLE:{slot}` — a needed artwork slot (e.g. the logo) yields no asset through `../../reference/artwork.md`.
 - `COMPLIANCE_UNSATISFIABLE` — a compliance rule cannot be satisfied without violating a reference spec.
 - `ELEMENTS_YAML_UNSET` — `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` not set.
+- `REVIEW_HARNESS_FAILED` — the review harness the pipeline emits beside the deliverable (pipeline stage 6) could not be built; surface the builder's stderr verbatim.
 
 Halt surface format:
 
@@ -76,7 +77,7 @@ The emitted Shell must satisfy every rule tagged `[scope: standalone]` and `[sco
 ## Boundary — does not
 
 - Does not compose Pages (`compose-page`) or Views (`compose-view`).
-- Does not ship or pre-define any Shell — every Shell is composed here, from the user's content. The plugin catalog contains no shells.
+- Does not ship or pre-define any Shell — every Shell is composed here, from the user's content. The plugin library contains no shells.
 - Does not inspect host-project code.
 - Does not itself author stylesheet CSS; the freshness stage INVOKES `generate-css` silently when inputs move.
 - Does not modify `$CUSTOMIZABLE_DESIGN_SYSTEM_ELEMENTS` or any file under `../../reference/`.

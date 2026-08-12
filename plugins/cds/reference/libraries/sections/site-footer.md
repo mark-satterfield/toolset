@@ -16,7 +16,6 @@ composition_notes: []
 variants: [ground]
 sizing:
   legal-row-separation: "var(--sp-4); calibrates to a 52–64px clamp"
-  mark-height: "var(--topbar-logo-height) when the received Shape places a mark, so the mark reads at one size wherever it appears"
   column-heading-type: "smallest body-sans size (12–14px), weight 700"
 behavior:
   - "hover on a footer link shifts color toward --text-primary over 100ms"
@@ -26,7 +25,7 @@ accessibility:
   - "column headings are <h3>-level; never nested deeper"
   - "each social icon link carries an aria-label naming the destination service; the SVG glyph is aria-hidden"
   - "foundation focus ring on :focus-visible for every link"
-token_bindings: [--footer-bg, --footer-text, --text-primary, --text-tertiary, --topbar-logo-height, --focus-ring, --sp-4]
+token_bindings: [--footer-bg, --footer-text, --text-primary, --text-tertiary, --focus-ring, --sp-4]
 ---
 
 # Site footer
@@ -50,7 +49,7 @@ Lazy by default: the Shape resolves at build time from `column_count`, `carries_
 - Column heading: smallest body-sans size (12–14px), weight 700, ink at `var(--text-tertiary)` (low-contrast cool gray). Semantically `<h3>`; never nested deeper.
 - The legal/copyright row sits full-width beneath whatever the Shape places above it, separated by `var(--sp-4)` (calibrates to a 52–64px clamp).
 - Hover on a footer link shifts color toward `--text-primary` over 100ms.
-- A mark placed in the footer renders at `var(--topbar-logo-height)`, the one mark height across the build.
+- A mark placed in the footer takes its height from the placing `footer-*` Shape's `sizing`, not from this entry.
 - A locale/language selector and a legal trigger (e.g. "Cookie Settings") are footer content and are placed by the received Shape. Neither is ever placed in the top-nav Section.
 
 ## Accessibility

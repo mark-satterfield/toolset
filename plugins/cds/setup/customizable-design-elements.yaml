@@ -1405,13 +1405,29 @@ geometry:
   # MUST NOT re-declare them in a page's <style> block (audit-against-system
   # flags page-block overrides of system-defined sizing).
   components:
+    # A mark's height is a proportion of the arrangement holding it, so it
+    # belongs to the placing Shape — never to the logo Component, and never to
+    # the Frame, whose own geometry is its own dimension. Each arrangement that
+    # can hold a mark carries its own value here. They start equal and are
+    # independent: change one and the others hold.
     # §12.1 Topbar. Logo glyph height tracks the bar height; the bar height
     # carries its own narrow-viewport floor (the §23 "consistent topbar height"
     # rule means one value per build, never per-section).
     topbar:
       height:        { value: "84px", description: "Bar height at desktop widths.", mobile_floor: { max_width: "480px", value: "64px" } }
-      logo-height:   { value: "40px", description: "Logo glyph rendered height, vertically centered in the bar. Sized by the system so a page never hardcodes it." }
+      logo-height:   { value: "40px", description: "Height of a mark placed in the top nav, vertically centered in the bar. Sizes the bar's own marks only." }
       action-height: { value: "36px", description: "Primary-action button height inside the bar." }
+    # Height of a mark placed in the side rail. A Shell carrying its mark here
+    # may have no bar at all, so the rail owns this rather than tracking one.
+    rail:
+      mark-height: { value: "40px", description: "Height of a mark placed in the side rail." }
+    # Height of a mark placed in the site footer's brand island.
+    footer:
+      mark-height: { value: "40px", description: "Height of a mark placed in the site footer." }
+    # Height of each customer logo in a quote carousel. A source's mark is not a
+    # brand mark in a Shell and shares no measurement with one.
+    logo-carousel:
+      mark-height: { value: "28px", description: "Height of each customer logo in a quote carousel." }
     # §12.5 App shell left rail.
     app-shell-rail:
       width: { value: "256px", description: "Primary navigation rail width (layout.md §11.10)." }

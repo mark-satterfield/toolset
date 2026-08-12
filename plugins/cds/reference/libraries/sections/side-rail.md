@@ -18,13 +18,12 @@ variants: [presentation, width]
 sizing:
   rail-width: "var(--app-shell-rail-width); calibrates to 256px at the reference desktop viewport"
   rail-padding: "var(--sp-0-75) on all sides; calibrates to 12px"
-  mark-height: "var(--topbar-logo-height) when the received Shape places a mark in the rail, so a mark in a rail and a mark in a bar read at one size across the build"
 behavior:
   - "the rail surface is static: it paints, it clips its overflow, and it does not animate"
 accessibility:
   - "landmark: <nav aria-label=\"Main navigation\"> wrapping the rail; the rail element it wraps does not redeclare a role"
   - "the rail contributes no keyboard semantics of its own — each piece the Shape places carries its own contract"
-token_bindings: [--surface-secondary, --surface-tertiary, --text-primary, --app-shell-rail-width, --topbar-logo-height, --sp-0-75]
+token_bindings: [--surface-secondary, --surface-tertiary, --text-primary, --app-shell-rail-width, --sp-0-75]
 ---
 
 # Side rail
@@ -51,7 +50,7 @@ Lazy by default: the Shape resolves at build time from `carries_mark` and `carri
 - Rail `overflow: hidden`; a scrolling region within the received Shape handles its own overflow.
 - The rail is a flex column, so a Shape may anchor a piece to either end.
 - Every determination here is written about the rail's own edges rather than about "left", so pinning to `inline-end` mirrors it without restating anything.
-- A mark placed in the rail renders at `var(--topbar-logo-height)`. An app Shell whose Shape carries the mark here needs no pinned block-start Section at all — the content region then runs to the block-start edge of the frame.
+- A mark placed in the rail takes its height from the placing `rail-*` Shape's `sizing`, not from this entry. An app Shell whose Shape carries the mark here needs no pinned block-start Section at all — the content region then runs to the block-start edge of the frame — which is exactly why a rail's mark height can never be a bar's: in that Shell there is no bar to take it from.
 
 ## Presentation
 
