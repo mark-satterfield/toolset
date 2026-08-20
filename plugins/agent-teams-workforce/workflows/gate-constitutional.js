@@ -1,8 +1,8 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling.',
-  phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals' }],
+    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again.',
+  phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals, over a persistent precedent store' }],
 }
 
 // args: { gate, phaseName, criteria: string[], artifact, escalateTargets?: string[] }
@@ -73,9 +73,76 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
   }
 )
 
-// Appeals court: only on a novel unresolved constitutive conflict.
+// ── Precedent store ─────────────────────────────────────────────────────────────
+// The constitutional-agent is told its ruling "becomes reusable precedent", and its
+// schema returns a `precedent` field — and nothing wrote that field anywhere, and
+// nothing read it on a later run. So every ruling died with the run that produced
+// it and the same conflict was re-adjudicated from nothing the next time it arose.
+// Precedent CR-001 was re-argued from scratch this way.
+//
+// A ruling is now written to a durable store, and the store is consulted BEFORE the
+// appeals court is convened. Scripts have no filesystem access, so both ends go
+// through an agent. The store sits beside the run ledger, under the path that
+// already exists and is already gitignored.
+const PRECEDENT_STORE = '.claude/workflow-runs/constitutional-precedents.jsonl'
+
+// Appeals court: only on a novel unresolved constitutive conflict, and only when no
+// precedent already settles it.
 if (verdict && verdict.needsConstitutionalRuling) {
-  log(`Constitutional gate ${a.gate}: novel conflict — escalating to constitutional-agent`)
+  const conflict = verdict.conflict || '(unspecified)'
+
+  // Look first. A precedent that answers this conflict IS the ruling — re-arguing a
+  // settled question is exactly what precedent exists to prevent, and it costs a
+  // constitutional-agent call every time the same tension recurs.
+  const found = await agent(
+    `Search the constitutional precedent store for a ruling that already settles the conflict below.
+
+Store: ${PRECEDENT_STORE} (JSON Lines; each line is one ruling with keys: key, gate, phaseName, conflict, verdict, rationale, precedent). If the file does not exist, that is not an error — it means no precedent has been recorded yet; return matched=false.
+
+Conflict to settle:
+${conflict}
+
+A stored ruling MATCHES only when it is about the SAME PAIR OF CONFLICTING CONSTRAINTS as this one — not merely the same gate, the same phase, or a similar-sounding subject. Two conflicts about the same subject that pull in different directions are DIFFERENT conflicts. When in doubt, return matched=false: convening the appeals court needlessly costs one agent call, whereas applying the wrong precedent silently imposes a binding ruling nobody made about this question.
+
+When you match, return the stored ruling's verdict, rationale and precedent VERBATIM. Do not re-reason it, do not improve it, and do not soften it.`,
+    {
+      label: `precedent:lookup:${a.gate || 'gate'}`,
+      phase: 'Gate (constitutional)',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['matched'],
+        properties: {
+          matched: { type: 'boolean' },
+          key: { type: 'string' },
+          verdict: { type: 'string', enum: ['pass', 'loop', 'escalate'] },
+          rationale: { type: 'string' },
+          precedent: { type: 'string' },
+          escalateTo: { type: 'string' },
+          reason: { type: 'string' },
+        },
+      },
+    }
+  )
+
+  if (found && found.matched === true && found.verdict) {
+    log(`Constitutional gate ${a.gate}: conflict SETTLED BY PRECEDENT ${found.key || '(unkeyed)'} — appeals court not convened`)
+    return {
+      verdict: found.verdict,
+      criteria: verdict.criteria,
+      feedback: found.rationale || found.precedent || 'settled by recorded precedent',
+      escalateTo: found.escalateTo || verdict.escalateTo,
+      ruledByConstitutionalAgent: true,
+      ruledFromPrecedent: true,
+      precedentKey: found.key || null,
+      precedent: found.precedent,
+    }
+  }
+
+  log(
+    `Constitutional gate ${a.gate}: novel conflict — no precedent on file` +
+      `${found && found.reason ? ` (${found.reason})` : ''} — escalating to constitutional-agent`
+  )
   const ruling = await agent(
     `A constitutional gate hit a novel conflict between constitutive objectives that the enforcer could not resolve. Rule on it by consulting the system's founding objectives (the BRD). Your ruling is binding and becomes reusable precedent.
 
@@ -100,12 +167,60 @@ Enforcer feedback: ${verdict.feedback || ''}`,
     }
   )
   if (ruling) {
+    // Record it. A ruling that is not written down is not precedent — it is an
+    // opinion that happened once. Persisting is best-effort: a store that cannot be
+    // written must not overturn a ruling that was properly made, so a failure here
+    // is logged and the ruling still stands for this run.
+    const written = await agent(
+      `Append one ruling to the constitutional precedent store, then confirm what you wrote.
+
+Store: ${PRECEDENT_STORE} (JSON Lines — one compact JSON object per line, no surrounding array, no pretty-printing). Create the file and any missing parent directories if they do not exist. APPEND ONLY: never rewrite, reorder, deduplicate or remove existing lines — a superseded ruling is part of the record.
+
+Write exactly this object as the new final line:
+${JSON.stringify({
+  key: null,
+  gate: a.gate || null,
+  phaseName: a.phaseName || null,
+  conflict,
+  verdict: ruling.verdict,
+  rationale: ruling.rationale,
+  precedent: ruling.precedent || null,
+})}
+
+Set \`key\` yourself before writing, to a short stable identifier for THE PAIR OF CONFLICTING CONSTRAINTS this ruling settles — not for this run, this gate, or this phase, because the whole point is that a different run hitting the same pair finds this line. Use the form CR-NNN, continuing the highest CR number already in the file (CR-001 if the file is new or has none).`,
+      {
+        label: `precedent:persist:${a.gate || 'gate'}`,
+        phase: 'Gate (constitutional)',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['written'],
+          properties: {
+            written: { type: 'boolean' },
+            key: { type: 'string' },
+            path: { type: 'string' },
+            error: { type: 'string' },
+          },
+        },
+      }
+    )
+    if (written && written.written === true) {
+      log(`Constitutional gate ${a.gate}: ruling recorded as precedent ${written.key || '(unkeyed)'} in ${written.path || PRECEDENT_STORE}`)
+    } else {
+      log(
+        `Constitutional gate ${a.gate}: ruling made but NOT recorded as precedent` +
+          `${written && written.error ? ` — ${written.error}` : ''}. The ruling stands for this run; the next run will re-adjudicate.`
+      )
+    }
     return {
       verdict: ruling.verdict,
       criteria: verdict.criteria,
       feedback: ruling.rationale,
       escalateTo: ruling.escalateTo || verdict.escalateTo,
       ruledByConstitutionalAgent: true,
+      ruledFromPrecedent: false,
+      precedentKey: (written && written.key) || null,
+      precedentRecorded: !!(written && written.written === true),
       precedent: ruling.precedent,
     }
   }

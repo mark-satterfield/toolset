@@ -32,6 +32,9 @@ export const meta = {
 //   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — ADOPTED, and it wins over any Epic prd-creation mints
 //   trdPath?: string,             // where the TRD lives/should be written
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
+//   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
+//   dimensions?: string[],        // size the analyst panel to exactly these axes; overrides both triage steps
+//   forceFullPanel?: boolean,     // run every analyst axis and the challenge wave, skipping both triage steps
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
@@ -45,6 +48,10 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 //
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
+// A field counts as supplied only when it carries actual text. `prd.body = ''` and
+// `prd.body = '   '` both used to sail through as "present" and hand every
+// downstream agent an empty document.
+const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.prd.repoPath) || null
 // One Epic may span repos and a Story is scoped to exactly one, so spec authoring
 // fans out once per repo below. Absent an explicit span the single repoPath is the
@@ -243,6 +250,72 @@ if (!prd && a.request) {
 }
 if (!prd) return { ok: false, stage: 'prd-creation', reason: 'no PRD available to validate (supply args.prd or args.request)' }
 
+// ── PRD text resolution ─────────────────────────────────────────────────────────
+// The args contract advertises body, content and path; only `body` was ever read.
+// `path` was used solely as a reference label on the minted Epic and `content` was
+// read nowhere at all, so a caller who supplied either — both of which the contract
+// invites — got a run in which every downstream agent received an empty PRD. The
+// failure did not surface at dispatch: it surfaced minutes and a full analyst
+// fan-out later, as G1 correctly refusing to validate nothing. Run wf_63a9f03f-6d7
+// died exactly this way.
+//
+// All three fields are now honoured, in the order body -> content -> path, and a
+// PRD that still carries no text after that is rejected HERE rather than several
+// phases downstream. Scripts have no filesystem access but agents do, so `path` is
+// resolved by one cheap agent that reads the file and threads its text back.
+if (!hasText(prd.body)) {
+  if (hasText(prd.content)) {
+    prd = { ...prd, body: prd.content }
+    log('PRD text taken from prd.content')
+  } else if (hasText(prd.path)) {
+    log(`PRD text absent — reading it from prd.path: ${prd.path}`)
+    const read = await agent(
+      `Read the PRD document at the path below and return its FULL text verbatim.
+
+Path: ${prd.path}
+
+Return the entire file contents in \`body\`. Do NOT summarize it, do NOT truncate it, do NOT reformat it, and do NOT comment on it — every downstream agent in this pipeline reads the PRD from what you return, so anything you drop is dropped from the whole run.
+
+If the path does not resolve to a readable file, set ok=false and say why in \`error\`. Do not invent content and do not substitute a different file.`,
+      {
+        label: 'resolve:prd-text',
+        phase: 'PRD Creation',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ok'],
+          properties: {
+            ok: { type: 'boolean' },
+            body: { type: 'string' },
+            resolvedPath: { type: 'string' },
+            error: { type: 'string' },
+          },
+        },
+      }
+    )
+    if (!read || read.ok !== true || !hasText(read.body)) {
+      return {
+        ok: false,
+        stage: 'input',
+        error:
+          `prd.path was supplied (${prd.path}) but no PRD text could be read from it` +
+          `${read && read.error ? `: ${read.error}` : ''}. ` +
+          'Correct the path, or pass the PRD text inline as prd.body.',
+      }
+    }
+    prd = { ...prd, body: read.body, path: read.resolvedPath || prd.path }
+    log(`PRD text read from ${prd.path} (${read.body.length} chars)`)
+  } else {
+    return {
+      ok: false,
+      stage: 'input',
+      error:
+        'the supplied PRD carries no text — none of prd.body, prd.content or prd.path resolved to a document. ' +
+        'Every downstream agent reads the PRD from this field, so a run without it validates an empty document.',
+    }
+  }
+}
+
 // ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
 phase('PRD Validation')
 const validation = await gateLoop({
@@ -339,6 +412,12 @@ phase('Architecture')
 // One cheap agent decides whether the panel is warranted. It CANNOT skip on its
 // own judgement of difficulty — only on the absence of a decision, or on the SAD
 // having already settled every one this PRD raises.
+
+// The analyst axes the `architecture` mini can dispatch. Kept in step with
+// ALL_DIMENSIONS in architecture.js: this composite's triage names axes from this
+// list and the mini filters against its own, so an axis missing from either side
+// is silently dropped rather than mis-dispatched.
+const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk', 'bounded-context', 'failure-mode']
 let archNeeded = true
 let archTriage = null
 if (a.skipArchitecture === true) {
@@ -347,7 +426,9 @@ if (a.skipArchitecture === true) {
 } else if (a.skipArchitecture === false) {
   archTriage = { needed: true, reason: 'caller passed skipArchitecture:false', settledBy: 'caller' }
 } else {
-  archTriage = await agent(
+  // The prompt is hoisted so the retry below sends exactly the same question. A
+  // retry that reworded it would be asking a different one.
+  const triagePrompt =
     `Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
       `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or a new access pattern, a new service or a new boundary between services, a new integration or transport, a new trust boundary, or a change to a crosscutting concern.\n\n` +
       `It does NOT exist merely because the work is hard, security-adjacent, or user-facing. A feature that composes existing decisions — a screen in an existing app, a field on an existing form, a call to an endpoint whose contract another PRD owns — raises NO architecture decision even when it is difficult.\n\n` +
@@ -355,25 +436,34 @@ if (a.skipArchitecture === true) {
       `Answer needed:true when even one unsettled choice remains. When uncertain, answer true: a wrongly-run panel costs tokens, a wrongly-skipped one costs a bad decision.\n\n` +
       `Repos this PRD spans (${repos.length}): ${repos.join(', ') || '(none named)'}\n` +
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
-      `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}`,
-    {
-      label: 'triage:architecture-needed',
-      phase: 'Architecture',
-      agentType: 'agent-teams-workforce:architecture-decider',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['needed', 'reason'],
-        properties: {
-          needed: { type: 'boolean' },
-          reason: { type: 'string' },
-          decisions: { type: 'array', items: { type: 'string' } },
-          settledBy: { type: 'string' },
-        },
+      `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}` +
+      `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.`
+  const triageOpts = {
+    label: 'triage:architecture-needed',
+    phase: 'Architecture',
+    agentType: 'agent-teams-workforce:architecture-decider',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['needed', 'reason'],
+      properties: {
+        needed: { type: 'boolean' },
+        reason: { type: 'string' },
+        decisions: { type: 'array', items: { type: 'string' } },
+        settledBy: { type: 'string' },
+        dimensions: { type: 'array', items: { type: 'string', enum: ARCH_DIMENSIONS } },
       },
-    }
-  )
-  // A null triage means the agent died, not that no decision exists. Run the panel.
+    },
+  }
+  archTriage = await agent(triagePrompt, triageOpts)
+  // A null triage means the agent DIED, not that no decision exists — so failing
+  // open runs the most expensive phase in the composite, and one transient agent
+  // failure used to cost a full analyst panel plus a challenge wave. Failing open
+  // is still the right default; paying for it without asking twice is not.
+  if (!archTriage) {
+    log('Architecture triage returned nothing — retrying once before failing open to the full panel')
+    archTriage = await agent(triagePrompt, { ...triageOpts, label: 'triage:architecture-needed (retry)' })
+  }
   archNeeded = !archTriage || archTriage.needed !== false
 }
 let architecture
@@ -383,6 +473,38 @@ if (!archNeeded) {
 } else {
   if (archTriage && archTriage.decisions && archTriage.decisions.length) {
     log(`Architecture NEEDED — ${archTriage.decisions.length} open decision(s): ${archTriage.decisions.join('; ')}`)
+  }
+  // Panel sizing, from the caller when they named it and from this composite's own
+  // triage otherwise. Without it the mini re-derives what triage has just worked
+  // out: this composite spends an architecture-decider call deciding whether a
+  // decision exists, and the mini then spends an architecture-boundary-guardian
+  // call deciding whether it is settled and which axes bear on it. Handing the axes
+  // down collapses the second triage instead of paying for it twice.
+  //
+  // An empty list is NOT passed through: architecture.js treats an empty
+  // `dimensions` as "no override" and runs its own triage, which is the correct
+  // behaviour when triage could not name the axes.
+  const callerDimensions = Array.isArray(a.dimensions)
+    ? a.dimensions.filter((d) => ARCH_DIMENSIONS.includes(d))
+    : null
+  const triageDimensions = (archTriage && Array.isArray(archTriage.dimensions) ? archTriage.dimensions : []).filter(
+    (d) => ARCH_DIMENSIONS.includes(d)
+  )
+  const archDimensions =
+    callerDimensions && callerDimensions.length
+      ? callerDimensions
+      : triageDimensions.length
+        ? triageDimensions
+        : undefined
+  if (a.forceFullPanel === true) {
+    log('Architecture panel: FULL — caller passed forceFullPanel')
+  } else if (archDimensions) {
+    log(
+      `Architecture panel sized to ${archDimensions.length}/${ARCH_DIMENSIONS.length} axes ` +
+        `(${callerDimensions && callerDimensions.length ? 'caller' : 'triage'}): ${archDimensions.join(', ')}`
+    )
+  } else {
+    log('Architecture panel: not sized here — the mini will run its own triage')
   }
   architecture = await gateLoop({
     gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
@@ -411,6 +533,8 @@ if (!archNeeded) {
           repoPath,
         },
         sadPath: a.sadPath,
+        dimensions: archDimensions,
+        forceFullPanel: a.forceFullPanel === true ? true : undefined,
         feedback,
       }),
   })
