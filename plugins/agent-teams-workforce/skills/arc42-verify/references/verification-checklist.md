@@ -14,14 +14,13 @@ sequence. A heading with no body, or a body consisting only of the template's pl
 | § | Section | Present-and-non-empty means | FAIL when |
 |---|---------|------------------------------|-----------|
 | 1 | Introduction and Goals | States the system's purpose, the top 3–5 quality goals, and the stakeholder list | No quality-goal table, or goals are generic ("be fast") with no priority |
-| 2 | Architecture Constraints | Lists technical, organizational, and convention constraints that are *given*, not chosen | Empty, or conflates constraints with decisions (a chosen tech is a §4/§9 item, not a constraint) |
+| 2 | Architecture Constraints | Lists technical, organizational, and convention constraints that are *given*, not chosen | Empty, or conflates constraints with decisions (a chosen tech is a §4 item, not a constraint) |
 | 3 | Context and Scope | Defines system boundary; names external systems/actors and the interfaces across the boundary | No business context or no technical context; boundary undefined |
 | 4 | Solution Strategy | Summarizes the fundamental decisions and approach: tech choices, decomposition, quality-goal tactics | Empty, or merely restates §1 goals without naming an approach |
 | 5 | Building Block View | Decomposes the system into building blocks with responsibilities; at least the level-1 whitebox | No level-1 decomposition, or blocks listed with no responsibilities |
 | 6 | Runtime View | Shows how building blocks collaborate in important scenarios (sequences/flows) | Empty, or no scenario tied to a §1 quality goal |
 | 7 | Deployment View | Maps building blocks to infrastructure/nodes; shows the technical deployment | No node-to-block mapping; only a prose mention of "the cloud" |
 | 8 | Crosscutting Concepts | Documents concerns that span blocks: domain model, persistence, security, error handling, etc. | Empty, or each concept is a one-liner with no actual concept content |
-| 9 | Architecture Decisions | Records important, expensive, risky, or large-scale decisions (ADR-style) with status and rationale | Empty, or decisions have no rationale / no status |
 | 10 | Quality Requirements | A quality tree plus concrete, measurable quality scenarios | Goals stated without measurable scenarios; no scenario references a stimulus + response + measure |
 | 11 | Risks and Technical Debt | Names known risks and accumulated debt with assessment | Empty, or "none" with no justification |
 | 12 | Glossary | Defines domain and technical terms used across the document | Empty, or missing terms the document actually uses |
@@ -29,7 +28,10 @@ sequence. A heading with no body, or a body consisting only of the template's pl
 **Ordering and numbering checks:**
 
 - Headings appear in ascending §1→§12 order. A section out of order is a `FAIL` even if all are present.
-- No duplicate section numbers; no skipped numbers.
+- No duplicate section numbers.
+- **§9 does not exist and must not be created.** Architecture decisions are recorded as current state
+  in §2, §4 and §8. A section table that runs §8 → §10 is correct: do not report the skipped number,
+  do not report §9 as missing, and never author one.
 - No extra top-level "section 13+" masquerading as arc42 content — appendices are fine but must not be numbered into the arc42 sequence.
 
 ## Part B — Cross-Section Consistency Invariants
@@ -48,16 +50,17 @@ invariant below. Each names the sections it spans and what to compare.
    block defined in §5 or an external system named in §3. A phantom participant is a `FAIL`.
 5. **Context actors are consistent.** Every external system/actor in §6, §7, or the building-block
    interfaces of §5 is declared in the §3 context boundary. An undeclared external is a `FAIL`.
-6. **Decisions trace to drivers.** Every §9 decision cites a driver — a §2 constraint, a §1 quality
-   goal, or a §11 risk. A decision with no driver is a `WARN`; a decision that *contradicts* a §2
-   constraint is a `FAIL` (and also a source-integrity failure — see `source-integrity-checks.md`).
+6. **Decisions trace to drivers.** Every decision recorded in §4 (and any decision-bearing §8 concept)
+   cites a driver — a §2 constraint, a §1 quality goal, or a §11 risk. A decision with no driver is a
+   `WARN`; a decision that *contradicts* a §2 constraint is a `FAIL` (and also a source-integrity
+   failure — see `source-integrity-checks.md`).
 7. **Crosscutting concepts are referenced.** Every §8 concept (security model, persistence approach,
    error handling) is applied somewhere in §5/§6/§7. A concept documented but never used is a `WARN`.
 8. **Glossary covers used terms.** Every term defined in §12 is used in the body, and every clearly
    domain-specific term used repeatedly in the body is defined in §12. Unused definitions are `WARN`;
    undefined repeated domain terms are `WARN`.
 9. **Risks reference reality.** Every §11 risk/debt item references a concrete block (§5), decision
-   (§9), or constraint (§2) it threatens. A free-floating risk is a `WARN`.
+   (§4), or constraint (§2) it threatens. A free-floating risk is a `WARN`.
 
 ```mermaid
 flowchart LR
@@ -66,8 +69,7 @@ flowchart LR
   S5[§5 Building Blocks] -->|invariant 3| S7[§7 Deployment]
   S6[§6 Runtime] -->|invariant 4| S5
   S3[§3 Context] -->|invariant 5| S6
-  S2[§2 Constraints] -->|invariant 6| S9[§9 Decisions]
-  S4 -->|invariant 6| S9
+  S2[§2 Constraints] -->|invariant 6| S4
   S8[§8 Crosscutting] -->|invariant 7| S5
   S12[§12 Glossary] -->|invariant 8| BODY[(document body)]
   S11[§11 Risks] -->|invariant 9| S5

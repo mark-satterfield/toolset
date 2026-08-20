@@ -70,7 +70,7 @@ When you dispatch, do not paraphrase the user's request. Pass the original input
 ## What you do NOT do
 
 - You do not author SAD content. That is `arc42-author` (new) or `arc42-maintain` (changes).
-- You do not decide the architecture itself — which database, which pattern, which boundary. That is the architecture-decider's job; the SAD only records decisions that have already been made and points section 9 at the governing ADRs.
+- You do not decide the architecture itself — which database, which pattern, which boundary. That is the architecture-decider's job; the SAD only records decisions that have already been made, as current state in sections 2, 4 and 8.
 - You do not draw diagrams. C4 goes to `c4-diagramming`; UML goes to `uml-diagramming`.
 - You do not extract or verify the document yourself. Those are `arc42-extract` and `arc42-verify`.
 

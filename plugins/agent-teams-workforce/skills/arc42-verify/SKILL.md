@@ -119,7 +119,7 @@ Living-document hygiene
          evidence: line "We will eventually adopt event sourcing."
 
 Source-section integrity
-  [PASS] §2, §4, §8, §9 each independently extractable
+  [PASS] §2, §4, §8 each independently extractable
   [FAIL] §2 constraint "no external network calls" contradicts §4 strategy
          evidence: §4 names a third-party payment API as the chosen approach
 ```

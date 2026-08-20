@@ -23,7 +23,7 @@ If a SAD's existence is unknown, run the Bootstrap probe in the router before ch
 
 | Intent signal | Examples | Dispatch to |
 |---|---|---|
-| Check the SAD for quality, completeness, or staleness | "audit the architecture doc", "is the SAD up to date", "lint the arc42 sections", "check for broken ADR links", "does every quality goal have a scenario", "find changelog prose that shouldn't be here" | `arc42-verify` |
+| Check the SAD for quality, completeness, or staleness | "audit the architecture doc", "is the SAD up to date", "lint the arc42 sections", "does every quality goal have a scenario", "find changelog prose that shouldn't be here" | `arc42-verify` |
 
 ## Diagrams — C4 vs. UML
 

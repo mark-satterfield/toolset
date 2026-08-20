@@ -30,8 +30,7 @@ The technical infrastructure the system runs on — environments, nodes, network
 ### 8. Crosscutting Concepts — SOURCE
 Overarching regularities and solution ideas relevant in multiple parts of the system: domain model, persistence, session handling, security and identity, error handling and logging, internationalization, transaction handling, build and test approach, architectural and design patterns applied. **This is a SOURCE section**: spec authors read it so that individual specs inherit the system-wide concepts instead of re-inventing them.
 
-### 9. Architecture Decisions — SOURCE
-The important, expensive, large-scale, or risky architecture decisions, including rationale and rejected alternatives. In a living SAD this section does **not** hold the full decision narrative inline — it links to the governing Architecture Decision Records (ADRs), which carry the dated, append-only history. **This is a SOURCE section**: it is the index TRD and spec authors follow to find the binding rationale behind a constraint or strategy.
+> **There is no section 9.** Architecture decisions are recorded as current state in sections 2, 4 and 8. Do not author a section 9, do not report its absence as a defect, and do not create ADRs — this project has none and will have none. A section table running 8 → 10 is correct.
 
 ### 10. Quality Requirements
 The full quality tree and concrete quality scenarios, refining the top goals from section 1. Each scenario is testable: a stimulus, the system, and a measurable response. This is what `arc42-verify` checks the rest of the document against.
@@ -49,6 +48,5 @@ The shared vocabulary — domain and technical terms with definitions — so tha
 | 2 | Architecture Constraints | Boundary conditions every downstream design must respect |
 | 4 | Solution Strategy | The high-level technical approach the TRD elaborates |
 | 8 | Crosscutting Concepts | System-wide concepts that specs inherit rather than re-derive |
-| 9 | Architecture Decisions | The index of binding decisions and their governing ADRs |
 
 `arc42-extract` reads exactly these four sections and nothing else when producing the feed described in `source-of-truth-map.md`.

@@ -29,9 +29,8 @@ Prose that narrates the document's own evolution rather than describing the syst
 
 - **Severity:** `WARN`.
 - **Evidence:** quote the narrating sentence.
-- **Note:** §9 Architecture Decisions legitimately records *superseded* decisions with a `Superseded`
-  status — that is structured decision history, not changelog narrative, and is **not** a finding.
-  Distinguish: an ADR with `Status: Superseded by ADR-014` is fine; a paragraph that says "we changed
+- **Note:** there is no §9 and no ADR corpus in this project, so there is no superseded-decision
+  exemption. Every section states current truth only. A paragraph that says "we changed
   our mind about the database last sprint" is a smell.
 
 ## 3. Future-tense / aspirational content
@@ -59,13 +58,12 @@ relationship to the rest of the document.
 **Flag:**
 - A §5 building block never mentioned in §6, §7, or §8.
 - A §8 crosscutting concept never applied in any other section.
-- A §9 decision that cites no driver and that no later section references.
 - A §10 quality scenario whose parent goal does not appear in §1.
 - A glossary term (§12) defined but never used in the body.
 - A diagram with no surrounding prose, or prose referencing "the diagram below" where no diagram exists.
 
 - **Severity:** `WARN` (orphans are integration gaps, not factual errors). Promote to `FAIL` only when
-  the orphan is one of the four source sections (§2/§4/§8/§9) and the orphaning breaks extractability —
+  the orphan is one of the three source sections (§2/§4/§8) and the orphaning breaks extractability —
   defer that judgment to `source-integrity-checks.md`.
 - **Evidence:** name the orphaned element and state which expected reference is absent.
 
@@ -79,7 +77,7 @@ in §5; a component called `auth-svc` in §5 and `AuthService` in §7 with no gl
 constraint "PostgreSQL only" against a §7 deployment showing MongoDB.
 
 - **Severity:** `WARN` for naming drift; escalate to `FAIL` and hand off to `source-integrity-checks.md`
-  when the contradiction is between two of §2/§4/§8/§9.
+  when the contradiction is between two of §2/§4/§8.
 - **Evidence:** quote both conflicting statements with their section numbers.
 
 ```mermaid
@@ -88,7 +86,7 @@ flowchart TD
   meta -->|"Last updated / Last modified"| failA[FAIL]
   meta -->|date qualifier| warnA[WARN]
   scan --> diary{changelog narrative?}
-  diary -->|"previously / used to"| warnB[WARN: distinguish from §9 Superseded]
+  diary -->|"previously / used to"| warnB[WARN]
   scan --> future{future tense?}
   future -->|whole section aspirational| failB[FAIL: also completeness]
   future -->|stray sentence| warnC[WARN]

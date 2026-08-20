@@ -21,12 +21,12 @@ constraint cited in the TRD and the same constraint cited in a spec resolve to o
 
 ## Guarantee 1 — the four buckets always exist
 
-The packet always contains all four buckets: `constraints` (§2), `solutionStrategy` (§4),
-`crosscuttingConcepts` (§8), `decisions` (§9). A consumer may iterate any bucket without a
-presence check. A section absent from the SAD is **not** dropped — its bucket carries
-`present: false`, an empty `entries` list, and a human-readable `missingReason`. This means
-"section 9 was missing from the SAD" is a fact the TRD author can see and act on, never an
-ambiguous silence.
+The packet always contains all three buckets: `constraints` (§2), `solutionStrategy` (§4),
+`crosscuttingConcepts` (§8). A consumer may iterate any bucket without a presence check. A section
+absent from the SAD is **not** dropped — its bucket carries `present: false`, an empty `entries`
+list, and a human-readable `missingReason`. This means "§4 was missing from the SAD" is a fact the
+TRD author can see and act on, never an ambiguous silence. There is no `decisions` bucket and no §9:
+architecture decisions are recorded as current state in §2, §4 and §8.
 
 ## Guarantee 2 — every entry has the four core fields
 
@@ -55,32 +55,6 @@ section was empty or absent, not silently filtered. Consumers can trust that the
 projection of the SAD and that any gap they see is a real gap in the source architecture document
 (which is itself useful signal for the TRD author to escalate).
 
-## Guarantee 5 — supersession is carried, never resolved away
-
-When section 9 contains a decision that supersedes an earlier one, **both** decisions appear in the
-`decisions` bucket. The superseding entry lists the superseded ID(s) in its `supersedes` array and
-typically carries `status: "accepted"`; the superseded entry typically carries
-`status: "superseded"` or `status: "deprecated"` as the SAD wrote it. The producer does **not**
-delete the superseded decision — removing it would erase the audit trail the TRD author needs to
-explain why a requirement changed.
-
-How consumers use this:
-
-- The **TRD author** treats only the non-superseded ("live") decisions as binding requirements, but
-  may reference the superseded one to justify a change in direction.
-- A **spec author** that finds a spec tracing to a superseded decision knows that spec needs revision.
-
-Supersession resolution is therefore a consumer concern. The producer's job is to make the graph
-explicit and lossless.
-
-```mermaid
-flowchart TD
-  R["AD-payments-retry-window\nstatus: superseded"]
-  N["AD-payments-idempotency\nstatus: accepted\nsupersedes: [AD-payments-retry-window]"]
-  N -->|supersedes| R
-  TRD["TRD: binds N, may cite R for rationale"]
-  N --> TRD
-```
 
 ## What the contract does NOT promise
 
@@ -90,7 +64,7 @@ flowchart TD
 - **No semantic deduplication.** If the SAD states the same constraint in two places, two entries
   appear (with distinct disambiguated IDs). Collapsing duplicates is a consumer decision, because
   only the consumer knows whether the duplication is meaningful.
-- **No cross-section linking beyond §9 supersession.** The producer does not infer that a §8 concept
+- **No cross-section linking.** The producer does not infer that a §8 concept
   "implements" a §4 strategy. Such linkage, if needed, is authored downstream.
 - **No requirement language.** The packet contains the SAD's statements as written. Turning a
   constraint into a testable requirement ("the system SHALL …") is the TRD author's job, not the

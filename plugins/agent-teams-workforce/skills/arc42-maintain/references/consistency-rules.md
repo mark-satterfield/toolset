@@ -11,22 +11,6 @@ sections — **3 Context** (C4 System Context), **5 Building Block** (C4
 Container/Component), **6 Runtime** (UML sequence/activity), **7 Deployment**
 (C4 Deployment) — render those decisions and must follow them.
 
-## INV-1 — Every accepted section-9 decision is reflected in section 4
-
-**Invariant.** For each ADR in section 9 with status `accepted`, the Solution
-Strategy (section 4) describes the chosen approach as current.
-
-**Why.** Section 4 is the executive summary of the architecture. A reader who
-only reads section 4 must see every consequential decision. A decision that is
-accepted but absent from the strategy is invisible to that reader.
-
-**Violation signal.** An `accepted` ADR whose chosen option appears nowhere in
-section 4; or a section-4 sentence describing an option that a later ADR
-superseded.
-
-**Repair.** Edit section 4 to summarize the accepted decision. If two ADRs
-conflict, only the non-superseded one may be reflected.
-
 ## INV-2 — Every pattern-bearing decision is reflected in section 8
 
 **Invariant.** If a section-9 decision establishes a project-wide pattern
@@ -63,44 +47,25 @@ existing section-4 statement, section-8 concept, section-9 outcome, or
 section-7 region map.
 
 **Repair.** Tighten or relax the dependent content to satisfy the new
-constraint. If a decision must change as a result, record a *new* ADR rather
-than rewriting an old one's rationale.
+constraint. If a decision must change as a result, rewrite the decision in §4
+as current state.
 
 ## INV-4 — No orphaned cross-references
 
-**Invariant.** Every in-document pointer resolves. References by ADR id ("see
-ADR-0037"), by section number, or by named building block must point at content
-that still exists under that identifier.
+**Invariant.** Every in-document pointer resolves. References by section number
+or by named building block must point at content that still exists under that
+identifier.
 
 **Why.** Downstream artifacts (TRD, Specs) and human readers navigate the SAD by
 these references. A dangling pointer is an inconsistency and a broken trail into
 and out of the document.
 
-**Violation signal.** A reference to an ADR id that was renumbered or removed; a
+**Violation signal.** A reference to a section that was renumbered or removed; a
 mention of a building block that section 5 no longer contains; a "see section X"
 that no longer covers the cited topic.
 
 **Repair.** Update the reference to the new id/target, or remove it if the
 target was intentionally deleted. Never silently leave it.
-
-## INV-5 — Decision status is single-valued and current
-
-**Invariant.** Each section-9 decision has exactly one status from the allowed
-set (`proposed`, `accepted`, `deprecated`, `superseded by ADR-NNNN`). At most
-one `accepted` decision governs any single question; when a new decision
-replaces an old one, the old one's status becomes `superseded by` the new id.
-
-**Why.** Status is how arc42 expresses history *without* changelog prose. Two
-`accepted` decisions on the same question, or a superseded decision still marked
-`accepted`, make it ambiguous which one the rest of the document (and the views)
-should follow.
-
-**Violation signal.** Two live `accepted` ADRs answering the same question; a
-superseded ADR still labelled `accepted`; a `superseded by` pointing at a
-non-existent id.
-
-**Repair.** Set statuses so exactly one decision per question is live, and the
-supersession pointer resolves (this also exercises INV-4).
 
 ## INV-6 — Views (3/5/6/7) match the live structural decisions
 
@@ -126,19 +91,19 @@ reference files keep to plain sketches.
 ## INV-7 — The SAD states only current state
 
 **Invariant.** No section contains changelog, history, or "what changed"
-narrative. The document describes the system as it is now. History is carried
-solely by ADR status fields in section 9.
+narrative. The document describes the system as it is now. No history is carried
+anywhere: this project keeps no ADRs, no decision log, and no section 9.
 
 **Why.** A living architecture document is read for *what is true*, not for an
 archaeology of what used to be true. Mixed history bloats sections and creates
 contradictions (current prose vs. retained old prose).
 
 **Violation signal.** Phrases like "previously", "we used to", "as of the last
-revision", "changed from X to Y" in any section body outside an ADR's Context.
+revision", "changed from X to Y" in any section body.
 
 **Repair.** Delete the historical prose; keep only the current statement. If the
-*reason* for the current state matters, it belongs in an ADR's Context, not in
-the body of 2/4/8 or a view.
+*reason* for the current state matters, state it inline as the decision's driver
+in 2/4/8 — never as narrative about what changed.
 
 ## Post-edit checklist
 

@@ -14,8 +14,7 @@ Do not assume; detect from disk.
   finding three or more arc42 section headings inside one file.
 - **One-file-per-section layout** — a directory (often `docs/architecture/`, `arc42/`, `chapters/`)
   with one file per section, conventionally numeric-prefixed: `02-constraints.md`,
-  `04-solution-strategy.md`, `08-concepts.md`, `09-decisions.md`. Decisions are sometimes a
-  subdirectory of ADR files (`09-decisions/` or `adr/` or `decisions/`) — one ADR per file.
+  `04-solution-strategy.md`, `08-concepts.md`.
 
 Record the detected layout in the packet's `source.layout`. The selector cascade below is layout-aware.
 
@@ -38,8 +37,9 @@ Knowing the neighbors prevents grabbing the wrong block:
 | 11 | Risks and Technical Debt |
 | 12 | Glossary |
 
-Only 2, 4, 8, 9 are in scope. The rest exist here so a selector never mistakes, say, section 11's
-"Technical Debt" decisions for section 9, or section 10's quality scenarios for crosscutting concepts.
+Only 2, 4, 8 are in scope. There is no section 9. The rest exist here so a selector never mistakes,
+say, section 11's "Technical Debt" for section 4's strategy, or section 10's quality scenarios for
+crosscutting concepts.
 
 ## Selector cascade (apply per target section, stop at first hit)
 
@@ -57,8 +57,7 @@ matched in provenance so a human can audit a fuzzy match.
 3. **Known synonym (medium).** Accept documented aliases (table below). Synonym matches are valid but
    note them in provenance.
 4. **Structural fallback (weak — last resort).** If numbering and titles are absent, locate by shape:
-   the Decisions section is the one containing repeated ADR blocks (a `Status:` / `Context:` /
-   `Decision:` / `Consequences:` quartet, or links to an `adr/` tree). Crosscutting Concepts is the
+   Crosscutting Concepts is the
    section enumerating named concepts each with its own subheading. Use shape only when nothing
    stronger exists, and flag the entry's provenance as `selector: structural` so downstream readers
    know it is heuristic.
@@ -73,7 +72,6 @@ log the conflict in provenance rather than merging.
 | 2 | Constraints | Architecture Constraints; Boundary Conditions; Constraints & Conventions |
 | 4 | Solution Strategy | Solution Approach; Strategy; Technical Strategy; Approach |
 | 8 | Crosscutting Concepts | Cross-cutting Concepts; Cross Cutting Concerns; Concepts; Architectural Concepts |
-| 9 | Architecture Decisions | Design Decisions; ADRs; Decision Log; Decision Records; Key Decisions |
 
 ## Sub-structure within a located section
 
@@ -88,9 +86,6 @@ Once a section is located, split it into atomic entries (one per emitted Entry):
 - **Section 8 / Crosscutting Concepts** — each named concept (its own subheading: Security,
   Persistence, Error Handling, Logging, Internationalization, etc.) is one entry. Do not split a
   single concept's paragraphs into multiple entries unless the author numbered them.
-- **Section 9 / Architecture Decisions** — each ADR is exactly one entry. In the one-file-per-ADR
-  layout, one file equals one entry. Capture `Status:` into the entry's `status` field and any
-  "Superseded by ADR-NNN" / "Supersedes ADR-MMM" line into `supersedes` (resolved to packet IDs).
 
 ## Provenance to record per located section
 

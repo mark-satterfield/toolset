@@ -77,8 +77,8 @@ behavior (section 6).** Ready-to-fill skeletons are at the bottom.
 **Acceptance bar**
 - A table mapping every §1 quality goal → the strategic approach that meets it.
   No quality goal left unaddressed.
-- Each fundamental decision is stated atomically and, where it warrants an ADR,
-  references an ADR id that exists in §9 (see `solution-strategy-guide.md`).
+- Each fundamental decision is stated atomically, carrying its own driver and
+  rationale inline (see `solution-strategy-guide.md`).
 - Marked `<!-- source-feed -->`.
 
 ---
@@ -152,9 +152,8 @@ behavior (section 6).** Ready-to-fill skeletons are at the bottom.
   record?
 
 **Acceptance bar**
-- An ADR **index** table: id, title, status (proposed / accepted / superseded),
-  date, one-line context, one-line decision. This is an index, not full ADR text.
-- Every ADR referenced from §4 has a row here.
+- Not authored. This project keeps no ADRs and no section 9. Decision results
+  live in §2, §4 and §8 as current state.
 
 ---
 

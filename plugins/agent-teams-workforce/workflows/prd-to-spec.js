@@ -53,6 +53,53 @@ const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.
 const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => r != null)
 if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither request nor prd supplied — refusing to run without a work item' }
 
+// ── Run budget ──────────────────────────────────────────────────────────────────
+// MAX_LOOPS bounds ONE gate. Nothing bounded the RUN, so a composite with five
+// gates could spend 5 x MAX_LOOPS full phase attempts before returning, and an
+// architecture attempt is ~17 agents. Runs measured at 2h+ were the result.
+//
+// A wall-clock ceiling is NOT expressible here: the workflow sandbox makes
+// Date.now(), argless new Date(), and Math.random() throw, because they would
+// break resume. So the ceiling is denominated in the two things the script CAN
+// observe — phase attempts, and the token budget when the caller set one.
+const MAX_TOTAL_ATTEMPTS = a.maxTotalAttempts || 6
+// Floor below which a further expensive phase is not started. Only meaningful
+// when the caller set a token target (budget.total); otherwise remaining() is
+// Infinity and this never trips.
+const BUDGET_FLOOR = a.budgetFloor || 60000
+let attemptsSpent = 0
+const budgetStop = () => {
+  if (attemptsSpent >= MAX_TOTAL_ATTEMPTS) {
+    return `run attempt budget exhausted (${attemptsSpent}/${MAX_TOTAL_ATTEMPTS} phase attempts). Raise args.maxTotalAttempts to allow more.`
+  }
+  // `typeof` guard, not a truthiness test: an undeclared identifier throws a
+  // ReferenceError rather than reading as falsy, so a runtime that does not expose
+  // `budget` would take the whole composite down here.
+  if (typeof budget !== 'undefined' && budget && budget.total && budget.remaining() < BUDGET_FLOOR) {
+    return `token budget floor reached (${Math.round(budget.remaining() / 1000)}k left, floor ${Math.round(BUDGET_FLOOR / 1000)}k).`
+  }
+  return null
+}
+
+// ── Partial results ─────────────────────────────────────────────────────────────
+// Every stage used to end `return { ok:false, stage, detail }`, which threw away
+// everything the run had already produced. A gate objection at Architecture
+// discarded the validated PRD and the minted Epic; hours of work returned nothing
+// actionable, so no PRD ever reached emission. Whatever exists is now carried out
+// on EVERY exit path. A spec with one open question is worth more than {ok:false},
+// and the caller — not this script — decides whether it is enough to act on.
+const produced = {}
+const partial = (stage, detail, extra) => ({
+  ok: false,
+  stage,
+  detail,
+  // Everything the run got to before it stopped. Absent keys mean "never reached".
+  partial: { ...produced, ...(extra || {}) },
+  partialNote:
+    'This run did not complete, but the artifacts under `partial` were produced and are usable. ' +
+    'Inspect them before re-running: the blocking finding is in `detail`, and re-running from scratch reproduces the work already listed here.',
+})
+
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
 // mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
 // finally so it runs on success, early-return, and throw alike.
@@ -119,14 +166,28 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       ...(extra || {}),
     })
 
+  // Kept across attempts so a loop-exhausted exit still hands back the last thing
+  // the phase produced. It used to return nothing at all, which is why an exhausted
+  // gate erased the whole phase rather than just failing it.
+  let lastArtifact = null
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    // The run-wide budget is checked BEFORE the expensive call, not after, so the
+    // ceiling actually prevents spend instead of reporting it.
+    const stop = budgetStop()
+    if (stop) {
+      log(`Gate ${gate} (${phaseName}): STOPPING before attempt ${attempt} — ${stop}`)
+      recordGate(attempt, null, { terminal: 'budget-exhausted', budgetReason: stop })
+      return { ok: false, reason: `gate ${gate} stopped by run budget: ${stop}`, artifact: lastArtifact, budgetExhausted: true }
+    }
     // Announce the START of the attempt. The progress panel cannot tick this phase:
     // its work happens inside a nested workflow(), whose agents the engine puts in
     // their own "▸ <mini>" group rather than counting toward the parent phase. So
     // without this line a phase that is actively running reads as "Not started yet",
     // and only its verdict — logged below, after the fact — ever proves it ran.
-    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS} (run attempt ${attemptsSpent + 1}/${MAX_TOTAL_ATTEMPTS})`)
+    attemptsSpent++
     const artifact = await phaseFn(feedback)
+    lastArtifact = artifact
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
@@ -147,7 +208,11 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     feedback = verdict.feedback || ''
   }
   recordGate(MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
-  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
+  // Hand the artifact back even here. The phase ran and produced something; the
+  // gate simply would not certify it. Discarding it forces the next run to pay for
+  // identical work, and denies the caller the one thing that would let them judge
+  // whether the objection is worth another round.
+  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true, artifact: lastArtifact }
 }
 
 // ── PRD Creation (optional) ────────────────────────────────────────────────────
@@ -199,8 +264,11 @@ const validation = await gateLoop({
     }),
 })
 if (validation.artifact && validation.artifact.ledger) runLedger.push(validation.artifact.ledger)
-if (!validation.ok) return { ok: false, stage: 'prd-validation', detail: validation, prd }
+produced.prd = prd
+produced.validation = validation.artifact || null
+if (!validation.ok) return partial('prd-validation', validation)
 const validatedPrd = (validation.artifact && validation.artifact.validatedPrd) || prd
+produced.validatedPrd = validatedPrd
 
 // ── Epic (adopt / mint) ─────────────────────────────────────────────────────────
 // A PRD and its Epic are ONE work item in two representations — the document and
@@ -249,6 +317,8 @@ if (a.epic) {
   }
   epicPath = 'epic-minted'
 }
+produced.epic = epic
+produced.epicPath = epicPath
 log(
   `Epic ${epic.key || '(no key)'} via ${epicPath}${
     epicPath === 'epic-minted' ? ` — bead face minted for existing PRD ${epic.prdRef || '(unreferenced)'}` : ''
@@ -258,28 +328,96 @@ log(
 // ── Architecture (Gate 2 — constitutional) ──────────────────────────────────────
 // Consumes the validated PRD; produces the ruled decision + arc42 SAD source feed.
 phase('Architecture')
-const architecture = await gateLoop({
-  gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
-  criteria: [
-    'The chosen architecture honors all platform constitutive bans (no Step Functions, no HTTP API v2, no FastAPI/Flask/Django, REST v1 only, Powertools-only, service isolation, SSM-not-CFN-exports, dot-only event naming)',
-    'Every significant decision is ruled by the decider and recorded in the SAD/arc42 source feed',
-    'No security or data-isolation finding is left open or downgraded',
-  ],
-  escalateTargets: ['prd-validation'],
-  phaseFn: (feedback) =>
-    workflow('agent-teams-workforce:architecture', {
-      decision: a.decision || {
-        id: prd.id,
-        title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
-        context: (validation.artifact && validation.artifact.summary) || prd.body || '',
-        repoPath,
+// Not every PRD contains an architecture decision. This phase is the most
+// expensive in the composite — a full analyst panel plus a challenge wave, ~17
+// agents — and it ran unconditionally, so a single-repo UI feature with nothing
+// to decide still convened persistence, event-schema, and API-contract analysts
+// against a repo that has no persistence, publishes no events, and serves no API.
+// Analysts handed nothing to analyze do not return "nothing"; they invent scope,
+// and the invented scope then fails the gate.
+//
+// One cheap agent decides whether the panel is warranted. It CANNOT skip on its
+// own judgement of difficulty — only on the absence of a decision, or on the SAD
+// having already settled every one this PRD raises.
+let archNeeded = true
+let archTriage = null
+if (a.skipArchitecture === true) {
+  archNeeded = false
+  archTriage = { needed: false, reason: 'caller passed skipArchitecture:true', settledBy: 'caller' }
+} else if (a.skipArchitecture === false) {
+  archTriage = { needed: true, reason: 'caller passed skipArchitecture:false', settledBy: 'caller' }
+} else {
+  archTriage = await agent(
+    `Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
+      `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or a new access pattern, a new service or a new boundary between services, a new integration or transport, a new trust boundary, or a change to a crosscutting concern.\n\n` +
+      `It does NOT exist merely because the work is hard, security-adjacent, or user-facing. A feature that composes existing decisions — a screen in an existing app, a field on an existing form, a call to an endpoint whose contract another PRD owns — raises NO architecture decision even when it is difficult.\n\n` +
+      `Answer needed:false when EITHER there is no such choice, OR the SAD already settles every choice this PRD raises (name the sections).\n` +
+      `Answer needed:true when even one unsettled choice remains. When uncertain, answer true: a wrongly-run panel costs tokens, a wrongly-skipped one costs a bad decision.\n\n` +
+      `Repos this PRD spans (${repos.length}): ${repos.join(', ') || '(none named)'}\n` +
+      `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
+      `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}`,
+    {
+      label: 'triage:architecture-needed',
+      phase: 'Architecture',
+      agentType: 'agent-teams-workforce:architecture-decider',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['needed', 'reason'],
+        properties: {
+          needed: { type: 'boolean' },
+          reason: { type: 'string' },
+          decisions: { type: 'array', items: { type: 'string' } },
+          settledBy: { type: 'string' },
+        },
       },
-      sadPath: a.sadPath,
-      feedback,
-    }),
-})
+    }
+  )
+  // A null triage means the agent died, not that no decision exists. Run the panel.
+  archNeeded = !archTriage || archTriage.needed !== false
+}
+let architecture
+if (!archNeeded) {
+  log(`Architecture SKIPPED — ${(archTriage && archTriage.reason) || 'no architecture decision in this PRD'}`)
+  architecture = { ok: true, skipped: true, artifact: { skipped: true, triage: archTriage } }
+} else {
+  if (archTriage && archTriage.decisions && archTriage.decisions.length) {
+    log(`Architecture NEEDED — ${archTriage.decisions.length} open decision(s): ${archTriage.decisions.join('; ')}`)
+  }
+  architecture = await gateLoop({
+    gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+    criteria: [
+      'The chosen architecture honors all platform constitutive bans (no Step Functions, no HTTP API v2, no FastAPI/Flask/Django, REST v1 only, Powertools-only, service isolation, SSM-not-CFN-exports, dot-only event naming)',
+      'Every significant decision is ruled by the decider and recorded in the SAD/arc42 source feed',
+      // This criterion used to read "No security or data-isolation finding is left
+      // open or downgraded", which no real architecture can satisfy: every honest
+      // threat model ends in accepted residual risk, so a correctly-done security
+      // analysis failed the gate BECAUSE it was done correctly. Any security-adjacent
+      // PRD then burned its full loop budget against an unsatisfiable bar and the run
+      // returned nothing. What the criterion is actually for is catching findings
+      // nobody addressed, or ones quietly waved through — so it now says that.
+      'No security or data-isolation finding is left UNMITIGATED or silently downgraded. ' +
+        'A finding that has been mitigated, and whose remaining exposure is recorded in the SAD as an accepted residual with its mitigations and rationale stated, SATISFIES this criterion — recorded residual risk is the expected output of a threat model, not a defect. ' +
+        'Fail only when: a finding has no mitigation at all; or a residual is undocumented; or the residual could be eliminated by a change THIS phase owns and was not. ' +
+        'If elimination would require changing the PRD, that is an UPSTREAM defect — return escalate (escalateTo prd-validation), never loop, because re-running architecture cannot fix a requirement.',
+    ],
+    escalateTargets: ['prd-validation'],
+    phaseFn: (feedback) =>
+      workflow('agent-teams-workforce:architecture', {
+        decision: a.decision || {
+          id: prd.id,
+          title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
+          context: (validation.artifact && validation.artifact.summary) || prd.body || '',
+          repoPath,
+        },
+        sadPath: a.sadPath,
+        feedback,
+      }),
+  })
+}
 if (architecture.artifact && architecture.artifact.ledger) runLedger.push(architecture.artifact.ledger)
-if (!architecture.ok) return { ok: false, stage: 'architecture', detail: architecture, prd: validatedPrd }
+produced.architecture = architecture.artifact || null
+if (!architecture.ok) return partial('architecture', architecture)
 const sadExtract = architecture.artifact && architecture.artifact.sadUpdate
 
 // ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
@@ -311,7 +449,8 @@ const trdAuthoring = await gateLoop({
     }),
 })
 if (trdAuthoring.artifact && trdAuthoring.artifact.ledger) runLedger.push(trdAuthoring.artifact.ledger)
-if (!trdAuthoring.ok) return { ok: false, stage: 'trd-authoring', detail: trdAuthoring, prd: validatedPrd }
+produced.trdAuthoring = trdAuthoring.artifact || null
+if (!trdAuthoring.ok) return partial('trd-authoring', trdAuthoring)
 const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
 
 // ── Spec Authoring (Gate 3 — once per repo) ──────────────────────────────────────
@@ -322,13 +461,10 @@ const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
 // whose spec fails its gate is RECORDED in the result — never silently dropped.
 phase('Spec Authoring')
 if (!repos.length) {
-  return {
-    ok: false,
-    stage: 'spec-authoring',
-    reason: 'no repos to author specs for — a Story is scoped to a single repo; supply args.repos or args.repoPath',
-    prd: validatedPrd,
-    epic,
-  }
+  return partial(
+    'spec-authoring',
+    { reason: 'no repos to author specs for — a Story is scoped to a single repo; supply args.repos or args.repoPath' }
+  )
 }
 const specPairs = [] // one { repoPath, spec, story } per repo that passed G3
 const specFailures = [] // repos whose spec failed G3 — kept so they cannot silently vanish
@@ -380,17 +516,20 @@ for (const [repoIndex, repo] of repos.entries()) {
   }
   specPairs.push({ repoPath: repo, spec: specAuthoring.artifact, story })
 }
+produced.specPairs = specPairs
+produced.specFailures = specFailures
+// A failure in ONE repo used to end the run for ALL of them, so a three-repo PRD
+// where two specs were clean and one was not emitted nothing for any of the three.
+// Repo failures are independent — a Story is scoped to a single repo by
+// construction — so the passing repos now carry on to decomposition and the
+// failures ride along in the result. Only a total washout stops the run.
 if (specFailures.length) {
-  return {
-    ok: false,
-    stage: 'spec-authoring',
-    prd: validatedPrd,
-    epic,
-    specFailures,
-    // The repos that DID pass, so their work is not lost with the failure.
-    specPairs,
-  }
+  log(
+    `Spec Authoring: ${specFailures.length} repo(s) failed G3, ${specPairs.length} passed — ` +
+      `${specPairs.length ? 'continuing with the repos that passed' : 'no repo produced a spec'}`
+  )
 }
+if (!specPairs.length) return partial('spec-authoring', { specFailures })
 
 // ── Story dependencies ───────────────────────────────────────────────────────────
 // Dependencies live at the STORY level, and only there.
@@ -535,18 +674,21 @@ for (const pair of specPairs) {
     })
   }
 }
+produced.stories = stories
+produced.decompositions = decompositions
+produced.decompositionFailures = decompositionFailures
+produced.tasks = tasks
+// Same rule as spec authoring: one Story failing to decompose does not invalidate
+// the Stories that did. The run continues to emission with the tasks it has, and
+// the failed Stories are reported so they can be re-run on their own rather than
+// dragging their siblings' work down with them.
 if (decompositionFailures.length) {
-  return {
-    ok: false,
-    stage: 'task-decomposition',
-    prd: validatedPrd,
-    epic,
-    stories,
-    decompositionFailures,
-    // The Stories that DID decompose cleanly, so their work is not lost.
-    decompositions,
-  }
+  log(
+    `Task Decomposition: ${decompositionFailures.length} story/stories failed G4, ${decompositions.length} passed — ` +
+      `${tasks.length} task(s) still emitted`
+  )
 }
+if (!decompositions.length) return partial('task-decomposition', { decompositionFailures })
 
 // ── Emit Beads ───────────────────────────────────────────────────────────────────
 // The full hierarchy is ready for `bd` emission from the main repo path: one Epic,
@@ -563,26 +705,45 @@ log(
     `Emit via bd from the main repo path: epic first, then stories by parentEpicKey in buildOrderIndex order, then tasks by parentStoryId.`
 )
 
+// A run that emitted a usable hierarchy is ok:true even if some repo or Story fell
+// out along the way — `degraded` says so without pretending the run failed, because
+// a caller holding real tasks needs to act on them, not re-run everything.
+const degraded = specFailures.length > 0 || decompositionFailures.length > 0
 return {
   ok: true,
+  degraded,
   prd: validatedPrd,
   stagesComplete: [
     creation ? 'prd-creation' : 'prd-supplied',
     'prd-validation',
     epicPath,
-    'architecture',
+    architecture.skipped ? 'architecture-skipped' : 'architecture',
     'trd-authoring',
     'spec-authoring',
     'task-decomposition',
     'emit-beads',
   ],
-  note: 'PRD validated, Epic ensured (supplied/created/minted), architecture ruled into the SAD, TRD authored once per PRD, a (spec, story) pair authored per repo, tasks decomposed/sequenced/WSJF-scored per Story and Beads-format valid. Emit the hierarchy via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.',
+  note:
+    'PRD validated, Epic ensured (supplied/created/minted), ' +
+    (architecture.skipped
+      ? 'architecture phase SKIPPED (triage found no architecture decision — see results.architectureTriage), '
+      : 'architecture ruled into the SAD, ') +
+    'TRD authored once per PRD, a (spec, story) pair authored per repo, tasks decomposed/sequenced/WSJF-scored per Story and Beads-format valid. ' +
+    'Emit the hierarchy via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.' +
+    (degraded
+      ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — see specFailures/decompositionFailures. Everything else here is emittable.`
+      : ''),
   hierarchy,
   beadSet,
+  // Carried on success too, so a degraded run does not have to be re-read from logs.
+  specFailures,
+  decompositionFailures,
+  budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
   results: {
     creation,
     validation: validation.artifact,
     architecture: architecture.artifact,
+    architectureTriage: archTriage,
     trdAuthoring: trdAuthoring.artifact,
     specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
     decomposition: decompositions,

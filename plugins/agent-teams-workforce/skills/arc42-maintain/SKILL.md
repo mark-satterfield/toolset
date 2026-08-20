@@ -24,7 +24,6 @@ triggers:
   - fix the solution strategy section
   - maintain the arc42 document
   - the SAD is out of date
-  - apply this change to section 9
 ---
 
 # arc42 SAD — maintain in place
@@ -52,13 +51,12 @@ reality. You do not:
 
 - append a "Changelog", "History", or "What changed" narrative to any section;
 - keep superseded prose alongside the new prose "for reference";
-- leave a decision in section 9 marked accepted while section 4 still describes
-  the option it replaced.
+- leave a superseded option described anywhere once the decision has changed.
 
-Decision *supersession* is captured by the status field of the section-9
-decision record itself (e.g. an ADR moving to `superseded by ADR-0042`), not by
-prose archaeology in the body. The rest of the document reads as if the new
-decision were always true.
+A superseded decision is simply overwritten in §4 by the one that replaces it.
+There is no section 9, no ADR, and no status field: nothing records that the old
+decision ever existed. The document reads as if the new decision were always
+true.
 
 ## The locate → edit → reconcile loop
 
@@ -75,9 +73,9 @@ worked examples is in `references/update-playbook.md`; the short form:
 
 2. **Edit.** Apply the current-state change to the primary section. Replace
    stale prose; do not annotate it. Keep the section's arc42 intent intact —
-   section 2 lists constraints, it does not justify them; section 9 records a
-   decision with context/options/rationale/consequences, it is not a design
-   essay.
+   section 2 lists constraints, it does not justify them; section 4 records a
+   decision with its driver, rejected alternatives and consequences, it is not a
+   design essay.
 
 3. **Reconcile.** Walk the cross-section invariants in
    `references/consistency-rules.md` and repair every dependent section the
@@ -92,20 +90,19 @@ These are the load-bearing relationships between the structural sections. The
 exhaustive list is in `references/consistency-rules.md`; the ones you check on
 every edit:
 
-- **Every section-9 decision is reflected in section 4.** Solution Strategy is
-  the executive summary of the accepted decisions. If ADR-0041 picks event
-  sourcing, section 4 says the system uses event sourcing. No accepted decision
-  may be invisible in the strategy.
+- **Every decision lives in section 4.** Solution Strategy *is* the decision
+  record. If the system adopts event sourcing, section 4 says so, with the driver
+  that forced it. No decision may be invisible in the strategy.
 - **Every pattern-bearing decision is reflected in section 8.** If a decision
   establishes a crosscutting concern (a standard for auth, retries, idempotency,
   observability), section 8 must describe that concern as now-current.
 - **Every changed section-2 constraint is propagated forward.** Constraints
-  bound the solution space. If a constraint changes, any section-4 / 8 / 9
-  content that was valid only under the old constraint is now suspect and must
-  be re-examined in the same edit.
+  bound the solution space. If a constraint changes, any section-4 / 8 content
+  that was valid only under the old constraint is now suspect and must be
+  re-examined in the same edit.
 - **No orphaned references.** If you remove or renumber a decision, every
-  in-document pointer to it (in 4, 8, or another section-9 record) is updated or
-  removed. A SAD with a dangling "see ADR-0037" reference is inconsistent.
+  in-document pointer to it (in 4 or 8) is updated or removed. A SAD with a
+  dangling reference is inconsistent.
 
 ## Flagging downstream impact
 

@@ -65,7 +65,6 @@ from them, so they must be written to be machine-extractable, not just readable:
 | **2 — Constraints** | Technical / organizational / political limits | Drift detectors and compliance checks read constraints as rules to enforce |
 | **4 — Solution Strategy** | Fundamental decisions and how quality goals are met | The decision log and tech-radar feeds are seeded here |
 | **8 — Crosscutting Concepts** | Domain model, persistence, security, error handling, observability, idempotency | Code-generation and review tooling reads concepts as the canonical pattern set |
-| **9 — Architecture Decisions** | The ADR index | The ADR tracker reads this as the authoritative decision list |
 
 When authoring 2, 4, and 8, follow the extraction-shape rules in the matching
 reference file so each item parses as a discrete, IDed, atomic statement. Mark
@@ -91,8 +90,10 @@ downstream tooling can locate them.
 8. **Crosscutting Concepts** — domain model, persistence, security,
    error-handling, logging/observability, idempotency, and other concerns that
    cut across building blocks. *Source feed.*
-9. **Architecture Decisions** — an index of ADRs (context → decision → status →
-   consequences). *Source feed.*
+> **Section 9 is not authored.** This project keeps no ADRs and no decision log.
+> Decision results are written as current state into sections 2, 4 and 8. Number
+> the document 1–8 then 10–12; a table running 8 → 10 is correct.
+
 10. **Quality Requirements** — the quality tree and a table of concrete,
     measurable quality scenarios (stimulus → response → measure).
 11. **Risks and Technical Debt** — known risks and accepted debt, each with an
@@ -143,7 +144,7 @@ component level — each level zooms one box from the level above.
 The document is done when: all 12 headings exist; every quality goal in section 1
 has a matching measurable scenario in section 10; sections 2/4/8 are shaped as
 source feeds and marked; every building block named in 5 appears in at least one
-of 6 or 7; every ADR referenced in 4 has an entry in 9; and every remaining gap
+of 6 or 7; and every remaining gap
 is an explicit `> TODO:` and not a missing section.
 
 ## What you do NOT do
@@ -152,8 +153,8 @@ is an explicit `> TODO:` and not a missing section.
 - You do **not** diff the document against the running system.
 - You do **not** produce the downstream feeds yourself — you only shape sections
   2/4/8 so the feed-extraction tools can read them.
-- You do **not** write ADR bodies — section 9 is an *index*; full ADRs live with
-  the ADR tooling. You author the index entry (context, decision, status).
+- You do **not** write ADRs or a section 9 in any form. Decisions go into 2/4/8
+  as current state, each carrying its own driver and rationale inline.
 - You do **not** add revision history, edit-timestamp lines, or changelogs to the
   body. The SAD is a living current-state document.
 

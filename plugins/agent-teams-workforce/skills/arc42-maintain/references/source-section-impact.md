@@ -15,7 +15,7 @@ artifacts can reconcile them.
 
 A reconciliation flag has three parts:
 
-1. **Source** — the SAD section (and ADR id, if applicable) that changed.
+1. **Source** — the SAD section that changed.
 2. **Downstream artifact** — the specific TRD requirement or Spec section at risk.
 3. **Claim to re-check** — the exact assertion the downstream item made on the
    basis of the old SAD content.
@@ -70,21 +70,6 @@ auth-model change touches all Specs with authenticated flows.
 **Flag template:** `Source: SAD §8 (concept <name> changed) → Risk: TRD
 crosscutting req <id> + ALL Specs inheriting the <name> contract → Re-check:
 behaviour assertions against the old <name> contract.`
-
-## Section 9 (Architecture Decisions) changed
-
-Decisions are cited *by id*, so the impact is the most precisely traceable: find
-every downstream item that names the ADR.
-
-| Downstream consumer | Why it is at risk | Re-check |
-|---|---|---|
-| TRD requirements citing the ADR id | A requirement traced to ADR-NNNN inherits its outcome | Does the requirement still follow from the new/superseding decision? |
-| Spec sections citing the ADR id | A Spec may justify scope or acceptance by "per ADR-NNNN" | Is the justification still valid, or now superseded? |
-| Items citing a *superseded* ADR | After supersession, references to the old id point at a defunct outcome | Re-point each citation to the superseding ADR id and re-check the claim. |
-
-**Flag template:** `Source: SAD §9 (ADR-NNNN <status change>) → Risk: every TRD
-req / Spec section citing ADR-NNNN → Re-check: outcome under ADR-MMMM (the
-superseding decision).`
 
 ## How to emit the flags
 

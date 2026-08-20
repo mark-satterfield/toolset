@@ -16,12 +16,11 @@ present, even when empty (an absent section is signaled inside the bucket, never
   "source": {
     "sad": "docs/architecture/",
     "layout": "one-file-per-section",
-    "extractedFrom": ["02-constraints.md", "04-solution-strategy.md", "08-crosscutting.md", "09-decisions.md"]
+    "extractedFrom": ["02-constraints.md", "04-solution-strategy.md", "08-crosscutting.md"]
   },
   "constraints":          { "sourceSection": 2, "present": true,  "entries": [ /* Entry */ ] },
   "solutionStrategy":     { "sourceSection": 4, "present": true,  "entries": [ /* Entry */ ] },
-  "crosscuttingConcepts": { "sourceSection": 8, "present": true,  "entries": [ /* Entry */ ] },
-  "decisions":            { "sourceSection": 9, "present": false, "entries": [], "missingReason": "section 9 absent from SAD" }
+  "crosscuttingConcepts": { "sourceSection": 8, "present": true,  "entries": [ /* Entry */ ] }
 }
 ```
 
@@ -47,8 +46,6 @@ Architecture Decision entries (`sourceSection: 9`) may additionally carry:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `status` | string | The ADR status as written in the SAD — typically `proposed`, `accepted`, `deprecated`, or `superseded`. Copy what the SAD says; do not normalize a status the SAD did not use. |
-| `supersedes` | string[] | IDs (or the SAD's own ADR references resolved to packet IDs) of decisions this one replaces. Empty or absent when none. See `trd-feed-contract.md` for how supersession is consumed. |
 
 ### Worked entries
 
@@ -90,11 +87,9 @@ A decision with supersession:
 ```json
 {
   "id": "AD-payments-idempotency",
-  "sourceSection": 9,
+  "sourceSection": 4,
   "statement": "All payment writes MUST be idempotent, keyed on a client-supplied request id.",
-  "rationaleRef": "09-decisions.md / ADR-014 / Consequences",
-  "status": "accepted",
-  "supersedes": ["AD-payments-retry-window"]
+  "rationaleRef": "04-solution-strategy.md / Idempotency / rationale"
 }
 ```
 
@@ -103,10 +98,9 @@ A decision with supersession:
 IDs MUST be **deterministic** and **content-anchored**, not positional. The same SAD content yields
 the same ID on every re-run so downstream references survive section reordering and re-extraction.
 
-1. **Prefix by bucket** — `C-` constraints, `S-` solution strategy, `X-` crosscutting concepts,
-   `AD-` architecture decisions.
+1. **Prefix by bucket** — `C-` constraints, `S-` solution strategy, `X-` crosscutting concepts.
 2. **Slug from the strongest available anchor**, in priority order:
-   - the SAD's own identifier for the item (e.g. an ADR number `ADR-014`, a constraint tag `TC-3`) if one exists, slugified;
+   - the SAD's own identifier for the item (e.g. a constraint tag `TC-3`) if one exists, slugified;
    - else a short kebab-case slug derived from the salient nouns of the `statement` (lowercase, ASCII, hyphen-separated, ~2–4 tokens).
 3. **Disambiguate collisions** by appending a numeric suffix (`-2`, `-3`) in stable document order, only when two entries would otherwise produce the same slug.
 

@@ -19,7 +19,6 @@ sections — the ones whose edits ripple — are highlighted:
 | 6 | Runtime View | Key scenarios (UML sequence / activity behaviour) |
 | 7 | Deployment View | Infrastructure mapping (C4 Deployment) |
 | **8** | **Crosscutting Concepts** | **Project-wide patterns: domain model, security, persistence, logging, error handling** |
-| **9** | **Architecture Decisions** | **Important, expensive, risky decisions as dated records (ADRs)** |
 | 10 | Quality Requirements | Quality tree and scenarios |
 | 11 | Risks and Technical Debt | Known risks and accepted debt |
 | 12 | Glossary | Domain and technical terms |
@@ -38,13 +37,13 @@ belongs in determines the reconciliation that follows.
 | A new or altered external mandate (regulation, mandated tech, org rule, team-topology rule, budget/runtime limit) | **2 Constraints** |
 | A fundamental "how we will build it" choice that summarizes direction | **4 Solution Strategy** |
 | A new or revised project-wide pattern (auth model, retry policy, logging contract, persistence approach, error taxonomy) | **8 Crosscutting Concepts** |
-| A specific, dated, rationale-bearing choice with consequences | **9 Architecture Decisions (ADR)** |
+| A specific, rationale-bearing choice with consequences | **4 Solution Strategy** (stated as current state, with its driver) |
 
 Tie-breakers:
 
-- If a single change is *both* a fundamental direction and a dated decision,
-  the **decision record (9)** is primary and **strategy (4)** is reconciled to
-  match. Section 9 carries the rationale; section 4 carries the summary.
+- **Section 4 is the decision record.** There is no section 9 and no ADR. A
+  decision's driver, chosen option, rejected alternatives and consequences are
+  stated inline in §4 as current state.
 - A pattern introduced *by* a decision lives in **8**, but the decision to adopt
   it is recorded in **9**. Both get touched; 9 is primary.
 - A constraint is never "decided" in the arc42 sense — it is imposed. If you
@@ -55,32 +54,28 @@ Tie-breakers:
 Apply the change so the section reads as the **current state**.
 
 - **Replace, do not annotate.** Delete the stale sentence; write the true one.
-  Do not leave "previously we used X" prose. Supersession of a *decision* is
-  expressed by the ADR status field (`accepted` → `superseded by ADR-NNNN`),
-  not by retained body prose.
+  Do not leave "previously we used X" prose. A superseded decision is simply
+  overwritten by the new one; nothing records that it ever existed.
 - **Stay within the section's arc42 intent.** Section 2 enumerates constraints;
   it does not argue them. Section 4 summarizes; it does not enumerate every
-  component. Section 9 uses the decision-record shape: Context, Decision
-  Drivers, Considered Options, Decision Outcome, Consequences. Section 8
+  component — though a §4 decision does state its driver, rejected alternatives
+  and consequences inline. Section 8
   describes a concept as a standing rule, not as a one-off.
-- **Preserve identifiers.** Keep ADR ids stable. If a decision is replaced,
-  write a *new* ADR with a new id and set the old one's status to superseded;
-  do not overwrite an existing ADR id with unrelated content, because
-  downstream artifacts cite ids.
+- **Preserve identifiers.** Keep `D-` decision ids stable, because downstream
+  artifacts cite them. If a decision is replaced, overwrite its row with the new
+  choice; do not reuse a retired id for an unrelated decision.
 
 ## Phase 3 — Reconcile dependent sections
 
 Walk `consistency-rules.md` and repair every section the primary edit affects.
 The common ripples:
 
-- Edited **9 (new accepted ADR)** → update **4** so the strategy reflects it;
-  if it introduces a pattern, update **8**; if it changes the static structure,
+- Edited **4 (new decision)** → if it introduces a pattern, update **8**; if it changes the static structure,
   update the **5** Building Block View (C4 Container/Component) and any **6**
   Runtime sequence that exercised the old structure; if it moves a deployment
   node, update **7**.
-- Edited **4 (direction change)** → ensure a backing ADR exists in **9** (create
-  one if the direction is a real decision); update **5/6/7** views that drew the
-  old direction.
+- Edited **4 (direction change)** → update **5/6/7** views that drew the old
+  direction.
 - Edited **8 (pattern change)** → update every view in **5/6/7** that rendered
   the old pattern, and confirm a decision in **9** authorizes the pattern.
 - Edited **2 (constraint change)** → re-examine **4/8/9** for content that was
@@ -107,7 +102,7 @@ playbook keeps to a plain sketch so it states the loop without a renderer.)
                    |
                    v
         +---------------------+
-        |  EDIT primary as    |   replace stale prose; ADR status,
+        |  EDIT primary as    |   replace stale prose;
         |  CURRENT STATE      |   not changelog narrative
         +----------+----------+
                    |
@@ -132,12 +127,11 @@ playbook keeps to a plain sketch so it states the loop without a renderer.)
 > "We're switching the order service from synchronous REST calls to an
 > event-driven outbox so we stop losing writes during downstream outages."
 
-1. **Locate:** dated, rationale-bearing, expensive → **section 9**. Primary.
-2. **Edit:** write `ADR-0044 Adopt transactional outbox for order events`
-   (Context: lost writes during downstream outages; Options: 2PC, sync retry,
-   outbox; Outcome: outbox; Consequences: eventual consistency, new relay
-   process). Set the superseded sync-call ADR's status to
-   `superseded by ADR-0044`.
+1. **Locate:** rationale-bearing, expensive → **section 4**. Primary.
+2. **Edit:** write a `D-` row adopting a transactional outbox for order events
+   (driver: lost writes during downstream outages; over: 2PC, sync retry;
+   consequences: eventual consistency, new relay process). Overwrite the old
+   sync-call decision rather than annotating it.
 3. **Reconcile:** section 4 now states the system is event-driven via an outbox;
    section 8 gains/updates the "asynchronous integration & idempotency" concept;
    section 5 Building Block View adds the relay component; a section-6 runtime
@@ -154,7 +148,7 @@ playbook keeps to a plain sketch so it states the loop without a renderer.)
 2. **Edit:** add/replace the data-residency constraint to state EU-only PII at
    rest as current.
 3. **Reconcile:** section 7 Deployment View region mapping is re-examined;
-   section 8 persistence concept updated; if a region choice was an ADR, a new
-   section-9 record captures the forced change.
+   section 8 persistence concept updated; any section-4 region decision is
+   overwritten to reflect the forced change.
 4. **Flag:** TRD compliance and data-residency NFRs re-checked; any Spec naming
    a non-EU store flagged.
