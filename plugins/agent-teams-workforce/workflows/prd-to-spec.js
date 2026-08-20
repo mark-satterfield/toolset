@@ -506,6 +506,37 @@ if (!archNeeded) {
   } else {
     log('Architecture panel: not sized here — the mini will run its own triage')
   }
+  // What the architecture phase is told, and what it is NOT told.
+  //
+  // The decision's `context` slot used to carry `validation.artifact.summary` —
+  // the prd-validation-lead's consolidated FINDINGS report, written by the
+  // analysts BEFORE the gate adjudicated their severities. Two things went wrong
+  // at once, and run wf_e1736f55-1fe showed both: the panel never received the
+  // PRD it was convened to analyze, and what it received instead was a defect
+  // report closing with "Recommend returning to the PRD owner to resolve the two
+  // blockers". The coordinator held on that basis, its HOLD propagated through
+  // the framing into all seven analysts, and every one of them returned
+  // STATUS: BLOCKED without opening its lens. A phase whose gate had PASSED
+  // produced zero proposals and escalated.
+  //
+  // The PRD is the artifact under analysis, so the PRD is the context. G1's
+  // outcome travels separately as a driver, and it is the GATE's verdict rather
+  // than the lead's draft — because the gate is what settles severity. A finding
+  // the gate declined to uphold is CLOSED, and must not travel downstream still
+  // wearing the grading the gate removed.
+  //
+  // The flags themselves are deliberately NOT forwarded. They are written in the
+  // analysts' voice, and reproducing that voice is what caused the panel to
+  // stand down in the first place.
+  const g1 = (validation.verdict && validation.verdict.verdict) || 'pass'
+  const archDrivers = [
+    `Gate G1 (PRD validation) returned ${String(g1).toUpperCase()}. The PRD in Context is VALIDATED.`,
+    'Findings raised during validation were adjudicated AT that gate. Any the gate did not uphold are closed. ' +
+      'Do NOT treat validation-phase findings as open defects, and do NOT withhold analysis on account of them — ' +
+      'if you believe the PRD is undecidable, say so about text you have read in the PRD itself.',
+    ...(Array.isArray(a.decision && a.decision.drivers) ? a.decision.drivers : []),
+  ]
+
   architecture = await gateLoop({
     gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
     criteria: [
@@ -529,7 +560,8 @@ if (!archNeeded) {
         decision: a.decision || {
           id: prd.id,
           title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
-          context: (validation.artifact && validation.artifact.summary) || prd.body || '',
+          context: validatedPrd.body || prd.body || '',
+          drivers: archDrivers,
           repoPath,
         },
         sadPath: a.sadPath,
