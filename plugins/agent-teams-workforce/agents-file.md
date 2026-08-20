@@ -1,5 +1,5 @@
 ---
-hash: 512dac5
+hash: 536a278
 ---
 
 ## Instructions for Agent Teams Workforce
