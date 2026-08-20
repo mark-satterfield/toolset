@@ -13,7 +13,7 @@ Container/Component), **6 Runtime** (UML sequence/activity), **7 Deployment**
 
 ## INV-2 — Every pattern-bearing decision is reflected in section 8
 
-**Invariant.** If a section-9 decision establishes a project-wide pattern
+**Invariant.** If a section-4 decision establishes a project-wide pattern
 (authentication model, authorization model, retry/backoff policy, idempotency
 strategy, logging/tracing contract, error taxonomy, persistence approach,
 validation strategy), section 8 Crosscutting Concepts describes that pattern as
@@ -43,8 +43,7 @@ produces a SAD that documents a solution its own constraints forbid.
 
 **Violation signal.** A new constraint (e.g. EU-only data residency, a banned
 library, a latency budget, a single-region mandate) that contradicts an
-existing section-4 statement, section-8 concept, section-9 outcome, or
-section-7 region map.
+existing section-4 statement, section-8 concept, or section-7 region map.
 
 **Repair.** Tighten or relax the dependent content to satisfy the new
 constraint. If a decision must change as a result, rewrite the decision in §4
@@ -92,7 +91,7 @@ reference files keep to plain sketches.
 
 **Invariant.** No section contains changelog, history, or "what changed"
 narrative. The document describes the system as it is now. No history is carried
-anywhere: this project keeps no ADRs, no decision log, and no section 9.
+anywhere.
 
 **Why.** A living architecture document is read for *what is true*, not for an
 archaeology of what used to be true. Mixed history bloats sections and creates

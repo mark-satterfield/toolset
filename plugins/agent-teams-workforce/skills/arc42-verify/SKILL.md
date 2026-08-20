@@ -2,9 +2,9 @@
 name: arc42-verify
 description: >-
   Verifies a Software Architecture Document (SAD) written to the arc42 template — checks
-  12-section completeness, cross-section consistency, living-document hygiene, and the integrity
-  of the four source sections (2 Constraints, 4 Solution Strategy, 8 Crosscutting Concepts,
-  9 Architecture Decisions). This is a test-category skill: it reports findings as a structured
+  eleven-section completeness, cross-section consistency, living-document hygiene, and the integrity
+  of the three source sections (2 Constraints, 4 Solution Strategy, 8 Crosscutting
+  Concepts). This is a test-category skill: it reports findings as a structured
   verdict and fixes nothing. Use when the user asks to verify, validate, lint, QA, or check a SAD
   or arc42 document, asks whether an architecture doc is complete or consistent, wants a SAD
   conformance report before a gate or review, or asks why a SAD failed verification.
@@ -57,7 +57,7 @@ You assert four families of property. Each has a dedicated reference file in `re
 
 | Family | What it asserts | Reference |
 |---|---|---|
-| **Completeness** | All 12 sections present, correctly numbered/ordered, none empty or stubbed | `references/verification-checklist.md` |
+| **Completeness** | All eleven sections present, correctly numbered/ordered, none empty or stubbed | `references/verification-checklist.md` |
 | **Consistency** | Cross-section invariants hold (quality goals trace to scenarios, building blocks appear in deployment, decisions trace to constraints, glossary covers used terms) | `references/verification-checklist.md` |
 | **Living-document hygiene** | No inline version-metadata lines, no changelog narrative, no future-tense/aspirational prose, no orphaned sections | `references/living-doc-antipatterns.md` |
 | **Source-section integrity** | Sections 2, 4, 8, 9 are present, individually extractable, and mutually non-contradictory | `references/source-integrity-checks.md` |
@@ -71,7 +71,7 @@ when every section is technically present.
 ## How to run the verification
 
 1. **Locate the SAD.** Take the path the user gives, or search for an arc42 document (a markdown
-   file with the 12 arc42 headings, or a `docs/architecture/` tree). If you cannot find exactly one,
+   file with the eleven arc42 headings, or a `docs/architecture/` tree). If you cannot find exactly one,
    ask one disambiguating question — do not guess across multiple candidates.
 2. **Load the rules.** Read `../arc42/references/` for the section contracts, then read all three
    files in `references/` for the assertions you are about to make.
@@ -144,7 +144,7 @@ test-category contract. Stop and emit the verdict.
 
 ## References
 
-- `references/verification-checklist.md` — the 12-section completeness checklist plus the
+- `references/verification-checklist.md` — the eleven-section completeness checklist plus the
   cross-section consistency invariants to assert.
 - `references/living-doc-antipatterns.md` — living-document smells to flag.
 - `references/source-integrity-checks.md` — presence, extractability, and non-contradiction rules

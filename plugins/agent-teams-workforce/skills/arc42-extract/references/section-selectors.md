@@ -1,7 +1,7 @@
 # Section selectors — locating arc42 sections reliably
 
-arc42 is a twelve-section template. This skill targets four of them — **2 Constraints**,
-**4 Solution Strategy**, **8 Crosscutting Concepts**, **9 Architecture Decisions**. The challenge is
+The SAD is an eleven-section document. This skill targets three of them — **2 Constraints**,
+**4 Solution Strategy**, **8 Crosscutting Concepts**. The challenge is
 that arc42 SADs ship in two common physical layouts, and authors rename headings. This file gives a
 layered selector cascade that locates each target section robustly across both.
 
@@ -10,7 +10,7 @@ layered selector cascade that locates each target section robustly across both.
 Do not assume; detect from disk.
 
 - **Single-file layout** — the entire SAD is one document (`architecture.md`, `arc42.adoc`, a single
-  `.docx`/`.md`) whose top-level or second-level headings are the twelve arc42 sections. Detect by
+  `.docx`/`.md`) whose top-level or second-level headings are the eleven arc42 sections. Detect by
   finding three or more arc42 section headings inside one file.
 - **One-file-per-section layout** — a directory (often `docs/architecture/`, `arc42/`, `chapters/`)
   with one file per section, conventionally numeric-prefixed: `02-constraints.md`,
@@ -37,7 +37,7 @@ Knowing the neighbors prevents grabbing the wrong block:
 | 11 | Risks and Technical Debt |
 | 12 | Glossary |
 
-Only 2, 4, 8 are in scope. There is no section 9. The rest exist here so a selector never mistakes,
+Only 2, 4, 8 are in scope. The rest exist here so a selector never mistakes,
 say, section 11's "Technical Debt" for section 4's strategy, or section 10's quality scenarios for
 crosscutting concepts.
 

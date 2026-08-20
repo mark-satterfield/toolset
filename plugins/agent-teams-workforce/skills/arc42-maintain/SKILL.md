@@ -40,7 +40,7 @@ write requirements or specs yourself — you keep the SAD that feeds them honest
 
 The arc42 section model and the canonical SAD layout live in
 `../arc42/references/`. Read those for the meaning and intended content of each
-of the twelve sections before editing; this skill governs only how you *change*
+of the eleven sections before editing; this skill governs only how you *change*
 an existing one.
 
 ## What "in place" means
@@ -54,9 +54,8 @@ reality. You do not:
 - leave a superseded option described anywhere once the decision has changed.
 
 A superseded decision is simply overwritten in §4 by the one that replaces it.
-There is no section 9, no ADR, and no status field: nothing records that the old
-decision ever existed. The document reads as if the new decision were always
-true.
+Nothing records that the old decision ever existed. The document reads as if the
+new decision were always true.
 
 ## The locate → edit → reconcile loop
 
@@ -67,9 +66,8 @@ worked examples is in `references/update-playbook.md`; the short form:
    external requirement or technology mandate is a section-2 (Constraints) edit;
    a new "how we will build it" choice is section-4 (Solution Strategy); a
    project-wide pattern (logging, error handling, security, persistence) is
-   section-8 (Crosscutting Concepts); a specific, dated, rationale-bearing
-   choice is a section-9 (Architecture Decision) record. Edit the primary
-   section first, completely.
+   section-8 (Crosscutting Concepts). Edit the primary section first,
+   completely.
 
 2. **Edit.** Apply the current-state change to the primary section. Replace
    stale prose; do not annotate it. Keep the section's arc42 intent intact —
@@ -79,8 +77,8 @@ worked examples is in `references/update-playbook.md`; the short form:
 
 3. **Reconcile.** Walk the cross-section invariants in
    `references/consistency-rules.md` and repair every dependent section the
-   primary edit touched. A section-9 decision must be reflected in the
-   section-4 strategy and, if it introduces a pattern, in section-8. A changed
+   primary edit touched. A pattern-bearing section-4 decision must be reflected
+   in section-8. A changed
    section-2 constraint must be propagated to every section whose content
    assumed the old constraint.
 
@@ -118,8 +116,6 @@ consumers are now stale so they can be reconciled. Use the mapping in
   Spec whose scope assumed the old structure.
 - A **section-8** change can invalidate crosscutting TRD requirements (security,
   logging, error-handling contracts) referenced across many Specs.
-- A **section-9** change can invalidate whichever TRD/Spec items cite that
-  decision by id.
 
 Emit the impact as an explicit, itemized **reconciliation flag list** — each
 item naming the source section that changed, the downstream artifact at risk,

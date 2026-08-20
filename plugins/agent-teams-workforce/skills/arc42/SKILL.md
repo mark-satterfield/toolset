@@ -28,7 +28,7 @@ triggers:
 
 You are the entry point for the arc42 Software Architecture Document (SAD) toolkit. Your only job is to recognize the user's intent and hand off to the correct specialized sub-skill. You hold no authoring or workflow logic yourself.
 
-The SAD follows the arc42 template: twelve numbered sections that together describe a system's architecture. Four of those sections — Constraints, Solution Strategy, Crosscutting Concepts, and Architecture Decisions — are the canonical SOURCE that downstream TRD and spec authors consume. This router owns the shared 12-section corpus under `references/` that every sub-skill reads; the sub-skills never redefine the section model, they read it from here.
+The SAD follows the arc42 template: eleven numbered sections that together describe a system's architecture. Three of those sections — Constraints, Solution Strategy and Crosscutting Concepts — are the canonical SOURCE that downstream TRD and spec authors consume. This router owns the shared section corpus under `references/` that every sub-skill reads; the sub-skills never redefine the section model, they read it from here.
 
 ## Bootstrap
 
@@ -80,7 +80,7 @@ Every turn ends in a one-sentence handoff. If you find yourself producing archit
 
 This router owns the shared corpus that all sub-skills read:
 
-- `references/arc42-section-model.md` — the twelve arc42 sections and what each holds; marks the four SOURCE sections.
+- `references/arc42-section-model.md` — the eleven arc42 sections and what each holds; marks the three SOURCE sections.
 - `references/living-document-rules.md` — the SAD is current-state only; how supersession works and where per-decision history actually lives.
 - `references/source-of-truth-map.md` — the feed contract: which sections are exported and who consumes them.
 - `references/routing-table.md` — the detailed intent-signal to sub-skill mapping.

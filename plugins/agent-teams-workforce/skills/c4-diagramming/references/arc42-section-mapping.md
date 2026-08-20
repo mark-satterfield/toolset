@@ -1,6 +1,6 @@
 # Mapping C4 levels onto arc42 sections
 
-arc42 is a 12-section template for documenting software and system architectures. C4 is a
+This project's SAD is an eleven-section arc42 document. C4 is a
 notation for the *static structure* diagrams. They are complementary: arc42 tells you
 *what to document and where*, C4 gives you *how to draw the structure pictures*. This file
 fixes which C4 artifact goes into which arc42 section, so a documentation set built with
@@ -8,7 +8,7 @@ both stays coherent.
 
 ## The relevant arc42 sections
 
-The full template has twelve sections. The three that consume C4 diagrams are:
+The SAD has eleven sections. The three that consume C4 diagrams are:
 
 | arc42 § | Section name | What it documents |
 |---|---|---|

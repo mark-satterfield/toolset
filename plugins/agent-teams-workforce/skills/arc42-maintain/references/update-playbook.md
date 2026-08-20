@@ -6,7 +6,7 @@ downstream feed into the TRD and Specs.
 
 ## The arc42 section model (reference)
 
-arc42 fixes twelve sections. The four this skill treats as *structural source*
+The SAD has eleven sections. The three this skill treats as *structural source*
 sections — the ones whose edits ripple — are highlighted:
 
 | # | Section | Holds |
@@ -41,9 +41,9 @@ belongs in determines the reconciliation that follows.
 
 Tie-breakers:
 
-- **Section 4 is the decision record.** There is no section 9 and no ADR. A
-  decision's driver, chosen option, rejected alternatives and consequences are
-  stated inline in §4 as current state.
+- **Section 4 is the decision record.** A decision's driver, chosen option,
+  rejected alternatives and consequences are stated inline in §4 as current
+  state.
 - A pattern introduced *by* a decision lives in **8**, but the decision to adopt
   it is recorded in **9**. Both get touched; 9 is primary.
 - A constraint is never "decided" in the arc42 sense — it is imposed. If you

@@ -1,10 +1,10 @@
 # arc42 section model
 
-arc42 is a free, open template for software architecture documentation, organized as twelve numbered sections. The template prescribes *what* each section holds, not *how* the system is built — it is a structure for communicating architecture, not a method for designing it. Every sub-skill in this toolkit reads this file for the authoritative section list; none of them redefines it.
+arc42 is a free, open template for software architecture documentation. This project's SAD uses eleven numbered sections — 1 through 8 and 10 through 12. The template prescribes *what* each section holds, not *how* the system is built — it is a structure for communicating architecture, not a method for designing it. Every sub-skill in this toolkit reads this file for the authoritative section list; none of them redefines it.
 
 A section may legitimately be empty if the system does not warrant it (small systems often collapse 5–7 into a few paragraphs and skip 11). An empty section is stated as "Not applicable" with a one-line reason, never deleted from the structure.
 
-## The twelve sections
+## The eleven sections
 
 ### 1. Introduction and Goals
 The short version of the requirements. The essential business goals, the top three to five quality goals that drive architecture (the **most important** prioritized quality attributes, expressed as concrete scenarios, not adjectives), and the key stakeholders with their expectations. This section answers "why does this system exist and what must it be good at?"
@@ -30,8 +30,6 @@ The technical infrastructure the system runs on — environments, nodes, network
 ### 8. Crosscutting Concepts — SOURCE
 Overarching regularities and solution ideas relevant in multiple parts of the system: domain model, persistence, session handling, security and identity, error handling and logging, internationalization, transaction handling, build and test approach, architectural and design patterns applied. **This is a SOURCE section**: spec authors read it so that individual specs inherit the system-wide concepts instead of re-inventing them.
 
-> **There is no section 9.** Architecture decisions are recorded as current state in sections 2, 4 and 8. Do not author a section 9, do not report its absence as a defect, and do not create ADRs — this project has none and will have none. A section table running 8 → 10 is correct.
-
 ### 10. Quality Requirements
 The full quality tree and concrete quality scenarios, refining the top goals from section 1. Each scenario is testable: a stimulus, the system, and a measurable response. This is what `arc42-verify` checks the rest of the document against.
 
@@ -41,7 +39,7 @@ Known technical risks and accumulated debt, prioritized, each with a mitigation 
 ### 12. Glossary
 The shared vocabulary — domain and technical terms with definitions — so that every other section, every diagram label, and every downstream document means the same thing by the same word.
 
-## The four SOURCE sections
+## The three SOURCE sections
 
 | # | Section | Why it is a SOURCE |
 |---|---|---|
@@ -49,4 +47,4 @@ The shared vocabulary — domain and technical terms with definitions — so tha
 | 4 | Solution Strategy | The high-level technical approach the TRD elaborates |
 | 8 | Crosscutting Concepts | System-wide concepts that specs inherit rather than re-derive |
 
-`arc42-extract` reads exactly these four sections and nothing else when producing the feed described in `source-of-truth-map.md`.
+`arc42-extract` reads exactly these three sections and nothing else when producing the feed described in `source-of-truth-map.md`.

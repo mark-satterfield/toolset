@@ -25,8 +25,8 @@ The packet always contains all three buckets: `constraints` (§2), `solutionStra
 `crosscuttingConcepts` (§8). A consumer may iterate any bucket without a presence check. A section
 absent from the SAD is **not** dropped — its bucket carries `present: false`, an empty `entries`
 list, and a human-readable `missingReason`. This means "§4 was missing from the SAD" is a fact the
-TRD author can see and act on, never an ambiguous silence. There is no `decisions` bucket and no §9:
-architecture decisions are recorded as current state in §2, §4 and §8.
+TRD author can see and act on, never an ambiguous silence. Architecture decisions arrive inside the
+§2, §4 and §8 buckets, as current state.
 
 ## Guarantee 2 — every entry has the four core fields
 

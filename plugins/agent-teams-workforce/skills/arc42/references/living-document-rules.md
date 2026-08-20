@@ -10,11 +10,11 @@ The SAD is a **current-state** document. It describes how the system *is* archit
 
 ## Where history actually lives
 
-This project keeps **no** per-decision history and **no** ADRs. There is no section 9, no decision log, and no append-only record — none will be created. A decision's result is written directly into section 2, 4 or 8 as current state, carrying its own driver and rationale inline. To answer "what is true now?", a reader reads the section. There is no "why did we reject X" trail to follow, by deliberate choice.
+This project keeps **no** per-decision history. A decision's result is written directly into section 2, 4 or 8 as current state, carrying its own driver and rationale inline. To answer "what is true now?", a reader reads the section. There is no "why did we reject X" trail to follow, by deliberate choice.
 
 ## Consequences for the sub-skills
 
-- `arc42-author` writes only present-tense, current-state content. It authors no section 9.
+- `arc42-author` writes only present-tense, current-state content.
 - `arc42-maintain` overwrites stale content rather than annotating it — it does not narrate the change inside the SAD.
 - `arc42-verify` flags any changelog prose, any "last updated"/"last modified" string, and any "we used to…" narrative.
 

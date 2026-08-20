@@ -1,6 +1,6 @@
 # arc42 Section Templates — prompt + acceptance bar per section
 
-This is the per-section authoring playbook. For each of the 12 arc42 sections it
+This is the per-section authoring playbook. For each of the eleven arc42 sections it
 gives: the **prompt** (the questions whose answers become the section content)
 and the **acceptance bar** (the testable definition of "done"). The bar is what
 you check a section against before moving on. If a section cannot clear its bar
@@ -142,18 +142,6 @@ behavior (section 6).** Ready-to-fill skeletons are at the bottom.
   rest of the code follows (see `crosscutting-concepts-guide.md`).
 - Each concept is extraction-shaped (IDed, atomic, present-tense rule).
 - Marked `<!-- source-feed -->`.
-
----
-
-## 9. Architecture Decisions
-
-**Prompt**
-- Which decisions are significant, costly to reverse, or contested enough to
-  record?
-
-**Acceptance bar**
-- Not authored. This project keeps no ADRs and no section 9. Decision results
-  live in §2, §4 and §8 as current state.
 
 ---
 

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting, decisions) into a typed packet; the trd-author writes the TRD; two independent checkers (structure/quality + bidirectional PRD<->TRD traceability) judge it. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet; the trd-author writes the TRD; two independent checkers (structure/quality + bidirectional PRD<->TRD traceability) judge it. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -58,7 +58,6 @@ Locate and normalize each source feed reliably across both single-file and one-f
 - Section 2 — Constraints
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
-- Section 9 — Architecture Decisions
 
 For every entry: assign a stable ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If a section is absent, return it as an empty array — do not fabricate.`,
   {
@@ -68,12 +67,11 @@ For every entry: assign a stable ID, capture the verbatim-grounded statement, an
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts', 'architectureDecisions'],
+      required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
       properties: {
         constraints: { $ref: '#/$defs/feed' },
         solutionStrategy: { $ref: '#/$defs/feed' },
         crosscuttingConcepts: { $ref: '#/$defs/feed' },
-        architectureDecisions: { $ref: '#/$defs/feed' },
         sadLocation: { type: 'string' },
         notes: { type: 'string' },
       },
@@ -126,7 +124,7 @@ PRD (source of product requirements):
 ${prdText}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
-SAD extract (architecture constraints/strategy/crosscutting/decisions the TRD must honor; cite by stable ID):
+SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; cite by stable ID):
 ${extractText}
 ${feedback ? `\nChecker feedback from the previous attempt — address every point:\n${feedback}` : ''}
 

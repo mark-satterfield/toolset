@@ -40,13 +40,6 @@ TRD and spec authors iterate the packet generically.
 | `statement` | string | yes | The extracted text. Verbatim or minimally normalized (whitespace collapse, leading list-marker stripping). Never paraphrased into new meaning. |
 | `rationaleRef` | string \| null | yes (nullable) | A pointer to the rationale/justification span in the SAD. `null` when the SAD states none. Never fabricate rationale to fill it. |
 
-### Section-9 entries carry two extra optional fields
-
-Architecture Decision entries (`sourceSection: 9`) may additionally carry:
-
-| Field | Type | Meaning |
-|---|---|---|
-
 ### Worked entries
 
 A constraint:

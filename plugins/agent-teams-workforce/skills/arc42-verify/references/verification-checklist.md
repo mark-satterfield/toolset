@@ -5,9 +5,9 @@ present, ordered, and non-empty) and **consistency** (the cross-section invarian
 the document to describe one coherent system). Run completeness first; a missing section short-circuits
 the consistency checks that depend on it.
 
-## Part A — 12-Section Completeness
+## Part A — Eleven-Section Completeness
 
-arc42 fixes the section set and their order. The SAD must contain all twelve, numbered 1–12, in
+arc42 fixes the section set and their order. The SAD must contain all eleven — 1–8 and 10–12 — in
 sequence. A heading with no body, or a body consisting only of the template's placeholder prompt
 (e.g. "Describe the relevant constraints…"), counts as **absent** — flag it `FAIL`, not `WARN`.
 
@@ -27,11 +27,8 @@ sequence. A heading with no body, or a body consisting only of the template's pl
 
 **Ordering and numbering checks:**
 
-- Headings appear in ascending §1→§12 order. A section out of order is a `FAIL` even if all are present.
+- Headings appear in ascending order across the eleven sections (§1–§8, §10–§12). A section out of order is a `FAIL` even if all are present.
 - No duplicate section numbers.
-- **§9 does not exist and must not be created.** Architecture decisions are recorded as current state
-  in §2, §4 and §8. A section table that runs §8 → §10 is correct: do not report the skipped number,
-  do not report §9 as missing, and never author one.
 - No extra top-level "section 13+" masquerading as arc42 content — appendices are fine but must not be numbered into the arc42 sequence.
 
 ## Part B — Cross-Section Consistency Invariants

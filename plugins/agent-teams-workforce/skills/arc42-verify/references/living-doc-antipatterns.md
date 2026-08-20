@@ -29,9 +29,9 @@ Prose that narrates the document's own evolution rather than describing the syst
 
 - **Severity:** `WARN`.
 - **Evidence:** quote the narrating sentence.
-- **Note:** there is no §9 and no ADR corpus in this project, so there is no superseded-decision
-  exemption. Every section states current truth only. A paragraph that says "we changed
-  our mind about the database last sprint" is a smell.
+- **Note:** every section states current truth only — there is no superseded-decision
+  exemption. A paragraph that says "we changed our mind about the database last
+  sprint" is a smell.
 
 ## 3. Future-tense / aspirational content
 

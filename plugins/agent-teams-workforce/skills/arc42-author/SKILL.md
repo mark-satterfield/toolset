@@ -2,7 +2,7 @@
 name: arc42-author
 description: >-
   Authors a brand-new arc42 Software Architecture Document (SAD) from supplied
-  inputs — scaffolds all 12 arc42 sections as a single living current-state
+  inputs — scaffolds all eleven arc42 sections as a single living current-state
   document and explicitly marks sections 2 (Constraints), 4 (Solution Strategy),
   8 (Crosscutting Concepts), and 9 (Architecture Decisions) as the downstream
   source feeds other tools extract from. Use when the user asks to create,
@@ -90,9 +90,7 @@ downstream tooling can locate them.
 8. **Crosscutting Concepts** — domain model, persistence, security,
    error-handling, logging/observability, idempotency, and other concerns that
    cut across building blocks. *Source feed.*
-> **Section 9 is not authored.** This project keeps no ADRs and no decision log.
-> Decision results are written as current state into sections 2, 4 and 8. Number
-> the document 1–8 then 10–12; a table running 8 → 10 is correct.
+> Number the document 1–8 then 10–12.
 
 10. **Quality Requirements** — the quality tree and a table of concrete,
     measurable quality scenarios (stimulus → response → measure).
@@ -141,7 +139,7 @@ component level — each level zooms one box from the level above.
 
 ## Acceptance bar for the whole SAD
 
-The document is done when: all 12 headings exist; every quality goal in section 1
+The document is done when: all eleven headings exist; every quality goal in section 1
 has a matching measurable scenario in section 10; sections 2/4/8 are shaped as
 source feeds and marked; every building block named in 5 appears in at least one
 of 6 or 7; and every remaining gap
@@ -153,8 +151,8 @@ is an explicit `> TODO:` and not a missing section.
 - You do **not** diff the document against the running system.
 - You do **not** produce the downstream feeds yourself — you only shape sections
   2/4/8 so the feed-extraction tools can read them.
-- You do **not** write ADRs or a section 9 in any form. Decisions go into 2/4/8
-  as current state, each carrying its own driver and rationale inline.
+- Decisions go into 2/4/8 as current state, each carrying its own driver and
+  rationale inline.
 - You do **not** add revision history, edit-timestamp lines, or changelogs to the
   body. The SAD is a living current-state document.
 

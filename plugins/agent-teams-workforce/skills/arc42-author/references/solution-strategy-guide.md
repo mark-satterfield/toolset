@@ -25,7 +25,7 @@ style (sync REST vs. async events vs. RPC), deployment platform.
 
 Each row that records a significant, hard-to-reverse choice names the **driver**
 that forced it — a §1 quality goal, a §2 constraint, or a §11 risk. That is the
-contract: §4 is the decision record itself. There is no ADR and no §9.
+contract: §4 is the decision record itself.
 
 ### 2. Top-level decomposition approach
 

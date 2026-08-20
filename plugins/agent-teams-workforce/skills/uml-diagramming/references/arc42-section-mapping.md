@@ -1,6 +1,6 @@
 # Mapping UML diagrams to arc42 sections
 
-arc42 is a template for architecture documentation organized into twelve numbered sections. A diagram is not just a picture — it occupies a slot in that narrative, and putting it in the wrong section confuses readers who navigate arc42 by section number. This reference fixes which UML type belongs in which section, and why.
+arc42 is a template for architecture documentation; this project's SAD uses eleven numbered sections. A diagram is not just a picture — it occupies a slot in that narrative, and putting it in the wrong section confuses readers who navigate arc42 by section number. This reference fixes which UML type belongs in which section, and why.
 
 ## The four sections this skill targets
 

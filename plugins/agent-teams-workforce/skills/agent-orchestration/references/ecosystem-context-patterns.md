@@ -131,7 +131,6 @@ Point to locations that would require extra exploration to discover organically:
 <eg>
 Recent linting reports in `.claude/reports/` document previously resolved issues
 Package validation scripts in `./scripts/` — see README.md for usage
-Architecture decision records in `./docs/adr/`
 </eg>
 
 **Why**: These locations may not be obvious from the directory structure. A hint saves investigation time. Do not list obvious locations (tests/, src/, etc.) that any agent would check first.

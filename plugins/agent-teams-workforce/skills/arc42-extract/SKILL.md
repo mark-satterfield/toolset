@@ -40,9 +40,7 @@ section catalog, and shape of each section live in the sibling arc42 skill — r
 
 ## What you extract
 
-arc42 has twelve sections. You pull only the three that carry forward-binding decisions. There is
-no section 9 — architecture decisions are recorded as current state in sections 2, 4 and 8, so do
-not look for a section 9 and do not report its absence:
+The SAD has eleven sections. You pull only the three that carry forward-binding decisions:
 
 | arc42 section | Title | Why it feeds downstream |
 |---|---|---|
@@ -57,7 +55,7 @@ separate contract — do not smuggle them in.
 
 ## How to run
 
-1. **Resolve the layout.** Determine whether the SAD is one file (all twelve sections under one
+1. **Resolve the layout.** Determine whether the SAD is one file (all eleven sections under one
    document) or one file per section (a directory tree). The selector strategy differs; see
    `references/section-selectors.md`. Never assume the layout — detect it from what is on disk.
 2. **Locate the four sections.** Use the layered selector cascade (numeric prefix → canonical
@@ -104,7 +102,7 @@ the SAD, stop: you have left the extractor contract.
 
 ## References
 
-- `references/extraction-schema.md` — the typed packet shape: bucket structure, per-entry fields (`id`, `sourceSection`, `statement`, `rationaleRef`), the section-9 supersession field, and the stable-ID derivation rule.
+- `references/extraction-schema.md` — the typed packet shape: bucket structure, per-entry fields (`id`, `sourceSection`, `statement`, `rationaleRef`), and the stable-ID derivation rule.
 - `references/section-selectors.md` — the layered selector cascade for locating each arc42 section across single-file and one-file-per-section layouts, with synonyms and structural fallbacks.
 - `references/trd-feed-contract.md` — the downstream contract: what is guaranteed present, how IDs stay stable, how missing sections are signaled, and how supersession is communicated to the TRD and spec authors.
 - `../arc42/references/` — the sibling SAD-authoring skill's section model and template (the authoring side your selectors target).

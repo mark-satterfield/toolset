@@ -9,10 +9,6 @@ standalone, machine-or-human-liftable inputs:
 | 4 | Solution Strategy | The chosen fundamental approach and tactics | Implementation teams, onboarding |
 | 8 | Crosscutting Concepts | The system-wide concepts (security, persistence, error handling, domain model) | Every implementer, applied across blocks |
 
-There is no §9. Architecture decisions are recorded as current state in §2, §4 and §8. Do not check
-for a §9, do not report its absence, and do not create one. An `arc42.md` section table that skips
-row 9 is correct.
-
 Integrity holds when all three properties below are true. Verify them in order: a section that is
 absent cannot be extractable, and two sections that are not both extractable cannot be checked for
 contradiction.

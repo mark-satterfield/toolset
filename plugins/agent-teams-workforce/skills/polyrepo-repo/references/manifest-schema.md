@@ -52,7 +52,6 @@ rules: [Rule]                    # see Rule schema — architectural,
 documentation:
   per_repo: string?              # convention, e.g., "each repo has /docs"
   project_level: [string]?       # paths or URLs
-  adrs: string?
   runbooks: [string]?
   onboarding: [string]?
 

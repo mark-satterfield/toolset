@@ -234,7 +234,6 @@ inside it.
 
 Recommend the meta repo hold:
 - `.polyrepo/manifest.yaml` (the steward's manifest)
-- `adrs/` — architecture decision records
 - `runbooks/` — operational docs that span repos
 - `deploy/` — cross-repo deploy scripts, environment definitions
 - `ci/` — shared CI templates (or links to where they live)
