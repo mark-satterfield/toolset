@@ -178,7 +178,7 @@ they are tribal knowledge. Capture them carefully and include the
 - Where does each repo's documentation live? (`README.md`, `/docs`,
   external wiki, Confluence, Notion, etc.)
 - Is there project-level (cross-repo) documentation? Where?
-- Are there ADRs, RFCs, or design docs? Where?
+- Are there RFCs or design docs? Where?
 - Are there onboarding docs, runbooks, postmortems?
 
 ### Phase 7: search

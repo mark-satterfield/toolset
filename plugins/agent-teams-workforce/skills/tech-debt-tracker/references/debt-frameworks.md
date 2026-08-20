@@ -81,7 +81,7 @@ Missing, outdated, or poor-quality documentation that makes the system harder to
 **Indicators:**
 - Missing API documentation
 - Outdated README files
-- No architectural decision records (ADRs)
+- No current architecture document recording the decisions
 - Missing code comments for complex algorithms
 - No onboarding documentation for new team members
 - Inconsistent documentation formats

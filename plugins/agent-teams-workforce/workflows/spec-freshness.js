@@ -1,10 +1,10 @@
 export const meta = {
   name: 'spec-freshness',
   description:
-    'Leaf mini — Spec Freshness. Fans three independent freshness checkers out in parallel (spec-vs-reality drift, ADR currency, upstream dependency changes), then a read-only lead aggregates the three verdicts into one fresh/stale ruling with reasons. Read-only — judges currency, changes no artifacts. Makers (the three checkers) and the aggregating router are distinct agents; the lead routes and aggregates, it never authors content.',
+    'Leaf mini — Spec Freshness. Fans two independent freshness checkers out in parallel (spec-vs-reality drift, upstream dependency changes), then a read-only lead aggregates the two verdicts into one fresh/stale ruling with reasons. Read-only — judges currency, changes no artifacts. Makers (the two checkers) and the aggregating router are distinct agents; the lead routes and aggregates, it never authors content.',
   phases: [
-    { title: 'Freshness checks', detail: 'three independent currency checkers fan out in parallel' },
-    { title: 'Aggregate', detail: 'read-only router rolls the three verdicts into one fresh/stale verdict' },
+    { title: 'Freshness checks', detail: 'two independent currency checkers fan out in parallel' },
+    { title: 'Aggregate', detail: 'read-only router rolls the two verdicts into one fresh/stale verdict' },
   ],
 }
 
@@ -14,7 +14,6 @@ export const meta = {
 //     title?: string,           // human title
 //     path?: string,            // path to the spec document
 //     repoPath?: string,        // repo the spec governs
-//     adrRefs?: string[],       // ADR ids/paths the spec references
 //     dependencies?: string[],  // upstream contracts/specs/libs the spec relies on
 //   },
 //   contract?: any,             // optional upstream contract this freshness check sits under (threaded back out)
@@ -25,20 +24,19 @@ const specId = spec.id || '(no spec id)'
 const specTitle = spec.title || ''
 const specPath = spec.path || '(spec path not provided — ask before reading files)'
 const repo = spec.repoPath || '(repo path not provided — ask before reading files)'
-const adrRefs = Array.isArray(spec.adrRefs) ? spec.adrRefs : []
 const dependencies = Array.isArray(spec.dependencies) ? spec.dependencies : []
 
 const specHeader = `Spec ${specId}${specTitle ? `: ${specTitle}` : ''}
 Spec document: ${specPath}
 Governing repository: ${repo}`
 
-// ── Phase 1: Freshness checks — three INDEPENDENT checkers in parallel ──────────
+// ── Phase 1: Freshness checks — two INDEPENDENT checkers in parallel ───────────
 // Segregation of duties: each checker is a distinct maker/checker agent; none of
 // them judges another's output, and the read-only lead (phase 2) judges none of
-// the content — it only aggregates the three verdicts.
+// the content — it only aggregates the two verdicts.
 phase('Freshness checks')
 
-const [specCurrency, adrCurrency, dependencyChanges] = await parallel([
+const [specCurrency, dependencyChanges] = await parallel([
   // 1) Spec-vs-reality currency: has the implemented code/behavior drifted from the spec?
   () =>
     agent(
@@ -82,56 +80,7 @@ Deliver:
       }
     ),
 
-  // 2) ADR currency: are the ADRs this spec leans on still authoritative?
-  () =>
-    agent(
-      `Validate that the ADRs this spec references are still current — not superseded, dissolved, or otherwise no longer authoritative. You are READ-ONLY: change nothing.
-
-${specHeader}
-
-ADRs referenced by the spec:
-${adrRefs.length ? adrRefs.map((r, i) => `${i + 1}. ${r}`).join('\n') : '(none declared in args — discover referenced ADRs from the spec document itself)'}
-
-For each referenced ADR, determine its current status and whether the spec relies on a decision that has since changed.
-
-Deliver:
-- current: true if every referenced ADR is still authoritative for what the spec depends on, false otherwise.
-- adrFindings: each ADR with a problem (adr, status one of current/superseded/dissolved/missing, impact on the spec).
-- evidence: how you verified ADR currency.`,
-      {
-        label: 'freshness:adr-currency',
-        phase: 'Freshness checks',
-        agentType: 'agent-teams-workforce:adr-currency-checker',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['current', 'adrFindings', 'evidence'],
-          properties: {
-            current: { type: 'boolean' },
-            adrFindings: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['adr', 'status', 'impact'],
-                properties: {
-                  adr: { type: 'string' },
-                  status: {
-                    type: 'string',
-                    enum: ['current', 'superseded', 'dissolved', 'missing'],
-                  },
-                  impact: { type: 'string' },
-                },
-              },
-            },
-            evidence: { type: 'string' },
-            notes: { type: 'string' },
-          },
-        },
-      }
-    ),
-
-  // 3) Dependency-change detection: did anything upstream the spec relies on change?
+  // 2) Dependency-change detection: did anything upstream the spec relies on change?
   () =>
     agent(
       `Detect upstream dependency changes that would invalidate this spec. You are READ-ONLY: change nothing.
@@ -184,22 +133,19 @@ Deliver:
 phase('Aggregate')
 
 const aggregate = await agent(
-  `You are the spec-freshness lead — a READ-ONLY router. You do NOT inspect the spec or code yourself and you do NOT author content. Synthesize the three independent freshness verdicts below into ONE fresh/stale ruling. The spec is FRESH only if all three checkers report current=true; if any reports current=false, the spec is STALE.
+  `You are the spec-freshness lead — a READ-ONLY router. You do NOT inspect the spec or code yourself and you do NOT author content. Synthesize the two independent freshness verdicts below into ONE fresh/stale ruling. The spec is FRESH only if both checkers report current=true; if either reports current=false, the spec is STALE.
 
 ${specHeader}
 
 Spec-vs-reality currency verdict:
 ${JSON.stringify(specCurrency ?? {}, null, 2)}
 
-ADR currency verdict:
-${JSON.stringify(adrCurrency ?? {}, null, 2)}
-
 Upstream dependency-change verdict:
 ${JSON.stringify(dependencyChanges ?? {}, null, 2)}
 
 Deliver:
-- fresh: true only if all three checkers are current; false if any is not.
-- staleReasons: a flat list of the concrete reasons the spec is stale (empty if fresh), each attributed to its source check (spec-currency / adr-currency / dependency-change).`,
+- fresh: true only if both checkers are current; false if either is not.
+- staleReasons: a flat list of the concrete reasons the spec is stale (empty if fresh), each attributed to its source check (spec-currency / dependency-change).`,
   {
     label: 'aggregate:freshness-verdict',
     phase: 'Aggregate',
@@ -219,7 +165,7 @@ Deliver:
             properties: {
               source: {
                 type: 'string',
-                enum: ['spec-currency', 'adr-currency', 'dependency-change'],
+                enum: ['spec-currency', 'dependency-change'],
               },
               reason: { type: 'string' },
             },
@@ -235,7 +181,7 @@ const ledger = {
   phase: 'spec-freshness',
   beadId: null,
   subject: specId,
-  chosen: ['spec-currency-validator', 'adr-currency-checker', 'dependency-change-detector', 'spec-freshness-lead'],
+  chosen: ['spec-currency-validator', 'dependency-change-detector', 'spec-freshness-lead'],
   mode: 'fixed', // design-mandated full fan-out — correct, not a gap
   ok: aggregate ? !!aggregate.fresh : false,
 }
@@ -243,7 +189,6 @@ const ledger = {
 return {
   fresh: aggregate ? aggregate.fresh : false,
   specCurrency,
-  adrCurrency,
   dependencyChanges,
   staleReasons: (aggregate && aggregate.staleReasons) || [],
   contract: a.contract || null,

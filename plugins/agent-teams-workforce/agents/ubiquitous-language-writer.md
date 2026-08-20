@@ -38,11 +38,11 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Scope:** Extracting candidate terms from the validated PRD and the context map; writing one definition per term per context, with usage rules (where the term appears: event names, API resources, table attributes, class names); recording terms that mean different things in different contexts as distinct entries; flagging synonyms and collisions for resolution.
 - **Out of Scope:** Deciding contested term meanings (flag them; architecture-decider resolves through the decision); defining bounded contexts; modeling events or schemas; renaming anything in existing code; approving the glossary.
 - **Allowed Decisions:** Glossary structure and entry format; which PRD phrases are terms versus prose; how to express usage rules so they are checkable in code review.
-- **Forbidden Decisions:** Resolving semantic conflicts between contexts; merging terms across context boundaries; redefining a term an existing ADR has fixed; declaring the glossary authoritative without review.
-- **Inputs Required:** Validated PRD; context map from bounded-context-mapper; event model and contract drafts when available; existing ADR inventory and any prior glossary.
+- **Forbidden Decisions:** Resolving semantic conflicts between contexts; merging terms across context boundaries; redefining a term the SAD has already fixed; declaring the glossary authoritative without review.
+- **Inputs Required:** Validated PRD; context map from bounded-context-mapper; event model and contract drafts when available; the SAD's decided architecture and any prior glossary.
 - **Outputs Produced:** Ubiquitous language glossary artifact: per context, terms with definitions, usage rules, code-facing naming guidance, and a conflict list of unresolved collisions.
-- **Required Reviewers:** architecture-boundary-guardian, adr-completeness-reviewer
-- **Escalation Triggers:** The same PRD term is used with contradictory meanings and neither reading is defensible; a term required by the event model has no business definition; the context map and PRD vocabulary cannot be reconciled; an existing ADR fixes a term in a way the PRD contradicts.
+- **Required Reviewers:** architecture-boundary-guardian
+- **Escalation Triggers:** The same PRD term is used with contradictory meanings and neither reading is defensible; a term required by the event model has no business definition; the context map and PRD vocabulary cannot be reconciled; the SAD fixes a term in a way the PRD contradicts.
 - **Acceptance Criteria:** Every term has exactly one definition per context; usage rules are concrete enough to check a name against; collisions and synonyms are listed, not silently merged; event names, contract resources, and schema fields produced by teammates can be traced to glossary entries.
 - **Anti-Goals:** A generic IT glossary detached from this domain; resolving ambiguity by picking the "obvious" meaning; one global vocabulary that erases context boundaries; definitions too vague to ever be violated.
 

@@ -55,17 +55,15 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | architecture-pattern-challenger | test | Generates a structurally different alternative for each proposal to force non-obvious paths |
 | architecture-tradeoff-skeptic | test | Attacks trade-off ratings: hidden assumptions, optimistic estimates, unconsidered failure modes. |
 | architecture-boundary-guardian | test | Validates that no proposal introduces cross-context coupling. |
-| adr-completeness-reviewer | test | Cross-references proposals against existing ADRs |
 | cost-impact-reviewer | test | Stress-tests cost estimates at 10x/100x/1000x scale |
 | operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
 | architecture-decider | approve | Receives all analyses, challenges, and cost data |
-| adr-writer | execute | Produces ADR drafts from the Decider's decisions: context, decision, consequences, status. |
 | architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
 | c4-diagram-author | execute | Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2 Container, Level 3 Component) for the SAD. |
 | uml-diagram-author | execute | Renders the decided behaviours and structures as UML Mermaid diagrams (sequence, class, state) for the SAD. |
-| sad-maintainer | execute | Consolidates the decided constraints, solution strategy, cross-cutting concepts, and accepted ADRs into the single living arc42 Software Architecture Document, updating current state in place. |
-| sad-source-extractor | execute | Extracts the SAD's section-2/4/8/9 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet for TRD and spec authoring. |
+| sad-maintainer | execute | Consolidates the decided constraints, solution strategy, and cross-cutting concepts into the single living arc42 Software Architecture Document, updating current state in place. |
+| sad-source-extractor | execute | Extracts the SAD's section-2/4/8 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet for TRD and spec authoring. |
 | sad-conformance-reviewer | test | Verifies the living SAD against the arc42 section model and reports conformance findings without fixing them. |
 | graphql-schema-designer | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track |
 | failure-mode-analyst | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages |
@@ -119,7 +117,6 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | spec-freshness-lead | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. |
 | spec-currency-validator | test | Validates the spec still matches current project reality before implementation begins. |
 | dependency-change-detector | test | Detects dependency version or contract changes since the spec was written. |
-| adr-currency-checker | test | Checks that the ADRs the spec relies on are still current and unsuperseded. |
 
 ## Test Design
 

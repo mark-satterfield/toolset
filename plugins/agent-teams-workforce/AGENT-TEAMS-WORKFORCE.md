@@ -43,7 +43,7 @@ Upstream of everything, the PRD Creation team turns raw stakeholder requests int
 
 ### PRD to Spec and Tasks
 
-Five phases, five gates. PRD Validation runs nine analysts concurrently over the draft (traceability, ambiguity, conflicts, completeness, constraints, dependencies) and feeds Gate 1. Architecture Analysis fans out a proposals sub-team and a challenge sub-team in parallel, then fans everything into a dedicated Decider who produced none of the analysis; ADRs, fitness functions, and diagrams are written from its decision, and Gate 2 is constitutional. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and translates it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself; a maker-checker loop (with a decider for deadlocks) feeds Gate 2b. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria — through its own maker-checker loop feeding Gate 3. Task Decomposition breaks each Spec into WSJF-scored, dependency-mapped tasks in Beads format for Gate 4.
+Five phases, five gates. PRD Validation runs nine analysts concurrently over the draft (traceability, ambiguity, conflicts, completeness, constraints, dependencies) and feeds Gate 1. Architecture Analysis fans out a proposals sub-team and a challenge sub-team in parallel, then fans everything into a dedicated Decider who produced none of the analysis; fitness functions and diagrams are written from its decision, and Gate 2 is constitutional. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and translates it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself; a maker-checker loop (with a decider for deadlocks) feeds Gate 2b. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria — through its own maker-checker loop feeding Gate 3. Task Decomposition breaks each Spec into WSJF-scored, dependency-mapped tasks in Beads format for Gate 4.
 
 ```mermaid
 graph LR
@@ -218,7 +218,6 @@ The workforce is designed using the same principles that guide durable software 
 | Reviewer | Security Controls Reviewer |
 | Reviewer | Operational Readiness Reviewer |
 | Writer | API Documentation Writer |
-| Writer | ADR Writer |
 
 **Bounded authority.** Every agent has explicit decision boundaries. Each definition states what the agent may decide, may recommend, may create, may modify, may review, may *not* decide, and when it must escalate. Capability does not imply authority — an agent may be capable of a task and still be forbidden from doing it.
 
@@ -338,7 +337,6 @@ Every unit of work belongs to exactly one of five categories:
 8. Cost Reviewer challenges cost assumptions and scaling risks.
 9. Security Reviewer challenges trust boundaries, permissions, and abuse cases.
 10. Operational Readiness Reviewer challenges observability, failure handling, supportability, and recovery.
-11. ADR Writer records the final decision, rationale, rejected alternatives, constraints, risks, and downstream implications.
 12. Architecture Team Leader verifies that all required workflow steps occurred and prepares the decision packet.
 ```
 
@@ -505,11 +503,9 @@ PRD-to-Spec pipeline, phase 2 — proposals and challenges fan in to a Decider; 
 | `architecture-pattern-challenger` | Worker | Adversary |
 | `architecture-tradeoff-skeptic` | Worker | Adversary |
 | `architecture-boundary-guardian` | Worker | Validator |
-| `adr-completeness-reviewer` | Worker | Validator |
 | `cost-impact-reviewer` | Worker | Adversary |
 | `operational-readiness-reviewer` | Worker | Validator |
 | `architecture-decider` | Worker | Decider |
-| `adr-writer` | Worker | Executor |
 | `architecture-fitness-function-author` | Worker | Executor |
 | `architecture-diagram-author` | Worker | Executor |
 | `graphql-schema-designer` | Worker | Executor |
@@ -566,14 +562,13 @@ PRD-to-Spec pipeline, phase 4 — decomposes a Spec's Story into WSJF-scored, de
 
 ### Spec Freshness — Execution Team
 
-Spec-to-Deploy pipeline, phase 1 — validates spec, ADR, and dependency currency; feeds Gate 1. 4 agents.
+Spec-to-Deploy pipeline, phase 1 — validates spec and dependency currency; feeds Gate 1. 3 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
 | `spec-freshness-lead` | Manager | Delegator, Orchestrator |
 | `spec-currency-validator` | Worker | Validator |
 | `dependency-change-detector` | Worker | Validator |
-| `adr-currency-checker` | Worker | Validator |
 
 ### Test Design — Execution Team
 
@@ -756,17 +751,15 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `architecture-pattern-challenger` | Architecture Analysis | Execution Team | Worker | Adversary | test | Generates a structurally different alternative for each proposal to force non-obvious paths | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `architecture-tradeoff-skeptic` | Architecture Analysis | Execution Team | Worker | Adversary | test | Attacks trade-off ratings: hidden assumptions, optimistic estimates, unconsidered failure modes. | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `architecture-boundary-guardian` | Architecture Analysis | Execution Team | Worker | Validator | test | Validates that no proposal introduces cross-context coupling. | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
-| `adr-completeness-reviewer` | Architecture Analysis | Execution Team | Worker | Validator | test | Cross-references proposals against existing ADRs | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `cost-impact-reviewer` | Architecture Analysis | Execution Team | Worker | Adversary | test | Stress-tests cost estimates at 10x/100x/1000x scale | subagent-contract, validation-protocol, aws-cost-operations | Read, Glob, Grep, Bash, Write |
 | `operational-readiness-reviewer` | Architecture Analysis | Execution Team | Worker | Validator | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. | subagent-contract, validation-protocol, observability-designer | Read, Glob, Grep, Bash, Write |
 | `architecture-decider` | Architecture Analysis | Execution Team | Worker | Decider | approve | Receives all analyses, challenges, and cost data | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
-| `adr-writer` | Architecture Analysis | Execution Team | Worker | Executor | execute | Produces ADR drafts from the Decider's decisions: context, decision, consequences, status. | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `architecture-fitness-function-author` | Architecture Analysis | Execution Team | Worker | Executor | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `architecture-diagram-author` | Architecture Analysis | Execution Team | Worker | Executor | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `graphql-schema-designer` | Architecture Analysis | Execution Team | Worker | Executor | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `failure-mode-analyst` | Architecture Analysis | Execution Team | Worker | Advisor | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages | subagent-contract, senior-architect, observability-designer | Read, Glob, Grep, Write |
 | `trd-authoring-lead` | TRD Authoring | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet; never writes TRD content, only pass/rework signals | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, Agent, SendMessage |
-| `sad-source-extractor` | TRD Authoring | Execution Team | Worker | Executor | execute | Extracts the SAD's section 2/4/8/9 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet the TRD author consumes | subagent-contract, validation-protocol, arc42-extract | Read, Write, Edit, Glob, Grep, Bash |
+| `sad-source-extractor` | TRD Authoring | Execution Team | Worker | Executor | execute | Extracts the SAD's section 2/4/8 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet the TRD author consumes | subagent-contract, validation-protocol, arc42-extract | Read, Write, Edit, Glob, Grep, Bash |
 | `trd-author` | TRD Authoring | Execution Team | Worker | Executor | execute | Authors the TRD that translates the PRD into technical requirements, NFR derivations, and interface and data obligations bounded by the SAD extract | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `trd-validator` | TRD Authoring | Execution Team | Worker | Validator | test | Validates each TRD requirement is unambiguous, testable, and feasible within the SAD's constraints and decisions, flagging anything that contradicts the architecture | subagent-contract, validation-protocol | Read, Glob, Grep, Bash, Write |
 | `prd-trd-traceability-verifier` | TRD Authoring | Execution Team | Worker | Validator | test | Validates bidirectional traceability between the PRD's requirements and the TRD's technical requirements | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
@@ -796,7 +789,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `spec-freshness-lead` | Spec Freshness | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, Agent, SendMessage |
 | `spec-currency-validator` | Spec Freshness | Execution Team | Worker | Validator | test | Validates the spec still matches current project reality before implementation begins. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash, Write |
 | `dependency-change-detector` | Spec Freshness | Execution Team | Worker | Validator | test | Detects dependency version or contract changes since the spec was written. | subagent-contract, validation-protocol, dependency-auditor | Read, Glob, Grep, Bash, Write |
-| `adr-currency-checker` | Spec Freshness | Execution Team | Worker | Validator | test | Checks that the ADRs the spec relies on are still current and unsuperseded. | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `test-design-lead` | Test Design | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes spec acceptance criteria to the right test writers, confirms Red (all new tests fail), and reports to Gate 2a. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, Agent, SendMessage |
 | `tdd-unit-test-generator` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing unit tests from spec acceptance criteria before implementation exists. | subagent-contract, validation-protocol, tdd-guide | Read, Write, Edit, Glob, Grep, Bash |
 | `consumer-driven-contract-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes consumer-driven contract tests ensuring API consumers and providers agree. | subagent-contract, validation-protocol, api-test-suite-builder | Read, Write, Edit, Glob, Grep, Bash |

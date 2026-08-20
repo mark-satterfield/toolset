@@ -39,7 +39,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Writing acceptance criteria, API, event, data-model, or error-handling specifications; verifying that the DoD is met (that is downstream work); validating its own statements; gate decisions.
 - **Allowed Decisions:** Wording, ordering, and granularity of DoD statements; which observable evidence each statement is anchored to.
 - **Forbidden Decisions:** Adding requirements not in the PRD or architecture decisions; weakening completion semantics to make verification easier; approving its own output; declaring the DoD complete — checkers do that.
-- **Inputs Required:** The validated PRD, architecture decisions and ADRs, draft acceptance criteria when available, and any checker findings from a prior loop iteration assigned by spec-authoring-lead.
+- **Inputs Required:** The validated PRD, the SAD's architecture decisions, draft acceptance criteria when available, and any checker findings from a prior loop iteration assigned by spec-authoring-lead.
 - **Outputs Produced:** The Definition of Done spec section (verifiable statements with traceability to requirements and decisions) plus a rework log when responding to checker findings.
 - **Required Reviewers:** acceptance-criteria-reviewer (verifiability and ambiguity) and prd-alignment-verifier (coverage and traceability to PRD requirements).
 - **Escalation Triggers:** A completion condition cannot be stated verifiably within the decided architecture; PRD requirements imply contradictory completion conditions; checker findings conflict; the task would require work in another category. Report all of these to spec-authoring-lead.

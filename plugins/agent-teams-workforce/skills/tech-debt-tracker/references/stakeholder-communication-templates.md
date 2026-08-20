@@ -195,56 +195,6 @@ Technical debt represents deferred investment in our technology platform. Our cu
 
 ---
 
-### Architecture Decision Record (ADR) Template
-
-**Subject**: ADR-[XXX]: [Decision Title] - Technical Debt Consideration
-
----
-
-**Status**: [Proposed/Accepted/Deprecated]
-**Date**: [YYYY-MM-DD]
-**Decision Makers**: [Names]
-
-**CONTEXT**
-
-[Background and current situation]
-
-**TECHNICAL DEBT ANALYSIS**
-
-• **Debt Created by This Decision**:
-  - [Specific debt that will be introduced]
-  - [Estimated effort to resolve later: X points]
-  - [Interest rate: impact over time]
-
-• **Debt Resolved by This Decision**:
-  - [Existing debt this addresses]
-  - [Estimated effort saved: X points]
-  - [Risk reduction achieved]
-
-• **Net Debt Impact**: [Positive/Negative/Neutral]
-
-**DECISION**
-
-[What we decided to do]
-
-**RATIONALE**
-
-[Why we made this decision, including debt trade-offs]
-
-**DEBT MANAGEMENT PLAN**
-
-• **Monitoring**: [How we'll track the debt introduced]
-• **Timeline**: [When we plan to address the debt]
-• **Success Criteria**: [How we'll know it's time to pay down the debt]
-
-**CONSEQUENCES**
-
-[Expected outcomes, including debt implications]
-
----
-
-## Customer-Facing Templates
-
 ### Release Notes - Quality Improvements
 
 **Subject**: Platform Stability and Performance Improvements - Release [X.Y]

@@ -23,10 +23,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | acceptance-criteria-writer | bug-triage | triage | Writes expected-behavior acceptance criteria for the fix contract |
 | acceptance-criteria-writer | spec-authoring | authoring | Authors testable given/when/then criteria per requirement |
 | accessibility-validator | tdd-refactor | Refactor *(optimizer roster)* | WCAG 2.2 A/AA validation when change touches UI |
-| adr-completeness-reviewer | architecture | Challenge | Flags proposals contradicting the ADR inventory |
-| adr-currency-checker | infra-intent | freshness check | Verifies ADRs the infra intent relies on are current |
-| adr-currency-checker | spec-freshness | parallel checkers | Verifies ADRs the spec relies on are current/unsuperseded |
-| adr-writer | architecture | Update SAD | Drafts ADRs from the decider's ruling |
 | advantage-evaluator | gate-enforce | gate (post-pass) | Applies advantage principle to competitive flags |
 | adversarial-critique-adjudicator | adversarial | Adjudicate | Referees finding severity; constitutive vs competitive |
 | ambiguity-detector | prd-validation | fan-out analysts | Detects ambiguous PRD requirements |
@@ -167,7 +163,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | s3-data-lake-implementer | tdd-green | Green *(implementer roster)* | S3 data-lake layout code |
 | sad-conformance-reviewer | architecture | Update SAD | Independent conformance check of SAD edit |
 | sad-maintainer | architecture | Update SAD | Consolidates ruling into arc42 SAD (maker) |
-| sad-source-extractor | trd-authoring | extract | Extracts SAD §2/4/8/9 source feed |
+| sad-source-extractor | trd-authoring | extract | Extracts SAD §2/4/8 source feed |
 | security-architecture-designer | architecture | Proposals | Threat model / IAM / encryption options |
 | security-test-case-designer | tdd-red | Red *(writer roster)* | Failing security test cases |
 | slo-error-budget-designer | deploy | Deploy-readiness *(artifact roster: slo)* | SLOs / error budgets |
@@ -244,7 +240,6 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 | architecture-decider | 2 | architecture, infra-intent |
 | cdk-infrastructure-designer | 2 | architecture, infra-intent |
 | cost-impact-reviewer | 2 | architecture, infra-intent |
-| adr-currency-checker | 2 | infra-intent, spec-freshness |
 | dependency-change-detector | 2 | infra-intent, spec-freshness |
 | dependency-cve-auditor | 2 | adversarial, infra-change |
 | data-exposure-scanner | 2 | adversarial, infra-change |

@@ -38,7 +38,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Creating, splitting, merging, or rescoping tasks (task-decomposer); WSJF scoring (wsjf-scorer); writing user stories; validating its own DAG; changing the spec or architecture.
 - **Allowed Decisions:** Whether a dependency edge exists and what type it is; how to represent the DAG in the agreed artifact format.
 - **Forbidden Decisions:** Approving its own DAG; altering task boundaries to make the graph cleaner; inventing dependencies to force a preferred sequence; removing a real dependency to break a cycle without escalation.
-- **Inputs Required:** The reviewed task breakdown from task-decomposer; approved spec; architecture artifacts (API contracts, event contracts, data models, ADRs); the delegation contract from task-decomposition-lead.
+- **Inputs Required:** The reviewed task breakdown from task-decomposer; approved spec; architecture artifacts (API contracts, event contracts, data models, architecture decisions); the delegation contract from task-decomposition-lead.
 - **Outputs Produced:** A dependency DAG artifact with typed, justified edges; per-task dependency annotations for the Beads task set; a list of tasks with no dependencies (parallelizable roots).
 - **Required Reviewers:** beads-format-validator; phase-gate-enforcer (Gate 4)
 - **Escalation Triggers:** A dependency cycle that cannot be broken without re-decomposing tasks; a dependency on work absent from the task set (missing spec coverage); contradictions between spec ordering and architecture constraints.

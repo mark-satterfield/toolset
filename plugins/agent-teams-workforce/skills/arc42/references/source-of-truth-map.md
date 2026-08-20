@@ -24,14 +24,13 @@ Only four arc42 sections are part of the feed. Sections 1, 3, 5, 6, 7, 10, 11, a
             ▼                             ▼
        TRD author                   Spec authors
    (constraints,                (crosscutting-concepts,
-    solution-strategy,           constraints,
-    decisions-index)             decisions-index)
+    solution-strategy)           constraints)
 ```
 
 The feed is **one-directional and read-only**. Downstream authors never write back into the SAD. If a spec or TRD reveals that a constraint, strategy, concept, or decision is wrong or missing, that change is made *in the SAD first* (via `arc42-maintain`), and only then re-extracted. This keeps the SAD as the single upstream source and prevents downstream documents from forking the architecture.
 
 ## Contract guarantees
 
-- **Stable export names.** `constraints`, `solution-strategy`, `crosscutting-concepts`, and `decisions-index` are the contract keys downstream tooling depends on. They do not change with the SAD's file layout (single-file vs. one-file-per-section).
+- **Stable export names.** `constraints`, `solution-strategy`, and `crosscutting-concepts` are the contract keys downstream tooling depends on. They do not change with the SAD's file layout (single-file vs. one-file-per-section).
 - **Current-state payload.** Because the SAD is a living document (see `living-document-rules.md`), every extraction returns present truth. There is no historical payload; rationale and rejected alternatives are stated inline with the decision in §2, §4 or §8.
-- **Source-only.** `arc42-extract` reads sections 2, 4, 8, and 9 and refuses to export any other section as source, even if asked — non-source sections are orientation, not feed.
+- **Source-only.** `arc42-extract` reads sections 2, 4 and 8 and refuses to export any other section as source, even if asked — non-source sections are orientation, not feed.

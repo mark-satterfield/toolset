@@ -20,7 +20,6 @@ The full template has twelve sections. The three that consume C4 diagrams are:
 | 6 | Runtime View | Behaviour — how building blocks collaborate at runtime |
 | **7** | **Deployment View** | Technical infrastructure and the mapping of software to it |
 | 8 | Crosscutting Concepts | Recurring patterns and concepts |
-| 9 | Architecture Decisions | ADRs |
 | 10 | Quality Requirements | Quality tree and scenarios |
 | 11 | Risks & Technical Debt | Known risks and debt |
 | 12 | Glossary | Terms and definitions |

@@ -202,7 +202,7 @@ Absorbs the execute-cluster discipline: "implement against approved decisions, n
 options"; "never approve your own output, never write the tests that gate it." Of these 72, the **28
 TDD implementers** additionally need the "minimum code to pass the failing test, never modify/weaken/
 skip a test" bullet — keep that as a labeled sub-clause the 28 reference, or inline it in those 28
-bodies (it does not fit spec/ADR/diagram authors). The remaining domain one-liners (chassis, event
+bodies (it does not fit spec/diagram authors). The remaining domain one-liners (chassis, event
 API, contract) stay in the body.
 
 ### R3 — `rules/tester-reviewer.md`  *(referenced by the 48 reviewers/testers + 12 test-writers where applicable; "never-fix" bullet reaches 60)*

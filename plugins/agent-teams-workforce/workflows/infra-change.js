@@ -15,13 +15,11 @@ export const meta = {
 
 // args: {
 //   bead: { id, title, description, repoPath },  // the infra change bead
-//   adrs?: string[],                              // ADR ids/paths the intent relies on
 //   runAdversarial?: boolean,                     // run the TRIMMED adversarial lane (default false)
 //   maxLoops?: number,                            // gate retry budget per phase (default 3)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
-const adrs = Array.isArray(a.adrs) ? a.adrs : []
 const RUN_ADVERSARIAL = a.runAdversarial === true
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
@@ -175,7 +173,7 @@ const g1Loop = await gateLoop({
   phaseName: 'Infra Intent',
   criteria: [
     'Provisioning intent is concrete and CDK-expressible (S3 versioning+SSE-S3 where buckets exist, no banned constructs)',
-    'Referenced ADRs are current and no dependency change invalidates the intent',
+    'No dependency change invalidates the intent',
     'Security and cost reviewers raised no open blocking finding',
   ],
   escalateTargets: ['infra-intent'],
@@ -183,7 +181,6 @@ const g1Loop = await gateLoop({
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:infra-intent', {
       change: { id: bead.id, title: bead.title, description: bead.description, repoPath: bead.repoPath },
-      adrs,
       feedback,
     }),
 })

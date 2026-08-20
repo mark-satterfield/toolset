@@ -18,7 +18,6 @@ export const meta = {
 //   spec: {                     // the approved, implementation-ready spec to build
 //     id?, title?, path?,       // identity + location of the spec document
 //     repoPath?,                // repo the spec governs (threaded to every tail mini as contract.repoPath)
-//     adrRefs?: string[],       // ADRs the spec references (freshness checks their currency)
 //     dependencies?: string[],  // upstream contracts/specs/libs the spec relies on
 //     acceptanceCriteria?: [{ given, when, then }],  // testable AC the Red phase encodes
 //   },
@@ -156,7 +155,6 @@ const freshness = await gateLoop({
   gate: '1', phaseName: 'Spec Freshness',
   criteria: [
     'The spec still matches current reality (no spec-currency drift)',
-    'Referenced ADRs are current (no superseded/stale ADR governs the build)',
     'No upstream dependency change invalidates the spec',
   ],
   escalateTargets: ['spec-authoring', 'architecture'],

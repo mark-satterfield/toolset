@@ -97,7 +97,6 @@ Examples:
 | Reviewer       | Security Controls Reviewer          |
 | Reviewer       | Operational Readiness Reviewer      |
 | Writer         | API Documentation Writer            |
-| Writer         | ADR Writer                          |
 
 ### **5.2 Bounded Authority**
 
@@ -524,7 +523,6 @@ Team leaders should have a charter that includes what is required by any agent, 
 
 10. Operational Readiness Reviewer challenges observability, failure handling, supportability, and recovery.
 
-11. ADR Writer records the final decision, rationale, rejected alternatives, constraints, risks, and downstream implications.
 
 12. Architecture Team Leader verifies that all required workflow steps occurred and prepares the decision packet.
 ```

@@ -23,7 +23,7 @@ Always consider both possibilities:
 1. Read the test name, setup, assertions, and comments.
 2. Identify the behavior the test is trying to specify.
 3. Trace the implementation path related to the failing assertion.
-4. Check whether the expected behavior is documented in requirements, specs, ADRs, or accepted criteria.
+4. Check whether the expected behavior is documented in requirements, specs, the SAD, or accepted criteria.
 5. Decide whether to fix implementation, fix the test, or return `STATUS: BLOCKED` for clarification.
 
 ## Red Flags

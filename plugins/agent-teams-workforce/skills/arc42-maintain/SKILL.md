@@ -157,7 +157,7 @@ than a paused edit.
   an in-place SAD update, with worked examples and a non-mermaid flow sketch.
 - `references/consistency-rules.md` — the full set of cross-section invariants
   that must hold after any edit.
-- `references/source-section-impact.md` — when sections 2/4/8/9 change, which
+- `references/source-section-impact.md` — when sections 2/4/8 change, which
   TRD/Spec consumers must be re-flagged for reconciliation.
 - `../arc42/references/` — the canonical arc42 section model and SAD layout
   this skill maintains.

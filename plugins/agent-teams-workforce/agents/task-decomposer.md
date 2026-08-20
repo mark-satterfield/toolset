@@ -39,7 +39,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Mapping inter-task dependencies (task-dependency-mapper); WSJF scoring (wsjf-scorer); writing user stories (user-story-writer); validating its own breakdown; modifying the spec or architecture; implementing any task.
 - **Allowed Decisions:** Task boundaries and granularity within the one-unit-per-task rule; how to split an oversized task; which spec section each task traces to.
 - **Forbidden Decisions:** Approving its own breakdown; adding, removing, or reinterpreting requirements; deviating from the approved architecture; assigning scores, sequence, or dependencies.
-- **Inputs Required:** Approved spec from phase 3; architecture artifacts (ADRs, API contracts, event contracts, data models); the delegation contract from task-decomposition-lead; any structured loop feedback from Gate 4.
+- **Inputs Required:** Approved spec from phase 3; architecture artifacts (architecture decisions, API contracts, event contracts, data models); the delegation contract from task-decomposition-lead; any structured loop feedback from Gate 4.
 - **Outputs Produced:** A draft task breakdown artifact listing every task with its scope statement, unit type (chassis extension, endpoint, or event handler), LOC estimate, and spec traceability references.
 - **Required Reviewers:** beads-format-validator; phase-gate-enforcer (Gate 4)
 - **Escalation Triggers:** A spec requirement that cannot be decomposed into tasks of 300 LOC or less; spec and architecture contradicting each other; spec sections with no implementable content; ambiguity that would force a requirements decision.

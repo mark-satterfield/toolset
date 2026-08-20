@@ -108,7 +108,6 @@ rules:
 documentation:
   per_repo: <convention; e.g., "each repo has a /docs folder">
   project_level: []
-  adrs: <where ADRs live, if any>
   runbooks: []
   onboarding: []
 

@@ -116,7 +116,7 @@ The hard call. Two viable patterns:
 store `.polyrepo/` inside it.
 
 - Versions the manifest, makes it shareable, and gives a clear home
-  for cross-repo concerns (ADRs, deploy scripts, runbooks) that
+  for cross-repo concerns (the SAD, deploy scripts, runbooks) that
   otherwise have no obvious place to live.
 - Requires creating one new repo. Often worth it the moment a second
   human or an agent on a different machine needs the manifest.
@@ -126,7 +126,7 @@ store `.polyrepo/` inside it.
   the manifest.
 - The project has lived more than ~3 months and is expected to keep
   growing.
-- Cross-repo ADRs or runbooks already exist (or are about to) and
+- A cross-repo SAD or runbooks already exist (or are about to) and
   have no home.
 
 Otherwise, recommend Option A and note in `open_questions` that
@@ -214,11 +214,11 @@ If the human's situation pulls toward monorepo, say so. Recommending
 **Question 2 — if polyrepo, what shape?**
 
 For a small project (2–5 repos): start `siblings_only` with a tiny
-meta repo holding the manifest + ADRs. Cheap, flexible, easy to
+meta repo holding the manifest + the SAD. Cheap, flexible, easy to
 restructure later.
 
 For a medium project (5–20 repos): `meta_and_satellites` with a real
-meta repo that holds deploy scripts, CI templates, ADRs, and the
+meta repo that holds deploy scripts, CI templates, the SAD, and the
 manifest. The meta repo earns its keep.
 
 For a large project (20+ repos): `meta_and_satellites` is almost

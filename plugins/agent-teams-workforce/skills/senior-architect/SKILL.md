@@ -1,6 +1,6 @@
 ---
 name: "senior-architect"
-description: This skill should be used when the user asks to "design system architecture", "evaluate microservices vs monolith", "create architecture diagrams", "analyze dependencies", "choose a database", "plan for scalability", "make technical decisions", or "review system design". Use for architecture decision records (ADRs), tech stack evaluation, system design reviews, dependency analysis, and generating architecture diagrams in Mermaid, PlantUML, or ASCII format.
+description: This skill should be used when the user asks to "design system architecture", "evaluate microservices vs monolith", "create architecture diagrams", "analyze dependencies", "choose a database", "plan for scalability", "make technical decisions", or "review system design". Use for recording architecture decisions, tech stack evaluation, system design reviews, dependency analysis, and generating architecture diagrams in Mermaid, PlantUML, or ASCII format.
 ---
 
 # Senior Architect
@@ -214,7 +214,7 @@ Use when choosing a database for a new project or migrating existing data.
 - Eventual consistency acceptable → DynamoDB, Cassandra, MongoDB
 
 **Step 4: Document decision**
-Create an ADR (Architecture Decision Record) with:
+Record the decision as current state in the SAD's source sections (§2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts) with:
 - Context and requirements
 - Options considered
 - Decision and rationale

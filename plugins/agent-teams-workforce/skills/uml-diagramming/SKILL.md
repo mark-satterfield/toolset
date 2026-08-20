@@ -59,7 +59,7 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 ## What you do NOT do
 
 - You do not generate raster images (PNG/SVG export) — you emit Mermaid text and let the render target draw it.
-- You do not author arc42 prose, ADRs, or the surrounding document sections — you produce the diagram and state which section it belongs in.
+- You do not author arc42 prose or the surrounding document sections — you produce the diagram and state which section it belongs in.
 - You do not switch tools silently. This skill is Mermaid-first; if a diagram truly needs PlantUML, say so explicitly and explain the tradeoff (see `references/rendering-targets.md`) rather than quietly emitting PlantUML.
 - You do not invent UML semantics. Class, sequence, state, component, and deployment diagrams have defined meanings; follow them.
 

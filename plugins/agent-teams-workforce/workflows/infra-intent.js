@@ -1,24 +1,22 @@
 export const meta = {
   name: 'infra-intent',
   description:
-    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then validate freshness (ADR currency + dependency changes) and review it (security scan + cost impact). On a blocking cost finding the maker re-runs with checker feedback (bounded 2 passes); deadlock escalates to the architecture-decider. Read-only review — no agent judges its own artifact.',
+    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then validate freshness (dependency changes) and review it (security scan + cost impact). On a blocking cost finding the maker re-runs with checker feedback (bounded 2 passes); deadlock escalates to the architecture-decider. Read-only review — no agent judges its own artifact.',
   phases: [
     { title: 'Provisioning intent', detail: 'cdk-infrastructure-designer authors the intent' },
-    { title: 'Freshness', detail: 'ADR currency + dependency-change checks' },
+    { title: 'Freshness', detail: 'dependency-change checks' },
     { title: 'Review', detail: 'independent security scan + cost-impact review' },
   ],
 }
 
 // args: {
 //   change: { id?, title?, description?, repoPath? },  // the change driving provisioning
-//   adrs?: string[],                                    // ADR ids/paths the intent relies on
 //   feedback?: string,                                  // gate feedback from a composite re-run
 //   maxCostLoops?: number,                              // maker<->cost-reviewer passes (default 2)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const change = a.change || {}
 const repo = change.repoPath || '(repo path not provided — ask before editing files)'
-const adrs = Array.isArray(a.adrs) ? a.adrs : []
 const MAX_COST_LOOPS = a.maxCostLoops || 2
 
 const changeHeader = `${change.id ? `Change ${change.id}: ` : ''}${change.title || '(untitled change)'}
@@ -33,7 +31,6 @@ function intentPrompt(feedback) {
   return `Produce the concrete provisioning intent for the change below. You are the MAKER — author the intent only; you do not judge it. Work within the repository at: ${repo}
 
 ${changeHeader}
-${adrs.length ? `\nADRs this intent must honor: ${adrs.join(', ')}` : ''}
 ${a.feedback ? `\nUpstream gate feedback to address:\n${a.feedback}` : ''}
 ${feedback ? `\nCost-review feedback from the previous pass — revise the intent to address it without violating the S3 standard:\n${feedback}` : ''}
 
@@ -42,7 +39,7 @@ Deliver CDK-expressible provisioning intent:
 - stacks: the CDK stacks the resources belong to.
 - crossStackRefs: cross-stack references expressed via SSM Parameter Store (never CloudFormation exports).
 - affectedStacks: the stacks created or modified by this intent (names).
-- rationale: why this shape, tied to the change and any ADRs.`
+- rationale: why this shape, tied to the change.`
 }
 
 async function makeIntent(feedback) {
@@ -85,49 +82,8 @@ phase('Freshness')
 
 const intentText = JSON.stringify(intent, null, 2)
 
-const [adrCurrency, dependencyChanges] = await parallel([
-  () =>
-    agent(
-      `Validate that the ADRs this provisioning intent depends on are CURRENT. You are an independent checker — you did not author the intent and you do not modify it.
-
-${changeHeader}
-ADRs the intent relies on: ${adrs.length ? adrs.join(', ') : '(none declared — flag if the intent implicitly depends on architecture decisions)'}
-
-Provisioning intent under review:
-${intentText}
-
-For each ADR the intent depends on, state whether it is current or superseded/stale. Report any decision the intent assumes that no current ADR supports.`,
-      {
-        label: 'freshness:adr-currency',
-        phase: 'Freshness',
-        agentType: 'agent-teams-workforce:adr-currency-checker',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['current', 'staleAdrs', 'findings'],
-          properties: {
-            current: { type: 'boolean' },
-            staleAdrs: { type: 'array', items: { type: 'string' } },
-            findings: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['adr', 'status', 'detail'],
-                properties: {
-                  adr: { type: 'string' },
-                  status: { type: 'string', enum: ['current', 'stale', 'superseded', 'missing'] },
-                  detail: { type: 'string' },
-                },
-              },
-            },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `Detect dependency changes that would INVALIDATE this provisioning intent — CDK/construct-library version drift, removed or renamed constructs, deprecated properties, or upstream service changes. You are an independent checker — you did not author the intent and you do not modify it.
+const dependencyChanges = await agent(
+  `Detect dependency changes that would INVALIDATE this provisioning intent — CDK/construct-library version drift, removed or renamed constructs, deprecated properties, or upstream service changes. You are an independent checker — you did not author the intent and you do not modify it.
 
 ${changeHeader}
 
@@ -135,36 +91,35 @@ Provisioning intent under review:
 ${intentText}
 
 Report each dependency change that affects the intent and whether it invalidates the intent as written.`,
-      {
-        label: 'freshness:dependency-changes',
-        phase: 'Freshness',
-        agentType: 'agent-teams-workforce:dependency-change-detector',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['invalidated', 'changes'],
-          properties: {
-            invalidated: { type: 'boolean' },
-            changes: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['dependency', 'change', 'impact'],
-                properties: {
-                  dependency: { type: 'string' },
-                  change: { type: 'string' },
-                  impact: { type: 'string' },
-                },
-              },
+  {
+    label: 'freshness:dependency-changes',
+    phase: 'Freshness',
+    agentType: 'agent-teams-workforce:dependency-change-detector',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['invalidated', 'changes'],
+      properties: {
+        invalidated: { type: 'boolean' },
+        changes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['dependency', 'change', 'impact'],
+            properties: {
+              dependency: { type: 'string' },
+              change: { type: 'string' },
+              impact: { type: 'string' },
             },
           },
         },
-      }
-    ),
-])
+      },
+    },
+  }
+)
 
-const fresh = adrCurrency.current === true && dependencyChanges.invalidated !== true
+const fresh = dependencyChanges.invalidated !== true
 
 // ── Phase 3: Review (independent checkers; cost can drive a bounded maker loop) ─
 phase('Review')
@@ -310,7 +265,6 @@ const contract = {
 return {
   provisioningIntent: intent,
   affectedStacks: intent.affectedStacks,
-  adrCurrency,
   dependencyChanges,
   securityFindings,
   costFindings,

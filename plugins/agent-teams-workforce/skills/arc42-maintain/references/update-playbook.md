@@ -23,7 +23,7 @@ sections — the ones whose edits ripple — are highlighted:
 | 11 | Risks and Technical Debt | Known risks and accepted debt |
 | 12 | Glossary | Domain and technical terms |
 
-A maintenance edit usually starts in one of 2/4/8/9 and then reconciles the
+A maintenance edit usually starts in one of 2/4/8 and then reconciles the
 others (and often 3/5/6/7, which *render* the structural decisions as C4 and UML
 views).
 
@@ -97,7 +97,7 @@ playbook keeps to a plain sketch so it states the loop without a renderer.)
                   v
         +---------------------+
         |  LOCATE primary     |   2 Constraints / 4 Strategy /
-        |  section (2/4/8/9)  |   8 Concepts / 9 Decision
+        |  section (2/4/8)  |   8 Concepts / 9 Decision
         +----------+----------+
                    |
                    v

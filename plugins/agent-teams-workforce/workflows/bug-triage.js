@@ -85,7 +85,7 @@ Deliver:
 const sizing = await agent(
   `Size this bug. It has been diagnosed; decide whether its honest remedy is a FIX or a REDESIGN. You are READ-ONLY and you are NOT proposing the remedy — only sizing it.
 
-Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision that no ADR covers, or amount to rebuilding a component rather than correcting it.
+Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision the SAD does not cover, or amount to rebuilding a component rather than correcting it.
 
 Answer "fix" when the defect is a mistake in existing behavior that can be corrected within the current design — the common case. Do not inflate a real bug into a project; most bugs are bugs.
 
