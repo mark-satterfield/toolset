@@ -33,7 +33,7 @@ async function run({ args = {}, triage }) {
     agentImpl: (call) => {
       if (call.label === 'triage:classify') return triage
       if (call.label === 'sad:conformance') return { verdict: 'pass', conformant: true, findings: [] }
-      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true }
+      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true, admissible: true, chosenApproach: 'a', blockingRules: [], ruleChallenges: [] }
     },
   })
 }
@@ -160,7 +160,7 @@ async function runVerified({ triage, verification, args = {} }) {
     agentImpl: (call) => {
       if (call.label === 'triage:classify') return triage
       if (call.label === 'triage:verify-citations') return verification
-      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true }
+      return { summary: 's', findings: [], options: [], ruling: 'accept', rationale: 'r', verdict: 'pass', conformant: true, admissible: true, chosenApproach: 'a', blockingRules: [], ruleChallenges: [] }
     },
   })
 }

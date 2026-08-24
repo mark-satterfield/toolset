@@ -1,12 +1,12 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
+    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, context-map + failure-mode analysis, concurrent); skipped when settled' },
     { title: 'Challenge', detail: 'pattern + tradeoff + boundary + cost-impact + ops-readiness panel (concurrent checkers) — runs only over proposals that were produced' },
-    { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled' },
+    { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled; when NO option is admissible it says so, classifies what blocked them, and the blocking constraints go back to the panel for a fresh option set (bounded)' },
     { title: 'Update SAD', detail: 'author fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8, conformance-checked' },
   ],
 }
@@ -300,6 +300,12 @@ let frame = null
 let proposals = []
 let contextMap = null
 let failureModes = []
+// Hoisted so the re-proposal round (Phase 3) can re-dispatch the same panel with
+// the decider's blocking constraints attached, instead of re-deriving the framing.
+let frameBlock = ''
+let activeMakers = []
+let wantsContextMap = false
+let wantsFailureModes = false
 if (settled) {
   log('Proposals phase skipped — settled decisions go straight to the architecture-decider')
 } else {
@@ -326,16 +332,16 @@ ${decisionHeader}`,
     }
   )
 
-  const frameBlock = `Framing from the coordinator:
+  frameBlock = `Framing from the coordinator:
 Sub-decisions: ${((frame && frame.subDecisions) || []).join('; ') || 'n/a'}
 Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
 
   // Dispatch only the selected slice of the panel. The two advisors are dimensions
   // like any other — a decision with no boundary or failure-mode stake does not pay
   // for a context map or a failure-mode catalogue.
-  const activeMakers = makers.filter((m) => activeDimensions.includes(m.dim))
-  const wantsContextMap = activeDimensions.includes('bounded-context')
-  const wantsFailureModes = activeDimensions.includes('failure-mode')
+  activeMakers = makers.filter((m) => activeDimensions.includes(m.dim))
+  wantsContextMap = activeDimensions.includes('bounded-context')
+  wantsFailureModes = activeDimensions.includes('failure-mode')
 
   const jobs = activeMakers.map((m) => () =>
     agent(
@@ -389,8 +395,8 @@ ${frameBlock}`,
   if (wantsContextMap) contextMap = proposalResults[cursor++] || null
   if (wantsFailureModes) failureModes = (proposalResults[cursor] && proposalResults[cursor].failureModes) || []
 }
-const proposalsText = JSON.stringify(proposals, null, 2)
-const analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
+let proposalsText = JSON.stringify(proposals, null, 2)
+let analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
 
 // ── Phase 2: Challenge ─────────────────────────────────────────────────────────
 // Five INDEPENDENT checkers stress the proposals concurrently — pattern, tradeoff,
@@ -580,14 +586,15 @@ if (!settled && proposals.length) {
   log('Challenge wave skipped — the selected panel produced no lens proposals to challenge')
 }
 
-const challenges = {
-  patterns: (challengeResults[0] && challengeResults[0].challenges) || [],
-  unstatedRisks: (challengeResults[1] && challengeResults[1].unstatedRisks) || [],
-  boundaryViolations: (challengeResults[2] && challengeResults[2].boundaryViolations) || [],
-  scaleBreakpoints: (challengeResults[3] && challengeResults[3].scaleBreakpoints) || [],
-  readinessGaps: (challengeResults[4] && challengeResults[4].readinessGaps) || [],
-}
-const challengesText = JSON.stringify(challenges, null, 2)
+const foldChallenges = (r) => ({
+  patterns: (r[0] && r[0].challenges) || [],
+  unstatedRisks: (r[1] && r[1].unstatedRisks) || [],
+  boundaryViolations: (r[2] && r[2].boundaryViolations) || [],
+  scaleBreakpoints: (r[3] && r[3].scaleBreakpoints) || [],
+  readinessGaps: (r[4] && r[4].readinessGaps) || [],
+})
+let challenges = foldChallenges(challengeResults)
+let challengesText = JSON.stringify(challenges, null, 2)
 
 // ── Phase 3: Decide ─────────────────────────────────────────────────────────────
 // The decider ONLY rules — it does not analyze or author. Distinct from makers and
@@ -613,30 +620,179 @@ ${challengesText}
 
 Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
-const decision = await agent(
-  `You are the architecture-decider. Rule on the architecture given the evidence below. You ONLY rule — do not re-analyze, do not author new options, do not write the SAD. Choose the approach, state the ruling as a decision (not a discussion), and list the constraints the ruling imposes downstream. Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).
+const DECISION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'surfaces', 'blockingRules', 'ruleChallenges'],
+  properties: {
+    // admissible=false means NO option in front of the decider can be ruled on.
+    // It is a real, reportable outcome — never a ruling, never written to the SAD.
+    admissible: { type: 'boolean' },
+    ruling: { type: 'string' },
+    chosenApproach: { type: 'string' },
+    imposedConstraints: { type: 'array', items: { type: 'string' } },
+    resolvedChallenges: { type: 'array', items: { type: 'string' } },
+    surfaces: { type: 'array', items: { type: 'string', enum: ['events', 'restApi', 'graphql', 'newDomain'] } },
+    // Why nothing was admissible, so the next round can be aimed rather than repeated.
+    blockingRules: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rule', 'source', 'whyBlocking', 'classification'],
+        properties: {
+          rule: { type: 'string' },
+          source: { type: 'string' },
+          whyBlocking: { type: 'string' },
+          // convention = a house rule this project wrote for itself. It MUST NOT
+          // halt delivery; it is challengeable. constitutive = a real external
+          // constraint (an AWS limit, a security fundamental, a legal obligation).
+          classification: { type: 'string', enum: ['constitutive', 'convention'] },
+        },
+      },
+    },
+    // First-class output: the SAD rule itself is wrong and should change. Routed to
+    // the human owner — never silently absorbed into the document.
+    ruleChallenges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rule', 'source', 'recommendedChange', 'rationale'],
+        properties: {
+          rule: { type: 'string' },
+          source: { type: 'string' },
+          recommendedChange: { type: 'string' },
+          rationale: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architecture given the evidence below. You do not analyze and you do not write the SAD.
+
+YOUR AUTHORITY, AND ITS LIMITS:
+- Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
+- If NO proposed option can be ruled on, set admissible=false and leave chosenApproach empty. Populate blockingRules with the specific rules that eliminated every option. This is a reportable outcome, not a failure to do your job — do NOT manufacture a ruling to avoid it, and do NOT dress a rejection up as a decision.
+- Classify every blocking rule. A rule is "constitutive" ONLY if it is a real external constraint: an AWS service limit, a security fundamental, a legal or contractual obligation. A rule this project wrote for itself — a naming convention, a curated allowlist, a house pattern, a self-authored MUST in our own SAD — is a "convention", however normatively it is phrased.
+- A convention MUST NOT be the reason delivery halts. If a convention is the only thing eliminating an otherwise sound design, prefer the design: rule it admissible and record a ruleChallenge against the convention.
+- Where our own written rule conflicts with industry best practice or an AWS Well-Architected principle, BEST PRACTICE WINS and our rule is the defect. Record it in ruleChallenges with the change you recommend. ruleChallenges go to the human owner; they are never applied by this run.
+
+Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).`
+
+const MAX_DECIDE_LOOPS = a.maxDecideLoops || 2
+let decision = null
+let decideRounds = 0
+
+for (let round = 1; round <= MAX_DECIDE_LOOPS; round++) {
+  decideRounds = round
+  const evidence = round === 1
+    ? evidenceBlock
+    : `Proposals (re-proposed round ${round}, aimed at the constraints that eliminated the previous set):
+${proposalsText}
+
+Analysis (context map + failure modes):
+${analysisText}
+
+Challenges:
+${challengesText}
+
+Blocking challenges must be resolved by the ruling or the ruling is invalid.`
+
+  decision = await agent(
+    `${DECIDER_CHARTER}
 
 ${decisionHeader}
 
-${evidenceBlock}`,
-  {
-    label: 'decide:ruling',
-    phase: 'Decide',
-    agentType: 'agent-teams-workforce:architecture-decider',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['ruling', 'chosenApproach', 'imposedConstraints', 'resolvedChallenges', 'surfaces'],
-      properties: {
-        ruling: { type: 'string' },
-        chosenApproach: { type: 'string' },
-        imposedConstraints: { type: 'array', items: { type: 'string' } },
-        resolvedChallenges: { type: 'array', items: { type: 'string' } },
-        surfaces: { type: 'array', items: { type: 'string', enum: ['events', 'restApi', 'graphql', 'newDomain'] } },
-      },
-    },
+${evidence}`,
+    {
+      label: round === 1 ? 'decide:ruling' : `decide:ruling-r${round}`,
+      phase: 'Decide',
+      agentType: 'agent-teams-workforce:architecture-decider',
+      schema: DECISION_SCHEMA,
+    }
+  )
+
+  if (!decision) break
+  if (decision.admissible) break
+
+  const blocking = decision.blockingRules || []
+  const conventionsOnly = blocking.length > 0 && blocking.every((b) => b.classification === 'convention')
+  log(`Decide round ${round}: NO admissible option — blocked by ${blocking.length} rule(s)${conventionsOnly ? ', all house conventions' : ''}`)
+
+  // A settled-by-triage question has no panel to send back to, and a run out of
+  // rounds stops here. Either way the inadmissible verdict stands and is reported.
+  if (settled || !activeMakers.length || round === MAX_DECIDE_LOOPS) break
+
+  // Re-proposal round: send the blocking constraints BACK to the same panel and ask
+  // for a design that satisfies them, or a named rule to challenge. This is the loop
+  // whose absence let a single bad option set end an entire architecture run.
+  phase('Proposals')
+  log(`Re-proposing against ${blocking.length} blocking rule(s) — round ${round + 1} of ${MAX_DECIDE_LOOPS}`)
+
+  const blockingBlock = `The previous option set was ruled INADMISSIBLE. Every option was eliminated by these rules:
+${blocking.map((b) => `- [${b.classification}] ${b.rule} (${b.source}) — ${b.whyBlocking}`).join('\n')}
+
+Propose a NEW option set. Requirements for this round:
+- Design the best solution to the problem FIRST, using industry best practice and AWS Well-Architected. Then check it against the rules above.
+- Do NOT re-present any option already eliminated.
+- A rule classified as [convention] is a house rule, not an external constraint. If the best design conflicts with one, propose the design anyway and say plainly in the option's cons which convention it breaks and why the convention should change.
+- Only a [constitutive] rule — a real AWS limit, a security fundamental, a legal obligation — is genuinely binding on your options.
+- Existing deployed infrastructure is NOT a constraint on the design. If the right answer requires something that does not exist yet, propose it.`
+
+  const reJobs = activeMakers.map((m) => () =>
+    agent(
+      `${m.ask}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
+      { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA }
+    )
+  )
+  const reProposed = (await parallel(reJobs)).filter(Boolean)
+  if (!reProposed.length) {
+    log('Re-proposal round produced nothing — the inadmissible verdict stands')
+    break
   }
-)
+  proposals = reProposed
+  proposalsText = JSON.stringify(proposals, null, 2)
+
+  phase('Challenge')
+  challenges = foldChallenges(await runChallengeWave())
+  challengesText = JSON.stringify(challenges, null, 2)
+}
+
+if (!decision) {
+  return { ok: false, stage: 'decide', error: 'the architecture-decider returned nothing', triage, proposals, challenges }
+}
+
+const admissible = decision.admissible === true
+const ruleChallenges = decision.ruleChallenges || []
+if (ruleChallenges.length) {
+  log(`${ruleChallenges.length} rule challenge(s) raised — these are for the human owner, not applied by this run`)
+}
+
+// A non-decision MUST NOT be written into the SAD. Recording "nothing was admissible"
+// as normative architecture is how a failed run becomes a permanent blocker.
+if (!admissible) {
+  log('No admissible option after ' + decideRounds + ' round(s) — SAD update SKIPPED; nothing is recorded')
+  return {
+    ok: false,
+    stage: 'decide',
+    admissible: false,
+    error: 'no admissible option — the panel produced nothing the decider could rule on',
+    blockingRules: decision.blockingRules || [],
+    ruleChallenges,
+    decideRounds,
+    decisionRef: d.id || null,
+    triage,
+    settledByTriage: settled,
+    panelDimensions: activeDimensions,
+    proposals,
+    contextMap,
+    failureModes,
+    challenges,
+    decision,
+  }
+}
 
 // ── Phase 4: Update SAD ──────────────────────────────────────────────────────────
 // Maker-checker bounded loop: sad-maintainer authors the SAD edit, an INDEPENDENT
@@ -801,8 +957,13 @@ ${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none
 }
 
 // ── Return: one object threading every phase output ──────────────────────────────
+// ok requires an actual DECISION, not merely a well-formed SAD edit. A run that
+// decided nothing returns ok:false even if every document it touched is tidy.
 return {
-  ok: !!conformanceVerdict && conformanceVerdict.verdict === 'pass',
+  ok: admissible && !!conformanceVerdict && conformanceVerdict.verdict === 'pass',
+  admissible,
+  ruleChallenges,
+  decideRounds,
   decisionRef: d.id || null,
   triage,
   settledByTriage: settled,
