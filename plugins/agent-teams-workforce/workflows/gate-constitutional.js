@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again.',
+    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again. On a self-contradictory packet NO exit path can return "loop" — the precedent path, the appeals-court path, and the no-ruling path all route through one conversion, because looping cannot repair a contradiction the same judge regenerates.',
   phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals, over a persistent precedent store' }],
 }
 
@@ -62,6 +62,22 @@ const packetConflict = describePacketContradiction(a.artifact)
 if (packetConflict) {
   log(`Constitutional gate ${a.gate || '?'}: self-contradictory adjudication detected in script — routing to a constitutional ruling instead of looping the same judge`)
 }
+
+// "A contradiction never comes back as loop" was true of ONE of this gate's three exit
+// paths — the one where the appeals court produced nothing. The other two returned an
+// agent's verdict straight through, and both schemas permit the enum
+// ['pass','loop','escalate']: a precedent line recording verdict:'loop', or an appeals
+// ruling of 'loop', went back to the caller unaltered and spent the loop budget
+// re-asking the question the same judge keeps answering inconsistently.
+//
+// So the rule is applied at the exit, once, and every path routes through it.
+const LOOP_ON_CONTRADICTION_NOTE =
+  'A self-contradictory adjudication cannot be repaired by re-running the phase — nothing about ' +
+  'the WORK changed between the contradictory rounds — so this exits as an escalation rather ' +
+  'than spending the loop budget on a contradiction the same judge regenerates.'
+const noLoopOnContradiction = (v) => (packetConflict && v === 'loop' ? 'escalate' : v)
+const withContradictionNote = (verdictIn, feedback) =>
+  packetConflict && verdictIn === 'loop' ? `${feedback || ''}\n\n${LOOP_ON_CONTRADICTION_NOTE}` : feedback
 
 phase('Gate (constitutional)')
 
@@ -175,11 +191,19 @@ When you match, return the stored ruling's verdict, rationale and precedent VERB
 
   if (found && found.matched === true && found.verdict) {
     log(`Constitutional gate ${a.gate}: conflict SETTLED BY PRECEDENT ${found.key || '(unkeyed)'} — appeals court not convened`)
+    // A stored precedent is applied VERBATIM in substance — but a recorded 'loop' is not
+    // a substantive ruling on a contradiction, it is the one verdict this gate has
+    // already established cannot answer one. It is converted here, and the conversion is
+    // stated in the feedback rather than performed silently.
     return {
-      verdict: found.verdict,
+      verdict: noLoopOnContradiction(found.verdict),
       criteria: verdict.criteria,
-      feedback: found.rationale || found.precedent || 'settled by recorded precedent',
-      escalateTo: found.escalateTo || verdict.escalateTo,
+      feedback: withContradictionNote(
+        found.verdict,
+        found.rationale || found.precedent || 'settled by recorded precedent'
+      ),
+      escalateTo:
+        found.escalateTo || verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
       ruledByConstitutionalAgent: true,
       ruledFromPrecedent: true,
       precedentKey: found.key || null,
@@ -262,10 +286,11 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
       )
     }
     return {
-      verdict: ruling.verdict,
+      verdict: noLoopOnContradiction(ruling.verdict),
       criteria: verdict.criteria,
-      feedback: ruling.rationale,
-      escalateTo: ruling.escalateTo || verdict.escalateTo,
+      feedback: withContradictionNote(ruling.verdict, ruling.rationale),
+      escalateTo:
+        ruling.escalateTo || verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
       ruledByConstitutionalAgent: true,
       ruledFromPrecedent: false,
       precedentKey: (written && written.key) || null,
@@ -282,11 +307,11 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
 if (packetConflict && verdict && verdict.verdict === 'loop') {
   return {
     ...verdict,
-    verdict: 'escalate',
+    verdict: noLoopOnContradiction(verdict.verdict),
     escalateTo: verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
     feedback:
       `${verdict.feedback || ''}\n\nThe adjudication for this gate contradicts itself and no constitutional ruling was obtained. ` +
-      'Looping cannot repair a contradiction the same judge regenerates, so this exits rather than burning the loop budget.',
+      LOOP_ON_CONTRADICTION_NOTE,
     packetContradiction: true,
   }
 }

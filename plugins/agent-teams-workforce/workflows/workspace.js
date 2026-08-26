@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch under `.worktrees/<bead>-<repo>`, and verifies the result really is a LINKED worktree (git-dir != git-common-dir) on a branch that is not the default. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
+    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch under `.worktrees/<bead>-<repo>`, and the SCRIPT then refuses anything it cannot verify: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must not be a default branch or a detached HEAD, and where git is reachable the tree is cross-examined directly. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 
@@ -106,30 +106,132 @@ Report: the absolute worktree path, its branch, whether you reused an existing t
 
 // A missing or unusable result is a failure, never a shrug. The caller must be able to
 // refuse to run rather than write into whichever tree it was pointed at.
+const refuse = (reason) => ({
+  ok: false,
+  applicable: true,
+  repoPath: null,
+  branch: null,
+  reused: false,
+  blocked: [reason, ...((provisioned && Array.isArray(provisioned.blocked) && provisioned.blocked) || [])],
+  evidence: (provisioned && provisioned.evidence) || null,
+})
+
 if (!provisioned || provisioned.ok !== true || !String(provisioned.repoPath || '').trim()) {
-  return {
-    ok: false,
-    applicable: true,
-    repoPath: null,
-    branch: null,
-    reused: false,
-    blocked: (provisioned && provisioned.blocked) || ['the workspace step returned no verified worktree'],
-    evidence: (provisioned && provisioned.evidence) || null,
-  }
+  return refuse(
+    ((provisioned && Array.isArray(provisioned.blocked) && provisioned.blocked[0]) ||
+      'the workspace step returned no verified worktree')
+  )
 }
 
+// ── SCRIPT-SIDE VERIFICATION ───────────────────────────────────────────────────
+// Everything above this line asks the provisioner to verify; nothing until here
+// CHECKED it. That gap is the original defect reproduced through the new code path:
+// `{ ok: true, repoPath: <the repository's MAIN working tree>, branch: 'main' }` was
+// accepted verbatim and handed to a code-WRITING phase — the very tree, and the very
+// branch, that stranded nine test files on main.
+//
+// Both guards below are pure comparisons of the values the provisioner reported. They
+// need no shell, no filesystem, and no git. Each REFUSES; none defaults to the
+// safe-sounding answer, because defaulting to it is the bug.
+const DEFAULT_BRANCHES = new Set(['main', 'master'])
+const normalizeBranch = (b) =>
+  String(b || '')
+    .trim()
+    .replace(/^refs\/heads\//, '')
+    .replace(/^origin\//, '')
+    .toLowerCase()
+
+// (a) The linked-worktree claim must be AFFIRMATIVE. `isLinkedWorktree` is optional in
+// the schema, so the previous `!== false` test handed the safe answer to exactly the
+// model that never looked. Absent is not verified. Absent refuses.
+if (provisioned.isLinkedWorktree !== true) {
+  return refuse(
+    `the provisioner did not affirm isLinkedWorktree=true for ${String(provisioned.repoPath).trim()} ` +
+      `(reported: ${JSON.stringify(provisioned.isLinkedWorktree)}). An unverified tree is a MAIN working ` +
+      'tree until proven otherwise — this step refuses rather than hand one to a writing phase.'
+  )
+}
+
+// (b) HEAD MUST NOT be the default branch. The prompt has said so since 6.0.5 and
+// nothing enforced it. An unreported branch falls back to BRANCH, which is
+// `<prefix>/<beadId>` and therefore can never be a default branch.
+const effectiveBranch = String(provisioned.branch || '').trim() || BRANCH
+const normalized = normalizeBranch(effectiveBranch)
+if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
+  return refuse(
+    `the provisioned tree ${String(provisioned.repoPath).trim()} reports HEAD as "${effectiveBranch}" — ` +
+      'the default branch (or a detached HEAD) is the one place the project\'s own rules forbid writing. ' +
+      'Every writing phase inherits this tree, so it is refused here rather than discovered at settle.'
+  )
+}
+
+// ── Optional third layer: ask git itself ───────────────────────────────────────
+// The two guards above test what the provisioner CLAIMED. This is the only check that
+// can catch a claim it did not earn. No shipped workflow uses child_process, so the
+// production runner may sandbox it by design — which is why this is an EXTRA layer and
+// never the primary control. An unavailable check falls through (the contract guards
+// have already ruled); only an AFFIRMATIVE contradiction refuses. stderr is captured
+// and reported, never discarded.
+const verifiedPath = String(provisioned.repoPath).trim()
+let gitContradiction = null
+let execFileSync = null
+try {
+  ;({ execFileSync } = await import('node:child_process'))
+} catch (e) {
+  log(
+    `Workspace: the optional git cross-check is unavailable here (${e && e.message ? e.message : e}) — ` +
+      'the contract guards above stand on their own.'
+  )
+}
+if (execFileSync) {
+  // Each probe is attempted SEPARATELY. A repository with no commits answers
+  // `--git-dir` fine and throws on `rev-parse HEAD`, and one failing probe must never
+  // discard the answer another one already gave — that is how a check that fires in
+  // one repository silently does nothing in the next.
+  const git = (...argv) => {
+    try {
+      return String(
+        execFileSync('git', ['-C', verifiedPath, ...argv], {
+          encoding: 'utf8',
+          timeout: 5000,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
+      ).trim()
+    } catch (e) {
+      log(
+        `Workspace: git ${argv.join(' ')} in ${verifiedPath} did not answer` +
+          `${e && e.stderr ? ` — ${String(e.stderr).trim()}` : e && e.message ? ` — ${e.message}` : ''}`
+      )
+      return null
+    }
+  }
+  const gitDir = git('rev-parse', '--git-dir')
+  const commonDir = git('rev-parse', '--git-common-dir')
+  const head = git('rev-parse', '--abbrev-ref', 'HEAD')
+  if (gitDir && commonDir && gitDir === commonDir) {
+    gitContradiction =
+      `git reports ${verifiedPath} is a MAIN working tree — --git-dir and --git-common-dir are both ` +
+      `"${gitDir}" — contradicting the provisioner's isLinkedWorktree=true.`
+  } else if (head && DEFAULT_BRANCHES.has(normalizeBranch(head))) {
+    gitContradiction =
+      `git reports HEAD at ${verifiedPath} is "${head}", the default branch, while the provisioner ` +
+      `reported "${effectiveBranch}".`
+  }
+}
+if (gitContradiction) return refuse(gitContradiction)
+
 log(
-  `Workspace: ${provisioned.reused ? 'REUSED' : 'created'} worktree ${provisioned.repoPath} on ${provisioned.branch || BRANCH} — every writing phase inherits this tree`
+  `Workspace: ${provisioned.reused ? 'REUSED' : 'created'} worktree ${verifiedPath} on ${effectiveBranch} — every writing phase inherits this tree`
 )
 
 return {
   ok: true,
   applicable: true,
-  repoPath: String(provisioned.repoPath).trim(),
-  branch: provisioned.branch || BRANCH,
+  repoPath: verifiedPath,
+  branch: effectiveBranch,
   reused: provisioned.reused === true,
-  isLinkedWorktree: provisioned.isLinkedWorktree !== false,
+  isLinkedWorktree: true,
   evidence: provisioned.evidence || null,
   blocked: provisioned.blocked || [],
-  ledger: { phase: 'workspace', beadId, branch: provisioned.branch || BRANCH, reused: provisioned.reused === true, ok: true },
+  ledger: { phase: 'workspace', beadId, branch: effectiveBranch, reused: provisioned.reused === true, ok: true },
 }

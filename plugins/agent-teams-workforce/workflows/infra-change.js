@@ -85,7 +85,23 @@ async function persistRun(outcome) {
 // The worktree the settle step lands. `contract.repoPath` is built inside the run's
 // async body and is out of scope in the `finally`, so the resolved path is captured
 // on this mutable as the run establishes it.
-let settleRepoPath = bead.repoPath || null
+// It starts NULL, not `bead.repoPath`. The caller-supplied path is the repository, and
+// settle COMMITS in whatever it is handed: seeding it with the caller's repo meant a run
+// that died before or inside the workspace step sent settle into the MAIN working tree
+// to commit there. Nothing writes before the workspace step, so until that step verifies
+// a tree there is genuinely nothing to land.
+let settleRepoPath = null
+// What the workspace step VERIFIED about that tree. Settle re-checks both before it is
+// willing to commit — see the guard in settleRun.
+let settleBranch = null
+let settleIsLinkedWorktree = false
+const SETTLE_DEFAULT_BRANCHES = new Set(['main', 'master'])
+const settleNormalizeBranch = (b) =>
+  String(b || '')
+    .trim()
+    .replace(/^refs\/heads\//, '')
+    .replace(/^origin\//, '')
+    .toLowerCase()
 
 // ── Settle: land the work, or name what stopped it ────────────────────────────
 // The telemetry `finally` below is the ONE construct that observes every exit path —
@@ -105,6 +121,31 @@ let settleRepoPath = bead.repoPath || null
 async function settleRun() {
   const wt = settleRepoPath
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
+  // Settle COMMITS, and then opens a PR on the CURRENT branch. Both are irreversible in
+  // the way that matters: the original incident left work uncommitted on main and
+  // therefore recoverable, whereas an unguarded settle in that same tree would have
+  // COMMITTED it onto main. So the tree settle is about to act in must still be the
+  // verified linked worktree the workspace step established, on a branch that is not the
+  // default one. An unverified tree is refused and reported as a blocked orphan — the
+  // work is named and left where a human can find it, never committed to find out.
+  const settleNormalized = settleNormalizeBranch(settleBranch || '')
+  if (settleIsLinkedWorktree !== true) {
+    return {
+      status: 'blocked',
+      reason:
+        `settle refused to commit in ${wt}: the workspace step did not affirm it is a linked worktree ` +
+        '(isLinkedWorktree=true). Committing into an unverified tree is how a fix lands on main.',
+    }
+  }
+  if (!settleNormalized || SETTLE_DEFAULT_BRANCHES.has(settleNormalized) || settleNormalized === 'head') {
+    return {
+      status: 'blocked',
+      reason:
+        `settle refused to commit in ${wt}: its branch is "${settleBranch || '(none reported)'}" — a default ` +
+        'branch, a detached HEAD, or unreported. skillspoke-pr runs on the CURRENT branch, so this would ' +
+        'commit and push the work onto main rather than onto a reviewable branch.',
+    }
+  }
   try {
     const reported = await agent(
       `Land every change in this worktree, or say exactly why it could not be landed. Worktree: ${wt}\n` +
@@ -164,6 +205,21 @@ function applySettle(res, settle) {
     res.landed = false
     res.ok = false
     res.settleFailed = { error: (settle && settle.error) || 'the settle step failed without an error message' }
+    return
+  }
+  // blocked — settle declined to commit because the tree it was pointed at was not the
+  // verified worktree. That IS an orphan: the work exists and was not landed. Saying so
+  // is the whole point; proceeding would have committed onto the default branch.
+  if (status === 'blocked') {
+    res.landed = false
+    res.ok = false
+    res.settled = 'blocked'
+    res.orphaned = {
+      worktree: settleRepoPath,
+      branch: settleBranch || null,
+      blocked: [(settle && settle.reason) || 'settle refused to commit into an unverified tree'],
+    }
+    log(`Settle: REFUSED — ${(settle && settle.reason) || 'unverified tree'}`)
     return
   }
   const PR_OK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(String(settle.prUrl || '').trim())
@@ -326,6 +382,11 @@ if (!workspace || workspace.ok !== true || !workspace.repoPath) {
 // this step supplies the worktree, and every downstream phase inherits THIS value.
 const workRepoPath = workspace.repoPath
 settleRepoPath = workRepoPath
+// Carry the workspace step's VERIFIED facts, not an assumption, to the settle guard.
+// Absent fields stay falsy on purpose: settle then refuses rather than committing on a
+// claim nobody made.
+settleBranch = workspace.branch || null
+settleIsLinkedWorktree = workspace.isLinkedWorktree === true
 if (workspace.ledger) runLedger.push(workspace.ledger)
 
 phase('Infra Intent')

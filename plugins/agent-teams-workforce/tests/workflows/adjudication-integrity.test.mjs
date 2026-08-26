@@ -180,3 +180,68 @@ test('a packet with NO contradiction is left entirely alone', async () => {
   assert.equal(result.verdict, 'pass')
   assert.ok(!calls.some((c) => String(c.label).startsWith('precedent:lookup')), 'no appeal is convened for a coherent packet')
 })
+
+// ── ssbd-36fn residual: "loop" was blocked on ONE exit path of three ──────────
+//
+// The 6.0.5 claim that this gate "can never return loop" on a contradictory packet was
+// true only of the path that was tested — the one where the appeals court produced
+// nothing. Two others returned an agent's verdict straight through, and BOTH schemas
+// permit the enum ['pass','loop','escalate']: the precedent path returned
+// `found.verdict` unguarded, and the appeals-court path returned `ruling.verdict`
+// unguarded. Either could hand back 'loop' and burn the whole loop budget re-asking a
+// question the same judge keeps answering inconsistently.
+//
+// These model the uncooperative authority: a precedent line and a constitutional ruling
+// that each say 'loop'.
+
+test('the PRECEDENT path can never settle a contradiction as "loop"', async () => {
+  const { result } = await runGate(CONTRADICTORY, {
+    enforcerVerdict: LOOP_VERDICT,
+    precedent: { matched: true, key: 'CR-007', verdict: 'loop', rationale: 'the stored line says loop', precedent: 'p' },
+  })
+  assert.equal(result.ruledFromPrecedent, true, 'the precedent was applied — this is that exit path')
+  assert.notEqual(result.verdict, 'loop', 'a recorded ruling cannot re-authorise the one verdict a contradiction cannot answer')
+  assert.equal(result.verdict, 'escalate')
+  assert.ok(result.escalateTo, 'an escalation with nowhere to go is not an escalation')
+  assert.match(result.feedback, /cannot be repaired by re-running the phase/, 'the conversion must be stated, not performed silently')
+  assert.equal(result.packetContradiction, true)
+})
+
+test('the APPEALS-COURT path can never rule a contradiction as "loop"', async () => {
+  const { result } = await runGate(CONTRADICTORY, {
+    enforcerVerdict: LOOP_VERDICT,
+    ruling: { verdict: 'loop', rationale: 'the constitutional agent said loop' },
+  })
+  assert.equal(result.ruledFromPrecedent, false, 'the appeals court ruled — this is that exit path')
+  assert.notEqual(result.verdict, 'loop')
+  assert.equal(result.verdict, 'escalate')
+  assert.ok(result.escalateTo)
+  assert.match(result.feedback, /the constitutional agent said loop/, 'the ruling\'s own rationale is preserved, not replaced')
+  assert.match(result.feedback, /cannot be repaired by re-running the phase/)
+})
+
+test('every exit path agrees: NO verdict of "loop" survives a self-contradictory packet', async () => {
+  // The three exits, driven together, so a future edit cannot re-open one of them.
+  const paths = [
+    { name: 'precedent', opts: { enforcerVerdict: LOOP_VERDICT, precedent: { matched: true, key: 'CR-009', verdict: 'loop', rationale: 'r' } } },
+    { name: 'appeals-court', opts: { enforcerVerdict: LOOP_VERDICT, ruling: { verdict: 'loop', rationale: 'r' } } },
+    { name: 'no-ruling', opts: { enforcerVerdict: LOOP_VERDICT, ruling: null } },
+  ]
+  for (const { name, opts } of paths) {
+    const { result } = await runGate(CONTRADICTORY, opts)
+    assert.equal(result.verdict, 'escalate', `${name} exit returned "${result.verdict}"`)
+    assert.equal(result.packetContradiction, true, `${name} exit must record WHY it escalated`)
+  }
+})
+
+test('a COHERENT packet still gets "loop" from either authority — the conversion is scoped to contradictions', async () => {
+  const clean = { packetIntegrity: { contradictions: [], unjustifiedReversals: [], constitutiveOpen: 0 } }
+  const needsRuling = { verdict: 'escalate', criteria: [], feedback: 'f', needsConstitutionalRuling: true, conflict: 'a novel tension' }
+  const viaPrecedent = await runGate(clean, {
+    enforcerVerdict: needsRuling,
+    precedent: { matched: true, key: 'CR-011', verdict: 'loop', rationale: 'fixable inside the phase' },
+  })
+  assert.equal(viaPrecedent.result.verdict, 'loop', 'loop is a legitimate verdict when the phase really can repair it')
+  const viaCourt = await runGate(clean, { enforcerVerdict: needsRuling, ruling: { verdict: 'loop', rationale: 'fixable inside the phase' } })
+  assert.equal(viaCourt.result.verdict, 'loop')
+})
