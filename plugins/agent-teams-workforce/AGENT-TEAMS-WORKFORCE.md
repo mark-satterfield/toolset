@@ -688,6 +688,7 @@ Spec-to-Deploy pipeline, phase 7 — CDK, pipeline, waves, readiness; feeds Gate
 | `deployment-lead` | Manager | Delegator, Orchestrator |
 | `cdk-stack-author` | Worker | Executor |
 | `github-actions-pipeline-implementer` | Worker | Executor |
+| `worktree-independent-verifier` | Worker | Validator |
 | `wave-deployment-sequencer` | Worker | Executor |
 | `cdk-infrastructure-drift-detector` | Worker | Validator |
 | `slo-error-budget-designer` | Worker | Advisor |
@@ -866,6 +867,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `deployment-lead` | Deployment | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the deployment sequence, validates preconditions at each step, and reports to Gate 5. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, Agent, SendMessage |
 | `cdk-stack-author` | Deployment | Execution Team | Worker | Executor | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Write, Edit, Glob, Grep, Bash |
 | `github-actions-pipeline-implementer` | Deployment | Execution Team | Worker | Executor | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. | subagent-contract, validation-protocol, senior-devops | Read, Write, Edit, Glob, Grep, Bash |
+| `worktree-independent-verifier` | Workspace | Execution Team | Worker | Validator | test | Independently reports the raw git facts about a provisioned path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — so workspace.js can rule on two separately-obtained accounts rather than trusting one. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash |
 | `wave-deployment-sequencer` | Deployment | Execution Team | Worker | Executor | execute | Executes wave-based deployments in the approved cross-repo order with precondition checks per wave. | subagent-contract, validation-protocol, senior-devops, polyrepo-steward | Read, Write, Edit, Glob, Grep, Bash |
 | `cdk-infrastructure-drift-detector` | Deployment | Execution Team | Worker | Validator | test | Detects drift between deployed infrastructure and the CDK stacks. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Glob, Grep, Bash, Write |
 | `slo-error-budget-designer` | Deployment | Execution Team | Worker | Advisor | plan | Designs SLOs and error budgets for the deployed feature. | subagent-contract, observability-designer, cloudwatch | Read, Glob, Grep, Write |

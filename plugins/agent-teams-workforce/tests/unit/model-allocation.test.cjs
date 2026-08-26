@@ -90,6 +90,11 @@ test('makers and their checkers do not share a model', () => {
     ['code-refactoring-specialist', 'code-correctness-reviewer'],
     ['wsjf-scorer', 'wsjf-scoring-reviewer'],
     ['prd-writer', 'prd-alignment-verifier'],
+    // The workspace step: one agent CREATES the worktree, a second and separately
+    // dispatched one reports what git says about it. On the same model the checker
+    // shares the maker's blind spots and corroborates the same wrong answer, which
+    // is the one failure this second dispatch exists to prevent.
+    ['github-actions-pipeline-implementer', 'worktree-independent-verifier'],
   ];
   const same = PAIRS.filter(([m, c]) => modelOf(`${m}.md`) && modelOf(`${m}.md`) === modelOf(`${c}.md`))
     .map(([m, c]) => `${m}/${c} both on ${modelOf(`${m}.md`)}`);

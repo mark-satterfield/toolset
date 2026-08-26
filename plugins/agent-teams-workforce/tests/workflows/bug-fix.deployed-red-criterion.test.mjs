@@ -81,7 +81,7 @@ async function runBugFixThroughBothRedGates() {
       // phase then operates in, so a fixture must supply one or the run correctly
       // refuses to write anywhere (ssbd-mz1w).
       if (call.name === 'agent-teams-workforce:workspace') {
-        return { ok: true, repoPath: '/tmp/worktrees/fixture', branch: 'fix/ssbd-fixture', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: '/tmp/worktrees/fixture', branch: 'fix/ssbd-fixture', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { bead: { id: 'ssbd-fixture', title: 'deployed-red fixture' }, repoPath: '/tmp/fixture' }

@@ -27,7 +27,7 @@ function run(args) {
     agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') {
-        return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:spec-freshness') return { fresh: true }
       if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {

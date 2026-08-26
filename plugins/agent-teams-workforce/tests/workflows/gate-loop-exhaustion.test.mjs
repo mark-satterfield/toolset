@@ -34,7 +34,7 @@ async function exhaust(file, writingGate, entryGate) {
     agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') {
-        return { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-36fn', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-36fn', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }

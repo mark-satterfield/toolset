@@ -27,7 +27,7 @@ function run(file, settleImpl, args) {
     },
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') {
-        return { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-4q3x', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-4q3x', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }

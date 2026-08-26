@@ -54,7 +54,15 @@ function run(file, { workspace, args } = {}) {
   })
 }
 
-const OK_WORKSPACE = { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true }
+const OK_WORKSPACE = {
+  ok: true,
+  repoPath: WORKTREE,
+  branch: 'fix/ssbd-mz1w',
+  reused: false,
+  isLinkedWorktree: true,
+  independentlyVerified: true,
+  defaultBranch: 'main',
+}
 
 for (const { file, writer } of COMPOSITES) {
   test(`${file}: the workspace phase runs FIRST, before anything that can write`, async () => {
@@ -134,13 +142,192 @@ test('workspace.js returns the verified tree and names the branch', async () => 
   const WS = path.join(WF, 'workspace.js')
   const { result, calls } = await runWorkflowScript(WS, {
     args: { repoPath: '/r', beadId: 'ssbd-1', branchPrefix: 'fix', purpose: 'a bug' },
-    agentImpl: () => ({ ok: true, repoPath: `${WORKTREE}  `, branch: '', reused: true, isLinkedWorktree: true, evidence: 'x' }),
+    agentImpl: (call) =>
+      call.label === 'workspace:independent-verify'
+        ? {
+            ok: true,
+            gitDir: '/r/.git/worktrees/ssbd-1',
+            gitCommonDir: '/r/.git',
+            branch: 'fix/ssbd-1',
+            callerCommonDir: '/r/.git',
+            callerDefaultBranch: 'main',
+          }
+        : { ok: true, repoPath: `${WORKTREE}  `, branch: '', reused: true, isLinkedWorktree: true, evidence: 'x' },
   })
   assert.equal(result.ok, true)
   assert.equal(result.repoPath, WORKTREE, 'the path is trimmed — a trailing space silently breaks every git -C after it')
   assert.equal(result.branch, 'fix/ssbd-1', 'an unreported branch falls back to the one this step asked for')
   assert.equal(result.reused, true)
+  assert.equal(result.independentlyVerified, true, 'the composites refuse a result that carries no affirmative verification')
   assert.match(calls[0].prompt, /worktree add -b/, 'the provisioning instruction must actually be in the prompt')
+})
+
+// ── SEGREGATION OF DUTIES (replaces the removed in-script git layer) ───────────
+//
+// 6.0.6 cross-examined the tree by shelling out to git from the script. The real runner
+// refuses a dynamic import STATICALLY, so that script could not load at all — and it was
+// the first phase of all three composites. A workflow script gets only args, agent,
+// workflow, phase, log, parallel and budget: no filesystem, no process spawning, no
+// module loader. A script-side git check is impossible BY CONSTRUCTION.
+//
+// What that layer was FOR is still real: the pure guards test what the provisioner SAID,
+// and neither can catch a provisioner that says the right thing while handing back
+// something else. So the check became this plugin's own doctrine instead — a SECOND agent,
+// dispatched separately, read-only, told only where to look and never what was claimed.
+// The script rules on the two accounts. An affirmative lie now needs two independently
+// dispatched agents to agree on it.
+
+test('workspace.js: the verification is a SECOND, separate dispatch — not the provisioner grading itself', async () => {
+  const { calls } = await provision({ ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true })
+  const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
+  assert.deepEqual(labels, ['workspace:provision', 'workspace:independent-verify'], 'two dispatches, provision first')
+
+  const provisionCall = calls.find((c) => c.label === 'workspace:provision')
+  const verifyCall = calls.find((c) => c.label === 'workspace:independent-verify')
+  assert.notEqual(
+    verifyCall.opts.agentType,
+    provisionCall.opts.agentType,
+    'a checker that is the same agent as its maker shares its blind spots and agrees for the same wrong reason',
+  )
+})
+
+test('workspace.js: the verifier is never shown what the provisioner claimed', async () => {
+  // A verifier that is shown the answer is not independent. It must be told WHERE to
+  // look — it cannot inspect a path it was not given — but nothing about the claim.
+  const { calls } = await provision({
+    ok: true,
+    repoPath: WORKTREE,
+    branch: 'fix/ssbd-mz1w',
+    reused: true,
+    isLinkedWorktree: true,
+    evidence: 'the provisioner said it verified everything',
+  })
+  const prompt = calls.find((c) => c.label === 'workspace:independent-verify').prompt
+  assert.ok(prompt.includes(WORKTREE), 'it must be told which path to inspect')
+  assert.ok(prompt.includes(CALLER_REPO), 'and which repository that path is supposed to belong to')
+  for (const leak of ['isLinkedWorktree', 'fix/ssbd-mz1w', 'reused', 'the provisioner said']) {
+    assert.ok(!prompt.includes(leak), `the verifier must not be told "${leak}" — that is the answer it exists to obtain independently`)
+  }
+})
+
+test('workspace.js: an independent report that CONTRADICTS the claim refuses', async () => {
+  // The affirmative lie: a provisioner reporting a linked worktree on a feature branch
+  // while git says the path is a MAIN working tree. No pure comparison can catch this;
+  // only a second account can.
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true },
+    undefined,
+    { ok: true, gitDir: CALLER_COMMON_DIR, gitCommonDir: CALLER_COMMON_DIR, branch: 'fix/ssbd-mz1w', callerCommonDir: CALLER_COMMON_DIR, callerDefaultBranch: 'main' },
+  )
+  assert.equal(result.ok, false, 'git says MAIN working tree; a claim to the contrary is not evidence')
+  assert.equal(result.repoPath, null)
+  assert.match(String(result.blocked[0]), /MAIN working tree/)
+})
+
+test('workspace.js: the two accounts must agree about the BRANCH', async () => {
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true },
+    undefined,
+    honestReport('main'),
+  )
+  assert.equal(result.ok, false, 'a tree whose own branch is in dispute is not a tree any writing phase may inherit')
+  assert.equal(result.repoPath, null)
+})
+
+test('workspace.js: NO independent report at all refuses — it is the primary control, not an extra', async () => {
+  // 6.0.6's git layer was allowed to fall through when unavailable, because two other
+  // guards still stood. This replaces the layer those guards could not cover, so falling
+  // through here would restore the exact hole it exists to close.
+  for (const verifier of [null, undefined, { ok: false }, {}, { ok: true, gitDir: '', gitCommonDir: '', branch: '', callerCommonDir: '' }]) {
+    const { result } = await provision(
+      { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+      undefined,
+      verifier === undefined ? null : verifier,
+    )
+    assert.equal(result.ok, false, `verifier ${JSON.stringify(verifier)} must refuse — an unverified tree is not a workspace`)
+    assert.equal(result.repoPath, null)
+  }
+})
+
+// ── RESIDUAL 1: the tree must belong to the repository the CALLER named ───────
+//
+// Proven against 6.0.6: the caller asks for repo A, the provisioner returns a GENUINE
+// linked worktree of unrelated repo B on a real feature branch, and it was ACCEPTED —
+// both existing guards pass, because it really is a linked worktree on a non-default
+// branch. Every writing phase then works in repo B and settle opens a PR against repo B.
+// Linked worktrees of one repository all share that repository's git-common-dir, so
+// comparing the two absolute common-dirs settles it exactly.
+
+test('workspace.js: a genuine worktree of the WRONG repository is refused', async () => {
+  const OTHER = '/repos/SkillSpoke-unrelated-service'
+  const { result } = await provision(
+    { ok: true, repoPath: `${OTHER}/../.worktrees/x-unrelated`, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    undefined,
+    {
+      ok: true,
+      // A real linked worktree — git-dir differs from git-common-dir — just of repo B.
+      gitDir: `${OTHER}/.git/worktrees/x-unrelated`,
+      gitCommonDir: `${OTHER}/.git`,
+      branch: 'fix/ssbd-mz1w',
+      callerCommonDir: CALLER_COMMON_DIR,
+      callerDefaultBranch: 'main',
+    },
+  )
+  assert.equal(result.ok, false, 'a real worktree of the wrong repository is still the wrong repository')
+  assert.equal(result.repoPath, null)
+  assert.match(String(result.blocked[0]), /DIFFERENT repository/, 'the refusal must name what it actually is')
+})
+
+// ── RESIDUAL 3: `main` and `master` are a FLOOR, not the whole test ───────────
+
+test('workspace.js: a repo whose default is `develop` refuses a tree checked out on develop', async () => {
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'develop', reused: true, isLinkedWorktree: true },
+    undefined,
+    { ...honestReport('develop'), callerDefaultBranch: 'develop' },
+  )
+  assert.equal(result.ok, false, 'the default branch is whatever THIS repository says it is, not a hardcoded pair')
+  assert.equal(result.repoPath, null)
+  assert.match(String(result.blocked[0]), /develop/)
+})
+
+test('workspace.js: `develop` is refused only where it IS the default — elsewhere it is a normal branch', async () => {
+  // The floor must not widen into a guess. In a repo whose default is main, `develop` is
+  // an ordinary branch and refusing it would break real work.
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'develop', reused: true, isLinkedWorktree: true },
+    undefined,
+    { ...honestReport('develop'), callerDefaultBranch: 'main' },
+  )
+  assert.equal(result.ok, true, 'a non-default branch is a fine place to work, whatever it is called')
+  assert.equal(result.repoPath, WORKTREE)
+})
+
+test('workspace.js: an unobtainable origin/HEAD narrows to the floor rather than guessing', async () => {
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    undefined,
+    { ...honestReport('fix/ssbd-mz1w'), callerDefaultBranch: '' },
+  )
+  assert.equal(result.ok, true, 'a missing ref must not block real work')
+  assert.equal(result.defaultBranch, null, 'and must be reported as unknown, not as an assumed "main"')
+
+  const onMain = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'master', reused: true, isLinkedWorktree: true },
+    undefined,
+    { ...honestReport('master'), callerDefaultBranch: '' },
+  )
+  assert.equal(onMain.result.ok, false, 'the floor still holds with no origin/HEAD to consult')
+})
+
+test('workspace.js: the verified result carries the real default branch to the settle guards', async () => {
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    undefined,
+    { ...honestReport(), callerDefaultBranch: 'trunk' },
+  )
+  assert.equal(result.ok, true)
+  assert.equal(result.defaultBranch, 'trunk', 'settle must test against THIS repo default, not a hardcoded pair')
 })
 
 // ── The UNCOOPERATIVE provisioner (ssbd-mz1w, residual) ───────────────────────
@@ -156,11 +343,43 @@ test('workspace.js returns the verified tree and names the branch', async () => 
 
 const WS = path.join(WF, 'workspace.js')
 
-/** Drive workspace.js with one scripted provisioner result. */
-function provision(provisioned, args) {
+// The workspace step now makes TWO dispatches, and they are deliberately different
+// agents doing different jobs: `workspace:provision` CREATES the tree and reports what it
+// believes it created, and `workspace:independent-verify` is told only WHERE to look and
+// reports what git printed. So a fixture must script them separately — scripting one
+// result for both would model a single agent grading its own homework, which is the exact
+// arrangement this design exists to end.
+const CALLER_COMMON_DIR = `${CALLER_REPO}/.git`
+const WORKTREE_GIT_DIR = `${CALLER_REPO}/.git/worktrees/ssbd-mz1w-shared-chassis`
+
+/** A truthful independent report for a real linked worktree of CALLER_REPO. */
+const honestReport = (branch = 'fix/ssbd-mz1w') => ({
+  ok: true,
+  gitDir: WORKTREE_GIT_DIR,
+  gitCommonDir: CALLER_COMMON_DIR,
+  branch,
+  callerCommonDir: CALLER_COMMON_DIR,
+  callerDefaultBranch: 'main',
+  evidence: 'git output',
+})
+
+/**
+ * Drive workspace.js with a scripted provisioner result and a scripted independent report.
+ *
+ * `verifier` defaults to a report that CORROBORATES the provisioner, so a test that cares
+ * only about the pure-comparison guards is not accidentally passing because the second
+ * dispatch refused for an unrelated reason.
+ */
+function provision(provisioned, args, verifier) {
   return runWorkflowScript(WS, {
     args: args || { repoPath: CALLER_REPO, beadId: 'ssbd-mz1w', branchPrefix: 'fix' },
-    agentImpl: () => provisioned,
+    agentImpl: (call) => {
+      if (call.label === 'workspace:independent-verify') {
+        if (verifier !== undefined) return verifier
+        return honestReport(String((provisioned && provisioned.branch) || 'fix/ssbd-mz1w').trim() || 'fix/ssbd-mz1w')
+      }
+      return provisioned
+    },
   })
 }
 
@@ -212,33 +431,25 @@ test('workspace.js: a verified linked worktree on a feature branch is still ACCE
   assert.equal(result.isLinkedWorktree, true, 'the returned field is now earned, not fabricated by the script')
 })
 
-test('workspace.js: git itself contradicts a claim the provisioner did not earn', async () => {
-  // The two guards above compare what the provisioner SAID. This is the only layer that
-  // can catch a claim it did not earn — a model that reports isLinkedWorktree:true and a
-  // feature branch while handing back a main working tree. It is an EXTRA layer, not the
-  // primary control: no shipped workflow uses child_process, so the production runner may
-  // sandbox it, in which case the pure guards above stand alone and this test is skipped.
-  const { execFileSync } = await import('node:child_process')
-  const { mkdtempSync, rmSync } = await import('node:fs')
-  const os = await import('node:os')
-  let dir
-  try {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'ws-guard-'))
-    execFileSync('git', ['init', '-q', '-b', 'main', dir], { stdio: ['ignore', 'pipe', 'pipe'] })
-  } catch {
-    return // no git here; the contract guards are covered by the tests above
+// The 6.0.6 in-script git cross-check is GONE, and could never have worked: the runner
+// refuses a dynamic import statically, so the script carrying it could not load at all.
+// Its job — catching a claim the provisioner did not earn — is now done by the
+// independent second dispatch, covered by the segregation-of-duties tests above.
+// scripts/check-workflow-syntax.mjs and this suite's own harness now both refuse any
+// workflow script that reaches for a module loader, so the construct cannot come back.
+
+test('no workflow script reaches for a construct the runner refuses', async () => {
+  const { findForbiddenConstructs } = await import('../../scripts/workflow-runner-constraints.mjs')
+  const fs = await import('node:fs')
+  const offenders = []
+  for (const f of fs.readdirSync(WF).filter((n) => n.endsWith('.js'))) {
+    // RAW bytes, comments and strings included: how the runner detects the construct is
+    // undocumented, so a mention in a comment is not worth risking a second outage over.
+    for (const hit of findForbiddenConstructs(fs.readFileSync(path.join(WF, f), 'utf8'))) {
+      offenders.push(`${f}:${hit.line} ${hit.name}`)
+    }
   }
-  try {
-    const { result } = await provision(
-      { ok: true, repoPath: dir, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true },
-      { repoPath: dir, beadId: 'ssbd-mz1w', branchPrefix: 'fix' },
-    )
-    assert.equal(result.ok, false, 'git says this is a MAIN working tree; a claim to the contrary is not evidence')
-    assert.equal(result.repoPath, null)
-    assert.match(String(result.blocked[0]), /MAIN working tree/)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+  assert.deepEqual(offenders, [], `these scripts CANNOT LOAD in production:\n  ${offenders.join('\n  ')}`)
 })
 
 // ── The settle guard (HOLE 2): never commit in a tree nobody verified ─────────
@@ -249,28 +460,83 @@ test('workspace.js: git itself contradicts a claim the provisioner did not earn'
 // and therefore recoverable.
 
 for (const { file } of COMPOSITES) {
-  test(`${file}: settle REFUSES to commit when the workspace tree was never verified`, async () => {
+  // RESIDUAL 5 — the WRITING phases get the backstop settle already had.
+  //
+  // The composites used to accept the workspace result on `ok === true && repoPath`
+  // alone. A 6.0.5-shaped result — version skew, a bypassed or stale plugin cache, any
+  // workspace mini that never ran the independent check — matches that exactly, and
+  // tdd-red, tdd-green and tdd-refactor each received whatever path it carried while only
+  // settle refused. The refusal now happens BEFORE the first writing phase, which is
+  // strictly better than orphaning: nothing was written, so there is nothing to strand.
+  test(`${file}: a workspace result carrying no independent verification REFUSES the run`, async () => {
     const { result, calls } = await run(file, {
       workspace: { ok: true, repoPath: CALLER_REPO, branch: 'main', reused: true },
     })
+    assert.equal(result.ok, false)
+    assert.equal(result.stage, 'workspace', 'the run must name where it stopped')
+    assert.match(
+      String(result.workspaceShapeFault),
+      /isLinkedWorktree|independent/,
+      'the refusal must name which part of the contract was missing',
+    )
+    const names = calls.filter((c) => c.kind === 'workflow').map((c) => c.name)
+    assert.deepEqual(names, ['agent-teams-workforce:workspace'], 'no phase that could WRITE may be dispatched')
     assert.ok(
       !calls.some((c) => c.kind === 'agent' && c.label === 'settle:land-work'),
       'settle must not be dispatched into a main working tree on main — that COMMITS the work onto main',
     )
+    assert.equal(result.orphaned, undefined, 'nothing was written, so nothing was orphaned')
+  })
+
+  test(`${file}: a 6.0.5-shaped result is refused even when the tree it names is fine`, async () => {
+    // The path here is a perfectly good worktree on a feature branch. It is refused
+    // anyway, because the result carrying it never claimed to have been verified — and a
+    // stale cache returning a plausible path is exactly the case this closes.
+    const { result, calls } = await run(file, {
+      workspace: { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    })
     assert.equal(result.ok, false)
-    assert.equal(result.settled, 'blocked')
-    assert.ok(result.orphaned, 'refusing to commit strands the work — say so; that is what an orphan report is for')
-    assert.equal(result.orphaned.worktree, CALLER_REPO, 'the report must name the tree the work is sitting in')
-    assert.match(String(result.orphaned.blocked[0]), /refused to commit/)
+    assert.equal(result.stage, 'workspace')
+    assert.match(String(result.workspaceShapeFault), /independentlyVerified/)
+    assert.deepEqual(
+      calls.filter((c) => c.kind === 'workflow').map((c) => c.name),
+      ['agent-teams-workforce:workspace'],
+    )
   })
 
   test(`${file}: settle REFUSES a verified worktree that is nonetheless on the default branch`, async () => {
+    // Defense in depth: the workspace mini refuses a default branch itself, so this can
+    // only arise if something between the two substitutes a tree. settle COMMITS and then
+    // pushes the CURRENT branch, so it re-checks rather than trusting.
     const { result, calls } = await run(file, {
-      workspace: { ok: true, repoPath: WORKTREE, branch: 'master', reused: true, isLinkedWorktree: true },
+      workspace: { ...OK_WORKSPACE, repoPath: WORKTREE, branch: 'master', reused: true },
     })
     assert.ok(!calls.some((c) => c.kind === 'agent' && c.label === 'settle:land-work'))
     assert.equal(result.settled, 'blocked')
     assert.match(String(result.orphaned.blocked[0]), /master/, 'skillspoke-pr runs on the CURRENT branch — name it')
+  })
+
+  // RESIDUAL 3 — the settle guard's hardcoded {main, master} is a FLOOR, not the test.
+  test(`${file}: settle refuses THIS repository's default branch, even when it is not main`, async () => {
+    const { result, calls } = await run(file, {
+      workspace: { ...OK_WORKSPACE, repoPath: WORKTREE, branch: 'develop', reused: true, defaultBranch: 'develop' },
+    })
+    assert.ok(!calls.some((c) => c.kind === 'agent' && c.label === 'settle:land-work'))
+    assert.equal(result.settled, 'blocked')
+    assert.match(String(result.orphaned.blocked[0]), /develop/, 'a repo defaulting to develop was previously unprotected')
+  })
+
+  test(`${file}: settle still LANDS work on an ordinary branch that merely resembles a default`, async () => {
+    // The floor must not widen into a guess: `develop` in a repo that defaults to main is
+    // an ordinary branch, and refusing it would strand real work.
+    const { calls } = await run(file, {
+      workspace: { ...OK_WORKSPACE, repoPath: WORKTREE, branch: 'develop', reused: true, defaultBranch: 'main' },
+    })
+    assert.equal(
+      calls.filter((c) => c.kind === 'agent' && c.label === 'settle:land-work').length,
+      1,
+      'work on a non-default branch must still be landed',
+    )
   })
 
   test(`${file}: a failed workspace step means settle touches NOTHING, least of all the caller's repo`, async () => {

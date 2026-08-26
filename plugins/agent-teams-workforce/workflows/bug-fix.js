@@ -99,6 +99,15 @@ let settleRepoPath = null
 // willing to commit — see the guard in settleRun.
 let settleBranch = null
 let settleIsLinkedWorktree = false
+// THIS repository's default branch, as the workspace step's independent check read it
+// from origin/HEAD. A repo whose default is `develop` or `trunk` was completely
+// unprotected while the hardcoded pair below was the only test. Null means the ref was
+// unobtainable, which narrows the guard back to the floor rather than widening it to a
+// guess.
+let settleDefaultBranch = null
+// A FLOOR, never the whole test. `main` and `master` are refused in every repository
+// because they are the fleet convention; the repository's actual default is refused as
+// well, and it is read, not assumed.
 const SETTLE_DEFAULT_BRANCHES = new Set(['main', 'master'])
 const settleNormalizeBranch = (b) =>
   String(b || '')
@@ -141,13 +150,22 @@ async function settleRun() {
         '(isLinkedWorktree=true). Committing into an unverified tree is how a fix lands on main.',
     }
   }
-  if (!settleNormalized || SETTLE_DEFAULT_BRANCHES.has(settleNormalized) || settleNormalized === 'head') {
+  const settleRepoDefault = settleNormalizeBranch(settleDefaultBranch || '')
+  if (
+    !settleNormalized ||
+    SETTLE_DEFAULT_BRANCHES.has(settleNormalized) ||
+    settleNormalized === 'head' ||
+    (settleRepoDefault && settleNormalized === settleRepoDefault)
+  ) {
     return {
       status: 'blocked',
       reason:
         `settle refused to commit in ${wt}: its branch is "${settleBranch || '(none reported)'}" — a default ` +
         'branch, a detached HEAD, or unreported. skillspoke-pr runs on the CURRENT branch, so this would ' +
-        'commit and push the work onto main rather than onto a reviewable branch.',
+        'commit and push the work onto the default branch rather than onto a reviewable branch.' +
+        (settleRepoDefault && settleNormalized === settleRepoDefault
+          ? ` This repository's default branch is "${settleDefaultBranch}", as origin/HEAD names it — not every repo defaults to main.`
+          : ''),
     }
   }
   try {
@@ -361,12 +379,35 @@ const workspace = await workflow('agent-teams-workforce:workspace', {
   branchPrefix: 'fix',
   purpose: bead.title || 'bug fix',
 })
-if (!workspace || workspace.ok !== true || !workspace.repoPath) {
+// RESIDUAL 5 — the writing phases get the same backstop settle already had.
+// `ok === true && repoPath` accepts a 6.0.5-shaped result: a version skew, a bypassed or
+// stale plugin cache, or any workspace mini that never ran the independent check returns
+// exactly that shape, and tdd-red, tdd-green and tdd-refactor would each receive whatever
+// path it carried while only settle refused. The phases that WRITE deserve the guard the
+// phase that commits already has, so the shape is validated here: the tree must be
+// affirmatively verified, not merely reported.
+const workspaceShapeFault = !workspace
+  ? 'the workspace step returned nothing'
+  : workspace.ok !== true
+    ? 'the workspace step did not report ok=true'
+    : !workspace.repoPath
+      ? 'the workspace step reported no repoPath'
+      : workspace.isLinkedWorktree !== true
+        ? 'the workspace step did not affirm isLinkedWorktree=true'
+        : workspace.independentlyVerified !== true
+          ? 'the workspace step carries no independent verification of the tree (independentlyVerified !== true) — ' +
+            'this is the shape a pre-6.0.7 workspace mini returns, so the result may come from a stale or ' +
+            'bypassed plugin cache'
+          : !String(workspace.branch || '').trim()
+            ? 'the workspace step named no branch'
+            : null
+if (workspaceShapeFault) {
   return {
     ok: false,
     stage: 'workspace',
+    workspaceShapeFault,
     bead: bead.id,
-    reason: 'no verified worktree was established — refusing to write into the tree the caller pointed at',
+    reason: `no verified worktree was established (${workspaceShapeFault}) — refusing to write into the tree the caller pointed at`,
     detail: workspace || null,
   }
 }
@@ -379,6 +420,8 @@ settleRepoPath = workRepoPath
 // claim nobody made.
 settleBranch = workspace.branch || null
 settleIsLinkedWorktree = workspace.isLinkedWorktree === true
+// Read, never assumed: null here narrows the settle guard to its hardcoded floor.
+settleDefaultBranch = workspace.defaultBranch || null
 if (workspace.ledger) runLedger.push(workspace.ledger)
 const workBead = { ...bead, repoPath: workRepoPath }
 

@@ -37,6 +37,72 @@ test('a workflow phase — not a command — creates the worktree', () => {
   assert.match(ws, /--git-common-dir/, 'it must VERIFY the result is a linked worktree, not assume it');
 });
 
+test('the worktree is verified by a SECOND agent, not by the one that created it', () => {
+  // 6.0.6 tried to cross-examine the tree by shelling out to git from the script. The
+  // runner refuses a module loader statically, so that script could not load AT ALL —
+  // and it is the first phase of all three composites. A workflow script gets only
+  // args, agent, workflow, phase, log, parallel and budget, so a script-side git check
+  // is impossible by construction. Segregation of duties replaces it: a separate,
+  // read-only agent reports the raw git facts and the SCRIPT rules on the two accounts.
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /workspace:independent-verify/, 'the second, independent dispatch must exist');
+  assert.match(
+    ws,
+    /agentType: 'agent-teams-workforce:worktree-independent-verifier'/,
+    'the verifier must be a DIFFERENT agent from the provisioner, or it grades its own homework',
+  );
+  assert.ok(
+    fs.existsSync(path.join(ROOT, 'agents', 'worktree-independent-verifier.md')),
+    'a workflow may not dispatch an agent this plugin does not ship',
+  );
+});
+
+test('the workspace step refuses a tree belonging to a DIFFERENT repository', () => {
+  // Residual: caller asks for repo A, provisioner returns a genuine linked worktree of
+  // unrelated repo B on a feature branch. Both pure guards pass — it really is a linked
+  // worktree on a non-default branch — and every writing phase then edits repo B.
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /DIFFERENT repository/, 'the returned tree must be checked against the repository the CALLER named');
+  assert.match(ws, /callerCommonDir/, 'linked worktrees of one repo share its git-common-dir — that is the comparison');
+});
+
+test('the default branch is READ per repository, not hardcoded to main and master', () => {
+  // A repo defaulting to `develop` or `trunk` was completely unprotected while the
+  // hardcoded pair was the whole test. It stays as a FLOOR; the repo's real default is
+  // read from origin/HEAD and refused as well.
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /refs\/remotes\/origin\/HEAD/, 'the real default branch must be obtained, not assumed');
+  for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
+    const src = read(f);
+    assert.match(src, /settleDefaultBranch/, `${f}: settle must test against THIS repo's default, not a hardcoded pair`);
+    assert.match(src, /SETTLE_DEFAULT_BRANCHES/, `${f}: and must keep main/master as a floor`);
+  }
+});
+
+test('the composites require an AFFIRMATIVE verification before any writing phase', () => {
+  // `ok === true && repoPath` also matches a 6.0.5-shaped result — version skew, a
+  // bypassed or stale plugin cache — and the writing phases used to receive whatever
+  // path it carried while only settle refused.
+  for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
+    const src = read(f);
+    assert.match(src, /workspaceShapeFault/, `${f} must validate the shape the composite requires`);
+    assert.match(src, /independentlyVerified !== true/, `${f} must refuse a result carrying no independent verification`);
+  }
+});
+
+test('no workflow script reaches for a construct the runner refuses', async () => {
+  // The P0 itself: an unloadable first phase in all three composites.
+  const { findForbiddenConstructs } = await import('../../scripts/workflow-runner-constraints.mjs');
+  const dir = path.join(ROOT, 'workflows');
+  const offenders = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.js'))) {
+    for (const hit of findForbiddenConstructs(fs.readFileSync(path.join(dir, f), 'utf8'))) {
+      offenders.push(`${f}:${hit.line} ${hit.name}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `these scripts CANNOT LOAD in production: ${offenders.join(', ')}`);
+});
+
 test('the workspace phase reuses an existing worktree for the same bead', () => {
   // A resumed or re-dispatched run must land in the same tree as the attempt
   // before it. In a fresh tree it cannot see the earlier run's tests, so Red's

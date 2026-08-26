@@ -118,6 +118,18 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | spec-currency-validator | test | Validates the spec still matches current project reality before implementation begins. |
 | dependency-change-detector | test | Detects dependency version or contract changes since the spec was written. |
 
+## Workspace
+
+The worktree every writing phase then operates in. One agent CREATES it; a SECOND, separately
+dispatched one reports what git says about it, and `workflows/workspace.js` rules on the two
+accounts. The verifier is told where to look and nothing about what was claimed — a checker
+shown the answer is not a checker.
+
+| Agent | Category | Purpose |
+| --- | --- | --- |
+| git-worktree-provisioner (role played by github-actions-pipeline-implementer) | execute | Fetches, fast-forwards, reuses an existing tree for the bead or cuts a new one on a feature branch. |
+| worktree-independent-verifier | test | Independently reports the raw git facts about a path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — so the workspace script can compare two separately-obtained accounts. |
+
 ## Test Design
 
 | Agent | Category | Purpose |

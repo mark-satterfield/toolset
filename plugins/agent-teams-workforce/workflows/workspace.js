@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch under `.worktrees/<bead>-<repo>`, and the SCRIPT then refuses anything it cannot verify: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must not be a default branch or a detached HEAD, and where git is reachable the tree is cross-examined directly. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
+    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch under `.worktrees/<bead>-<repo>` — and then a SECOND, independently dispatched read-only verifier, told nothing about what the provisioner claimed, reports the raw git facts for that path. The SCRIPT rules on the two accounts and refuses anything it cannot reconcile: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must be neither a default branch nor a detached HEAD, the independent account must agree about the branch, git-dir must differ from git-common-dir, and the tree must share a git-common-dir with the repository the CALLER named. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 
@@ -165,63 +165,179 @@ if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
   )
 }
 
-// ── Optional third layer: ask git itself ───────────────────────────────────────
-// The two guards above test what the provisioner CLAIMED. This is the only check that
-// can catch a claim it did not earn. No shipped workflow uses child_process, so the
-// production runner may sandbox it by design — which is why this is an EXTRA layer and
-// never the primary control. An unavailable check falls through (the contract guards
-// have already ruled); only an AFFIRMATIVE contradiction refuses. stderr is captured
-// and reported, never discarded.
+// The path every later comparison is about. Trimmed once, here: a trailing space
+// silently breaks every `git -C` after it.
 const verifiedPath = String(provisioned.repoPath).trim()
-let gitContradiction = null
-let execFileSync = null
-try {
-  ;({ execFileSync } = await import('node:child_process'))
-} catch (e) {
-  log(
-    `Workspace: the optional git cross-check is unavailable here (${e && e.message ? e.message : e}) — ` +
-      'the contract guards above stand on their own.'
+
+// ── SEGREGATION OF DUTIES: a SECOND, INDEPENDENT account of the same tree ──────
+//
+// What replaced the shelling-out layer, and why it had to be replaced.
+//
+// 6.0.6 tried to close this hole from inside the script by dynamically importing Node's
+// process-spawning module. The real runner REJECTS a dynamic import STATICALLY, with a
+// SyntaxError saying the construct is not available in workflow scripts. The
+// rejection is total and happens at LOAD: one dynamic import anywhere in the file —
+// even inside a function that is never called — makes the whole script unloadable.
+// workspace.js is the first phase of all three composites, so 6.0.6 could not start
+// a run at all.
+//
+// The token itself is deliberately absent from this file, comments included. How the
+// runner detects the construct is not documented, so a raw scan is possible, and a
+// comment that reintroduced the token could reintroduce the outage. Nothing under
+// workflows/ may contain it; scripts/check-workflow-syntax.mjs enforces that against
+// the raw bytes, for the same reason.
+//
+// A workflow script receives ONLY args, agent, workflow, phase, log, parallel and
+// budget. There is no filesystem, no process spawning, no require and no module
+// loading, so a script-side git check is impossible BY CONSTRUCTION. Do not look for
+// another way to shell out; there isn't one.
+//
+// What the git layer was for is still real: the two guards above compare what the
+// provisioner SAID, and neither can catch a provisioner that says it correctly while
+// handing back something else. So the check moves from a shell to this plugin's own
+// doctrine — segregation of duties. A SECOND agent, dispatched separately, running
+// read-only, and told NOTHING about what the provisioner claimed, reports the raw git
+// facts. The SCRIPT then compares the two accounts. An affirmative lie now costs two
+// separately-dispatched agents independently agreeing on it.
+//
+// The verifier is told the path and the caller's repository, because it must be told
+// WHERE to look. It is never told the branch, the reuse flag, the isLinkedWorktree
+// claim, or that a claim exists at all — a verifier shown the answer is not a verifier.
+const verified = await agent(
+  `Report the raw git facts about two filesystem paths. Report ONLY what git prints. Do not create, move, repair, check out, fetch or delete anything, and do not judge whether what you find is correct — another step rules on that. Your entire job is to be an independent observation.
+
+PATH UNDER INSPECTION: ${verifiedPath}
+CALLER'S REPOSITORY:   ${repoPath}
+
+Run every command as \`git -C "<path>"\` exactly as written. Never \`cd\` into a tree and rely on the ambient directory — you may be running inside an isolation copy of a different repository, so a bare \`git status\` can inspect the wrong tree entirely. Never redirect stderr to /dev/null; both streams to a readable log is fine, discarding errors is not.
+
+1. THE PATH UNDER INSPECTION
+\`\`\`
+git -C "${verifiedPath}" rev-parse --path-format=absolute --git-dir
+git -C "${verifiedPath}" rev-parse --path-format=absolute --git-common-dir
+git -C "${verifiedPath}" rev-parse --abbrev-ref HEAD
+\`\`\`
+Report these as \`gitDir\`, \`gitCommonDir\` and \`branch\`. If \`--path-format=absolute\` is not supported by this git, run the same rev-parse without it and resolve the result to an absolute path yourself against the path under inspection, and say so in \`notes\`.
+
+2. THE CALLER'S REPOSITORY
+\`\`\`
+git -C "${repoPath}" rev-parse --path-format=absolute --git-common-dir
+git -C "${repoPath}" symbolic-ref --short refs/remotes/origin/HEAD
+\`\`\`
+Report these as \`callerCommonDir\` and \`callerDefaultBranch\`. Strip any leading \`origin/\` from the default branch. If that ref does not exist, leave \`callerDefaultBranch\` EMPTY and say so in \`notes\` — do not guess "main", and do not substitute the branch the repository happens to have checked out.
+
+3. Report the literal output of every command you ran as \`evidence\`.
+
+Every value you report must be the literal output of the command that produced it. If a command does not answer, leave its field EMPTY and name the failure in \`notes\` — one failing probe must not discard an answer another probe already gave, and an inferred value is worse than an absent one, because the script cannot tell them apart. Set \`ok\` false only if you could not run git at all.`,
+  {
+    label: 'workspace:independent-verify',
+    phase: 'Workspace',
+    agentType: 'agent-teams-workforce:worktree-independent-verifier',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['ok', 'gitDir', 'gitCommonDir', 'branch', 'callerCommonDir'],
+      properties: {
+        ok: { type: 'boolean' },
+        gitDir: { type: 'string' },
+        gitCommonDir: { type: 'string' },
+        branch: { type: 'string' },
+        callerCommonDir: { type: 'string' },
+        callerDefaultBranch: { type: 'string' },
+        evidence: { type: 'string' },
+        notes: { type: 'array', items: { type: 'string' } },
+      },
+    },
+  }
+)
+
+// The independent report is now the PRIMARY control, not an optional extra, so a
+// missing or unusable one REFUSES. 6.0.6's git layer could fall through when it was
+// unavailable because two other guards were still standing; this replaces the layer
+// those guards could not cover, and falling through here would restore the exact hole
+// it exists to close.
+const seen = (v) => String((verified && v) || '').trim()
+if (!verified || verified.ok !== true) {
+  return refuse(
+    'no independent verification of the provisioned tree was obtained — the workspace step ' +
+      'refuses to certify a tree on the sole authority of the agent that created it.'
   )
 }
-if (execFileSync) {
-  // Each probe is attempted SEPARATELY. A repository with no commits answers
-  // `--git-dir` fine and throws on `rev-parse HEAD`, and one failing probe must never
-  // discard the answer another one already gave — that is how a check that fires in
-  // one repository silently does nothing in the next.
-  const git = (...argv) => {
-    try {
-      return String(
-        execFileSync('git', ['-C', verifiedPath, ...argv], {
-          encoding: 'utf8',
-          timeout: 5000,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-      ).trim()
-    } catch (e) {
-      log(
-        `Workspace: git ${argv.join(' ')} in ${verifiedPath} did not answer` +
-          `${e && e.stderr ? ` — ${String(e.stderr).trim()}` : e && e.message ? ` — ${e.message}` : ''}`
-      )
-      return null
-    }
-  }
-  const gitDir = git('rev-parse', '--git-dir')
-  const commonDir = git('rev-parse', '--git-common-dir')
-  const head = git('rev-parse', '--abbrev-ref', 'HEAD')
-  if (gitDir && commonDir && gitDir === commonDir) {
-    gitContradiction =
-      `git reports ${verifiedPath} is a MAIN working tree — --git-dir and --git-common-dir are both ` +
-      `"${gitDir}" — contradicting the provisioner's isLinkedWorktree=true.`
-  } else if (head && DEFAULT_BRANCHES.has(normalizeBranch(head))) {
-    gitContradiction =
-      `git reports HEAD at ${verifiedPath} is "${head}", the default branch, while the provisioner ` +
-      `reported "${effectiveBranch}".`
-  }
+
+const obsGitDir = seen(verified.gitDir)
+const obsCommonDir = seen(verified.gitCommonDir)
+const obsBranch = seen(verified.branch)
+const obsCallerCommonDir = seen(verified.callerCommonDir)
+const obsDefaultBranch = normalizeBranch(verified.callerDefaultBranch)
+
+// Trailing separators and `/.` make two spellings of one directory compare unequal.
+const canonicalDir = (d) => String(d || '').trim().replace(/\/+\.?$/, '') || ''
+
+if (!obsGitDir || !obsCommonDir || !obsBranch || !obsCallerCommonDir) {
+  return refuse(
+    'the independent verification came back incomplete ' +
+      `(git-dir: ${JSON.stringify(obsGitDir)}, git-common-dir: ${JSON.stringify(obsCommonDir)}, ` +
+      `branch: ${JSON.stringify(obsBranch)}, caller git-common-dir: ${JSON.stringify(obsCallerCommonDir)}). ` +
+      'A partial observation cannot rule out the thing it was dispatched to rule out.' +
+      (Array.isArray(verified.notes) && verified.notes.length ? ` Reported: ${verified.notes.join('; ')}` : '')
+  )
 }
-if (gitContradiction) return refuse(gitContradiction)
+
+// (c) A LINKED worktree has a git-dir distinct from its git-common-dir. When they are
+// equal the path is a MAIN working tree — the original incident — however confidently
+// the provisioner reported otherwise.
+if (canonicalDir(obsGitDir) === canonicalDir(obsCommonDir)) {
+  return refuse(
+    `an independent check reports ${verifiedPath} is a MAIN working tree — its --git-dir and ` +
+      `--git-common-dir are both "${obsGitDir}" — contradicting the provisioner's isLinkedWorktree=true.`
+  )
+}
+
+// (d) RESIDUAL 1 — the returned tree must belong to the repository the CALLER named.
+// Both guards above pass for a genuine linked worktree of an UNRELATED repository on a
+// feature branch: every writing phase then works in the wrong repository and settle
+// opens a PR against it. Linked worktrees of one repository all share that repository's
+// git-common-dir, so comparing the two absolute common-dirs settles it exactly.
+if (canonicalDir(obsCommonDir) !== canonicalDir(obsCallerCommonDir)) {
+  return refuse(
+    `the provisioned tree ${verifiedPath} belongs to a DIFFERENT repository than the caller asked ` +
+      `for: its --git-common-dir is "${obsCommonDir}" while ${repoPath} reports "${obsCallerCommonDir}". ` +
+      'It may well be a real worktree on a real feature branch — of the wrong repository. Every writing ' +
+      'phase would edit that repository and settle would open a PR against it.'
+  )
+}
+
+// (e) The two accounts must AGREE about the branch. A provisioner reporting a feature
+// branch over a tree git says is on another one is the affirmative lie this whole
+// second dispatch exists to detect.
+if (normalizeBranch(obsBranch) !== normalizeBranch(effectiveBranch)) {
+  return refuse(
+    `the two accounts of ${verifiedPath} disagree: the provisioner reported branch ` +
+      `"${effectiveBranch}", an independent check reports "${obsBranch}". A tree whose own branch is ` +
+      'in dispute is not a tree any writing phase may inherit.'
+  )
+}
+
+// (f) RESIDUAL 3 — the default branch is whatever THIS repository's origin/HEAD says it
+// is. `main` and `master` remain a FLOOR, never the whole test: a repo whose default is
+// `develop` or `trunk` was completely unprotected while the hardcoded pair was the only
+// check. An unobtainable origin/HEAD narrows the test back to the floor; it never
+// widens it to a guess.
+const observedNormalized = normalizeBranch(obsBranch)
+if (DEFAULT_BRANCHES.has(observedNormalized) || observedNormalized === 'head' || (obsDefaultBranch && observedNormalized === obsDefaultBranch)) {
+  return refuse(
+    `an independent check reports HEAD at ${verifiedPath} is "${obsBranch}" — ` +
+      (obsDefaultBranch && observedNormalized === obsDefaultBranch
+        ? `the default branch of ${repoPath} as origin/HEAD names it`
+        : 'a default branch or a detached HEAD') +
+      '. That is the one place the project\'s own rules forbid writing, and every writing phase ' +
+      'inherits this tree.'
+  )
+}
 
 log(
-  `Workspace: ${provisioned.reused ? 'REUSED' : 'created'} worktree ${verifiedPath} on ${effectiveBranch} — every writing phase inherits this tree`
+  `Workspace: ${provisioned.reused ? 'REUSED' : 'created'} worktree ${verifiedPath} on ${effectiveBranch} — ` +
+    'independently verified as a linked worktree of the caller\'s repository; every writing phase inherits this tree'
 )
 
 return {
@@ -231,7 +347,30 @@ return {
   branch: effectiveBranch,
   reused: provisioned.reused === true,
   isLinkedWorktree: true,
+  // The affirmative marker the composites require before they will run a writing phase.
+  // A 6.0.5-shaped result — or any result that skipped the independent account — carries
+  // no such field, so it cannot be mistaken for a verified one.
+  independentlyVerified: true,
+  // The real default branch, so the settle guards test against THIS repository's default
+  // rather than a hardcoded pair. Null means unobtainable, which narrows those guards
+  // back to their floor.
+  defaultBranch: obsDefaultBranch || null,
+  verification: {
+    gitDir: obsGitDir,
+    gitCommonDir: obsCommonDir,
+    branch: obsBranch,
+    callerCommonDir: obsCallerCommonDir,
+    defaultBranch: obsDefaultBranch || null,
+    notes: Array.isArray(verified.notes) ? verified.notes : [],
+  },
   evidence: provisioned.evidence || null,
   blocked: provisioned.blocked || [],
-  ledger: { phase: 'workspace', beadId, branch: effectiveBranch, reused: provisioned.reused === true, ok: true },
+  ledger: {
+    phase: 'workspace',
+    beadId,
+    branch: effectiveBranch,
+    reused: provisioned.reused === true,
+    independentlyVerified: true,
+    ok: true,
+  },
 }

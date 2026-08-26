@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { findForbiddenConstructs } from './workflow-runner-constraints.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dir = process.argv[2] || path.join(here, '..', 'workflows')
@@ -86,6 +87,11 @@ console.log(
 // no child_process to reach for. A ReferenceError is a FAILURE; anything else is not,
 // because a script legitimately bails on a null dispatch.
 //
+// NOTE the standing limitation, which is what pass 3 exists for: an AsyncFunction body is
+// strictly MORE PERMISSIVE than the real runner. Constructs the runner refuses statically
+// are perfectly legal in here, so this pass can execute a script the runner would not even
+// load. Never treat a green pass 2 as evidence that the runner will accept the file.
+//
 // This is dynamic, so it covers executed paths only — the happy path plus whatever
 // branches the stubs steer into. That is enough for this defect class, which lives in
 // the contract-construction code every run touches on its way to the first gate.
@@ -125,6 +131,12 @@ const SMOKE_RETURN = {
   branch: 'smoke/smoke-0000',
   reused: false,
   isLinkedWorktree: true,
+  independentlyVerified: true,
+  defaultBranch: 'main',
+  gitDir: '/tmp/smoke-repo/.git/worktrees/smoke',
+  gitCommonDir: '/tmp/smoke-repo/.git',
+  callerCommonDir: '/tmp/smoke-repo/.git',
+  callerDefaultBranch: 'main',
   scope: 'fix',
   reproduction: 'r',
   rootCause: 'rc',
@@ -200,4 +212,48 @@ console.log(
     : `all ${executed} workflow scripts execute without an undeclared identifier`
 )
 
-process.exit(failures.length || refErrors.length ? 1 : 0)
+// ── Pass 3: RUNNER STRICTNESS ──────────────────────────────────────────────────
+//
+// Passes 1 and 2 both model the runtime with an AsyncFunction body. That model is
+// MORE PERMISSIVE than the real workflow runner, and the gap shipped a P0.
+//
+// 6.0.6's workspace.js used a dynamic import to reach node:child_process. Inside an
+// AsyncFunction a dynamic import works, so pass 1 parsed it, pass 2 executed it, 446
+// tests passed, and an adversarial verifier probed 28 attack variants against it. Every
+// one of them missed that the script COULD NOT LOAD. The real runner refuses the
+// construct statically — the rejection is total and happens before any phase runs, and a
+// probe placed inside a function that is never called was still refused at load.
+// workspace.js is the first phase of all three composites, so the release could not start
+// a run at all.
+//
+// Nothing modelled the runner's strictness, so this pass does. It checks the RAW BYTES,
+// with no comment or string stripping, on purpose: how the runner detects the construct
+// is not documented, a raw scan is entirely possible, and a "harmless" mention in a
+// comment is not worth risking a second outage over. If a construct must be discussed,
+// discuss it by name without writing the token.
+//
+// A workflow script is handed exactly these globals — args, agent, workflow, phase, log,
+// parallel, budget — and nothing else. It has no module loader, no fs, no child_process
+// and no require, so anything reaching for one is unrunnable in production however well
+// it behaves in a test harness.
+// The list itself lives in scripts/workflow-runner-constraints.mjs, which the unit-test
+// HARNESS imports too. Two copies would drift, and a harness laxer than this checker is
+// precisely the gap that shipped 6.0.6 — so there is one list, used by both.
+const strictness = []
+for (const file of readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) {
+  const raw = readFileSync(path.join(dir, file), 'utf8')
+  // Raw bytes on purpose: comments and strings are NOT stripped. See the shared module.
+  for (const f of findForbiddenConstructs(raw)) strictness.push({ file, ...f })
+}
+
+for (const f of strictness) {
+  console.log(`FAIL  ${f.file}:${f.line}  —  ${f.name} is not available in a workflow script. ${f.why}`)
+  console.log(`        ${f.text}`)
+}
+console.log(
+  strictness.length
+    ? `\n${strictness.length} runner-strictness violation(s) — these scripts CANNOT LOAD in production`
+    : `all ${checked} workflow scripts are free of constructs the runner refuses`,
+)
+
+process.exit(failures.length || refErrors.length || strictness.length ? 1 : 0)

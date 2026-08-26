@@ -10,8 +10,12 @@
 //
 // This file is TEST INFRASTRUCTURE (a mock of the runner), not production code.
 // Nothing here reaches a network, an AWS control plane, or a real agent.
+//
+// It is a mock, so it is only as good as the strictness it reproduces. Where it is
+// laxer than the runner, a green suite means nothing — see assertRunnerLoadable below.
 
 import { readFileSync } from 'node:fs'
+import { assertRunnerLoadable } from '../../../scripts/workflow-runner-constraints.mjs'
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 
@@ -44,6 +48,16 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
         `script on any other top-level export. Found: ${stray.map((l) => l.trim().slice(0, 60)).join(' | ')}`,
     )
   }
+  // An AsyncFunction body is strictly MORE PERMISSIVE than the real runner: constructs
+  // the runner refuses STATICALLY are perfectly legal in here. That gap is not academic
+  // — 6.0.6 shipped a workspace.js the runner could not load, and because this harness
+  // happily executed it, 446 tests passed and an adversarial verifier's 28 probes all
+  // missed that the first phase of all three composites was unloadable.
+  //
+  // So the harness now refuses what the runner refuses, from the SAME list the syntax
+  // checker uses. A test that passes here is now at least a test of a loadable script.
+  assertRunnerLoadable(raw, absPath)
+
   const transformed = raw.replace(/^export\s+const\s+meta\b/m, 'const meta')
 
   const calls = []

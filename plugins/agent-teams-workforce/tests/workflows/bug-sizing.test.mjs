@@ -88,7 +88,7 @@ test('bug-fix STOPS at triage on needs-prd — nothing is built or deployed', as
       // phase then operates in, so a fixture must supply one or the run correctly
       // refuses to write anywhere (ssbd-mz1w).
       if (String(call.name).endsWith('workspace')) {
-        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (String(call.name).endsWith('bug-triage')) {
         return { ...DIAGNOSIS, scope: 'needs-prd', scopeRationale: 'changes the event schema', contractsTouched: ['e'] }
@@ -120,7 +120,7 @@ test('bug-fix proceeds normally when triage sizes it as a fix', async () => {
       // phase then operates in, so a fixture must supply one or the run correctly
       // refuses to write anywhere (ssbd-mz1w).
       if (n.endsWith('workspace')) {
-        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true }
+        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (n.endsWith('bug-triage')) {
         return { ...DIAGNOSIS, scope: 'fix', acceptanceCriteria: [{ given: 'g', when: 'w', then: 't' }] }
