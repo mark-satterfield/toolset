@@ -141,22 +141,22 @@ test('workspace.js fails closed when the provisioner cannot verify the tree', as
 test('workspace.js returns the verified tree and names the branch', async () => {
   const WS = path.join(WF, 'workspace.js')
   const { result, calls } = await runWorkflowScript(WS, {
-    args: { repoPath: '/r', beadId: 'ssbd-1', branchPrefix: 'fix', purpose: 'a bug' },
+    args: { repoPath: CALLER_REPO, beadId: 'ssbd-mz1w', branchPrefix: 'fix', purpose: 'a bug' },
     agentImpl: (call) =>
       call.label === 'workspace:independent-verify'
         ? {
             ok: true,
-            gitDir: '/r/.git/worktrees/ssbd-1',
-            gitCommonDir: '/r/.git',
-            branch: 'fix/ssbd-1',
-            callerCommonDir: '/r/.git',
+            gitDir: `${CALLER_REPO}/.git/worktrees/ssbd-mz1w`,
+            gitCommonDir: `${CALLER_REPO}/.git`,
+            branch: 'fix/ssbd-mz1w',
+            callerCommonDir: `${CALLER_REPO}/.git`,
             callerDefaultBranch: 'main',
           }
         : { ok: true, repoPath: `${WORKTREE}  `, branch: '', reused: true, isLinkedWorktree: true, evidence: 'x' },
   })
   assert.equal(result.ok, true)
   assert.equal(result.repoPath, WORKTREE, 'the path is trimmed — a trailing space silently breaks every git -C after it')
-  assert.equal(result.branch, 'fix/ssbd-1', 'an unreported branch falls back to the one this step asked for')
+  assert.equal(result.branch, 'fix/ssbd-mz1w', 'an unreported branch falls back to the one this step asked for')
   assert.equal(result.reused, true)
   assert.equal(result.independentlyVerified, true, 'the composites refuse a result that carries no affirmative verification')
   assert.match(calls[0].prompt, /worktree add -b/, 'the provisioning instruction must actually be in the prompt')
@@ -261,7 +261,9 @@ test('workspace.js: NO independent report at all refuses — it is the primary c
 test('workspace.js: a genuine worktree of the WRONG repository is refused', async () => {
   const OTHER = '/repos/SkillSpoke-unrelated-service'
   const { result } = await provision(
-    { ok: true, repoPath: `${OTHER}/../.worktrees/x-unrelated`, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    // The path is the one this script BUILDS, so it passes the allowlist and the
+    // built-here check; only git can tell that the tree sitting there is repo B's.
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
     undefined,
     {
       ok: true,

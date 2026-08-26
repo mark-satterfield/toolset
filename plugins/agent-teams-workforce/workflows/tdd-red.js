@@ -14,7 +14,71 @@ export const meta = {
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
-const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
+// ── PATH SAFETY AT THIS MINI'S OWN BOUNDARY ─────────────────────────────────
+//
+// The contract repo path is interpolated below into `git -C "<path>"` command text inside
+// prompts that agents are told to run exactly as written, and into the prompt PROSE those
+// same agents read. Inside a composite the value arrives already validated by the
+// workspace step — but this mini is separately dispatchable, and a contract handed
+// straight to it has been through no workspace step at all. Then the unvalidated value is
+// back, in the phases that WRITE CODE and DEPLOY.
+//
+// This is the argument 6.0.8 used to justify re-validating inside settle rather than
+// trusting the composite, applied where it was left out. A guard that only exists on the
+// composite path is a guard on one of the two ways in.
+//
+// The rule matches the workspace step's: an ALLOWLIST, not a blocklist of shell
+// metacharacters. The target is a model reading a prompt as well as a shell parsing a
+// line, and a path made only of permitted characters can still be a sentence addressed to
+// the reader. No spaces and no colons — a worktree path this pipeline creates needs
+// neither, and prose needs both. REFUSE, never sanitize: a rewritten path names a
+// different tree and nobody would learn of the substitution.
+//
+// An ABSENT path is not a fault. It has always meant "no tree was established", the
+// placeholder below is not attacker-controlled, and turning that into a refusal would
+// change what this mini does rather than what it accepts.
+const CONTRACT_PATH_SHAPE = /^\/[A-Za-z0-9._/-]+$/
+const suppliedRepoPath = String(c.repoPath || (c.bead && c.bead.repoPath) || '').trim()
+const contractPathFault = (() => {
+  if (!suppliedRepoPath) return null
+  if (!CONTRACT_PATH_SHAPE.test(suppliedRepoPath)) {
+    const offending = Array.from(suppliedRepoPath).find((ch) => !/[A-Za-z0-9._/-]/.test(ch))
+    return (
+      `the contract repoPath ${JSON.stringify(suppliedRepoPath)} ` +
+      (suppliedRepoPath.startsWith('/')
+        ? `contains ${JSON.stringify(offending)}, which either reshapes the commands an agent is told to run verbatim or lets the path be read as a sentence addressed to that agent`
+        : 'is not absolute, and every command in this phase runs as `git -C "<path>"`, which resolves a relative path against whatever tree the agent is standing in')
+    )
+  }
+  if (suppliedRepoPath.includes('//') || suppliedRepoPath.endsWith('/')) {
+    return `the contract repoPath ${JSON.stringify(suppliedRepoPath)} has an empty or trailing path segment; it is refused rather than normalized`
+  }
+  if (suppliedRepoPath.split('/').includes('..')) {
+    return `the contract repoPath ${JSON.stringify(suppliedRepoPath)} contains a ".." segment, so the directory it names is not the directory it reads as`
+  }
+  return null
+})()
+if (contractPathFault) {
+  return {
+    ok: false,
+    testFiles: [],
+    redConfirmed: false,
+    evidence: '',
+    greenReachable: false,
+    greenPathChecked: false,
+    greenPathFindings: [],
+    writers: [],
+    surfaces: [],
+    coverageGaps: [],
+    blocked: [
+      `${contractPathFault}. This phase refuses the contract rather than dispatching it: the path would ` +
+        'already be inside the prompt by the time anyone could object.',
+    ],
+    ledger: { phase: 'red', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'refused', ok: false },
+  }
+}
+
+const repo = suppliedRepoPath || '(repo path not provided)'
 const ac = Array.isArray(c.acceptanceCriteria) ? c.acceptanceCriteria : []
 const affectedFiles = Array.isArray(c.affectedFiles) ? c.affectedFiles.filter(Boolean).map(String) : []
 
