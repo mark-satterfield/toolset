@@ -36,16 +36,74 @@ if (!criteria.length) {
 // precedent first and writes its ruling down, so the next occurrence settles for free.
 // Detected in script, not volunteered by the enforcer, because an enforcer that misses
 // it costs the entire loop budget to discover.
+//
+// DETECTION, not just the exits. The three exit paths above are correctly guarded — no
+// path can return "loop" on a contradiction. But a guard on the exits is worth nothing
+// if the contradiction is never DETECTED, and this read was exact: `artifact` had to be
+// an object with `packetIntegrity` at its own top level. It missed a packet handed over
+// as a JSON string, and it missed one nested a level down — both of which arise from
+// ordinary plumbing, not from anything exotic. A missed contradiction falls through to
+// the normal verdict, which is the "loop" this whole mechanism exists to prevent.
+//
+// So the packet is now LOCATED before it is read: JSON strings are parsed, and the
+// object is searched to a bounded depth for a `packetIntegrity` carrying contradictions.
+// Bounded because an unbounded walk over an agent-supplied object is a denial-of-service
+// waiting to happen; a cycle-safe seen-set for the same reason. Widening detection can
+// only route MORE contradictions to the appeals court — never fewer, and never a
+// coherent packet.
+
+/** Parse a JSON-string packet; return objects unchanged; null for anything else. */
+function asPacketObject(value) {
+  if (value && typeof value === 'object') return value
+  if (typeof value !== 'string') return null
+  const text = value.trim()
+  if (!text.startsWith('{') && !text.startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(text)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null // an unparseable string is not a packet; it is not evidence of anything
+  }
+}
+
+/**
+ * The contradictions in `artifact`, wherever the packet actually sits.
+ * Searches to MAX_DEPTH, parsing JSON strings on the way, and stops at the first
+ * packetIntegrity that carries a non-empty contradictions array.
+ */
+function findContradictions(artifact) {
+  const MAX_DEPTH = 4
+  const MAX_NODES = 500
+  const seen = new Set()
+  let visited = 0
+  const queue = [[asPacketObject(artifact), 0]]
+  while (queue.length) {
+    const [node, depth] = queue.shift()
+    if (!node || typeof node !== 'object' || depth > MAX_DEPTH || visited++ > MAX_NODES) continue
+    if (seen.has(node)) continue
+    seen.add(node)
+
+    const pi = asPacketObject(node.packetIntegrity)
+    if (pi && Array.isArray(pi.contradictions) && pi.contradictions.length) return pi.contradictions
+
+    for (const value of Array.isArray(node) ? node : Object.values(node)) {
+      const child = asPacketObject(value)
+      if (child) queue.push([child, depth + 1])
+    }
+  }
+  return []
+}
+
 function describePacketContradiction(artifact) {
-  const pi = artifact && artifact.packetIntegrity
-  const contradictions = (pi && Array.isArray(pi.contradictions) && pi.contradictions) || []
+  const contradictions = findContradictions(artifact)
   if (!contradictions.length) return null
   const detail = contradictions
     .map((cx) => {
-      const pair = (cx.rulings || [])
-        .map((r) => `real=${r.real}/${r.classification}/${r.severity}`)
+      const c = (cx && typeof cx === 'object' && cx) || {}
+      const pair = (Array.isArray(c.rulings) ? c.rulings : [])
+        .map((r) => `real=${r && r.real}/${r && r.classification}/${r && r.severity}`)
         .join(' vs ')
-      return `${cx.findingId}: ${pair}`
+      return `${c.findingId || '(unnamed finding)'}: ${pair || '(rulings not itemised)'}`
     })
     .join('; ')
   return (

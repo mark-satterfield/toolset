@@ -245,3 +245,81 @@ test('a COHERENT packet still gets "loop" from either authority — the conversi
   const viaCourt = await runGate(clean, { enforcerVerdict: needsRuling, ruling: { verdict: 'loop', rationale: 'fixable inside the phase' } })
   assert.equal(viaCourt.result.verdict, 'loop')
 })
+
+// ── RESIDUAL: the EXITS were guarded; DETECTION was not ───────────────────────
+//
+// Every test above proves no exit path can return "loop" on a contradictory packet.
+// None of them proves the gate NOTICES one. The detector required `artifact` to be an
+// object carrying `packetIntegrity` at its own top level, so a packet handed over as a
+// JSON string, or nested one level down by ordinary plumbing, was simply not seen — and
+// an unseen contradiction falls straight through to the normal verdict, which is the
+// very "loop" this mechanism exists to prevent. A guard on the exit of a road nobody
+// walks down guards nothing.
+
+const CONTRADICTION = {
+  findingId: 'lane#f',
+  kind: 'intra-packet',
+  rulings: [
+    { real: true, classification: 'constitutive', severity: 'critical' },
+    { real: false, classification: 'competitive', severity: 'low' },
+  ],
+}
+const PI = { contradictions: [CONTRADICTION] }
+
+/** Every shape a contradictory packet has actually been handed over in. */
+const SHAPES = [
+  ['top-level object (the shape that always worked)', { packetIntegrity: PI }],
+  ['the whole artifact as a JSON string', JSON.stringify({ packetIntegrity: PI })],
+  ['packetIntegrity itself as a JSON string', { packetIntegrity: JSON.stringify(PI) }],
+  ['nested one level under `artifact`', { artifact: { packetIntegrity: PI } }],
+  ['nested under `adjudication`', { adjudication: { packetIntegrity: PI } }],
+  ['nested under a JSON-string child', { result: JSON.stringify({ packetIntegrity: PI }) }],
+]
+
+for (const [name, artifact] of SHAPES) {
+  test(`a contradiction is DETECTED when the packet arrives as: ${name}`, async () => {
+    const { result } = await runGate(artifact, { enforcerVerdict: LOOP_VERDICT, ruling: null })
+    assert.equal(result.packetContradiction, true, 'an undetected contradiction is an unguarded one')
+    assert.notEqual(result.verdict, 'loop', 'looping re-asks the question the same judge keeps answering inconsistently')
+  })
+}
+
+test('a COHERENT packet is still left alone in every one of those shapes', async () => {
+  // Widening detection must not start seeing contradictions that are not there —
+  // that would convene the appeals court over healthy work and stall the pipeline.
+  const clean = { contradictions: [], unjustifiedReversals: [], constitutiveOpen: 0 }
+  for (const artifact of [
+    { packetIntegrity: clean },
+    JSON.stringify({ packetIntegrity: clean }),
+    { artifact: { packetIntegrity: clean } },
+    { adjudication: { packetIntegrity: clean } },
+    null,
+    'not json at all',
+    '{ this is not valid json',
+    { packetIntegrity: 'also not json' },
+  ]) {
+    const { result } = await runGate(artifact, { enforcerVerdict: LOOP_VERDICT, ruling: null })
+    // absent or false — either way the gate saw no contradiction, which is the point.
+    assert.ok(!result.packetContradiction, `must not invent a contradiction in ${JSON.stringify(artifact)}`)
+    assert.equal(result.verdict, 'loop', 'a coherent packet still loops — the conversion is scoped to contradictions')
+  }
+})
+
+test('the search is bounded — a huge artifact cannot hang the gate', async () => {
+  // An artifact is agent-supplied, so an unbounded walk over one is a denial of service.
+  // (A true cycle cannot arrive here — results cross the dispatch boundary as JSON — so
+  // the depth and node bounds are what actually matter. The seen-set is cheap insurance.)
+  const wide = { packetIntegrity: { contradictions: [] } }
+  for (let i = 0; i < 300; i++) wide[`k${i}`] = { a: { b: { c: { d: i } } } }
+  let deep = { packetIntegrity: PI }
+  for (let i = 0; i < 40; i++) deep = { down: deep }
+  wide.deep = deep
+
+  const started = Date.now()
+  const { result } = await runGate(wide, { enforcerVerdict: LOOP_VERDICT, ruling: null })
+  assert.ok(Date.now() - started < 2000, 'the walk must terminate promptly')
+  // Buried 40 levels down it is beyond the depth bound, and that is the correct trade:
+  // the bound is what makes a hostile artifact safe to inspect at all. Real packets sit
+  // at the top level or one step in, which the shape tests above cover.
+  assert.ok(!result.packetContradiction)
+})
