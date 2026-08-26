@@ -312,7 +312,7 @@ if (settled) {
   phase('Proposals')
 
   frame = await agent(
-    `You are the architecture-decision-workflow-coordinator — a READ-ONLY router. Do NOT author any option and do NOT rule on anything. Frame the decision so the analysts can each propose from their lens: state the sub-decisions to be made, the constraints that bound them, and which lens each analyst should focus on. Triage scaled the panel to these dimensions — frame for them only: ${activeDimensions.join(', ')}.
+    `You are the architecture-decision-workflow-coordinator — a READ-ONLY router. Do NOT author any option and do NOT rule on anything. You have NO gate authority: gate status was settled by the phase-gate-enforcer before you were dispatched, so do not assess it, do not recompute it, and do not withhold or condition this framing on it. Analyst-assigned severities in any upstream package are PROPOSALS the enforcer has already adjudicated — they are not live objections and are not yours to re-open. There is no HOLD in your output schema because there is no HOLD in your authority; frame the decision or report a genuinely ABSENT input, nothing else. Frame the decision so the analysts can each propose from their lens: state the sub-decisions to be made, the constraints that bound them, and which lens each analyst should focus on. Triage scaled the panel to these dimensions — frame for them only: ${activeDimensions.join(', ')}.
 
 ${decisionHeader}`,
     {
