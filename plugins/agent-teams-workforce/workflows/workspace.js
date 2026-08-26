@@ -26,6 +26,64 @@ if (!beadId) {
   return { ok: false, applicable: false, repoPath: null, branch: null, reused: false, blocked: ['no beadId supplied — the branch and worktree directory are named after the work item'] }
 }
 
+// ── PATH SAFETY: in this step a path is COMMAND TEXT, not a string ────────────
+//
+// Every path below is interpolated verbatim into `git -C "<path>"` lines inside a prompt,
+// and the agent receiving that prompt is told to run those commands EXACTLY AS WRITTEN. A
+// path carrying a double quote closes the quoting; a backtick, a dollar sign, a semicolon,
+// a pipe or a newline appends commands of the path author's choosing to a shell a second
+// agent then executes. The value arrives from whoever dispatched this workflow, and at the
+// second dispatch from the provisioning agent itself — neither is a trusted author of shell.
+//
+// REFUSE, never sanitize. A rewritten path is a path nobody asked for: it would still be
+// interpolated, still be obeyed, and the caller would never learn which tree it actually
+// named. Absolute is required for the same reason every command here is `git -C` — a
+// relative path resolves against whatever directory the agent happens to be standing in.
+const UNSAFE_IN_COMMAND_TEXT = /[`'"\\$;&|<>(){}[\]*?!#~\u0000-\u001f\u007f]/
+const pathFault = (label, p) => {
+  const v = String(p == null ? '' : p)
+  if (!v.trim()) return `${label} is empty`
+  if (!v.startsWith('/')) {
+    return (
+      `${label} ${JSON.stringify(v)} is not an absolute path. Every command in this step runs as ` +
+      '`git -C "<path>"`, and a relative path resolves against whatever tree the agent is standing in.'
+    )
+  }
+  const bad = v.match(UNSAFE_IN_COMMAND_TEXT)
+  if (bad) {
+    return (
+      `${label} ${JSON.stringify(v)} contains ${JSON.stringify(bad[0])}, which would change the SHAPE of the ` +
+      'commands another agent is told to run verbatim rather than merely name a directory. A path is ' +
+      'refused here, never rewritten — a sanitized path is a different tree that would be silently obeyed.'
+    )
+  }
+  return null
+}
+
+// The bead id is command text too: it is interpolated into the branch name AND into the
+// shell expression that builds the worktree directory. Same surface, same refusal. The
+// branch prefix is already reduced to a safe alphabet above.
+const BEAD_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+const callerPathFault = pathFault("the caller's repoPath", repoPath)
+if (callerPathFault) {
+  return { ok: false, applicable: false, repoPath: null, branch: null, reused: false, blocked: [callerPathFault] }
+}
+if (!BEAD_ID_SHAPE.test(beadId)) {
+  return {
+    ok: false,
+    applicable: false,
+    repoPath: null,
+    branch: null,
+    reused: false,
+    blocked: [
+      `the beadId ${JSON.stringify(beadId)} is not a plain identifier. It names the branch and is ` +
+        'interpolated into the shell expression that builds the worktree directory, so anything outside ' +
+        'letters, digits, dot, dash and underscore is refused rather than stripped.',
+    ],
+  }
+}
+
 phase('Workspace')
 
 const BRANCH = `${prefix}/${beadId}`
@@ -168,6 +226,15 @@ if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
 // The path every later comparison is about. Trimmed once, here: a trailing space
 // silently breaks every `git -C` after it.
 const verifiedPath = String(provisioned.repoPath).trim()
+
+// (b2) The PROVISIONER-supplied path is untrusted input, exactly as the caller's was. It
+// is about to be interpolated into a second prompt as `git -C "<path>"` command text that
+// the independent verifier is told to run exactly as written, so a provisioner that
+// returns a quote-bearing path is not naming a tree — it is writing that verifier's shell.
+// The two accounts of the tree are only worth anything if the second one is still asking
+// about the tree the first one named.
+const verifiedPathFault = pathFault('the provisioned repoPath', verifiedPath)
+if (verifiedPathFault) return refuse(verifiedPathFault)
 
 // ── SEGREGATION OF DUTIES: a SECOND, INDEPENDENT account of the same tree ──────
 //

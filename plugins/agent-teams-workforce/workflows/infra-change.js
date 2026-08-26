@@ -112,6 +112,34 @@ const settleNormalizeBranch = (b) =>
     .replace(/^origin\//, '')
     .toLowerCase()
 
+// ── PATH SAFETY: the worktree path is COMMAND TEXT in the settle prompt ───────
+//
+// settle interpolates the path verbatim into `git -C "<path>"` lines and into a
+// `cd "<path>" && skillspoke-pr ...` line, and the agent that receives that prompt is told
+// to run those commands exactly as written. A path carrying a double quote closes the
+// quoting; a backtick, a dollar sign, a semicolon or a pipe appends commands of the path
+// author's choosing to a shell that then COMMITS AND PUSHES. The path travels here from
+// the workspace step, which is the one place it is validated at the source — so it is
+// re-checked here rather than trusted, because settle is the step that acts irreversibly.
+//
+// REFUSE, never sanitize: a rewritten path names a different tree, and settle would commit
+// in it without anyone learning of the substitution. Absolute is required because a
+// relative path resolves against whatever directory the agent is standing in.
+const SETTLE_UNSAFE_IN_COMMAND_TEXT = /[`'"\\$;&|<>(){}[\]*?!#~\u0000-\u001f\u007f]/
+const settlePathFault = (p) => {
+  const v = String(p == null ? '' : p)
+  if (!v.trim()) return 'it is empty'
+  if (!v.startsWith('/')) return `${JSON.stringify(v)} is not an absolute path, and every settle command runs as \`git -C "<path>"\``
+  const bad = v.match(SETTLE_UNSAFE_IN_COMMAND_TEXT)
+  if (bad) {
+    return (
+      `${JSON.stringify(v)} contains ${JSON.stringify(bad[0])}, which would change the SHAPE of the commands ` +
+      'the settle agent is told to run verbatim rather than merely name a directory'
+    )
+  }
+  return null
+}
+
 // ── Settle: land the work, or name what stopped it ────────────────────────────
 // The telemetry `finally` below is the ONE construct that observes every exit path —
 // every failure return and the success return alike. Persisting a ledger there while
@@ -130,6 +158,19 @@ const settleNormalizeBranch = (b) =>
 async function settleRun() {
   const wt = settleRepoPath
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
+  // Before the path becomes command text in the prompt below. A path that could reshape
+  // those commands is a blocked orphan: the work is named and left where a human can find
+  // it, never committed by a shell somebody else wrote.
+  const wtFault = settlePathFault(wt)
+  if (wtFault) {
+    return {
+      status: 'blocked',
+      reason:
+        `settle refused to act on the worktree path it was handed because ${wtFault}. The path is ` +
+        'interpolated into git and skillspoke-pr commands another agent runs exactly as written, so it ' +
+        'is refused rather than rewritten.',
+    }
+  }
   // Settle COMMITS, and then opens a PR on the CURRENT branch. Both are irreversible in
   // the way that matters: the original incident left work uncommitted on main and
   // therefore recoverable, whereas an unguarded settle in that same tree would have
