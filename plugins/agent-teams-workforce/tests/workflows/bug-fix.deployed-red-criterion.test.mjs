@@ -77,6 +77,12 @@ async function runBugFixThroughBothRedGates() {
     args: { bead: { id: 'ssbd-fixture', title: 'deployed-red fixture', description: 'd', repoPath: '/tmp/fixture' } },
     agentImpl: () => ({ written: true }), // ledger:persist
     workflowImpl: (call) => {
+      // The composite's first phase is `workspace` — it OWNS the worktree every writing
+      // phase then operates in, so a fixture must supply one or the run correctly
+      // refuses to write anywhere (ssbd-mz1w).
+      if (call.name === 'agent-teams-workforce:workspace') {
+        return { ok: true, repoPath: '/tmp/worktrees/fixture', branch: 'fix/ssbd-fixture', reused: false, isLinkedWorktree: true }
+      }
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { bead: { id: 'ssbd-fixture', title: 'deployed-red fixture' }, repoPath: '/tmp/fixture' }
       }

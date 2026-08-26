@@ -20,7 +20,8 @@ ${bead.description || ''}
 
 Deliver:
 - reproduction: the minimal, concrete steps/conditions that trigger the defect.
-- rootCause: the precise mechanism and code location (file:line where possible).
+- rootCause: the precise mechanism and code location (file:line where possible), as prose.
+- defects: the SAME root cause, ENUMERATED — one entry per distinct defect, each with a short stable id (D1, D2, ...), its mechanism, and the file and line where it lives. One bead frequently contains several distinct defects, and returning them only as one paragraph of prose leaves everything downstream with nothing countable: the acceptance criteria are then written against a blob and cannot be bounded, indexed, or checked for coverage. Return exactly one entry per defect you would fix separately — not one per file, not one per symptom.
 - affectedFiles: the files that must change to fix it (paths).
 - blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.
 - surfaces: which surfaces from the CLOSED SET below the fix actually touches. This decides which specialist test writers run downstream, so it is a real decision, not a label:
@@ -42,10 +43,25 @@ Deliver:
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['reproduction', 'rootCause', 'affectedFiles', 'blastRadius', 'surfaces'],
+      required: ['reproduction', 'rootCause', 'defects', 'affectedFiles', 'blastRadius', 'surfaces'],
       properties: {
         reproduction: { type: 'string' },
         rootCause: { type: 'string' },
+        defects: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id', 'mechanism'],
+            properties: {
+              id: { type: 'string' },
+              mechanism: { type: 'string' },
+              file: { type: 'string' },
+              line: { type: 'integer' },
+            },
+          },
+        },
         affectedFiles: { type: 'array', items: { type: 'string' } },
         blastRadius: { type: 'string' },
         surfaces: {
@@ -127,6 +143,7 @@ if (scope === 'needs-prd') {
     contractsTouched: (sizing && sizing.contractsTouched) || [],
     reproduction: analysis.reproduction,
     rootCause: analysis.rootCause,
+    defects: (Array.isArray(analysis.defects) ? analysis.defects : []).filter((d) => d && d.id),
     affectedFiles: analysis.affectedFiles,
     blastRadius: analysis.blastRadius,
     acceptanceCriteria: [],
@@ -140,12 +157,37 @@ if (scope === 'needs-prd') {
 
 // 2) Expected-behavior contract — the "spec-lite" a bug lacks, as testable AC.
 //    A different agent than the diagnostician (no self-authoring of its own contract).
+//
+// BOUNDED BY CONSTRUCTION. This step used to receive a prose root cause with no cap, no
+// defect index, and no scope rule — and a four-defect bug produced eighteen-plus
+// criteria, several of them repo-wide greps. The downstream coverage reviewer then
+// blocked on partial coverage of criteria Red could never legitimately turn red, and the
+// Red gate exhausted without one line of production code being written.
+//
+// The cap is a SCHEMA bound, not a sentence in a prompt: the runtime enforces the first
+// and merely requests the second, which is the lesson from every prose control in this
+// pipeline that has already failed. Coverage then becomes an exact join — every defectId
+// resolves, every defect has at least one criterion — instead of a judgment call.
+const defects = (Array.isArray(analysis.defects) ? analysis.defects : []).filter((d) => d && d.id)
+const defectIds = defects.map((d) => String(d.id))
+const AC_MIN = Math.max(1, defectIds.length)
+const AC_MAX = Math.max(2, defectIds.length * 2)
+log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria bounded to ${AC_MIN}..${AC_MAX}`)
+
 const contract = await agent(
   `Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
+ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total — this is enforced by the schema, not requested.
+
+A CRITERION DESCRIBES AN EXECUTION, NOT THE REPOSITORY. Apply this test to everything you are about to write: **if it would still be checkable with the change reverted, it is not an acceptance criterion.** "No occurrence of \`redis://\` anywhere in the repo" passes that test trivially — it is checkable before, during and after the fix, against code nobody touched — which is exactly what makes it a LINT RULE wearing an acceptance-criterion costume. Return those in \`lintRules\` instead. They are real and they are worth enforcing; they are just not something a failing test can encode, and putting them here blocks the build on a grep no Red phase can legitimately make fail.
+
 Bug ${bead.id || ''}: ${bead.title || ''}
+Reproduction: ${analysis.reproduction}
 Root cause: ${analysis.rootCause}
-Reproduction: ${analysis.reproduction}`,
+Files the fix must change: ${(analysis.affectedFiles || []).join(', ') || 'n/a'}
+
+Defects to cover (use these ids exactly):
+${defects.length ? defects.map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${d.file}${d.line ? `:${d.line}` : ''}]` : ''}`).join('\n') : '(the diagnosis enumerated none — derive minimal coverage from the root cause above and use the id D1)'}`,
   {
     label: 'triage:expected-behavior',
     phase: 'Triage',
@@ -157,14 +199,34 @@ Reproduction: ${analysis.reproduction}`,
       properties: {
         acceptanceCriteria: {
           type: 'array',
+          minItems: AC_MIN,
+          maxItems: AC_MAX,
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['given', 'when', 'then'],
+            required: ['defectId', 'given', 'when', 'then'],
             properties: {
+              defectId: defectIds.length ? { type: 'string', enum: defectIds } : { type: 'string' },
               given: { type: 'string' },
               when: { type: 'string' },
               then: { type: 'string' },
+            },
+          },
+        },
+        // Sibling output, deliberately NOT passed to tdd-red. A repo-wide invariant is a
+        // lint rule or a pre-commit hook, landed by the path that already commits — the
+        // coverage reviewer never sees it and therefore structurally cannot block the
+        // Red gate on a criterion Red can never turn red.
+        lintRules: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['pattern', 'rationale'],
+            properties: {
+              pattern: { type: 'string' },
+              rationale: { type: 'string' },
+              scope: { type: 'string' },
             },
           },
         },
@@ -173,6 +235,15 @@ Reproduction: ${analysis.reproduction}`,
   }
 )
 
+// Coverage is an exact join, not a judgment: every enumerated defect must have at least
+// one criterion pointing at it.
+const authoredAc = (contract && Array.isArray(contract.acceptanceCriteria) ? contract.acceptanceCriteria : []).filter(Boolean)
+const covered = new Set(authoredAc.map((x) => String(x.defectId || '')))
+const uncoveredDefects = defectIds.filter((id) => !covered.has(id))
+if (uncoveredDefects.length) log(`⚠ Triage: defect(s) with no acceptance criterion: ${uncoveredDefects.join(', ')}`)
+const lintRules = (contract && Array.isArray(contract.lintRules) ? contract.lintRules : []).filter(Boolean)
+if (lintRules.length) log(`Triage: ${lintRules.length} repo-wide invariant(s) routed to lint, not to the Red phase`)
+
 return {
   bead,
   repoPath: bead.repoPath || null,
@@ -180,10 +251,15 @@ return {
   scopeRationale,
   reproduction: analysis.reproduction,
   rootCause: analysis.rootCause,
+  defects,
   affectedFiles: analysis.affectedFiles,
   blastRadius: analysis.blastRadius,
   // Consumed by tdd-red to DERIVE its test writers. Empty means unit tests only,
   // which is the correct answer for a fix confined to internal logic.
   surfaces: analysis.surfaces || [],
-  acceptanceCriteria: contract.acceptanceCriteria,
+  acceptanceCriteria: authoredAc,
+  uncoveredDefects,
+  // Carried on the contract for the settle/deploy path to land as a repo gate. NOT
+  // acceptance criteria and never handed to the Red phase.
+  lintRules,
 }

@@ -1,18 +1,20 @@
 'use strict';
 
 /**
- * Deploy requires a worktree that nothing creates.
+ * Deploy requires a worktree, and the COMPOSITE is what creates it.
  *
  * deploy.js tells its agent to "Confirm the work is committed on a feature branch
- * IN A WORKTREE ... Never branch in a main working tree". But no workflow phase
- * creates one, and no phase mentions branching at all — so every writing phase
- * edits whatever tree it was handed. Observed live on ssbd-sa5j: the Red phase
- * wrote its test files onto `main` in the main working tree, the one place the
- * rules forbid, and the one place two parallel runs would collide.
+ * IN A WORKTREE ... Never branch in a main working tree". That chain used to close
+ * only at the entry command — shell in a markdown file, executed by a model — and
+ * the two runs that stranded production work in a main working tree are the two
+ * that skipped it. A step the pipeline depends on cannot be a step the pipeline
+ * cannot see.
  *
- * The chain closes at the entry command, which is deterministic shell rather than
- * an agent's judgement: /work-bead establishes the worktree and passes it as
- * repoPath, and everything downstream inherits it.
+ * It is now `workflows/workspace.js`, dispatched as the FIRST phase of every
+ * code-writing composite, and its return value is the sole source of
+ * contract.repoPath. These tests pin the mechanism, not the prose; the behavioural
+ * assertions (dispatch order, refusal on an unverified tree) live in
+ * tests/workflows/workspace-contract.test.mjs.
  */
 
 const test = require('node:test');
@@ -28,18 +30,35 @@ test('deploy still requires a feature branch in a worktree', () => {
   assert.match(src, /IN A WORKTREE/i, 'if this requirement is dropped, the entry command should stop creating one');
 });
 
-test('/work-bead establishes the worktree before dispatching', () => {
-  const cmd = read('commands/work-bead.md');
-  assert.match(cmd, /git .*worktree add/, 'the entry point must create the worktree — no workflow phase does');
-  assert.match(cmd, /repoPath: "\$WT"/, 'the composite must be pointed at the worktree, not the main tree');
+test('a workflow phase — not a command — creates the worktree', () => {
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /git -C "\$REPO" worktree add/, 'the workspace phase must actually cut the tree');
+  assert.match(ws, /git -C "\$REPO" fetch origin/, 'branching without fetching can use a stale ref');
+  assert.match(ws, /--git-common-dir/, 'it must VERIFY the result is a linked worktree, not assume it');
 });
 
-test('/work-bead reuses an existing worktree for the same bead', () => {
+test('the workspace phase reuses an existing worktree for the same bead', () => {
   // A resumed or re-dispatched run must land in the same tree as the attempt
   // before it. In a fresh tree it cannot see the earlier run's tests, so Red's
   // survey finds nothing and re-authors everything it already paid for.
-  const cmd = read('commands/work-bead.md');
-  assert.match(cmd, /REUSE it/i, 'a second attempt in a fresh tree cannot see the first attempt\'s work');
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /REUSE IT/i, 'a second attempt in a fresh tree cannot see the first attempt\'s work');
+});
+
+test('every code-writing composite dispatches the workspace phase', () => {
+  for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
+    const src = read(f);
+    assert.match(src, /workflow\('agent-teams-workforce:workspace'/, `${f} must establish its own worktree`);
+    assert.match(src, /no bead\.repoPath supplied/, `${f} must refuse to write code with no repository`);
+  }
+});
+
+test('the entry commands no longer carry worktree shell of their own', () => {
+  // Two sources for one convention is how `.worktrees/<bead>-<repo>`, `wt-<bead>`
+  // and `wt-<name>` all ended up in the fleet at once.
+  for (const f of ['commands/work-bead.md', 'commands/next-task.md']) {
+    assert.doesNotMatch(read(f), /worktree add/, `${f} must not create a tree the composite also creates`);
+  }
 });
 
 test('/resume-run enumerates worktrees rather than trusting the main tree', () => {
@@ -175,14 +194,14 @@ test('the main-tree guard is declared universal; the role guards are not', () =>
 });
 
 
-test('/work-bead branches from the current tip, not a possibly-stale ref', () => {
+test('the workspace phase branches from the current tip, not a possibly-stale ref', () => {
   // Observed on ssbd-sa5j: the worktree was cut at 97f6e58 while main had already
   // moved to 048bd9c, which carried the committed unit suite. Red's survey looked
   // for those tests in a tree that genuinely did not have them, found nothing, and
   // re-authored the phase that had just been paid for. The survey was correct; it
   // was handed the wrong tree.
-  const cmd = read('commands/work-bead.md');
-  assert.match(cmd, /git -C "\$REPO" fetch origin main/, 'branching without fetching can use a stale ref');
-  assert.match(cmd, /confirm the worktree actually has what you expect/i,
+  const ws = read('workflows/workspace.js');
+  assert.match(ws, /BRANCH FROM THE CURRENT TIP/i, 'branching from a stale ref silently omits landed work');
+  assert.match(ws, /VERIFY, DO NOT ASSUME/i,
     'a worktree at the wrong commit is invisible until a phase behaves oddly — check it explicitly');
 });

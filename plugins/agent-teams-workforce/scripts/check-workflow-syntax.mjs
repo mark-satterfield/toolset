@@ -71,4 +71,133 @@ console.log(
     ? `\n${failures.length} of ${checked} workflow scripts FAIL to parse`
     : `all ${checked} workflow scripts parse`
 )
-process.exit(failures.length ? 1 : 0)
+
+// ── Pass 2: EXECUTION SMOKE ────────────────────────────────────────────────────
+//
+// Parsing is not enough, and the gap is not theoretical. `node --check` asks V8 to
+// PARSE; it never resolves identifiers, so a free variable is valid syntax and always
+// will be. task-to-deploy.js read an undeclared `spec` at two places, died with
+// `ReferenceError: spec is not defined` at Gate 1 for EVERY caller shape, and this
+// checker reported it as passing through two shipped releases.
+//
+// So each script is also EXECUTED, once, with the same six injected globals the runtime
+// supplies and with dispatchers that return null. Nothing reaches a network, an agent,
+// or a filesystem: `agent` and `workflow` are stubs, and a workflow script has no fs and
+// no child_process to reach for. A ReferenceError is a FAILURE; anything else is not,
+// because a script legitimately bails on a null dispatch.
+//
+// This is dynamic, so it covers executed paths only — the happy path plus whatever
+// branches the stubs steer into. That is enough for this defect class, which lives in
+// the contract-construction code every run touches on its way to the first gate.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+
+// Deliberately permissive: every top-level arg key any workflow reads, so a script gets
+// past its own input guards and reaches the code where an undeclared identifier lives.
+const SMOKE_ARGS = {
+  bead: { id: 'smoke-0000', title: 'smoke', description: 'smoke', repoPath: '/tmp/smoke-repo' },
+  spec: { id: 'smoke-0000', title: 'smoke', path: 'spec.md', repoPath: '/tmp/smoke-repo', dependencies: [] },
+  contract: { bead: { id: 'smoke-0000', title: 'smoke' }, repoPath: '/tmp/smoke-repo', acceptanceCriteria: [], surfaces: [] },
+  change: { id: 'smoke-0000', title: 'smoke', repoPath: '/tmp/smoke-repo' },
+  request: 'smoke',
+  prd: { title: 'smoke', body: 'smoke' },
+  repoPath: '/tmp/smoke-repo',
+  beadId: 'smoke-0000',
+  green: { changedFiles: [] },
+  gate: '1',
+  phaseName: 'smoke',
+  criteria: ['smoke'],
+  artifact: {},
+}
+
+// The stubs must return something PLAUSIBLE, not null. Inert stubs make every composite
+// bail at its first guard, and the run never reaches the contract-construction code where
+// this defect class lives — which is precisely how a null-returning probe reported
+// task-to-deploy.js clean while it still read an undeclared identifier at Gate 1. One
+// permissive object satisfies the shapes the scripts check, so execution walks the happy
+// path all the way to the end.
+const SMOKE_RETURN = {
+  ok: true,
+  verdict: 'pass',
+  criteria: [],
+  feedback: '',
+  flags: [],
+  repoPath: '/tmp/smoke-worktree',
+  branch: 'smoke/smoke-0000',
+  reused: false,
+  isLinkedWorktree: true,
+  scope: 'fix',
+  reproduction: 'r',
+  rootCause: 'rc',
+  defects: [{ id: 'D1', mechanism: 'm' }],
+  affectedFiles: ['a.py'],
+  blastRadius: 'b',
+  surfaces: [],
+  acceptanceCriteria: [{ defectId: 'D1', given: 'g', when: 'w', then: 't' }],
+  testFiles: ['t.py'],
+  redConfirmed: true,
+  greenConfirmed: true,
+  greenReachable: true,
+  greenPath: [],
+  evidence: 'captured output',
+  changedFiles: ['a.py'],
+  findings: [],
+  rulings: [],
+  constitutiveOpen: 0,
+  adjudication: { rulings: [], constitutiveOpen: 0 },
+  suites: [],
+  prOpened: true,
+  prUrl: 'https://github.com/o/r/pull/1',
+  treeClean: true,
+  hasWork: false,
+  written: true,
+  matched: false,
+  affectedStacks: ['S1'],
+  provisioningIntent: 'p',
+  deployedToDev: true,
+  stale: false,
+  fresh: true,
+}
+
+const refErrors = []
+let executed = 0
+for (const file of readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) {
+  const src = readFileSync(path.join(dir, file), 'utf8').replace(/^export\s+const\s+meta\s*=/m, 'const meta =')
+  let fn
+  try {
+    fn = new AsyncFunction('args', 'agent', 'workflow', 'phase', 'log', 'parallel', src)
+  } catch {
+    continue // a parse failure is already reported by pass 1
+  }
+  executed++
+  try {
+    await Promise.race([
+      fn(
+        SMOKE_ARGS,
+        async () => SMOKE_RETURN,
+        async () => SMOKE_RETURN,
+        () => {},
+        () => {},
+        async (thunks = []) => {
+          const out = []
+          for (const t of thunks) out.push(await t())
+          return out
+        },
+      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('smoke execution timed out after 5s')), 5000).unref()),
+    ])
+  } catch (err) {
+    // ONLY an unresolved identifier is a defect here. A TypeError from a null dispatch
+    // is the stub's doing, not the script's, and failing on it would make this check
+    // unusable noise.
+    if (err instanceof ReferenceError) refErrors.push({ file, error: `${err.name}: ${err.message}` })
+  }
+}
+
+for (const { file, error } of refErrors) console.log(`FAIL  ${file}  —  ${error}`)
+console.log(
+  refErrors.length
+    ? `\n${refErrors.length} of ${executed} workflow scripts reference an UNDECLARED identifier`
+    : `all ${executed} workflow scripts execute without an undeclared identifier`
+)
+
+process.exit(failures.length || refErrors.length ? 1 : 0)

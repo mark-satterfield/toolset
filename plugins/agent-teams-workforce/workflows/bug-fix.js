@@ -3,6 +3,7 @@ export const meta = {
   description:
     'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-ship tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
   phases: [
+    { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Triage' },
     { title: 'Red' },
     { title: 'Green' },
@@ -29,7 +30,9 @@ export const meta = {
 const DEPLOYED_RED_CRITERION =
   'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
 
-// args: { bead: { id, title, description, repoPath }, implementer?, maxLoops? }
+// args: { bead: { id, title, description, repoPath }, implementer?, maxLoops?, maxEscalations? }
+//   bead.repoPath is REQUIRED and names the REPOSITORY. The tree the phases write in is
+//   established by the Workspace step below and is NOT this value.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
@@ -44,6 +47,12 @@ const bead = a.bead || {}
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
+// A code-writing composite with no repository cannot write anywhere it can later land
+// from, and a run that proceeded blind then reported a phantom orphan at the end. Refuse
+// at the input stage instead, the same way a missing bead.id is refused.
+if (!String(bead.repoPath || '').trim()) {
+  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in' }
+}
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`
 // on its artifact; the composite collects them and persists ONCE via run-ledger-writer
@@ -93,11 +102,15 @@ let settleRepoPath = bead.repoPath || null
 //
 // It gets its OWN phase for the same reason the ledger does: running on every exit
 // path, it must never be able to tick a work phase green.
+// Three worlds, three answers. A run with no repo path, a settle agent that threw, and a
+// genuine orphan used to be indistinguishable — all three returned null, and the first two
+// then flipped a successful run to ok:false and blamed a PR URL that was never withheld
+// because the agent never ran.
 async function settleRun() {
   const wt = settleRepoPath
-  if (!wt) return null
+  if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
   try {
-    return await agent(
+    const reported = await agent(
       `Land every change in this worktree, or say exactly why it could not be landed. Worktree: ${wt}\n` +
         `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before skillspoke-pr — it has no -C flag and must run inside the tree.\n` +
         `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
@@ -123,15 +136,64 @@ async function settleRun() {
         },
       }
     )
+    if (!reported) return { status: 'error', error: 'the settle agent returned no result' }
+    return { status: 'reported', ...reported }
   } catch (e) {
-    log(`settle failed: ${e && e.message ? e.message : e}`)
-    return null
+    const error = e && e.message ? e.message : String(e)
+    log(`settle failed: ${error}`)
+    return { status: 'error', error }
+  }
+}
+
+// Translate a settle report into the run's landing verdict. Three worlds:
+//   not-applicable — no repo path was ever established, so nothing could be written
+//                    through the contract and nothing can be orphaned. It does NOT
+//                    touch result.ok; forcing a successful run to false here reported
+//                    failure over correct work and taught the operator to disbelieve
+//                    the orphan signal that exists to be believed.
+//   error          — the settle agent threw or returned nothing. The run is unlanded,
+//                    but say WHY, and never claim a URL was withheld by an agent that
+//                    never ran.
+//   reported       — the only world in which "orphaned" is an honest word.
+function applySettle(res, settle) {
+  const status = (settle && settle.status) || 'error'
+  if (status === 'not-applicable') {
+    res.landed = false
+    res.settled = 'not-applicable'
+    res.settleNote = (settle && settle.reason) || 'no repo path was established'
+    log(`Settle: not applicable — ${res.settleNote}`)
+    return
+  }
+  if (status === 'error') {
+    res.landed = false
+    res.ok = false
+    res.settleFailed = { error: (settle && settle.error) || 'the settle step failed without an error message' }
+    return
+  }
+  const PR_OK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(String(settle.prUrl || '').trim())
+  const landed = settle.treeClean === true && (settle.hasWork === false || PR_OK)
+  res.landed = landed
+  res.prUrl = PR_OK ? String(settle.prUrl).trim() : null
+  res.settled = 'reported'
+  if (!landed) {
+    res.ok = false
+    res.orphaned = {
+      worktree: settleRepoPath,
+      branch: settle.branch || null,
+      blocked: (settle.blocked && settle.blocked.length ? settle.blocked : null) || ['settle returned no verifiable PR URL'],
+    }
   }
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // Carried across attempts so loop exhaustion can say WHAT was unmet and on what
+  // evidence, instead of a bare count. Both are computed at every attempt already;
+  // the exhaustion path simply never saw them.
+  let lastVerdict = null
+  let lastArtifact = null
+  const attempts = []
   // Every adjudication goes to the ledger. Without the verdict and its per-criterion
   // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
   // distinguish a genuine defect from an over-strict criterion or a loop exhaustion.
@@ -164,7 +226,19 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     // without this line a phase that is actively running reads as "Not started yet",
     // and only its verdict — logged below, after the fact — ever proves it ran.
     log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
-    const artifact = await phaseFn(feedback)
+    // The second argument is the STRUCTURED loop channel. A free-text string cannot
+    // carry which criteria were unmet, nor what the phase produced last time — and a
+    // phase re-judged with no memory of the prior round regenerates the prior round's
+    // contradiction. Existing call sites that take only `feedback` are unaffected.
+    const artifact = await phaseFn(feedback, {
+      attempt,
+      maxLoops: MAX_LOOPS,
+      feedback,
+      priorArtifact: lastArtifact,
+      priorVerdicts: attempts.map((x) => x.verdict).filter(Boolean),
+      unmetCriteria: lastVerdict ? ((lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))) : [],
+    })
+    lastArtifact = artifact
     // A phase may report that its work was ALREADY DONE — Red finding the contract
     // satisfied by passing tests, for instance. There is nothing for the gate to
     // judge and no rework that could change the answer, so gating it would fail a
@@ -181,6 +255,13 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
     }
     recordGate(attempt, verdict)
+    lastVerdict = verdict
+    attempts.push({
+      attempt,
+      verdict,
+      feedback: verdict.feedback || null,
+      unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
+    })
     if (verdict.verdict === 'pass') {
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
@@ -192,19 +273,62 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
-  recordGate(MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
-  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true }
+  // Record the REAL final verdict, not null. A terminal ledger row with `criteria: []`
+  // cannot distinguish a genuine defect from an over-strict criterion — which is the one
+  // question anyone asks about an exhausted gate.
+  recordGate(MAX_LOOPS, lastVerdict, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
+  return {
+    ok: false,
+    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`,
+    loopExhausted: true,
+    artifact: lastArtifact,
+    verdict: lastVerdict,
+    unmetCriteria: lastVerdict ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [],
+    attempts,
+  }
 }
 
 // ── Front-end: triage ─────────────────────────────────────────────────────────
 let result
 try {
   result = await (async () => {
+// ── Workspace: establish the tree every writing phase then operates in ─────────
+// This is the structural mirror of the settle step above: settle LANDS the tree on
+// every exit path, workspace ESTABLISHES it before the first write. Nothing else in
+// this pipeline creates one, so without this step every writing phase edits whatever
+// tree the caller pointed at — which twice meant `main` in a main working tree, the
+// one place the project's own rules forbid, with no branch for settle to push.
+phase('Workspace')
+const workspace = await workflow('agent-teams-workforce:workspace', {
+  repoPath: bead.repoPath,
+  beadId: bead.id,
+  branchPrefix: 'fix',
+  purpose: bead.title || 'bug fix',
+})
+if (!workspace || workspace.ok !== true || !workspace.repoPath) {
+  return {
+    ok: false,
+    stage: 'workspace',
+    bead: bead.id,
+    reason: 'no verified worktree was established — refusing to write into the tree the caller pointed at',
+    detail: workspace || null,
+  }
+}
+// THE tree, from here on. Not the caller's path: the caller supplies a repository,
+// this step supplies the worktree, and every downstream phase inherits THIS value.
+const workRepoPath = workspace.repoPath
+settleRepoPath = workRepoPath
+if (workspace.ledger) runLedger.push(workspace.ledger)
+const workBead = { ...bead, repoPath: workRepoPath }
+
 phase('Triage')
 log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-const contract = await workflow('agent-teams-workforce:bug-triage', { bead })
+const contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
 if (!contract) return { ok: false, stage: 'triage', reason: 'triage produced nothing' }
-settleRepoPath = contract.repoPath || settleRepoPath
+// The composite owns the tree, not the mini. bug-triage echoes back whatever repoPath
+// it was handed; pinning it here means no mini can substitute a different tree.
+contract.repoPath = workRepoPath
+settleRepoPath = workRepoPath
 
 // Triage sizes the bug as well as diagnosing it. A defect whose honest remedy is a
 // redesign does NOT continue down this path: the fix path has no PRD validation, no
@@ -278,9 +402,24 @@ const red = await gateLoop({
   checks: [
     { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
     { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+    // Red proves a test fails NOW. It must also establish that a pass is REACHABLE:
+    // a test pinned to a pre-fix import path fails correctly and can never go green,
+    // and is otherwise indistinguishable from a correct Red (ssbd-vtnl).
+    { field: 'greenReachable', equals: true, label: 'every authored test names the production file whose change makes it pass' },
+    // NEGATIVE CONTROL over the captured output. Deliberately NARROW: a missing fixture
+    // is always a harness fault and never a product failure. ModuleNotFoundError,
+    // ImportError and "collected 0 items" are deliberately NOT in this pattern — for a
+    // missing-capability defect the only failure obtainable at HEAD IS the absence of
+    // the symbol the fix introduces, and pytest reports exactly that shape. Banning it
+    // would re-break the carve-out that cost 827k tokens on ssbd-cg27 to learn.
+    { field: 'evidence', notMatches: 'fixture .{0,80} not found', label: 'the captured failure is a product failure, not a missing fixture' },
   ],
   escalateTargets: ['triage'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', { contract, feedback }),
+  // From attempt 2 the previous attempt's test is ON DISK. Discovery would re-find it,
+  // report no gaps, and the confirm-existing branch would hand the gate back the very
+  // test it just rejected — through a code path the gate's objection never reaches.
+  // A re-run after a rejection authors; it does not shop for what it already wrote.
+  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract, feedback, skipDiscovery: !!(loop && loop.attempt > 1) }),
 })
 
 // ── Red ⇄ Green with WORKING escalation ───────────────────────────────────────
@@ -323,7 +462,15 @@ for (;;) {
   phase('Green')
   green = await gateLoop({
     gate: '2b', phaseName: 'TDD Green',
-    criteria: ['The previously-failing test now passes', 'No other tests regressed', 'The change is minimal and the test was not weakened'],
+    criteria: [
+      'The previously-failing test now passes',
+      'No other tests regressed',
+      'The change is minimal and the test was not weakened',
+      // Names the un-passable case so it reliably produces escalate:"red" instead of a
+      // loop. The implementer may not modify a test and the gate is right to fail a test
+      // that does not pass, so neither role can break the deadlock — only Red can.
+      'If a test cannot be made to pass AS AUTHORED — it is pinned to a pre-fix import path, patches a symbol at a module path the fix does not use, or its own source defeats its assertion — that is a TEST defect, not an implementation failure. Escalate to red; do NOT loop Green over it and do NOT weaken the test to pass it.',
+    ],
     checks: [
       { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
       { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
@@ -359,12 +506,18 @@ for (;;) {
     checks: [
       { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
       { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+      { field: 'greenReachable', equals: true, label: 'every authored test names the production file whose change makes it pass' },
     ],
     escalateTargets: ['triage'],
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:tdd-red', {
         contract,
         red: redResult.artifact,
+        // The reuse branch is how a bad test survives a loop: discovery re-finds the
+        // previous attempt's file, reports no gaps, and the confirm-existing branch
+        // hands the gate back the identical un-passable test — through a code path the
+        // gate's own objection never reaches. On a re-author, author.
+        skipDiscovery: true,
         feedback: `The Green gate escalated back to test authoring. Green could not pass because of a defect in the TESTS THEMSELVES, not in the production change. Repair the test, then re-confirm it is still a genuine red.\n\nGreen gate evidence:\n${why}\n\n${feedback || ''}`,
       }),
   })
@@ -430,7 +583,15 @@ const adversarial = await gateLoop({
   gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
   criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
   escalateTargets: ['green', 'triage'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:adversarial', { contract, green: green.artifact, feedback }),
+  // priorRulings is what makes a re-run adjudication accountable to the one before it.
+  // Without it the adjudicator is a fresh instance every round with no knowledge that it
+  // ever ruled — it is not reversing a ruling, it has never been shown one.
+  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:adversarial', {
+    contract,
+    green: green.artifact,
+    feedback,
+    priorRulings: (loop && loop.priorArtifact && loop.priorArtifact.adjudication && loop.priorArtifact.adjudication.rulings) || [],
+  }),
 })
 if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
 if (!adversarial.ok) return await failAfterDoc('adversarial', adversarial)
@@ -475,19 +636,6 @@ return {
 } finally {
   await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   const settle = await settleRun()
-  const PR_OK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(String((settle && settle.prUrl) || '').trim())
-  const landed = !!settle && settle.treeClean === true && (settle.hasWork === false || PR_OK)
-  if (result) {
-    result.landed = landed
-    result.prUrl = PR_OK ? settle.prUrl.trim() : null
-    if (!landed) {
-      result.ok = false
-      result.orphaned = {
-        worktree: settleRepoPath,
-        branch: (settle && settle.branch) || null,
-        blocked: (settle && settle.blocked) || ['settle returned no verifiable PR URL'],
-      }
-    }
-  }
+  if (result) applySettle(result, settle)
 }
 return result

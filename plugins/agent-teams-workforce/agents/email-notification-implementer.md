@@ -12,7 +12,6 @@ permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:email-template-builder, agent-teams-workforce:sns]
 effort: xhigh
-isolation: worktree
 color: green
 ---
 

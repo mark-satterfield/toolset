@@ -84,6 +84,12 @@ test('bug-fix STOPS at triage on needs-prd — nothing is built or deployed', as
   const { result, calls } = await runWorkflowScript(bugFix, {
     args: { bead: { id: 'ssbd-1', title: 'a bug', description: 'd', repoPath: '/repo' } },
     workflowImpl: (call) => {
+      // The composite's first phase is `workspace` — it OWNS the worktree every writing
+      // phase then operates in, so a fixture must supply one or the run correctly
+      // refuses to write anywhere (ssbd-mz1w).
+      if (String(call.name).endsWith('workspace')) {
+        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true }
+      }
       if (String(call.name).endsWith('bug-triage')) {
         return { ...DIAGNOSIS, scope: 'needs-prd', scopeRationale: 'changes the event schema', contractsTouched: ['e'] }
       }
@@ -110,6 +116,12 @@ test('bug-fix proceeds normally when triage sizes it as a fix', async () => {
     args: { bead: { id: 'ssbd-1', title: 'a bug', description: 'd', repoPath: '/repo' } },
     workflowImpl: (call) => {
       const n = String(call.name)
+      // The composite's first phase is `workspace` — it OWNS the worktree every writing
+      // phase then operates in, so a fixture must supply one or the run correctly
+      // refuses to write anywhere (ssbd-mz1w).
+      if (n.endsWith('workspace')) {
+        return { ok: true, repoPath: '/repo/../.worktrees/ssbd-1-repo', branch: 'fix/ssbd-1', reused: false, isLinkedWorktree: true }
+      }
       if (n.endsWith('bug-triage')) {
         return { ...DIAGNOSIS, scope: 'fix', acceptanceCriteria: [{ given: 'g', when: 'w', then: 't' }] }
       }

@@ -75,81 +75,39 @@ The router returns `{action, composite, reason}`:
 A skip is an outcome, not an obstacle. Never relabel a bead to make it routable —
 a Task that skips for a missing Story needs a Story, not a new label.
 
-## 3b. Establish the worktree FIRST — `work` only
+## 3b. The worktree — owned by the composite, not by this command
 
-Skip this entire step for an `elaborate`. That path authors documents and returns
-bead specifications; it writes no code, so there is no feature branch for it to land
-on and no tree for two runs to collide in.
+Skip any thought of provisioning a tree here. **The composite establishes its own
+worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
+existing tree for this bead or cuts a new one under `.worktrees/<bead>-<repo>` on a
+feature branch, and verifies the result really is a linked worktree before any phase
+writes a line. Its return value is the sole source of `contract.repoPath`, and every
+writing phase inherits it.
 
+This used to live here, as shell in a markdown file that a model executed — and the
+two runs that stranded production work in a main working tree are the two that skipped
+it. A step the pipeline depends on cannot be a step the pipeline cannot see. It is now
+code, in `workflows/workspace.js`, dispatched before the first writing phase, and a run
+that cannot verify a worktree refuses to write rather than falling back to the tree it
+was pointed at.
 
-Every writing phase edits the tree it is given, and nothing in the workflows creates
-one — while `deploy.js` requires the work to be on a feature branch in a worktree.
-That chain only closes if the worktree exists before dispatch. Without it, Red and
-Green write to whatever tree they were handed, which is usually `main` in the main
-working tree: the one place the rules forbid, and a tree two parallel runs would
-collide in.
+**So pass the plain repository.** `repoPath` is `$REPO`, not a worktree you built. If
+you hand it a worktree anyway — a resumed run, say — `workspace` recognises a linked
+worktree on a feature branch and reuses it, which is the same reuse guarantee this
+section used to describe.
 
-```bash
-REPO=<the repo from step 1>
-git -C "$REPO" worktree list          # ALWAYS look first — see below
-```
-
-**Follow the convention already in use.** This fleet keeps worktrees under a
-`.worktrees/` directory beside the repo, named `<bead>-<repo-or-domain>`, e.g.
-`apps/personal-agent/.worktrees/ssbd-0wmo-document`. Read the existing list and
-match it. Inventing a third layout scatters the fleet's worktrees across
-directories where the next run will not find them.
-
-```bash
-WTDIR="$(dirname "$REPO")/.worktrees"
-WT="$WTDIR/$ARGUMENTS-$(basename "$REPO" | sed 's/^SkillSpoke-//')"
-BRANCH=fix/$ARGUMENTS                 # feat/ for a task
-
-# Branch from the CURRENT tip, not a stale ref. Fetch first, then use whichever of
-# local main / origin/main is ahead. A worktree cut from an older commit silently
-# omits work that has already landed — and the Red survey, looking for tests that
-# ARE committed but not in this tree, finds nothing and re-authors them.
-git -C "$REPO" fetch origin main
-# Land what already merged upstream before cutting a tree from it. Preferring
-# origin/main as BASE hides the drift; fast-forwarding removes it.
-if [ -z "$(git -C "$REPO" status --porcelain)" ] \
-   && [ "$(git -C "$REPO" rev-parse --abbrev-ref HEAD)" = "main" ] \
-   && git -C "$REPO" merge-base --is-ancestor main origin/main; then
-  git -C "$REPO" merge --ff-only origin/main
-else
-  echo "NOT fast-forwarded: $(git -C "$REPO" rev-list --left-right --count main...origin/main) (left=local ahead, right=behind); report this before dispatching"
-fi
-BASE=$(git -C "$REPO" rev-parse main)
-
-if ! git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS"; then
-  git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE"
-fi
-```
-
-**Then confirm the worktree actually has what you expect.** A worktree at the wrong
-commit is invisible until a phase behaves oddly:
-
-```bash
-git -C "$WT" log --oneline -1
-git -C "$REPO" log --oneline -1 main
-```
-
-If they differ, say so before dispatching — the run will not see work that is
-committed on `main` but absent from the tree it was given.
-
-If a worktree for this bead already exists, REUSE it — a resumed or re-dispatched
-run must land in the same tree as the attempt before it, or the second run cannot
-see the first one's tests and re-authors them.
-
-Pass `$WT` as `repoPath` to the composite, not `$REPO`. Everything downstream
-inherits it.
+For an `elaborate` there is no worktree at all: that path authors documents and returns
+bead specifications, so there is no feature branch for it to land on.
 
 ## 4. Dispatch — `work` only
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: {id, title, description, repoPath: "$WT"}}})
+  args: {bead: {id, title, description, repoPath: "$REPO"}}})
 ```
+
+`$REPO` is the repository from step 1. The composite's `workspace` phase turns it into
+the worktree; do not pre-cut one.
 
 Then go to step 6.
 

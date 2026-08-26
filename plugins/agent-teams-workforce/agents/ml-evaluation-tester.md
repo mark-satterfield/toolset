@@ -12,7 +12,6 @@ permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-ml-engineer, agent-teams-workforce:senior-data-scientist]
 effort: xhigh
-isolation: worktree
 color: red
 ---
 

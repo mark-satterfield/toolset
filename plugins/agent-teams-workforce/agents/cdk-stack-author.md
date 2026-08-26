@@ -12,7 +12,6 @@ permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-cdk-development, agent-teams-workforce:cloudformation]
 effort: xhigh
-isolation: worktree
 color: pink
 ---
 

@@ -23,6 +23,46 @@ if (!criteria.length) {
   }
 }
 
+// ── A self-contradictory adjudication is a JUDGE failure, not a phase failure ──
+//
+// When the packet under review rules one fact two opposite ways, "loop" is the wrong
+// verdict by the gate's own definition: loop means a criterion is unmet AND the root
+// cause is INSIDE this phase. Nothing about the WORK changed between rounds, so no
+// retry of the phase can repair it, and re-running the same adjudicator regenerates
+// the contradiction. Escalating upstream is equally wrong — the escalate targets are
+// producing phases, and none of them caused the adjudicator to contradict itself.
+//
+// So it goes to a DIFFERENT AUTHORITY: the appeals court below, which consults recorded
+// precedent first and writes its ruling down, so the next occurrence settles for free.
+// Detected in script, not volunteered by the enforcer, because an enforcer that misses
+// it costs the entire loop budget to discover.
+function describePacketContradiction(artifact) {
+  const pi = artifact && artifact.packetIntegrity
+  const contradictions = (pi && Array.isArray(pi.contradictions) && pi.contradictions) || []
+  if (!contradictions.length) return null
+  const detail = contradictions
+    .map((cx) => {
+      const pair = (cx.rulings || [])
+        .map((r) => `real=${r.real}/${r.classification}/${r.severity}`)
+        .join(' vs ')
+      return `${cx.findingId}: ${pair}`
+    })
+    .join('; ')
+  return (
+    'THE ADJUDICATION CONTRADICTS ITSELF. The same finding carries opposite reality or ' +
+    `classification rulings within one packet, with no new evidence between them: ${detail}. ` +
+    'This is a defect in the ADJUDICATION, not in the work under review, so it cannot be ' +
+    'repaired by re-running the phase and it did not originate in an upstream producing ' +
+    'phase. Rule which reading stands. While this appeal is pending the MORE SEVERE ruling ' +
+    'holds — a real constitutive finding outranks a not-real or competitive one about the ' +
+    'same fact, because believing the softer round is how a genuine exposure gets waved through.'
+  )
+}
+const packetConflict = describePacketContradiction(a.artifact)
+if (packetConflict) {
+  log(`Constitutional gate ${a.gate || '?'}: self-contradictory adjudication detected in script — routing to a constitutional ruling instead of looping the same judge`)
+}
+
 phase('Gate (constitutional)')
 
 const verdict = await agent(
@@ -86,6 +126,14 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
 // already exists and is already gitignored.
 const PRECEDENT_STORE = '.claude/workflow-runs/constitutional-precedents.jsonl'
 
+// A contradiction the script found is not the enforcer's to decline. Setting the flag
+// here — rather than waiting for the enforcer to volunteer it — is what makes the
+// escalation deterministic.
+if (packetConflict && verdict) {
+  verdict.needsConstitutionalRuling = true
+  verdict.conflict = [packetConflict, verdict.conflict].filter(Boolean).join('\n\n')
+}
+
 // Appeals court: only on a novel unresolved constitutive conflict, and only when no
 // precedent already settles it.
 if (verdict && verdict.needsConstitutionalRuling) {
@@ -136,6 +184,7 @@ When you match, return the stored ruling's verdict, rationale and precedent VERB
       ruledFromPrecedent: true,
       precedentKey: found.key || null,
       precedent: found.precedent,
+      packetContradiction: !!packetConflict,
     }
   }
 
@@ -222,7 +271,23 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
       precedentKey: (written && written.key) || null,
       precedentRecorded: !!(written && written.written === true),
       precedent: ruling.precedent,
+      packetContradiction: !!packetConflict,
     }
+  }
+}
+
+// The appeals court produced nothing. A contradiction must still never come back as
+// "loop": that would spend the loop budget re-asking the question the same agent keeps
+// answering inconsistently, which is the exact failure this detection exists to stop.
+if (packetConflict && verdict && verdict.verdict === 'loop') {
+  return {
+    ...verdict,
+    verdict: 'escalate',
+    escalateTo: verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
+    feedback:
+      `${verdict.feedback || ''}\n\nThe adjudication for this gate contradicts itself and no constitutional ruling was obtained. ` +
+      'Looping cannot repair a contradiction the same judge regenerates, so this exits rather than burning the loop budget.',
+    packetContradiction: true,
   }
 }
 

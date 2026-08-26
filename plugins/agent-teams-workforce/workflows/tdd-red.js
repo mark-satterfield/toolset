@@ -16,6 +16,16 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
 const ac = Array.isArray(c.acceptanceCriteria) ? c.acceptanceCriteria : []
+const affectedFiles = Array.isArray(c.affectedFiles) ? c.affectedFiles.filter(Boolean).map(String) : []
+
+// The gate's objection must reach EVERY step that can decide to reuse a test, not just
+// the writers. It previously reached only the writer prompt — so on a loop attempt the
+// discovery step re-found the previous attempt's bad test, reported no gaps, and the
+// confirm-existing branch handed the gate back the identical un-passable test through a
+// code path the objection never touched.
+const feedbackBlock = a.feedback
+  ? `\n\nA GATE REJECTED THE PREVIOUS ATTEMPT AT THIS PHASE. Read this before deciding anything is already covered — a test the gate has objected to is NOT covering test, however well it matches by name:\n${a.feedback}`
+  : ''
 
 phase('Red')
 
@@ -91,7 +101,10 @@ const strategyBlock = strategy
 const discovery = a.skipDiscovery === true
   ? null
   : await agent(
-      `Before any test is written, establish what the repository ALREADY has. This is a LOOKUP, not an evaluation. Work within the repository at: ${repo}
+      `Before any test is written, establish what the repository ALREADY has. This is a LOOKUP, not an evaluation.
+
+PIN YOURSELF TO THE RIGHT TREE FIRST. You may be running in an isolation worktree, so a bare \`ls\`, \`git status\`, or relative path can inspect or write to the wrong copy of the repository entirely. Every path you read or write is under this tree, and every git command runs as \`git -C "${repo}"\`:
+${repo}${feedbackBlock}
 
 Locate the test files that already encode the contract below — a previous attempt at this same work may have written them, or they may predate it. Search by the bead id, by the module under test, and by the behavior each criterion names.
 
@@ -137,7 +150,9 @@ const openGaps = (discovery && discovery.gaps) || []
 // failure is an unrelated harness break — goes on to authoring.
 if (foundFiles.length && !openGaps.length) {
   const confirmation = await agent(
-    `Discovery reports that existing tests already encode every acceptance criterion below. RUN THEM — only these files, never the wider suite — and rule on what you observe:
+    `Discovery reports that existing tests already encode every acceptance criterion below. RUN THEM — only these files, never the wider suite — and rule on what you observe. Run everything against this tree, as \`git -C "${repo}"\` / with paths under it; a bare command may inspect a different copy of the repository:
+${repo}${feedbackBlock}
+
 ${foundFiles.join('\n')}
 
 Return exactly one verdict:
@@ -177,6 +192,13 @@ ${taskBlock}`,
       redConfirmed: true,
       evidence: confirmation.evidence,
       reusedExistingTests: true,
+      // These tests were not authored here, so there is no greenPath declaration to
+      // check. They were EXECUTED and observed red, and a loop attempt never reaches
+      // this branch (the composite sets skipDiscovery from attempt 2), so a rejected
+      // test cannot be laundered back through reuse.
+      greenReachable: true,
+      greenPath: [],
+      greenPathChecked: false,
       strategy,
       coverage: { gaps: [], reviewed: 'discovery+confirmation' },
       ledger: { phase: 'red', chosen: writersFinal, mode: 'reused', ok: true },
@@ -189,6 +211,9 @@ ${taskBlock}`,
       testFiles: foundFiles,
       redConfirmed: false,
       alreadySatisfied: true,
+      greenReachable: true,
+      greenPath: [],
+      greenPathChecked: false,
       evidence: confirmation.evidence,
       reusedExistingTests: true,
       strategy,
@@ -216,17 +241,41 @@ const gapBlock = openGaps.length
 const RED_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['testFiles', 'redConfirmed', 'evidence'],
+  required: ['testFiles', 'redConfirmed', 'evidence', 'greenPath'],
   properties: {
     testFiles: { type: 'array', items: { type: 'string' } },
     redConfirmed: { type: 'boolean' },
     evidence: { type: 'string' },
+    // ── THE GREEN-REACHABILITY DECLARATION ───────────────────────────────────
+    // Red proves a test fails NOW. Nothing here used to ask whether a PASS is
+    // reachable, so a test pinned to the PRE-FIX import path — one that can never go
+    // green no matter how correct the production change is — was indistinguishable
+    // from a correct Red and was certified as one. Naming the production file and
+    // symbol whose change makes each test pass turns that into a set comparison the
+    // script can settle with no model turn.
+    greenPath: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['testFile', 'targetFile', 'targetSymbol', 'assertionSubject'],
+        properties: {
+          testFile: { type: 'string' },
+          targetFile: { type: 'string' },
+          targetSymbol: { type: 'string' },
+          assertionSubject: { type: 'string' },
+        },
+      },
+    },
     notes: { type: 'string' },
   },
 }
 const writerResults = (await parallel(writersFinal.map((w) => () =>
   agent(
-    `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty. Work within the repository at: ${repo}
+    `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty.
+
+PIN YOURSELF TO THE RIGHT TREE FIRST. You may be running in an isolation worktree, so a bare \`git status\`, a relative path, or an editor's idea of the project root can inspect — or WRITE TO — the wrong copy of the repository. Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
+${repo}
 
 FIND THE EXISTING SUITE BEFORE YOU WRITE. These tests are permanent: they are committed and every later run inherits them. Locate the file that already covers this module or behavior and ADD to it, matching its imports, fixtures, naming, and helpers. Create a new file only when nothing covers this area yet.
 
@@ -239,7 +288,9 @@ ${taskBlock}
 ${strategyBlock}${gapBlock}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
-Deliver: the test file paths you created/modified, whether Red is confirmed, and the captured failing output as evidence.`,
+DECLARE THE PATH TO GREEN. For every test you author, name the PRODUCTION file and symbol whose change will make it pass, and what the test actually asserts about that symbol. This is not paperwork: a test whose mock is patched at the module path the code used BEFORE the fix fails perfectly and can never go green, and this declaration is the only thing that distinguishes it from a correct Red. The targetFile must be a production file this change will actually touch${affectedFiles.length ? ` — the contract names these: ${affectedFiles.join(', ')}` : ''}. If you cannot name one, you have not written a test the fix can satisfy.
+
+Deliver: the test file paths you created/modified, whether Red is confirmed, the greenPath declaration, and the captured failing output as evidence.`,
     {
       label: `red:${w}`,
       phase: 'Red',
@@ -252,6 +303,47 @@ Deliver: the test file paths you created/modified, whether Red is confirmed, and
 const testFiles = writerResults.flatMap((r) => (r && r.testFiles) || [])
 const redConfirmed = writerResults.length > 0 && writerResults.every((r) => r && r.redConfirmed)
 const evidence = writerResults.map((r) => r && r.evidence).filter(Boolean).join('\n---\n')
+
+// ── Green reachability, settled in script ─────────────────────────────────────
+//
+// Zero model turns. Two tiers, and which one applies depends on whether the contract
+// declared the files the fix must change:
+//   • affectedFiles declared (the bug path — bug-triage always supplies them): every
+//     targetFile must resolve to one of them. A mock patched at the pre-fix module path
+//     names a file the fix does not touch, and dies here.
+//   • affectedFiles absent: the declaration itself is still required — every authored
+//     test file must name a production file and symbol whose change makes it pass. A
+//     writer that cannot name one has not written a test the fix can satisfy.
+const greenPath = writerResults.flatMap((r) => (r && Array.isArray(r.greenPath) ? r.greenPath : []))
+function normPath(p) {
+  return String(p || '').trim().replace(/^\.\//, '').replace(/^\/+/, '')
+}
+function sameFile(x, y) {
+  const nx = normPath(x)
+  const ny = normPath(y)
+  if (!nx || !ny) return false
+  return nx === ny || nx.endsWith(`/${ny}`) || ny.endsWith(`/${nx}`)
+}
+const greenPathFindings = []
+for (const entry of greenPath) {
+  if (!String(entry.targetFile || '').trim() || !String(entry.targetSymbol || '').trim()) {
+    greenPathFindings.push(`${entry.testFile || '(unnamed test)'}: named no production file/symbol whose change makes it pass`)
+    continue
+  }
+  if (affectedFiles.length && !affectedFiles.some((f) => sameFile(f, entry.targetFile))) {
+    greenPathFindings.push(
+      `${entry.testFile || '(unnamed test)'}: targets ${entry.targetFile} (${entry.targetSymbol}), which the contract does not list among the files the fix changes (${affectedFiles.join(', ')}). A test pinned to a path the fix does not touch cannot go green.`
+    )
+  }
+}
+const declaredFor = new Set(greenPath.map((e) => normPath(e.testFile)))
+for (const f of testFiles) {
+  if (!declaredFor.has(normPath(f))) greenPathFindings.push(`${f}: no greenPath entry — the test declares no route to green`)
+}
+const greenReachable = redConfirmed && greenPathFindings.length === 0
+if (greenPathFindings.length) {
+  log(`⚠ Red: ${greenPathFindings.length} test(s) declare no reachable path to green — ${greenPathFindings.join(' | ')}`)
+}
 
 // Independent coverage check — every acceptance criterion has a covering test. The
 // reviewer authors no tests; it only judges.
@@ -290,6 +382,10 @@ return {
   testFiles,
   redConfirmed,
   evidence,
+  greenPath,
+  greenReachable,
+  greenPathChecked: true,
+  greenPathFindings,
   writers: writersFinal,
   surfaces,
   strategy,

@@ -196,6 +196,11 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   // the phase produced. It used to return nothing at all, which is why an exhausted
   // gate erased the whole phase rather than just failing it.
   let lastArtifact = null
+  // Carried across attempts so loop exhaustion can say WHAT was unmet and on what
+  // evidence, instead of a bare count. Both are computed at every attempt already;
+  // the exhaustion path simply never saw them.
+  let lastVerdict = null
+  const attempts = []
   for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
     // The run-wide budget is checked BEFORE the expensive call, not after, so the
     // ceiling actually prevents spend instead of reporting it.
@@ -212,7 +217,17 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     // and only its verdict — logged below, after the fact — ever proves it ran.
     log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS} (run attempt ${attemptsSpent + 1}/${MAX_TOTAL_ATTEMPTS})`)
     attemptsSpent++
-    const artifact = await phaseFn(feedback)
+    // The second argument is the STRUCTURED loop channel. A free-text string cannot
+    // carry which criteria were unmet, nor what the phase produced last time. Existing
+    // call sites that take only `feedback` are unaffected.
+    const artifact = await phaseFn(feedback, {
+      attempt,
+      maxLoops: MAX_LOOPS,
+      feedback,
+      priorArtifact: lastArtifact,
+      priorVerdicts: attempts.map((x) => x.verdict).filter(Boolean),
+      unmetCriteria: lastVerdict ? ((lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))) : [],
+    })
     lastArtifact = artifact
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
@@ -222,6 +237,13 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
     }
     recordGate(attempt, verdict)
+    lastVerdict = verdict
+    attempts.push({
+      attempt,
+      verdict,
+      feedback: verdict.feedback || null,
+      unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
+    })
     if (verdict.verdict === 'pass') {
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
@@ -233,12 +255,23 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
-  recordGate(MAX_LOOPS, null, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
+  // Record the REAL final verdict, not null. A terminal ledger row with `criteria: []`
+  // cannot distinguish a genuine defect from an over-strict criterion — which is the one
+  // question anyone asks about an exhausted gate.
+  recordGate(MAX_LOOPS, lastVerdict, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
   // Hand the artifact back even here. The phase ran and produced something; the
   // gate simply would not certify it. Discarding it forces the next run to pay for
   // identical work, and denies the caller the one thing that would let them judge
   // whether the objection is worth another round.
-  return { ok: false, reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`, loopExhausted: true, artifact: lastArtifact }
+  return {
+    ok: false,
+    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`,
+    loopExhausted: true,
+    artifact: lastArtifact,
+    verdict: lastVerdict,
+    unmetCriteria: lastVerdict ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [],
+    attempts,
+  }
 }
 
 // ── PRD Creation (optional) ────────────────────────────────────────────────────

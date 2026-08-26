@@ -12,7 +12,6 @@ permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:mcp-server-builder, agent-teams-workforce:aws-agentic-ai, agent-teams-workforce:aws-mcp-setup]
 effort: xhigh
-isolation: worktree
 color: green
 ---
 

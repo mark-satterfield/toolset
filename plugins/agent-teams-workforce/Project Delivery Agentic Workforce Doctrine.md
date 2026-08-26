@@ -286,7 +286,25 @@ The agent is defined by these front-matter fields:
 | `memory`          | No                     | [Persistent memory scope](https://code.claude.com/docs/en/sub-agents#enable-persistent-memory): `user`, `project`, or `local`. Enables cross-session learning |
 | `background`      | No                     | Set to `true` to always run this subagent as a [background task](https://code.claude.com/docs/en/sub-agents#run-subagents-in-foreground-or-background). Default: `false` |
 | `effort`          | No                     | Effort level when this subagent is active. Overrides the session effort level. Default: inherits from session. Options: `low`, `medium`, `high`, `xhigh`, `max`; available levels depend on the model |
-| `isolation`       | Yes (set the worktree) | Set to `worktree` to run the subagent in a temporary [git worktree](https://code.claude.com/docs/en/common-workflows#run-parallel-claude-code-sessions-with-git-worktrees), giving it an isolated copy of the repository. The worktree is automatically cleaned up if the subagent makes no changes. |
+| `isolation`       | **Not on a code-writing agent** | Set to `worktree` it runs the subagent in a temporary [git worktree](https://code.claude.com/docs/en/common-workflows#run-parallel-claude-code-sessions-with-git-worktrees) of **the repository the session is standing in** — which, for a pipeline run, is the orchestrator's command-and-control repo, not the service repo under change. See the note below. |
+
+### Isolation is the contract's worktree, not a frontmatter flag
+
+`isolation: worktree` copies *the repository the session is in*. A pipeline run's session
+is the orchestrator's, so for service work that copy is the wrong repository — and no
+dispatch option carries a path, so it cannot be pointed at the right one. The result was
+two-sided and both sides were wrong: the absolute-path writes the prompts actually direct
+ESCAPED isolation and landed in the target repo's real tree, while any cwd-relative write
+landed in an auto-discarded copy that no later phase, no gate and no settle ever read —
+work that vanished and was never reported missing.
+
+The composites now establish a real linked worktree in their `workspace` phase and pin
+every writing prompt to it (`git -C "<repoPath>"`, absolute paths under that tree). **The
+contract's `repoPath` IS the isolation boundary.** The flag has therefore been dropped
+from the code-writing agents — the implementers, the optimizers, the test writers, the
+refactoring specialist — where it was at best inert and at worst a false assurance. It
+remains on read-only and analysis agents, where an isolated copy costs nothing and
+guarantees they cannot write.
 | `color`           | Yes                    | Display color for the subagent in the task list and transcript. Accepts `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `pink`, or `cyan` |
 | `initialPrompt`   | No                     | Auto-submitted as the first user turn when this agent runs as the main session agent (via `--agent` or the `agent` setting). [Commands](https://code.claude.com/docs/en/commands) and [skills](https://code.claude.com/docs/en/skills) are processed. Prepended to any user-provided prompt |
 

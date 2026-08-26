@@ -77,6 +77,9 @@ if (a.implementer) {
 
 Work within the repository at: ${repo}
 
+PIN YOURSELF TO THE RIGHT TREE FIRST. You may be running in an isolation worktree, so a bare \`git status\`, a relative path, or an editor's idea of the project root can inspect — or WRITE TO — the wrong copy of the repository. Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
+${repo}
+
 ${taskBlock}`,
     {
       label: 'green:select-implementers',
@@ -120,6 +123,9 @@ const changedFiles = []
 for (const impl of implementers) {
   green = await agent(
     `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed. Work within the repository at: ${repo}
+
+PIN YOURSELF TO THE RIGHT TREE FIRST. You may be running in an isolation worktree, so a bare \`git status\`, a relative path, or an editor's idea of the project root can inspect — or WRITE TO — the wrong copy of the repository. Every file you create or modify is under this tree, and every git command runs as \`git -C "${repo}"\`:
+${repo}
 
 ${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}

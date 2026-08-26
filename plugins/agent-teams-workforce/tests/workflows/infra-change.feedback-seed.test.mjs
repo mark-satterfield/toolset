@@ -42,6 +42,12 @@ async function runInfra({ priorFindings, g1Verdicts, intentReturns } = {}) {
     },
     agentImpl: () => ({ written: true }), // ledger:persist
     workflowImpl: (call) => {
+      // The composite's first phase is `workspace` — it OWNS the worktree every writing
+      // phase then operates in, so a fixture must supply one or the run correctly
+      // refuses to write anywhere (ssbd-mz1w).
+      if (call.name === 'agent-teams-workforce:workspace') {
+        return { ok: true, repoPath: '/tmp/worktrees/fixture', branch: 'infra/ssbd-fixture', reused: false, isLinkedWorktree: true }
+      }
       if (call.name === 'agent-teams-workforce:infra-intent') {
         intentPayloads.push(call.payload)
         const i = intentPayloads.length - 1

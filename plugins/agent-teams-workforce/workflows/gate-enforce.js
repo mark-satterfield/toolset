@@ -9,7 +9,11 @@ export const meta = {
 //   gate: string,                 // gate id, e.g. "2a"
 //   phaseName: string,            // human name of the phase being judged
 //   criteria: string[],           // JUDGMENT criteria (ALL must hold) — adjudicated by the model
-//   checks?: [{ field, equals?, nonEmpty?, label? }],  // DETERMINISTIC criteria, see below
+//   checks?: [{ field, equals?, nonEmpty?, matches?, notMatches?, label? }],
+//                                 // DETERMINISTIC criteria, see below. `matches` and
+//                                 // `notMatches` are regular-expression SOURCE strings
+//                                 // (no delimiters, no flags), tested case-insensitively
+//                                 // against the field rendered as text.
 //   artifact: any,                // the phase output under review
 //   escalateTargets?: string[],   // upstream phases this gate may escalate to
 // }
@@ -33,17 +37,48 @@ const artifactText =
 // "the test asserts real behavior", "the change is minimal" — stay with the model,
 // which is told the deterministic ones are already settled so it does not re-open
 // them.
+//
+// `matches` / `notMatches` exist for NEGATIVE CONTROLS over captured output — the
+// class of check a model can always argue with in prose but cannot argue with as a
+// regex. The motivating case: Red "evidence" whose captured output is a collection or
+// import failure (`ModuleNotFoundError`, `collected 0 items`) rather than a product
+// failure. Carried as prose for the enforcer to weigh, that was routinely weighed away.
 const checks = Array.isArray(a.checks) ? a.checks : []
+function asText(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map((v) => asText(v)).join('\n')
+  return JSON.stringify(value)
+}
 const checkResults = checks.map((chk) => {
   const value = a.artifact ? a.artifact[chk.field] : undefined
   let met
+  let evidence = `observed ${chk.field} = ${JSON.stringify(value)}`
   if (Object.prototype.hasOwnProperty.call(chk, 'equals')) met = value === chk.equals
   else if (chk.nonEmpty) met = Array.isArray(value) ? value.length > 0 : String(value ?? '').trim().length > 0
-  else met = value !== undefined && value !== null
+  else if (chk.matches || chk.notMatches) {
+    const source = chk.matches || chk.notMatches
+    const text = asText(value)
+    let re = null
+    try {
+      re = new RegExp(source, 'i')
+    } catch (e) {
+      // An unusable pattern must not silently pass the check it was written to enforce.
+      re = null
+      met = false
+      evidence = `check pattern /${source}/ is not a valid regular expression (${e && e.message ? e.message : e}) — the check cannot be evaluated and fails closed`
+    }
+    if (re) {
+      const hit = re.test(text)
+      met = chk.matches ? hit : !hit
+      const excerpt = text.length > 300 ? `${text.slice(0, 300)}…` : text
+      evidence = `${chk.matches ? 'required' : 'forbidden'} pattern /${source}/i ${hit ? 'MATCHED' : 'did not match'} ${chk.field}: ${JSON.stringify(excerpt)}`
+    }
+  } else met = value !== undefined && value !== null
   return {
     criterion: chk.label || `${chk.field} satisfies its required shape`,
     met,
-    evidence: `observed ${chk.field} = ${JSON.stringify(value)}`,
+    evidence,
   }
 })
 const failedChecks = checkResults.filter((r) => !r.met)
