@@ -282,27 +282,36 @@ const multiRepo = a.multiRepo === true || c.multiRepo === true
 // MERGE IS NOT THIS STAGE'S JOB. The PR flow owns it: skillspoke-pr posts the
 // CodeRabbit review request, shepherd-pr iterates the findings, and the merge lands
 // through that flow. This stage must never run `gh pr merge` behind it.
-const shipEnabled = a.ship !== false && rolloutAllowed
+// Opening a PR is a source-control action with no environment dimension. Gating it on
+// `rolloutAllowed` (targetEnv === 'dev') switched shipping off for every non-dev
+// invocation, stranding committed work on an un-PR'd branch and reporting ok.
+const shipEnabled = a.ship !== false
 let ship = null
-if (readiness && readiness.ready && shipEnabled) {
+// A FAILED readiness review is the single most likely moment for work to strand, and it
+// was exactly the moment PR creation was skipped. Rollout keeps its `readiness.ready`
+// guard below, so nothing reaches AWS unreviewed — only the branch gets pushed and reviewed.
+if (shipEnabled) {
   ship = await agent(
     `Open a pull request for this change. Repo: ${repo}
 
 SEQUENCE
+0. Pin yourself to the right tree FIRST: \`cd "${repo}" && git rev-parse --show-toplevel\` and confirm it prints \`${repo}\`. You may be running in an isolation worktree, so a bare \`git status\` can inspect the wrong repository copy. Run every git command as \`git -C "${repo}"\`, and stay inside \`${repo}\` for skillspoke-pr — it has no \`-C\` flag and must run from inside the tree.
 1. Confirm the work is committed on a feature branch IN A WORKTREE and pushed to origin. Never branch in a main working tree. If work is uncommitted, commit it as \`type(scope): description\` with NO \`Co-Authored-By\` header.
-2. Run the repo's gates LOCALLY FIRST: the test suite, \`ruff check\`, and \`npx cdk synth\`. This fleet has NO CI — no repo has \`.github/workflows\`, so the only PR checks are CodeRabbit and Socket Security, neither of which runs tests, lint, or synth. Your local run is the ONLY real gate. If any gate fails, STOP and report; do not open the PR on known-broken work.
+2. Run the repo's gates LOCALLY FIRST: the test suite, \`ruff check\`, and \`npx cdk synth\`. Check this repo's \`.github/workflows\` before assuming CI will catch anything — most service repos in this fleet have none, in which case the only PR checks are CodeRabbit and Socket Security, neither of which runs tests, lint, or synth. Your local run is the ONLY real gate. If any gate fails, STOP and report; do not open the PR on known-broken work.
 3. Open the PR with \`/Users/msat1971/.local/bin/skillspoke-pr\`. NEVER \`gh pr create\` — CodeRabbit does not scan PRs opened under an agent token, so \`gh pr create\` yields an unreviewed PR.
-   KNOWN QUIRK: \`skillspoke-pr\` exits 1 AFTER successfully creating the PR, because its follow-up CodeRabbit comment call fails. DO NOT read exit 1 as failure. Confirm the real outcome in \`~/.claude/pr-daemon.log\`, which records every created PR and its URL.
+   \`skillspoke-pr\` prints the PR URL on success and is idempotent: if a PR already exists for this head it returns that PR's URL, which is success, not failure. Trust its exit status.
 
 DO NOT MERGE. Do not run \`gh pr merge\`. Merging is owned by the PR flow (CodeRabbit review, then shepherd-pr iteration), not by this pipeline. Opening the PR is where your job ends.
 
 HARD LIMITS
 - NEVER bypass a quality gate. \`--no-verify\` is forbidden in every form. If a hook fails, fix findings, restage, retry; if they cannot be fixed, abort with no commit and report.
-- Report the literal PR URL. Never claim a PR you did not observe created in the daemon log.`,
+- Report the literal PR URL exactly as \`skillspoke-pr\` printed it. Never claim a PR you did not observe the command return.`,
     {
       label: 'deploy:ship-pr',
       phase: 'Deploy-readiness',
-      agentType: 'agent-teams-workforce:deployment-lead',
+      // deployment-lead has no Bash and no Write (deployment-lead.md:6-7), so it could not
+      // run git, ruff, cdk synth or skillspoke-pr — it could only refuse or fabricate.
+      agentType: 'agent-teams-workforce:github-actions-pipeline-implementer',
       schema: {
         type: 'object',
         additionalProperties: false,
@@ -366,16 +375,23 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
   )
 }
 
+// A boolean the shipping agent reports about its own work is not evidence. A real
+// PR always has a real URL, so derive prOpened from the URL's shape rather than
+// trusting the flag beside it.
+const PR_URL_RE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/
+const prUrl = ship && typeof ship.prUrl === 'string' && PR_URL_RE.test(ship.prUrl.trim()) ? ship.prUrl.trim() : null
+const prOpened = !!(ship && ship.prOpened) && !!prUrl
+
 const ledger = {
   phase: 'deploy',
   beadId: (c.bead && c.bead.id) || null,
   chosen: ['deployment-lead', 'smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), 'deployment-strategy-decider', 'production-readiness-review-facilitator', ...(rollout ? [multiRepo ? 'wave-deployment-sequencer' : 'cdk-stack-author'] : [])],
   mode: selectionMode,
   env: targetEnv,
-  prOpened: !!(ship && ship.prOpened),
-  prUrl: (ship && ship.prUrl) || null,
+  prOpened,
+  prUrl,
   rolledOut: !!(rollout && rollout.deployed),
-  ok: !!(readiness && readiness.ready) && (!shipEnabled || !!(ship && ship.prOpened)) && (!rolloutAllowed || !!(rollout && rollout.deployed && rollout.smokePassed)),
+  ok: !!(readiness && readiness.ready) && (!shipEnabled || prOpened) && (!rolloutAllowed || !!(rollout && rollout.deployed && rollout.smokePassed)),
 }
 
-return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, ship, rollout, env: targetEnv, prOpened: !!(ship && ship.prOpened), prUrl: (ship && ship.prUrl) || null, deployedToDev: !!(rollout && rollout.deployed), deployedToProd: false, ledger }
+return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, ship, rollout, env: targetEnv, prOpened, prUrl, deployedToDev: !!(rollout && rollout.deployed), deployedToProd: false, ledger }

@@ -45,7 +45,7 @@ function deployResponders(overrides = {}) {
     },
     // Simulates the enforcer resolving "no test evidence" via the uncertainty default.
     'deploy:gate5-verdict': { ready: true, findings: [] },
-    'deploy:ship-pr': { prOpened: true, prUrl: 'https://github.example/pr/1', gatesPassed: true },
+    'deploy:ship-pr': { prOpened: true, prUrl: 'https://github.com/satteritsik/fixture/pull/1', gatesPassed: true },
     'deploy:rollout-dev': { deployed: true, stacks: ['DevStack'], smokePassed: true },
     ...overrides,
   }
@@ -104,8 +104,14 @@ test('D1-AC1: Gate 5 prompt carries green.evidence verbatim and a CONFIRMED GREE
   )
 })
 
-// ─── D1-AC2 — unconfirmed green blocks ────────────────────────────────────────
-test('D1-AC2: greenConfirmed=false blocks the pipeline — no ship, no rollout, ledger not ok, findings name the unconfirmed tests', async () => {
+// ─── D1-AC2 — unconfirmed green blocks the ROLLOUT ────────────────────────────
+// The blocked thing is AWS, not source control. Opening a PR has no environment
+// dimension and does not deploy anything, and skipping it on a failed readiness
+// review was how finished work stranded on an un-PR'd branch — the single most
+// likely moment for that to happen. So the branch is still pushed and put up for
+// review; nothing reaches AWS, ledger.ok stays false, and the findings still name
+// the unconfirmed tests.
+test('D1-AC2: greenConfirmed=false blocks the rollout — no deploy, ledger not ok, findings name the unconfirmed tests, but the work is still PR\'d', async () => {
   const { result, calls } = await runWorkflowScript(DEPLOY_JS, {
     args: {
       contract: CONTRACT,
@@ -120,8 +126,8 @@ test('D1-AC2: greenConfirmed=false blocks the pipeline — no ship, no rollout, 
     'no deploy:rollout-dev agent may be dispatched when green.greenConfirmed=false — an unrun test suite must never reach AWS'
   )
   assert.equal(
-    agentCalls(calls, 'deploy:ship-pr').length, 0,
-    'no deploy:ship-pr agent may be dispatched when green.greenConfirmed=false'
+    agentCalls(calls, 'deploy:ship-pr').length, 1,
+    'the branch must still be pushed and PR\'d — a failed readiness review blocks AWS, not source control, and skipping the PR here is what stranded finished work'
   )
   assert.equal(result.deployedToDev, false, 'deployedToDev must be false')
   assert.equal(result.ledger.ok, false, 'ledger.ok must be false')

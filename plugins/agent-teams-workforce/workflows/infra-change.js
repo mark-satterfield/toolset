@@ -9,6 +9,7 @@ export const meta = {
     { title: 'Integration' },
     { title: 'Adversarial' },
     { title: 'Deploy-to-dev' },
+    { title: 'Settle', detail: 'lands the work — commit, push, PR — on EVERY exit path; never evidence a work phase completed' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -68,6 +69,58 @@ async function persistRun(outcome) {
     )
   } catch (e) {
     log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
+  }
+}
+
+// The worktree the settle step lands. `contract.repoPath` is built inside the run's
+// async body and is out of scope in the `finally`, so the resolved path is captured
+// on this mutable as the run establishes it.
+let settleRepoPath = bead.repoPath || null
+
+// ── Settle: land the work, or name what stopped it ────────────────────────────
+// The telemetry `finally` below is the ONE construct that observes every exit path —
+// every failure return and the success return alike. Persisting a ledger there while
+// the change sat unlanded in a worktree is how finished work went missing: no mini in
+// this pipeline touches git before the deploy mini's ship step, so a run that dies at
+// Integration or Adversarial leaves the work UNCOMMITTED — not merely unpushed, but
+// with no commit to find later. This lands it or reports exactly why it could not be
+// landed, and it can never report success over an orphan.
+//
+// It gets its OWN phase for the same reason the ledger does: running on every exit
+// path, it must never be able to tick a work phase green.
+async function settleRun() {
+  const wt = settleRepoPath
+  if (!wt) return null
+  try {
+    return await agent(
+      `Land every change in this worktree, or say exactly why it could not be landed. Worktree: ${wt}\n` +
+        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before skillspoke-pr — it has no -C flag and must run inside the tree.\n` +
+        `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
+        `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to origin/main, run \`git -C "${wt}" branch --unset-upstream\`. Never push to main.\n` +
+        `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from origin/main.\n` +
+        `4. If hasWork, \`cd "${wt}" && /Users/msat1971/.local/bin/skillspoke-pr --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch itself. NEVER open the PR any other way — CodeRabbit does not scan PRs opened under an agent token, so the raw \`gh\` PR-create path yields an unreviewed PR. NEVER \`gh pr merge\`. If a PR already exists for this head skillspoke-pr returns that PR's URL — success, not failure.\n` +
+        `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
+      {
+        label: 'settle:land-work',
+        phase: 'Settle',
+        agentType: 'agent-teams-workforce:github-actions-pipeline-implementer',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['treeClean', 'hasWork', 'branch', 'prUrl'],
+          properties: {
+            treeClean: { type: 'boolean' },
+            hasWork: { type: 'boolean' },
+            branch: { type: 'string' },
+            prUrl: { type: 'string' },
+            blocked: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`settle failed: ${e && e.message ? e.message : e}`)
+    return null
   }
 }
 
@@ -209,6 +262,7 @@ const tailContract = {
     },
   ],
 }
+settleRepoPath = tailContract.repoPath || settleRepoPath
 
 // ── Red (Gate 2a) — author the FAILING infra synth/policy assertion ──────────────
 phase('Red')
@@ -329,6 +383,10 @@ const deployReady = await gateLoop({
     'Deployed to the dev environment',
     'Smoke tests pass against the deployed dev endpoints',
   ],
+  checks: [
+    { field: 'prOpened', equals: true, label: 'a pull request was opened for this work' },
+    { field: 'prUrl', nonEmpty: true, label: 'the PR URL was reported' },
+  ],
   escalateTargets: ['integration', 'green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract: tailContract, green: green.artifact, docCurrency, feedback }),
 })
@@ -362,5 +420,20 @@ return {
   })()
 } finally {
   await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
+  const settle = await settleRun()
+  const PR_OK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(String((settle && settle.prUrl) || '').trim())
+  const landed = !!settle && settle.treeClean === true && (settle.hasWork === false || PR_OK)
+  if (result) {
+    result.landed = landed
+    result.prUrl = PR_OK ? settle.prUrl.trim() : null
+    if (!landed) {
+      result.ok = false
+      result.orphaned = {
+        worktree: settleRepoPath,
+        branch: (settle && settle.branch) || null,
+        blocked: (settle && settle.blocked) || ['settle returned no verifiable PR URL'],
+      }
+    }
+  }
 }
 return result

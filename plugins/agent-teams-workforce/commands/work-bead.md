@@ -110,8 +110,16 @@ BRANCH=fix/$ARGUMENTS                 # feat/ for a task
 # omits work that has already landed — and the Red survey, looking for tests that
 # ARE committed but not in this tree, finds nothing and re-authors them.
 git -C "$REPO" fetch origin main
+# Land what already merged upstream before cutting a tree from it. Preferring
+# origin/main as BASE hides the drift; fast-forwarding removes it.
+if [ -z "$(git -C "$REPO" status --porcelain)" ] \
+   && [ "$(git -C "$REPO" rev-parse --abbrev-ref HEAD)" = "main" ] \
+   && git -C "$REPO" merge-base --is-ancestor main origin/main; then
+  git -C "$REPO" merge --ff-only origin/main
+else
+  echo "NOT fast-forwarded: $(git -C "$REPO" rev-list --left-right --count main...origin/main) (left=local ahead, right=behind); report this before dispatching"
+fi
 BASE=$(git -C "$REPO" rev-parse main)
-git -C "$REPO" merge-base --is-ancestor "$BASE" origin/main && BASE=$(git -C "$REPO" rev-parse origin/main)
 
 if ! git -C "$REPO" worktree list --porcelain | grep -q "$ARGUMENTS"; then
   git -C "$REPO" worktree add -b "$BRANCH" "$WT" "$BASE"
@@ -177,6 +185,7 @@ Five lines, no more:
 - any gate that blocked it, with its feedback **verbatim**
 - what you did NOT do
 - the worktree and branch the work landed on
+- the PR URL, or the explicit reason there is none
 
 If a gate blocks you, report it. Do not work around it, do not edit the workflow
 mid-run, and do not fall back to a subagent beside the pipeline.

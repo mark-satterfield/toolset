@@ -23,6 +23,9 @@ cd <the repo the run was working in>
 git worktree list
 for w in $(git worktree list --porcelain | awk '/^worktree /{print $2}'); do
   echo "=== $w"; git -C "$w" status --short; git -C "$w" branch --show-current
+  git -C "$w" rev-parse --abbrev-ref --symbolic-full-name @{u} || echo "NO UPSTREAM"
+  git -C "$w" log --oneline @{u}..HEAD || true
+  gh pr list --head "$(git -C "$w" branch --show-current)" --state open
 done
 ```
 
@@ -31,9 +34,19 @@ work is sitting on `main` in the MAIN tree, say so explicitly — branch work be
 in a worktree, so that is either a rule the run broke or something else writing to
 the repo, and both are worth knowing before you resume on top of it.
 
-Report it. Three cases, and they lead to different places:
+A clean tree is not evidence the work shipped. Finished, committed, unpushed and
+un-PR'd is the exact shape of an orphan, and reading it as healthy is how that
+state becomes permanent — so the probes above decide it, not `status --short`.
 
-- **Clean tree** — nothing was written, or it was all committed. Resume freely.
+Report it. Four cases, and they lead to different places:
+
+- **Clean and landed** — an upstream is set, nothing is ahead of it, and exactly
+  one open PR exists for the branch. Resume freely.
+- **Clean but UNLANDED** — anything else: no upstream, commits ahead of upstream,
+  or no open PR for the branch. The work exists and nothing downstream can see it.
+  Route it to the composite's settle step (commit, push, `skillspoke-pr`) before
+  anything else. Do **not** resume on top of it and do **not** report the run as
+  done.
 - **Uncommitted TEST files** — Red got partway. Do **not** delete them. The Red
   phase now surveys existing tests and reuses ones that still fail, so a resume
   will pick them up rather than re-author them.
