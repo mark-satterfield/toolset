@@ -869,6 +869,19 @@ async function authorSad(reviewerFeedback) {
   return await agent(
     `You are the sad-maintainer. Consolidate the ruling below into the living arc42 SAD, editing ONLY the source-feed sections it touches: §2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts. Keep those sections mutually consistent. Edit the living document in place — no changelog narrative, no rewriting history. SAD location: ${sadPath}.
 
+SWEEP EVERY CLAIM YOU CHANGE — THIS IS NOT OPTIONAL.
+The SAD states the same normative claim in several places: a §2 constraint, a §4 strategy bullet, a §8 concept, a §5 building-block description, and a §8 README index row can all name the same store, protocol, or topology. Changing one and leaving the others is the single most common way this document self-contradicts, and a downstream extractor then reads whichever copy it happens to hit.
+For EVERY claim the ruling changes: grep the WHOLE SAD tree for the OLD value and for the subject of the claim, and correct EVERY statement of it in the same pass — including index/summary rows, which are claims too. Then re-grep for the old value and confirm the only remaining hits are ones that legitimately describe a different mechanism. Report the sweep you ran.
+
+A DECIDED QUESTION IS NOT AN OPEN ONE.
+Never record an "unresolved" or "contradiction" marker for a claim this ruling settles. If the SAD contradicts the ruling, the SAD is the defect: correct it. Reserve unresolved-markers for questions genuinely outside this ruling's reach.
+
+NEVER LABEL THE ADOPTED OPTION WITH A BARE PROPOSAL LETTER.
+Option letters are packet-local and do not survive outside the packet — the same letter routinely names an eliminated option elsewhere. Write the descriptive name. Where a provenance label is needed, write the full dual label, never a bare letter.
+
+MARK WHAT THIS RULING SUPERSEDES IN PROVENANCE, NOT ONLY IN PROSE.
+If a \`derived_from\` entry asserts a state this ruling overturns, append a supersession marker naming this decision to that entry. A reader or extractor reading provenance alone must not come away with two rulings asserting opposite states.
+
 Ruling: ${decision.ruling}
 Chosen approach: ${decision.chosenApproach}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
