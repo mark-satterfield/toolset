@@ -69,7 +69,23 @@ if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither re
 // Date.now(), argless new Date(), and Math.random() throw, because they would
 // break resume. So the ceiling is denominated in the two things the script CAN
 // observe — phase attempts, and the token budget when the caller set one.
-const MAX_TOTAL_ATTEMPTS = a.maxTotalAttempts || 6
+//
+// The ceiling MUST scale with the fan-out, because most phases here are per-repo.
+// A clean run with zero retries costs:
+//     3 fixed gates (G1 PRD Validation, G2 Architecture, G2b TRD Authoring)
+//   + 2 gates per repo (G3 Spec Authoring, G4 Task Decomposition)
+// so 3 + 2N. A flat ceiling of 6 fit N=1 with one retry to spare and was
+// mathematically unreachable from N=2 upward: a two-repo PRD needs 7 attempts to
+// succeed perfectly on the first try. Every multi-repo PRD therefore died at G4
+// with "run attempt budget exhausted" having never decomposed a single Story —
+// and one Story per repo is the normal shape of this pipeline, not an edge case.
+// Scaling the floor keeps the runaway protection (worst case is still
+// (3 + 2N) * MAX_LOOPS, well above this) while guaranteeing a clean run always fits.
+const FIXED_GATES = 3
+const GATES_PER_REPO = 2
+const RETRY_HEADROOM = a.retryHeadroom || 3
+const MAX_TOTAL_ATTEMPTS =
+  a.maxTotalAttempts || FIXED_GATES + GATES_PER_REPO * repos.length + RETRY_HEADROOM
 // Floor below which a further expensive phase is not started. Only meaningful
 // when the caller set a token target (budget.total); otherwise remaining() is
 // Infinity and this never trips.
@@ -77,7 +93,10 @@ const BUDGET_FLOOR = a.budgetFloor || 60000
 let attemptsSpent = 0
 const budgetStop = () => {
   if (attemptsSpent >= MAX_TOTAL_ATTEMPTS) {
-    return `run attempt budget exhausted (${attemptsSpent}/${MAX_TOTAL_ATTEMPTS} phase attempts). Raise args.maxTotalAttempts to allow more.`
+    return (
+      `run attempt budget exhausted (${attemptsSpent}/${MAX_TOTAL_ATTEMPTS} phase attempts across ` +
+      `${repos.length} repo(s)). Raise args.maxTotalAttempts to allow more.`
+    )
   }
   // `typeof` guard, not a truthiness test: an undeclared identifier throws a
   // ReferenceError rather than reading as falsy, so a runtime that does not expose
