@@ -218,9 +218,15 @@ test('every composite answers the deployment scalars from handback, not per-retu
     const src = readWorkflowSource(path.join(WF, `${name}.js`))
     assert.match(
       src,
-      /function handback\([^)]*\)\s*\{[\s\S]*?deployedToDev: false,[\s\S]*?deployIteration: 0,/,
-      `${name}: the deployment scalars must be defaulted in handback, where every return passes through`,
+      /function handback\([^)]*\)\s*\{[\s\S]*?deployedToDev: false,[\s\S]*?smokePassed: false,[\s\S]*?deployIteration: 0,/,
+      `${name}: all three deployment scalars must be defaulted in handback, where every return passes through`,
     )
+    // The input refusals return before handback exists, so they are checked separately.
+    for (const refusal of src.match(/return \{ ok: false, stage: 'input'[^}]*\}/g) || []) {
+      for (const field of ['deployedToDev: false', 'smokePassed: false', 'deployIteration: 0']) {
+        assert.ok(refusal.includes(field), `${name}: an input refusal omits ${field} — handback cannot cover this path`)
+      }
+    }
     assert.doesNotMatch(
       src,
       /deployedToDev: true,\s*\n\s*deployIteration: 0/,
@@ -261,18 +267,27 @@ test('a run that fails BEFORE the deploy phase still reports deployedToDev=false
   assert.equal(result.deployIteration, 0, 'no deploy was attempted')
 })
 
-test('the input refusals answer too, before handback even exists', async () => {
-  const run = (bead) => runWorkflowScript(path.join(WF, 'bug-fix.js'), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
+test('the input refusals answer ALL THREE scalars, before handback even exists', async () => {
+  // These six returns are the one path handback() cannot reach, so its defaulting does not
+  // cover them and each scalar has to be carried explicitly. 6.2.1 carried two of the three
+  // and its commit message claimed it carried them all — which is the same absent-field trap
+  // that commit existed to close, one level down.
+  for (const [name, composite] of [['task-to-deploy', 'task-to-deploy.js'], ['bug-fix', 'bug-fix.js'], ['infra-change', 'infra-change.js']]) {
+    const run = (bead) => runWorkflowScript(path.join(WF, composite), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
 
-  const noId = (await run({ repoPath: '/repos/chassis' })).result
-  assert.equal(noId.stage, 'input')
-  assert.equal(noId.deployedToDev, false)
-  assert.equal(noId.deployIteration, 0)
-
-  const noRepo = (await run({ id: 'ssbd-x' })).result
-  assert.equal(noRepo.stage, 'input')
-  assert.equal(noRepo.deployedToDev, false)
-  assert.equal(noRepo.deployIteration, 0)
+    for (const [label, bead] of [['no id', { repoPath: '/repos/chassis' }], ['no repoPath', { id: 'ssbd-x' }]]) {
+      const { result } = await run(bead)
+      assert.equal(result.stage, 'input', `${name} / ${label}`)
+      for (const field of ['deployedToDev', 'smokePassed', 'deployIteration']) {
+        assert.notEqual(result[field], undefined, `${name} / ${label}: ${field} must not be omitted`)
+      }
+      assert.equal(result.deployedToDev, false, `${name} / ${label}`)
+      // An input refusal means no smoke test ran, so none passed. That is a definite
+      // answer, not an unknown.
+      assert.equal(result.smokePassed, false, `${name} / ${label}`)
+      assert.equal(result.deployIteration, 0, `${name} / ${label}`)
+    }
+  }
 })
 
 test('the field names the dashboard reads do not move', async () => {
@@ -284,4 +299,70 @@ test('the field names the dashboard reads do not move', async () => {
   }
   assert.equal(typeof result.deployedToDev, 'boolean', 'deployedToDev is a scalar, never an object to drill into')
   assert.equal(typeof result.deployIteration, 'number')
+})
+
+// ── The "no confirmed deployment" branch is LIVE, not dead defensive prose ────
+//
+// It looks unreachable: Gate 5 requires deployedToDev===true and smokePassed===true, so a
+// PASS verdict cannot produce a successful run with no deployment. But a passing verdict is
+// not the only way out of gateLoop with ok:true. When a gate spends its retry budget, the
+// advantage-evaluator rules the remaining findings competitive or constitutive, and a
+// COMPETITIVE ruling returns ok:true carrying the artifact that FAILED the checks.
+//
+// That is exactly the path where a run proceeds under a flag having deployed nothing — the
+// one place a success return could still claim a deployment it never made. The branch is
+// what keeps that headline honest, so it stays, and this test is why.
+test('an exhausted Gate 5 ruled COMPETITIVE proceeds, and the headline refuses to claim a deployment', async () => {
+  const { result } = await runWorkflowScript(path.join(WF, 'bug-fix.js'), {
+    args: { maxLoops: 1, bead: { id: 'ssbd-dep', title: 'x', description: 'd', repoPath: '/repos/chassis' } },
+    agentImpl: (call) => {
+      // The ruling that turns an exhausted gate into a proceed-under-flag.
+      if (call.label === 'advantage:exhausted-5') {
+        return {
+          ruling: 'competitive',
+          rationale: 'the readiness artifacts are incomplete, which does not invalidate the build',
+          findings: [{ criterion: 'the change was deployed to the AWS dev environment', classification: 'competitive', rationale: 'process gap' }],
+        }
+      }
+      if (call.label === 'settle:land-work') return { treeClean: true, hasWork: true, branch: 'fix/x', prUrl: 'https://github.com/o/r/pull/7' }
+      if (call.label === 'ledger:persist') return { written: true, path: '/p.jsonl' }
+      return null
+    },
+    workflowImpl: (call) => {
+      if (call.name === 'agent-teams-workforce:workspace') {
+        return { ok: true, repoPath: WORKTREE, branch: 'fix/x', isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
+      }
+      if (call.name === 'agent-teams-workforce:bug-triage') return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
+      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, evidence: 'passing', changedFiles: ['s.py'] }
+      // Readiness blocked the rollout: nothing ever reached AWS.
+      if (call.name === 'agent-teams-workforce:deploy') return NEVER_DEPLOYED
+      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+        if (String(call.payload.gate) !== '5') return { verdict: 'pass', criteria: [], flags: [] }
+        // The unmet criterion must be NAMED, or there is no finding for the evaluator to
+        // rule on and nothing to carry forward as a flag.
+        return {
+          verdict: 'loop',
+          feedback: 'no deployment evidence',
+          criteria: [{ criterion: 'the change was deployed to the AWS dev environment', met: false, evidence: 'observed deployedToDev = false' }],
+          deterministic: true,
+        }
+      }
+      return {}
+    },
+  })
+
+  assert.equal(result.ok, true, 'a competitive ruling proceeds — that is the advantage principle')
+  assert.equal(result.stage, 'deployed-to-dev', 'the run reached the terminal stage')
+  // ...and this is the whole point: the stage token says the phase completed, the FIELD says
+  // nothing reached AWS, and the headline agrees with the field rather than the token.
+  assert.equal(result.deployedToDev, false, 'nothing was deployed, and the field must say so')
+  assert.equal(result.smokePassed, false)
+  assert.match(
+    result.headline,
+    /gated through deploy WITHOUT a confirmed dev deployment/,
+    'the headline must refuse to claim a deployment the run did not make',
+  )
+  assert.doesNotMatch(result.headline, /DEPLOYED TO AWS DEV/, 'and must not claim one anyway')
+  assert.match(result.headline, /PROCEEDED UNDER 1 carried flag/, 'the flag it proceeded under is named')
 })

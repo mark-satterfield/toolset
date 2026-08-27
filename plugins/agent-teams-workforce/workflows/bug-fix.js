@@ -65,12 +65,12 @@ const MAX_LOOPS = a.maxLoops || 2
 // converging, and each iteration costs a real AWS rollout. On exhaustion the run FAILS and
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
-if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, deployIteration: 0 }
+if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
 // A code-writing composite with no repository cannot write anywhere it can later land
 // from, and a run that proceeded blind then reported a phantom orphan at the end. Refuse
 // at the input stage instead, the same way a missing bead.id is refused.
 if (!String(bead.repoPath || '').trim()) {
-  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in', deployedToDev: false, deployIteration: 0 }
+  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in', deployedToDev: false, smokePassed: false, deployIteration: 0 }
 }
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`
