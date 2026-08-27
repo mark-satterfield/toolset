@@ -739,7 +739,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   // reporting it as a constitutive ruling nobody made.
   if (measuredFailures.length) {
     log(
-      `Gate ${gate} ({PHASE}): budget spent — ${measuredFailures.length} DETERMINISTIC check(s) failed, so no advantage ruling was requested: ` +
+      `Gate ${gate} (${phaseName}): budget spent — ${measuredFailures.length} DETERMINISTIC check(s) failed, so no advantage ruling was requested: ` +
         measuredFailures.join('; ')
     )
     return {

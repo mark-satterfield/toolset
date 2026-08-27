@@ -429,3 +429,39 @@ test('every composite enforces the deterministic rule in CODE, not only in promp
     assert.match(src, /deterministicFailure: true/, `${name}: the failure must name itself as a measured one`)
   }
 })
+
+// ── Log lines must actually interpolate ──────────────────────────────────────
+//
+// 6.2.3 shipped `Gate ${gate} ({PHASE}): budget spent …` in all three composites — the
+// literal text `{PHASE}` instead of `${phaseName}`. It printed only on the
+// deterministic-failure path, which is exactly when someone is debugging a failed measured
+// check, so the log was least informative at the moment it mattered most.
+//
+// It was a GENERATION bug, not a typo: the patch was written with a Python f-string in
+// which `{{PHASE}}` collapses to `{PHASE}` before the intended `.replace()` ever ran, so
+// the substitution matched nothing and failed silently. A placeholder that survives into
+// shipped source is invisible to every check that does not look for it — hence this one.
+test('no composite ships an uninterpolated placeholder in a template literal', () => {
+  for (const name of COMPOSITES) {
+    const src = readWorkflowSource(path.join(WF, `${name}.js`))
+    // Inside a backticked line, a bare {WORD} in caps is a placeholder that lost its `$`.
+    // The `$` matters: `${MAX_LOOPS}` is correct, a bare `{MAX_LOOPS}` is the bug.
+    const suspects = (src.match(/`[^`\n]*(?<!\$)\{[A-Z_]{2,}\}[^`\n]*`/g) || [])
+    assert.deepEqual(suspects, [], `${name}: template literal(s) contain an uninterpolated placeholder: ${suspects.join(' | ')}`)
+    assert.doesNotMatch(src, /\{PHASE\}/, `${name}: {PHASE} must be \${phaseName}`)
+  }
+})
+
+test('the deterministic-failure log names the gate AND the phase', async () => {
+  const { logs } = await runToGate5Exhaustion({
+    unmetCriterion: DEPLOYED_CHECK_LABEL,
+    ruling: COMPETITIVE_RULING,
+    deterministicChecks: [{ criterion: DEPLOYED_CHECK_LABEL, met: false, evidence: 'observed deployedToDev = false' }],
+  })
+
+  const line = (logs || []).find((l) => /DETERMINISTIC check\(s\) failed/.test(l))
+  assert.ok(line, 'the deterministic-failure path must log why no ruling was requested')
+  assert.doesNotMatch(line, /\{PHASE\}/, 'the placeholder must be interpolated, not printed')
+  assert.match(line, /Gate 5 \(Deploy to dev \(iteration 1\/3\)\)/, 'the real phase name must appear')
+  assert.match(line, new RegExp(DEPLOYED_CHECK_LABEL), 'and the measured criterion must be named')
+})

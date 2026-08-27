@@ -426,6 +426,38 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
 // not see it, which is how a gate came to assert a PR URL instead.
 // Nothing about a pull request is reported here any more, because this mini no longer
 // performs one. Git truth comes from the composite's Settle step (`settled`, `prUrl`).
+// ── THESE TWO ARE NOT EQUALLY STRONG EVIDENCE, AND THE WEAKER ONE IS FIRST ────
+//
+// `deployedToDev` is SELF-REPORTED. It is the deploying agent's own boolean about its own
+// work: nothing in this script observed a stack, an endpoint, or a byte. Read it as a
+// claim, not a measurement.
+//
+// `smokePassed` is the stronger of the two, and materially so — a passing smoke suite had
+// to reach a live endpoint over the network and get an answer it accepted. An agent can
+// set `deployed:true` for free; it cannot make a failing HTTP call succeed. Where the two
+// disagree, believe `smokePassed`.
+//
+// The residual, stated rather than papered over: a smoke suite proves SOMETHING is live at
+// that endpoint, not that THIS CHANGE is what is live. A suite that asserts nothing new
+// passes just as happily against the previous deployment. So the pair establishes "a
+// working environment is serving", and neither field on its own establishes "the new bytes
+// are serving".
+//
+// WHY THIS IS NOT SIMPLY FIXED HERE. A workflow script cannot observe anything. The runner
+// injects exactly seven globals — args, agent, workflow, phase, log, parallel, budget —
+// with no filesystem, no network, no process and no way to spawn one. "Observed rather
+// than asserted" therefore cannot mean the script checked; it can only ever mean a
+// DIFFERENT agent than the one that did the work reported the raw facts, and the script
+// ruled on the two accounts. That is segregation of duties, and workspace.js already does
+// exactly this with its independent worktree verifier.
+//
+// So the grounding that would work here is a second read-only dispatch after the rollout —
+// told nothing about what the deployer claimed — reporting the stack's own
+// `LastUpdatedTime` (or the CloudFront invalidation's completion) for comparison against
+// the run's start time. That is a real improvement and it is not free: one extra agent
+// dispatch and one AWS call per deploy iteration, on a path that already iterates up to
+// three times. It is deliberately NOT done here, and this comment exists so the next
+// reader knows the value is a claim rather than discovering it the hard way.
 const deployedToDev = !!(rollout && rollout.deployed)
 const smokePassed = !!(rollout && rollout.smokePassed)
 

@@ -75,7 +75,14 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
     return value
   }
   const phase = () => {}
-  const log = () => {}
+  // Logs were discarded, so nothing could assert on them — which is how a log line
+  // containing the literal text `{PHASE}` instead of `${phaseName}` shipped in three
+  // composites at once. They are captured and returned now; a line a script emits is
+  // output, and output that nothing ever reads is output nobody has checked.
+  const logs = []
+  const log = (line) => {
+    logs.push(String(line == null ? '' : line))
+  }
   const parallel = async (thunks = []) => {
     const out = []
     for (const t of thunks) out.push(await t())
@@ -102,7 +109,7 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
       )
     }
   }
-  return { result, calls }
+  return { result, calls, logs }
 }
 
 /** All agent() dispatches with the given label. */
