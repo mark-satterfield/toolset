@@ -202,3 +202,86 @@ test('landing is reported separately from deployment, under its own stage token'
   assert.equal(result.prUrl, 'https://github.com/o/r/pull/7')
   assert.equal(result.settled, 'reported')
 })
+
+// ── The monitoring contract: answered on EVERY exit path, never omitted ───────
+//
+// `deployedToDev` is the only field the dashboard trusts as evidence that code is live in
+// AWS dev. It deliberately refuses to derive that from `stage`, and it was right to: it had
+// a live bug mapping stage `deploy-to-dev` to a green "live in dev" card, which under the
+// PR-gated Gate 5 would have shown deployed work that never reached AWS.
+//
+// An ABSENT field is the dangerous answer, not the safe one — a consumer that finds nothing
+// has to guess, and the guess a green run invites is "true". So every exit path answers.
+
+test('every composite answers the deployment scalars from handback, not per-return', () => {
+  for (const name of COMPOSITES) {
+    const src = readWorkflowSource(path.join(WF, `${name}.js`))
+    assert.match(
+      src,
+      /function handback\([^)]*\)\s*\{[\s\S]*?deployedToDev: false,[\s\S]*?deployIteration: 0,/,
+      `${name}: the deployment scalars must be defaulted in handback, where every return passes through`,
+    )
+    assert.doesNotMatch(
+      src,
+      /deployedToDev: true,\s*\n\s*deployIteration: 0/,
+      `${name}: nothing may default deployedToDev to true`,
+    )
+  }
+})
+
+test('a run that fails BEFORE the deploy phase still reports deployedToDev=false, not undefined', async () => {
+  // Green fails, so the run never reaches Deploy. The dashboard must still get a definite
+  // "not live in AWS" rather than an absent field it has to interpret.
+  const { result, calls } = await runWorkflowScript(path.join(WF, 'bug-fix.js'), {
+    args: { maxLoops: 1, bead: { id: 'ssbd-dep', title: 'x', description: 'd', repoPath: '/repos/chassis' } },
+    agentImpl: (call) => {
+      if (call.label === 'settle:land-work') return { treeClean: true, hasWork: false, branch: 'fix/x', prUrl: '' }
+      if (call.label === 'ledger:persist') return { written: true, path: '/p.jsonl' }
+      return null
+    },
+    workflowImpl: (call) => {
+      if (call.name === 'agent-teams-workforce:workspace') {
+        return { ok: true, repoPath: WORKTREE, branch: 'fix/x', isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
+      }
+      if (call.name === 'agent-teams-workforce:bug-triage') return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
+      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: false, evidence: '' }
+      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+        return { verdict: 'escalate', criteria: [], escalateTo: 'triage', flags: [] }
+      }
+      return {}
+    },
+  })
+
+  assert.equal(result.ok, false)
+  assert.equal(workflowCalls(calls, 'agent-teams-workforce:deploy').length, 0, 'the run never reached Deploy')
+  assert.notEqual(result.deployedToDev, undefined, 'an omitted field forces the consumer to guess')
+  assert.equal(result.deployedToDev, false, 'and the honest answer is that nothing reached AWS')
+  assert.equal(result.smokePassed, false)
+  assert.equal(result.deployIteration, 0, 'no deploy was attempted')
+})
+
+test('the input refusals answer too, before handback even exists', async () => {
+  const run = (bead) => runWorkflowScript(path.join(WF, 'bug-fix.js'), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
+
+  const noId = (await run({ repoPath: '/repos/chassis' })).result
+  assert.equal(noId.stage, 'input')
+  assert.equal(noId.deployedToDev, false)
+  assert.equal(noId.deployIteration, 0)
+
+  const noRepo = (await run({ id: 'ssbd-x' })).result
+  assert.equal(noRepo.stage, 'input')
+  assert.equal(noRepo.deployedToDev, false)
+  assert.equal(noRepo.deployIteration, 0)
+})
+
+test('the field names the dashboard reads do not move', async () => {
+  // These four are read directly by the monitoring dashboard and were promised stable.
+  // A rename or relocation here is a breaking change that must be coordinated, not shipped.
+  const { result } = await runWithDeploys([DEPLOYED_SMOKE_PASSED])
+  for (const field of ['deployedToDev', 'settled', 'prUrl', 'deployIteration']) {
+    assert.ok(field in result, `${field} must remain a top-level field on the composite result`)
+  }
+  assert.equal(typeof result.deployedToDev, 'boolean', 'deployedToDev is a scalar, never an object to drill into')
+  assert.equal(typeof result.deployIteration, 'number')
+})

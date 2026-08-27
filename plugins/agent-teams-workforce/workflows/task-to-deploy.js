@@ -71,12 +71,12 @@ const MAX_LOOPS = a.maxLoops || 2
 // converging, and each iteration costs a real AWS rollout. On exhaustion the run FAILS and
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
-if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
+if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, deployIteration: 0 }
 // A code-writing composite with no repository cannot write anywhere it can later land
 // from, and a run that proceeded blind then reported a phantom orphan at the end. Refuse
 // at the input stage instead, the same way a missing bead.id is refused.
 if (!String(bead.repoPath || '').trim()) {
-  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in' }
+  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in', deployedToDev: false, deployIteration: 0 }
 }
 
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
@@ -445,9 +445,33 @@ function enterPhase(title) {
 // The settle verdict is added on top by applySettle — that is the run's LANDING status,
 // not phase state, it is a handful of scalars, and an orphaned worktree must be
 // impossible to miss.
+//
+// DEPLOYMENT STATE IS ANSWERED ON EVERY EXIT PATH, NEVER OMITTED. `deployedToDev` is the
+// only field the monitoring dashboard trusts as evidence that code is live in AWS dev, and
+// it deliberately refuses to derive that from `stage` — correctly, because a stage token
+// says which phase the run reached, not what reached AWS.
+//
+// An ABSENT field is the dangerous answer, not the safe one: a consumer that finds nothing
+// there has to guess, and the guess a green run invites is "true". So the two deployment
+// scalars are defaulted HERE, where every return in the file passes through, rather than at
+// each return where one can be forgotten. The default is the honest reading of a run that
+// exits before the Deploy phase: nothing was deployed and no deploy was attempted.
+//
+// The Deploy phase's own returns spread over this result and set the measured values, which
+// win because they come later in the object literal. Nothing is ever defaulted to true.
 function handback(ok, stage, headline, detail) {
   runDetail = detail === undefined ? null : detail
-  return { ok, stage, beadId: bead.id || null, headline: String(headline || '') }
+  return {
+    ok,
+    stage,
+    beadId: bead.id || null,
+    headline: String(headline || ''),
+    deployedToDev: false,
+    // Same argument one level down: an absent `smokePassed` beside a present
+    // `deployedToDev` is the same trap, so it is answered too.
+    smokePassed: false,
+    deployIteration: 0,
+  }
 }
 
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
