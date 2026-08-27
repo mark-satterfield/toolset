@@ -513,7 +513,7 @@ This is NOT a request to re-judge the work, and it is NOT a request to halt. Rul
 - "constitutive": the finding invalidates the work. A security violation, a broken contract, an assertion that cannot hold, a claim the evidence does not support, or work that was never actually produced. Only these stop a run.
 - "competitive": the finding is a quality or completeness opinion the work survives. Partial coverage of an acceptance criterion, an unassessed edge case, a style preference, a reviewer wanting more than was asked for. These are recorded as flags and the pipeline PROCEEDS — you never halt for a non-invalidating finding.
 
-A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh.
+A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh. You will not in fact be handed one — the caller now ENFORCES this rather than asking for it, and skips this dispatch entirely when a deterministic check failed. Every criterion below is a judgment criterion.
 
 Unmet criteria after ${MAX_LOOPS} attempt(s):
 ${unmet.length ? unmet.map((c, i) => `${i + 1}. ${c.criterion}\n   evidence: ${c.evidence || '(none given)'}`).join('\n') : '(the gate named none)'}
@@ -716,7 +716,44 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   const exhaustedUnmet = lastVerdict
     ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))
     : []
-  const ruling = await ruleExhaustion({ gate, phaseName, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
+  // ── A MEASURED FACT IS NOT OPEN TO A RULING ──────────────────────────────────
+  //
+  // The advantage-evaluator exists to rule on JUDGMENT criteria — a reviewer's opinion
+  // that coverage is thin, an unassessed edge case — and ruling those competitive is
+  // correct and deliberate. It has no business ruling on a DETERMINISTIC check, because a
+  // deterministic check did not form an opinion about the artifact: it MEASURED the
+  // artifact and reported what it observed.
+  //
+  // That rule was stated only in the prompt sent to the evaluator ("a criterion a
+  // DETERMINISTIC check settled against the phase is constitutive by construction"), and a
+  // rule stated only in a prompt is a request, not a guard. Nothing here checked WHICH
+  // criteria were unmet, so any `competitive` ruling produced ok:true carrying the artifact
+  // that failed the checks — which after the Gate 5 rewrite meant a run could report success
+  // with deployedToDev:false, the exact claim that rewrite existed to make impossible.
+  //
+  // gate-enforce.js already refuses to adjudicate a failed deterministic check at all — "do
+  // not argue the observation" — and rides `deterministicChecks` out on every verdict for
+  // precisely this decision. This applies the same refusal at the exhaustion site: when a
+  // measured check failed, NO ruling is requested. There is nothing to weigh, so the
+  // dispatch is skipped rather than made and then overridden, which is both cheaper and
+  // impossible to bypass.
+  //
+  // TWO SOURCES, deliberately. `deterministicChecks` is what a well-behaved gate reports —
+  // but gate-constitutional does not report it, so a guard resting on that field alone would
+  // silently do nothing the day someone adds `checks` to a constitutional gate. The labels
+  // are therefore ALSO derived locally from this gate's own `checks`, spelled exactly as
+  // gate-enforce spells them, so the guard holds whatever the gate workflow chooses to
+  // report about itself.
+  const deterministicLabels = new Set(
+    (Array.isArray(checks) ? checks : []).map((chk) => chk.label || `${chk.field} satisfies its required shape`)
+  )
+  const measuredFailures = [
+    ...new Set([
+      ...((lastVerdict && lastVerdict.deterministicChecks) || []).filter((c) => !c.met).map((c) => c.criterion),
+      ...exhaustedUnmet.filter((cc) => deterministicLabels.has(cc.criterion)).map((cc) => cc.criterion),
+    ]),
+  ]
+  const ruling = measuredFailures.length ? null : await ruleExhaustion({ gate, phaseName, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
   // TRUTHINESS IS NOT A RULING. A result object that came back without a `ruling` field
   // has not ruled anything, and reading it as one made a malformed reply indistinguishable
   // from a considered "constitutive" — which is the reporting half of the same fail-closed
@@ -728,7 +765,14 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   // criterion — which is the one question anyone asks about an exhausted gate.
   recordGate(MAX_LOOPS, lastVerdict, {
     verdict: competitive ? 'loop-exhausted-competitive' : 'loop-exhausted',
-    terminal: competitive ? 'proceeded-under-flag' : 'loop-exhausted',
+    terminal: competitive
+      ? 'proceeded-under-flag'
+      : measuredFailures.length
+        ? 'deterministic-failure'
+        : 'loop-exhausted',
+    // Which criteria were MEASURED and failed, so a reader can tell a gate that lost an
+    // argument from one that lost a measurement.
+    measuredFailures,
     advantageRuling: ruling || null,
   })
   if (competitive) {
@@ -741,6 +785,30 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       ruledCompetitive: true,
       carriedFlags: flags,
       advantageRuling: ruling,
+      artifact: lastArtifact,
+      verdict: lastVerdict,
+      unmetCriteria: exhaustedUnmet,
+      attempts,
+    }
+  }
+  // A deterministic check failed and no ruling was sought, so say exactly that rather than
+  // reporting it as a constitutive ruling nobody made.
+  if (measuredFailures.length) {
+    log(
+      `Gate ${gate} ({PHASE}): budget spent — ${measuredFailures.length} DETERMINISTIC check(s) failed, so no advantage ruling was requested: ` +
+        measuredFailures.join('; ')
+    )
+    return {
+      ok: false,
+      reason:
+        `gate ${gate} exceeded ${MAX_LOOPS} loops with ${measuredFailures.length} deterministic check(s) still failing ` +
+        `(${measuredFailures.join('; ')}). A deterministic check measured the artifact rather than forming a judgment about ` +
+        'it, so it is constitutive by construction and no advantage ruling was requested.',
+      loopExhausted: true,
+      ruledCompetitive: false,
+      deterministicFailure: true,
+      measuredFailures,
+      advantageRuling: null,
       artifact: lastArtifact,
       verdict: lastVerdict,
       unmetCriteria: exhaustedUnmet,
@@ -1306,7 +1374,13 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
 // and `smokePassed` as deterministic checks, so those are exactly the two claims made here,
 // read back off the artifact the gate passed. Nothing is said about a pull request: landing
 // happens in Settle, after this, and the caller reads it from `settled` / `prUrl` /
-// `landingStage`.
+// `landingStage`.//
+// The unconfirmed-deployment branch below is now UNREACHABLE, and deliberately kept. It was
+// reachable until the exhaustion path stopped letting a `competitive` ruling waive a failed
+// deterministic check: that was the one route by which ok:true could arrive here carrying
+// deployedToDev:false. With that closed, ok:true implies a confirmed deployment. The branch
+// stays as a fail-safe — the cost of keeping it is one unused string, and the cost of
+// removing it is that any future path to ok:true claims a deployment unconditionally.
 const finalDeploy = deployReady.artifact || {}
 const deployedToDev = finalDeploy.deployedToDev === true
 const smokePassed = finalDeploy.smokePassed === true
