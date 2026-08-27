@@ -24,76 +24,137 @@
 // scripts/check-workflow-syntax.mjs and tests/workflows/helpers/run-workflow.mjs
 // both import it, so a construct added here is refused by both at once.
 //
-// THE SCAN IS OVER THE WHOLE RAW SOURCE — and 6.0.7 proved why that wording has to be
-// exact. The scan has always been raw (no comment or string stripping) but until 6.0.8
-// it ran LINE BY LINE: every rule was tested against each line in isolation. A construct
-// split across a newline therefore matched nothing, because no single line contained all
-// of it. A dynamic import written as the token, a newline, then its parenthesis is a
-// perfectly valid ImportCall that the runner WOULD refuse, and the checker printed
-// "free of constructs the runner refuses" over it. The same evasion worked for the
-// CommonJS loader, for runtime code generation, and for a member access on the process
-// object. Both the checker and the test harness consume this one function, so both were
-// bypassed by the same three-character edit.
+// ─────────────────────────────────────────────────────────────────────────────
+// WHAT THIS FILE IMPLEMENTS, AND WHERE ITS BOUNDARY IS
+// ─────────────────────────────────────────────────────────────────────────────
 //
-// So each rule is now matched against the ENTIRE source text in one piece, and the line
-// number is DERIVED from the match index for reporting. Every rule that has a token and
-// a following parenthesis or dot allows arbitrary whitespace — newlines included —
-// between them, because the parser does.
+// Five releases in a row, this scan was widened by EXAMPLE and the next evasion was
+// the same class one step out: a line-by-line scan fell to a newline; the newline fix
+// fell to `/* */`; the `/* */` fix fell to Annex B `<!--`. Enumerating the forms
+// somebody thought of is the defect, not the particular form that got through.
 //
-// 6.0.8 fixed the newline but left the same hole one character wider. `\s` matches
-// whitespace and nothing else, and whitespace is not the only thing JavaScript allows
-// between a token and its parenthesis: a COMMENT is allowed there too. Every one of
+// So the scan is now defined against the GRAMMAR, and the grammar is small, closed and
+// citable. Two productions are implemented, and they are the only two that decide
+// whether a run of source text spells a forbidden construct:
 //
-//     <dynamic-import-token>/*x*/("node:fs")
-//     <commonjs-loader>/*x*/(
-//     new/*a*/Function/*b*/(
-//     <process-object>/*a*/.env
-//     <commonjs-loader>/*a*/./*b*/resolve
-//     <dynamic-import-token>  NEWLINE  //comment  NEWLINE  (
+//   (P1) WHAT MAY SIT BETWEEN TWO TOKENS.  ECMA-262 §12.2 WhiteSpace, §12.3
+//        LineTerminator, and §12.4 Comment as EXTENDED BY Annex B.1.1 (HTML-like
+//        Comments), which is normative for a Script. Written out, Annex B's Comment is
 //
-// is valid JavaScript — node --check accepts every one — and every one walked straight
-// past the 6.0.8 rules. A scratch workflows directory carrying four of them made this
-// checker exit 0 while printing "free of constructs the runner refuses", and
-// assertRunnerLoadable was equally blind, so the whole suite would have gone green over a
-// script the runner CANNOT LOAD. That is the 6.0.6 P0 failure mode exactly.
+//            Comment ::  MultiLineComment
+//                        SingleLineComment
+//                        SingleLineHTMLOpenComment      <!-- ...
+//                        SingleLineHTMLCloseComment     <LT> ws* /*…*/ * --> ...
+//                        SingleLineDelimitedComment     /* … */ with no LineTerminator
 //
-// So the separator is no longer `\s`. It is GAP / GAP1 below, which match whitespace,
-// block comments and line comments — the COMPLETE set of things the grammar permits
-// between two tokens, not a longer list of things someone thought of. There is nothing
-// else to add, which is why this is a fix rather than another widening.
+//        All five are covered — see SEPARATOR_PRODUCTIONS below, which names each one
+//        and is what the grammar-derived tests iterate over. WhiteSpace ∪ LineTerminator
+//        is not hand-enumerated: §22.2.2.9 DEFINES the RegExp class `\s` as exactly that
+//        union, so `\s` already covers <TAB> <VT> <FF> <ZWNBSP>, every Space_Separator
+//        code point, and <LF> <CR> <LS> <PS>. Where a production needs "not a
+//        LineTerminator" the four code points ARE spelled out, because §12.3 is a closed
+//        four-element production and nothing else can join it.
 //
-// AND every rule is matched a second time against a comment-STRIPPED copy of the source,
-// because a separator pattern only covers gaps someone anticipated writing a rule around.
-// The stripped copy preserves byte offsets exactly — comment characters become spaces and
-// newlines are kept — so a line number derived from a match in it still points at the
-// right line of the RAW source.
+//   (P2) HOW A TOKEN MAY BE SPELLED.  §12.7.1: an IdentifierName may contain a
+//        UnicodeEscapeSequence, and it denotes the same binding — `require(x)` and
+//        `require(x)` both call require. (A ReservedWord may NOT be escaped, so
+//        `import` cannot be hidden this way; the escapable names here are `require`,
+//        `process`, `Function`, `child_process`, `globalThis`, `__dirname`,
+//        `__filename`.) That is a separate production from (P1) and it is closed the
+//        same way: a third pass decodes identifier escapes and rescans.
 //
-// THE RAW PASS STAYS. It is not replaced and must not be: how the runner detects a
-// dynamic import is not documented, a raw scan on its side is entirely possible, and a
-// "harmless" mention inside a comment is not worth risking a repeat outage over. The
-// stripped pass is ADDED ALONGSIDE it — strictly more is caught, never less. Discuss a
-// forbidden construct by name; do not write the token.
+// THE BOUNDARY, stated so the next reader can check completeness against the spec
+// rather than against a list of attacks:
+//
+//   * IN SCOPE: any source text whose TOKEN SEQUENCE contains a forbidden construct,
+//     however it is separated (P1) or spelled (P2). If a new evasion is claimed, the
+//     question to ask is "which production does it use", and if the answer is neither
+//     P1 nor P2 it is not this file's category.
+//   * OUT OF SCOPE, deliberately: reaching a forbidden binding without ever writing its
+//     token — computed member access, an alias, a name assembled at runtime. No static
+//     scan closes that, and it is closed elsewhere instead: `globalThis` is refused
+//     outright, and the runner injects seven globals, so there is no object to compute
+//     a property of.
+//   * Annex B comments are SCRIPT-ONLY (a Module rejects `<!--`; verified against V8).
+//     Scanning as a Script is correct here and not a widening: the checker's probe is a
+//     .cjs file and the harness body is an AsyncFunction — both Scripts, both accept
+//     every Annex B form.
+//
+// THREE PASSES, and all three are load-bearing:
+//
+//   raw               the source byte for byte, nothing stripped. The runner's own
+//                     detection mechanism is undocumented and may itself be a raw scan,
+//                     so a forbidden token written inside a comment is still reported.
+//   comment-stripped  comments blanked at IDENTICAL offsets, for a construct split by a
+//                     comment in a place no separator rule anticipated.
+//   escape-normalized comments blanked AND identifier escapes decoded (P2), with an
+//                     offset map back to the raw text so a finding still names its line.
+//
+// A rule fires if ANY pass sees it. None replaces another; strictly more is caught,
+// never less. Discuss a forbidden construct by name; do not write the token.
 
 /** The globals the runner injects. Everything else is unavailable. */
 export const RUNNER_GLOBALS = Object.freeze(['args', 'agent', 'workflow', 'phase', 'log', 'parallel', 'budget'])
 
+// ── (P1) The complete set of things the grammar allows between two tokens ─────
+//
+// §12.3 LineTerminator is a closed four-element production. Everything below that needs
+// "a line terminator" or "anything but a line terminator" is derived from this one list.
+const LINE_TERMINATOR_CHARS = '\\n\\r\\u2028\\u2029'
+/** §12.3 LineTerminatorSequence — <CR><LF> is ONE sequence, so it is matched first. */
+const LINE_TERMINATOR_SEQUENCE = String.raw`(?:\r\n|[${LINE_TERMINATOR_CHARS}])`
+/** SourceCharacter but not LineTerminator — i.e. SingleLineCommentChars. */
+const NOT_LINE_TERMINATOR = String.raw`[^${LINE_TERMINATOR_CHARS}]`
+/** §12.2 WhiteSpace alone: `\s` is WhiteSpace ∪ LineTerminator (§22.2.2.9), less the four. */
+const WHITESPACE_NO_LINE_TERMINATOR = String.raw`[^\S${LINE_TERMINATOR_CHARS}]`
+
+/** §12.4 MultiLineComment ∪ Annex B SingleLineDelimitedComment — a slash-star block, LineTerminator inside or not. */
+const MULTI_LINE_COMMENT = String.raw`/\*[\s\S]*?\*/`
+/** Annex B SingleLineDelimitedComment ONLY — no LineTerminator inside. Used by HTMLCloseComment. */
+const SINGLE_LINE_DELIMITED_COMMENT = String.raw`/\*(?:(?!\*/)${NOT_LINE_TERMINATOR})*\*/`
+/** §12.4 SingleLineComment. Terminated by ANY LineTerminator, not only <LF>. */
+const SINGLE_LINE_COMMENT = String.raw`//${NOT_LINE_TERMINATOR}*`
+/** Annex B.1.1 SingleLineHTMLOpenComment. */
+const SINGLE_LINE_HTML_OPEN_COMMENT = String.raw`<!--${NOT_LINE_TERMINATOR}*`
+/** Annex B.1.1 HTMLCloseComment :: WhiteSpaceSequence? SingleLineDelimitedCommentSequence? `-->` … */
+const HTML_CLOSE_COMMENT =
+  String.raw`${WHITESPACE_NO_LINE_TERMINATOR}*(?:${SINGLE_LINE_DELIMITED_COMMENT}${WHITESPACE_NO_LINE_TERMINATOR}*)*-->${NOT_LINE_TERMINATOR}*`
+/** Annex B.1.1 SingleLineHTMLCloseComment :: LineTerminatorSequence HTMLCloseComment. */
+const SINGLE_LINE_HTML_CLOSE_COMMENT = String.raw`${LINE_TERMINATOR_SEQUENCE}${HTML_CLOSE_COMMENT}`
+
 /**
- * What JavaScript permits BETWEEN two tokens: whitespace, a block comment, a line
- * comment. That is the whole list — the grammar has nothing else — so a rule built on
- * these is complete against separator evasion rather than merely longer than the last one.
- *
- * GAP  matches zero or more of them (a token already adjacent to `(` or `.`).
+ * Every production that may appear between two tokens, named. The grammar-derived tests
+ * iterate this record so that adding a production without a case for it fails the suite,
+ * and so a reader can check the list against §12.2/§12.3/§12.4/Annex B.1.1 directly.
+ */
+export const SEPARATOR_PRODUCTIONS = Object.freeze({
+  'WhiteSpace ∪ LineTerminator (§12.2, §12.3)': String.raw`\s`,
+  'MultiLineComment (§12.4)': MULTI_LINE_COMMENT,
+  'SingleLineDelimitedComment (Annex B.1.1)': SINGLE_LINE_DELIMITED_COMMENT,
+  'SingleLineComment (§12.4)': SINGLE_LINE_COMMENT,
+  'SingleLineHTMLOpenComment (Annex B.1.1)': SINGLE_LINE_HTML_OPEN_COMMENT,
+  'SingleLineHTMLCloseComment (Annex B.1.1)': SINGLE_LINE_HTML_CLOSE_COMMENT,
+})
+
+// The HTML CLOSE form is tried FIRST because it begins with a LineTerminatorSequence that
+// `\s` would otherwise swallow one character at a time, leaving the `-->` unconsumed.
+const SEPARATOR =
+  `(?:${SINGLE_LINE_HTML_CLOSE_COMMENT}|${MULTI_LINE_COMMENT}|${SINGLE_LINE_COMMENT}|${SINGLE_LINE_HTML_OPEN_COMMENT}|\\s)`
+
+/**
+ * GAP  matches zero or more separators (a token already adjacent to `(` or `.`).
  * GAP1 matches one or more (where the grammar REQUIRES a separator, as in `new Function`);
  *      using GAP there would make `importantThing` match an `import` rule.
  */
-const GAP = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))*`
-const GAP1 = String.raw`(?:\s|/\*[\s\S]*?\*/|//[^\n]*(?:\n|$))+`
+export const GAP = `${SEPARATOR}*`
+export const GAP1 = `${SEPARATOR}+`
 
 /**
  * Constructs the runner refuses. Each is matched against the WHOLE source text, never
- * line by line, and against a comment-stripped copy of it as well — see the header.
- * Where a rule joins a token to a parenthesis or a dot it spans GAP, because a newline
- * AND a comment are both legal there and the parser accepts both.
+ * line by line, and against the comment-stripped and escape-normalized copies as well —
+ * see the header. Where a rule joins a token to a parenthesis or a dot it spans GAP,
+ * because every production in SEPARATOR_PRODUCTIONS is legal there and the parser
+ * accepts all of them.
  */
 export const FORBIDDEN_CONSTRUCTS = Object.freeze([
   {
@@ -103,7 +164,11 @@ export const FORBIDDEN_CONSTRUCTS = Object.freeze([
       'the runner refuses it STATICALLY — one occurrence anywhere in the file, even inside a ' +
       'function that is never called, makes the whole script unloadable. This is the 6.0.6 P0.',
   },
-  { re: new RegExp(String.raw`^[^\S\n]*import` + GAP1 + String.raw`[\w{*]`, 'm'), name: 'import statement', why: 'a workflow script is a script body, not a module.' },
+  {
+    re: new RegExp(String.raw`^${WHITESPACE_NO_LINE_TERMINATOR}*import` + GAP1 + String.raw`[\w{*]`, 'm'),
+    name: 'import statement',
+    why: 'a workflow script is a script body, not a module.',
+  },
   { re: new RegExp(String.raw`\brequire` + GAP + String.raw`\(`), name: 'require()', why: 'there is no CommonJS loader in the runner.' },
   { re: new RegExp(String.raw`\brequire` + GAP + String.raw`\.` + GAP + String.raw`resolve\b`), name: 'require.resolve', why: 'there is no module resolution in the runner.' },
   { re: new RegExp(String.raw`\bnew` + GAP1 + String.raw`Function` + GAP + String.raw`\(`), name: 'new Function', why: 'code generated at runtime escapes every check that guards this directory.' },
@@ -116,6 +181,9 @@ export const FORBIDDEN_CONSTRUCTS = Object.freeze([
 /**
  * The 1-based line number that character offset `index` falls on in `text`.
  *
+ * Counts every §12.3 LineTerminator, not only <LF>: a construct split with <LS> would
+ * otherwise be reported on the wrong line.
+ *
  * @param {string} text  the whole source
  * @param {number} index a character offset into it
  * @returns {number} 1-based line number
@@ -123,33 +191,104 @@ export const FORBIDDEN_CONSTRUCTS = Object.freeze([
 function lineAt(text, index) {
   let line = 1
   const stop = Math.min(index, text.length)
-  for (let i = 0; i < stop; i++) if (text.charCodeAt(i) === 10) line++
+  for (let i = 0; i < stop; i++) {
+    const c = text.charCodeAt(i)
+    if (c === 13 && text.charCodeAt(i + 1) === 10) continue
+    if (c === 10 || c === 13 || c === 0x2028 || c === 0x2029) line++
+  }
   return line
 }
 
+const LINE_TERMINATOR_SET = new Set(['\n', '\r', '\u2028', '\u2029'])
+const isLineTerminator = (ch) => ch !== undefined && LINE_TERMINATOR_SET.has(ch)
+const IDENTIFIER_CHAR = /[A-Za-z0-9_$]/
+
 /**
- * A copy of `source` with every comment blanked out, at IDENTICAL byte offsets.
+ * The index of the first §12.3 LineTerminator at or after `from`, or the end of the text.
  *
- * Comment characters become spaces and newlines are preserved, so the result has the same
- * length and the same line breaks as the input: a match index found here names the same
- * line in the raw source, and the raw line can be quoted in the report unchanged.
+ * @param {string} text the whole source
+ * @param {number} from where to start looking
+ * @returns {number} an index into `text`
+ */
+function endOfLineFrom(text, from) {
+  for (let k = from; k < text.length; k++) if (isLineTerminator(text[k])) return k
+  return text.length
+}
+
+/**
+ * Read a §12.7.1 UnicodeEscapeSequence at `at` (`\uXXXX` or `\u{H+}`).
  *
- * Strings, template literals and regex literals are recognised only so that a `//` or a
- * `/*` INSIDE one is not mistaken for a comment. Their contents are left alone — the raw
- * pass scans them, deliberately, and blanking them would lose findings.
+ * Only escapes that decode to an identifier character are reported: this pass exists to
+ * normalize the SPELLING of a name, and decoding anything else could only invent a
+ * construct that the source does not contain.
  *
- * This pass is additive. If it ever misjudges a division for a regex it can only miss a
+ * @param {string} text the whole source
+ * @param {number} at   the offset of the backslash
+ * @returns {{decoded: string, end: number}|null} null when this is not such an escape
+ */
+function readIdentifierEscape(text, at) {
+  if (text[at] !== '\\' || text[at + 1] !== 'u') return null
+  let decoded = null
+  let end = -1
+  if (text[at + 2] === '{') {
+    const close = text.indexOf('}', at + 3)
+    const hex = close === -1 ? '' : text.slice(at + 3, close)
+    if (hex && /^[0-9a-fA-F]{1,6}$/.test(hex)) {
+      const cp = Number.parseInt(hex, 16)
+      if (cp <= 0x10ffff) {
+        decoded = String.fromCodePoint(cp)
+        end = close + 1
+      }
+    }
+  } else {
+    const hex = text.slice(at + 2, at + 6)
+    if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+      decoded = String.fromCharCode(Number.parseInt(hex, 16))
+      end = at + 6
+    }
+  }
+  if (decoded === null || !IDENTIFIER_CHAR.test(decoded)) return null
+  return { decoded, end }
+}
+
+/**
+ * One scan of `source` producing the two derived copies the extra passes need.
+ *
+ * `stripped` has every comment — all five Annex B forms — replaced by spaces at IDENTICAL
+ * offsets, so a match index in it names the same line of the raw source.
+ *
+ * `normalized` additionally decodes identifier escapes (P2), which changes the length, so
+ * it carries `normalizedOffsets`: normalized index → raw index.
+ *
+ * Strings, template literals and regex literals are recognised only so that a `//`, a
+ * `/*`, a `<!--` or an escape INSIDE one is not mistaken for code. Their contents are
+ * copied through untouched — the raw pass scans them, deliberately.
+ *
+ * This scan is additive. If it ever misjudges a division for a regex it can only miss a
  * comment, never invent a construct, and the raw pass and the GAP-tolerant rules are both
  * still scanning independently.
  *
  * @param {string} source raw workflow script text
- * @returns {string} the same text with comment bodies replaced by spaces
+ * @returns {{stripped: string, normalized: string, normalizedOffsets: number[]}} the derived copies
  */
-export function stripCommentsPreservingOffsets(source) {
+export function scanSource(source) {
   const text = String(source)
-  const out = Array.from(text)
-  const blank = (from, to) => {
-    for (let k = from; k < to && k < out.length; k++) if (out[k] !== '\n') out[k] = ' '
+  const stripped = text.split('')
+  const norm = []
+  const normAt = []
+  const emit = (ch, at) => {
+    norm.push(ch)
+    normAt.push(at)
+  }
+  const blankBoth = (from, to) => {
+    for (let k = from; k < to && k < text.length; k++) {
+      const keep = isLineTerminator(text[k])
+      if (!keep) stripped[k] = ' '
+      emit(keep ? text[k] : ' ', k)
+    }
+  }
+  const copyThrough = (from, to) => {
+    for (let k = from; k < to && k < text.length; k++) emit(text[k], k)
   }
   // A `/` opens a regex literal only where a VALUE may begin. After an identifier,
   // a number, `)`, `]` or a closing quote it is division. These are the keywords after
@@ -157,21 +296,45 @@ export function stripCommentsPreservingOffsets(source) {
   const VALUE_KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'case', 'do', 'else', 'yield', 'await'])
   let prev = ''
   let prevWord = ''
+  // Annex B's `-->` is a comment only when nothing but WhiteSpace and
+  // SingleLineDelimitedComments separate it from the preceding LineTerminatorSequence.
+  // It starts true because V8 accepts `-->` on the first line of a Script (verified), and
+  // being permissive here can only blank text the raw pass still scans.
+  let htmlCloseAllowed = true
   let i = 0
   while (i < text.length) {
     const ch = text[i]
     const next = text[i + 1]
+    // §12.4 SingleLineComment
     if (ch === '/' && next === '/') {
-      let end = text.indexOf('\n', i)
-      if (end === -1) end = text.length
-      blank(i, end)
+      const end = endOfLineFrom(text, i)
+      blankBoth(i, end)
       i = end
       continue
     }
+    // Annex B.1.1 SingleLineHTMLOpenComment
+    if (ch === '<' && text.startsWith('<!--', i)) {
+      const end = endOfLineFrom(text, i)
+      blankBoth(i, end)
+      i = end
+      continue
+    }
+    // Annex B.1.1 SingleLineHTMLCloseComment — the `-->` half; the LineTerminatorSequence
+    // that licenses it was consumed earlier and recorded in htmlCloseAllowed.
+    if (ch === '-' && htmlCloseAllowed && text.startsWith('-->', i)) {
+      const end = endOfLineFrom(text, i)
+      blankBoth(i, end)
+      i = end
+      continue
+    }
+    // §12.4 MultiLineComment ∪ Annex B SingleLineDelimitedComment
     if (ch === '/' && next === '*') {
       let end = text.indexOf('*/', i + 2)
       end = end === -1 ? text.length : end + 2
-      blank(i, end)
+      // Only the SingleLineDelimitedComment form preserves a pending `-->`; a comment
+      // carrying a LineTerminator supplies one of its own, which V8 honours.
+      for (let k = i; k < end; k++) if (isLineTerminator(text[k])) { htmlCloseAllowed = true; break }
+      blankBoth(i, end)
       i = end
       continue
     }
@@ -185,9 +348,12 @@ export function stripCommentsPreservingOffsets(source) {
         if (text[k] === ch) break
         k++
       }
-      i = Math.min(k + 1, text.length)
+      const end = Math.min(k + 1, text.length)
+      copyThrough(i, end)
+      i = end
       prev = ch
       prevWord = ''
+      htmlCloseAllowed = false
       continue
     }
     if (ch === '/' && !/[A-Za-z0-9_$)\]]/.test(prev)) {
@@ -196,7 +362,7 @@ export function stripCommentsPreservingOffsets(source) {
         let k = i + 1
         let inClass = false
         let closed = false
-        while (k < text.length && text[k] !== '\n') {
+        while (k < text.length && !isLineTerminator(text[k])) {
           const c = text[k]
           if (c === '\\') { k += 2; continue }
           if (c === '[') inClass = true
@@ -205,69 +371,94 @@ export function stripCommentsPreservingOffsets(source) {
           k++
         }
         if (closed) {
+          copyThrough(i, k + 1)
           i = k + 1
           prev = '/'
           prevWord = ''
+          htmlCloseAllowed = false
           continue
         }
       }
     }
-    if (!/\s/.test(ch)) {
+    // §12.7.1 IdentifierName UnicodeEscapeSequence — same binding, different spelling.
+    const escape = readIdentifierEscape(text, i)
+    if (escape) {
+      for (const c of escape.decoded) emit(c, i)
+      i = escape.end
+      prev = escape.decoded
+      prevWord += escape.decoded
+      htmlCloseAllowed = false
+      continue
+    }
+    emit(ch, i)
+    if (isLineTerminator(ch)) {
+      htmlCloseAllowed = true
+    } else if (!/\s/.test(ch)) {
       prev = ch
-      prevWord = /[A-Za-z0-9_$]/.test(ch) ? prevWord + ch : ''
+      prevWord = IDENTIFIER_CHAR.test(ch) ? prevWord + ch : ''
+      htmlCloseAllowed = false
     }
     i++
   }
-  return out.join('')
+  return { stripped: stripped.join(''), normalized: norm.join(''), normalizedOffsets: normAt }
+}
+
+/**
+ * A copy of `source` with every comment blanked out, at IDENTICAL byte offsets.
+ *
+ * @param {string} source raw workflow script text
+ * @returns {string} the same text with comment bodies replaced by spaces
+ */
+export function stripCommentsPreservingOffsets(source) {
+  return scanSource(source).stripped
 }
 
 /**
  * Every forbidden construct in `source`, with the line each was found on.
  *
- * TWO passes, and both are load-bearing. The RAW pass scans the source byte for byte with
- * nothing stripped, because the runner's own detection mechanism is undocumented and a
- * forbidden token written inside a comment is not worth the risk. The COMMENT-STRIPPED
- * pass catches a construct someone split with a comment in a place no separator rule
- * anticipated. Neither replaces the other; a rule fires if EITHER pass sees it.
- *
- * Each rule is matched over the whole text in one piece; the line number is derived from
- * the match index, which is valid for both passes because the stripped copy preserves
- * offsets. When a construct spans lines the report names the line it STARTS on and shows
- * it with whitespace collapsed, so a finding is still readable.
+ * THREE passes, and all three are load-bearing — see the header. A rule fires if ANY of
+ * them sees it, and the report names which one did.
  *
  * @param {string} source raw workflow script text — NOT stripped of comments or strings
  * @returns {Array<{line: number, name: string, why: string, text: string, via: string}>} empty when clean
  */
 export function findForbiddenConstructs(source) {
   const text = String(source)
-  const stripped = stripCommentsPreservingOffsets(text)
+  const { stripped, normalized, normalizedOffsets } = scanSource(text)
   const found = []
   for (const { re, name, why } of FORBIDDEN_CONSTRUCTS) {
     // Defensive: a `g` or `y` rule would carry lastIndex between calls and start
     // skipping matches. Scan with a stateless clone.
     const scan = re.global || re.sticky ? new RegExp(re.source, re.flags.replace(/[gy]/g, '')) : re
-    const raw = scan.exec(text)
-    const hidden = raw ? null : scan.exec(stripped)
-    const m = raw || hidden
+    let m = scan.exec(text)
+    let via = 'raw'
+    let rawIndex = m ? m.index : -1
+    if (!m) {
+      m = scan.exec(stripped)
+      via = 'comment-stripped'
+      rawIndex = m ? m.index : -1
+    }
+    if (!m) {
+      m = scan.exec(normalized)
+      via = 'escape-normalized'
+      rawIndex = m ? (normalizedOffsets[m.index] ?? 0) : -1
+    }
     if (!m) continue
-    const via = raw ? 'raw' : 'comment-stripped'
-    const line = lineAt(text, m.index)
-    const lineStart = text.lastIndexOf('\n', m.index - 1) + 1
-    const nextBreak = text.indexOf('\n', m.index)
+    const line = lineAt(text, rawIndex)
+    const lineStart = text.lastIndexOf('\n', rawIndex - 1) + 1
+    const nextBreak = text.indexOf('\n', rawIndex)
     const sourceLine = text.slice(lineStart, nextBreak === -1 ? text.length : nextBreak).trim().slice(0, 80)
-    const spansLines = m[0].includes('\n')
+    const spansLines = /[\n\r\u2028\u2029]/.test(m[0])
     const collapsed = m[0].replace(/\s+/g, ' ').trim().slice(0, 80)
-    found.push({
-      line,
-      name,
-      why,
-      via,
-      text: spansLines
-        ? `${sourceLine}   ⟵ the construct CONTINUES ACROSS LINES: ${collapsed}`
-        : hidden
-          ? `${sourceLine}   ⟵ SPLIT BY A COMMENT; with comments removed it reads: ${collapsed}`
-          : sourceLine,
-    })
+    const suffix =
+      via === 'raw'
+        ? spansLines
+          ? `   ⟵ the construct CONTINUES ACROSS LINES: ${collapsed}`
+          : ''
+        : via === 'comment-stripped'
+          ? `   ⟵ SPLIT BY A COMMENT; with comments removed it reads: ${collapsed}`
+          : `   ⟵ SPELLED WITH IDENTIFIER ESCAPES; decoded it reads: ${collapsed}`
+    found.push({ line, name, why, via, text: `${sourceLine}${suffix}` })
   }
   return found
 }
