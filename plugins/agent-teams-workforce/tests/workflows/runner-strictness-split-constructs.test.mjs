@@ -77,6 +77,25 @@ const CASES = [
   { name: 'child_process', split: null, note: 'one token — it has no split form; this row guards against losing the rule' },
   { name: '__dirname / __filename', split: null, note: 'one token — no split form' },
   { name: 'globalThis', split: null, note: 'one token — no split form' },
+  // ── The C2 code-generation rules ────────────────────────────────────────────
+  // These are BARE IDENTIFIER rules, deliberately: the capability is "compile a string
+  // in the global scope", and it does not stop being that capability because a
+  // punctuator sits between the name and its parenthesis. `new (Function)(…)` and
+  // `(0, eval)(…)` both walked past the 6.0.10 call-position rules and both returned the
+  // live global object. A bare-identifier rule has no split form to test — the name IS
+  // the whole construct — so these rows guard against the rule being lost.
+  { name: 'Function', split: null, note: 'a bare identifier — covers `Function(`, `new (Function)(` and `const f = Function` alike' },
+  { name: 'eval', split: null, note: 'a bare identifier — covers direct eval and the `(0, eval)` indirect form alike' },
+  {
+    name: 'AsyncFunction / GeneratorFunction',
+    split: null,
+    note: 'bare identifiers — the same code-generation intrinsic reached through a constructor chain',
+  },
+  {
+    name: '.constructor',
+    split: `const F = ({}).\n  constructor\n`,
+    note: 'the constructor chain to the code-generation intrinsic, split at the dot',
+  },
 ]
 
 test('every construct in the shared list has a case here', () => {

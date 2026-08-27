@@ -25,17 +25,105 @@
 // both import it, so a construct added here is refused by both at once.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// WHAT THIS FILE IMPLEMENTS, AND WHERE ITS BOUNDARY IS
+// THE CAPABILITY MODEL — what a workflow script is PERMITTED to reach
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Five releases in a row, this scan was widened by EXAMPLE and the next evasion was
-// the same class one step out: a line-by-line scan fell to a newline; the newline fix
-// fell to `/* */`; the `/* */` fix fell to Annex B `<!--`. Enumerating the forms
-// somebody thought of is the defect, not the particular form that got through.
+// This section is the definition. Everything below it is DERIVED from this section,
+// and a rule that cannot be traced back to it does not belong in the file.
 //
-// So the scan is now defined against the GRAMMAR, and the grammar is small, closed and
-// citable. Two productions are implemented, and they are the only two that decide
-// whether a run of source text spells a forbidden construct:
+// The runner calls a workflow script with exactly seven bindings in scope:
+//
+//     args, agent, workflow, phase, log, parallel, budget
+//
+// That is the whole contract. A script composes prompts, dispatches work through
+// `agent` and `workflow`, and returns a result. It has no module loader, no
+// filesystem, no process object, no network and no way to spawn anything. Every
+// other capability is OUT OF CONTRACT — not discouraged, not risky, absent.
+//
+// So the interesting question is NOT "which of these six token spellings appear".
+// It is: CAN THIS SOURCE YIELD A REFERENCE THE SEVEN INJECTED GLOBALS DO NOT PROVIDE?
+// Five releases running, that question was answered by example — a line-by-line scan
+// fell to a newline, the newline fix fell to `/* */`, that fix fell to Annex B `<!--`
+// — and the sixth answered it by appending two more entries, which is the same defect
+// wearing a longer list. There are exactly four ways to obtain such a reference, and
+// they are categories, not spellings:
+//
+//   C1  MODULE LOADING — load code from outside the script and take its exports.
+//       (dynamic import, an import statement, the CommonJS loader, module resolution)
+//   C2  CODE GENERATION FROM STRINGS — compile a string into a function. The compiled
+//       function's scope is the GLOBAL scope, not the injected one, so this hands back
+//       everything the seven globals withhold. Proven end to end: `Function('return
+//       this')()` returned the live global object, the process uid and $HOME while the
+//       checker printed "free of constructs the runner refuses". However spelled,
+//       aliased, or reached through a constructor chain, this is one category.
+//       (eval, indirect eval, the Function constructor, AsyncFunction /
+//        GeneratorFunction / AsyncGeneratorFunction via `.constructor.constructor`)
+//   C3  THE GLOBAL OBJECT OR ANOTHER REALM — name the object the injected globals were
+//       meant to stand in for. (globalThis, global, self, window)
+//   C4  A HOST CAPABILITY THE RUNNER DOES NOT INJECT — process, child_process, Buffer,
+//       fetch, module-scope values like __dirname.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// TWO CONTROLS, AND WHICH ONE CARRIES THE WEIGHT
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// (A) A RUNTIME CAPABILITY PROBE — `createCapabilityProbe` below, used by BOTH the
+//     syntax checker's execution pass and the unit-test harness. Each out-of-contract
+//     name is bound as a PARAMETER of the function the script body is compiled into,
+//     shadowing the real binding with a tripwire that records and throws on any read,
+//     call or construct. This is a scope-level control, not a text-level one, so it is
+//     strictly stronger than any regex: it catches an alias (`const f = Function; f(x)`),
+//     a computed property (`globalThis['pro' + 'cess']`) and a name assembled at
+//     runtime, none of which a static scan can see. This is where the weight belongs.
+//
+// (B) THE STATIC SCAN — `findForbiddenConstructs` below. It exists for a DIFFERENT
+//     question: the real runner refuses some constructs STATICALLY, before any phase
+//     runs, so a script containing one cannot load at all even if no line of it ever
+//     executes. That is the 6.0.6 P0, and only a text scan can catch it, because the
+//     probe never gets to run. The scan is therefore load-bearing for C1 and for the
+//     spellings of C2–C4 that appear literally, and it is NOT a completeness claim.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// WHAT REMAINS OPEN — stated plainly, because the previous header's implied
+// completeness is what made the last gap invisible
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// THE STATIC SCAN CANNOT CLOSE, and does not claim to close:
+//
+//   * COMPUTED MEMBER ACCESS.       `globalThis['pro' + 'cess']`, `o[k]` for a runtime k.
+//   * ALIASING.                     `const f = Function` then `f('...')` on a later line.
+//   * PUNCTUATOR INTERPOSITION beyond optional chaining. `(require)(x)` parenthesizes the
+//     callee; the rules span optional chaining (`require?.(`, `process?.`) because that is
+//     a closed two-character production, but arbitrary parenthesization is expression
+//     grammar, not separator grammar, and enumerating it would be example-driven again.
+//   * A CONSTRUCTOR CHAIN off a value the scan never sees named, e.g. reaching the
+//     Function constructor from an arbitrary expression's `.constructor`. The literal
+//     `.constructor` member access IS refused; an equivalent computed one is not.
+//
+// Every one of those is closed by control (A) instead, because the tripwire is in the
+// SCOPE: the alias, the computed key and the parenthesized callee all resolve to the
+// same shadowed binding. What neither control closes:
+//
+//   * A CONSTRUCTOR CHAIN OFF AN INTRINSIC THE PROBE CANNOT SHADOW — `({}).constructor
+//     .constructor` reaches the real Function constructor without naming any shadowed
+//     binding, and poisoning `Function.prototype.constructor` would corrupt the
+//     checker's own realm. The literal spelling is caught by the scan; a computed
+//     spelling of it is caught by NEITHER. This is a known, open hole, and it is
+//     recorded here rather than papered over.
+//
+// The honest summary: a workflow script is OUR OWN code in OUR OWN repository, and an
+// author who can write into workflows/ can already do whatever they like elsewhere in
+// the repo. These controls exist to stop an accident from shipping and to stop the
+// checker from telling us it verified something it did not. They are not an adversarial
+// boundary and must not be described as one.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// HOW THE STATIC SCAN IS DERIVED — the grammar, not a list of attacks
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Within its stated scope the scan is defined against the GRAMMAR, and the grammar is
+// small, closed and citable. Two productions decide whether a run of source text spells
+// a forbidden construct:
 //
 //   (P1) WHAT MAY SIT BETWEEN TWO TOKENS.  ECMA-262 §12.2 WhiteSpace, §12.3
 //        LineTerminator, and §12.4 Comment as EXTENDED BY Annex B.1.1 (HTML-like
@@ -57,24 +145,23 @@
 //
 //   (P2) HOW A TOKEN MAY BE SPELLED.  §12.7.1: an IdentifierName may contain a
 //        UnicodeEscapeSequence, and it denotes the same binding — `require(x)` and
-//        `require(x)` both call require. (A ReservedWord may NOT be escaped, so
-//        `import` cannot be hidden this way; the escapable names here are `require`,
-//        `process`, `Function`, `child_process`, `globalThis`, `__dirname`,
-//        `__filename`.) That is a separate production from (P1) and it is closed the
-//        same way: a third pass decodes identifier escapes and rescans.
+//        `requir\u0065(x)` both call require. (A ReservedWord may NOT be escaped, so
+//        `import` cannot be hidden this way.) That is a separate production from (P1)
+//        and it is closed the same way: a third pass decodes identifier escapes and
+//        rescans.
 //
-// THE BOUNDARY, stated so the next reader can check completeness against the spec
-// rather than against a list of attacks:
+//   Every SEPARATOR production is written so that it can match a given run of text in
+//   exactly ONE way. That is a correctness property AND a performance one: the earlier
+//   MultiLineComment was lazy (`/\*[\s\S]*?\*/`), so it could be extended past its own
+//   `*/` onto a later one, and n adjacent comments admitted 2^(n-1) parses of the same
+//   text. A 147-byte file took 21 seconds; a ~250-byte one never finished. A comment
+//   ends at its FIRST `*/`, so the ambiguity was never grammatical to begin with — the
+//   productions below are anchored to it and the scan is linear.
 //
 //   * IN SCOPE: any source text whose TOKEN SEQUENCE contains a forbidden construct,
 //     however it is separated (P1) or spelled (P2). If a new evasion is claimed, the
 //     question to ask is "which production does it use", and if the answer is neither
-//     P1 nor P2 it is not this file's category.
-//   * OUT OF SCOPE, deliberately: reaching a forbidden binding without ever writing its
-//     token — computed member access, an alias, a name assembled at runtime. No static
-//     scan closes that, and it is closed elsewhere instead: `globalThis` is refused
-//     outright, and the runner injects seven globals, so there is no object to compute
-//     a property of.
+//     P1 nor P2 it is not this file's category — see WHAT REMAINS OPEN above.
 //   * Annex B comments are SCRIPT-ONLY (a Module rejects `<!--`; verified against V8).
 //     Scanning as a Script is correct here and not a widening: the checker's probe is a
 //     .cjs file and the harness body is an AsyncFunction — both Scripts, both accept
@@ -85,6 +172,11 @@
 //   raw               the source byte for byte, nothing stripped. The runner's own
 //                     detection mechanism is undocumented and may itself be a raw scan,
 //                     so a forbidden token written inside a comment is still reported.
+//                     This is also why C2/C3/C4 rules are matched as whole IDENTIFIERS
+//                     only where the name never occurs in ordinary prose: `require` and
+//                     `process` are common English words and appear in agent prompts, so
+//                     their rules stay anchored to a call or a member access, while
+//                     `eval`, `Function` and `globalThis` are refused on sight.
 //   comment-stripped  comments blanked at IDENTICAL offsets, for a construct split by a
 //                     comment in a place no separator rule anticipated.
 //   escape-normalized comments blanked AND identifier escapes decoded (P2), with an
@@ -107,18 +199,44 @@ const LINE_TERMINATOR_SEQUENCE = String.raw`(?:\r\n|[${LINE_TERMINATOR_CHARS}])`
 const NOT_LINE_TERMINATOR = String.raw`[^${LINE_TERMINATOR_CHARS}]`
 /** §12.2 WhiteSpace alone: `\s` is WhiteSpace ∪ LineTerminator (§22.2.2.9), less the four. */
 const WHITESPACE_NO_LINE_TERMINATOR = String.raw`[^\S${LINE_TERMINATOR_CHARS}]`
+/**
+ * "and here the line ends" — the next character is a §12.3 LineTerminator, or there is no
+ * next character.
+ *
+ * Every to-end-of-line production below is PINNED with this, and that is a correctness
+ * property before it is a performance one: a SingleLineComment runs to the end of its
+ * line and CANNOT stop early, so a pattern that lets it stop early is describing a
+ * grammar JavaScript does not have. Unpinned, `//   a   //   b` admits one parse per
+ * position in every trailing space run — the comment ends there, `\s` takes the spaces,
+ * and the inner `//` opens another comment that can also end anywhere. Those multiply
+ * across a comment block, which is exactly the ReDoS shape the MultiLineComment note
+ * below describes, in a different production. Pinned, only the true end of line can
+ * match and the scan stays linear.
+ */
+const END_OF_LINE_AHEAD = String.raw`(?![^${LINE_TERMINATOR_CHARS}])`
 
-/** §12.4 MultiLineComment ∪ Annex B SingleLineDelimitedComment — a slash-star block, LineTerminator inside or not. */
-const MULTI_LINE_COMMENT = String.raw`/\*[\s\S]*?\*/`
+/**
+ * §12.4 MultiLineComment ∪ Annex B SingleLineDelimitedComment — a slash-star block,
+ * LineTerminator inside or not.
+ *
+ * ANCHORED TO THE FIRST COMMENT TERMINATOR, deliberately. The lazy form — a star-slash
+ * body written non-greedily — matches the same comment, but on backtracking it can be EXTENDED past that terminator onto a later
+ * one — so n adjacent comments admit 2^(n-1) distinct parses of the same text and the
+ * enclosing SEPARATOR star explores all of them. Measured on 6.0.10: a 147-byte source
+ * took 20.8s and a ~250-byte one did not finish, which is a denial of service against
+ * our own checker. A comment ends at its first terminator, so the longer matches were
+ * never grammatical; `(?:[^*]|\*(?!/))*` cannot produce them and the scan is linear.
+ */
+const MULTI_LINE_COMMENT = String.raw`/\*(?:[^*]|\*(?!/))*\*/`
 /** Annex B SingleLineDelimitedComment ONLY — no LineTerminator inside. Used by HTMLCloseComment. */
 const SINGLE_LINE_DELIMITED_COMMENT = String.raw`/\*(?:(?!\*/)${NOT_LINE_TERMINATOR})*\*/`
-/** §12.4 SingleLineComment. Terminated by ANY LineTerminator, not only <LF>. */
-const SINGLE_LINE_COMMENT = String.raw`//${NOT_LINE_TERMINATOR}*`
-/** Annex B.1.1 SingleLineHTMLOpenComment. */
-const SINGLE_LINE_HTML_OPEN_COMMENT = String.raw`<!--${NOT_LINE_TERMINATOR}*`
+/** §12.4 SingleLineComment. Terminated by ANY LineTerminator, not only <LF>, and it runs to it. */
+const SINGLE_LINE_COMMENT = String.raw`//${NOT_LINE_TERMINATOR}*${END_OF_LINE_AHEAD}`
+/** Annex B.1.1 SingleLineHTMLOpenComment. Runs to the end of its line. */
+const SINGLE_LINE_HTML_OPEN_COMMENT = String.raw`<!--${NOT_LINE_TERMINATOR}*${END_OF_LINE_AHEAD}`
 /** Annex B.1.1 HTMLCloseComment :: WhiteSpaceSequence? SingleLineDelimitedCommentSequence? `-->` … */
 const HTML_CLOSE_COMMENT =
-  String.raw`${WHITESPACE_NO_LINE_TERMINATOR}*(?:${SINGLE_LINE_DELIMITED_COMMENT}${WHITESPACE_NO_LINE_TERMINATOR}*)*-->${NOT_LINE_TERMINATOR}*`
+  String.raw`${WHITESPACE_NO_LINE_TERMINATOR}*(?:${SINGLE_LINE_DELIMITED_COMMENT}${WHITESPACE_NO_LINE_TERMINATOR}*)*-->${NOT_LINE_TERMINATOR}*${END_OF_LINE_AHEAD}`
 /** Annex B.1.1 SingleLineHTMLCloseComment :: LineTerminatorSequence HTMLCloseComment. */
 const SINGLE_LINE_HTML_CLOSE_COMMENT = String.raw`${LINE_TERMINATOR_SEQUENCE}${HTML_CLOSE_COMMENT}`
 
@@ -150,6 +268,27 @@ export const GAP = `${SEPARATOR}*`
 export const GAP1 = `${SEPARATOR}+`
 
 /**
+ * §11.1.4 / §13.3 OptionalExpression — `?.` is ONE punctuator and may stand where a call
+ * or a member access would. It is a closed two-character production, so spanning it is
+ * derivation, not another entry on an example list. `require?.(` and `process?.` are the
+ * forms that reached 6.0.10.
+ */
+const OPTIONAL_CALL = String.raw`(?:\?\.)?`
+/** `?.name` / `.name` — the member half of the same production. */
+const OPTIONAL_MEMBER = String.raw`\??\.`
+
+// ── The four capability categories the rules below are DERIVED from ───────────
+// Each rule names the category it serves. A rule with no category has no derivation,
+// which is the defect this file exists to stop repeating.
+export const C1_MODULE_LOADING = 'C1 module loading'
+export const C2_CODE_GENERATION = 'C2 code generation from strings'
+export const C3_GLOBAL_OBJECT = 'C3 the global object or another realm'
+export const C4_HOST = 'C4 a host capability the runner does not inject'
+
+/** The four categories, for tests that iterate them. */
+export const CAPABILITIES = Object.freeze([C1_MODULE_LOADING, C2_CODE_GENERATION, C3_GLOBAL_OBJECT, C4_HOST])
+
+/**
  * Constructs the runner refuses. Each is matched against the WHOLE source text, never
  * line by line, and against the comment-stripped and escape-normalized copies as well —
  * see the header. Where a rule joins a token to a parenthesis or a dot it spans GAP,
@@ -157,7 +296,9 @@ export const GAP1 = `${SEPARATOR}+`
  * accepts all of them.
  */
 export const FORBIDDEN_CONSTRUCTS = Object.freeze([
+  // ── C1  MODULE LOADING ──────────────────────────────────────────────────────
   {
+    capability: C1_MODULE_LOADING,
     re: new RegExp(String.raw`\bimport` + GAP + String.raw`\(`),
     name: 'dynamic import',
     why:
@@ -165,17 +306,101 @@ export const FORBIDDEN_CONSTRUCTS = Object.freeze([
       'function that is never called, makes the whole script unloadable. This is the 6.0.6 P0.',
   },
   {
+    capability: C1_MODULE_LOADING,
     re: new RegExp(String.raw`^${WHITESPACE_NO_LINE_TERMINATOR}*import` + GAP1 + String.raw`[\w{*]`, 'm'),
     name: 'import statement',
     why: 'a workflow script is a script body, not a module.',
   },
-  { re: new RegExp(String.raw`\brequire` + GAP + String.raw`\(`), name: 'require()', why: 'there is no CommonJS loader in the runner.' },
-  { re: new RegExp(String.raw`\brequire` + GAP + String.raw`\.` + GAP + String.raw`resolve\b`), name: 'require.resolve', why: 'there is no module resolution in the runner.' },
-  { re: new RegExp(String.raw`\bnew` + GAP1 + String.raw`Function` + GAP + String.raw`\(`), name: 'new Function', why: 'code generated at runtime escapes every check that guards this directory.' },
-  { re: new RegExp(String.raw`\bprocess` + GAP + String.raw`\.`), name: 'process', why: 'the runner injects no process object.' },
-  { re: /\b(?:child_process|node:child_process)\b/, name: 'child_process', why: 'a workflow script cannot shell out; use an agent dispatch.' },
-  { re: /\b(?:__dirname|__filename)\b/, name: '__dirname / __filename', why: 'module-scope values the runner does not define.' },
-  { re: /\bglobalThis\b/, name: 'globalThis', why: 'reaching past the injected globals is unsupported and unportable.' },
+  {
+    capability: C1_MODULE_LOADING,
+    re: new RegExp(String.raw`\brequire` + GAP + OPTIONAL_CALL + GAP + String.raw`\(`),
+    name: 'require()',
+    why: 'there is no CommonJS loader in the runner.',
+  },
+  {
+    capability: C1_MODULE_LOADING,
+    re: new RegExp(String.raw`\brequire` + GAP + OPTIONAL_MEMBER + GAP + String.raw`resolve\b`),
+    name: 'require.resolve',
+    why: 'there is no module resolution in the runner.',
+  },
+
+  // ── C2  CODE GENERATION FROM STRINGS ────────────────────────────────────────
+  //
+  // These four rules are ONE capability, not four spellings. A compiled string runs in
+  // the GLOBAL scope, so any of them hands back everything the seven injected globals
+  // withhold — proven with a live sentinel that returned the process uid and $HOME.
+  // `eval`, `Function` and the `*Function` intrinsics never occur in workflow prose, so
+  // they are refused as bare identifiers rather than only in call position: that is what
+  // covers `(0, eval)(…)`, `new (Function)(…)` and `const f = Function` in one rule each,
+  // instead of a punctuator list that the next round walks around.
+  {
+    capability: C2_CODE_GENERATION,
+    re: new RegExp(String.raw`\bnew` + GAP1 + String.raw`Function` + GAP + String.raw`\(`),
+    name: 'new Function',
+    why: 'code generated at runtime escapes every check that guards this directory.',
+  },
+  {
+    capability: C2_CODE_GENERATION,
+    re: /\bFunction\b/,
+    name: 'Function',
+    why:
+      'the Function constructor compiles a string in the GLOBAL scope, however it is spelled or ' +
+      'aliased — naming the binding at all is out of contract.',
+  },
+  {
+    capability: C2_CODE_GENERATION,
+    re: /\beval\b/,
+    name: 'eval',
+    why: 'direct and indirect eval both compile a string; indirect eval compiles it in the global scope.',
+  },
+  {
+    capability: C2_CODE_GENERATION,
+    re: /\b(?:Async|Generator|AsyncGenerator)Function\b/,
+    name: 'AsyncFunction / GeneratorFunction',
+    why: 'the same code-generation intrinsic reached through a constructor chain rather than by name.',
+  },
+  {
+    capability: C2_CODE_GENERATION,
+    re: new RegExp(String.raw`\.` + GAP + String.raw`constructor\b`),
+    name: '.constructor',
+    why:
+      'a function value\u2019s `.constructor` IS the Function constructor, so a constructor chain reaches ' +
+      'code generation without ever writing its name. A COMPUTED equivalent is not caught here — see ' +
+      'WHAT REMAINS OPEN in the header, and the runtime capability probe.',
+  },
+
+  // ── C3  THE GLOBAL OBJECT OR ANOTHER REALM ──────────────────────────────────
+  {
+    capability: C3_GLOBAL_OBJECT,
+    re: /\bglobalThis\b/,
+    name: 'globalThis',
+    why: 'reaching past the injected globals is unsupported and unportable.',
+  },
+
+  // ── C4  A HOST CAPABILITY THE RUNNER DOES NOT INJECT ────────────────────────
+  //
+  // `process` and `require` are ordinary English words that DO occur in the agent prompts
+  // these scripts compose, and the raw pass scans prose. So unlike the C2 names they stay
+  // anchored to a call or a member access — spanning optional chaining, which is a closed
+  // two-character production, but not arbitrary parenthesization. See the header.
+  {
+    capability: C4_HOST,
+    re: new RegExp(String.raw`\bprocess` + GAP + OPTIONAL_MEMBER),
+    name: 'process',
+    why: 'the runner injects no process object.',
+  },
+  {
+    capability: C4_HOST,
+    re: /\b(?:child_process|node:child_process)\b/,
+    name: 'child_process',
+    why: 'a workflow script cannot shell out; use an agent dispatch.',
+  },
+  {
+    capability: C4_HOST,
+    re: /\b(?:__dirname|__filename)\b/,
+    name: '__dirname / __filename',
+    why: 'module-scope values the runner does not define.',
+  },
 ])
 
 /**
@@ -461,6 +686,126 @@ export function findForbiddenConstructs(source) {
     found.push({ line, name, why, via, text: `${sourceLine}${suffix}` })
   }
   return found
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROL (A) — THE RUNTIME CAPABILITY PROBE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// This is the stronger of the two controls and it is where the weight belongs. The
+// static scan above answers "would the runner refuse to LOAD this file"; this answers
+// the capability-model question directly — "did this script reach anything the seven
+// injected globals do not provide".
+//
+// The mechanism is scope, not text. Both places that execute a workflow body — the
+// syntax checker's execution pass and the unit-test harness — compile it into a
+// function whose parameter list is the seven runner globals FOLLOWED BY every
+// out-of-contract name below. A parameter shadows the real binding for the whole body,
+// so inside the script `Function`, `eval`, `globalThis`, `process` and the rest resolve
+// to a tripwire that records the reach and throws.
+//
+// Being a scope control, it closes what no regex can:
+//
+//   const f = Function; f('return this')()   the alias resolves to the tripwire
+//   globalThis['pro' + 'cess']               the computed key hits the get trap
+//   (require)('node:fs')                     the parenthesized callee is still the binding
+//   (0, eval)('this')                        the comma expression yields the tripwire
+//
+// It does NOT close a constructor chain off an intrinsic — `({}).constructor.constructor`
+// never names a shadowed binding, and poisoning `Function.prototype.constructor` would
+// corrupt the realm the checker itself runs in. The literal spelling of that chain is
+// refused by the static scan; a computed spelling of it is refused by neither control.
+// That hole is real and is stated in the header rather than papered over.
+//
+// A probe that only threw would be evadable by a `try {} catch {}`, so every reach is
+// APPENDED TO `escapes` before the throw and callers must inspect the array after the
+// run rather than trusting that an error propagated.
+
+/** Names the runner does NOT inject, grouped by the capability category they serve. */
+export const OUT_OF_CONTRACT_GLOBALS = Object.freeze([
+  // C2 — code generation from strings
+  'eval',
+  'Function',
+  'AsyncFunction',
+  'GeneratorFunction',
+  'AsyncGeneratorFunction',
+  // C3 — the global object or another realm
+  'globalThis',
+  'global',
+  'self',
+  'window',
+  'frames',
+  // C1 — module loading (the syntax forms are the static scan's job; these are bindings)
+  'require',
+  'module',
+  'exports',
+  // C4 — host capabilities
+  'process',
+  'Buffer',
+  '__dirname',
+  '__filename',
+  'fetch',
+  'XMLHttpRequest',
+  'WebAssembly',
+])
+
+/** Thrown by a tripwire. Distinguishable so a caller can tell it from a script's own error. */
+export class CapabilityEscapeError extends Error {
+  /**
+   * @param {string} message what was reached, and how
+   */
+  constructor(message) {
+    super(message)
+    this.name = 'CapabilityEscapeError'
+  }
+}
+
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+
+/**
+ * A set of tripwire bindings for every out-of-contract global, plus the array they
+ * record into.
+ *
+ * @returns {{names: string[], values: unknown[], escapes: Array<{name: string, op: string, detail: string|null, message: string}>}}
+ *          `names`/`values` are positionally aligned, for use as parameters and arguments
+ */
+export function createCapabilityProbe() {
+  const escapes = []
+  const trip = (name, op, detail) => {
+    const message = `\`${name}\` was reached (${op}${detail ? ` ${detail}` : ''}) — the runner injects only ${RUNNER_GLOBALS.join(', ')}`
+    escapes.push({ name, op, detail: detail ?? null, message })
+    throw new CapabilityEscapeError(message)
+  }
+  const values = OUT_OF_CONTRACT_GLOBALS.map((name) =>
+    // The target is a function so that `apply` and `construct` are legal traps.
+    new Proxy(function () {}, {
+      apply: () => trip(name, 'called as a function', null),
+      construct: () => trip(name, 'used with new', null),
+      get: (_t, prop) => trip(name, 'property read', typeof prop === 'symbol' ? prop.toString() : `.${String(prop)}`),
+      has: (_t, prop) => trip(name, 'probed with in', String(prop)),
+    }),
+  )
+  return { names: [...OUT_OF_CONTRACT_GLOBALS], values, escapes }
+}
+
+/**
+ * Compile a workflow script body the way both executing models must: the seven injected
+ * globals, then a tripwire for every out-of-contract name.
+ *
+ * `typeof` on a shadowed name does NOT trip — reading a binding's type touches no trap —
+ * so a script's own `typeof budget !== 'undefined'` style guard still behaves.
+ *
+ * @param {string} source the workflow script body, with `export const meta` already neutralized
+ * @returns {{invoke: (globals: Record<string, unknown>) => Promise<unknown>, escapes: Array<object>}}
+ * @throws {SyntaxError} when the body does not parse
+ */
+export function compileWorkflowBody(source) {
+  const probe = createCapabilityProbe()
+  const fn = new AsyncFunction(...RUNNER_GLOBALS, ...probe.names, String(source))
+  return {
+    escapes: probe.escapes,
+    invoke: (globals = {}) => fn(...RUNNER_GLOBALS.map((n) => globals[n]), ...probe.values),
+  }
 }
 
 /**

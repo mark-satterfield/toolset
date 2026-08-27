@@ -33,7 +33,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findForbiddenConstructs } from './workflow-runner-constraints.mjs'
+import { findForbiddenConstructs, compileWorkflowBody, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dir = process.argv[2] || path.join(here, '..', 'workflows')
@@ -73,29 +73,43 @@ console.log(
     : `all ${checked} workflow scripts parse`
 )
 
-// ── Pass 2: EXECUTION SMOKE ────────────────────────────────────────────────────
+// ── Pass 2: EXECUTION SMOKE **AND CAPABILITY PROBE** ──────────────────────────
 //
-// Parsing is not enough, and the gap is not theoretical. `node --check` asks V8 to
-// PARSE; it never resolves identifiers, so a free variable is valid syntax and always
-// will be. task-to-deploy.js read an undeclared `spec` at two places, died with
-// `ReferenceError: spec is not defined` at Gate 1 for EVERY caller shape, and this
-// checker reported it as passing through two shipped releases.
+// Two defect classes, one execution.
 //
-// So each script is also EXECUTED, once, with the same six injected globals the runtime
-// supplies and with dispatchers that return null. Nothing reaches a network, an agent,
-// or a filesystem: `agent` and `workflow` are stubs, and a workflow script has no fs and
-// no child_process to reach for. A ReferenceError is a FAILURE; anything else is not,
-// because a script legitimately bails on a null dispatch.
+// (a) UNDECLARED IDENTIFIERS. Parsing is not enough. `node --check` asks V8 to PARSE; it
+//     never resolves identifiers, so a free variable is valid syntax and always will be.
+//     task-to-deploy.js read an undeclared `spec` at two places, died with `ReferenceError:
+//     spec is not defined` at Gate 1 for EVERY caller shape, and this checker reported it
+//     as passing through two shipped releases. So each script is EXECUTED once, with the
+//     seven injected globals the runtime supplies and dispatchers that return a plausible
+//     result. A ReferenceError is a FAILURE; anything else is not, because a script
+//     legitimately bails on a stubbed dispatch.
+//
+// (b) CAPABILITY ESCAPE — and this is the STRONGER control in the whole checker. The
+//     capability model says a workflow script may reach exactly seven bindings. Every
+//     out-of-contract name is therefore bound as a PARAMETER of the compiled body,
+//     shadowing the real one with a tripwire. Being a scope control rather than a text
+//     one, it catches what no regex can: an alias, a computed property, a parenthesized
+//     callee, a name assembled at runtime. `Function('return this')()` returned the live
+//     global object, the process uid and $HOME against 6.0.10 while pass 3 printed "free
+//     of constructs the runner refuses"; it is caught here now, as is the same reach
+//     wrapped in a `try {} catch {}`, because escapes are RECORDED before they throw and
+//     the array is inspected afterwards. See scripts/workflow-runner-constraints.mjs for
+//     the model, and for the one route neither control closes.
+//
+// Nothing reaches a network, an agent, or a filesystem.
 //
 // NOTE the standing limitation, which is what pass 3 exists for: an AsyncFunction body is
 // strictly MORE PERMISSIVE than the real runner. Constructs the runner refuses statically
 // are perfectly legal in here, so this pass can execute a script the runner would not even
 // load. Never treat a green pass 2 as evidence that the runner will accept the file.
 //
-// This is dynamic, so it covers executed paths only — the happy path plus whatever
-// branches the stubs steer into. That is enough for this defect class, which lives in
-// the contract-construction code every run touches on its way to the first gate.
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+// (a) is dynamic, so it covers executed paths only — the happy path plus whatever branches
+// the stubs steer into. That is enough for that defect class, which lives in the
+// contract-construction code every run touches on its way to the first gate. (b) is
+// dynamic for the same reason: a capability reached only down an unexecuted branch is
+// caught by pass 3 if it is spelled literally, and by nothing if it is computed.
 
 // Deliberately permissive: every top-level arg key any workflow reads, so a script gets
 // past its own input guards and reaches the code where an undeclared identifier lives.
@@ -170,39 +184,47 @@ const SMOKE_RETURN = {
   fresh: true,
 }
 
+// The seventh injected global. `budget` was missing from this pass while the capability
+// model named it, so prd-to-spec.js's budget-floor branch was never executed here.
+const SMOKE_GLOBALS = {
+  args: SMOKE_ARGS,
+  agent: async () => SMOKE_RETURN,
+  workflow: async () => SMOKE_RETURN,
+  phase: () => {},
+  log: () => {},
+  parallel: async (thunks = []) => {
+    const out = []
+    for (const t of thunks) out.push(await t())
+    return out
+  },
+  budget: { total: 1_000_000, remaining: () => 1_000_000 },
+}
+
 const refErrors = []
+const escapees = []
 let executed = 0
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) {
   const src = readFileSync(path.join(dir, file), 'utf8').replace(/^export\s+const\s+meta\s*=/m, 'const meta =')
-  let fn
+  let compiled
   try {
-    fn = new AsyncFunction('args', 'agent', 'workflow', 'phase', 'log', 'parallel', src)
+    compiled = compileWorkflowBody(src)
   } catch {
     continue // a parse failure is already reported by pass 1
   }
   executed++
   try {
     await Promise.race([
-      fn(
-        SMOKE_ARGS,
-        async () => SMOKE_RETURN,
-        async () => SMOKE_RETURN,
-        () => {},
-        () => {},
-        async (thunks = []) => {
-          const out = []
-          for (const t of thunks) out.push(await t())
-          return out
-        },
-      ),
+      compiled.invoke(SMOKE_GLOBALS),
       new Promise((_, reject) => setTimeout(() => reject(new Error('smoke execution timed out after 5s')), 5000).unref()),
     ])
   } catch (err) {
-    // ONLY an unresolved identifier is a defect here. A TypeError from a null dispatch
+    // ONLY an unresolved identifier is a defect here. A TypeError from a stubbed dispatch
     // is the stub's doing, not the script's, and failing on it would make this check
-    // unusable noise.
+    // unusable noise. A capability escape is read off `compiled.escapes`, not off the
+    // error, so that a script which CATCHES its own escape is still reported.
     if (err instanceof ReferenceError) refErrors.push({ file, error: `${err.name}: ${err.message}` })
   }
+  for (const e of compiled.escapes) escapees.push({ file, ...e })
 }
 
 for (const { file, error } of refErrors) console.log(`FAIL  ${file}  —  ${error}`)
@@ -210,6 +232,14 @@ console.log(
   refErrors.length
     ? `\n${refErrors.length} of ${executed} workflow scripts reference an UNDECLARED identifier`
     : `all ${executed} workflow scripts execute without an undeclared identifier`
+)
+
+for (const { file, message } of escapees) console.log(`FAIL  ${file}  —  CAPABILITY ESCAPE: ${message}`)
+console.log(
+  escapees.length
+    ? `\n${escapees.length} capability escape(s) — a script reached past the ${RUNNER_GLOBALS.length} injected globals`
+    : `all ${executed} workflow scripts reached ONLY the ${RUNNER_GLOBALS.length} injected globals ` +
+        `(${RUNNER_GLOBALS.join(', ')}) on the paths executed`
 )
 
 // ── Pass 3: RUNNER STRICTNESS ──────────────────────────────────────────────────
@@ -253,7 +283,8 @@ for (const f of strictness) {
 console.log(
   strictness.length
     ? `\n${strictness.length} runner-strictness violation(s) — these scripts CANNOT LOAD in production`
-    : `all ${checked} workflow scripts are free of constructs the runner refuses`,
+    : `all ${checked} workflow scripts are free of the LITERALLY SPELLED constructs the runner refuses ` +
+        `(a computed or aliased reach is pass 2's job, not this one)`,
 )
 
-process.exit(failures.length || refErrors.length || strictness.length ? 1 : 0)
+process.exit(failures.length || refErrors.length || escapees.length || strictness.length ? 1 : 0)

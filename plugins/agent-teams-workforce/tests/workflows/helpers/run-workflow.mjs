@@ -15,9 +15,7 @@
 // laxer than the runner, a green suite means nothing — see assertRunnerLoadable below.
 
 import { readFileSync } from 'node:fs'
-import { assertRunnerLoadable } from '../../../scripts/workflow-runner-constraints.mjs'
-
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+import { assertRunnerLoadable, compileWorkflowBody } from '../../../scripts/workflow-runner-constraints.mjs'
 
 /** Read the raw workflow source (for source-text assertions, e.g. D1-AC1's grep clause). */
 export function readWorkflowSource(absPath) {
@@ -32,9 +30,10 @@ export function readWorkflowSource(absPath) {
  * @param {object} opts.args         the `args` global the script parses
  * @param {function} opts.agentImpl  (call, calls) => scripted result for agent() dispatches
  * @param {function} opts.workflowImpl (call, calls) => scripted result for workflow() dispatches
+ * @param {object} [opts.budget]     the seventh injected global; undefined unless a test supplies one
  * @returns {Promise<{result: any, calls: Array}>}
  */
-export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflowImpl } = {}) {
+export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflowImpl, budget } = {}) {
   const raw = readFileSync(absPath, 'utf8')
   // The runner accepts ONE top-level export — `meta` — and rejects the script on a
   // second one before any phase runs. Stripping every `export const` made this
@@ -83,8 +82,26 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
     return out
   }
 
-  const fn = new AsyncFunction('args', 'agent', 'workflow', 'phase', 'log', 'parallel', transformed)
-  const result = await fn(args, agent, workflow, phase, log, parallel)
+  // The harness executes a workflow body, so it carries the SAME capability probe the
+  // syntax checker's execution pass does — out-of-contract names are shadowed by
+  // tripwires, and a reach is recorded before it throws. Two models, one control: a
+  // harness laxer than the checker is precisely the gap that shipped 6.0.6, and a
+  // capability escape that only the checker notices is the same defect one level up.
+  const compiled = compileWorkflowBody(transformed)
+  let result
+  try {
+    result = await compiled.invoke({ args, agent, workflow, phase, log, parallel, budget })
+  } finally {
+    // Checked in `finally` so a script that CATCHES its own escape is still reported,
+    // and so an escape is reported even when the script then fails for another reason.
+    if (compiled.escapes.length) {
+      throw new Error(
+        `${absPath}: CAPABILITY ESCAPE — this script reached past the globals the runner injects, ` +
+          `so a passing test here would be meaningless.\n` +
+          compiled.escapes.map((e) => `  ${e.message}`).join('\n'),
+      )
+    }
+  }
   return { result, calls }
 }
 
