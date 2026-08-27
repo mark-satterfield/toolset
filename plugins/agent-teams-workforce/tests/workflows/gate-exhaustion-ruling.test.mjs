@@ -64,7 +64,9 @@ async function runToExhaustion(ruling) {
       }
       if (call.name === 'agent-teams-workforce:tdd-red') return RED_ARTIFACT
       if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, evidence: 'passing', changedFiles: ['src/s.py'] }
-      if (call.name === 'agent-teams-workforce:deploy') return { prOpened: true, prUrl: 'https://github.com/o/r/pull/7', deployedToDev: true }
+      // Deploy reports the two facts Gate 5 asserts. It reports nothing about a pull
+      // request — landing is the Settle step, and a PR is not deploy evidence.
+      if (call.name === 'agent-teams-workforce:deploy') return { deployedToDev: true, smokePassed: true }
       return {}
     },
   })
@@ -99,7 +101,8 @@ test('an exhausted gate consults the EXISTING advantage-evaluator — it is neve
 test('a COMPETITIVE ruling proceeds, with the unmet criterion recorded as a carried flag', async () => {
   const { result, calls } = await runToExhaustion(COMPETITIVE)
   assert.equal(result.ok, true, 'the pipeline must not halt for a non-invalidating finding — this is ssbd-97as')
-  assert.equal(result.stage, 'deploy-to-dev', 'and it must run all the way to the end, not stop where the gate objected')
+  assert.equal(result.stage, 'deployed-to-dev', 'and it must run all the way to the end, not stop where the gate objected')
+  assert.equal(result.deployedToDev, true, 'the terminal stage token names a deployment, so a deployment must have happened')
   assert.match(
     result.headline,
     /PROCEEDED UNDER 1 carried flag/,

@@ -25,9 +25,36 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-test('deploy still requires a feature branch in a worktree', () => {
+// The worktree requirement used to be asserted against deploy.js, because deploy.js
+// was where the pipeline opened its pull request. It no longer opens one: deploying to
+// AWS dev and landing the work in git are separate things, and landing belongs to the
+// composites' Settle step. So the requirement is pinned where it now lives — a deploy
+// mini that never touches git has no business restating a git rule.
+test('landing still requires a feature branch in a verified worktree, in every composite', () => {
+  for (const composite of ['task-to-deploy', 'bug-fix', 'infra-change']) {
+    const src = read(`workflows/${composite}.js`);
+    assert.match(
+      src,
+      /settle refused to commit in \$\{wt\}: the workspace step did not affirm it is a linked worktree/,
+      `${composite}: settle must refuse to commit into a tree the workspace step did not verify`,
+    );
+    assert.match(
+      src,
+      /SETTLE_DEFAULT_BRANCHES/,
+      `${composite}: settle must refuse the default branch — skillspoke-pr runs on the CURRENT branch`,
+    );
+  }
+});
+
+test('the deploy mini opens no pull request and depends on none', () => {
   const src = read('workflows/deploy.js');
-  assert.match(src, /IN A WORKTREE/i, 'if this requirement is dropped, the entry command should stop creating one');
+  assert.doesNotMatch(src, /skillspoke-pr/, 'deploy must not open a PR — landing is the Settle step');
+  assert.doesNotMatch(src, /deploy:ship-pr/, 'the PR-opening dispatch must be gone from the deploy mini');
+  assert.doesNotMatch(
+    src,
+    /prOpened/,
+    'deploy reports nothing about pull requests; a PR is not evidence of a deployment',
+  );
 });
 
 test('a workflow phase — not a command — creates the worktree', () => {

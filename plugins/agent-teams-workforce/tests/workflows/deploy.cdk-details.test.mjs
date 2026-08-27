@@ -41,7 +41,6 @@ function deployResponders(overrides = {}) {
       concerns: [],
     },
     'deploy:gate5-verdict': { ready: true, findings: [] },
-    'deploy:ship-pr': { prOpened: true, prUrl: 'https://github.com/satteritsik/fixture/pull/2', gatesPassed: true },
     'deploy:rollout-dev': { deployed: true, stacks: [], smokePassed: true },
     ...overrides,
   }

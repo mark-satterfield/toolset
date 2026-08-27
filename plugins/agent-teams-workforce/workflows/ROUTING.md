@@ -36,7 +36,7 @@ Notes on order:
   `feature` type and a `bug`/`infra` label; the more specific kind wins.
 - **Spec-ready (rule 3) is checked before feature (rule 4)** on purpose. A
   feature that *already* has an implementation-ready spec skips prd-to-spec
-  re-derivation and goes straight to the build-and-ship tail. Without a
+  re-derivation and goes straight to the build-and-deploy tail. Without a
   `spec*`/`implementation` label, a feature falls through to rule 4 and runs
   prd-to-spec first.
 

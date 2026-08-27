@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
+    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-deploy tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the code in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, up to a bounded number of attempts. No pull request exists or is required while that is happening. Only afterwards does Settle land the work in git — commit, push, PR — on every exit path. Gate 5 asserts deployedToDev and smokePassed; a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Spec Freshness' },
@@ -10,8 +10,8 @@ export const meta = {
     { title: 'Refactor' },
     { title: 'Integration' },
     { title: 'Adversarial' },
-    { title: 'Deploy-to-dev' },
-    { title: 'Settle', detail: 'lands the work — commit, push, PR — on EVERY exit path; never evidence a work phase completed' },
+    { title: 'Deploy-to-dev', detail: 'deploys to AWS dev and smoke-checks the deployed endpoints; re-enters Green and redeploys on a smoke failure, bounded' },
+    { title: 'Settle', detail: 'lands the work in git — commit, push, PR — AFTER deployment, on EVERY exit path; never evidence a work phase completed, and never a precondition of deploying' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -32,6 +32,7 @@ export const meta = {
 //                                // which is what /work-bead and /next-task actually send.
 //   implementer?: string,        // override the Green-phase implementer agent (default chassis-extension-implementer)
 //   maxLoops?: number,           // bounded retries per gate (default 2)
+//   maxDeployIterations?: number,// bounded deploy → smoke → fix → REDEPLOY cycles (default 3)
 // }
 //
 // The header used to document `args.spec` while the body read `args.bead`, and two bare
@@ -52,6 +53,24 @@ const spec = a.spec || bead
 //
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
+// ── The deploy → smoke → fix → REDEPLOY budget ────────────────────────────────
+//
+// A gate loop and a deploy iteration are not the same thing and cannot substitute for one
+// another. MAX_LOOPS re-runs a phase to produce a BETTER ARTIFACT and judges it again; a
+// deploy iteration re-runs the phase because the ARTIFACT WAS FINE AND REALITY DISAGREED —
+// the code deployed to AWS dev and the smoke tests, which can only run against a deployed
+// environment, then failed there.
+//
+// Deploy used to be one-shot: a smoke failure inside the rollout just failed the artifact,
+// and the gate loop's answer was to re-run the readiness mini, not to fix anything and try
+// again. That is not how deploying to a dev environment works. Dev is where things are
+// found out, and the honest cycle is deploy, test, fix, deploy, test — possibly several
+// times, and entirely BEFORE a pull request is a sensible thing to open.
+//
+// Three is the bound because a fix that has not held after three deployed attempts is not
+// converging, and each iteration costs a real AWS rollout. On exhaustion the run FAILS and
+// the headline names the smoke failure; it never quietly passes.
+const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item' }
 // A code-writing composite with no repository cannot write anywhere it can later land
 // from, and a run that proceeded blind then reported a phantom orphan at the end. Refuse
@@ -352,10 +371,18 @@ async function settleRun() {
 //                    but say WHY, and never claim a URL was withheld by an agent that
 //                    never ran.
 //   reported       — the only world in which "orphaned" is an honest word.
+// ── STAGE VOCABULARY: two different facts, two different words ────────────────
+// `deployed-to-dev` means the code is live in AWS dev. `landed` means the work is in git
+// with a pull request open. They are independent — a run can be deployed and unlanded, or
+// landed and never deployed — and the single old `deploy-to-dev` token could not tell a
+// reader which of the two it was asserting. `landingStage` carries the git fact; the
+// pipeline `stage` carries the AWS fact. The FIELD names a dashboard reads for each
+// (`deployedToDev` for AWS, `settled`/`prUrl` for git) are unchanged.
 function applySettle(res, settle) {
   const status = (settle && settle.status) || 'error'
   if (status === 'not-applicable') {
     res.landed = false
+    res.landingStage = 'not-applicable'
     res.settled = 'not-applicable'
     res.settleNote = (settle && settle.reason) || 'no repo path was established'
     log(`Settle: not applicable — ${res.settleNote}`)
@@ -363,6 +390,7 @@ function applySettle(res, settle) {
   }
   if (status === 'error') {
     res.landed = false
+    res.landingStage = 'unlanded'
     res.ok = false
     res.settleFailed = { error: (settle && settle.error) || 'the settle step failed without an error message' }
     return
@@ -372,6 +400,7 @@ function applySettle(res, settle) {
   // is the whole point; proceeding would have committed onto the default branch.
   if (status === 'blocked') {
     res.landed = false
+    res.landingStage = 'unlanded'
     res.ok = false
     res.settled = 'blocked'
     res.orphaned = {
@@ -385,6 +414,7 @@ function applySettle(res, settle) {
   const PR_OK = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(String(settle.prUrl || '').trim())
   const landed = settle.treeClean === true && (settle.hasWork === false || PR_OK)
   res.landed = landed
+  res.landingStage = landed ? 'landed' : 'unlanded'
   res.prUrl = PR_OK ? String(settle.prUrl).trim() : null
   res.settled = 'reported'
   if (!landed) {
@@ -824,18 +854,23 @@ if (red.alreadySatisfied) {
 }
 
 // ── Green (Gate 2b) ───────────────────────────────────────────────────────────
+// `let`, not `const`: the Deploy phase below can send the run back through Green when the
+// DEPLOYED dev environment fails its smoke tests, and the redeploy must build on the fix
+// rather than on the artifact the deployed environment just disproved.
+const GREEN_CRITERIA = [
+  'The previously-failing test now passes',
+  'No other tests regressed',
+  'The change is minimal and the test was not weakened',
+]
+const GREEN_CHECKS = [
+  { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
+  { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
+]
 enterPhase('Green')
-const green = await gateLoop({
+let green = await gateLoop({
   gate: '2b', phaseName: 'TDD Green',
-  criteria: [
-    'The previously-failing test now passes',
-    'No other tests regressed',
-    'The change is minimal and the test was not weakened',
-  ],
-  checks: [
-    { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
-    { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
-  ],
+  criteria: GREEN_CRITERIA,
+  checks: GREEN_CHECKS,
   escalateTargets: ['spec-freshness', 'red'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
 })
@@ -917,38 +952,159 @@ if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
 // lifecycle, not a release. A change cannot be integration-tested in AWS until
 // it is IN AWS. This phase runs deploy.js, which deploys to dev and smoke-tests
 // the deployed endpoints. Outward-facing qa/prod rollout never happens here.
-enterPhase('Deploy-to-dev')
-const deployReady = await gateLoop({
-  gate: '5', phaseName: 'Deploy to dev',
-  criteria: [
-    'CDK synth valid, no unresolved drift',
-    'Smoke tests present',
-    'Deployed to the dev environment',
-    'Smoke tests pass against the deployed dev endpoints',
-  ],
-  checks: [
-    { field: 'prOpened', equals: true, label: 'a pull request was opened for this work' },
-    { field: 'prUrl', nonEmpty: true, label: 'the PR URL was reported' },
-  ],
-  escalateTargets: ['integration', 'green'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
-})
-if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), deployReady)
+//
+// WHAT GATE 5 ASSERTS, AND WHY IT CHANGED. Its deterministic checks used to be
+// `prOpened === true` and a non-empty `prUrl` — so the one mechanically-enforced
+// condition on the phase that puts code in AWS was that a pull request existed in
+// GitHub. A pull request is a proposed migration; it is not a deployment to any
+// environment, and it is not evidence that one happened. Meanwhile `deployedToDev`
+// was computed by deploy.js and returned to this file and never asserted by
+// anything, so the run could report success having deployed nothing at all.
+// Deployment evidence is the criterion now: the two facts the phase is answerable
+// for are that the code reached AWS dev and that the smoke suite passed there.
+//
+// AND IT ITERATES. Smoke tests run only against a deployed environment, so a smoke
+// failure is not a reason to re-run the readiness review — it is a defect the
+// deployed environment has just proved, and the answer is to fix it and deploy
+// again. Each iteration re-enters Green with the smoke failure as its feedback,
+// then redeploys and re-smokes.
+const deployIterations = []
+let deployReady = null
+let deployIteration = 0
+let smokeFeedback = ''
+for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIteration++) {
+  enterPhase('Deploy-to-dev')
+  // Distinct per-iteration telemetry so a monitor can render "deploy #2" rather than
+  // showing one deploy phase that mysteriously takes three times as long.
+  log(`Deploy to dev — iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS} (stage deploy-to-dev#${deployIteration})`)
+  const iterationFeedback = smokeFeedback
+  deployReady = await gateLoop({
+    gate: '5', phaseName: `Deploy to dev (iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS})`,
+    criteria: [
+      'CDK synth valid, no unresolved drift',
+      'Smoke tests present',
+      'Deployed to the dev environment',
+      'Smoke tests pass against the deployed dev endpoints',
+    ],
+    checks: [
+      { field: 'deployedToDev', equals: true, label: 'the change was deployed to the AWS dev environment' },
+      { field: 'smokePassed', equals: true, label: 'the smoke tests passed against the deployed dev endpoints' },
+    ],
+    escalateTargets: ['integration', 'green'],
+    phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
+      contract, green: green.artifact, docCurrency,
+      feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
+    }),
+  })
+  const deployArtifact = deployReady.artifact || {}
+  if (deployArtifact.ledger) runLedger.push(deployArtifact.ledger)
+  const iterationRow = {
+    phase: 'deploy-iteration',
+    stage: `deploy-to-dev#${deployIteration}`,
+    gate: '5',
+    iteration: deployIteration,
+    maxIterations: MAX_DEPLOY_ITERATIONS,
+    deployedToDev: deployArtifact.deployedToDev === true,
+    smokePassed: deployArtifact.smokePassed === true,
+    ok: !!deployReady.ok,
+  }
+  deployIterations.push(iterationRow)
+  runLedger.push(iterationRow)
+  if (deployReady.ok) break
+
+  // WHY IT FAILED decides whether iterating can possibly help. A smoke failure against a
+  // DEPLOYED environment is the case this loop exists for: the code is in AWS and behaving
+  // wrongly, which is a fixable defect. Anything else — the rollout never happened, the
+  // readiness verdict blocked it, the gate escalated — is not repaired by deploying the
+  // same artifact again, so it fails here rather than burning two more AWS rollouts.
+  const smokeFailedInDev = deployArtifact.deployedToDev === true && deployArtifact.smokePassed !== true
+  if (!smokeFailedInDev) {
+    return {
+      ...handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
+      deployedToDev: deployArtifact.deployedToDev === true,
+      smokePassed: deployArtifact.smokePassed === true,
+      deployIteration,
+    }
+  }
+  const smokeEvidence =
+    (deployArtifact.rollout && (deployArtifact.rollout.evidence || (deployArtifact.rollout.findings || []).join('; '))) ||
+    'the deploy phase reported no smoke output'
+  const smokeHeadline =
+    `deployed to AWS dev on iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS}, but the smoke tests FAILED ` +
+    `against the deployed dev endpoints: ${smokeEvidence}`
+  if (deployIteration >= MAX_DEPLOY_ITERATIONS) {
+    // Never a silent pass. The bound is spent, the environment is still wrong, and the
+    // headline says which of the two facts failed.
+    return {
+      ...handback(
+        false,
+        'deploy-to-dev',
+        `${bead.id || 'work item'} ${smokeHeadline}. The deploy → fix → redeploy budget of ` +
+          `${MAX_DEPLOY_ITERATIONS} iteration(s) is spent and the deployed environment is still failing its smoke tests.`,
+        { ...deployReady, deployIterations, smokeFailure: smokeEvidence }
+      ),
+      deployedToDev: true,
+      smokePassed: false,
+      deployIteration,
+    }
+  }
+  log(`Deploy to dev — iteration ${deployIteration} smoke FAILED in AWS dev; re-entering Green to fix, then redeploying`)
+  smokeFeedback =
+    `The previous deploy iteration (${deployIteration}/${MAX_DEPLOY_ITERATIONS}) DID reach the AWS dev environment, ` +
+    `and the smoke tests then FAILED against the deployed endpoints. This is a real defect the deployed ` +
+    `environment has proved, not a test-harness problem. Smoke failure: ${smokeEvidence}`
+
+  // Back through Green — the fix — then round the loop to deploy again. Red is not
+  // re-run: the failing contract it encoded is unchanged, and what is being corrected is
+  // the production code that satisfies it in a deployed environment.
+  enterPhase('Green')
+  green = await gateLoop({
+    gate: '2b', phaseName: `TDD Green (deploy iteration ${deployIteration + 1}/${MAX_DEPLOY_ITERATIONS})`,
+    criteria: GREEN_CRITERIA,
+    checks: GREEN_CHECKS,
+    escalateTargets: ['spec-freshness', 'red'],
+    phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', {
+      contract, red: red.artifact, implementer: a.implementer,
+      feedback: [smokeFeedback, feedback].filter(Boolean).join('\n\n'),
+    }),
+  })
+  if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
+  if (!green.ok) return await failAfterDoc('green', green)
+}
 
 // The success return is where the bloat was worst: the whole contract plus eight complete
 // phase artifacts. All of it goes to the journal; the caller gets the one line that says
 // what happened and the path to the rest. Carried flags are named in the headline rather
 // than buried, because a run that proceeded past an unmet criterion is not the same run as
 // one that met every one of them.
-return handback(
+//
+// THE HEADLINE MAY ONLY CLAIM WHAT THE GATE MEASURED. It used to assert the work was
+// "built and DEPLOYED TO DEV, smoke-checked against the deployed endpoints" while Gate 5
+// verified neither of those things — it checked that a pull request existed. Gate 5 now
+// asserts `deployedToDev` and `smokePassed` as deterministic checks, so those are exactly
+// the two claims made here, read back off the artifact the gate passed. Nothing is said
+// about a pull request: landing happens in Settle, after this, and the caller reads it
+// from `settled` / `prUrl` / `landingStage`.
+const finalDeploy = deployReady.artifact || {}
+const deployedToDev = finalDeploy.deployedToDev === true
+const smokePassed = finalDeploy.smokePassed === true
+const iterationNote = deployIterations.length > 1 ? ` after ${deployIterations.length} deploy iterations` : ''
+return {
+  ...handback(
   true,
-  'deploy-to-dev',
-  `${bead.id || 'work item'} built and DEPLOYED TO DEV, smoke-checked against the deployed endpoints; ` +
-    'outward-facing qa/prod rollout is a separate human-gated action and did not happen here.' +
+  'deployed-to-dev',
+  `${bead.id || 'work item'} built and ${
+    deployedToDev
+      ? `DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests ${smokePassed ? 'PASSING against the deployed dev endpoints' : 'NOT confirmed passing against the deployed dev endpoints'}`
+      : 'gated through deploy WITHOUT a confirmed dev deployment'
+  }. Landing the work in git — commit, push, pull request — is the separate Settle step ` +
+    'reported under `settled` / `prUrl`, and outward-facing qa/prod rollout is a separate human-gated action that did not happen here.' +
     (carriedFlags.length ? ` PROCEEDED UNDER ${carriedFlags.length} carried flag(s): ${carriedFlags.join(' | ')}` : ''),
   {
-    stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-to-dev'],
+    stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deployed-to-dev'],
+    deployedToDev,
+    smokePassed,
+    deployIterations,
     carriedFlags,
     contract,
     results: {
@@ -957,7 +1113,13 @@ return handback(
       deployReadiness: deployReady.artifact, documentation: docCurrency,
     },
   }
-)
+  ),
+  // AWS truth, on the value the caller actually receives — the same two names the
+  // monitoring dashboard reads. Git truth is added on top by applySettle.
+  deployedToDev,
+  smokePassed,
+  deployIteration: deployIterations.length,
+}
   })()
 } finally {
   // The journal is written FIRST, because it is now the only place the run's detail exists

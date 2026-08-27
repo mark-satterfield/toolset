@@ -1,8 +1,8 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy (Gate 5). A read-only deployment-lead selects the readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) and the deployment-strategy-decider rules the rollout plan; smoke tests, CDK synth/drift, and the selected artifacts feed a readiness review that returns a go/no-go. On a go, it DEPLOYS TO DEV via the wave sequencer and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
-  phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke + readiness review, then open the PR and roll out to dev' }],
+    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. A read-only deployment-lead selects the readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) and the deployment-strategy-decider rules the rollout plan; smoke tests, CDK synth/drift, and the selected artifacts feed a readiness review that returns a go/no-go. On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
+  phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke authoring + readiness review, then roll out to AWS dev and smoke-check the deployed endpoints' }],
 }
 
 // args: { contract, green, docCurrency?, feedback? }
@@ -58,9 +58,8 @@ if (contractPathFault) {
   return {
     ok: false,
     readiness: { ready: false },
-    prOpened: false,
-    prUrl: null,
     deployedToDev: false,
+    smokePassed: false,
     deployedToProd: false,
     blocked: [
       `${contractPathFault}. This phase refuses the contract rather than dispatching it: the path would ` +
@@ -210,8 +209,10 @@ const readinessArtifacts = artifactSpecs.length
   : []
 
 // deployment-strategy-decider DECIDES the rollout PLAN (wave order, rollout style, risk)
-// for the human-gated rollout. It does NOT execute it — wave-deployment-sequencer performs
-// the actual rollout and is deliberately NOT invoked here (rollout is human-gated).
+// for the rollout below. It DECIDES only; the rollout itself is executed further down by
+// cdk-stack-author (single repo) or wave-deployment-sequencer (multi-repo). Deciding the
+// plan and executing it are separate agents on purpose — the decider never deploys.
+// Only the outward-facing qa/prod rollout is human-gated, and it never happens from here.
 const strategy = await agent(
   `You are the deployment-strategy-decider. Decide the rollout strategy for this change: wave order (cross-repo), rollout style (canary / rolling / blue-green), and the risk level — with rationale. You ONLY decide the plan; you do NOT execute the rollout (that is a separate human-gated action).
 
@@ -277,7 +278,7 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
 let readiness = await agent(
   `GATE 5 — DEPLOY READINESS. Rule on whether this change may roll out to the ${(a.env || c.env || 'dev').toLowerCase()} environment. Return ready=true (proceed) or ready=false (block), with reasons.
 
-CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever ships and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out. That uncertainty default is scoped to PROCESS artifacts (absent FinOps, SLOs, runbook, pipeline authoring): it does not apply to unit/integration test evidence. Missing, unconfirmed, or unreported test results are a blocking gap, not uncertainty.
+CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever reaches AWS and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out. That uncertainty default is scoped to PROCESS artifacts (absent FinOps, SLOs, runbook, pipeline authoring): it does not apply to unit/integration test evidence. Missing, unconfirmed, or unreported test results are a blocking gap, not uncertainty.
 
 DEPLOYMENT IS NOT THE FINAL STATE, AND IT IS NOT A REWARD FOR PASSING EVERY TEST. It is the step that makes the remaining evidence obtainable. Some tests — every post-deployment smoke test — can only run against a deployed environment, so requiring them to pass BEFORE deploying is circular and permanently deadlocks the pipeline. Never do it.
 
@@ -334,64 +335,45 @@ const targetEnv = (a.env || c.env || 'dev').toLowerCase()
 const rolloutAllowed = targetEnv === 'dev'
 const multiRepo = a.multiRepo === true || c.multiRepo === true
 
-// ── Ship: open the PR ─────────────────────────────────────────────────────────
-// Until 2026-08-07 NO script in this pipeline set opened a PR. Every composite run
-// ended with committed work stranded on a branch, silently violating the definition
-// of done ("a PR is opened with skillspoke-pr") — which is why callers kept hand-
-// rolling PR creation into ad-hoc agent prompts beside the pipeline.
-// MERGE IS NOT THIS STAGE'S JOB. The PR flow owns it: skillspoke-pr posts the
-// CodeRabbit review request, shepherd-pr iterates the findings, and the merge lands
-// through that flow. This stage must never run `gh pr merge` behind it.
-// Opening a PR is a source-control action with no environment dimension. Gating it on
-// `rolloutAllowed` (targetEnv === 'dev') switched shipping off for every non-dev
-// invocation, stranding committed work on an un-PR'd branch and reporting ok.
-const shipEnabled = a.ship !== false
-let ship = null
-// A FAILED readiness review is the single most likely moment for work to strand, and it
-// was exactly the moment PR creation was skipped. Rollout keeps its `readiness.ready`
-// guard below, so nothing reaches AWS unreviewed — only the branch gets pushed and reviewed.
-if (shipEnabled) {
-  ship = await agent(
-    `Open a pull request for this change. Repo: ${repo}
+// ── DEPLOYING IS NOT LANDING, AND NEITHER ONE IS A PRECONDITION OF THE OTHER ──
+//
+// This mini used to open a pull request here, immediately BEFORE the rollout, and then
+// make the rollout conditional on that PR step having reported `gatesPassed`. Both halves
+// were wrong, and they were wrong in the same way: a pull request is a migration proposed
+// in GitHub. It says nothing about any environment, and it is not evidence that anything
+// was deployed anywhere.
+//
+// The ordering it produced was backwards for what this pipeline is actually for. The goal
+// is to get code into the AWS dev environment, which sits squarely inside the TESTING part
+// of the lifecycle — and the honest shape of that work is deploy, test, fix, deploy, test,
+// possibly several times over, BEFORE a pull request is ever a sensible thing to open. A
+// PR opened at deploy time proposes work that the deploy is about to prove is not finished.
+//
+// So the PR step is gone from here. Landing — commit, push, open the PR — belongs to the
+// calling composite's Settle step, which already does exactly that, runs on every exit path
+// including this one, and is the only place in the pipeline that touches git. Before this
+// change git was touched twice per run, from two different steps, with two different
+// agents; now there is one landing step and it is not this one.
+//
+// WHAT THE ROLLOUT ACTUALLY REQUIRES is the GATES, not the PR agent. The gates the deleted
+// step ran were the test suite and `cdk synth` — and both are already established here as
+// evidence rather than as an agent's self-report:
+//   - the test suite, by the machine-checked Green artifact (`greenEvidenceOk` above), which
+//     the Gate 5 backstop already refuses to let a prose verdict overrule;
+//   - `cdk synth`, by the cdk-infrastructure-drift-detector's own read-only validation run.
+// `ruff check` was the third, and it is a LANDING gate, not a deploy-safety gate: it is
+// enforced by the pre-commit hooks that Settle must satisfy to commit at all. Lint does not
+// decide whether bytes may reach dev.
+// Both conditions are read off artifacts this mini produced, so the rollout depends on
+// measured results and not on whether some other step happened to run first.
+const cdkSynthOk = !cdk ? false : cdk.applicable === false ? true : cdk.synthValid === true
+const localGatesOk = greenEvidenceOk && cdkSynthOk
 
-SEQUENCE
-0. Pin yourself to the right tree FIRST: \`cd "${repo}" && git rev-parse --show-toplevel\` and confirm it prints \`${repo}\`. You may be running in an isolation worktree, so a bare \`git status\` can inspect the wrong repository copy. Run every git command as \`git -C "${repo}"\`, and stay inside \`${repo}\` for skillspoke-pr — it has no \`-C\` flag and must run from inside the tree.
-1. Confirm the work is committed on a feature branch IN A WORKTREE and pushed to origin. Never branch in a main working tree. If work is uncommitted, commit it as \`type(scope): description\` with NO \`Co-Authored-By\` header.
-2. Run the repo's gates LOCALLY FIRST: the test suite, \`ruff check\`, and \`npx cdk synth\`. Check this repo's \`.github/workflows\` before assuming CI will catch anything — most service repos in this fleet have none, in which case the only PR checks are CodeRabbit and Socket Security, neither of which runs tests, lint, or synth. Your local run is the ONLY real gate. If any gate fails, STOP and report; do not open the PR on known-broken work.
-3. Open the PR with \`/Users/msat1971/.local/bin/skillspoke-pr\`. NEVER \`gh pr create\` — CodeRabbit does not scan PRs opened under an agent token, so \`gh pr create\` yields an unreviewed PR.
-   \`skillspoke-pr\` prints the PR URL on success and is idempotent: if a PR already exists for this head it returns that PR's URL, which is success, not failure. Trust its exit status.
-
-DO NOT MERGE. Do not run \`gh pr merge\`. Merging is owned by the PR flow (CodeRabbit review, then shepherd-pr iteration), not by this pipeline. Opening the PR is where your job ends.
-
-HARD LIMITS
-- NEVER bypass a quality gate. \`--no-verify\` is forbidden in every form. If a hook fails, fix findings, restage, retry; if they cannot be fixed, abort with no commit and report.
-- Report the literal PR URL exactly as \`skillspoke-pr\` printed it. Never claim a PR you did not observe the command return.`,
-    {
-      label: 'deploy:ship-pr',
-      phase: 'Deploy-readiness',
-      // deployment-lead has no Bash and no Write (deployment-lead.md:6-7), so it could not
-      // run git, ruff, cdk synth or skillspoke-pr — it could only refuse or fabricate.
-      agentType: 'agent-teams-workforce:github-actions-pipeline-implementer',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['prOpened', 'gatesPassed'],
-        properties: {
-          prOpened: { type: 'boolean' },
-          prUrl: { type: 'string' },
-          gatesPassed: { type: 'boolean' },
-          findings: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    }
-  )
-}
-
-// Rollout targets dev, which is NOT mainline-gated — dev is how code reaches AWS for
-// fast feedback, and the PR merges asynchronously through the review flow. So rollout
-// does not wait on the merge; it does require the local gates to have passed.
+// Rollout targets dev, which is NOT mainline-gated — dev is how code reaches AWS for fast
+// feedback, and it deliberately does not wait on a branch being merged, reviewed, or even
+// proposed. It requires only the readiness verdict and the gates above.
 let rollout = null
-if (readiness && readiness.ready && rolloutAllowed && (!shipEnabled || (ship && ship.gatesPassed))) {
+if (readiness && readiness.ready && rolloutAllowed && localGatesOk) {
   rollout = await agent(
     `Deploy this change to the DEV environment (AWS account 616930583457, us-east-1).
 
@@ -435,23 +417,32 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
   )
 }
 
-// A boolean the shipping agent reports about its own work is not evidence. A real
-// PR always has a real URL, so derive prOpened from the URL's shape rather than
-// trusting the flag beside it.
-const PR_URL_RE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/
-const prUrl = ship && typeof ship.prUrl === 'string' && PR_URL_RE.test(ship.prUrl.trim()) ? ship.prUrl.trim() : null
-const prOpened = !!(ship && ship.prOpened) && !!prUrl
+// THE TWO FACTS THIS MINI IS ANSWERABLE FOR, hoisted to the top level of the result so a
+// gate can check them MECHANICALLY rather than reading prose. `deployedToDev` is whether
+// the bytes reached AWS dev; `smokePassed` is whether the suite that runs only against a
+// deployed environment then passed there. Gate 5 asserts both, and the monitoring
+// dashboard reads `deployedToDev` for AWS truth — so both names are load-bearing and stay.
+// `smokePassed` used to live only inside `rollout`, where a flat deterministic check could
+// not see it, which is how a gate came to assert a PR URL instead.
+// Nothing about a pull request is reported here any more, because this mini no longer
+// performs one. Git truth comes from the composite's Settle step (`settled`, `prUrl`).
+const deployedToDev = !!(rollout && rollout.deployed)
+const smokePassed = !!(rollout && rollout.smokePassed)
 
 const ledger = {
   phase: 'deploy',
+  // The honest stage token. `deployed-to-dev` means the code is live in AWS dev — nothing
+  // more and nothing less. It is never a claim about git.
+  stage: deployedToDev ? 'deployed-to-dev' : 'not-deployed',
   beadId: (c.bead && c.bead.id) || null,
   chosen: ['deployment-lead', 'smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), 'deployment-strategy-decider', 'production-readiness-review-facilitator', ...(rollout ? [multiRepo ? 'wave-deployment-sequencer' : 'cdk-stack-author'] : [])],
   mode: selectionMode,
   env: targetEnv,
-  prOpened,
-  prUrl,
-  rolledOut: !!(rollout && rollout.deployed),
-  ok: !!(readiness && readiness.ready) && (!shipEnabled || prOpened) && (!rolloutAllowed || !!(rollout && rollout.deployed && rollout.smokePassed)),
+  localGatesOk,
+  deployedToDev,
+  smokePassed,
+  rolledOut: deployedToDev,
+  ok: !!(readiness && readiness.ready) && (!rolloutAllowed || (deployedToDev && smokePassed)),
 }
 
-return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, ship, rollout, env: targetEnv, prOpened, prUrl, deployedToDev: !!(rollout && rollout.deployed), deployedToProd: false, ledger }
+return { plan, smoke, cdk, readinessArtifacts, strategy, readiness, rollout, env: targetEnv, localGatesOk, deployedToDev, smokePassed, deployedToProd: false, ledger }
