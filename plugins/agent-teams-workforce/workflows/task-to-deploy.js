@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is.',
+    'Composite — drives an approved spec from freshness check through TDD (Red, Green, Refactor), Integration, Adversarial, and Deploy-to-dev. Stitches the spec-freshness front-end onto the shared build-and-ship tail via mini workflows, with an independent gate between phases and Documentation as a parallel track started after Green and awaited before deploy. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. Deploy DEPLOYS TO DEV and smoke-checks the deployed endpoints — that is how code reaches AWS and is not human-gated; only outward-facing qa/prod rollout is. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Spec Freshness' },
@@ -70,11 +70,29 @@ if (!String(bead.repoPath || '').trim()) {
 // Telemetry must never be able to paint a work phase complete, so it reports
 // under a phase that claims nothing about the work.
 const runLedger = []
+// Findings a gate could not get resolved inside its retry budget and that the
+// advantage-evaluator then ruled COMPETITIVE — carried forward rather than fatal. See
+// the exhaustion ruling below.
+const carriedFlags = []
+// ── The full detail, and where it goes ────────────────────────────────────────
+// Everything a phase produced used to travel back to the CALLER: the whole contract plus
+// every phase artifact under `results`, and `detail: <entire phase result>` at each
+// failure return. Those are complete artifacts — authored test files, captured suite
+// output, adjudications — and single runs came back with 8.5k, 21k and 22k characters
+// truncated off the end. A campaign is hundreds of runs, so the DISPATCHING session dies
+// long before the campaign finishes. That is a defect in the caller's context window, not
+// in the run.
+//
+// So the detail stops crossing that boundary and goes to the run journal instead; the
+// caller receives the path. Nothing INSIDE the composite changes — every phase still
+// hands its full artifact to the next one, and to its gate. Only the value that crosses
+// back out is trimmed.
+let runDetail = null
 async function persistRun(outcome) {
-  if (!runLedger.length) return
+  if (!runLedger.length && !runDetail) return null
   try {
-    await agent(
-      `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'task-to-deploy', bead: null, subject: bead.id || null, outcome, runLedger })}`,
+    const written = await agent(
+      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. JSON payload:\n${JSON.stringify({ composite: 'task-to-deploy', bead: null, subject: bead.id || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
       {
         label: 'ledger:persist',
         phase: 'Run Ledger',
@@ -92,8 +110,10 @@ async function persistRun(outcome) {
         },
       }
     )
+    return (written && written.path) || null
   } catch (e) {
     log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
+    return null
   }
 }
 
@@ -377,6 +397,125 @@ function applySettle(res, settle) {
   }
 }
 
+// ── The meta phase currently in progress ──────────────────────────────────────
+// Every agent() dispatch names the phase it belongs to, and the phase titles are the
+// ones in `meta` above. gateLoop is handed the gate's HUMAN name ("TDD Red"), which is
+// not one of them, so the title is captured here as the composite enters each phase and
+// the ruling dispatched from inside gateLoop can name it correctly.
+let currentPhase = null
+function enterPhase(title) {
+  currentPhase = title
+  phase(title)
+}
+
+// ── What the CALLER receives ──────────────────────────────────────────────────
+// One shape, everywhere: `{ ok, stage, beadId, headline, detailPath }`. The headline is
+// the one line a caller can act on without opening anything; `detailPath` (attached in
+// the `finally` below, once the journal has been written) is where everything else went.
+// The settle verdict is added on top by applySettle — that is the run's LANDING status,
+// not phase state, it is a handful of scalars, and an orphaned worktree must be
+// impossible to miss.
+function handback(ok, stage, headline, detail) {
+  runDetail = detail === undefined ? null : detail
+  return { ok, stage, beadId: bead.id || null, headline: String(headline || '') }
+}
+
+// Turn a gate result into that one line. An exhausted or escalated gate already knows
+// WHAT was unmet and on what evidence; a headline that says only "green failed" makes
+// the caller open the journal to learn anything at all.
+function gateHeadline(stage, r) {
+  const unmet = (r && r.unmetCriteria) || []
+  const why = (r && r.reason) || (r && r.escalate ? `escalated to ${r.escalate}` : 'the gate did not pass')
+  const first = unmet.length ? ` — unmet: ${unmet[0].criterion}` : ''
+  const more = unmet.length > 1 ? ` (+${unmet.length - 1} more)` : ''
+  return `${stage}: ${why}${first}${more}`
+}
+
+// ── Loop exhaustion is a RULING, not a halt ───────────────────────────────────
+//
+// Spending the retry budget says nothing about whether the objection that REMAINS
+// invalidates the work. MAX_LOOPS' own comment above states the intent — "One rework
+// round, then proceed with the finding recorded" — and the code did the opposite:
+// exhaustion returned ok:false, every caller treats ok:false as terminal, and the run
+// died. It died identically whether the unmet criterion was a security violation or a
+// reviewer's opinion that coverage was incomplete, which erases the distinction this
+// framework is built on — constitutive findings are hard stops, competitive ones proceed
+// under a flag.
+//
+// ssbd-97as is the case that proves the cost. A P0 live outage reached the Red gate with
+// redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
+// clean, and not one production file touched. The blocking objection was "AC5 partially
+// covered — two of three clauses unassessed". The budget ran out and nothing shipped.
+//
+// So an exhausted gate now asks the agent whose entire purpose is that ruling. The
+// advantage-evaluator already applies the advantage principle at a PASSING gate inside
+// gate-enforce and "never halts the pipeline for non-invalidating findings"; this is the
+// same question arriving from the other end of the loop, and it is dispatched the same
+// way. It is given the unmet criteria, the artifact the phase produced, and the gate's
+// DETERMINISTIC-check results — those last matter most, because a check the gate measured
+// directly against the artifact is not a matter of opinion and must not be waived as one.
+//
+// It FAILS CLOSED. An evaluator that throws, returns nothing, or names no ruling has not
+// ruled anything competitive; reading silence as permission would turn every dispatch
+// failure into a waived gate.
+async function ruleExhaustion(ctx) {
+  const unmet = ctx.unmetCriteria || []
+  const dchecks = (ctx.verdict && ctx.verdict.deterministicChecks) || []
+  try {
+    return await agent(
+      `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${MAX_LOOPS} attempt(s) and the criteria below are still unmet.
+
+This is NOT a request to re-judge the work, and it is NOT a request to halt. Rule on ONE question: does what remains INVALIDATE the artifact, or does it merely make it less than ideal?
+
+- "constitutive": the finding invalidates the work. A security violation, a broken contract, an assertion that cannot hold, a claim the evidence does not support, or work that was never actually produced. Only these stop a run.
+- "competitive": the finding is a quality or completeness opinion the work survives. Partial coverage of an acceptance criterion, an unassessed edge case, a style preference, a reviewer wanting more than was asked for. These are recorded as flags and the pipeline PROCEEDS — you never halt for a non-invalidating finding.
+
+A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh.
+
+Unmet criteria after ${MAX_LOOPS} attempt(s):
+${unmet.length ? unmet.map((c, i) => `${i + 1}. ${c.criterion}\n   evidence: ${c.evidence || '(none given)'}`).join('\n') : '(the gate named none)'}
+
+Deterministic checks this gate evaluated directly against the artifact:
+${dchecks.length ? dchecks.map((c) => `- ${c.criterion}: ${c.met ? 'MET' : 'NOT MET'} — ${c.evidence}`).join('\n') : '(this gate declared none)'}
+
+The artifact the phase produced:
+${JSON.stringify(ctx.artifact === undefined ? null : ctx.artifact, null, 2)}
+
+Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rule "competitive" and classify each finding.`,
+      {
+        label: `advantage:exhausted-${ctx.gate}`,
+        phase: currentPhase || 'Triage',
+        agentType: 'agent-teams-workforce:advantage-evaluator',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ruling', 'findings', 'rationale'],
+          properties: {
+            ruling: { type: 'string', enum: ['competitive', 'constitutive'] },
+            findings: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['criterion', 'classification', 'rationale'],
+                properties: {
+                  criterion: { type: 'string' },
+                  classification: { type: 'string', enum: ['competitive', 'constitutive'] },
+                  rationale: { type: 'string' },
+                },
+              },
+            },
+            rationale: { type: 'string' },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`advantage-evaluator failed to rule on gate ${ctx.gate} exhaustion: ${e && e.message ? e.message : e}`)
+    return null
+  }
+}
+
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
@@ -465,17 +604,55 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
-  // Record the REAL final verdict, not null. A terminal ledger row with `criteria: []`
-  // cannot distinguish a genuine defect from an over-strict criterion — which is the one
-  // question anyone asks about an exhausted gate.
-  recordGate(MAX_LOOPS, lastVerdict, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
+  // The budget is spent. Before this is called a failure, the ONE agent with authority to
+  // say whether the remaining findings invalidate the work is asked — see ruleExhaustion.
+  const exhaustedUnmet = lastVerdict
+    ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))
+    : []
+  const ruling = await ruleExhaustion({ gate, phaseName, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
+  // TRUTHINESS IS NOT A RULING. A result object that came back without a `ruling` field
+  // has not ruled anything, and reading it as one made a malformed reply indistinguishable
+  // from a considered "constitutive" — which is the reporting half of the same fail-closed
+  // mistake the verdict half already avoids.
+  const ruled = !!(ruling && (ruling.ruling === 'competitive' || ruling.ruling === 'constitutive'))
+  const competitive = !!(ruling && ruling.ruling === 'competitive')
+  // Record the REAL final verdict, not null, and the ruling made on it. A terminal ledger
+  // row with `criteria: []` cannot distinguish a genuine defect from an over-strict
+  // criterion — which is the one question anyone asks about an exhausted gate.
+  recordGate(MAX_LOOPS, lastVerdict, {
+    verdict: competitive ? 'loop-exhausted-competitive' : 'loop-exhausted',
+    terminal: competitive ? 'proceeded-under-flag' : 'loop-exhausted',
+    advantageRuling: ruling || null,
+  })
+  if (competitive) {
+    const flags = exhaustedUnmet.map((cc) => `gate ${gate} (${phaseName}) proceeded with an unmet criterion: ${cc.criterion}${cc.evidence ? ` — ${cc.evidence}` : ''}`)
+    for (const f of flags) carriedFlags.push(f)
+    log(`Gate ${gate} (${phaseName}): budget spent — advantage-evaluator ruled the remaining finding(s) COMPETITIVE; proceeding with ${flags.length} flag(s) recorded`)
+    return {
+      ok: true,
+      loopExhausted: true,
+      ruledCompetitive: true,
+      carriedFlags: flags,
+      advantageRuling: ruling,
+      artifact: lastArtifact,
+      verdict: lastVerdict,
+      unmetCriteria: exhaustedUnmet,
+      attempts,
+    }
+  }
+  log(
+    `Gate ${gate} (${phaseName}): budget spent — ` +
+      (ruled ? 'advantage-evaluator ruled the remaining finding(s) CONSTITUTIVE' : 'no ruling came back, so the findings are treated as constitutive (fail closed)')
+  )
   return {
     ok: false,
-    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`,
+    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops and the remaining finding(s) were ruled constitutive${ruled ? '' : ' by default — the advantage-evaluator returned no ruling'}`,
     loopExhausted: true,
+    ruledCompetitive: false,
+    advantageRuling: ruling || null,
     artifact: lastArtifact,
     verdict: lastVerdict,
-    unmetCriteria: lastVerdict ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [],
+    unmetCriteria: exhaustedUnmet,
     attempts,
   }
 }
@@ -492,7 +669,7 @@ try {
 // this pipeline creates one, so without this step every writing phase edits whatever
 // tree the caller pointed at — which twice meant `main` in a main working tree, the
 // one place the project's own rules forbid, with no branch for settle to push.
-phase('Workspace')
+enterPhase('Workspace')
 const workspace = await workflow('agent-teams-workforce:workspace', {
   repoPath: bead.repoPath,
   beadId: bead.id,
@@ -523,12 +700,13 @@ const workspaceShapeFault = !workspace
             : null
 if (workspaceShapeFault) {
   return {
-    ok: false,
-    stage: 'workspace',
+    ...handback(
+      false,
+      'workspace',
+      `no verified worktree was established (${workspaceShapeFault}) — refusing to write into the tree the caller pointed at`,
+      { workspaceShapeFault, workspace: workspace || null }
+    ),
     workspaceShapeFault,
-    bead: bead.id,
-    reason: `no verified worktree was established (${workspaceShapeFault}) — refusing to write into the tree the caller pointed at`,
-    detail: workspace || null,
   }
 }
 // THE tree, from here on. Not the caller's path: the caller supplies a repository,
@@ -544,7 +722,7 @@ settleIsLinkedWorktree = workspace.isLinkedWorktree === true
 settleDefaultBranch = workspace.defaultBranch || null
 if (workspace.ledger) runLedger.push(workspace.ledger)
 
-phase('Spec Freshness')
+enterPhase('Spec Freshness')
 log(`Validating freshness of ${bead.id || '(no id)'} — ${bead.title || ''}`)
 const freshness = await gateLoop({
   gate: '1', phaseName: 'Spec Freshness',
@@ -556,7 +734,7 @@ const freshness = await gateLoop({
   phaseFn: () => workflow('agent-teams-workforce:spec-freshness', { spec }),
 })
 if (freshness.artifact && freshness.artifact.ledger) runLedger.push(freshness.artifact.ledger)
-if (!freshness.ok) return { ok: false, stage: 'spec-freshness', bead: bead.id, detail: freshness }
+if (!freshness.ok) return handback(false, 'spec-freshness', gateHeadline('spec-freshness', freshness), freshness)
 
 // The fresh, build-ready contract every downstream tail mini consumes. It carries
 // the spec's repo path and acceptance criteria so Red/Green/etc. thread correctly.
@@ -595,7 +773,7 @@ settleRepoPath = contract.repoPath
 if (contractSurfaces.length) log(`Contract surfaces: ${contractSurfaces.join(', ')} — specialist test writers will be derived from these`)
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
-phase('Red')
+enterPhase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
   criteria: [
@@ -627,21 +805,26 @@ const red = await gateLoop({
   phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract, feedback, skipDiscovery: !!(loop && loop.attempt > 1) }),
 })
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
-if (!red.ok) return { ok: false, stage: 'red', bead: bead.id, detail: red }
+if (!red.ok) return handback(false, 'red', gateHeadline('red', red), red)
 // Red found the contract already encoded by PASSING tests: the behavior exists.
 // Green would be asked to make a failing test pass when none fails, so the run
 // ends here — successfully, with nothing built. Closing the work item is a human
 // call, not something this composite does on its own.
 if (red.alreadySatisfied) {
   return {
-    ok: true, stage: 'red', bead: bead.id, alreadySatisfied: true, built: false,
-    reason: 'the spec contract is already satisfied by passing tests — no Red is obtainable and nothing was authored or changed',
-    detail: red.artifact,
+    ...handback(
+      true,
+      'red',
+      'the spec contract is already satisfied by passing tests — no Red is obtainable and nothing was authored or changed',
+      red.artifact
+    ),
+    alreadySatisfied: true,
+    built: false,
   }
 }
 
 // ── Green (Gate 2b) ───────────────────────────────────────────────────────────
-phase('Green')
+enterPhase('Green')
 const green = await gateLoop({
   gate: '2b', phaseName: 'TDD Green',
   criteria: [
@@ -657,7 +840,7 @@ const green = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
 })
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
-if (!green.ok) return { ok: false, stage: 'green', bead: bead.id, detail: green }
+if (!green.ok) return handback(false, 'green', gateHeadline('green', green), green)
 
 // Documentation runs ALONGSIDE the rest of the tail — started here (after Green),
 // awaited before deploy.
@@ -667,11 +850,11 @@ const docTrack = workflow('agent-teams-workforce:documentation', { contract, gre
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
 async function failAfterDoc(stage, detail) {
   await Promise.allSettled([docTrack])
-  return { ok: false, stage, bead: bead.id, detail }
+  return handback(false, stage, gateHeadline(stage, detail), detail)
 }
 
 // ── Refactor (Gate 2c) ────────────────────────────────────────────────────────
-phase('Refactor')
+enterPhase('Refactor')
 const refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
   criteria: [
@@ -686,7 +869,7 @@ if (refactor.artifact && refactor.artifact.ledger) runLedger.push(refactor.artif
 if (!refactor.ok) return await failAfterDoc('refactor', refactor)
 
 // ── Integration (Gate 3) ──────────────────────────────────────────────────────
-phase('Integration')
+enterPhase('Integration')
 const integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
   criteria: [
@@ -705,7 +888,7 @@ if (integration.artifact && integration.artifact.ledger) runLedger.push(integrat
 if (!integration.ok) return await failAfterDoc('integration', integration)
 
 // ── Adversarial (Gate 4 — constitutional) ─────────────────────────────────────
-phase('Adversarial')
+enterPhase('Adversarial')
 const adversarial = await gateLoop({
   gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
   criteria: [
@@ -734,7 +917,7 @@ if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
 // lifecycle, not a release. A change cannot be integration-tested in AWS until
 // it is IN AWS. This phase runs deploy.js, which deploys to dev and smoke-tests
 // the deployed endpoints. Outward-facing qa/prod rollout never happens here.
-phase('Deploy-to-dev')
+enterPhase('Deploy-to-dev')
 const deployReady = await gateLoop({
   gate: '5', phaseName: 'Deploy to dev',
   criteria: [
@@ -751,23 +934,38 @@ const deployReady = await gateLoop({
   phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', { contract, green: green.artifact, docCurrency, feedback }),
 })
 if (deployReady.artifact && deployReady.artifact.ledger) runLedger.push(deployReady.artifact.ledger)
-if (!deployReady.ok) return { ok: false, stage: 'deploy-to-dev', bead: bead.id, detail: deployReady }
+if (!deployReady.ok) return handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), deployReady)
 
-return {
-  ok: true,
-  bead: bead.id,
-  stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-to-dev'],
-  note: 'DEPLOYED TO DEV and smoke-checked against the deployed endpoints. Outward-facing qa/prod rollout is a separate human-gated action and did not happen here.',
-  contract,
-  results: {
-    freshness: freshness.artifact, red: red.artifact, green: green.artifact, refactor: refactor.artifact,
-    integration: integration.artifact, adversarial: adversarial.artifact,
-    deployReadiness: deployReady.artifact, documentation: docCurrency,
-  },
-}
+// The success return is where the bloat was worst: the whole contract plus eight complete
+// phase artifacts. All of it goes to the journal; the caller gets the one line that says
+// what happened and the path to the rest. Carried flags are named in the headline rather
+// than buried, because a run that proceeded past an unmet criterion is not the same run as
+// one that met every one of them.
+return handback(
+  true,
+  'deploy-to-dev',
+  `${bead.id || 'work item'} built and DEPLOYED TO DEV, smoke-checked against the deployed endpoints; ` +
+    'outward-facing qa/prod rollout is a separate human-gated action and did not happen here.' +
+    (carriedFlags.length ? ` PROCEEDED UNDER ${carriedFlags.length} carried flag(s): ${carriedFlags.join(' | ')}` : ''),
+  {
+    stagesComplete: ['spec-freshness', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deploy-to-dev'],
+    carriedFlags,
+    contract,
+    results: {
+      freshness: freshness.artifact, red: red.artifact, green: green.artifact, refactor: refactor.artifact,
+      integration: integration.artifact, adversarial: adversarial.artifact,
+      deployReadiness: deployReady.artifact, documentation: docCurrency,
+    },
+  }
+)
   })()
 } finally {
-  await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
+  // The journal is written FIRST, because it is now the only place the run's detail exists
+  // and the caller's `detailPath` is the path this returns. A journal that could not be
+  // written yields detailPath:null — an honest "the detail is gone", never a path to a file
+  // nobody wrote.
+  const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
+  if (result) result.detailPath = detailPath || null
   const settle = await settleRun()
   if (result) applySettle(result, settle)
 }

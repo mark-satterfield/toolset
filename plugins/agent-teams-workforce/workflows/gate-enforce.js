@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-enforce',
   description:
-    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Remaining JUDGMENT criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate. On a pass that carries competitive (non-constitutive) flags, the advantage-evaluator applies the advantage principle — proceed-under-flag or revert — without ever halting the pipeline. Enforces segregation of duties: the judge never produced the work it judges.',
+    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Remaining JUDGMENT criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate. On a pass that carries competitive (non-constitutive) flags, the advantage-evaluator applies the advantage principle — proceed-under-flag or revert — without ever halting the pipeline. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. Enforces segregation of duties: the judge never produced the work it judges.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
 
@@ -92,6 +92,7 @@ if (!criteria.length && !checks.length) {
     feedback: `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}) was invoked with no pass criteria and no deterministic checks — refusing to adjudicate. Supply the gate's criteria upstream.`,
     escalateTo: (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
     flags: ['gate-misconfiguration: empty criteria'],
+    deterministicChecks: checkResults,
   }
 }
 
@@ -106,6 +107,7 @@ if (failedChecks.length) {
     feedback: `The phase did not meet a mechanically-verified condition, so there is nothing to adjudicate: ${detail}. Fix that and re-run; do not argue the observation.`,
     flags: [],
     deterministic: true,
+    deterministicChecks: checkResults,
   }
 }
 
@@ -118,6 +120,7 @@ if (!criteria.length) {
     feedback: 'All criteria for this gate were mechanically verified against the artifact and hold.',
     flags: [],
     deterministic: true,
+    deterministicChecks: checkResults,
   }
 }
 
@@ -210,7 +213,14 @@ ${verdict.flags.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
       },
     }
   )
-  return { ...verdict, advantage: advantage || null }
+  return { ...verdict, advantage: advantage || null, deterministicChecks: checkResults }
 }
 
-return verdict
+// The deterministic results ride out on EVERY verdict, not just the ones this file
+// short-circuits on. On the judgment path they reach the enforcer only as prose in
+// `settledBlock` and never appeared in the returned verdict at all — so the caller
+// holding a `loop` verdict could not tell a criterion that was MEASURED against the
+// artifact from one that was argued about. That distinction is the whole basis on which
+// an exhausted gate is ruled competitive or constitutive upstream: a mechanically-settled
+// failure is not a matter of opinion and must never be waived as one.
+return verdict ? { ...verdict, deterministicChecks: checkResults } : verdict

@@ -115,6 +115,31 @@ export function workflowCalls(calls, name) {
   return calls.filter((c) => c.kind === 'workflow' && c.name === name)
 }
 
+/**
+ * The payload a composite handed to the run journal.
+ *
+ * Composites no longer return their phase artifacts to the caller — a single run came back
+ * with 22k characters truncated off the end, and a campaign of hundreds killed the
+ * dispatching session. The detail goes to the run-ledger-writer instead and the caller
+ * gets `detailPath`. Tests that used to assert against `result.detail` assert against this.
+ *
+ * @returns {{ detail: any, runLedger: any[], carriedFlags: string[] }|null}
+ */
+export function journalPayload(calls) {
+  const call = calls.find((c) => c.kind === 'agent' && c.label === 'ledger:persist')
+  if (!call) return null
+  const marker = 'JSON payload:\n'
+  const i = call.prompt.indexOf(marker)
+  if (i < 0) return null
+  return JSON.parse(call.prompt.slice(i + marker.length))
+}
+
+/** Just the `detail` a composite journalled — what `result.detail` used to hold. */
+export function journalDetail(calls) {
+  const payload = journalPayload(calls)
+  return payload ? payload.detail : null
+}
+
 /** Index of the first agent() dispatch with the given label, or -1. */
 export function agentCallIndex(calls, label) {
   return calls.findIndex((c) => c.kind === 'agent' && c.label === label)

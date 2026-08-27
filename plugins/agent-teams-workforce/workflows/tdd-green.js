@@ -169,6 +169,31 @@ const GREEN_SCHEMA = {
     changedFiles: { type: 'array', items: { type: 'string' } },
     greenConfirmed: { type: 'boolean' },
     evidence: { type: 'string' },
+    // ── THE CONTRADICTION CHANNEL ────────────────────────────────────────────
+    // An implementer can be blocked by something no amount of implementation fixes:
+    // the failing test asserts one outcome for an input, and ANOTHER test — already
+    // passing — asserts the opposite outcome for the identical input. Nobody in the
+    // pipeline could act on that. This implementer may not modify a test, the gate is
+    // right to fail a test that does not pass, and re-authoring only regenerates one
+    // side of the disagreement. Without somewhere to SAY it, the observation was lost
+    // and the run deadlocked until a human read the logs.
+    //
+    // It is deliberately a structured field rather than prose in `notes`: the caller
+    // routes it to the test-strategy-decider, which needs both tests and the GIVEN
+    // they share to rule which contract binds.
+    contradiction: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['testA', 'testB', 'sharedGiven', 'evidence'],
+      properties: {
+        testA: { type: 'string' },
+        testB: { type: 'string' },
+        sharedGiven: { type: 'string' },
+        expectedA: { type: 'string' },
+        expectedB: { type: 'string' },
+        evidence: { type: 'string' },
+      },
+    },
     notes: { type: 'string' },
   },
 }
@@ -177,6 +202,11 @@ const GREEN_SCHEMA = {
 // they never edit the same files concurrently. The final pass confirms the suite is Green.
 let green = null
 const changedFiles = []
+// The FIRST contradiction any implementer reports, kept separately. Only the LAST
+// implementer's result is spread into the return below, so a contradiction observed by an
+// earlier one in the sequence would otherwise be dropped — and it is the one finding in
+// this phase that nothing downstream can rediscover.
+let contradiction = null
 for (const impl of implementers) {
   green = await agent(
     `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed. Work within the repository at: ${repo}
@@ -187,6 +217,8 @@ ${repo}
 ${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
+IF TWO TESTS CONTRADICT EACH OTHER, REPORT IT — do not pick a side and do not keep trying. There is one blocker you cannot fix and must not attempt to: the failing test requires one outcome for an input, and another test that ALREADY PASSES requires the opposite outcome for that identical input. No implementation satisfies both, so every further attempt re-proves the same impossibility. You may not modify a test, and neither may the gate, so the only correct move is to say so: fill in \`contradiction\` with both test identifiers, the precondition they share, what each one expects, and the executed output showing they cannot both hold. Which contract is right is not yours to decide — it is ruled by an agent with that authority, and your report is what reaches it. Report a contradiction ONLY for genuinely opposite expectations over the same input; a test that is merely wrong on its own terms is a defective test, which you report in your evidence as usual.
+
 Constraints: minimum change to pass; do not modify the test to make it pass; honor SkillSpoke code-quality rules (timeouts, backoff, idempotency, explicit error handling). Deliver the changed files, whether Green is confirmed, and the captured passing output.`,
     {
       label: `green:${impl}`,
@@ -196,6 +228,10 @@ Constraints: minimum change to pass; do not modify the test to make it pass; hon
     }
   )
   if (green && Array.isArray(green.changedFiles)) changedFiles.push(...green.changedFiles)
+  if (!contradiction && green && green.contradiction && green.contradiction.testA && green.contradiction.testB) {
+    contradiction = green.contradiction
+    log(`Green: '${impl}' reports a test contradiction — ${contradiction.testA} and ${contradiction.testB} assert opposite outcomes for the same input`)
+  }
 }
 
 // Decision ledger — what this phase actually did, for over-time mining.
@@ -207,6 +243,7 @@ const ledger = {
   chosen: implementers,
   mode: selectionMode,
   ok: !!(green && green.greenConfirmed),
+  contradiction: !!contradiction,
 }
 
-return { ...(green || {}), changedFiles, ledger }
+return { ...(green || {}), changedFiles, contradiction, ledger }

@@ -16,7 +16,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runWorkflowScript } from './helpers/run-workflow.mjs'
+import { runWorkflowScript, journalPayload } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
@@ -68,12 +68,19 @@ if (name.endsWith('prd-reconciliation')) {
   }
 }
 
+// The budget accounting is no longer RETURNED — composites hand their phase detail to the
+// run journal and give the caller a path, because returning it killed the dispatching
+// session over a campaign. `journal` is where `result.budget` now lives, and asserting
+// against it tests the same accounting through the channel that actually carries it.
 async function runRepos(repos, extraArgs = {}) {
-  return runWorkflowScript(prdToSpec, {
+  const run = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, ...extraArgs },
     workflowImpl: cleanRun(repos),
     agentImpl: () => null,
   })
+  const payload = journalPayload(run.calls)
+  const detail = payload && payload.detail
+  return { ...run, journal: detail && (detail.partial ? detail : detail) , budget: (detail && detail.budget) || null }
 }
 
 for (const n of [1, 2, 3, 5]) {
@@ -84,7 +91,7 @@ for (const n of [1, 2, 3, 5]) {
     assert.equal(
       result.ok,
       true,
-      `a perfect run with zero retries must always fit the budget; failed at ${result.stage}: ${JSON.stringify(result.detail || result.decompositionFailures || '').slice(0, 300)}`,
+      `a perfect run with zero retries must always fit the budget; failed at ${result.stage}: ${String(result.headline || '').slice(0, 300)}`,
     )
     assert.equal(result.hierarchy.stories.length, n, 'one Story per repo')
     assert.equal(result.hierarchy.tasks.length, n, 'every Story decomposed — none starved by the budget')
@@ -96,36 +103,38 @@ test('the budget floor scales with repo count rather than being a flat constant'
   const four = await runRepos(['/repo-a', '/repo-b', '/repo-c', '/repo-d'])
 
   assert.ok(
-    four.result.budget.maxTotalAttempts > one.result.budget.maxTotalAttempts,
+    four.budget.maxTotalAttempts > one.budget.maxTotalAttempts,
     'more repos means more legitimate per-repo phases, so the ceiling must rise with them',
   )
   // 3 fixed + 2 per repo is the zero-retry cost; the ceiling must clear it.
   for (const [n, r] of [[1, one], [4, four]]) {
     assert.ok(
-      r.result.budget.maxTotalAttempts >= 3 + 2 * n,
+      r.budget.maxTotalAttempts >= 3 + 2 * n,
       `a ${n}-repo run needs at least ${3 + 2 * n} attempts to succeed with no retries at all`,
     )
   }
 })
 
 test('the budget still leaves headroom for retries, and still bounds them', async () => {
-  const { result } = await runRepos(['/repo-a', '/repo-b'])
+  const { budget } = await runRepos(['/repo-a', '/repo-b'])
   const floor = 3 + 2 * 2
-  assert.ok(result.budget.maxTotalAttempts > floor, 'a run with no retry headroom would fail on the first gate objection')
+  assert.ok(budget.maxTotalAttempts > floor, 'a run with no retry headroom would fail on the first gate objection')
   // MAX_LOOPS is 2, so the pathological ceiling is 2x the zero-retry cost. Staying
   // under it is what keeps the runaway protection meaningful.
-  assert.ok(result.budget.maxTotalAttempts < floor * 2, 'the ceiling must still bite before every gate has looped to exhaustion')
+  assert.ok(budget.maxTotalAttempts < floor * 2, 'the ceiling must still bite before every gate has looped to exhaustion')
 })
 
 test('an explicit maxTotalAttempts still overrides the scaled default', async () => {
-  const { result } = await runRepos(['/repo-a', '/repo-b', '/repo-c'], { maxTotalAttempts: 99 })
-  assert.equal(result.budget.maxTotalAttempts, 99, 'the caller override must win over the computed floor')
+  const { budget } = await runRepos(['/repo-a', '/repo-b', '/repo-c'], { maxTotalAttempts: 99 })
+  assert.equal(budget.maxTotalAttempts, 99, 'the caller override must win over the computed floor')
 })
 
 test('a starved budget reports the repo count so the cause is legible', async () => {
   const { result } = await runRepos(['/repo-a', '/repo-b', '/repo-c'], { maxTotalAttempts: 4 })
   assert.equal(result.ok, false, 'a budget below the zero-retry cost cannot complete')
-  const text = JSON.stringify(result)
+  // The headline, not the journal: a caller that has to open a file to learn WHY its run
+  // stopped has not been told. This is what the trimmed return has to keep carrying.
+  const text = String(result.headline || '')
   assert.match(text, /budget exhausted/, 'the failure must name the budget')
   assert.match(text, /3 repo\(s\)/, 'and the repo count, since that is what drives the cost')
 })

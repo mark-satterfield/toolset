@@ -96,5 +96,10 @@ work — correctly, because a Task with no Story has no Spec to build against.
 - PRD: located, or minted from the Epic
 - Stories: how many, and which repo each covers
 - Tasks: how many, and the story-dependency edge count
-- Any gate that blocked, with its feedback verbatim
+- Any gate that blocked — the composite's `headline` carries the phase, the reason and
+  the first unmet criterion; the full gate feedback and every phase artifact are in the
+  run journal at `detailPath`. The composite no longer returns its phase artifacts: a
+  single run came back truncated and a campaign of them killed the dispatching session.
+  A blocked run also names what it DID produce under `partialProduced` — read the journal
+  before re-running, because a fresh run reproduces exactly that work.
 - The exact next command: `/agent-teams-workforce:work-bead <first task id>`

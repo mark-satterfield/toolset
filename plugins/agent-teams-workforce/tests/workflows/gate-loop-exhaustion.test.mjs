@@ -12,7 +12,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runWorkflowScript } from './helpers/run-workflow.mjs'
+import { runWorkflowScript, journalDetail } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const WORKTREE = '/repos/.worktrees/ssbd-36fn-chassis'
@@ -27,9 +27,19 @@ const LOOP_VERDICT = {
 }
 const FINAL_ARTIFACT = { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e', greenReachable: true, marker: 'LAST' }
 
-/** Exhaust the first WRITING gate of a composite and return the gateLoop result. */
+/**
+ * Exhaust the first WRITING gate of a composite and return the gateLoop result.
+ *
+ * The gateLoop result no longer travels back to the CALLER — composites hand their phase
+ * detail to the run journal and return a `detailPath`, because returning it truncated
+ * single runs and killed the session over a campaign. So the shape is asserted where it
+ * now lives. The scripted agent here answers every dispatch, including the
+ * advantage-evaluator the exhausted gate consults: it names no ruling, which is the
+ * fail-closed path, so the gate still fails and the exhaustion shape is still what is
+ * under test.
+ */
 async function exhaust(file, writingGate, entryGate) {
-  const { result } = await runWorkflowScript(path.join(WF, file), {
+  const { result, calls } = await runWorkflowScript(path.join(WF, file), {
     args: { maxLoops: 2, bead: { id: 'ssbd-36fn', title: 'x', description: 'd', repoPath: '/repos/chassis' } },
     agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
@@ -47,7 +57,8 @@ async function exhaust(file, writingGate, entryGate) {
       return FINAL_ARTIFACT
     },
   })
-  return result.detail
+  assert.equal(result.ok, false, 'a gate whose remaining findings are not ruled competitive must still fail the run')
+  return journalDetail(calls)
 }
 
 const CASES = [
@@ -89,9 +100,23 @@ test('all four gateLoop copies return the same exhaustion shape', async () => {
   const { readFileSync } = await import('node:fs')
   for (const f of ['bug-fix.js', 'task-to-deploy.js', 'infra-change.js', 'prd-to-spec.js']) {
     const src = readFileSync(path.join(WF, f), 'utf8')
-    for (const key of ['loopExhausted: true', 'verdict: lastVerdict', 'unmetCriteria: lastVerdict', 'attempts,']) {
+    // `unmetCriteria` is now computed ONCE into `exhaustedUnmet` — the exhausted gate hands
+    // it to the advantage-evaluator as well as returning it, and deriving it twice is how
+    // two of the copies diverged in the first place.
+    for (const key of ['loopExhausted: true', 'verdict: lastVerdict', 'unmetCriteria: exhaustedUnmet', 'attempts,']) {
       assert.ok(src.includes(key), `${f} is missing "${key}" from its loop-exhausted return`)
     }
+    // The ruling is the point: exhaustion is adjudicated, not assumed fatal, and it must
+    // fail closed when no ruling comes back.
+    assert.ok(src.includes('await ruleExhaustion('), `${f} calls no decider on loop exhaustion — the budget running out is not a ruling`)
+    assert.ok(
+      src.includes("ruling.ruling === 'competitive'"),
+      `${f} must proceed ONLY on an explicit competitive ruling — anything else, including no ruling at all, fails closed`,
+    )
+    assert.ok(
+      src.includes("agentType: 'agent-teams-workforce:advantage-evaluator'"),
+      `${f} must route the exhaustion ruling to the EXISTING advantage-evaluator, not a new authority`,
+    )
     assert.ok(
       src.includes('recordGate(MAX_LOOPS, lastVerdict') || src.includes('MAX_LOOPS, lastVerdict'),
       `${f} still records a null verdict at exhaustion — the ledger's terminal row then carries no criteria at all`,

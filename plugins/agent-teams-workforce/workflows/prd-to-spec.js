@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent: a PRD whose requirements are all built is closed, a delta that is really a defect or an infrastructure switch is rerouted to bug-fix or infra-change, and everything that continues is specified against the DELTA PRD — the absent and partial requirements — never the original ambition. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. One level only: this composite calls minis and gates, never another composite.',
+    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent: a PRD whose requirements are all built is closed, a delta that is really a defect or an infrastructure switch is rerouted to bug-fix or infra-change, and everything that continues is specified against the DELTA PRD — the absent and partial requirements — never the original ambition. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The caller receives { ok, stage, beadId, headline, detailPath } plus the emitted hierarchy and bead set; every phase artifact goes to the run journal.',
   phases: [
     { title: 'PRD Reconciliation', detail: 'establish what already ships BEFORE any gate is spent; everything downstream reads the delta PRD' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
@@ -110,6 +110,11 @@ const budgetStop = () => {
   return null
 }
 
+// The work item this run is about. This composite has no bead of its own — the Epic is
+// minted downstream — so the caller's PRD or request identifies it, and every return names
+// it under the same key the code-writing composites use.
+const subjectId = (a.prd && (a.prd.id || a.prd.path)) || (a.request && a.request.id) || (a.epic && a.epic.key) || null
+
 // ── Partial results ─────────────────────────────────────────────────────────────
 // Every stage used to end `return { ok:false, stage, detail }`, which threw away
 // everything the run had already produced. A gate objection at Architecture
@@ -118,16 +123,31 @@ const budgetStop = () => {
 // on EVERY exit path. A spec with one open question is worth more than {ok:false},
 // and the caller — not this script — decides whether it is enough to act on.
 const produced = {}
-const partial = (stage, detail, extra) => ({
-  ok: false,
-  stage,
-  detail,
-  // Everything the run got to before it stopped. Absent keys mean "never reached".
-  partial: { ...produced, ...(extra || {}) },
-  partialNote:
-    'This run did not complete, but the artifacts under `partial` were produced and are usable. ' +
-    'Inspect them before re-running: the blocking finding is in `detail`, and re-running from scratch reproduces the work already listed here.',
-})
+const partial = (stage, detail, extra) => {
+  const salvage = { ...produced, ...(extra || {}) }
+  runDetail = { stage, detail, partial: salvage }
+  const why =
+    (detail && detail.reason) ||
+    (detail && detail.headline) ||
+    (detail && detail.escalate ? `escalated to ${detail.escalate}` : null) ||
+    `the ${stage} phase did not pass its gate`
+  const unmet = (detail && detail.unmetCriteria) || []
+  const keys = Object.keys(salvage)
+  return {
+    ok: false,
+    stage,
+    beadId: subjectId,
+    headline:
+      `${stage}: ${why}${unmet.length ? ` — unmet: ${unmet[0].criterion}` : ''}${unmet.length > 1 ? ` (+${unmet.length - 1} more)` : ''}. ` +
+      (keys.length
+        ? `${keys.length} artifact(s) were produced before it stopped and are in the run journal under \`partial\` (${keys.join(', ')}) — read them before re-running, because a fresh run reproduces exactly this work.`
+        : 'Nothing had been produced when it stopped.'),
+    // KEY NAMES only, never the artifacts. This is what makes the pointer actionable: the
+    // caller can tell whether opening the journal is worth it without being handed
+    // everything in order to find out.
+    partialProduced: keys,
+  }
+}
 
 // Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
 // mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
@@ -140,11 +160,28 @@ const partial = (stage, detail, extra) => ({
 // Architecture. Telemetry must never be able to paint a work phase complete, so
 // it reports under a phase that claims nothing about the work.
 const runLedger = []
+// Findings a gate could not get resolved inside its retry budget and that the
+// advantage-evaluator then ruled COMPETITIVE — carried forward rather than fatal. See
+// the exhaustion ruling below.
+const carriedFlags = []
+// ── The full detail, and where it goes ────────────────────────────────────────
+// Every failure return used to carry `detail: <entire phase result>` alongside the whole
+// `partial` bag, and the success return carried `results` — a complete artifact per phase.
+// Single runs came back with 8.5k, 21k and 22k characters truncated off the end, and a
+// campaign is hundreds of runs, so the DISPATCHING session dies long before the campaign
+// finishes. That is a defect in the caller's context window, not in the run.
+//
+// Nothing is DISCARDED — the salvage principle behind `partial` below is intact and is
+// the reason this had to be a journal rather than a deletion. The artifacts go to the run
+// journal and the caller gets the path plus the list of what is in it, so it can still
+// decide whether re-running is cheaper than reading. What changed is only that the caller
+// opens the artifacts deliberately instead of receiving them whether it wanted them or not.
+let runDetail = null
 async function persistRun(outcome) {
-  if (!runLedger.length) return
+  if (!runLedger.length && !runDetail) return null
   try {
-    await agent(
-      `Persist this SDLC workflow run's decision ledger. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, runLedger })}`,
+    const written = await agent(
+      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
       {
         label: 'ledger:persist',
         phase: 'Run Ledger',
@@ -162,8 +199,129 @@ async function persistRun(outcome) {
         },
       }
     )
+    return (written && written.path) || null
   } catch (e) {
     log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
+    return null
+  }
+}
+
+// ── The meta phase currently in progress ──────────────────────────────────────
+// Every agent() dispatch names the phase it belongs to, and the phase titles are the
+// ones in `meta` above. gateLoop is handed the gate's HUMAN name ("TDD Red"), which is
+// not one of them, so the title is captured here as the composite enters each phase and
+// the ruling dispatched from inside gateLoop can name it correctly.
+let currentPhase = null
+function enterPhase(title) {
+  currentPhase = title
+  phase(title)
+}
+
+// ── What the CALLER receives ──────────────────────────────────────────────────
+// One shape, everywhere: `{ ok, stage, beadId, headline, detailPath }`. The headline is
+// the one line a caller can act on without opening anything; `detailPath` (attached in
+// the `finally` below, once the journal has been written) is where everything else went.
+// The settle verdict is added on top by applySettle — that is the run's LANDING status,
+// not phase state, it is a handful of scalars, and an orphaned worktree must be
+// impossible to miss.
+function handback(ok, stage, headline, detail) {
+  runDetail = detail === undefined ? null : detail
+  return { ok, stage, beadId: subjectId, headline: String(headline || '') }
+}
+
+// Turn a gate result into that one line. An exhausted or escalated gate already knows
+// WHAT was unmet and on what evidence; a headline that says only "green failed" makes
+// the caller open the journal to learn anything at all.
+function gateHeadline(stage, r) {
+  const unmet = (r && r.unmetCriteria) || []
+  const why = (r && r.reason) || (r && r.escalate ? `escalated to ${r.escalate}` : 'the gate did not pass')
+  const first = unmet.length ? ` — unmet: ${unmet[0].criterion}` : ''
+  const more = unmet.length > 1 ? ` (+${unmet.length - 1} more)` : ''
+  return `${stage}: ${why}${first}${more}`
+}
+
+// ── Loop exhaustion is a RULING, not a halt ───────────────────────────────────
+//
+// Spending the retry budget says nothing about whether the objection that REMAINS
+// invalidates the work. MAX_LOOPS' own comment above states the intent — "One rework
+// round, then proceed with the finding recorded" — and the code did the opposite:
+// exhaustion returned ok:false, every caller treats ok:false as terminal, and the run
+// died. It died identically whether the unmet criterion was a security violation or a
+// reviewer's opinion that coverage was incomplete, which erases the distinction this
+// framework is built on — constitutive findings are hard stops, competitive ones proceed
+// under a flag.
+//
+// ssbd-97as is the case that proves the cost. A P0 live outage reached the Red gate with
+// redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
+// clean, and not one production file touched. The blocking objection was "AC5 partially
+// covered — two of three clauses unassessed". The budget ran out and nothing shipped.
+//
+// So an exhausted gate now asks the agent whose entire purpose is that ruling. The
+// advantage-evaluator already applies the advantage principle at a PASSING gate inside
+// gate-enforce and "never halts the pipeline for non-invalidating findings"; this is the
+// same question arriving from the other end of the loop, and it is dispatched the same
+// way. It is given the unmet criteria, the artifact the phase produced, and the gate's
+// DETERMINISTIC-check results — those last matter most, because a check the gate measured
+// directly against the artifact is not a matter of opinion and must not be waived as one.
+//
+// It FAILS CLOSED. An evaluator that throws, returns nothing, or names no ruling has not
+// ruled anything competitive; reading silence as permission would turn every dispatch
+// failure into a waived gate.
+async function ruleExhaustion(ctx) {
+  const unmet = ctx.unmetCriteria || []
+  const dchecks = (ctx.verdict && ctx.verdict.deterministicChecks) || []
+  try {
+    return await agent(
+      `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${MAX_LOOPS} attempt(s) and the criteria below are still unmet.
+
+This is NOT a request to re-judge the work, and it is NOT a request to halt. Rule on ONE question: does what remains INVALIDATE the artifact, or does it merely make it less than ideal?
+
+- "constitutive": the finding invalidates the work. A security violation, a broken contract, an assertion that cannot hold, a claim the evidence does not support, or work that was never actually produced. Only these stop a run.
+- "competitive": the finding is a quality or completeness opinion the work survives. Partial coverage of an acceptance criterion, an unassessed edge case, a style preference, a reviewer wanting more than was asked for. These are recorded as flags and the pipeline PROCEEDS — you never halt for a non-invalidating finding.
+
+A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh.
+
+Unmet criteria after ${MAX_LOOPS} attempt(s):
+${unmet.length ? unmet.map((c, i) => `${i + 1}. ${c.criterion}\n   evidence: ${c.evidence || '(none given)'}`).join('\n') : '(the gate named none)'}
+
+Deterministic checks this gate evaluated directly against the artifact:
+${dchecks.length ? dchecks.map((c) => `- ${c.criterion}: ${c.met ? 'MET' : 'NOT MET'} — ${c.evidence}`).join('\n') : '(this gate declared none)'}
+
+The artifact the phase produced:
+${JSON.stringify(ctx.artifact === undefined ? null : ctx.artifact, null, 2)}
+
+Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rule "competitive" and classify each finding.`,
+      {
+        label: `advantage:exhausted-${ctx.gate}`,
+        phase: currentPhase || 'PRD Validation',
+        agentType: 'agent-teams-workforce:advantage-evaluator',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ruling', 'findings', 'rationale'],
+          properties: {
+            ruling: { type: 'string', enum: ['competitive', 'constitutive'] },
+            findings: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['criterion', 'classification', 'rationale'],
+                properties: {
+                  criterion: { type: 'string' },
+                  classification: { type: 'string', enum: ['competitive', 'constitutive'] },
+                  rationale: { type: 'string' },
+                },
+              },
+            },
+            rationale: { type: 'string' },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`advantage-evaluator failed to rule on gate ${ctx.gate} exhaustion: ${e && e.message ? e.message : e}`)
+    return null
   }
 }
 
@@ -258,21 +416,59 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
-  // Record the REAL final verdict, not null. A terminal ledger row with `criteria: []`
-  // cannot distinguish a genuine defect from an over-strict criterion — which is the one
-  // question anyone asks about an exhausted gate.
-  recordGate(MAX_LOOPS, lastVerdict, { verdict: 'loop-exhausted', terminal: 'loop-exhausted' })
-  // Hand the artifact back even here. The phase ran and produced something; the
+  // The budget is spent. Before this is called a failure, the ONE agent with authority to
+  // say whether the remaining findings invalidate the work is asked — see ruleExhaustion.
+  const exhaustedUnmet = lastVerdict
+    ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))
+    : []
+  const ruling = await ruleExhaustion({ gate, phaseName, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
+  // TRUTHINESS IS NOT A RULING. A result object that came back without a `ruling` field
+  // has not ruled anything, and reading it as one made a malformed reply indistinguishable
+  // from a considered "constitutive" — which is the reporting half of the same fail-closed
+  // mistake the verdict half already avoids.
+  const ruled = !!(ruling && (ruling.ruling === 'competitive' || ruling.ruling === 'constitutive'))
+  const competitive = !!(ruling && ruling.ruling === 'competitive')
+  // Record the REAL final verdict, not null, and the ruling made on it. A terminal ledger
+  // row with `criteria: []` cannot distinguish a genuine defect from an over-strict
+  // criterion — which is the one question anyone asks about an exhausted gate.
+  recordGate(MAX_LOOPS, lastVerdict, {
+    verdict: competitive ? 'loop-exhausted-competitive' : 'loop-exhausted',
+    terminal: competitive ? 'proceeded-under-flag' : 'loop-exhausted',
+    advantageRuling: ruling || null,
+  })
+  // Hand the artifact back on either outcome. The phase ran and produced something; the
   // gate simply would not certify it. Discarding it forces the next run to pay for
   // identical work, and denies the caller the one thing that would let them judge
   // whether the objection is worth another round.
+  if (competitive) {
+    const flags = exhaustedUnmet.map((cc) => `gate ${gate} (${phaseName}) proceeded with an unmet criterion: ${cc.criterion}${cc.evidence ? ` — ${cc.evidence}` : ''}`)
+    for (const f of flags) carriedFlags.push(f)
+    log(`Gate ${gate} (${phaseName}): budget spent — advantage-evaluator ruled the remaining finding(s) COMPETITIVE; proceeding with ${flags.length} flag(s) recorded`)
+    return {
+      ok: true,
+      loopExhausted: true,
+      ruledCompetitive: true,
+      carriedFlags: flags,
+      advantageRuling: ruling,
+      artifact: lastArtifact,
+      verdict: lastVerdict,
+      unmetCriteria: exhaustedUnmet,
+      attempts,
+    }
+  }
+  log(
+    `Gate ${gate} (${phaseName}): budget spent — ` +
+      (ruled ? 'advantage-evaluator ruled the remaining finding(s) CONSTITUTIVE' : 'no ruling came back, so the findings are treated as constitutive (fail closed)')
+  )
   return {
     ok: false,
-    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops`,
+    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops and the remaining finding(s) were ruled constitutive${ruled ? '' : ' by default — the advantage-evaluator returned no ruling'}`,
     loopExhausted: true,
+    ruledCompetitive: false,
+    advantageRuling: ruling || null,
     artifact: lastArtifact,
     verdict: lastVerdict,
-    unmetCriteria: lastVerdict ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [],
+    unmetCriteria: exhaustedUnmet,
     attempts,
   }
 }
@@ -283,14 +479,14 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 let result
 try {
   result = await (async () => {
-phase('PRD Creation')
+enterPhase('PRD Creation')
 let creation = null
 let prd = a.prd || null
 if (!prd && a.request) {
   log(`Creating PRD from request ${a.request.id || '(no id)'} — ${a.request.title || ''}`)
   creation = await workflow('agent-teams-workforce:prd-creation', { request: a.request })
   if (!creation || !creation.ok) {
-    return { ok: false, stage: 'prd-creation', reason: 'PRD creation did not produce an aligned PRD', detail: creation }
+    return handback(false, 'prd-creation', 'PRD creation did not produce an aligned PRD', creation)
   }
   // Thread the created PRD forward as the validation input.
   prd = {
@@ -303,7 +499,7 @@ if (!prd && a.request) {
 } else {
   log(prd ? 'PRD supplied — skipping creation' : 'No request and no PRD — nothing to create')
 }
-if (!prd) return { ok: false, stage: 'prd-creation', reason: 'no PRD available to validate (supply args.prd or args.request)' }
+if (!prd) return handback(false, 'prd-creation', 'no PRD available to validate (supply args.prd or args.request)')
 
 // ── PRD text resolution ─────────────────────────────────────────────────────────
 // The args contract advertises body, content and path; only `body` was ever read.
@@ -352,6 +548,7 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
       return {
         ok: false,
         stage: 'input',
+        beadId: subjectId,
         error:
           `prd.path was supplied (${prd.path}) but no PRD text could be read from it` +
           `${read && read.error ? `: ${read.error}` : ''}. ` +
@@ -364,6 +561,7 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
     return {
       ok: false,
       stage: 'input',
+      beadId: subjectId,
       error:
         'the supplied PRD carries no text — none of prd.body, prd.content or prd.path resolved to a document. ' +
         'Every downstream agent reads the PRD from this field, so a run without it validates an empty document.',
@@ -388,7 +586,7 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 // is already built, or that is really a bug or an infrastructure flag, is settled
 // here for the cost of two read-only checkers rather than after G1 has convened six
 // analysts and G2 an architecture panel against work that does not need doing.
-phase('PRD Reconciliation')
+enterPhase('PRD Reconciliation')
 const reconciliation = await workflow('agent-teams-workforce:prd-reconciliation', {
   prd,
   repos,
@@ -415,19 +613,18 @@ log(
 
 // Short-circuit 1: nothing is left to build. Closing costs no gate.
 if (reconciliation.deltaCount === 0) {
+  // `action` and `deltaCount` survive the trim because they are the DECISION this exit
+  // reached, not phase state, and the caller acts on them directly. The per-requirement
+  // evidence behind the decision goes to the journal with everything else.
   return {
-    ok: true,
+    ...handback(
+      true,
+      'prd-reconciliation',
+      `every requirement this PRD states is already shipped or obsolete (${reconciliation.verdict}) — nothing was specified, decomposed, or gated. Close the work item; the per-requirement evidence is in the run journal under \`requirements\`.`,
+      { action: 'close', reconciliation, prd, epic: a.epic || null }
+    ),
     action: 'close',
-    verdict: reconciliation.verdict,
     deltaCount: 0,
-    sizeVerdict: reconciliation.sizeVerdict,
-    prd,
-    epic: a.epic || null,
-    requirements: reconciliation.requirements,
-    note:
-      'Every requirement this PRD states is already shipped or obsolete, on the evidence in `requirements`. ' +
-      'Nothing was specified, decomposed, or gated — close the work item.',
-    results: { reconciliation },
   }
 }
 
@@ -438,20 +635,21 @@ if (reconciliation.deltaCount === 0) {
 // the full elaboration pipeline.
 if (reconciliation.sizeVerdict === 'bug' || reconciliation.infraOnly) {
   const composite = reconciliation.infraOnly ? 'infra-change' : 'bug-fix'
+  // `action`, `composite` and `deltaPrdPath` survive the trim: they are the routing
+  // INSTRUCTION this exit exists to give, and a caller that has to open a journal to learn
+  // where to send the work has not been routed.
   return {
-    ok: true,
+    ...handback(
+      true,
+      'prd-reconciliation',
+      `the remaining delta (${reconciliation.deltaCount} requirement(s)) is ${reconciliation.infraOnly ? 'satisfiable by an infrastructure change alone' : 'a defect in behaviour that already exists'}, ` +
+        `so it routes to agent-teams-workforce:${composite}. No gate was spent. The delta PRD is at ${reconciliation.deltaPrdPath}.`,
+      { action: 'reroute', composite, reconciliation, prd }
+    ),
     action: 'reroute',
     composite,
-    verdict: reconciliation.verdict,
     deltaCount: reconciliation.deltaCount,
-    sizeVerdict: reconciliation.sizeVerdict,
     deltaPrdPath: reconciliation.deltaPrdPath,
-    prd,
-    requirements: reconciliation.requirements,
-    note:
-      `The remaining delta is ${reconciliation.infraOnly ? 'satisfiable by an infrastructure change alone' : 'a defect in behaviour that already exists'}, ` +
-      `so it routes to agent-teams-workforce:${composite}. No gate was spent. The delta is at ${reconciliation.deltaPrdPath}.`,
-    results: { reconciliation },
   }
 }
 
@@ -483,7 +681,7 @@ log(
 )
 
 // ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
-phase('PRD Validation')
+enterPhase('PRD Validation')
 const validation = await gateLoop({
   gate: 'G1', phaseName: 'PRD Validation',
   criteria: [
@@ -523,7 +721,7 @@ produced.validatedPrd = validatedPrd
 // most needs to hold. The Epic-without-a-PRD entry hits exactly that combination:
 // it passes the existing Epic and supplies the bead's content as the request so the
 // PRD document gets authored.
-phase('Epic')
+enterPhase('Epic')
 let epic
 let epicPath
 if (a.epic) {
@@ -566,7 +764,7 @@ log(
 
 // ── Architecture (Gate 2 — constitutional) ──────────────────────────────────────
 // Consumes the validated PRD; produces the ruled decision + arc42 SAD source feed.
-phase('Architecture')
+enterPhase('Architecture')
 // Not every PRD contains an architecture decision. This phase is the most
 // expensive in the composite — a full analyst panel plus a challenge wave, ~17
 // agents — and it ran unconditionally, so a single-repo UI feature with nothing
@@ -746,7 +944,7 @@ const sadExtract = architecture.artifact && architecture.artifact.sadUpdate
 // Consumes PRD + SAD extract; produces the TRD + bidirectional traceability matrix.
 // The TRD is per-PRD, not per-repo: it is authored exactly ONCE here and never
 // fanned out with the per-repo spec passes below.
-phase('TRD Authoring')
+enterPhase('TRD Authoring')
 const trdAuthoring = await gateLoop({
   gate: 'G2b', phaseName: 'TRD Authoring',
   criteria: [
@@ -781,7 +979,7 @@ const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
 // this phase fans out across args.repos: one (spec, story) pair per repo, every
 // Story parented to the Epic above. Each repo faces its own G3 gate, and a repo
 // whose spec fails its gate is RECORDED in the result — never silently dropped.
-phase('Spec Authoring')
+enterPhase('Spec Authoring')
 if (!repos.length) {
   return partial(
     'spec-authoring',
@@ -851,7 +1049,21 @@ if (specFailures.length) {
       `${specPairs.length ? 'continuing with the repos that passed' : 'no repo produced a spec'}`
   )
 }
-if (!specPairs.length) return partial('spec-authoring', { specFailures })
+// The headline has to name the underlying cause, not just the phase. The failures are a
+// LIST — one per repo — and the reason each repo failed lives one level down on its gate
+// result; a caller told only "spec-authoring did not pass its gate" learns nothing it
+// could act on, and a run starved by the token budget reads identically to one rejected on
+// its merits.
+if (!specPairs.length) {
+  return partial('spec-authoring', {
+    reason:
+      'no repo produced a spec — ' +
+      (specFailures
+        .map((x) => `${x.repoPath}: ${(x.detail && x.detail.reason) || x.reason || 'gate failure'}`)
+        .join('; ') || 'no per-repo failure was recorded'),
+    specFailures,
+  })
+}
 
 // ── Story dependencies ───────────────────────────────────────────────────────────
 // Dependencies live at the STORY level, and only there.
@@ -905,14 +1117,15 @@ ${depStories.map((s) => `- ${s.key} [${s.repoPath}]: ${s.title}${s.description ?
     }
   )
   if (mapped && mapped.acyclic === false) {
+    // The cycle itself stays: it is a short list of Story keys and it is the whole finding.
     return {
-      ok: false,
-      stage: 'story-dependencies',
-      reason: 'the Story dependency graph is not acyclic',
+      ...handback(
+        false,
+        'story-dependencies',
+        `the Story dependency graph is not acyclic — cycle: ${((mapped && mapped.cycle) || []).join(' -> ') || '(not reported)'}`,
+        { cycle: (mapped && mapped.cycle) || [], prd: validatedPrd, epic, stories: depStories }
+      ),
       cycle: (mapped && mapped.cycle) || [],
-      prd: validatedPrd,
-      epic,
-      stories: depStories,
     }
   }
   if (mapped) storyDependencies = { ...mapped, cycle: mapped.cycle || [] }
@@ -937,7 +1150,7 @@ log(
 // Consumes each repo's specs; produces a sized, sequenced (DAG), WSJF-scored task
 // set parented to that repo's Story. Decomposition yields TASKS ONLY — the Epic
 // and the Stories already exist above, so nothing else is ever minted here.
-phase('Task Decomposition')
+enterPhase('Task Decomposition')
 const stories = specPairs.map((p) => p.story)
 const decompositions = [] // one { repoPath, storyKey, artifact } per Story that passed G4
 const decompositionFailures = [] // Stories whose task set failed G4 — kept, never dropped
@@ -1010,7 +1223,17 @@ if (decompositionFailures.length) {
       `${tasks.length} task(s) still emitted`
   )
 }
-if (!decompositions.length) return partial('task-decomposition', { decompositionFailures })
+// Same reason as the spec-authoring exit above: the cause is one level down, per Story.
+if (!decompositions.length) {
+  return partial('task-decomposition', {
+    reason:
+      'no Story produced tasks — ' +
+      (decompositionFailures
+        .map((x) => `${x.storyKey || x.repoPath}: ${(x.detail && x.detail.reason) || x.reason || 'gate failure'}`)
+        .join('; ') || 'no per-Story failure was recorded'),
+    decompositionFailures,
+  })
+}
 
 // ── Emit Beads ───────────────────────────────────────────────────────────────────
 // The full hierarchy is ready for `bd` emission from the main repo path: one Epic,
@@ -1018,7 +1241,7 @@ if (!decompositions.length) return partial('task-decomposition', { decomposition
 // beneath it (parentStoryId). This composite surfaces the tree; it does not write
 // to .beads itself (never from a worktree/runtime context). The flat beadSet is
 // kept as the concatenation of every Story's tasks so existing callers keep working.
-phase('Emit Beads')
+enterPhase('Emit Beads')
 const beadSet = tasks
 const hierarchy = { epic, stories, tasks, storyDependencies }
 log(
@@ -1031,51 +1254,65 @@ log(
 // out along the way — `degraded` says so without pretending the run failed, because
 // a caller holding real tasks needs to act on them, not re-run everything.
 const degraded = specFailures.length > 0 || decompositionFailures.length > 0
+// ── What crosses back, and the one thing that CANNOT be trimmed ────────────────
+// `results` is eight complete phase artifacts and it goes to the journal with the rest.
+// `hierarchy` and `beadSet` do NOT: they are this composite's PRODUCT, not its state. The
+// caller's next act is to write them into beads with bd (see the elaborate-prd-epic
+// skill), so replacing them with a path would not trim a run's context — it would break
+// the pipeline and make every caller read a file back to do the job it just asked for.
+// The rule this trim enforces is that STATE stops crossing the boundary; a deliverable
+// still does.
 return {
-  ok: true,
-  degraded,
-  prd: validatedPrd,
-  stagesComplete: [
-    creation ? 'prd-creation' : 'prd-supplied',
-    'prd-reconciliation',
-    'prd-validation',
-    epicPath,
-    architecture.skipped ? 'architecture-skipped' : 'architecture',
-    'trd-authoring',
-    'spec-authoring',
-    'task-decomposition',
+  ...handback(
+    true,
     'emit-beads',
-  ],
-  note:
-    `PRD reconciled against what already ships (${reconciliation.verdict}; ${reconciliation.deltaCount} requirement(s) remained and everything below was specified against the delta PRD at ${reconciliation.deltaPrdPath}), ` +
-    'PRD validated, Epic ensured (supplied/created/minted), ' +
-    (architecture.skipped
-      ? 'architecture phase SKIPPED (triage found no architecture decision — see results.architectureTriage), '
-      : 'architecture ruled into the SAD, ') +
-    'TRD authored once per PRD, a (spec, story) pair authored per repo, tasks decomposed/sequenced/WSJF-scored per Story and Beads-format valid. ' +
-    'Emit the hierarchy via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.' +
-    (degraded
-      ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — see specFailures/decompositionFailures. Everything else here is emittable.`
-      : ''),
+    `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced, WSJF-scored and Beads-format valid, against the delta PRD at ${reconciliation.deltaPrdPath} (${reconciliation.verdict}; ${reconciliation.deltaCount} requirement(s) remained). ` +
+      (architecture.skipped ? 'Architecture was SKIPPED — triage found no architecture decision. ' : 'Architecture was ruled into the SAD. ') +
+      'Emit via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.' +
+      (degraded
+        ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — details in the run journal. Everything returned here is emittable.`
+        : '') +
+      (carriedFlags.length ? ` PROCEEDED UNDER ${carriedFlags.length} carried flag(s): ${carriedFlags.join(' | ')}` : ''),
+    {
+      prd: validatedPrd,
+      stagesComplete: [
+        creation ? 'prd-creation' : 'prd-supplied',
+        'prd-reconciliation',
+        'prd-validation',
+        epicPath,
+        architecture.skipped ? 'architecture-skipped' : 'architecture',
+        'trd-authoring',
+        'spec-authoring',
+        'task-decomposition',
+        'emit-beads',
+      ],
+      carriedFlags,
+      specFailures,
+      decompositionFailures,
+      budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
+      results: {
+        creation,
+        reconciliation,
+        validation: validation.artifact,
+        architecture: architecture.artifact,
+        architectureTriage: archTriage,
+        trdAuthoring: trdAuthoring.artifact,
+        specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
+        decomposition: decompositions,
+      },
+    }
+  ),
+  degraded,
   hierarchy,
   beadSet,
-  // Carried on success too, so a degraded run does not have to be re-read from logs.
-  specFailures,
-  decompositionFailures,
-  budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
-  results: {
-    creation,
-    reconciliation,
-    validation: validation.artifact,
-    architecture: architecture.artifact,
-    architectureTriage: archTriage,
-    trdAuthoring: trdAuthoring.artifact,
-    specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
-    decomposition: decompositions,
-  },
 }
   })()
 } finally {
-  await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
+  // The journal is written FIRST, because it is now the only place the run's detail exists
+  // and the caller's `detailPath` is the path this returns. A journal that could not be
+  // written yields detailPath:null — an honest "the detail is gone", never a path to a file
+  // nobody wrote.
+  const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
+  if (result) result.detailPath = detailPath || null
 }
 return result

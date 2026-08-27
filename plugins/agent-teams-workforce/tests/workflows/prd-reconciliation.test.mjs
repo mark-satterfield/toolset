@@ -326,7 +326,7 @@ async function composite(reconResult, { onCalls } = {}) {
     agentImpl: () => ({ written: true }),
   })
   if (onCalls) onCalls(calls)
-  return { result, seen }
+  return { result, seen, calls }
 }
 
 test('reconciliation runs BEFORE any gate is spent', async () => {
@@ -400,11 +400,17 @@ test('the original PRD is handed to reconciliation, and only there', async () =>
 })
 
 test('a failed reconciliation stops the run — it is never read as a greenfield delta', async () => {
-  const { result, seen } = await composite({ ok: false, reason: 'could not read the repository' })
+  const { result, calls, seen } = await composite({ ok: false, reason: 'could not read the repository' })
   assert.equal(result.ok, false)
   assert.equal(result.stage, 'prd-reconciliation')
   assert.equal(seen.filter((c) => c.name === 'agent-teams-workforce:prd-validation').length, 0)
-  assert.ok(result.partial.originalPrd, 'and the PRD it was handed comes back with it')
+  // The salvage principle is intact, but the artifacts travel to the run journal rather
+  // than back to the caller — a composite that returned everything it had produced killed
+  // the dispatching session over a campaign. The RETURN names what is salvageable; the
+  // journal holds it.
+  assert.ok(result.partialProduced.includes('originalPrd'), 'the return must name what was produced before it stopped')
+  const { journalDetail } = await import('./helpers/run-workflow.mjs')
+  assert.ok(journalDetail(calls).partial.originalPrd, 'and the PRD it was handed is in the journal with it')
 })
 
 test('a delta claimed but not delivered stops the run rather than falling back to the original', async () => {
