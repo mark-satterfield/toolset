@@ -110,6 +110,16 @@
 //     checker's own realm. The literal spelling is caught by the scan; a computed
 //     spelling of it is caught by NEITHER. This is a known, open hole, and it is
 //     recorded here rather than papered over.
+//   * `this` AT THE TOP LEVEL OF THE COMPILED BODY. Both models compile the script into
+//     a sloppy-mode function, so top-level `this` IS the real global object and
+//     `this.process` reaches the host — measured, not theorised. `this` is not a
+//     binding, so the probe cannot shadow it, and it is far too common in prose for the
+//     raw scan to refuse on sight. Note this is a property of the two MODELS, not
+//     necessarily of the real runner, which may well call the body in strict mode or
+//     with a bound receiver; nobody has checked. Tracked as a bead, deliberately NOT
+//     fixed here — prepending a strict-mode directive would change the semantics of
+//     every shipped script, which is a bigger change than this component's risk
+//     justifies and is not something to do on the way past.
 //
 // The honest summary: a workflow script is OUR OWN code in OUR OWN repository, and an
 // author who can write into workflows/ can already do whatever they like elsewhere in

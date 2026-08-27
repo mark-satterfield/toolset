@@ -347,6 +347,20 @@ test('OPEN, and stated: neither control sees a COMPUTED constructor chain off an
   )
 })
 
+test('OPEN, and stated: top-level `this` in the compiled body IS the global object', async () => {
+  // Measured, not assumed. Both models compile the body into a sloppy-mode function, so
+  // `this` is the real global object and `this.process` reaches the host. `this` is not a
+  // binding, so the probe cannot shadow it; it is far too common in prose for the raw scan
+  // to refuse on sight. Whether the REAL runner behaves this way is unverified.
+  //
+  // This test exists so the hole is learned from the suite. If it starts failing, some
+  // control has closed the route and WHAT REMAINS OPEN must be updated to say so.
+  const body = `return this === undefined ? 'no-receiver' : typeof this.process`
+  const { escapes, thrown } = await probe(body)
+  assert.equal(thrown, null)
+  assert.deepEqual(escapes, [], 'a control now sees this route — update WHAT REMAINS OPEN')
+})
+
 // ── 9. THE ReDoS BOUND, PER PRODUCTION ────────────────────────────────────────
 //
 // 6.0.10's MultiLineComment was lazy, so it could be extended past its own terminator:
