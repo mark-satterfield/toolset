@@ -1,8 +1,9 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. One level only: this composite calls minis and gates, never another composite.',
+    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent: a PRD whose requirements are all built is closed, a delta that is really a defect or an infrastructure switch is rerouted to bug-fix or infra-change, and everything that continues is specified against the DELTA PRD — the absent and partial requirements — never the original ambition. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. One level only: this composite calls minis and gates, never another composite.',
   phases: [
+    { title: 'PRD Reconciliation', detail: 'establish what already ships BEFORE any gate is spent; everything downstream reads the delta PRD' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
     { title: 'PRD Validation' },
     { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
@@ -31,6 +32,8 @@ export const meta = {
 //                                 // defaults to [repoPath] so the single-repo case is unchanged
 //   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — ADOPTED, and it wins over any Epic prd-creation mints
 //   trdPath?: string,             // where the TRD lives/should be written
+//   dependencies?: string[],      // upstream contracts/schemas/libs the PRD assumes — fed to reconciliation
+//   deltaPath?: string,           // where the delta PRD is written; derived from prd.path when absent
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
 //   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
 //   dimensions?: string[],        // size the analyst panel to exactly these axes; overrides both triage steps
@@ -367,6 +370,117 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
     }
   }
 }
+
+// ── PRD Reconciliation (no gate) ────────────────────────────────────────────────
+// A PRD states what someone WANTED. It has never stated what is MISSING, and until
+// now nothing in this composite read the codebase at all — the six PRD-validation
+// analysts judge the document, not the system. So a PRD written against a capability
+// that partly or largely shipped got specified, decomposed, and built a second time
+// on top of working code. An audit of 20 Epics in one project found ELEVEN written
+// as greenfield against shipped behaviour: a 929-line MFA implementation that was
+// merely disabled at one CDK line, a fully deployed passkey ceremony, three of four
+// identity providers live, a shipped session dashboard with revoke and revoke-all.
+//
+// Reality is therefore established FIRST, and everything downstream reads the DELTA
+// PRD — the requirements genuinely absent or partial — never the original ambition.
+//
+// This phase spends NO GATE, and that is the point of its position: a work item that
+// is already built, or that is really a bug or an infrastructure flag, is settled
+// here for the cost of two read-only checkers rather than after G1 has convened six
+// analysts and G2 an architecture panel against work that does not need doing.
+phase('PRD Reconciliation')
+const reconciliation = await workflow('agent-teams-workforce:prd-reconciliation', {
+  prd,
+  repos,
+  dependencies: a.dependencies,
+  deltaPath: a.deltaPath,
+})
+if (reconciliation && reconciliation.ledger) runLedger.push(reconciliation.ledger)
+produced.originalPrd = prd
+produced.reconciliation = reconciliation || null
+if (!reconciliation || reconciliation.ok === false) {
+  // A failed reconciliation is NOT a zero delta. Reading "we could not establish what
+  // exists" as "nothing exists" is the exact greenfield assumption this phase removes,
+  // so the run stops instead of proceeding against the original PRD.
+  return partial('prd-reconciliation', {
+    reason:
+      (reconciliation && reconciliation.reason) ||
+      'PRD reconciliation returned nothing — what already ships could not be established.',
+    detail: reconciliation || null,
+  })
+}
+log(
+  `Reconciliation: ${reconciliation.verdict} — ${reconciliation.deltaCount} requirement(s) remain, sized '${reconciliation.sizeVerdict}'.`
+)
+
+// Short-circuit 1: nothing is left to build. Closing costs no gate.
+if (reconciliation.deltaCount === 0) {
+  return {
+    ok: true,
+    action: 'close',
+    verdict: reconciliation.verdict,
+    deltaCount: 0,
+    sizeVerdict: reconciliation.sizeVerdict,
+    prd,
+    epic: a.epic || null,
+    requirements: reconciliation.requirements,
+    note:
+      'Every requirement this PRD states is already shipped or obsolete, on the evidence in `requirements`. ' +
+      'Nothing was specified, decomposed, or gated — close the work item.',
+    results: { reconciliation },
+  }
+}
+
+// Short-circuit 2: what remains is not a product increment. A defect in shipped
+// behaviour, or an infrastructure switch, does not need a PRD, an architecture
+// ruling, a TRD or a spec — it needs the composite that owns that shape of work.
+// Routing it here, before G1, is what keeps a one-line flag change from consuming
+// the full elaboration pipeline.
+if (reconciliation.sizeVerdict === 'bug' || reconciliation.infraOnly) {
+  const composite = reconciliation.infraOnly ? 'infra-change' : 'bug-fix'
+  return {
+    ok: true,
+    action: 'reroute',
+    composite,
+    verdict: reconciliation.verdict,
+    deltaCount: reconciliation.deltaCount,
+    sizeVerdict: reconciliation.sizeVerdict,
+    deltaPrdPath: reconciliation.deltaPrdPath,
+    prd,
+    requirements: reconciliation.requirements,
+    note:
+      `The remaining delta is ${reconciliation.infraOnly ? 'satisfiable by an infrastructure change alone' : 'a defect in behaviour that already exists'}, ` +
+      `so it routes to agent-teams-workforce:${composite}. No gate was spent. The delta is at ${reconciliation.deltaPrdPath}.`,
+    results: { reconciliation },
+  }
+}
+
+// ── Everything downstream consumes the DELTA, never the raw incoming PRD ────────
+// Rebinding `prd` here is deliberate and load-bearing: validation, architecture, the
+// TRD, every spec and every task set read this binding, so narrowing it once is what
+// guarantees none of them can reach the original. The original is kept under
+// `produced.originalPrd` for the record.
+if (!hasText(reconciliation.deltaPrdPath) || !reconciliation.deltaPrd || !hasText(reconciliation.deltaPrd.body)) {
+  return partial('prd-reconciliation', {
+    reason:
+      `${reconciliation.deltaCount} requirement(s) remain but no usable delta PRD came back. ` +
+      'Refusing to continue against the original PRD — that is how shipped behaviour gets specified again.',
+    detail: reconciliation,
+  })
+}
+const originalPrd = prd
+prd = {
+  ...prd,
+  body: reconciliation.deltaPrd.body,
+  content: reconciliation.deltaPrd.body,
+  path: reconciliation.deltaPrdPath,
+  reconciledFrom: originalPrd.path || originalPrd.id || originalPrd.title || null,
+}
+produced.deltaPrd = { path: reconciliation.deltaPrdPath, deltaCount: reconciliation.deltaCount }
+log(
+  `Downstream phases now read the delta PRD at ${prd.path} (${reconciliation.deltaCount} of ` +
+    `${reconciliation.requirements.length} requirement(s)); the original is retained under partial.originalPrd.`
+)
 
 // ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
 phase('PRD Validation')
@@ -923,6 +1037,7 @@ return {
   prd: validatedPrd,
   stagesComplete: [
     creation ? 'prd-creation' : 'prd-supplied',
+    'prd-reconciliation',
     'prd-validation',
     epicPath,
     architecture.skipped ? 'architecture-skipped' : 'architecture',
@@ -932,6 +1047,7 @@ return {
     'emit-beads',
   ],
   note:
+    `PRD reconciled against what already ships (${reconciliation.verdict}; ${reconciliation.deltaCount} requirement(s) remained and everything below was specified against the delta PRD at ${reconciliation.deltaPrdPath}), ` +
     'PRD validated, Epic ensured (supplied/created/minted), ' +
     (architecture.skipped
       ? 'architecture phase SKIPPED (triage found no architecture decision — see results.architectureTriage), '
@@ -949,6 +1065,7 @@ return {
   budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
   results: {
     creation,
+    reconciliation,
     validation: validation.artifact,
     architecture: architecture.artifact,
     architectureTriage: archTriage,

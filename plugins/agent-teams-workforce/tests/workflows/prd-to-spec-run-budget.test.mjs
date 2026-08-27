@@ -29,6 +29,20 @@ function cleanRun(repos) {
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
       return { verdict: 'pass', criteria: [], flags: [] }
     }
+if (name.endsWith('prd-reconciliation')) {
+  // Reconciliation is unconditional and runs before every gate, so every
+  // prd-to-spec fixture has to answer it or the run stops at the new phase.
+  return {
+    ok: true,
+    verdict: 'partial',
+    requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
+    deltaCount: 1,
+    deltaPrdPath: '/prd/PRD-1.delta.md',
+    deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
+    sizeVerdict: 'story',
+    infraOnly: false,
+  }
+}
     if (name.endsWith('prd-validation')) {
       return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     }

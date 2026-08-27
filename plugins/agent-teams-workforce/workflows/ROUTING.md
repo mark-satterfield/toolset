@@ -9,7 +9,7 @@ executable form. Keep them in sync — edit both when the policy changes.
 
 | Composite | Front-end | For |
 |---|---|---|
-| `prd-to-spec` | prd-validation → architecture → trd-authoring → spec-authoring → task-decomposition | a NEW feature with no implementation-ready contract yet |
+| `prd-to-spec` | prd-reconciliation → prd-validation → architecture → trd-authoring → spec-authoring → task-decomposition | a feature with no implementation-ready contract yet. Reconciliation runs FIRST and before any gate: a PRD whose requirements already ship is closed, a delta that is really a defect or an infrastructure switch is rerouted to `bug-fix` / `infra-change`, and everything that continues is specified against the DELTA PRD |
 | `task-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior |
 | `infra-change` | infra-intent → shared tail (subset) | an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing) |

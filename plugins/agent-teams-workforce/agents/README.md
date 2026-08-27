@@ -110,6 +110,13 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | user-story-reviewer | test | Validates stories are complete, testable, and properly scoped. |
 | beads-format-validator | test | Validates Beads issue format: title, acceptance criteria, DoD, WSJF score, dependencies, spec link. |
 
+## PRD Reconciliation
+
+| Agent | Category | Purpose |
+| --- | --- | --- |
+| prd-reality-reconciler | test | Reconciles a PRD against what is already built and deployed, classifying each requirement as shipped, partial, absent, or obsolete with cited file:line or live-endpoint evidence. |
+| dependency-change-detector | test | Also serves this phase — detects upstream changes that invalidate what the PRD assumes. |
+
 ## Spec Freshness
 
 | Agent | Category | Purpose |
