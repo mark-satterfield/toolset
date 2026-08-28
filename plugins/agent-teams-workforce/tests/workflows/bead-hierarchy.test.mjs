@@ -231,6 +231,88 @@ test('a Story identified only by `key` still parents its tasks', async () => {
   }
 })
 
+// ── A Task RECORDS the repository it belongs to ───────────────────────────────
+//
+// The repo is RULED on the Story — one Spec+Story per repository — and that stays
+// true. But a Task that only inherits it is not self-describing: dispatching one
+// meant walking up to its Story first, and a Task whose ancestor carried no repo was
+// undispatchable even though the repository was known when it was decomposed. The
+// field is `repoPath` because that is what every code-writing composite reads off
+// the bead.
+
+test('every emitted task carries the repository, copied from the Spec it decomposed', async () => {
+  const { result } = await runWorkflowScript(taskDecomposition, {
+    args: {
+      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repos/service-a' },
+      story: { key: 'S1', title: 'the story' },
+    },
+    agentImpl: (call) => {
+      if (call.label === 'decompose:tasks') {
+        return {
+          tasks: [
+            { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] },
+            { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'] },
+          ],
+          rationale: 'r',
+        }
+      }
+      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1', 'T2'], acyclic: true }
+      if (call.label === 'wsjf:score') {
+        return {
+          scores: ['T1', 'T2'].map((key) => ({
+            key,
+            userBusinessValue: 5,
+            timeCriticality: 3,
+            riskReductionOpportunityEnablement: 2,
+            jobSize: 2,
+            wsjf: 5,
+            rationale: 'r',
+          })),
+        }
+      }
+      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
+      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
+      return null
+    },
+  })
+
+  assert.equal(result.ok, true, `decomposition failed: ${result.reason || ''}`)
+  assert.equal(result.repoPath, '/repos/service-a', 'the run must report the repository it decomposed against')
+  assert.equal(result.beadSet.length, 2)
+  for (const bead of result.beadSet) {
+    assert.equal(
+      bead.repoPath,
+      '/repos/service-a',
+      'a Task must record its own repository — a consumer should not have to walk up to the Story to find it',
+    )
+  }
+})
+
+test('the repository may also arrive as args.repoPath', async () => {
+  const { result } = await runWorkflowScript(taskDecomposition, {
+    args: {
+      spec: { id: 'SPEC-1', title: 'spec' },
+      story: { key: 'S1' },
+      repoPath: '/repos/service-b',
+    },
+    agentImpl: (call) => {
+      if (call.label === 'decompose:tasks') {
+        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
+      }
+      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
+      if (call.label === 'wsjf:score') {
+        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
+      }
+      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
+      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
+      return null
+    },
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.beadSet[0].repoPath, '/repos/service-b')
+})
+
 test('task-decomposition tells the decomposer it may not mint a container', () => {
   const src = readWorkflowSource(taskDecomposition)
   assert.match(

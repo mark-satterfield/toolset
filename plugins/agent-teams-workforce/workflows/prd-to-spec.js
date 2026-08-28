@@ -1374,6 +1374,13 @@ for (const pair of specPairs) {
       ...t,
       key: localToNamespaced.get(t.key) || t.key,
       dependsOn: (t.dependsOn || []).map((d) => localToNamespaced.get(d) || d),
+      // A Task RECORDS the repository it is worked in, alongside the Story that rules it.
+      // task-decomposition denormalizes this from the Spec it is handed, and the spread
+      // above carries that through; the fallback covers the case where the mini was given
+      // no repoPath, since this loop knows the repository for certain — `pair.repoPath` is
+      // the very value spec authoring was fanned out with. Emitting a Task without it
+      // means bd writes a bead nobody can dispatch without walking back up to the Story.
+      repoPath: t.repoPath || pair.repoPath || null,
     })
   }
 }

@@ -152,6 +152,32 @@ test('a PRD spanning three repos emits one Epic and one Story PER REPO', async (
   }
 })
 
+test('every emitted Task records the repository of the Story it hangs under', async () => {
+  // The Story rules the repo; the Task carries a copy so it stands alone. Without it
+  // a Task is only dispatchable by first resolving its Story, and a Task whose Story
+  // lost its repo is not dispatchable at all. The decomposition fixture here returns
+  // tasks with NO repoPath on purpose — the composite knows the repository for certain
+  // (it is what spec authoring was fanned out with) and must fill it in.
+  const repos = ['/repo-a', '/repo-b', '/repo-c']
+  const { result } = await run({
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
+    repos,
+  })
+
+  assert.equal(result.ok, true, `composite failed at ${result.stage}`)
+  const { stories, tasks } = result.hierarchy
+  const repoByStoryKey = Object.fromEntries(stories.map((s) => [s.key, s.repoPath]))
+
+  assert.ok(tasks.length > 0)
+  for (const t of tasks) {
+    assert.equal(
+      t.repoPath,
+      repoByStoryKey[t.parentStoryId],
+      `Task ${t.key} must record the repository of Story ${t.parentStoryId}`,
+    )
+  }
+})
+
 test('an existing PRD with no Epic gets one BACKFILLED — it is not skipped', async () => {
   const { result } = await run({
     args: { prd: { id: 'PRD-OLD', title: 'Legacy PRD', body: 'b' }, repoPath: '/repo-a' },

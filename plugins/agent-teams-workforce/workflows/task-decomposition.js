@@ -11,10 +11,13 @@ export const meta = {
 }
 
 // args: {
-//   spec:  { id?, title?, description?, source?, repoPath? },  // the Spec being decomposed
+//   spec:  { id?, title?, description?, source?, repoPath? },  // the Spec being decomposed;
+//                                                              // repoPath is the ONE repository the
+//                                                              // Story covers and every task inherits
 //   story: { id?, title? },                                    // the Story the Spec pairs with —
 //                                                              // ALREADY EXISTS; every emitted task
 //                                                              // is parented to it
+//   repoPath?: string,                                         // fallback source of the same repository
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -35,6 +38,29 @@ if (!spec.title && !spec.description && !spec.id) {
 const storyRef = story.id || story.key || null
 if (!storyRef) {
   log('⚠ no story.id or story.key supplied — emitted tasks will be parentless and will not route as workable')
+}
+
+// The REPOSITORY every emitted task is worked in, DENORMALIZED onto the task itself.
+//
+// The repo is RULED one level up and stays there: prd-to-spec fans spec authoring out
+// once per repository, so the Story is where the single-repo scoping decision is made.
+// That part is correct and is not what this copy changes. What it fixes is that a Task
+// carrying no repository is not self-describing — a consumer holding a Task has to walk
+// up to its Story to learn where the work happens, and a Task whose ancestor is missing
+// or has lost its repo is undispatchable even though the repository was perfectly well
+// known at the moment the Task was decomposed. Denormalizing at creation costs one field
+// and removes the walk and the whole class of undispatchable-but-knowable tasks.
+//
+// The field name is `repoPath` because that is what the consumers already read: every
+// code-writing composite (bug-fix, task-to-deploy, infra-change) takes `bead.repoPath`
+// and refuses to run without it. Inventing a second name here would mean the value was
+// recorded and still not found.
+const repoPath = spec.repoPath || a.repoPath || null
+if (!repoPath) {
+  log(
+    '⚠ no spec.repoPath (or args.repoPath) supplied — emitted tasks will carry repoPath null, ' +
+      'and whoever dispatches them will have to resolve the repository again from the Story'
+  )
 }
 
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
@@ -361,6 +387,9 @@ const beadSet = tasks
     description: t.description,
     type: 'task',
     parentStoryId: storyRef,
+    // A copy of the Story's repository, not a second ruling on it. See the note above
+    // the `repoPath` resolution: the Story rules the repo, the Task records it.
+    repoPath,
     acceptanceCriteria: t.acceptanceCriteria,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
     wsjf: wsjfByKey[t.key] ? wsjfByKey[t.key].wsjf : null,
@@ -375,6 +404,7 @@ const beadSet = tasks
 return {
   ok: true,
   spec: specRef,
+  repoPath,
   tasks,
   dependencyDag: { edges: dag.edges, acyclic: dag.acyclic, cycle: dag.cycle || [] },
   buildOrder: dag.buildOrder,
@@ -387,5 +417,5 @@ return {
   beadsValidation,
   beadSet,
   story: { id: story.id || null, key: story.key || null, ref: storyRef, title: story.title || null },
-  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and Beads-format valid.${scoringDisputed ? ' WSJF review did NOT converge — scores are the scorer\'s latest and are recorded as disputed; the task structure is unaffected.' : ' Scoring passed independent review.'} Emit via bd from the main repo path.`,
+  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}${repoPath ? ` and carrying repoPath ${repoPath}` : ' and carrying repoPath null (no repository was supplied), so each one has to be re-resolved before it can be dispatched'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and Beads-format valid.${scoringDisputed ? ' WSJF review did NOT converge — scores are the scorer\'s latest and are recorded as disputed; the task structure is unaffected.' : ' Scoring passed independent review.'} Emit via bd from the main repo path.`,
 }
