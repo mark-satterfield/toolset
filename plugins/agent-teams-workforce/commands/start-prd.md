@@ -51,8 +51,9 @@ this command is.
 ## 3. Hand off
 
 Invoke the `elaborate-prd-epic` skill with the resolved pair and the BRD and SAD
-paths when they exist. It owns the `prd-to-spec` dispatch, writing the hierarchy
-into beads, and the report.
+paths when they exist. It owns the `prd-to-spec` dispatch and the
+report. The run writes the hierarchy into beads itself — you verify and report
+what it wrote, you do not write it.
 
 **Do not work out the repo span and do not pass one.** The span is an OUTPUT of
 the run: `prd-to-spec` rules it after the architecture decision, from the design

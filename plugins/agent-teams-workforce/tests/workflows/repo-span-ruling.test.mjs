@@ -22,6 +22,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls, journalPayload } from './helpers/run-workflow.mjs'
+import { beadWriter } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -250,7 +251,7 @@ test('with no args.repos the composite RULES the span and fans out over what it 
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood' },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
@@ -267,7 +268,7 @@ test('the launch repository is passed to scoping as a seed, and is NOT the span'
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood' },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
   assert.deepEqual(scoping.payload.seedRepos, ['/repos/where-the-human-stood'], 'the seed travels as a seed')
@@ -280,7 +281,7 @@ test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is d
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha', repos: ['/repos/alpha', '/repos/beta'] },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/never-used']) }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:repo-scoping').length, 0, 'a pinned span spends nothing')
@@ -293,7 +294,7 @@ test('a failed ruling STOPS the run — it never falls back to the launch reposi
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood' },
     workflowImpl: compositeWorkflows({ scopingResult: { ok: false, reason: 'could not establish the span' } }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   assert.equal(result.ok, false)
   assert.equal(result.stage, 'repo-scoping')
@@ -310,7 +311,7 @@ test('a span that is entirely NEW repositories hands back the actions and create
         spanVerified: false,
       }),
     }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   assert.equal(result.action, 'create-repos')
   assert.equal(result.newRepos.length, 1)
@@ -331,7 +332,7 @@ test('the run attempt ceiling is RESCALED to the ruled span, before the first pe
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a' },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${String(result.headline || '').slice(0, 300)}`)
@@ -350,7 +351,7 @@ test('a caller who PINNED maxTotalAttempts keeps exactly that, rescale or not', 
   const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a', maxTotalAttempts: 99 },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/a', '/repos/b', '/repos/c', '/repos/d']) }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   const detail = (journalPayload(calls) || {}).detail
   assert.equal(detail.budget.maxTotalAttempts, 99, 'pinning it is what pinning it means')
@@ -366,7 +367,7 @@ test('spec authoring finding work OUTSIDE the ruled span is surfaced, not droppe
       scopingResult: RULED(['/repos/alpha']),
       outOfRepoFindings: ['the consumer for order.placed lives in /repos/beta and does not exist'],
     }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.ok(Array.isArray(result.outOfSpanFindings) && result.outOfSpanFindings.length, 'it must cross the boundary, not go to the journal')

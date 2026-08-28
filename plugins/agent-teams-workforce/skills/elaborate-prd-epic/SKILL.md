@@ -5,7 +5,7 @@ description: >-
   Story and Task beads beneath it. Use after resolving a PRD/Epic pair from either
   end — a PRD document via /agent-teams-workforce:start-prd, or an Epic bead via
   /agent-teams-workforce:work-bead. Covers the repo span, the prd-to-spec dispatch,
-  and writing the returned hierarchy into beads with bd.
+  and checking what the run itself wrote into beads.
 allowed-tools: [Read, Write, Bash, Glob, Workflow]
 ---
 
@@ -81,27 +81,46 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
 Use `scriptPath`, never a bare `name` — name dispatch resolves against the
 session-start snapshot and the workflow dispatch guard refuses it.
 
-No worktree. This phase authors documents and returns bead specifications; it
-writes no code, so there is no feature branch for it to land on.
+No worktree. This phase authors documents and writes beads from the MAIN repo
+path; it writes no code, so there is no feature branch for it to land on — and
+`.beads` is never written from a worktree.
 
 Without `brd` the traceability audit has nothing to audit against and every
 requirement reads as an orphan. Supply it when one exists; say so when it does not.
 
-## 3. Write the hierarchy into beads
+## 3. Check what the run wrote — do NOT write it yourself
 
-The composite returns `hierarchy: {epic, stories, tasks, storyDependencies}` and
-does **not** touch `.beads`. Links are by local key (`E1`, `S1`), not bead id, so
-write top-down and record each real id as you go:
+**The composite writes the hierarchy into beads itself.** Its Emit Beads phase
+creates the Epic, then the Stories under the Epic's real id, then each Story's
+Tasks under their own Story's real id, then the dependency edges — parent before
+child, ordered by the script, with a child of an unwritten parent never attempted.
+Writing any of it again creates duplicates.
 
-1. The Epic already exists — record its real id against `epic.key`.
-2. `bd create` each Story in `buildOrderIndex` order, parent = the Epic's real id
-   (mapped from `parentEpicKey`). Record each id against its key.
-3. Add Story dependencies: each Story's `dependsOn` names keys that must land
-   first — translate them to ids.
-4. `bd create` each Task, parent = its Story's real id (from `parentStoryId`).
+What comes back:
 
-Get step 2 or 4 wrong and every Task is parentless, which the router refuses to
-work — correctly, because a Task with no Story has no Spec to build against.
+- `hierarchy: {epic, stories, tasks, storyDependencies}` — the same tree, with each
+  node now carrying the real `id` it was written under.
+- `emissionOk` — true only when every bead and every edge landed.
+- `beadsEmitted` — how many beads this run actually created.
+- `emission` — `{verdict, target, created, adopted, failed[], skipped[], links}`.
+  `verdict` is `complete`, `partial`, or `none`.
+
+Act on the verdict:
+
+- **complete** — nothing to do. Report the ids.
+- **partial** — some beads did not land, and `emission.failed` / `emission.skipped`
+  name every one with its reason. The hierarchy is returned in full, so the
+  remainder can be written with `bd` without re-running the pipeline: create each
+  named node under the real parent id already recorded on the tree, parent before
+  child. A `skipped` node was not attempted because its parent is missing — write
+  the parent first or the child is an orphan the router refuses to work.
+- **none** — the run comes back `ok: false` at stage `emit-beads`. Nothing is durable
+  and nothing was lost: read `emission.reason`, fix the cause (usually the repository
+  path or the tracker itself), and write the returned hierarchy or re-dispatch.
+
+Report `emissionOk` and `beadsEmitted` exactly as the composite returned them. They
+are measured by the step that did the writing; never compose them from your own
+account of what you think landed.
 
 ## 4. Report
 
@@ -113,6 +132,9 @@ work — correctly, because a Task with no Story has no Spec to build against.
   Say plainly that their work is specified nowhere until they exist
 - Stories: how many, and which repo each covers
 - Tasks: how many, and the story-dependency edge count
+- Emission: `emission.verdict`, `beadsEmitted`, and — when the verdict is not
+  `complete` — every node in `emission.failed` and `emission.skipped` and what
+  still has to be written
 - Any gate that blocked — the composite's `headline` carries the phase, the reason and
   the first unmet criterion; the full gate feedback and every phase artifact are in the
   run journal at `detailPath`. The composite no longer returns its phase artifacts: a

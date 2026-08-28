@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, journalPayload } from './helpers/run-workflow.mjs'
+import { beadWriter } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
@@ -76,7 +77,7 @@ async function runRepos(repos, extraArgs = {}) {
   const run = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, ...extraArgs },
     workflowImpl: cleanRun(repos),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   const payload = journalPayload(run.calls)
   const detail = payload && payload.detail

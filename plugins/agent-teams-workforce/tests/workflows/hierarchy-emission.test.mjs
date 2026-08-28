@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
+import { beadWriter, withBeadWriter } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
@@ -100,7 +101,7 @@ async function run({ args, repos, withEpic = true }) {
   return runWorkflowScript(prdToSpec, {
     args,
     workflowImpl: makeWorkflowImpl({ repos, withEpic }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
 }
 
@@ -267,8 +268,8 @@ if (name.endsWith('prd-reconciliation')) {
       }
       return null
     },
-    agentImpl: (call) =>
-      call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null,
+    agentImpl: withBeadWriter((call) =>
+      call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
@@ -344,7 +345,7 @@ if (name.endsWith('prd-reconciliation')) {
       }
       return null
     },
-    agentImpl: (call) => (call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null),
+    agentImpl: withBeadWriter((call) => (call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null)),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
@@ -391,11 +392,11 @@ test('Stories carry the dependency graph; the Epic carries none', async () => {
   const { result } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
     workflowImpl: makeWorkflowImpl({ repos, withEpic: true }),
-    // The Story-dependency mapper is the only agent() call this composite makes.
-    agentImpl: (call) =>
+    // The Story-dependency mapper and the bead writer are the agent() calls this composite makes.
+    agentImpl: withBeadWriter((call) =>
       call.label === 'sequence:story-dag'
         ? { edges: [{ from: 'S1', to: 'S2' }], buildOrder: ['S1', 'S2', 'S3'], acyclic: true }
-        : null,
+        : null),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
@@ -419,7 +420,7 @@ test('a single Story needs no dependency mapper run', async () => {
   const { calls } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a' },
     workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: true }),
-    agentImpl: () => null,
+    agentImpl: beadWriter(),
   })
   const mapperRuns = calls.filter((c) => c.kind === 'agent' && c.label === 'sequence:story-dag')
   assert.equal(mapperRuns.length, 0, 'one Story has nothing to depend on — do not spend an agent on it')
@@ -430,10 +431,10 @@ test('a cyclic Story graph fails the run rather than inventing an order', async 
   const { result } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
     workflowImpl: makeWorkflowImpl({ repos, withEpic: true }),
-    agentImpl: (call) =>
+    agentImpl: withBeadWriter((call) =>
       call.label === 'sequence:story-dag'
         ? { edges: [{ from: 'S1', to: 'S2' }, { from: 'S2', to: 'S1' }], buildOrder: [], acyclic: false, cycle: ['S1', 'S2', 'S1'] }
-        : null,
+        : null),
   })
 
   assert.equal(result.ok, false)

@@ -129,8 +129,8 @@ ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
   your invoking this command is.
 
 Then invoke the `elaborate-prd-epic` skill with the resolved pair. It owns the
-`prd-to-spec` dispatch, writing the returned hierarchy into beads with `bd`, and
-the report. `/agent-teams-workforce:start-prd` hands off to the same skill from
+`prd-to-spec` dispatch and the report. The run writes the returned hierarchy into
+beads itself; the skill verifies what landed rather than writing it by hand. `/agent-teams-workforce:start-prd` hands off to the same skill from
 the other door — do not re-implement any of it here.
 
 Do not work out a repo span. `prd-to-spec` RULES the span during the run, after
