@@ -35,18 +35,31 @@ You must arrive with:
 If either is missing, stop. Mint the missing half and return here — minting
 completes the representation, it does not authorize the build.
 
-## 1. Determine the repo span
+## 1. Do NOT determine the repo span
 
-A Story is scoped to exactly one repo, and `prd-to-spec` runs spec authoring once
-per repo, so the span must be known before it starts.
+A PRD is a requirement. It is not scoped to a repository and it may span several. A
+Spec and its Story are scoped to exactly one, and `prd-to-spec` runs spec authoring
+once per repo — but **the span is decided inside the run, not by you.** Its
+`repo-scoping` phase surveys the repositories that exist and rules the span from the
+architecture decision the same run produced.
 
-- Given explicitly → use it.
-- Otherwise derive it from the PRD: which services does it name? Check each against
-  the repos actually on disk. State what you derived and what you are running with.
-- Genuinely single-service → one repo. That is the common case; do not inflate it.
+So: **pass no `repos`.** Pass `repoPath` — the repository you are standing in — as a
+starting point, and let the run rule the rest.
 
-A missing repo means a Story that never existed, and re-running costs the whole
-front end.
+Pass `repos` only when a human has named the span explicitly (`/start-prd`'s second
+argument), and only for that run. It is an override, not a setting: nothing stores it,
+and a later run without it is scoped afresh. Deriving a span yourself and passing it is
+the failure this phase exists to remove — it pins the answer to what you could see
+before the architecture decision existed, and a re-run after an adjustment then
+inherits it.
+
+Two results come back that you must not bury:
+
+- `repoSpan` — the repositories that were ruled. Report it.
+- `newRepos` / `requiredHumanActions` — repositories the work needs that the project
+  does not have. The run created nothing, and the work in them is specified nowhere.
+  Surface each one; the fix is to create the repository through the `polyrepo-steward`
+  and re-run.
 
 ## 2. Dispatch
 
@@ -58,8 +71,8 @@ ls -d ~/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/*/ | sort -
 Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   prd:      {id, title, body, repoPath},
   epic:     <the Epic bead — always pass it, so it is adopted rather than re-minted>,
-  repos:    ["/path/to/repo-a", "/path/to/repo-b"],
-  repoPath: "/path/to/repo-a",
+  repoPath: "/path/to/the/repo/you/are/standing/in",
+  repos:    <OMIT — the run rules the span. Only when a human named it explicitly>,
   brd:      <BRD objectives text, when there is one>,
   sadPath:  <arc42 SAD location, when known>
 }})
@@ -94,6 +107,10 @@ work — correctly, because a Task with no Story has no Spec to build against.
 
 - Epic: adopted, or minted from the PRD
 - PRD: located, or minted from the Epic
+- Repo span: the repositories `repoSpan` names, and whether the run ruled them or a
+  human pinned them
+- Repositories still to create: every `newRepos` entry, with why no existing repo fits.
+  Say plainly that their work is specified nowhere until they exist
 - Stories: how many, and which repo each covers
 - Tasks: how many, and the story-dependency edge count
 - Any gate that blocked — the composite's `headline` carries the phase, the reason and

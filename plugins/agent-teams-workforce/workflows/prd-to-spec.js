@@ -1,15 +1,16 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent: a PRD whose requirements are all built is closed, a delta that is really a defect or an infrastructure switch is rerouted to bug-fix or infra-change, and everything that continues is specified against the DELTA PRD — the absent and partial requirements — never the original ambition. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the PRD spans, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The caller receives { ok, stage, beadId, headline, detailPath } plus the emitted hierarchy and bead set; every phase artifact goes to the run journal.',
+    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent: a PRD whose requirements are all built is closed, a delta that is really a defect or an infrastructure switch is rerouted to bug-fix or infra-change, and everything that continues is specified against the DELTA PRD — the absent and partial requirements — never the original ambition. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The caller receives { ok, stage, beadId, headline, detailPath } plus the emitted hierarchy and bead set; every phase artifact goes to the run journal.',
   phases: [
     { title: 'PRD Reconciliation', detail: 'establish what already ships BEFORE any gate is spent; everything downstream reads the delta PRD' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
     { title: 'PRD Validation' },
     { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
     { title: 'Architecture' },
+    { title: 'Repo Scoping', detail: 'rule the repo span from the architecture decision and the delta — an output of this run, never pre-staged' },
     { title: 'TRD Authoring', detail: 'once per PRD — the TRD is per-PRD, never fanned out per repo' },
-    { title: 'Spec Authoring', detail: 'once per repo — a Spec and its Story are created together, one Story per repo' },
+    { title: 'Spec Authoring', detail: 'once per repo in the RULED span — a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
     { title: 'Emit Beads', detail: 'surface the full Epic → Story → Task hierarchy plus the flat task bead set' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
@@ -27,9 +28,12 @@ export const meta = {
 //   sadPath?: string,             // arc42 SAD path for the architecture mini
 //   spec?: { id?, title?, summary?, service?, repoPath? }, // spec-authoring context
 //   accessPatterns?: string[],    // known data access patterns for the data-model spec
-//   repoPath?: string,            // owning service/repo for downstream artifacts
-//   repos?: string[],             // every repo this PRD spans — one Story (one spec pass) per repo;
-//                                 // defaults to [repoPath] so the single-repo case is unchanged
+//   repoPath?: string,            // where the run was launched from — a STARTING POINT for the
+//                                 // phases that run before the span is ruled, not the span itself
+//   repos?: string[],             // OVERRIDE. Absent (the normal case), the span is RULED by the
+//                                 // repo-scoping mini during the run. Supply it only to pin a span
+//                                 // deliberately — a re-run, or a test — and it wins for that run
+//                                 // only. It is an argument, never a stored artifact.
 //   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — ADOPTED, and it wins over any Epic prd-creation mints
 //   trdPath?: string,             // where the TRD lives/should be written
 //   dependencies?: string[],      // upstream contracts/schemas/libs the PRD assumes — fed to reconciliation
@@ -56,11 +60,27 @@ const MAX_LOOPS = a.maxLoops || 2
 // downstream agent an empty document.
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.prd.repoPath) || null
-// One Epic may span repos and a Story is scoped to exactly one, so spec authoring
-// fans out once per repo below. Absent an explicit span the single repoPath is the
-// whole span; null is filtered out rather than minted into a repo-less Story, which
-// the work-item hierarchy forbids.
-const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => r != null)
+// ── The repo span is RULED, not supplied ────────────────────────────────────────
+//
+// One Epic may span repositories and a Story is scoped to exactly one, so spec authoring
+// fans out once per repo. Which repos those ARE used to arrive as `args.repos`, defaulting
+// to `[repoPath]` — so nothing in this composite ever decided the span, and a PRD that
+// genuinely spanned three repositories produced ONE Story in whichever repository the
+// caller happened to be standing in. The other two repos worth of work was never
+// specified, and nothing said so: a wrongly-narrowed span is indistinguishable from a
+// correctly-scoped single-repo PRD once the run is under way.
+//
+// Three bindings, and they are not interchangeable:
+//
+//   callerRepos — an explicit OVERRIDE for this run. It still wins, for a deliberate
+//                 re-run and for tests, and it is an argument rather than anything stored.
+//   seedRepos   — where the run was launched from. It is what the phases BEFORE the span
+//                 is ruled are told, and it is a hint to them, never an answer.
+//   repos       — the RULED span, empty until the Repo Scoping phase below fills it.
+//                 Everything that fans out per repo reads this and only this.
+const callerRepos = (Array.isArray(a.repos) ? a.repos : []).filter((r) => r != null && String(r).trim() !== '')
+const seedRepos = (callerRepos.length ? callerRepos : [repoPath]).filter((r) => r != null)
+let repos = callerRepos.slice()
 if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither request nor prd supplied — refusing to run without a work item' }
 
 // ── Run budget ──────────────────────────────────────────────────────────────────
@@ -84,11 +104,18 @@ if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither re
 // and one Story per repo is the normal shape of this pipeline, not an edge case.
 // Scaling the floor keeps the runaway protection (worst case is still
 // (3 + 2N) * MAX_LOOPS, well above this) while guaranteeing a clean run always fits.
+//
+// The span is no longer known when this is first computed — it is ruled mid-run — so the
+// ceiling is SEEDED from the caller's starting point and RESCALED once the ruling lands.
+// It only ever grows: a scoping step that finds three repositories where the caller named
+// one has discovered more legitimate work, not less budget. A caller who pinned
+// maxTotalAttempts keeps exactly that number, which is what pinning it means.
 const FIXED_GATES = 3
 const GATES_PER_REPO = 2
 const RETRY_HEADROOM = a.retryHeadroom || 3
-const MAX_TOTAL_ATTEMPTS =
-  a.maxTotalAttempts || FIXED_GATES + GATES_PER_REPO * repos.length + RETRY_HEADROOM
+const attemptsFor = (repoCount) =>
+  a.maxTotalAttempts || FIXED_GATES + GATES_PER_REPO * repoCount + RETRY_HEADROOM
+let MAX_TOTAL_ATTEMPTS = attemptsFor(seedRepos.length)
 // Floor below which a further expensive phase is not started. Only meaningful
 // when the caller set a token target (budget.total); otherwise remaining() is
 // Infinity and this never trips.
@@ -98,7 +125,7 @@ const budgetStop = () => {
   if (attemptsSpent >= MAX_TOTAL_ATTEMPTS) {
     return (
       `run attempt budget exhausted (${attemptsSpent}/${MAX_TOTAL_ATTEMPTS} phase attempts across ` +
-      `${repos.length} repo(s)). Raise args.maxTotalAttempts to allow more.`
+      `${repos.length || seedRepos.length} repo(s)). Raise args.maxTotalAttempts to allow more.`
     )
   }
   // `typeof` guard, not a truthiness test: an undeclared identifier throws a
@@ -589,7 +616,12 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 enterPhase('PRD Reconciliation')
 const reconciliation = await workflow('agent-teams-workforce:prd-reconciliation', {
   prd,
-  repos,
+  // The SEED, deliberately, and not the span: the span has not been ruled yet and cannot
+  // be, because ruling it needs an architecture decision that needs a validated PRD that
+  // needs this reconciliation. Reconciliation is told where to START looking; its own
+  // reality check reports back which repositories it actually found the work in, and that
+  // report is one of the inputs the scoping phase rules on.
+  repos: seedRepos,
   dependencies: a.dependencies,
   deltaPath: a.deltaPath,
 })
@@ -798,7 +830,8 @@ if (a.skipArchitecture === true) {
       `It does NOT exist merely because the work is hard, security-adjacent, or user-facing. A feature that composes existing decisions — a screen in an existing app, a field on an existing form, a call to an endpoint whose contract another PRD owns — raises NO architecture decision even when it is difficult.\n\n` +
       `Answer needed:false when EITHER there is no such choice, OR the SAD already settles every choice this PRD raises (name the sections).\n` +
       `Answer needed:true when even one unsettled choice remains. When uncertain, answer true: a wrongly-run panel costs tokens, a wrongly-skipped one costs a bad decision.\n\n` +
-      `Repos this PRD spans (${repos.length}): ${repos.join(', ') || '(none named)'}\n` +
+      `Repositories the run was launched from (${seedRepos.length}): ${seedRepos.join(', ') || '(none named)'}. ` +
+      `This is a STARTING POINT, not the span — which repositories this PRD lands in is ruled later in this run, after you answer. Do not treat the count as evidence about scope.\n` +
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
       `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}` +
       `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.`
@@ -940,6 +973,111 @@ produced.architecture = architecture.artifact || null
 if (!architecture.ok) return partial('architecture', architecture)
 const sadExtract = architecture.artifact && architecture.artifact.sadUpdate
 
+// ── Repo Scoping (no gate) ───────────────────────────────────────────────────────
+//
+// A PRD is a REQUIREMENT. It is not scoped to a repository and it may span several. A
+// Spec and its Story ARE scoped to exactly one. Deciding what sits between those two
+// facts is a real decision, and nothing in this composite used to make it — the span
+// arrived as caller input and defaulted to the one repo the run was launched from.
+//
+// It is ruled HERE, and the position is load-bearing in both directions:
+//
+//   AFTER architecture, because the ruling is most of the input. Which services the
+//   design creates, which boundaries it crosses, which surfaces it stands up — those
+//   decide where the work lands, and none of them are known before the decider rules.
+//   The scoping mini also reads the repositories and code that already exist, which is
+//   the other half: a PRD lands in the repository that already owns the capability far
+//   more often than in a new one.
+//
+//   BEFORE the TRD and the specs, because everything downstream of here fans out per
+//   repo. The TRD is per-PRD so it does not care, but the span has to exist before the
+//   first fan-out, and the run budget has to be rescaled to it before the first per-repo
+//   gate is spent.
+//
+// IT IS NEVER PRE-STAGED. Not a cache file, not a config file, not a side-car: the span
+// is recomputed on every run. That is not fastidiousness — a stored span is an answer
+// computed against a PRD that has since been adjusted, and a run that reads one succeeds
+// against the wrong repositories, silently. Recomputing costs a survey and a ruling.
+//
+// It spends NO GATE, for the same reason PRD reconciliation does not. Its output is a
+// short structured list that an INDEPENDENT verifier inside the mini has already checked
+// against the repositories that actually exist, and the enforcement that matters is
+// deterministic and lives in the mini's own reduction. A gate here would buy an
+// adjudication of a list rather than of a document, at the price of one more attempt
+// against the run budget before a single spec is authored.
+enterPhase('Repo Scoping')
+let scoping = null
+if (callerRepos.length) {
+  // An explicit span is an override for THIS run — an argument the caller passed in band,
+  // not a stored artifact — so it wins and nothing is dispatched. A re-run that does not
+  // pass it is scoped afresh, which is the property the whole phase exists to preserve.
+  repos = callerRepos
+  log(`Repo Scoping SKIPPED — the caller pinned the span explicitly (${repos.length}): ${repos.join(', ')}`)
+} else {
+  scoping = await workflow('agent-teams-workforce:repo-scoping', {
+    // The DELTA PRD, like every phase downstream of reconciliation. Scoping the original
+    // ambition would place work in repositories whose share of it already shipped.
+    prd: { id: prd.id, title: prd.title, body: validatedPrd.body || prd.body },
+    architecture: architecture.skipped ? { skipped: true } : architecture.artifact || null,
+    reconciliation: { requirements: reconciliation.requirements, sizing: reconciliation.sizing },
+    seedRepos,
+    epic: { key: epic.key, title: epic.title },
+  })
+  if (scoping && scoping.ledger) runLedger.push(scoping.ledger)
+  produced.repoScoping = scoping || null
+  if (!scoping || scoping.ok === false) {
+    // A failed scoping is NOT a single-repo span. Falling back to the caller's starting
+    // point would restore exactly the defect this phase removes, and would do it on the
+    // one run where the span was least certain.
+    return partial('repo-scoping', {
+      reason:
+        (scoping && scoping.reason) ||
+        'repo scoping returned nothing — which repositories this PRD lands in could not be established, and the run will not guess.',
+    })
+  }
+  repos = Array.isArray(scoping.repos) ? scoping.repos : []
+}
+const repoActions = (scoping && scoping.requiredHumanActions) || []
+const newRepos = (scoping && scoping.newRepos) || []
+if (scoping) {
+  log(
+    `Span ruled: ${repos.length} repositor(ies) — ${repos.join(', ') || '(none)'}` +
+      `${newRepos.length ? `; ${newRepos.length} repositor(ies) do not exist yet and are returned as human actions` : ''}` +
+      `${scoping.spanVerified ? '' : '; the span is UNVERIFIED'}`
+  )
+}
+
+// Every repository the work needs has still to be created. There is nothing to author a
+// Spec against, so the run stops and hands back the actions — the same shape as the
+// reroute exit above: a definite decision the caller acts on, not a failure.
+if (!repos.length) {
+  return {
+    ...handback(
+      true,
+      'repo-scoping',
+      `the work lands in ${newRepos.length} repositor(ies) that do not exist yet, so no Spec or Story could be authored. ` +
+        `Create them — ${newRepos.map((n) => n.proposedName).join(', ') || '(unnamed)'} — through the polyrepo-steward so the manifest is written too, then re-run this PRD. ` +
+        'This run created nothing: a repository is an outward-facing, effectively irreversible addition, and a phase that minted one would mint a second on the next pass.',
+      { action: 'create-repos', scoping, prd: validatedPrd, epic }
+    ),
+    action: 'create-repos',
+    newRepos,
+    requiredHumanActions: repoActions,
+  }
+}
+
+// Rescale the run budget to the span that was actually ruled, BEFORE the first per-repo
+// gate. Without this a PRD ruled into four repositories runs against a ceiling sized for
+// the one the caller named: the Stories all get authored, the budget runs out partway
+// through decomposition, and the run returns DEGRADED with three of the four Stories
+// carrying no tasks — a shortfall caused entirely by a ceiling for a span it no longer
+// has. A caller who pinned maxTotalAttempts keeps it; nothing here overrides that.
+const rescaled = attemptsFor(repos.length)
+if (rescaled > MAX_TOTAL_ATTEMPTS) {
+  log(`Run attempt ceiling rescaled ${MAX_TOTAL_ATTEMPTS} -> ${rescaled} for a ruled span of ${repos.length} repo(s)`)
+  MAX_TOTAL_ATTEMPTS = rescaled
+}
+
 // ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
 // Consumes PRD + SAD extract; produces the TRD + bidirectional traceability matrix.
 // The TRD is per-PRD, not per-repo: it is authored exactly ONCE here and never
@@ -980,14 +1118,32 @@ const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
 // Story parented to the Epic above. Each repo faces its own G3 gate, and a repo
 // whose spec fails its gate is RECORDED in the result — never silently dropped.
 enterPhase('Spec Authoring')
+// Unreachable by design — the Repo Scoping phase above returns before here on an empty
+// span, either with the ruled repositories or with the actions that would create them.
+// Kept as a backstop, and the message says what reaching it MEANS rather than restating
+// the symptom. It no longer means "the caller forgot to pass args.repos": that argument is
+// an override now and its absence is normal. It means the span was never ruled — the
+// scoping phase returned ok with no repositories and no repositories to create, which is a
+// different failure from a PRD that lands nowhere and needs a different fix.
 if (!repos.length) {
-  return partial(
-    'spec-authoring',
-    { reason: 'no repos to author specs for — a Story is scoped to a single repo; supply args.repos or args.repoPath' }
-  )
+  return partial('spec-authoring', {
+    reason:
+      'no repos to author specs for. A Story is scoped to a single repo and the span is RULED during the run, not supplied, ' +
+      'so reaching here means the ruling produced neither a repository to author in nor a repository to create — the architecture ' +
+      'side of the run failed to rule the span rather than the caller failing to name it. Re-run; do not pass args.repos to paper over it, ' +
+      'because a pinned span suppresses the ruling that is the thing actually broken.',
+  })
 }
 const specPairs = [] // one { repoPath, spec, story } per repo that passed G3
 const specFailures = [] // repos whose spec failed G3 — kept so they cannot silently vanish
+// Work the spec set implies in a repository OTHER than the one its Story covers.
+// spec-authoring returns these per repo and this composite used to drop them on the floor.
+// They are the only independent evidence the pipeline produces about whether the ruled span
+// was RIGHT: the scoping phase ruled the span before any spec existed, and a spec author who
+// then finds a contract, a table, or a consumer it needs in a repository outside the span has
+// found a hole in that ruling from the one vantage point that could see it. Discarding them
+// meant the span could only ever be confirmed, never contradicted.
+const outOfSpanFindings = []
 // Each repo's Story needs a distinct key: they become sibling beads under one Epic
 // and the dependency graph addresses them by key, so a repeated key would collapse
 // several repos' work onto one phantom Story.
@@ -1034,10 +1190,22 @@ for (const [repoIndex, repo] of repos.entries()) {
     specFailures.push({ repoPath: repo, reason: 'spec-authoring returned no story', detail: specAuthoring })
     continue
   }
+  const outOfRepo = (specAuthoring.artifact && specAuthoring.artifact.outOfRepoFindings) || []
+  for (const f of outOfRepo) {
+    if (typeof f === 'string' && f.trim()) outOfSpanFindings.push({ repoPath: repo, finding: f.trim() })
+  }
   specPairs.push({ repoPath: repo, spec: specAuthoring.artifact, story })
 }
 produced.specPairs = specPairs
 produced.specFailures = specFailures
+produced.outOfSpanFindings = outOfSpanFindings
+if (outOfSpanFindings.length) {
+  log(
+    `Spec authoring reported ${outOfSpanFindings.length} finding(s) of work OUTSIDE the ruled span — ` +
+      `the span may be too narrow, and nothing in this run specifies that work: ` +
+      outOfSpanFindings.map((f) => `${f.repoPath}: ${f.finding}`).join('; ')
+  )
+}
 // A failure in ONE repo used to end the run for ALL of them, so a three-repo PRD
 // where two specs were clean and one was not emitted nothing for any of the three.
 // Repo failures are independent — a Story is scoped to a single repo by
@@ -1268,6 +1436,15 @@ return {
     'emit-beads',
     `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced, WSJF-scored and Beads-format valid, against the delta PRD at ${reconciliation.deltaPrdPath} (${reconciliation.verdict}; ${reconciliation.deltaCount} requirement(s) remained). ` +
       (architecture.skipped ? 'Architecture was SKIPPED — triage found no architecture decision. ' : 'Architecture was ruled into the SAD. ') +
+      (scoping
+        ? `The repo span was RULED this run (${repos.join(', ')}) — it is recomputed every run and nothing was stored. `
+        : `The repo span was PINNED by the caller (${repos.join(', ')}). `) +
+      (newRepos.length
+        ? `REQUIRES A HUMAN: ${newRepos.length} repositor(ies) the work needs do not exist — ${newRepos.map((n) => n.proposedName).join(', ')}. Nothing was created; their work is specified nowhere in this run. `
+        : '') +
+      (outOfSpanFindings.length
+        ? `THE RULED SPAN MAY BE TOO NARROW: spec authoring found ${outOfSpanFindings.length} piece(s) of implied work OUTSIDE it (${outOfSpanFindings.map((f) => f.finding).join(' | ')}). No Story covers them. Widen the span and re-run, or confirm the work belongs to another PRD. `
+        : '') +
       'Emit via bd from the main repo path — epic, then stories, then tasks; this composite does not write to .beads.' +
       (degraded
         ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — details in the run journal. Everything returned here is emittable.`
@@ -1281,6 +1458,7 @@ return {
         'prd-validation',
         epicPath,
         architecture.skipped ? 'architecture-skipped' : 'architecture',
+        scoping ? 'repo-scoping' : 'repo-span-pinned-by-caller',
         'trd-authoring',
         'spec-authoring',
         'task-decomposition',
@@ -1296,6 +1474,7 @@ return {
         validation: validation.artifact,
         architecture: architecture.artifact,
         architectureTriage: archTriage,
+        repoScoping: scoping,
         trdAuthoring: trdAuthoring.artifact,
         specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
         decomposition: decompositions,
@@ -1305,6 +1484,18 @@ return {
   degraded,
   hierarchy,
   beadSet,
+  // The ruled span and anything it needs a human for cross the boundary with the
+  // hierarchy rather than going to the journal. They are DECISIONS the caller acts on —
+  // which repositories these Stories are for, and which repository has to be created
+  // before the rest of the work can be specified at all — and both are a handful of
+  // short strings. A required action nobody reads is a required action nobody takes.
+  repoSpan: repos,
+  ...(newRepos.length ? { newRepos } : {}),
+  ...(repoActions.length ? { requiredHumanActions: repoActions } : {}),
+  // Crosses the boundary for the same reason, and it is the ONE result that can
+  // contradict the span rather than confirm it — see outOfSpanFindings above. In the
+  // journal it would be read only by someone who already suspected the span was wrong.
+  ...(outOfSpanFindings.length ? { outOfSpanFindings } : {}),
 }
   })()
 } finally {

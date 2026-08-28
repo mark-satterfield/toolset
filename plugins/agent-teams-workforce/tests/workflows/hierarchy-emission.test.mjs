@@ -48,6 +48,22 @@ if (name.endsWith('prd-reconciliation')) {
       return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
+    if (name.endsWith('repo-scoping')) {
+      // The repo span is RULED during the run now, not supplied. A fixture that does not
+      // answer this stops the composite at the scoping phase — deliberately, because
+      // falling back to the caller's starting point is the defect the phase removes.
+      // Runs that pin `args.repos` never reach here; this answers the ones that do not.
+      return {
+        ok: true,
+        repos,
+        placements: repos.map((r) => ({ repoPath: r, repoName: r, workUnitIds: [], rationale: 'ruled', verified: true })),
+        newRepos: [],
+        requiredHumanActions: [],
+        reclassified: [],
+        blocked: [],
+        spanVerified: true,
+      }
+    }
     if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
     if (name.endsWith('spec-authoring')) {
       storyN += 1

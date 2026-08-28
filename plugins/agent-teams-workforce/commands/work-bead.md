@@ -128,10 +128,15 @@ ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
   PRD template. Minting completes the pair; it is not what authorizes the build —
   your invoking this command is.
 
-Then invoke the `elaborate-prd-epic` skill with the resolved pair. It owns the repo
-span, the `prd-to-spec` dispatch, writing the returned hierarchy into beads with
-`bd`, and the report. `/agent-teams-workforce:start-prd` hands off to the same
-skill from the other door — do not re-implement any of it here.
+Then invoke the `elaborate-prd-epic` skill with the resolved pair. It owns the
+`prd-to-spec` dispatch, writing the returned hierarchy into beads with `bd`, and
+the report. `/agent-teams-workforce:start-prd` hands off to the same skill from
+the other door — do not re-implement any of it here.
+
+Do not work out a repo span. `prd-to-spec` RULES the span during the run, after
+the architecture decision, and it is recomputed every run rather than stored — so
+a span derived here would pin the answer to what was visible before the design
+existed, and a re-run after an adjustment would inherit it.
 
 ## 6. Report
 

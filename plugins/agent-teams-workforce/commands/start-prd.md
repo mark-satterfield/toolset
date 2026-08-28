@@ -1,6 +1,6 @@
 ---
 description: "Start a PRD at the top of the pipeline — Epic, TRD, Spec+Story per repo, Tasks"
-argument-hint: "<prd-path-or-title> [repo,repo,...]"
+argument-hint: "<prd-path-or-title> [repo,repo,... — an override, rarely needed]"
 allowed-tools: [Bash, Read, Glob, Skill, Workflow]
 ---
 
@@ -50,10 +50,20 @@ this command is.
 
 ## 3. Hand off
 
-Invoke the `elaborate-prd-epic` skill with the resolved pair, the repo span from
-the second argument if given, and the BRD and SAD paths when they exist. It owns
-the repo span, the `prd-to-spec` dispatch, writing the hierarchy into beads, and
-the report.
+Invoke the `elaborate-prd-epic` skill with the resolved pair and the BRD and SAD
+paths when they exist. It owns the `prd-to-spec` dispatch, writing the hierarchy
+into beads, and the report.
+
+**Do not work out the repo span and do not pass one.** The span is an OUTPUT of
+the run: `prd-to-spec` rules it after the architecture decision, from the design
+that decision produced and from the repositories that actually exist. It cannot be
+known before then — the span is a property of work no repository contains yet.
+
+The second argument is an override for the case where a human has already decided
+the span and wants this one run pinned to it. Pass it only when the invoker named
+it. It is an argument, never a setting: nothing stores it, and the next run without
+it is scoped afresh, which is what stops a re-run after an adjustment inheriting a
+span computed before the adjustment.
 
 Do not re-implement any of that here. If it needs to change, change it there so
 both doors change together.
