@@ -268,16 +268,20 @@ test('a run that fails BEFORE the deploy phase still reports deployedToDev=false
 })
 
 test('the input refusals answer ALL THREE scalars, before handback even exists', async () => {
-  // These six returns are the one path handback() cannot reach, so its defaulting does not
+  // These returns are the one path handback() cannot reach, so its defaulting does not
   // cover them and each scalar has to be carried explicitly. 6.2.1 carried two of the three
   // and its commit message claimed it carried them all — which is the same absent-field trap
   // that commit existed to close, one level down.
   for (const [name, composite] of [['task-to-deploy', 'task-to-deploy.js'], ['bug-fix', 'bug-fix.js'], ['infra-change', 'infra-change.js']]) {
     const run = (bead) => runWorkflowScript(path.join(WF, composite), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
 
-    for (const [label, bead] of [['no id', { repoPath: '/repos/chassis' }], ['no repoPath', { id: 'ssbd-x' }]]) {
+    // A missing repoPath is no longer an input refusal: it is ruled at run time, and with
+    // the fixture's resolver yielding nothing the run stops at `repo-resolution` — which
+    // goes through handback and therefore answers the scalars by construction. It is kept
+    // in this loop so that path is measured too, not assumed.
+    for (const [label, bead, stage] of [['no id', { repoPath: '/repos/chassis' }, 'input'], ['no repoPath', { id: 'ssbd-x' }, 'repo-resolution']]) {
       const { result } = await run(bead)
-      assert.equal(result.stage, 'input', `${name} / ${label}`)
+      assert.equal(result.stage, stage, `${name} / ${label}`)
       for (const field of ['deployedToDev', 'smokePassed', 'deployIteration']) {
         assert.notEqual(result[field], undefined, `${name} / ${label}: ${field} must not be omitted`)
       }

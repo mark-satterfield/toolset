@@ -79,5 +79,6 @@ test('the header comment documents the argument the body actually reads', async 
   const src = readFileSync(T2D, 'utf8')
   const header = src.slice(0, src.indexOf('const a = ('))
   assert.match(header, /bead: \{/, 'the documented entry argument must be the one the code reads')
-  assert.match(header, /repoPath,\s+\/\/ required/, 'repoPath is required and the header must say so')
+  assert.match(header, /repoPath\?,\s+\/\/ the REPOSITORY/, 'repoPath is optional — ruled at run time when absent — and the header must say so')
+  assert.doesNotMatch(header, /repoPath,\s+\/\/ required/, 'the header must not still call it required')
 })

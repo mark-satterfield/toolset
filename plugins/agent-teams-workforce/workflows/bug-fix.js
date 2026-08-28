@@ -4,7 +4,7 @@ export const meta = {
     'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-deploy tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. Two tests that assert opposite outcomes for the same input are a CONTRADICTION, not a defective test — the test-strategy-decider rules which contract binds and the Red re-author corrects the losing test. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the fix in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
-    { title: 'Triage' },
+    { title: 'Triage', detail: 'runs FIRST, before Workspace, when the caller supplied no repository — the diagnosis locates the repository the defect lives in' },
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Refactor' },
@@ -30,9 +30,14 @@ export const meta = {
 const DEPLOYED_RED_CRITERION =
   'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
 
-// args: { bead: { id, title, description, repoPath }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations? }
+// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
-//   bead.repoPath is REQUIRED and names the REPOSITORY. The tree the phases write in is
+//   bead.repoPath names the REPOSITORY when the caller knows it. It is NOT required: a Bug
+//   is filed against a symptom, and the repository the defect lives in is a FINDING of the
+//   triage — so with no repoPath the run triages FIRST, takes the repository the diagnosis
+//   located beside its blast radius, and only then establishes a worktree. `repoHints`
+//   (names or paths the caller suspects) and `manifestPath` (the polyrepo manifest) reach
+//   the diagnosing agent as hints, never as answers. The tree the phases write in is
 //   established by the Workspace step below and is NOT this value.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const bead = a.bead || {}
@@ -66,12 +71,12 @@ const MAX_LOOPS = a.maxLoops || 2
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
-// A code-writing composite with no repository cannot write anywhere it can later land
-// from, and a run that proceeded blind then reported a phantom orphan at the end. Refuse
-// at the input stage instead, the same way a missing bead.id is refused.
-if (!String(bead.repoPath || '').trim()) {
-  return { ok: false, stage: 'input', error: 'no bead.repoPath supplied — refusing to write code without a repository to establish a worktree in', deployedToDev: false, smokePassed: false, deployIteration: 0 }
-}
+// A missing `bead.repoPath` is NOT refused here. It used to be — the same way a missing
+// bead.id is — and that made a repository a dispatch PRECONDITION for a Bug, which is filed
+// against a symptom and frequently names no repository at all (136 of 144 open Bugs on the
+// live tracker). The repository is a finding of the diagnosis: see the triage-first path
+// in the run body, which runs only when the caller supplied none.
+const REPO_RESOLUTION_STAGE = 'repo-resolution'
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`
 // on its artifact; the composite collects them and persists ONCE via run-ledger-writer
@@ -836,6 +841,46 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 let result
 try {
   result = await (async () => {
+// ── Triage FIRST when the caller supplied no repository ───────────────────────
+// A Bug is filed against a SYMPTOM. Which repository the defect lives in is a finding of
+// the diagnosis — the blast radius names the code at fault — so a run that arrives with
+// no `bead.repoPath` cannot establish a worktree yet: it does not know where. Triage is
+// read-only, so it runs first, without a tree; the repository it LOCATED is validated
+// against the same path allowlist every other path here passes through; and only then is
+// the worktree established. A run that arrives WITH a repository keeps the usual order —
+// Workspace first, then triage inside the tree — and this branch is not taken.
+const repoSupplied = !!String(bead.repoPath || '').trim()
+let contract = null
+if (!repoSupplied) {
+  enterPhase('Triage')
+  log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''} (no repository supplied; the diagnosis locates it)`)
+  contract = await workflow('agent-teams-workforce:bug-triage', { bead: { ...bead } })
+  if (!contract) return handback(false, 'triage', 'triage produced nothing')
+  const promoted = needsPrdExit(contract)
+  if (promoted) return promoted
+  const located = String(contract.repoPath || '').trim()
+  const locatedFault = located
+    ? pathFault('the repository triage located', located)
+    : `triage located no repository — ${contract.repoResolution || 'no resolution reported'}`
+  if (locatedFault) {
+    return {
+      ...handback(
+        false,
+        REPO_RESOLUTION_STAGE,
+        `no bead.repoPath was supplied and the diagnosis could not locate one — ${locatedFault}`,
+        { contract }
+      ),
+      diagnosis: {
+        reproduction: contract.reproduction,
+        rootCause: contract.rootCause,
+        affectedFiles: contract.affectedFiles,
+        blastRadius: contract.blastRadius,
+      },
+    }
+  }
+  log(`Repository located by triage: ${located}`)
+  bead.repoPath = located
+}
 // ── Workspace: establish the tree every writing phase then operates in ─────────
 // This is the structural mirror of the settle step above: settle LANDS the tree on
 // every exit path, workspace ESTABLISHES it before the first write. Nothing else in
@@ -896,13 +941,18 @@ settleDefaultBranch = workspace.defaultBranch || null
 if (workspace.ledger) runLedger.push(workspace.ledger)
 const workBead = { ...bead, repoPath: workRepoPath }
 
-enterPhase('Triage')
-log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-const contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
-if (!contract) return handback(false, 'triage', 'triage produced nothing')
+
+if (!contract) {
+  enterPhase('Triage')
+  log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
+  contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
+  if (!contract) return handback(false, 'triage', 'triage produced nothing')
+}
 // The composite owns the tree, not the mini. bug-triage echoes back whatever repoPath
-// it was handed; pinning it here means no mini can substitute a different tree.
+// it was handed — or, on the triage-first path, the REPOSITORY it located — and pinning
+// the worktree here means no mini can substitute a different tree.
 contract.repoPath = workRepoPath
+contract.bead = { ...(contract.bead || bead), repoPath: workRepoPath }
 settleRepoPath = workRepoPath
 
 // Triage sizes the bug as well as diagnosing it. A defect whose honest remedy is a
@@ -912,7 +962,8 @@ settleRepoPath = workRepoPath
 //
 // Promotion to a PRD and an Epic is a HUMAN decision — whether to build it, and
 // now — so this stops and reports rather than promoting itself.
-if (contract.scope === 'needs-prd') {
+function needsPrdExit(contract) {
+  if (contract.scope !== 'needs-prd') return null
   log(`Bug ${bead.id || ''} needs a PRD, not a fix — stopping before Red. ${contract.scopeRationale || ''}`)
   // The one exit that keeps a payload beyond the headline. The diagnosis IS the product of
   // this exit — it is what a PRD would start from — and it is four bounded fields, not a
@@ -938,6 +989,8 @@ if (contract.scope === 'needs-prd') {
       'would start from. Promote it when you want it built: /agent-teams-workforce:start-prd.',
   }
 }
+const promoted = needsPrdExit(contract)
+if (promoted) return promoted
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
 enterPhase('Red')

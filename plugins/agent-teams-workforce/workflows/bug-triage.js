@@ -5,9 +5,27 @@ export const meta = {
   phases: [{ title: 'Triage', detail: 'root-cause analysis + scope sizing + expected-behavior contract' }],
 }
 
-// args: { bead: { id, title, description, repoPath } }
+// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? } }
+//
+// `repoPath` is the repository when the caller knows it. It is NOT required: a Bug is
+// filed against a SYMPTOM, and which repository the defect lives in is a finding of the
+// diagnosis — the blast radius names the code at fault, and the code at fault is in a
+// repository. So when no repoPath is supplied the diagnosing agent is told to LOCATE it,
+// from the symptom, the polyrepo manifest (`manifestPath`) and any names the caller merely
+// suspects (`repoHints`), and to report it CONFIRMED — an absolute path that exists and is
+// a git repository — or to report that it could not. A guessed repository is not an
+// answer: bug-fix validates what comes back and refuses what it cannot use.
 const bead = ((typeof args === 'string' ? JSON.parse(args) : args) || {}).bead || {}
-const repo = bead.repoPath || '(repo path not provided — ask before editing files)'
+const repoKnown = !!String(bead.repoPath || '').trim()
+const repo = repoKnown ? bead.repoPath : '(NOT KNOWN — locating it is part of this diagnosis; see below)'
+const repoHints = (Array.isArray(bead.repoHints) ? bead.repoHints : []).map((h) => String(h == null ? '' : h).trim()).filter(Boolean)
+const manifestPath = String(bead.manifestPath || '').trim()
+const LOCATE_REPO =
+  repoKnown
+    ? ''
+    : `
+
+THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate the repository whose source contains the code at fault. Start from the symptom and the blast radius; consult the polyrepo manifest${manifestPath ? ` at ${manifestPath}` : ''} for the repositories this project has and where each is checked out on this machine${repoHints.length ? `; the caller suspects it may be one of: ${repoHints.join(', ')} — a suspicion, not an answer` : ''}. Report repoPath as the ABSOLUTE path of that repository — the repository itself, not a worktree beneath it and not a subdirectory — and only after you have CONFIRMED the directory exists and is a git repository. If you cannot confirm one, report repoPath as an empty string and say in repoResolution which repositories you examined and why none was confirmed. A guessed repository sends a pipeline that writes code, commits and opens a pull request into a tree nobody chose; an honest empty answer does not.`
 
 phase('Triage')
 
@@ -35,7 +53,9 @@ Deliver:
     cross-platform-mobile  React Native or other cross-platform mobile
     ml                     matching, recommendation, ranking, or embeddings
     data-pipeline          ETL, CDC, or stream processing
-  Return ONLY surfaces the CHANGE touches — not surfaces the surrounding code happens to sit near. Return an empty list when the fix is confined to internal logic, which is the common case. Each surface you name costs a full additional test-authoring agent; each one you omit leaves that surface with no specialist coverage.`,
+  Return ONLY surfaces the CHANGE touches — not surfaces the surrounding code happens to sit near. Return an empty list when the fix is confined to internal logic, which is the common case. Each surface you name costs a full additional test-authoring agent; each one you omit leaves that surface with no specialist coverage.
+- repoPath: the ABSOLUTE path of the repository the defect lives in${repoKnown ? ' — echo the repository you were given' : ''}.
+- repoResolution: how you confirmed the repository${repoKnown ? ' (one line; it was supplied)' : ', or why none could be confirmed'}.${LOCATE_REPO}`,
   {
     label: 'triage:diagnosis',
     phase: 'Triage',
@@ -64,6 +84,8 @@ Deliver:
         },
         affectedFiles: { type: 'array', items: { type: 'string' } },
         blastRadius: { type: 'string' },
+        repoPath: { type: 'string' },
+        repoResolution: { type: 'string' },
         surfaces: {
           type: 'array',
           items: {
@@ -89,6 +111,12 @@ Deliver:
 
 // 1b) SIZING — is this a fix, or a redesign wearing a bug ticket?
 //
+// The repository the fix is built in. A supplied one is the answer; otherwise it is what
+// the diagnosis LOCATED, reported as a finding beside the blast radius. Never a guess made
+// here: an empty string is carried as null and the caller refuses to write without one.
+const resolvedRepoPath = repoKnown ? bead.repoPath : String((analysis && analysis.repoPath) || '').trim() || null
+if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resolvedRepoPath}` : 'NOT located'} — ${(analysis && analysis.repoResolution) || 'no resolution reported'}`)
+
 // A bug can be worked directly, or it can turn out to need a PRD and an Epic. The
 // difference matters: the fix path has no PRD validation, no architecture ruling,
 // and no spec — so a defect whose honest remedy is "redesign how this service
@@ -137,7 +165,8 @@ if (scope === 'needs-prd') {
   log(`Bug ${bead.id || ''} sized as NEEDS-PRD: ${scopeRationale}`)
   return {
     bead,
-    repoPath: bead.repoPath || null,
+    repoPath: resolvedRepoPath,
+    repoResolution: (analysis && analysis.repoResolution) || null,
     scope,
     scopeRationale,
     contractsTouched: (sizing && sizing.contractsTouched) || [],
@@ -246,7 +275,8 @@ if (lintRules.length) log(`Triage: ${lintRules.length} repo-wide invariant(s) ro
 
 return {
   bead,
-  repoPath: bead.repoPath || null,
+  repoPath: resolvedRepoPath,
+  repoResolution: (analysis && analysis.repoResolution) || null,
   scope,
   scopeRationale,
   reproduction: analysis.reproduction,

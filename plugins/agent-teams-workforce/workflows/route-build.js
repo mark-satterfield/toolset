@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-build',
   description:
-    'Leaf mini — the BUILD router. Routes a Task or a Bug to the composite that takes it through code, test, and deployment to dev. Development work is the only thing routed here: a Task (workable ONLY when it has a parent Story and an ancestor Epic) or a Bug (workable standing alone). An Epic, Story, or feature belongs to route-elaboration and is skipped here with a pointer to it. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite) or "skip" (with the reason). Pure routing logic; it authors nothing and force-fits nothing.',
+    'Leaf mini — the BUILD router. Routes a Task or a Bug to the composite that takes it through code, test, and deployment to dev. Development work is the only thing routed here: a Task (workable with or without a parent Story — a Story is a roll-up parent for reporting, never a dispatch precondition) or a Bug (workable standing alone). An Epic, Story, or feature belongs to route-elaboration and is skipped here with a pointer to it. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite) or "skip" (with the reason). Pure routing logic; it authors nothing and force-fits nothing.',
   phases: [
     { title: 'Classify', detail: 'workability rules for development work; never force-fit' },
   ],
@@ -71,9 +71,14 @@ const hasEpicAncestor = () => ancestorTypes.includes('epic')
 //
 //   DEVELOPMENT work — writing code, tests, infrastructure, and deploying to dev —
 //   belongs to a Task or a Bug and to nothing else. A Task is scoped to one agent's
-//   work within one repo, and it is workable ONLY with a parent Story and an
-//   ancestor Epic: without a Story there is no Spec, and therefore no contract to
-//   build against.
+//   work within one repo. Its Story and Epic are ROLL-UP PARENTS FOR REPORTING: they
+//   say where the work reports, and they NEVER gate whether it is worked. A Task with
+//   no Story is routed exactly like one with a Story; the missing parent is a
+//   reporting repair the caller makes on the side (and names when it cannot), not a
+//   reason to refuse. This router used to refuse such a Task on the theory that "no
+//   Story means no Spec means no contract" — but the composite it routes to builds
+//   its contract from the Task's own statement of work and rules the repository at
+//   run time, so the gate guarded nothing and held 50 of 51 live Tasks out of the run.
 //
 //   An Epic or a Story IS workable, but its work is elaboration, not development.
 //   That belongs to route-elaboration.
@@ -84,10 +89,10 @@ function deterministicRoute() {
     return work('bug-fix', `bug is workable standing alone (type="${type || 'n/a'}"${labelTail}) → bug-fix`)
   }
 
-  // 2) TASK — the unit of development work, but ONLY inside a complete hierarchy.
+  // 2) TASK — the unit of development work. Its parents never gate it.
   if (type === 'task' || hasLabel('task')) {
+    const composite = workComposite()
     if (hasStoryParent() && hasEpicAncestor()) {
-      const composite = workComposite()
       return work(
         composite,
         `task sits under a Story and an Epic (parent="${parentType || ancestorTypes[0] || 'story'}", ancestors=[${ancestorTypes.join(', ') || 'story, epic'}]) → ${composite}`,
@@ -96,8 +101,9 @@ function deterministicRoute() {
     const missing = [!hasStoryParent() && 'parent Story', !hasEpicAncestor() && 'ancestor Epic']
       .filter(Boolean)
       .join(' and ')
-    return skip(
-      `task is missing its ${missing}; a Task without a Story has no Spec and therefore no contract to build against → SKIP (attach it to a Story under an Epic, or work the Epic through route-elaboration first)`,
+    return work(
+      composite,
+      `task is missing its ${missing} — a roll-up parent for reporting, never a dispatch precondition; the composite builds against the Task's own statement of work and rules the repository at run time → ${composite} (the missing parent is a reporting repair, made on the side)`,
     )
   }
 
@@ -159,7 +165,7 @@ Description:
 ${bead.description || '(none)'}
 
 The work-item kinds:
-- task    — one agent's unit of work within ONE repo. Development work, but only under a Story and an Epic.
+- task    — one agent's unit of work within ONE repo. Development work, with or without a Story above it.
 - bug     — a defect or regression in EXISTING behavior. Development work, standing alone.
 - infra   — a provisioning/IaC change (CDK, AWS resources, deploy plumbing).
 - epic    — a container for a whole PRD's worth of work, spanning repos. Not development work.
@@ -205,7 +211,8 @@ if (!kind || kind === 'other' || !confident) {
 
 // Re-apply the SAME workability rules to the classified kind. The classifier
 // decides what the bead IS; the workability rule stays the script's and is not
-// negotiable by an agent's answer — a classified 'task' with no Story still skips.
+// negotiable by an agent's answer — and a classified 'task' is worked whether or
+// not it has a Story, exactly as the deterministic rule works one.
 let final
 if (kind === 'bug') {
   final = work('bug-fix', `classified as a bug: ${agentReason} → bug-fix`)
@@ -215,7 +222,7 @@ if (kind === 'bug') {
   final =
     hasStoryParent() && hasEpicAncestor()
       ? work(workComposite(), `classified as a task under a Story and an Epic: ${agentReason} → ${workComposite()}`)
-      : skip(`classified as a task but it lacks a parent Story and/or an ancestor Epic: ${agentReason} → SKIP (attach it to a Story under an Epic first)`)
+      : work(workComposite(), `classified as a task with no parent Story and/or ancestor Epic — a roll-up parent for reporting, never a dispatch precondition: ${agentReason} → ${workComposite()}`)
 } else {
   final = skip(
     `classified as ${kind === 'feature' ? 'feature-shaped work' : `an ${kind}`}: ${agentReason}. That is elaboration work, not development work → SKIP here. Route it through route-elaboration.js.`,

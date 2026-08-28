@@ -78,17 +78,28 @@ test('a provisioning Task with a full hierarchy routes to infra-change', async (
   assert.equal(r.composite, 'infra-change')
 })
 
-test('a parentless Task is NOT workable — no Story means no Spec to build against', async () => {
+test('a parentless Task IS workable — a Story is a roll-up parent for reporting, never a gate', async () => {
+  // This router used to refuse a Task with no Story on the theory that no Story meant no
+  // Spec and therefore no contract. The composite builds its contract from the Task's own
+  // statement of work and rules the repository at run time, so the gate guarded nothing
+  // and held 50 of 51 live Tasks out of the run.
   const r = await route({ type: 'task' })
-  assert.equal(r.action, 'skip')
-  assert.equal(r.composite, null)
-  assert.match(r.reason, /parent Story/i)
+  assert.equal(r.action, 'work')
+  assert.equal(r.composite, 'task-to-deploy')
+  assert.match(r.reason, /parent Story/i, 'the missing parent is still NAMED — it is a reporting repair, not a secret')
+  assert.match(r.reason, /never a dispatch precondition/i)
 })
 
-test('a Task under a Story but with no ancestor Epic is NOT workable', async () => {
+test('a Task under a Story but with no ancestor Epic is workable too', async () => {
   const r = await route({ type: 'task', parentType: 'story', ancestorTypes: ['story'] })
-  assert.equal(r.action, 'skip')
-  assert.match(r.reason, /Epic/i)
+  assert.equal(r.action, 'work')
+  assert.match(r.reason, /Epic/i, 'the missing ancestor is named')
+})
+
+test('a parentless provisioning Task routes to infra-change, not to a skip', async () => {
+  const r = await route({ type: 'task', labels: ['cdk'] })
+  assert.equal(r.action, 'work')
+  assert.equal(r.composite, 'infra-change')
 })
 
 // ── Routing: containers are never worked and never decomposed ────────────────
@@ -193,7 +204,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
     assert.equal(
       bead.parentStoryId,
       'ssbd-story-1',
-      'every emitted task must be parented to the Story, or route-build will refuse to work it',
+      'every emitted task must be parented to the Story — the roll-up parent it reports under',
     )
   }
 })
@@ -201,7 +212,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
 test('a Story identified only by `key` still parents its tasks', async () => {
   // Before bd writes them, a Story has no id — only the local key the composite
   // assigned. Reading `story.id` alone yields parentStoryId: null on every task,
-  // and route-build then refuses to work any of them.
+  // and every one of them would then report under no Story at all.
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
