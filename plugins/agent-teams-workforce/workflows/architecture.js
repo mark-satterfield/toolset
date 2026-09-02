@@ -4,8 +4,8 @@ export const meta = {
     'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
-    { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, context-map + failure-mode analysis, concurrent); skipped when settled' },
-    { title: 'Challenge', detail: 'pattern + tradeoff + boundary + cost-impact + ops-readiness panel (concurrent checkers) — runs only over proposals that were produced' },
+    { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
+    { title: 'Challenge', detail: 'one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness) — runs only over proposals that were produced' },
     { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled; when NO option is admissible it says so, classifies what blocked them, and the blocking constraints go back to the panel for a fresh option set (bounded)' },
     { title: 'Update SAD', detail: 'author fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8, conformance-checked' },
   ],
@@ -354,36 +354,36 @@ Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
       }
     )
   )
-  if (wantsContextMap) {
+  // The two analysis advisors (context map, failure modes) used to be two separate
+  // sessions. Both are read-only ANALYSIS feeding the decider — neither judges the
+  // other, neither authors options — so when either is wanted, one session carries
+  // whichever of the two the triage selected.
+  if (wantsContextMap || wantsFailureModes) {
     jobs.push(() =>
       agent(
-        `You are the bounded-context-mapper. Map the domain boundaries and context relationships this decision touches: which bounded contexts are involved and how they relate (upstream/downstream, conformist, anti-corruption layer). Return the context map; do NOT rule or author options.
+        `You are a read-only architecture analysis advisor. Produce the analysis artifact(s) named below in one pass, each under its own key. Do NOT rule or author options.
+${wantsContextMap ? `
+- \`contextMap\`: map the domain boundaries and context relationships this decision touches — which bounded contexts are involved and how they relate (upstream/downstream, conformist, anti-corruption layer).` : ''}${wantsFailureModes ? `
+- \`failureModes\`: model the failure modes the proposed directions must withstand — DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius.` : ''}
 
 ${decisionHeader}
 
 ${frameBlock}`,
         {
-          label: 'proposals:context-map',
+          label: 'proposals:analysis-advisors',
           phase: 'Proposals',
-          agentType: 'agent-teams-workforce:bounded-context-mapper',
-          schema: CONTEXT_MAP_SCHEMA,
-        }
-      )
-    )
-  }
-  if (wantsFailureModes) {
-    jobs.push(() =>
-      agent(
-        `You are the failure-mode-analyst. Model the failure modes the proposed directions must withstand: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius. Do NOT author options or rule.
-
-${decisionHeader}
-
-${frameBlock}`,
-        {
-          label: 'proposals:failure-modes',
-          phase: 'Proposals',
-          agentType: 'agent-teams-workforce:failure-mode-analyst',
-          schema: FAILURE_MODES_SCHEMA,
+          agentType: wantsContextMap
+            ? 'agent-teams-workforce:bounded-context-mapper'
+            : 'agent-teams-workforce:failure-mode-analyst',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: [...(wantsContextMap ? ['contextMap'] : []), ...(wantsFailureModes ? ['failureModes'] : [])],
+            properties: {
+              ...(wantsContextMap ? { contextMap: CONTEXT_MAP_SCHEMA } : {}),
+              ...(wantsFailureModes ? { failureModes: FAILURE_MODES_SCHEMA.properties.failureModes } : {}),
+            },
+          },
         }
       )
     )
@@ -391,194 +391,121 @@ ${frameBlock}`,
 
   const proposalResults = await parallel(jobs)
   proposals = proposalResults.slice(0, activeMakers.length).filter(Boolean)
-  let cursor = activeMakers.length
-  if (wantsContextMap) contextMap = proposalResults[cursor++] || null
-  if (wantsFailureModes) failureModes = (proposalResults[cursor] && proposalResults[cursor].failureModes) || []
+  if (wantsContextMap || wantsFailureModes) {
+    const advisors = proposalResults[activeMakers.length] || null
+    if (wantsContextMap) contextMap = (advisors && advisors.contextMap) || null
+    if (wantsFailureModes) failureModes = (advisors && advisors.failureModes) || []
+  }
 }
 let proposalsText = JSON.stringify(proposals, null, 2)
 let analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
 
 // ── Phase 2: Challenge ─────────────────────────────────────────────────────────
-// Five INDEPENDENT checkers stress the proposals concurrently — pattern, tradeoff,
-// boundary coupling, cost-at-scale, and operational readiness.
-// Different agents than the makers — no proposer challenges its own proposal. The
-// wave runs only over proposals that were actually produced, because a settled
-// decision (or an analysis-only panel) leaves nothing to challenge.
-const runChallengeWave = () => parallel([
-  () =>
-    agent(
-      `You are the architecture-pattern-challenger. Challenge the proposed patterns against SkillSpoke platform constraints and known anti-patterns. Name each pattern that conflicts with a constraint or is a known anti-pattern, with the reason and the constraint it violates. Do NOT author replacement patterns — only challenge.
+// ONE independent checker session stresses the proposals through all five challenge
+// lenses — pattern, tradeoff, boundary coupling, cost-at-scale, and operational
+// readiness. These used to be five separate sessions, each paying a full
+// session-start to read the same proposal set; every lens is a CHECK on options
+// authored by OTHER agents, so one session carrying all five preserves segregation
+// of duties — no proposer challenges its own proposal, and the challenger authored
+// nothing. The wave runs only over proposals that were actually produced, because a
+// settled decision (or an analysis-only panel) leaves nothing to challenge.
+const runChallengeWave = async () => {
+  const wave = await agent(
+    `You are the adversarial challenge panel for an architecture decision. You did NOT author any of the proposals below; you only stress them. Apply ALL FIVE lenses in one pass, returning each lens's findings under its own key. Do NOT author replacement options anywhere — only challenge. Keep every objection/risk/concern under 40 words.
+
+1. \`challenges\` (pattern lens): patterns that conflict with SkillSpoke platform constraints or are known anti-patterns, each with the reason and the constraint it violates.
+2. \`unstatedRisks\` (tradeoff-skeptic lens): tradeoffs the proposers understated, hidden coupling, operational cost not accounted for, failure modes glossed over.
+3. \`boundaryViolations\` (boundary lens): cross-context coupling — where a proposal makes this context own behavior another owns, reaches across a boundary it should respect, or violates service isolation.
+4. \`scaleBreakpoints\` (cost-at-scale lens): stress each option's cost at 10x, 100x, and 1000x the stated load — where each option's cost breaks first (cost cliff, throttle, or quota) and the bottleneck that causes it.
+5. \`readinessGaps\` (operational-readiness lens): operations a proposal would require but does not account for — monitoring, alerting, runbooks, on-call load, failure recovery.
 
 ${decisionHeader}
 
 Proposals under challenge:
 ${proposalsText}`,
-      {
-        label: 'challenge:patterns',
-        phase: 'Challenge',
-        agentType: 'agent-teams-workforce:architecture-pattern-challenger',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['challenges'],
-          properties: {
-            challenges: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['target', 'objection', 'severity'],
-                properties: {
-                  target: { type: 'string' },
-                  objection: { type: 'string' },
-                  severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
-                },
+    {
+      label: 'challenge:all-lenses',
+      phase: 'Challenge',
+      agentType: 'agent-teams-workforce:architecture-tradeoff-skeptic',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['challenges', 'unstatedRisks', 'boundaryViolations', 'scaleBreakpoints', 'readinessGaps'],
+        properties: {
+          challenges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['target', 'objection', 'severity'],
+              properties: {
+                target: { type: 'string' },
+                objection: { type: 'string' },
+                severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+              },
+            },
+          },
+          unstatedRisks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['risk', 'affects', 'severity'],
+              properties: {
+                risk: { type: 'string' },
+                affects: { type: 'string' },
+                severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+              },
+            },
+          },
+          boundaryViolations: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['target', 'coupling', 'severity'],
+              properties: {
+                target: { type: 'string' },
+                coupling: { type: 'string' },
+                severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+              },
+            },
+          },
+          scaleBreakpoints: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['option', 'breaksAt', 'bottleneck', 'severity'],
+              properties: {
+                option: { type: 'string' },
+                breaksAt: { type: 'string', enum: ['10x', '100x', '1000x', 'beyond'] },
+                bottleneck: { type: 'string' },
+                severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
+              },
+            },
+          },
+          readinessGaps: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['target', 'concern', 'severity'],
+              properties: {
+                target: { type: 'string' },
+                concern: { type: 'string' },
+                severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
               },
             },
           },
         },
-      }
-    ),
-  () =>
-    agent(
-      `You are the architecture-tradeoff-skeptic. Independently stress the stated tradeoffs and expose UNSTATED risk: tradeoffs the proposers understated, hidden coupling, operational cost not accounted for, failure modes glossed over. Do NOT author replacement options — only surface the gaps.
+      },
+    }
+  )
+  return wave
+}
 
-${decisionHeader}
-
-Proposals under challenge:
-${proposalsText}`,
-      {
-        label: 'challenge:tradeoffs',
-        phase: 'Challenge',
-        agentType: 'agent-teams-workforce:architecture-tradeoff-skeptic',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['unstatedRisks'],
-          properties: {
-            unstatedRisks: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['risk', 'affects', 'severity'],
-                properties: {
-                  risk: { type: 'string' },
-                  affects: { type: 'string' },
-                  severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
-                },
-              },
-            },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `You are the architecture-boundary-guardian. Validate each proposed design against bounded-context boundaries and integration constraints. Flag cross-context coupling: where a proposal makes this context own behavior another owns, reaches across a boundary it should respect, or violates service isolation. Do NOT author replacement designs — only flag violations.
-
-${decisionHeader}
-
-Proposals under challenge:
-${proposalsText}`,
-      {
-        label: 'challenge:boundaries',
-        phase: 'Challenge',
-        agentType: 'agent-teams-workforce:architecture-boundary-guardian',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['boundaryViolations'],
-          properties: {
-            boundaryViolations: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['target', 'coupling', 'severity'],
-                properties: {
-                  target: { type: 'string' },
-                  coupling: { type: 'string' },
-                  severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
-                },
-              },
-            },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `You are the cost-impact-reviewer — an adversary to the cost proposal. Stress each option's cost at 10x, 100x, and 1000x the stated load. Find where each option's cost breaks first (the scale at which a cost cliff, throttle, or quota makes it non-viable) and the bottleneck that causes it. Do NOT author replacement options — only expose the breakpoints.
-
-${decisionHeader}
-
-Proposals under challenge:
-${proposalsText}`,
-      {
-        label: 'challenge:cost-impact',
-        phase: 'Challenge',
-        agentType: 'agent-teams-workforce:cost-impact-reviewer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['scaleBreakpoints'],
-          properties: {
-            scaleBreakpoints: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['option', 'breaksAt', 'bottleneck', 'severity'],
-                properties: {
-                  option: { type: 'string' },
-                  breaksAt: { type: 'string', enum: ['10x', '100x', '1000x', 'beyond'] },
-                  bottleneck: { type: 'string' },
-                  severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
-                },
-              },
-            },
-          },
-        },
-      }
-    ),
-  () =>
-    agent(
-      `You are the operational-readiness-reviewer. Evaluate each proposal's operational burden: monitoring, alerting, runbooks, on-call load, failure recovery. Flag readiness gaps — operations the proposal would require but does not account for. Do NOT author the operational design — only flag gaps.
-
-${decisionHeader}
-
-Proposals under challenge:
-${proposalsText}`,
-      {
-        label: 'challenge:ops-readiness',
-        phase: 'Challenge',
-        agentType: 'agent-teams-workforce:operational-readiness-reviewer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['readinessGaps'],
-          properties: {
-            readinessGaps: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['target', 'concern', 'severity'],
-                properties: {
-                  target: { type: 'string' },
-                  concern: { type: 'string' },
-                  severity: { type: 'string', enum: ['blocking', 'major', 'minor'] },
-                },
-              },
-            },
-          },
-        },
-      }
-    ),
-])
-
-let challengeResults = []
+let challengeResults = null
 if (!settled && proposals.length) {
   phase('Challenge')
   challengeResults = await runChallengeWave()
@@ -587,11 +514,11 @@ if (!settled && proposals.length) {
 }
 
 const foldChallenges = (r) => ({
-  patterns: (r[0] && r[0].challenges) || [],
-  unstatedRisks: (r[1] && r[1].unstatedRisks) || [],
-  boundaryViolations: (r[2] && r[2].boundaryViolations) || [],
-  scaleBreakpoints: (r[3] && r[3].scaleBreakpoints) || [],
-  readinessGaps: (r[4] && r[4].readinessGaps) || [],
+  patterns: (r && r.challenges) || [],
+  unstatedRisks: (r && r.unstatedRisks) || [],
+  boundaryViolations: (r && r.boundaryViolations) || [],
+  scaleBreakpoints: (r && r.scaleBreakpoints) || [],
+  readinessGaps: (r && r.readinessGaps) || [],
 })
 let challenges = foldChallenges(challengeResults)
 let challengesText = JSON.stringify(challenges, null, 2)
@@ -807,42 +734,62 @@ const decisionContext = `Ruling: ${decision.ruling}
 Chosen approach: ${decision.chosenApproach}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}`
 
-const authored = await parallel([
-  () => agent(
-    `You are the architecture-fitness-function-author. Define testable fitness functions from the ruling — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis". Write FROM the ruling — do NOT re-decide.\n\n${decisionContext}`,
-    { label: 'author:fitness', phase: 'Update SAD', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
-      schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions'], properties: { fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } } } } }
-  ),
-  () => agent(
-    `You are the architecture-diagram-author. Produce the architecture diagram(s) of the decided design in the project's standard Mermaid format. Draw FROM the ruling — do NOT re-decide. SAD location: ${sadPath}.\n\n${decisionContext}`,
-    { label: 'author:diagram', phase: 'Update SAD', agentType: 'agent-teams-workforce:architecture-diagram-author',
-      schema: { type: 'object', additionalProperties: false, required: ['diagrams'], properties: { diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } } } } }
-  ),
-])
+// Fitness functions and diagrams used to be two separate maker sessions reading the
+// same ruling; both are makers writing FROM the ruling with no judging anywhere, so
+// one session authors both. Same argument for the design drafts below.
+const authored = await agent(
+  `Author the decision artifacts FROM the ruling below — do NOT re-decide anything. Two artifacts, each under its own key:
+
+1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis".
+2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
+
+${decisionContext}`,
+  { label: 'author:decision-artifacts', phase: 'Update SAD', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
+    schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions', 'diagrams'], properties: {
+      fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
+      diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } },
+    } } }
+)
 const authoredArtifacts = {
-  fitnessFunctions: (authored[0] && authored[0].fitnessFunctions) || [],
-  diagrams: (authored[1] && authored[1].diagrams) || [],
+  fitnessFunctions: (authored && authored.fitnessFunctions) || [],
+  diagrams: (authored && authored.diagrams) || [],
 }
 
-// SELECTED design drafts — only the surfaces the ruling actually creates. Each design
-// executor produces a concrete draft for the downstream spec phase to elaborate.
+// SELECTED design drafts — only the surfaces the ruling actually creates, all
+// authored in ONE maker session (one draft per selected design, each under its key).
 const surfaces = Array.isArray(decision.surfaces) ? decision.surfaces : []
 const designSpecs = []
 if (surfaces.includes('events')) {
-  designSpecs.push(['event-schema-designer', 'design:event-schema', 'Design the event schema(s) within the event API envelope format for the decided events.'])
-  designSpecs.push(['domain-event-modeler', 'design:domain-events', 'Model the domain events, flows, and contracts the ruling introduces.'])
+  designSpecs.push(['eventSchema', 'Design the event schema(s) within the event API envelope format for the decided events.'])
+  designSpecs.push(['domainEvents', 'Model the domain events, flows, and contracts the ruling introduces.'])
 }
-if (surfaces.includes('restApi')) designSpecs.push(['api-contract-designer', 'design:api-contract', 'Produce the OpenAPI contract proposal for the decided REST surface.'])
-if (surfaces.includes('graphql')) designSpecs.push(['graphql-schema-designer', 'design:graphql', 'Design the GraphQL schema proposal for the decided AppSync surface.'])
-if (surfaces.includes('newDomain')) designSpecs.push(['ubiquitous-language-writer', 'design:ubiquitous-language', 'Capture the ubiquitous language — terms, definitions, usage rules — for the new or affected bounded context.'])
-const designDrafts = designSpecs.length
-  ? (await parallel(designSpecs.map(([at, label, ask]) => () =>
-      agent(`${ask}\n\nDraw FROM the ruling — do NOT re-decide.\n\n${decisionContext}`, {
-        label, phase: 'Update SAD', agentType: `agent-teams-workforce:${at}`,
-        schema: { type: 'object', additionalProperties: false, required: ['summary'], properties: { summary: { type: 'string' }, path: { type: 'string' } } },
-      })
-    ))).filter(Boolean)
-  : []
+if (surfaces.includes('restApi')) designSpecs.push(['apiContract', 'Produce the OpenAPI contract proposal for the decided REST surface.'])
+if (surfaces.includes('graphql')) designSpecs.push(['graphql', 'Design the GraphQL schema proposal for the decided AppSync surface.'])
+if (surfaces.includes('newDomain')) designSpecs.push(['ubiquitousLanguage', 'Capture the ubiquitous language — terms, definitions, usage rules — for the new or affected bounded context.'])
+let designDrafts = []
+if (designSpecs.length) {
+  const draftsResult = await agent(
+    `Author the design draft(s) the ruling below creates — one per key, drawn FROM the ruling; do NOT re-decide anything.
+
+${designSpecs.map(([key, ask]) => `- \`${key}\`: ${ask}`).join('\n')}
+
+${decisionContext}`,
+    {
+      label: 'design:drafts',
+      phase: 'Update SAD',
+      agentType: 'agent-teams-workforce:api-contract-designer',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: designSpecs.map(([key]) => key),
+        properties: Object.fromEntries(designSpecs.map(([key]) => [key, { type: 'object', additionalProperties: false, required: ['summary'], properties: { summary: { type: 'string' }, path: { type: 'string' } } }])),
+      },
+    }
+  )
+  designDrafts = draftsResult
+    ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
+    : []
+}
 
 const SAD_UPDATE_SCHEMA = {
   type: 'object',

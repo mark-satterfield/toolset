@@ -149,6 +149,26 @@ for (const kind of ['chore', 'docs', 'research', 'spike']) {
   })
 }
 
+// The decompose/sequence/score maker and the review/format checker are ONE session
+// each now (ssbd-qrpf0); this stub answers the merged labels, plus the standalone
+// re-scoring dispatch.
+const score = (key) => ({ key, userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' })
+function decompStub({ tasks, buildOrder, review, validation }) {
+  return (call) => {
+    if (call.label === 'decompose:sequence-and-score') {
+      return { tasks, rationale: 'r', edges: [], buildOrder, acyclic: true, scores: buildOrder.map(score) }
+    }
+    if (call.label === 'wsjf:score') return { scores: buildOrder.map(score) }
+    if (String(call.label).startsWith('review:scores-and-format')) {
+      return {
+        scoringReview: review || { accepted: true, feedback: '', issues: [] },
+        beadsValidation: validation || { valid: true, violations: [] },
+      }
+    }
+    return null
+  }
+}
+
 // ── Decomposition: tasks only ─────────────────────────────────────────────────
 
 test('task-decomposition can only ever emit type "task"', () => {
@@ -173,28 +193,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { id: 'ssbd-story-1', title: 'the story' },
     },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') return { tasks: decomposed, rationale: 'r' }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return {
-          scores: [
-            {
-              key: 'T1',
-              userBusinessValue: 5,
-              timeCriticality: 3,
-              riskReductionOpportunityEnablement: 2,
-              jobSize: 2,
-              wsjf: 5,
-              rationale: 'r',
-            },
-          ],
-        }
-      }
-      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    agentImpl: decompStub({ tasks: decomposed, buildOrder: ['T1'] }),
   })
 
   assert.equal(result.ok, true, `decomposition failed: ${result.reason || ''}`)
@@ -218,18 +217,7 @@ test('a Story identified only by `key` still parents its tasks', async () => {
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { key: 'S2', title: 'keyed but not yet written to bd' },
     },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') {
-        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
-      }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
-      }
-      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
   })
 
   assert.equal(result.ok, true)
@@ -257,34 +245,13 @@ test('every emitted task carries the repository, copied from the Spec it decompo
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repos/service-a' },
       story: { key: 'S1', title: 'the story' },
     },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') {
-        return {
-          tasks: [
-            { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] },
-            { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'] },
-          ],
-          rationale: 'r',
-        }
-      }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1', 'T2'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return {
-          scores: ['T1', 'T2'].map((key) => ({
-            key,
-            userBusinessValue: 5,
-            timeCriticality: 3,
-            riskReductionOpportunityEnablement: 2,
-            jobSize: 2,
-            wsjf: 5,
-            rationale: 'r',
-          })),
-        }
-      }
-      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    agentImpl: decompStub({
+      tasks: [
+        { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] },
+        { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'] },
+      ],
+      buildOrder: ['T1', 'T2'],
+    }),
   })
 
   assert.equal(result.ok, true, `decomposition failed: ${result.reason || ''}`)
@@ -306,18 +273,7 @@ test('the repository may also arrive as args.repoPath', async () => {
       story: { key: 'S1' },
       repoPath: '/repos/service-b',
     },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') {
-        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
-      }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
-      }
-      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
   })
 
   assert.equal(result.ok, true)
@@ -344,21 +300,12 @@ test('an unresolved WSJF review emits the tasks anyway, with the dispute recorde
       story: { key: 'S1', title: 'the story' },
       maxScoringPasses: 2,
     },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') {
-        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
-      }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
-      }
-      // The reviewer never accepts.
-      if (String(call.label).startsWith('wsjf:review')) {
-        return { accepted: false, feedback: 'jobSize looks optimistic', issues: [{ key: 'T1', problem: 'jobSize disputed' }] }
-      }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    // The reviewer never accepts.
+    agentImpl: decompStub({
+      tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }],
+      buildOrder: ['T1'],
+      review: { accepted: false, feedback: 'jobSize looks optimistic', issues: [{ key: 'T1', problem: 'jobSize disputed' }] },
+    }),
   })
 
   assert.equal(result.ok, true, 'a scoring disagreement must not discard correct structural work')
@@ -371,18 +318,7 @@ test('an unresolved WSJF review emits the tasks anyway, with the dispute recorde
 test('an accepted review reports no dispute', async () => {
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: { spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' }, story: { key: 'S1' } },
-    agentImpl: (call) => {
-      if (call.label === 'decompose:tasks') {
-        return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r' }
-      }
-      if (call.label === 'sequence:dag') return { edges: [], buildOrder: ['T1'], acyclic: true }
-      if (call.label === 'wsjf:score') {
-        return { scores: [{ key: 'T1', userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' }] }
-      }
-      if (String(call.label).startsWith('wsjf:review')) return { accepted: true, feedback: '', issues: [] }
-      if (call.label === 'validate:beads-format') return { valid: true, violations: [] }
-      return null
-    },
+    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
   })
   assert.equal(result.scoringDisputed, false)
   assert.deepEqual(result.scoringFindings, [])

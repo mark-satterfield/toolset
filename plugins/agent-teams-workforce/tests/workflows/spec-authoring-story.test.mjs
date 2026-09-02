@@ -16,14 +16,22 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const specAuthoring = path.resolve(HERE, '..', '..', 'workflows', 'spec-authoring.js')
 
 /** Every maker returns a plausible draft; every checker approves. */
+const SPEC_DRAFT = () => ({ artifactPaths: [], summary: 'drafted', content: 'x' })
+const APPROVE = () => ({ verdict: 'approve', findings: [], feedback: '' })
 function agentImpl(call) {
   const label = String(call.label || '')
   if (label === 'author:story-bead') {
     return { title: 'Story title', description: 'Story description', outOfRepoFindings: [] }
   }
-  if (label.startsWith('author:')) return { summary: 'drafted', content: 'x' }
-  if (label.startsWith('review:') || label.includes('check')) {
-    return { approved: true, accepted: true, findings: [], issues: [] }
+  if (label === 'author:contracts') {
+    return { apiSpec: SPEC_DRAFT(), eventContracts: SPEC_DRAFT(), errorSpec: SPEC_DRAFT() }
+  }
+  if (label === 'author:criteria') {
+    return { acceptanceCriteria: [{ given: 'g', when: 'w', then: 't' }], definitionOfDone: ['done'] }
+  }
+  if (label.startsWith('author:')) return SPEC_DRAFT()
+  if (label.startsWith('review:')) {
+    return { apiSpec: APPROVE(), dataModelSpec: APPROVE(), eventContracts: APPROVE(), acceptance: APPROVE() }
   }
   if (label.startsWith('decide') || label.includes('decider')) return { ruling: 'accept', rationale: 'r' }
   return { approved: true, accepted: true, findings: [] }
@@ -81,12 +89,17 @@ test('the six spec artifacts are actually authored, not silently empty', async (
     storyKey: 'S1',
   })
 
-  // parallel() over an object map dispatches nothing; over an array it dispatches six.
+  // parallel() over an object map dispatches nothing; over an array it dispatches the
+  // three maker sessions (contracts, data model, criteria) that carry all six artifacts.
   const authorCalls = calls.filter((c) => c.kind === 'agent' && String(c.label).startsWith('author:'))
   assert.ok(
-    authorCalls.length >= 6,
-    `expected the six spec makers to run, saw ${authorCalls.length}: [${authorCalls.map((c) => c.label).join(', ')}]`,
+    authorCalls.length >= 3,
+    `expected the three merged spec-maker sessions to run, saw ${authorCalls.length}: [${authorCalls.map((c) => c.label).join(', ')}]`,
   )
+  assert.ok(result.apiSpec, 'apiSpec must survive to the return')
+  assert.ok(result.dataModelSpec, 'dataModelSpec must survive to the return')
+  assert.ok(result.eventContracts, 'eventContracts must survive to the return')
+  assert.ok(result.acceptanceCriteria, 'acceptanceCriteria must survive to the return')
   assert.ok(result.errorSpec, 'errorSpec must survive to the return')
   assert.ok(result.definitionOfDone, 'definitionOfDone must survive to the return')
 })

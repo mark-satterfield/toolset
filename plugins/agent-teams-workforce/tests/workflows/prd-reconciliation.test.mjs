@@ -36,15 +36,15 @@ const DEPENDENCY_CLEAN = { current: true, changeFindings: [], evidence: 'lockfil
 /** Scripted reconciler + dependency detector + delta writer. */
 function reconcileAgents({ requirements, deltaIsInfraOnly = false, unsettled = false, delta = {} }) {
   return (call) => {
-    if (call.label === 'reconcile:prd-vs-reality') {
+    if (call.label === 'reconcile:reality-and-dependencies') {
       return {
         requirements,
         deltaIsInfraOnly,
         unsettledTechnicalDecision: unsettled,
         evidenceSummary: 'read the auth service and queried the deployed pool',
+        dependencyChanges: DEPENDENCY_CLEAN,
       }
     }
-    if (call.label === 'reconcile:dependency-changes') return DEPENDENCY_CLEAN
     if (call.label === 'delta:write') {
       return {
         ok: true,
@@ -131,7 +131,7 @@ test('a schema that permitted an evidence-free status would defeat the whole che
   const { calls } = await reconcile({
     requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
   })
-  const schema = agentCalls(calls, 'reconcile:prd-vs-reality')[0].opts.schema
+  const schema = agentCalls(calls, 'reconcile:reality-and-dependencies')[0].opts.schema
   const item = schema.properties.requirements.items
   assert.ok(item.required.includes('evidence'), 'evidence is required of every requirement, whatever its status')
   assert.equal(item.properties.evidence.minItems, 1, 'and an empty evidence array is not expressible')
@@ -235,15 +235,15 @@ test('a delta that could not be written fails the mini rather than passing the o
   const { result } = await runWorkflowScript(reconciliation, {
     args: { prd: PRD },
     agentImpl: (call) => {
-      if (call.label === 'reconcile:prd-vs-reality') {
+      if (call.label === 'reconcile:reality-and-dependencies') {
         return {
           requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['nope'] }],
           deltaIsInfraOnly: false,
           unsettledTechnicalDecision: false,
           evidenceSummary: 's',
+          dependencyChanges: DEPENDENCY_CLEAN,
         }
       }
-      if (call.label === 'reconcile:dependency-changes') return DEPENDENCY_CLEAN
       return { ok: false, path: '', body: '', error: 'disk full' }
     },
   })
@@ -262,15 +262,18 @@ test('an empty PRD is refused, not reported as a zero delta', async () => {
 
 // ── the two checkers are independent ────────────────────────────────────────────
 
-test('reality and dependency currency are checked by two different agents', async () => {
-  const { calls } = await reconcile({
+test('reality and dependency currency are both checked by ONE checker session', async () => {
+  // The two checks were two sessions, each paying a full session-start to read the
+  // same PRD. Both are checks on a document authored upstream, so one session
+  // carrying both preserves segregation of duties at half the cost (ssbd-qrpf0).
+  const { calls, result } = await reconcile({
     requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
   })
-  const reality = agentCalls(calls, 'reconcile:prd-vs-reality')[0]
-  const deps = agentCalls(calls, 'reconcile:dependency-changes')[0]
-  assert.equal(reality.opts.agentType, 'agent-teams-workforce:prd-reality-reconciler')
-  assert.equal(deps.opts.agentType, 'agent-teams-workforce:dependency-change-detector')
-  assert.notEqual(reality.opts.agentType, deps.opts.agentType)
+  const combined = agentCalls(calls, 'reconcile:reality-and-dependencies')
+  assert.equal(combined.length, 1, 'exactly one checker session runs both checks')
+  assert.equal(combined[0].opts.agentType, 'agent-teams-workforce:prd-reality-reconciler')
+  assert.match(combined[0].prompt, /CHECK 2/, 'the dependency check is part of the same dispatch')
+  assert.ok(result.dependencyChanges, 'the dependency-change verdict still crosses back to the caller')
 })
 
 test('the reconciler is told to pin every aws command to a profile', async () => {
@@ -279,7 +282,7 @@ test('the reconciler is told to pin every aws command to a profile', async () =>
   const { calls } = await reconcile({
     requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
   })
-  assert.match(agentCalls(calls, 'reconcile:prd-vs-reality')[0].prompt, /--profile dev/)
+  assert.match(agentCalls(calls, 'reconcile:reality-and-dependencies')[0].prompt, /--profile dev/)
 })
 
 test('the mini is a leaf — it never nests another workflow', async () => {

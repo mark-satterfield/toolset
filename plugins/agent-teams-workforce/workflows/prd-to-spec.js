@@ -215,6 +215,7 @@ async function persistRun(outcome) {
       {
         label: 'ledger:persist',
         phase: 'Run Ledger',
+        effort: 'low',
         agentType: 'agent-teams-workforce:run-ledger-writer',
         schema: {
           type: 'object',
@@ -561,6 +562,7 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
       {
         label: 'resolve:prd-text',
         phase: 'PRD Creation',
+        effort: 'low',
         schema: {
           type: 'object',
           additionalProperties: false,
@@ -1551,6 +1553,7 @@ async function writeWave(level, items) {
     reply = await agent(`${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level, beads: items, links: [] })}`, {
       label: `beads:write-${level}`,
       phase: 'Emit Beads',
+      effort: 'low',
       agentType: 'agent-teams-workforce:bead-writer',
       schema: WRITE_SCHEMA,
     })
@@ -1744,7 +1747,7 @@ if (pendingLinks.length) {
         beads: [],
         links: pendingLinks.map(({ fromId, dependsOnId }) => ({ fromId, dependsOnId })),
       })}`,
-      { label: 'beads:link', phase: 'Emit Beads', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+      { label: 'beads:link', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
     )
   } catch (e) {
     linkFault = `the bead-writer dispatch failed: ${(e && e.message) || e}`

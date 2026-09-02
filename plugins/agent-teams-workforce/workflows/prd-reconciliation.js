@@ -1,9 +1,9 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. Fans two independent read-only checkers out in parallel (PRD-vs-reality reconciliation, upstream dependency changes), then reduces their findings to ONE verdict: which requirements already shipped, which remain, and how big the REMAINING delta is. Every requirement status must be backed by a file:line or a live deployed endpoint — a status with no evidence behind it is not honoured and its requirement stays in the delta. Read-only apart from writing the delta PRD: it judges what is already built and authors no new requirement.',
+    'Leaf mini — PRD Reconciliation. ONE independent read-only checker session performs both reconciliation checks (PRD-vs-reality, upstream dependency changes) — both are checks on a document authored upstream, so folding them into one session preserves segregation of duties while paying one session-start instead of two — then the script reduces the findings to ONE verdict: which requirements already shipped, which remain, and how big the REMAINING delta is. Every requirement status must be backed by a file:line or a live deployed endpoint — a status with no evidence behind it is not honoured and its requirement stays in the delta. Read-only apart from writing the delta PRD: it judges what is already built and authors no new requirement.',
   phases: [
-    { title: 'Reconciliation checks', detail: 'two independent read-only checkers fan out in parallel' },
+    { title: 'Reconciliation checks', detail: 'one independent read-only checker session runs both checks' },
     { title: 'Delta', detail: 'the remaining requirements are written to a delta PRD and the work is sized by what is LEFT' },
   ],
 }
@@ -71,16 +71,18 @@ const repoBlock = repos.length
   ? repos.map((r, i) => `${i + 1}. ${r}`).join('\n')
   : '(no repo paths supplied — discover the repositories this PRD touches from the PRD text)'
 
-// ── Phase 1: Reconciliation checks — two INDEPENDENT checkers in parallel ──────
-// Same shape as spec-freshness: neither checker judges the other's output, and the
-// reduction below judges no code — it applies a fixed rule to their typed findings.
+// ── Phase 1: Reconciliation checks — ONE independent checker session, both checks ──
+// This used to be two parallel sessions, each paying a full session-start to read the
+// same PRD and the same repositories. Both are read-only CHECKS on a document authored
+// upstream — neither ever judged the other's output — so one session carrying both
+// preserves segregation of duties, and the reduction below still judges no code: it
+// applies a fixed rule to the typed findings.
 phase('Reconciliation checks')
 
-const [reality, dependencyChanges] = await parallel([
-  // 1) PRD-vs-reality: for each requirement, is it shipped, partial, absent or obsolete?
-  () =>
-    agent(
-      `Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere.
+const combined = await agent(
+  `Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere. Two checks, one pass — return both.
+
+═══ CHECK 1 — PRD vs reality ═══
 
 ${prdBlock}
 
@@ -112,71 +114,53 @@ Finally judge, across the WHOLE remaining delta:
 - deltaIsInfraOnly — true only if every remaining requirement is satisfied by an infrastructure change alone (a flag, a stack parameter, a permission, a provisioned resource) with no application code to write.
 - unsettledTechnicalDecision — true if a technical decision that nobody has made yet still blocks the remaining work. An existing pattern in the codebase, or a decision already recorded, means FALSE.
 
-Do not soften a finding to be agreeable in either direction. Claiming shipped work is absent causes it to be rebuilt; claiming absent work is shipped causes it never to be built at all.`,
-      {
-        label: 'reconcile:prd-vs-reality',
-        phase: 'Reconciliation checks',
-        agentType: 'agent-teams-workforce:prd-reality-reconciler',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['requirements', 'deltaIsInfraOnly', 'unsettledTechnicalDecision', 'evidenceSummary'],
-          properties: {
-            requirements: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['id', 'requirement', 'status', 'evidence'],
-                properties: {
-                  id: { type: 'string' },
-                  requirement: { type: 'string' },
-                  status: { type: 'string', enum: ['shipped', 'partial', 'absent', 'obsolete'] },
-                  // minItems is load-bearing: a status with no evidence behind it is the
-                  // defect this mini exists to catch, so the schema refuses to express one.
-                  // The reduction below enforces the same rule again, because a schema
-                  // constrains what a model is ASKED for, not what it returns.
-                  evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
-                  missing: { type: 'string' },
-                  needsNewContract: { type: 'boolean' },
-                  behaviourExistsButWrong: { type: 'boolean' },
-                  repos: { type: 'array', items: { type: 'string' } },
-                },
-              },
-            },
-            deltaIsInfraOnly: { type: 'boolean' },
-            unsettledTechnicalDecision: { type: 'boolean' },
-            decisionRationale: { type: 'string' },
-            evidenceSummary: { type: 'string' },
-          },
-        },
-      }
-    ),
+Do not soften a finding to be agreeable in either direction. Claiming shipped work is absent causes it to be rebuilt; claiming absent work is shipped causes it never to be built at all.
 
-  // 2) Dependency-change detection: has anything the PRD assumes moved underneath it?
-  () =>
-    agent(
-      `Detect upstream changes that invalidate what this PRD assumes. You are READ-ONLY: change nothing.
-
-${prdBlock}
-
-Repositories in scope:
-${repoBlock}
+═══ CHECK 2 — upstream dependency changes ═══
 
 Upstream dependencies the PRD relies on:
 ${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') : '(none declared in args — discover them from the PRD text and the repositories above)'}
 
-Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved.
-
-Deliver:
+Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved. Return this check under \`dependencyChanges\`:
 - current: true if no invalidating upstream change is found, false otherwise.
 - changeFindings: each invalidating change (dependency, change describing what changed, invalidates describing which PRD assumption it breaks).
-- evidence: how you verified the dependency state.`,
-      {
-        label: 'reconcile:dependency-changes',
-        phase: 'Reconciliation checks',
-        agentType: 'agent-teams-workforce:dependency-change-detector',
-        schema: {
+- evidence: how you verified the dependency state (one paragraph, under 60 words).`,
+  {
+    label: 'reconcile:reality-and-dependencies',
+    phase: 'Reconciliation checks',
+    agentType: 'agent-teams-workforce:prd-reality-reconciler',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['requirements', 'deltaIsInfraOnly', 'unsettledTechnicalDecision', 'evidenceSummary', 'dependencyChanges'],
+      properties: {
+        requirements: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id', 'requirement', 'status', 'evidence'],
+            properties: {
+              id: { type: 'string' },
+              requirement: { type: 'string' },
+              status: { type: 'string', enum: ['shipped', 'partial', 'absent', 'obsolete'] },
+              // minItems is load-bearing: a status with no evidence behind it is the
+              // defect this mini exists to catch, so the schema refuses to express one.
+              // The reduction below enforces the same rule again, because a schema
+              // constrains what a model is ASKED for, not what it returns.
+              evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+              missing: { type: 'string' },
+              needsNewContract: { type: 'boolean' },
+              behaviourExistsButWrong: { type: 'boolean' },
+              repos: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+        deltaIsInfraOnly: { type: 'boolean' },
+        unsettledTechnicalDecision: { type: 'boolean' },
+        decisionRationale: { type: 'string' },
+        evidenceSummary: { type: 'string' },
+        dependencyChanges: {
           type: 'object',
           additionalProperties: false,
           required: ['current', 'changeFindings', 'evidence'],
@@ -199,9 +183,13 @@ Deliver:
             notes: { type: 'string' },
           },
         },
-      }
-    ),
-])
+      },
+    },
+  }
+)
+
+const reality = combined
+const dependencyChanges = (combined && combined.dependencyChanges) || null
 
 if (!reality || !Array.isArray(reality.requirements)) {
   return fail('the reality reconciler returned no requirement inventory — reconciliation cannot be reduced to a verdict.')
@@ -352,8 +340,8 @@ const ledger = {
   phase: 'prd-reconciliation',
   beadId: null,
   subject: prdId || prdTitle || null,
-  chosen: ['prd-reality-reconciler', 'dependency-change-detector'],
-  mode: 'fixed', // design-mandated full fan-out — correct, not a gap
+  chosen: ['prd-reality-reconciler (both checks, one session)'],
+  mode: 'combined', // one checker session carries both reconciliation checks
   verdict,
   deltaCount,
   sizeVerdict,

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet; the trd-author writes the TRD; two independent checkers (structure/quality + bidirectional PRD<->TRD traceability) judge it. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -164,26 +164,39 @@ Each technical requirement must have a stable ID, trace upward to a PRD requirem
 
   const trdText = JSON.stringify(trd, null, 2)
 
-  // ── Phase 3: Verify & Traceability (independent checkers, run in parallel) ───
+  // ── Phase 3: Verify & Traceability — ONE independent checker session, both checks ─
+  // This used to be two parallel checker sessions, each paying a full session-start to
+  // read the same TRD. Both are independent CHECKS on the maker's artifact — neither
+  // ever judged the other — so one session carrying both preserves segregation of
+  // duties (the checker authored nothing) at half the cost.
   phase('Verify & Traceability')
 
-  const [validation, traceability] = await parallel([
-    () =>
-      agent(
-        `You are an INDEPENDENT validator. You did NOT author this TRD; you only judge it. Do not modify it. Validate the TRD's structure and quality: required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites.
+  const verification = await agent(
+    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words.
+
+CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
+
+CHECK 2 — bidirectional PRD<->TRD traceability (return under \`traceability\`): every PRD requirement maps forward to at least one TRD requirement (no coverage gaps), and every TRD requirement maps back to a PRD requirement (no orphans). Build the traceability matrix and report gaps in both directions. verdict "pass" only if traceability is complete in BOTH directions with no unexplained gaps or orphans.
+
+PRD (source requirements):
+${prdText}
+${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
 TRD under review:
 ${trdText}
 
 SAD extract the TRD must stay consistent with:
-${extractText}
-
-Return verdict "pass" only if every check holds. Otherwise "reject" with feedback specific enough that the author can fix it without interpretation. List each finding with its severity.`,
-        {
-          label: 'verify:trd-validation',
-          phase: 'Verify & Traceability',
-          agentType: 'agent-teams-workforce:trd-validator',
-          schema: {
+${extractText}`,
+    {
+      label: 'verify:trd-and-traceability',
+      phase: 'Verify & Traceability',
+      agentType: 'agent-teams-workforce:trd-validator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['validation', 'traceability'],
+        properties: {
+          validation: {
             type: 'object',
             additionalProperties: false,
             required: ['verdict', 'findings', 'feedback'],
@@ -205,25 +218,7 @@ Return verdict "pass" only if every check holds. Otherwise "reject" with feedbac
               feedback: { type: 'string' },
             },
           },
-        }
-      ),
-    () =>
-      agent(
-        `You are an INDEPENDENT traceability verifier. You did NOT author this TRD. Verify BIDIRECTIONAL PRD<->TRD traceability: every PRD requirement maps forward to at least one TRD requirement (no coverage gaps), and every TRD requirement maps back to a PRD requirement (no orphans). Build the traceability matrix and report gaps in both directions.
-
-PRD (source requirements):
-${prdText}
-${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
-
-TRD under review:
-${trdText}
-
-Return verdict "pass" only if traceability is complete in BOTH directions with no unexplained gaps or orphans.`,
-        {
-          label: 'verify:traceability',
-          phase: 'Verify & Traceability',
-          agentType: 'agent-teams-workforce:prd-trd-traceability-verifier',
-          schema: {
+          traceability: {
             type: 'object',
             additionalProperties: false,
             required: ['verdict', 'links', 'prdGaps', 'trdOrphans', 'feedback'],
@@ -246,9 +241,13 @@ Return verdict "pass" only if traceability is complete in BOTH directions with n
               feedback: { type: 'string' },
             },
           },
-        }
-      ),
-  ])
+        },
+      },
+    }
+  )
+
+  const validation = verification && verification.validation
+  const traceability = verification && verification.traceability
 
   trdValidation = validation
   traceabilityMatrix = traceability

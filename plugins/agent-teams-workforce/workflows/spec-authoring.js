@@ -1,10 +1,10 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. A Spec and its Story are created together, so this mini also emits exactly ONE Story bead specification paired with the Spec — a container scoped to the single repo in args.repoPath, with no task breakdown and no WSJF score; work the spec set implies in any other repo is returned as a finding, never a second Story (the caller runs this mini once per repo and writes the bead with bd). Maker agents author each artifact in parallel; INDEPENDENT reviewer agents judge the reviewable artifacts (segregation of duties — no author reviews its own work); a bounded maker/checker loop re-runs the maker on rejection and the spec-decider breaks any deadlock. Read-and-author only — no nested workflow(); the downstream gate owns final acceptance.',
+    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. A Spec and its Story are created together, so this mini also emits exactly ONE Story bead specification paired with the Spec — a container scoped to the single repo in args.repoPath, with no task breakdown and no WSJF score; work the spec set implies in any other repo is returned as a finding, never a second Story (the caller runs this mini once per repo and writes the bead with bd). Three maker sessions author the six artifacts in parallel (interface contracts, data model, criteria); ONE INDEPENDENT reviewer session judges the reviewable artifacts through every review lens (segregation of duties — no author reviews its own work, and merging checks into one checker session never merges a maker with its checker); a bounded maker/checker loop re-runs only the owning maker on rejection and the spec-decider breaks any deadlock. Read-and-author only — no nested workflow(); the downstream gate owns final acceptance.',
   phases: [
-    { title: 'Author specs', detail: 'makers author each spec artifact in parallel' },
-    { title: 'Review specs', detail: 'independent reviewers judge the reviewable artifacts' },
+    { title: 'Author specs', detail: 'three maker sessions author the six spec artifacts in parallel' },
+    { title: 'Review specs', detail: 'one independent reviewer session judges the reviewable artifacts' },
     { title: 'Decide', detail: 'spec-decider breaks any maker/checker deadlock' },
     { title: 'Emit story', detail: 'author the ONE Story bead this Spec pairs with — container only, single repo' },
   ],
@@ -194,22 +194,55 @@ async function main(a) {
   const MAX_LOOPS = (a && a.maxLoops) || 1
   const ctx = ctxBlock(s, trd, constraints)
 
-  // ── Phase 1: Author specs (makers, in parallel) ───────────────────────────────
+  // ── Phase 1: Author specs — THREE maker sessions, six artifacts ───────────────
+  // The six artifacts used to be six parallel maker sessions, each paying a full
+  // session-start to read the same TRD packet and the same repo. Merging MAKERS
+  // costs no segregation of duties — no maker judges anything here, and the
+  // independent review below still covers everything — so related artifacts are
+  // authored together: the interface contracts in one session (API + events +
+  // errors, one behavioural surface), the data model in its own specialist
+  // session, and the criteria (AC + DoD) in one small session.
   phase('Author specs')
+
+  const CONTRACTS_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['apiSpec', 'eventContracts', 'errorSpec'],
+    properties: {
+      apiSpec: SPEC_SCHEMA,
+      eventContracts: SPEC_SCHEMA,
+      errorSpec: SPEC_SCHEMA,
+    },
+  }
+  const CRITERIA_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['acceptanceCriteria', 'definitionOfDone'],
+    properties: {
+      acceptanceCriteria: AC_SCHEMA.properties.acceptanceCriteria,
+      definitionOfDone: DOD_SCHEMA.properties.definitionOfDone,
+      notes: { type: 'string' },
+    },
+  }
 
   // parallel() takes an ARRAY of thunks — that is the runner's contract and what
   // every other workflow in this directory passes. An object map is iterated as
-  // an empty list, so all six specs came back undefined.
-  const [apiSpecDraft, dataModelSpecDraft, eventContractsDraft, errorSpecDraft, acceptanceDraft, dodDraft] =
-    await parallel([
+  // an empty list, so all the specs would come back undefined.
+  const [contractsDraft, dataModelSpecDraft, criteriaDraft] = await parallel([
     () =>
       agent(
-        `Author the API/OpenAPI contract specification for this feature (spec-first). REST API v1 only — HTTP API v2 is banned. Define resources, methods, request/response schemas, status codes, and auth. Author only — do not review your own work.\n\n${ctx}`,
+        `Author the three INTERFACE CONTRACT artifacts for this feature, each under its own key. Author only — do not review your own work.
+
+1. \`apiSpec\` — the API/OpenAPI contract specification (spec-first). REST API v1 only — HTTP API v2 is banned. Define resources, methods, request/response schemas, status codes, and auth.
+2. \`eventContracts\` — the event contracts/schemas. Dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema.
+3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
+
+${ctx}`,
         {
-          label: 'author:api-spec',
+          label: 'author:contracts',
           phase: 'Author specs',
           agentType: 'agent-teams-workforce:api-specification-author',
-          schema: SPEC_SCHEMA,
+          schema: CONTRACTS_SCHEMA,
         }
       ),
     () =>
@@ -224,158 +257,131 @@ async function main(a) {
       ),
     () =>
       agent(
-        `Author the event contracts/schemas for this feature. Use dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema. Author only — do not review your own work.\n\n${ctx}`,
+        `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
+
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions.
+2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.).
+
+${ctx}`,
         {
-          label: 'author:event-contracts',
-          phase: 'Author specs',
-          agentType: 'agent-teams-workforce:event-contract-author',
-          schema: SPEC_SCHEMA,
-        }
-      ),
-    () =>
-      agent(
-        `Author the error-handling specification for this feature: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed). Author only — do not review your own work.\n\n${ctx}`,
-        {
-          label: 'author:error-spec',
-          phase: 'Author specs',
-          agentType: 'agent-teams-workforce:error-handling-specification-author',
-          schema: SPEC_SCHEMA,
-        }
-      ),
-    () =>
-      agent(
-        `Author the acceptance criteria for this spec as testable given/when/then statements covering the happy path, error paths, and boundary conditions. Author only — do not review your own work.\n\n${ctx}`,
-        {
-          label: 'author:acceptance-criteria',
+          label: 'author:criteria',
           phase: 'Author specs',
           agentType: 'agent-teams-workforce:acceptance-criteria-writer',
-          schema: AC_SCHEMA,
+          schema: CRITERIA_SCHEMA,
         }
       ),
-    () =>
-      agent(
-        `Codify the Definition of Done for this spec as a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). Author only — do not review your own work.\n\n${ctx}`,
-        {
-          label: 'author:definition-of-done',
-          phase: 'Author specs',
-          agentType: 'agent-teams-workforce:definition-of-done-enforcer',
-          schema: DOD_SCHEMA,
-        }
-      ),
-    ])
+  ])
   const authored = {
-    apiSpec: apiSpecDraft,
+    apiSpec: contractsDraft && contractsDraft.apiSpec,
     dataModelSpec: dataModelSpecDraft,
-    eventContracts: eventContractsDraft,
-    errorSpec: errorSpecDraft,
-    acceptance: acceptanceDraft,
-    dod: dodDraft,
+    eventContracts: contractsDraft && contractsDraft.eventContracts,
+    errorSpec: contractsDraft && contractsDraft.errorSpec,
+    acceptance: criteriaDraft
+      ? { acceptanceCriteria: criteriaDraft.acceptanceCriteria, notes: criteriaDraft.notes }
+      : null,
+    dod: criteriaDraft ? { definitionOfDone: criteriaDraft.definitionOfDone, notes: criteriaDraft.notes } : null,
   }
 
-  // ── Phase 2 & 3: independent review + bounded maker/checker loop + decider ──────
+  // ── Phase 2 & 3: ONE independent reviewer session + bounded maker re-runs ──────
+  // The four reviewable artifacts used to get four separate reviewer sessions per
+  // attempt — four session-starts to judge one spec set. All four reviews are CHECKS
+  // on maker output, and the reviewer authored none of it, so one session applying
+  // all four review lenses preserves segregation of duties (never a maker checking
+  // itself) at a quarter of the cost. On rejection only the owning MAKER re-runs
+  // (never the reviewer), and only the rejected artifacts are replaced.
   phase('Review specs')
 
-  // One reviewable artifact = { key, makerType, reviewerType, makerSchema, draft, prompts }.
-  // makerType !== reviewerType for every entry (no self-approval).
-  const reviewables = [
-    {
-      key: 'apiSpec',
-      reviewerType: 'agent-teams-workforce:openapi-contract-reviewer',
-      makerType: 'agent-teams-workforce:api-specification-author',
-      makerLabel: 'author:api-spec',
-      reviewLabel: 'review:api-spec',
-      makerSchema: SPEC_SCHEMA,
-      draft: authored.apiSpec,
-      reviewPrompt: (draft) =>
-        `Independently review this API/OpenAPI contract spec for correctness and design rules (REST v1 only, resource/method/schema/status-code/auth completeness, spec-first conformance). You did NOT author it. Verdict approve or reject with specific findings.\n\nSpec under review:\n${JSON.stringify(draft, null, 2)}\n\n${ctx}`,
-      makerPrompt: (feedback) =>
-        `Revise the API/OpenAPI contract spec to resolve the reviewer's findings. REST API v1 only. Author only.\n\nReviewer findings to address:\n${feedback}\n\n${ctx}`,
-    },
-    {
-      key: 'dataModelSpec',
-      reviewerType: 'agent-teams-workforce:dynamodb-schema-access-pattern-reviewer',
-      makerType: 'agent-teams-workforce:data-model-specification-author',
-      makerLabel: 'author:data-model',
-      reviewLabel: 'review:data-model',
-      makerSchema: SPEC_SCHEMA,
-      draft: authored.dataModelSpec,
-      reviewPrompt: (draft) =>
-        `Independently review this data-model spec against its access patterns: does every key/index/item shape serve a stated pattern with no hot keys, no cross-service table sharing, and no unsupported pattern? You did NOT author it. Verdict approve or reject with specific findings.\n\nAccess patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(as defined in the spec)'}\n\nSpec under review:\n${JSON.stringify(draft, null, 2)}\n\n${ctx}`,
-      makerPrompt: (feedback) =>
-        `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${feedback}\n\n${ctx}`,
-    },
-    {
-      key: 'eventContracts',
-      reviewerType: 'agent-teams-workforce:event-schema-reviewer',
-      makerType: 'agent-teams-workforce:event-contract-author',
-      makerLabel: 'author:event-contracts',
-      reviewLabel: 'review:event-contracts',
-      makerSchema: SPEC_SCHEMA,
-      draft: authored.eventContracts,
-      reviewPrompt: (draft) =>
-        `Independently review these event schemas: dot-form naming, standard envelope conformance, payload schema completeness and versioning, and that orchestration uses events (not Step Functions). You did NOT author them. Verdict approve or reject with specific findings.\n\nEvent contracts under review:\n${JSON.stringify(draft, null, 2)}\n\n${ctx}`,
-      makerPrompt: (feedback) =>
-        `Revise the event contracts to resolve the reviewer's findings. Dot-form naming, standard envelope, events over Step Functions. Author only.\n\nReviewer findings to address:\n${feedback}\n\n${ctx}`,
-    },
-    {
-      key: 'acceptance',
-      reviewerType: 'agent-teams-workforce:acceptance-criteria-reviewer',
-      makerType: 'agent-teams-workforce:acceptance-criteria-writer',
-      makerLabel: 'author:acceptance-criteria',
-      reviewLabel: 'review:acceptance-criteria',
-      makerSchema: AC_SCHEMA,
-      draft: authored.acceptance,
-      reviewPrompt: (draft) =>
-        `Independently review these acceptance criteria for testability and coverage: each is unambiguous given/when/then, the happy path, error paths, and boundaries are all covered, and nothing is unverifiable. You did NOT author them. Verdict approve or reject with specific findings.\n\nAcceptance criteria under review:\n${JSON.stringify(draft, null, 2)}\n\n${ctx}`,
-      makerPrompt: (feedback) =>
-        `Revise the acceptance criteria to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${feedback}\n\n${ctx}`,
-    },
-  ]
-
+  const REVIEW_KEYS = ['apiSpec', 'dataModelSpec', 'eventContracts', 'acceptance']
+  const drafts = {
+    apiSpec: authored.apiSpec,
+    dataModelSpec: authored.dataModelSpec,
+    eventContracts: authored.eventContracts,
+    acceptance: authored.acceptance,
+  }
   const reviewFindings = {}
-  const finalArtifacts = {}
+  let lastReviews = {}
 
-  for (const r of reviewables) {
-    let draft = r.draft
-    let lastReview = null
-    let resolved = false
+  for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+    const review = await agent(
+      `You are an INDEPENDENT spec reviewer. You did NOT author any artifact below; you only judge them. Review all four in one pass, returning a verdict per artifact under its own key. Keep every finding under 40 words — findings, not essays.
 
-    for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-      const review = await agent(r.reviewPrompt(draft), {
-        label: r.reviewLabel,
+1. \`apiSpec\` — the API/OpenAPI contract: correctness and design rules (REST v1 only, resource/method/schema/status-code/auth completeness, spec-first conformance).
+2. \`dataModelSpec\` — the data model against its access patterns: does every key/index/item shape serve a stated pattern with no hot keys, no cross-service table sharing, and no unsupported pattern?
+   Access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `   ${i + 1}. ${p}`).join('\n') : '   (as defined in the spec)'}
+3. \`eventContracts\` — the event schemas: dot-form naming, standard envelope conformance, payload schema completeness and versioning, and that orchestration uses events (not Step Functions).
+4. \`acceptance\` — the acceptance criteria: each is unambiguous given/when/then; happy path, error paths, and boundaries are all covered; nothing is unverifiable.
+
+Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation.
+
+Artifacts under review:
+${JSON.stringify(drafts, null, 2)}
+
+${ctx}`,
+      {
+        label: `review:all-specs${attempt > 1 ? `:${attempt}` : ''}`,
         phase: 'Review specs',
-        agentType: r.reviewerType,
-        schema: REVIEW_SCHEMA,
-      })
-      lastReview = review
-
-      if (review && review.verdict === 'approve') {
-        resolved = true
-        break
+        agentType: 'agent-teams-workforce:api-design-reviewer',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: REVIEW_KEYS,
+          properties: {
+            apiSpec: REVIEW_SCHEMA,
+            dataModelSpec: REVIEW_SCHEMA,
+            eventContracts: REVIEW_SCHEMA,
+            acceptance: REVIEW_SCHEMA,
+          },
+        },
       }
+    )
+    lastReviews = review || {}
+    const rejected = REVIEW_KEYS.filter((k) => !(review && review[k] && review[k].verdict === 'approve'))
+    if (!rejected.length) break
+    log(`Review: REJECT ${rejected.join(', ')} (attempt ${attempt}/${MAX_LOOPS})`)
 
-      log(`Review ${r.key}: REJECT (attempt ${attempt}/${MAX_LOOPS}) — ${findingsText(review)}`)
+    // Last attempt: do not re-run the makers; fall through to the decider.
+    if (attempt === MAX_LOOPS) break
 
-      // Last attempt: do not re-run the maker; fall through to the decider.
-      if (attempt === MAX_LOOPS) break
-
-      // Re-run the MAKER (never the reviewer) with the reviewer's feedback.
-      draft = await agent(r.makerPrompt(findingsText(review)), {
-        label: r.makerLabel,
-        phase: 'Author specs',
-        agentType: r.makerType,
-        schema: r.makerSchema,
-      })
+    // Re-run only the OWNING makers, and replace only the rejected artifacts.
+    const contractRejects = rejected.filter((k) => k === 'apiSpec' || k === 'eventContracts')
+    if (contractRejects.length) {
+      const fb = contractRejects.map((k) => `${k}:\n${findingsText(lastReviews[k])}`).join('\n\n')
+      const redone = await agent(
+        `Revise the interface contract artifacts to resolve the reviewer's findings below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\nReviewer findings to address:\n${fb}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: drafts.apiSpec, eventContracts: drafts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}`,
+        { label: 'author:contracts', phase: 'Author specs', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
+      )
+      for (const k of contractRejects) if (redone && redone[k]) drafts[k] = redone[k]
     }
-
-    finalArtifacts[r.key] = draft
-    reviewFindings[r.key] = {
-      resolved,
-      verdict: lastReview ? lastReview.verdict : 'reject',
-      findings: lastReview ? lastReview.findings : [],
-      feedback: lastReview ? lastReview.feedback : '',
+    if (rejected.includes('dataModelSpec')) {
+      drafts.dataModelSpec = await agent(
+        `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}`,
+        { label: 'author:data-model', phase: 'Author specs', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
+      )
+    }
+    if (rejected.includes('acceptance')) {
+      const redone = await agent(
+        `Revise the acceptance criteria and Definition of Done to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.acceptance)}\n\n${ctx}`,
+        { label: 'author:criteria', phase: 'Author specs', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
+      )
+      if (redone) {
+        drafts.acceptance = { acceptanceCriteria: redone.acceptanceCriteria, notes: redone.notes }
+        authored.dod = { definitionOfDone: redone.definitionOfDone, notes: redone.notes }
+      }
     }
   }
+
+  const finalArtifacts = {}
+  for (const k of REVIEW_KEYS) {
+    const r = lastReviews[k]
+    finalArtifacts[k] = drafts[k]
+    reviewFindings[k] = {
+      resolved: !!(r && r.verdict === 'approve'),
+      verdict: r ? r.verdict : 'reject',
+      findings: r ? r.findings : [],
+      feedback: r ? r.feedback : '',
+    }
+  }
+  const reviewables = REVIEW_KEYS.map((key) => ({ key }))
 
   // ── Phase 3: Decide — break any deadlock the bounded loop could not resolve ─────
   phase('Decide')
