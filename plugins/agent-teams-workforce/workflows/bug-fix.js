@@ -945,7 +945,37 @@ const workBead = { ...bead, repoPath: workRepoPath }
 if (!contract) {
   enterPhase('Triage')
   log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
-  contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead })
+  // Standing rulings from the project owner: resolved once from the repository this
+  // run operates on (one cheap read agent — scripts have no filesystem) and threaded
+  // into the triage brief, the judgment front-end of this composite. Missing file ->
+  // nothing injected, zero behavior change. The triage-first path above runs without
+  // them, because no repository is known yet when it dispatches.
+  let standingRulings = null
+  try {
+    const rulingsRead = await agent(
+      `Check whether a standing-rulings file exists and read it. Path: ${bead.repoPath}/.claude/standing-rulings.md
+
+If the file exists and contains text, return found=true and its FULL text verbatim in \`content\` — do not summarize, reformat, or comment on it. If it does not exist or is empty, return found=false with content "". Do not invent content and do not read any other file.`,
+      {
+        label: 'resolve:standing-rulings',
+        phase: 'Triage',
+        effort: 'low',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['found', 'content'],
+          properties: { found: { type: 'boolean' }, content: { type: 'string' } },
+        },
+      }
+    )
+    if (rulingsRead && rulingsRead.found === true && typeof rulingsRead.content === 'string' && rulingsRead.content.trim()) {
+      standingRulings = rulingsRead.content.trim().slice(0, 8192)
+      log(`Standing rulings found (${standingRulings.length} chars) — injected into the triage brief`)
+    }
+  } catch (e) {
+    log(`standing-rulings resolution failed (non-fatal, nothing injected): ${(e && e.message) || e}`)
+  }
+  contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead, standingRulings })
   if (!contract) return handback(false, 'triage', 'triage produced nothing')
 }
 // The composite owns the tree, not the mini. bug-triage echoes back whatever repoPath

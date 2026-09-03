@@ -619,8 +619,60 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 // here for the cost of two read-only checkers rather than after G1 has convened six
 // analysts and G2 an architecture panel against work that does not need doing.
 enterPhase('PRD Reconciliation')
+
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Unattended multi-day runs mean Mark's standing rulings must live in the pipeline's
+// heads, not in a human watcher's: a reconciliation checker once found that a "live
+// service" serves nobody yet kept migration requirements his dev-data-is-disposable
+// ruling invalidates, and only a watching human caught it. So the run resolves the
+// project-local rulings file ONCE here (a workflow script has no filesystem, so one
+// cheap read agent does it) and threads the text into every JUDGMENT-BEARING agent's
+// brief. A missing file injects nothing — zero behavior change. Mechanical agents
+// (bead-writer, ledger, text-resolution) never get it: they judge nothing and the
+// tokens are wasted. Capped so a bloated file cannot blow up every brief.
+const RULINGS_CAP = 8192
+let standingRulings = null
+if (repoPath) {
+  let rulingsRead = null
+  try {
+    rulingsRead = await agent(
+      `Check whether a standing-rulings file exists and read it. Path: ${repoPath}/.claude/standing-rulings.md
+
+If the file exists and contains text, return found=true and its FULL text verbatim in \`content\` — do not summarize, reformat, or comment on it. If it does not exist or is empty, return found=false with content "". Do not invent content and do not read any other file.`,
+      {
+        label: 'resolve:standing-rulings',
+        phase: 'PRD Reconciliation',
+        effort: 'low',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['found', 'content'],
+          properties: {
+            found: { type: 'boolean' },
+            content: { type: 'string' },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`standing-rulings resolution failed (non-fatal, nothing injected): ${(e && e.message) || e}`)
+  }
+  if (rulingsRead && rulingsRead.found === true && typeof rulingsRead.content === 'string' && rulingsRead.content.trim()) {
+    standingRulings = rulingsRead.content.trim().slice(0, RULINGS_CAP)
+    log(`Standing rulings found (${standingRulings.length} chars${rulingsRead.content.trim().length > RULINGS_CAP ? ', capped' : ''}) — injecting into every judgment-bearing brief`)
+  } else {
+    log('No standing-rulings file — nothing injected')
+  }
+}
+// The same delimited block the minis build, for the judgment dispatches this composite
+// makes DIRECTLY (architecture triage).
+const rulingsBlock = standingRulings
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
+  : ''
+
 const reconciliation = await workflow('agent-teams-workforce:prd-reconciliation', {
   prd,
+  standingRulings,
   // The SEED, deliberately, and not the span: the span has not been ruled yet and cannot
   // be, because ruling it needs an architecture decision that needs a validated PRD that
   // needs this reconciliation. Reconciliation is told where to START looking; its own
@@ -730,6 +782,7 @@ const validation = await gateLoop({
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:prd-validation', {
       prd,
+      standingRulings,
       // The BRD must be threaded through explicitly. prd-validation reads args.brd and hands it
       // to the traceability auditor; when it is absent the auditor has no objectives to map to
       // and reports every requirement as an orphan, which reads as a PRD defect but is not one.
@@ -830,7 +883,7 @@ if (a.skipArchitecture === true) {
   // The prompt is hoisted so the retry below sends exactly the same question. A
   // retry that reworded it would be asking a different one.
   const triagePrompt =
-    `Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
+    `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
       `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or a new access pattern, a new service or a new boundary between services, a new integration or transport, a new trust boundary, or a change to a crosscutting concern.\n\n` +
       `It does NOT exist merely because the work is hard, security-adjacent, or user-facing. A feature that composes existing decisions — a screen in an existing app, a field on an existing form, a call to an endpoint whose contract another PRD owns — raises NO architecture decision even when it is difficult.\n\n` +
       `Answer needed:false when EITHER there is no such choice, OR the SAD already settles every choice this PRD raises (name the sections).\n` +
@@ -959,6 +1012,7 @@ if (!archNeeded) {
     escalateTargets: ['prd-validation'],
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:architecture', {
+        standingRulings,
         decision: a.decision || {
           id: prd.id,
           title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
@@ -1020,6 +1074,7 @@ if (callerRepos.length) {
   log(`Repo Scoping SKIPPED — the caller pinned the span explicitly (${repos.length}): ${repos.join(', ')}`)
 } else {
   scoping = await workflow('agent-teams-workforce:repo-scoping', {
+    standingRulings,
     // The DELTA PRD, like every phase downstream of reconciliation. Scoping the original
     // ambition would place work in repositories whose share of it already shipped.
     prd: { id: prd.id, title: prd.title, body: validatedPrd.body || prd.body },
@@ -1098,6 +1153,7 @@ const trdAuthoring = await gateLoop({
   escalateTargets: ['architecture', 'prd-validation'],
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:trd-authoring', {
+      standingRulings,
       prd: {
         id: prd.id,
         title: prd.title,
@@ -1343,6 +1399,7 @@ for (const pair of specPairs) {
     escalateTargets: ['spec-authoring'],
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:task-decomposition', {
+        standingRulings,
         spec: {
           id: prd.id,
           title: prd.title,

@@ -15,9 +15,27 @@ export const meta = {
 // suspects (`repoHints`), and to report it CONFIRMED — an absolute path that exists and is
 // a git repository — or to report that it could not. A guessed repository is not an
 // answer: bug-fix validates what comes back and refuses what it cannot use.
-const bead = ((typeof args === 'string' ? JSON.parse(args) : args) || {}).bead || {}
+const __a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const bead = __a.bead || {}
 const repoKnown = !!String(bead.repoPath || '').trim()
 const repo = repoKnown ? bead.repoPath : '(NOT KNOWN — locating it is part of this diagnosis; see below)'
+
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof __a.standingRulings === 'string' ? __a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
 const repoHints = (Array.isArray(bead.repoHints) ? bead.repoHints : []).map((h) => String(h == null ? '' : h).trim()).filter(Boolean)
 const manifestPath = String(bead.manifestPath || '').trim()
 const LOCATE_REPO =
@@ -31,7 +49,7 @@ phase('Triage')
 
 // 1) Diagnosis — read-only analyst. Separation of duties: this agent does not fix.
 const analysis = await agent(
-  `Diagnose this bug. You are READ-ONLY — do not change code. Work within the repository at: ${repo}
+  `${rulingsBlock}Diagnose this bug. You are READ-ONLY — do not change code. Work within the repository at: ${repo}
 
 Bug ${bead.id || ''}: ${bead.title || ''}
 ${bead.description || ''}
@@ -127,7 +145,7 @@ if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resol
 // A DIFFERENT agent sizes it — the diagnostician has just invested in a root cause
 // and is the worst-placed judge of whether fixing it is too big.
 const sizing = await agent(
-  `Size this bug. It has been diagnosed; decide whether its honest remedy is a FIX or a REDESIGN. You are READ-ONLY and you are NOT proposing the remedy — only sizing it.
+  `${rulingsBlock}Size this bug. It has been diagnosed; decide whether its honest remedy is a FIX or a REDESIGN. You are READ-ONLY and you are NOT proposing the remedy — only sizing it.
 
 Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision the SAD does not cover, or amount to rebuilding a component rather than correcting it.
 
@@ -204,7 +222,7 @@ const AC_MAX = Math.max(2, defectIds.length * 2)
 log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria bounded to ${AC_MIN}..${AC_MAX}`)
 
 const contract = await agent(
-  `Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
+  `${rulingsBlock}Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
 ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total — this is enforced by the schema, not requested.
 

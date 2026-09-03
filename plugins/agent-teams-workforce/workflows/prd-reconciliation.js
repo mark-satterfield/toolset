@@ -45,6 +45,23 @@ const repoPath = (typeof prdInput === 'string' ? '' : prdInput.repoPath) || a.re
 const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => r)
 const dependencies = Array.isArray(a.dependencies) ? a.dependencies : []
 const awsProfile = a.awsProfile || 'dev'
+
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 
 const fail = (reason) => ({
@@ -80,7 +97,7 @@ const repoBlock = repos.length
 phase('Reconciliation checks')
 
 const combined = await agent(
-  `Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere. Two checks, one pass — return both.
+  `${rulingsBlock}Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere. Two checks, one pass — return both.
 
 ═══ CHECK 1 — PRD vs reality ═══
 
@@ -288,7 +305,7 @@ let deltaPrdBody = null
 if (deltaCount > 0) {
   const suggestedPath = a.deltaPath || (hasText(prdPath) ? `${prdPath.replace(/\.md$/i, '')}.delta.md` : '')
   const written = await agent(
-    `Write the DELTA PRD: this PRD rewritten to contain ONLY the requirements that are still absent or partial. Everything downstream of here — validation, architecture, the TRD, the specs, the tasks — reads THIS document and never the original, so a requirement you carry across is a requirement that gets built again.
+    `${rulingsBlock}Write the DELTA PRD: this PRD rewritten to contain ONLY the requirements that are still absent or partial. Everything downstream of here — validation, architecture, the TRD, the specs, the tasks — reads THIS document and never the original, so a requirement you carry across is a requirement that gets built again.
 
 Original PRD:
 ${prdBlock}

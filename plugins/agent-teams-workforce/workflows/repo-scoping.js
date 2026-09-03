@@ -89,6 +89,23 @@ const deltaRepos = ((reconciliation.sizing && reconciliation.sizing.deltaRepos) 
 const architecture = a.architecture || null
 const architectureSkipped = !architecture || architecture.skipped === true
 
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
+
 // Every refusal returns the SAME shape a success does, with `ok:false` and a reason. A
 // caller that has to branch on shape as well as on `ok` reads a refusal as a span.
 //
@@ -177,7 +194,7 @@ const [shape, survey] = await parallel([
   //    seedRepos, no deltaRepos. That absence is the mechanism, not an oversight.
   () =>
     agent(
-      `Decompose this work into WORK UNITS and say what kind of home each one should have. You are designing on a BLANK SLATE.
+      `${rulingsBlock}Decompose this work into WORK UNITS and say what kind of home each one should have. You are designing on a BLANK SLATE.
 
 ASSUME GREENFIELD. Nothing has been built. No repository exists. Decide what SHOULD be built, and how it should be divided, on architectural best-practice grounds alone — bounded contexts, service boundaries, deployment independence, ownership, blast radius, and the platform's own conventions.
 
@@ -333,7 +350,7 @@ const evidenceBlock = [
 ].join('\n\n')
 
 const ruling = await agent(
-  `Rule which repository hosts each unit of this work. You are DECIDING only: you did not produce the design below and you did not produce the inventory below, and you must not re-do either.
+  `${rulingsBlock}Rule which repository hosts each unit of this work. You are DECIDING only: you did not produce the design below and you did not produce the inventory below, and you must not re-do either.
 
 The ordering that produced your inputs is binding on how you use them. A greenfield design was produced FIRST, deliberately blind to what exists. The inventory was produced separately. Your job is the third step: decide how the repositories that exist serve that design. Architectural best practice drives what is built — existing code does not. Where an existing repository serves the design, use it, because a new repository is a real and permanent cost. Where it does not, say so, and do not bend the design to fit it.
 

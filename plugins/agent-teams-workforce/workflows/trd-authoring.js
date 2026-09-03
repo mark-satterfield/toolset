@@ -33,6 +33,23 @@ const trdPath = a.trdPath || '(TRD path not provided)'
 // Callers who want the old behaviour pass args.maxLoops explicitly.
 const MAX_LOOPS = a.maxLoops || 2
 
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
+
 if (!prd.id && !prd.path && !prd.content) {
   return { ok: false, stage: 'input', error: 'no PRD supplied (id/path/content all empty) — refusing to run without a work item' }
 }
@@ -116,7 +133,7 @@ for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   log(`Authoring TRD (attempt ${attempt}/${MAX_LOOPS}) at ${trdPath}`)
 
   trd = await agent(
-    `Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
+    `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
 
 Target TRD path: ${trdPath}
 

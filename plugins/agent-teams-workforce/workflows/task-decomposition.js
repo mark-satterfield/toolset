@@ -22,6 +22,23 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const spec = a.spec || {}
 const story = a.story || {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
+
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
 const specRef = spec.id || spec.title || '(unspecified spec)'
 if (!spec.title && !spec.description && !spec.id) {
   return { ok: false, stage: 'input', error: 'no spec supplied — refusing to run without a work item' }
@@ -132,7 +149,7 @@ const wsjfSchema = {
 }
 
 const maker = await agent(
-  `Three maker jobs on the Spec below, in order, one pass. Do NOT write code, and do NOT judge your own output — an independent checker does that after you.
+  `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code, and do NOT judge your own output — an independent checker does that after you.
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into ATOMIC TASKS. Each task must be scoped to ONE agent's work within the single repository named below, be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Assign each a stable, human-readable local "key" (e.g. T1, T2). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature under any circumstance: the Epic was created with its PRD and the Story with this Spec, both already exist upstream, and every task you emit is a child of the Story named below. If the Spec looks too large for one Story, report that in your rationale (under 80 words) and still decompose only what this Spec covers.
 

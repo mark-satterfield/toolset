@@ -32,6 +32,23 @@ Context: ${d.context || 'n/a'}
 Decision drivers: ${(Array.isArray(d.drivers) ? d.drivers : []).join('; ') || 'n/a'}
 Work within the repository at: ${repo}${upstream}`
 
+// ── Standing rulings from the project owner ─────────────────────────────────────
+// Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
+// resolves .claude/standing-rulings.md in the repo the run operates on and threads
+// the text here; absent -> empty string, zero behavior change. Capped so a bloated
+// file cannot blow up every brief.
+const RULINGS_CAP = 8192
+const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsBlock = rulingsText
+  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
+
+${rulingsText}
+
+END STANDING RULINGS
+
+`
+  : ''
+
 // Shared proposal shape — each maker proposes options with tradeoffs from its lens.
 const PROPOSAL_SCHEMA = {
   type: 'object',
@@ -162,7 +179,7 @@ if (a.forceFullPanel === true) {
   log(`Triage skipped: caller forced the panel — analysts selected: ${activeDimensions.join(', ')}`)
 } else {
   triage = await agent(
-    `You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
+    `${rulingsBlock}You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
 
 Return settled=true when the SAD already answers this question, or when it is a routine variation on a settled pattern; otherwise settled=false. Cite in relevantDecisions the SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)} — include an axis only when the decision could plausibly turn on it, never by reflex.
 
@@ -368,7 +385,7 @@ Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
 
   const jobs = activeMakers.map((m) => () =>
     agent(
-      `${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}`,
       {
         label: `proposals:${m.lens}`,
         phase: 'Proposals',
@@ -384,7 +401,7 @@ Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
   if (wantsContextMap || wantsFailureModes) {
     jobs.push(() =>
       agent(
-        `You are a read-only architecture analysis advisor. Produce the analysis artifact(s) named below in one pass, each under its own key. Do NOT rule or author options.
+        `${rulingsBlock}You are a read-only architecture analysis advisor. Produce the analysis artifact(s) named below in one pass, each under its own key. Do NOT rule or author options.
 ${wantsContextMap ? `
 - \`contextMap\`: map the domain boundaries and context relationships this decision touches — which bounded contexts are involved and how they relate (upstream/downstream, conformist, anti-corruption layer).` : ''}${wantsFailureModes ? `
 - \`failureModes\`: model the failure modes the proposed directions must withstand — DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius.` : ''}
@@ -714,7 +731,7 @@ ${challengesEvidence()}
 Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
   decision = await agent(
-    `${DECIDER_CHARTER}
+    `${rulingsBlock}${DECIDER_CHARTER}
 
 ${decisionHeader}
 
@@ -756,7 +773,7 @@ Propose a NEW option set. Requirements for this round:
 
   const reJobs = activeMakers.map((m) => () =>
     agent(
-      `${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
       { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA }
     )
   )
