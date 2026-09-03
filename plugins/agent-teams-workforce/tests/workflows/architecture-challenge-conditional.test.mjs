@@ -141,6 +141,76 @@ test('a re-proposal round runs the wave regardless of the round-1 trigger', asyn
   assert.ok(waveRuns >= 1, 'the re-proposed option set must be stressed even though round 1 converged')
 })
 
+// ── Judicious tie-break: ambiguity challenges by default ──────────────────────
+// Mark's clarification: the requirement is a JUDICIOUS trigger, not a bias against
+// challenging. Skipping requires AFFIRMATIVE evidence of convergence and low
+// stakes; any signal that is merely absent — a lens that did not state contested,
+// a triage that did not state a flag, a dispatched analyst that returned nothing —
+// is ambiguity, and ambiguity runs the wave.
+
+test('a lens that did not state contested either way is ambiguity — the wave runs', async () => {
+  const { result, calls } = await runWorkflowScript(architecture, {
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' } },
+    agentImpl: (call) => {
+      const l = String(call.label)
+      if (l === 'triage:classify') return benignTriage
+      if (l === 'proposals:frame') return { subDecisions: [], constraints: [], dispatch: 'd' }
+      // One lens omits `contested` entirely — silence, not consensus.
+      if (l === 'proposals:integration/decomposition') {
+        return { lens: 'integration', options: [{ name: 'o', approach: 'a', pros: [], cons: [] }], recommendation: 'o' }
+      }
+      if (l.startsWith('proposals:')) return proposal(false)
+      if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
+      if (l.startsWith('decide:ruling')) return goodDecision
+      if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
+      if (l === 'sad:maintain') return { updatedSections: [], changedFiles: [], summary: 's' }
+      if (l === 'sad:conformance') return { verdict: 'pass', findings: [] }
+      return null
+    },
+    workflowImpl: () => null,
+  })
+  assert.ok(calls.some((c) => String(c.label).startsWith('challenge:')), 'an unstated flag is not affirmative convergence')
+  assert.match(result.challengeWave.reason, /ambiguous/, 'the journal must show ambiguity was why the wave ran')
+})
+
+test('a dispatched lens that returned nothing is ambiguity — the wave runs', async () => {
+  const { result, calls } = await runWorkflowScript(architecture, {
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' } },
+    agentImpl: (call) => {
+      const l = String(call.label)
+      if (l === 'triage:classify') return benignTriage
+      if (l === 'proposals:frame') return { subDecisions: [], constraints: [], dispatch: 'd' }
+      if (l === 'proposals:security') return null // this analyst died; its view is unknown
+      if (l.startsWith('proposals:')) return proposal(false)
+      if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
+      if (l.startsWith('decide:ruling')) return goodDecision
+      if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
+      if (l === 'sad:maintain') return { updatedSections: [], changedFiles: [], summary: 's' }
+      if (l === 'sad:conformance') return { verdict: 'pass', findings: [] }
+      return null
+    },
+    workflowImpl: () => null,
+  })
+  assert.ok(calls.some((c) => String(c.label).startsWith('challenge:')), 'a dead analyst must widen scrutiny, not narrow it')
+  assert.match(result.challengeWave.reason, /returned nothing/)
+})
+
+test('a triage that did not state its flags either way is ambiguity — the wave runs', async () => {
+  const { ranWave, result } = await run({
+    triage: { settled: false, rationale: 'open', relevantDecisions: [], dimensions: ['integration', 'security'] },
+  })
+  assert.equal(ranWave, true, 'an unstated reversalRisk/highStakes is not an affirmed low-stakes verdict')
+  assert.match(result.challengeWave.reason, /either way/)
+})
+
+test('the journal line names the judgment both ways — "challenge ran:" / "challenge skipped:"', async () => {
+  const skipped = await run({ triage: benignTriage })
+  assert.match(skipped.result.challengeWave.reason, /^challenge skipped: /)
+  assert.match(skipped.result.challengeWave.reason, /affirmed/, 'a skip must stand on affirmative evidence, and say so')
+  const ran = await run({ triage: benignTriage, contested: true })
+  assert.match(ran.result.challengeWave.reason, /^challenge ran: /)
+})
+
 test('the trigger is computed by the script — no agent is spent deciding whether to challenge', async () => {
   const { labels } = await run({ triage: benignTriage })
   assert.ok(

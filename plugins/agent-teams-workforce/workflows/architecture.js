@@ -5,7 +5,7 @@ export const meta = {
   phases: [
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
-    { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or no triage verdict exists (fail open). Converged, low-stakes decisions skip it and route straight to the decider, with the skip recorded' },
+    { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or any signal is ambiguous (a dead analyst, an unstated flag, no triage verdict) — ambiguity challenges by default. Skipping requires AFFIRMATIVE evidence: every lens explicitly contested=false and triage explicitly low-risk/low-stakes; the judgment is recorded either way' },
     { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled; when NO option is admissible it says so, classifies what blocked them, and the blocking constraints go back to the panel for a fresh option set (bounded)' },
     { title: 'Update SAD', detail: 'author fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8, conformance-checked' },
   ],
@@ -528,20 +528,27 @@ ${proposalsText}`,
   return wave
 }
 
-// ── The challenge wave is CONDITIONAL — it runs only when the decision is actually
-// contested (Mark's ruling: "Challenge shouldn't run 100% of the time"). The trigger
-// is computed HERE, by the script, from data the run already holds — the analysts'
-// own contested reports, and triage's reversal-risk and high-stakes classifications.
-// No agent decides whether to challenge, so segregation of duties is untouched: the
-// decider still never analyzes, and challengers still never decide. It FAILS OPEN:
-// with no triage verdict to skip on (forceFullPanel, caller-forced dimensions, or a
-// dead triage), the wave runs.
+// ── The challenge wave is CONDITIONAL, and the trigger is JUDICIOUS ─────────────
+// Mark's ruling: "Challenge shouldn't run 100% of the time" — and, on clarification,
+// "we need to be judicious": this is not a bias against challenging. The wave runs
+// on any contest TRIGGER (an analyst reports a live conflict, or triage classified
+// SAD-reversal risk or constitutive stakes), and skipping requires AFFIRMATIVE
+// evidence of convergence and low stakes: every dispatched lens actually returned
+// and explicitly said contested=false, and triage explicitly said reversalRisk=false
+// AND highStakes=false. Anything AMBIGUOUS — a dead analyst, an unstated flag, no
+// triage verdict at all — challenges by default; silence is never read as consensus.
+// The trigger is computed HERE, by the script, from data the run already holds. No
+// agent decides whether to challenge, so segregation of duties is untouched: the
+// decider still never analyzes, and challengers still never decide. The judgment is
+// recorded either way — "challenge ran: <trigger>" / "challenge skipped: <evidence>"
+// — so every run's trace shows the decision being made, not silence.
 let challengeResults = null
 let challengeWave = null
 if (!settled && proposals.length) {
   const triggers = []
+  const ambiguities = []
   if (a.forceFullPanel === true) triggers.push('caller forced the full panel')
-  if (!triage) triggers.push('no triage verdict exists (caller-forced dimensions or triage failure) — failing open')
+  if (!triage) ambiguities.push('no triage verdict exists (caller-forced dimensions or triage failure)')
   const contestedLenses = proposals.filter((p) => p && p.contested === true)
   if (contestedLenses.length) {
     triggers.push(
@@ -551,20 +558,33 @@ if (!settled && proposals.length) {
   }
   if (triage && triage.reversalRisk === true) triggers.push('triage: a plausible ruling could reverse or contradict a recorded SAD decision')
   if (triage && triage.highStakes === true) triggers.push('triage: the question implicates a constitutive/high-stakes constraint')
-  if (triggers.length) {
-    challengeWave = { ran: true, reason: triggers.join(' | ') }
-    log(`Challenge wave RUNNING — ${challengeWave.reason}`)
+  // Affirmative-evidence checks — each failure is ambiguity, and ambiguity challenges.
+  const missingLenses = activeMakers.length - proposals.length
+  if (missingLenses > 0) ambiguities.push(`${missingLenses} dispatched analyst lens(es) returned nothing, so their view of the contest is unknown`)
+  const unstated = proposals.filter((p) => typeof (p && p.contested) !== 'boolean')
+  if (unstated.length) ambiguities.push(`${unstated.length} lens(es) did not state contested either way`)
+  if (triage && typeof triage.reversalRisk !== 'boolean') ambiguities.push('triage did not state reversalRisk either way')
+  if (triage && typeof triage.highStakes !== 'boolean') ambiguities.push('triage did not state highStakes either way')
+
+  if (triggers.length || ambiguities.length) {
+    const why = [
+      ...triggers,
+      ...(ambiguities.length ? [`signals ambiguous, challenging by default: ${ambiguities.join('; ')}`] : []),
+    ].join(' | ')
+    challengeWave = { ran: true, reason: `challenge ran: ${why}` }
+    log(challengeWave.reason)
     phase('Challenge')
     challengeResults = await runChallengeWave()
   } else {
     // Recorded as a decision, not silence: the reason crosses back on the result so
-    // the run journal shows WHY no challenge findings exist for this ruling.
+    // the run journal shows the affirmative evidence this skip stands on.
     challengeWave = {
       ran: false,
       reason:
-        'challenge skipped: analysts converged (no lens reported a live conflict), triage found no SAD-reversal risk, and the question is not high-stakes',
+        `challenge skipped: analysts converged — all ${proposals.length}/${activeMakers.length} dispatched lenses affirmed contested=false, ` +
+        'and triage affirmed reversalRisk=false and highStakes=false',
     }
-    log(`Challenge wave SKIPPED — ${challengeWave.reason}`)
+    log(challengeWave.reason)
   }
 } else if (!settled) {
   challengeWave = { ran: false, reason: 'challenge skipped: the selected panel produced no lens proposals to challenge' }
@@ -751,7 +771,7 @@ Propose a NEW option set. Requirements for this round:
   phase('Challenge')
   // A re-proposal round is contested BY CONSTRUCTION — the decider just ruled every
   // option inadmissible — so the wave runs here regardless of the round-1 trigger.
-  challengeWave = { ran: true, reason: `re-proposal round ${round + 1}: the previous option set was ruled inadmissible, which is a live conflict by construction` }
+  challengeWave = { ran: true, reason: `challenge ran: re-proposal round ${round + 1} — the previous option set was ruled inadmissible, which is a live conflict by construction` }
   challenges = foldChallenges(await runChallengeWave())
   challengesText = JSON.stringify(challenges, null, 2)
 }
