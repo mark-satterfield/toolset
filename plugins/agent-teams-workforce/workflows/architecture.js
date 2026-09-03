@@ -1,11 +1,11 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; independent challengers stress the patterns and tradeoffs; the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
+    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
-    { title: 'Challenge', detail: 'one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness) — runs only over proposals that were produced' },
+    { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or no triage verdict exists (fail open). Converged, low-stakes decisions skip it and route straight to the decider, with the skip recorded' },
     { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled; when NO option is admissible it says so, classifies what blocked them, and the blocking constraints go back to the panel for a fresh option set (bounded)' },
     { title: 'Update SAD', detail: 'author fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8, conformance-checked' },
   ],
@@ -36,7 +36,7 @@ Work within the repository at: ${repo}${upstream}`
 const PROPOSAL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['lens', 'options', 'recommendation'],
+  required: ['lens', 'options', 'recommendation', 'contested'],
   properties: {
     lens: { type: 'string' },
     options: {
@@ -54,8 +54,22 @@ const PROPOSAL_SCHEMA = {
       },
     },
     recommendation: { type: 'string' },
+    // The analyst's own report on whether its lens still holds a live fight. One of
+    // the three inputs the script's challenge-wave trigger reads — see Phase 2.
+    contested: { type: 'boolean' },
+    contestedReason: { type: 'string' },
   },
 }
+
+// Appended to every analyst prompt so `contested` means the same thing on every
+// lens. An analyst reports on its OWN analysis here — it judges no other agent.
+const CONTESTED_GUIDE =
+  'Also report `contested`: true when a materially different alternative remains genuinely live in your lens ' +
+  '(two options a reasonable architect could each defend), when your recommendation strains against a stated ' +
+  'constraint, or when it plausibly collides with what another lens as framed would recommend — with a one-line ' +
+  '`contestedReason`. false when your recommendation is the only sensible option given the constraints. ' +
+  'This flag decides whether an adversarial challenge pass runs, so do not soften it — an uncontested claim ' +
+  'that was actually contested skips the scrutiny it needed.'
 
 // Analysis advisors with non-proposal output shapes — a domain context map and a
 // failure-mode catalogue that feed the decider alongside the lens proposals.
@@ -109,12 +123,16 @@ const ALL_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk',
 const TRIAGE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['settled', 'rationale', 'relevantDecisions', 'dimensions'],
+  required: ['settled', 'rationale', 'relevantDecisions', 'dimensions', 'highStakes', 'reversalRisk'],
   properties: {
     settled: { type: 'boolean' },
     rationale: { type: 'string' },
     relevantDecisions: { type: 'array', items: { type: 'string' } },
     dimensions: { type: 'array', items: { type: 'string', enum: ALL_DIMENSIONS } },
+    // Two classifications the challenge-wave trigger reads (see Phase 2). Triage
+    // still only classifies — neither field rules on anything.
+    highStakes: { type: 'boolean' },
+    reversalRisk: { type: 'boolean' },
   },
 }
 
@@ -147,6 +165,11 @@ if (a.forceFullPanel === true) {
     `You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
 
 Return settled=true when the SAD already answers this question, or when it is a routine variation on a settled pattern; otherwise settled=false. Cite in relevantDecisions the SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)} — include an axis only when the decision could plausibly turn on it, never by reflex.
+
+Also classify two more things (classification only — you rule on nothing):
+- highStakes: true when the question implicates a constitutive constraint — a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban. Difficulty alone is NOT high stakes.
+- reversalRisk: true when a plausible ruling on this question could REVERSE or contradict a decision the SAD already records (name the sections in relevantDecisions). false when the SAD is silent here or any ruling would merely extend it.
+These two decide whether an adversarial challenge pass runs after the analysts, so classify them on evidence, not by reflex.
 
 ${decisionHeader}`,
     {
@@ -345,7 +368,7 @@ Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
 
   const jobs = activeMakers.map((m) => () =>
     agent(
-      `${m.ask}\n\n${decisionHeader}\n\n${frameBlock}`,
+      `${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}`,
       {
         label: `proposals:${m.lens}`,
         phase: 'Proposals',
@@ -505,12 +528,49 @@ ${proposalsText}`,
   return wave
 }
 
+// ── The challenge wave is CONDITIONAL — it runs only when the decision is actually
+// contested (Mark's ruling: "Challenge shouldn't run 100% of the time"). The trigger
+// is computed HERE, by the script, from data the run already holds — the analysts'
+// own contested reports, and triage's reversal-risk and high-stakes classifications.
+// No agent decides whether to challenge, so segregation of duties is untouched: the
+// decider still never analyzes, and challengers still never decide. It FAILS OPEN:
+// with no triage verdict to skip on (forceFullPanel, caller-forced dimensions, or a
+// dead triage), the wave runs.
 let challengeResults = null
+let challengeWave = null
 if (!settled && proposals.length) {
-  phase('Challenge')
-  challengeResults = await runChallengeWave()
+  const triggers = []
+  if (a.forceFullPanel === true) triggers.push('caller forced the full panel')
+  if (!triage) triggers.push('no triage verdict exists (caller-forced dimensions or triage failure) — failing open')
+  const contestedLenses = proposals.filter((p) => p && p.contested === true)
+  if (contestedLenses.length) {
+    triggers.push(
+      `${contestedLenses.length} analyst lens(es) report a live conflict: ` +
+        contestedLenses.map((p) => `${p.lens}${p.contestedReason ? ` (${p.contestedReason})` : ''}`).join('; ')
+    )
+  }
+  if (triage && triage.reversalRisk === true) triggers.push('triage: a plausible ruling could reverse or contradict a recorded SAD decision')
+  if (triage && triage.highStakes === true) triggers.push('triage: the question implicates a constitutive/high-stakes constraint')
+  if (triggers.length) {
+    challengeWave = { ran: true, reason: triggers.join(' | ') }
+    log(`Challenge wave RUNNING — ${challengeWave.reason}`)
+    phase('Challenge')
+    challengeResults = await runChallengeWave()
+  } else {
+    // Recorded as a decision, not silence: the reason crosses back on the result so
+    // the run journal shows WHY no challenge findings exist for this ruling.
+    challengeWave = {
+      ran: false,
+      reason:
+        'challenge skipped: analysts converged (no lens reported a live conflict), triage found no SAD-reversal risk, and the question is not high-stakes',
+    }
+    log(`Challenge wave SKIPPED — ${challengeWave.reason}`)
+  }
 } else if (!settled) {
+  challengeWave = { ran: false, reason: 'challenge skipped: the selected panel produced no lens proposals to challenge' }
   log('Challenge wave skipped — the selected panel produced no lens proposals to challenge')
+} else {
+  challengeWave = { ran: false, reason: 'challenge skipped: triage ruled the question settled, so no proposals exist to challenge' }
 }
 
 const foldChallenges = (r) => ({
@@ -521,6 +581,12 @@ const foldChallenges = (r) => ({
   readinessGaps: (r && r.readinessGaps) || [],
 })
 let challenges = foldChallenges(challengeResults)
+// When the wave was SKIPPED, the decider must not read the empty set as "the
+// challengers found nothing" — the skip and its reason travel with the evidence.
+const challengesEvidence = () =>
+  challengeWave && challengeWave.ran === false
+    ? `(none — ${challengeWave.reason}. No challenger ran; an empty set here is a recorded skip, not a clean bill.)`
+    : challengesText
 let challengesText = JSON.stringify(challenges, null, 2)
 
 // ── Phase 3: Decide ─────────────────────────────────────────────────────────────
@@ -543,7 +609,7 @@ Analysis (context map + failure modes):
 ${analysisText}
 
 Challenges:
-${challengesText}
+${challengesEvidence()}
 
 Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
@@ -623,7 +689,7 @@ Analysis (context map + failure modes):
 ${analysisText}
 
 Challenges:
-${challengesText}
+${challengesEvidence()}
 
 Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
@@ -670,7 +736,7 @@ Propose a NEW option set. Requirements for this round:
 
   const reJobs = activeMakers.map((m) => () =>
     agent(
-      `${m.ask}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
+      `${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
       { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA }
     )
   )
@@ -683,6 +749,9 @@ Propose a NEW option set. Requirements for this round:
   proposalsText = JSON.stringify(proposals, null, 2)
 
   phase('Challenge')
+  // A re-proposal round is contested BY CONSTRUCTION — the decider just ruled every
+  // option inadmissible — so the wave runs here regardless of the round-1 trigger.
+  challengeWave = { ran: true, reason: `re-proposal round ${round + 1}: the previous option set was ruled inadmissible, which is a live conflict by construction` }
   challenges = foldChallenges(await runChallengeWave())
   challengesText = JSON.stringify(challenges, null, 2)
 }
@@ -713,6 +782,7 @@ if (!admissible) {
     triage,
     settledByTriage: settled,
     panelDimensions: activeDimensions,
+    challengeWave,
     proposals,
     contextMap,
     failureModes,
@@ -928,6 +998,7 @@ return {
   triage,
   settledByTriage: settled,
   panelDimensions: activeDimensions,
+  challengeWave,
   proposals,
   tradeoffs: proposals.map((p) => ({ lens: p.lens, recommendation: p.recommendation, options: p.options })),
   contextMap,
