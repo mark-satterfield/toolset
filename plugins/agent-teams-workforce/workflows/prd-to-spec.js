@@ -258,7 +258,7 @@ async function persistRun(outcome) {
 // the run-ledger-writer — already this pipeline's journal-plumbing seam — writes and
 // deletes it. Both are non-fatal: a checkpoint that cannot be written costs only the
 // ability to resume, never the run.
-const CHECKPOINT_VERSION = '6.8.0' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.0' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
@@ -906,6 +906,70 @@ log(
     `${reconciliation.requirements.length} requirement(s)); the original is retained under partial.originalPrd.`
 )
 
+// A G1 loop that re-validates the SAME unedited document gets the same verdict every attempt,
+// spends the budget, and parks. That is not a quality control; it is a stall with a budget.
+// Before a retry, REPAIR the document against the criteria the gate named. prd-writer is the
+// only agent that may edit a PRD, and it repairs a self-contradictory acceptance criterion in
+// place rather than escalating — see its charter. The repaired body comes back the same way the
+// delta PRD's body did (this script has no filesystem access), so the in-memory PRD keeps up
+// with the file the agent just edited.
+async function repairPrdForGate(feedback, unmet) {
+  if (!prd || !hasText(prd.path)) {
+    log('G1: no PRD path on disk, so the document cannot be repaired between attempts')
+    return false
+  }
+  const defects = (unmet || [])
+    .map((c) => `- ${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`)
+    .join('\n')
+  const outcome = await agent(
+    `Gate G1 refused to certify the PRD at ${prd.path}.\n\n` +
+      `Unmet criteria:\n${defects || '- (none itemised — use the gate feedback)'}\n\n` +
+      `Gate feedback:\n${feedback || '(none)'}\n\n` +
+      `Repair the DOCUMENT so the named defects are gone, editing ${prd.path} in place, then return ` +
+      `its full repaired body. Close under-specified Given clauses so no two acceptance criteria can ` +
+      `apply to the same input and demand opposite outcomes. Never reword a criterion into vagueness, ` +
+      `never delete the criterion that exposed a conflict, and change nothing the gate did not name. ` +
+      `A defect you cannot repair from the document alone goes in \`unrepairable\` — leave that text as it is.`,
+    {
+      label: 'g1:repair-prd',
+      phase: 'PRD Validation',
+      effort: 'medium',
+      agentType: 'agent-teams-workforce:prd-writer',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['repaired'],
+        properties: {
+          repaired: { type: 'boolean' },
+          body: { type: 'string' },
+          changes: { type: 'array', items: { type: 'string' } },
+          unrepairable: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+  const changed = !!(outcome && outcome.repaired)
+  if (changed && hasText(outcome.body)) {
+    prd = { ...prd, body: outcome.body, content: outcome.body }
+  }
+  const changes = (outcome && outcome.changes) || []
+  const stuck = (outcome && outcome.unrepairable) || []
+  runLedger.push({
+    phase: 'gate:G1',
+    gate: 'G1',
+    repair: 'prd-document',
+    repaired: changed,
+    changes,
+    unrepairable: stuck,
+  })
+  log(
+    changed
+      ? `G1: repaired the PRD before re-validating — ${changes.length} change(s)${stuck.length ? `, ${stuck.length} left unrepairable` : ''}`
+      : `G1: the PRD was NOT repaired${stuck.length ? ` — ${stuck.length} defect(s) need input the document does not hold` : ''}`
+  )
+  return changed
+}
+
 // ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
 enterPhase('PRD Validation')
 let validation = cpGet('validation')
@@ -917,9 +981,17 @@ validation = await gateLoop({
     'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.',
     'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.',
   ],
-  escalateTargets: ['prd-creation'],
-  phaseFn: (feedback) =>
-    workflow('agent-teams-workforce:prd-validation', {
+  // NO escalation target. prd-creation only runs when there is no PRD at all (`!prd && a.request`),
+  // so naming it here declared an exit that could never be taken: the escalate verdict fell through
+  // to partial() and was reported as a retryable failure, which re-dispatched the identical run.
+  // A PRD that exists is repaired in place by the loop below, or it fails honestly at exhaustion.
+  escalateTargets: [],
+  phaseFn: async (feedback, ctx) => {
+    // First attempt validates what reconciliation produced. Every attempt after that repairs the
+    // document against the gate's own findings first — otherwise the retry is guaranteed to fail
+    // the same way, which is exactly what it used to do.
+    if (ctx && ctx.attempt > 1) await repairPrdForGate(feedback, ctx.unmetCriteria)
+    return workflow('agent-teams-workforce:prd-validation', {
       prd,
       standingRulings,
       // The BRD must be threaded through explicitly. prd-validation reads args.brd and hands it
@@ -927,7 +999,8 @@ validation = await gateLoop({
       // and reports every requirement as an orphan, which reads as a PRD defect but is not one.
       brd: a.brd,
       context: feedback ? `${a.context || ''}\n\nGate feedback:\n${feedback}` : a.context,
-    }),
+    })
+  },
 })
 if (validation.ok) await cpSave('validation', validation)
 }

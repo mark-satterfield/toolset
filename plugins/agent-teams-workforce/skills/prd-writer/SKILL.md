@@ -32,6 +32,40 @@ the system produces — not the mechanism that produces it.
 
 If a sentence names a library, table, queue, framework, or class, it belongs in a Spec, not a PRD.
 
+## A PRD and Its Epic Are One Entity
+
+A PRD document and its Epic bead are **the same entity in two places** — the document and its
+tracker half. Neither contains, summarises, or points at the other. They hold the same content.
+Change the PRD and the Epic changes; change the Epic and the PRD changes. Epics exist as separate
+records only because PRDs were written before the tracker was in use.
+
+Three consequences bind every PRD author and reviewer:
+
+1. **Never describe an Epic as a container for a PRD.** A "Container for PRD `<file>`" line is the
+   old, wrong convention: it is prose, so any rewrite deletes it silently, and 29 PRD-to-Epic links
+   were lost exactly that way. The link is the Epic label **`prd:<slug>`**, where `<slug>` is the
+   PRD filename without `.md`. A label survives a description or notes rewrite.
+2. **Keep the file shape the mapping depends on.** The mapping is exact and two-way:
+
+   ```
+   PRD file  ==  "# " + epic.title + "\n\n" + epic.description
+   ```
+
+   So the PRD's **first and only** `# ` heading is the Epic title, and everything after it is the
+   Epic description. Do not add YAML frontmatter, and do not introduce a second `# ` heading — both
+   break the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
+3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
+   Epic into sync, and say in your handoff that you did:
+
+   ```bash
+   ops/prd-epic-sync.py --only <slug> --apply    # document -> Epic (creates the Epic if absent)
+   ops/prd-epic-verify.py <slug>                 # check one PRD against its Epic
+   ops/prd-epic-verify.py <slug> --apply         # Epic -> document, when the Epic was edited first
+   ```
+
+   Both scripts live in the SkillSpoke command repo under `ops/`. If you cannot reach them from your
+   working tree, report the exact slug that needs syncing rather than leaving the halves divergent.
+
 ## The Mechanism: `scripts/check_prd.py`
 
 A deterministic conformance linter both modes run. It reads `references/prd-template.md` at runtime
@@ -69,13 +103,31 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    and states a behavior. **Every P0 requirement MUST have Acceptance Criteria** as Given/When/Then
    or boolean assertions, each verifiable pass/fail. If a requirement needs more than 5 assertions,
    the feature is too big — decompose.
-7. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
+7. **Make the criteria within one requirement mutually consistent.** No two criteria may both apply
+   to the same input and demand opposite outcomes. The usual cause is a success criterion whose
+   `Given` lists only some of the conditions its sibling criteria make decisive — so a rejected
+   input also satisfies the success case. **Every success criterion's `Given` must restate every
+   condition that any sibling criterion treats as grounds for rejection.**
+
+   A real example that halted a pipeline for a day. One criterion said an out-of-range value must be
+   rejected; another said "Given a settings write containing no unknown fields … then the write
+   succeeds." A write with a known field holding an out-of-range value satisfied both, so the gate
+   could not certify the requirement. The repair was to close the second `Given`: "Given a settings
+   write containing no unknown fields **and no field value outside its defined type or range** …".
+
+   **When you find a contradiction like this — in your own draft or an existing PRD — fix it and
+   carry on.** Close the under-specified `Given`; do not reword it into vagueness, do not delete the
+   criterion that exposed the conflict, and do not escalate. Name the repair in your handoff. This is
+   the one exception to review-only routing: a self-contradictory criterion blocks every downstream
+   phase, and it is repairable from the document alone.
+8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
    Dependencies (table + status), Measurable Outcomes (table + baseline/target/method), Risks &
    Open Questions, Visual References, Definition of Done.
-8. **Record every unresolved input gap as an Open Question.** Never invent a requirement, metric, or
+9. **Record every unresolved input gap as an Open Question.** Never invent a requirement, metric, or
    constraint to look finished; never smooth an upstream contradiction into vague language.
-9. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
-10. **Run `scripts/check_prd.py` on your draft and resolve every error** before handoff.
+10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
+11. **Run `scripts/check_prd.py` on your draft and resolve every error** before handoff.
+12. **Sync the Epic half** — `ops/prd-epic-sync.py --only <slug> --apply` — and say so in the handoff.
 
 ## Validate Mode — Workflow
 
