@@ -848,7 +848,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // worktree for the same bead, which is where the checkpointed code lives); Deploy
 // and Settle always re-run, because deployment evidence must be fresh. A completed
 // run deletes its checkpoint.
-const CHECKPOINT_VERSION = '6.9.0' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.1' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {

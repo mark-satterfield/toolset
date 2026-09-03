@@ -41,19 +41,31 @@ records only because PRDs were written before the tracker was in use.
 
 Three consequences bind every PRD author and reviewer:
 
-1. **Never describe an Epic as a container for a PRD.** A "Container for PRD `<file>`" line is the
-   old, wrong convention: it is prose, so any rewrite deletes it silently, and 29 PRD-to-Epic links
-   were lost exactly that way. The link is the Epic label **`prd:<slug>`**, where `<slug>` is the
-   PRD filename without `.md`. A label survives a description or notes rewrite.
+1. **The pair is recorded on BOTH sides, and neither side is a container for the other.**
+
+   | Direction | Where it lives | What it holds |
+   |---|---|---|
+   | PRD → Epic | a `**Epic:** ssbd-xxxx` line under the title | the Epic's bead id |
+   | Epic → PRD | the label `prd:<slug>` | the PRD's filename without `.md` |
+
+   Write both when you form the pair. Never a local filesystem path — the filename or the title, so
+   the pointer survives the vault moving. The old "Container for PRD `<file>`" sentence is wrong
+   twice over: it points one way only, and it is prose, so a rewrite deletes it silently — which is
+   how 29 PRD-to-Epic links were lost. A label and an `**Epic:**` line both survive a rewrite.
+
+   **When the two pointers disagree, that is a conflict to report, never a tie to break.** Guessing
+   which side is right — matching Epics to PRDs by title resemblance — mis-paired three Epics and
+   overwrote them with another PRD's content. One Epic, one PRD, on recorded evidence only.
 2. **Keep the file shape the mapping depends on.** The mapping is exact and two-way:
 
    ```
-   PRD file  ==  "# " + epic.title + "\n\n" + epic.description
+   PRD file  ==  "# " + epic.title + "\n\n" + epic.description   (plus the **Epic:** pointer line)
    ```
 
-   So the PRD's **first and only** `# ` heading is the Epic title, and everything after it is the
-   Epic description. Do not add YAML frontmatter, and do not introduce a second `# ` heading — both
-   break the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
+   So the PRD's **first and only** `# ` heading is the Epic title, and everything after it — minus
+   the `**Epic:**` pointer, which the Epic does not need to store about itself — is the Epic
+   description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
+   the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
 3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
    Epic into sync, and say in your handoff that you did:
 
