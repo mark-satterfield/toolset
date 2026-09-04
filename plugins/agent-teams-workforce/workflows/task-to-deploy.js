@@ -1226,9 +1226,13 @@ if (freshness === undefined) {
 log(`Validating freshness of ${bead.id || '(no id)'} — ${bead.title || ''}`)
 freshness = await gateLoop({
   gate: '1', phaseName: 'Spec Freshness',
+  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag
+  // routed to the advantage-evaluator. Both entries here are currency judgments about a
+  // document authored upstream — the right response to stale-looking input is to flag it
+  // and let the tail prove it, not to refuse to start.
   criteria: [
-    'The spec still matches current reality (no spec-currency drift)',
-    'No upstream dependency change invalidates the spec',
+    { class: 'competitive', text: 'The spec still matches current reality (no spec-currency drift)' },
+    { class: 'competitive', text: 'No upstream dependency change invalidates the spec' },
   ],
   escalateTargets: ['spec-authoring', 'architecture'],
   phaseFn: () => workflow('agent-teams-workforce:spec-freshness', { spec }),
@@ -1285,11 +1289,12 @@ let red = cpGet('red')
 if (red === undefined) {
 red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
+  // Only the Red EVIDENCE and the ban on manufacturing the failure are hard stops.
   criteria: [
-    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
-    'A failing test encodes the spec contract',
-    'The test fails for the intended reason',
-    'No production code changed yet',
+    { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
+    { class: 'constitutive', text: 'A failing test encodes the spec contract' },
+    { class: 'constitutive', text: 'The test fails for the intended reason' },
+    { class: 'constitutive', text: 'No production code changed yet' },
   ],
   checks: [
     { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
@@ -1338,10 +1343,13 @@ if (red.alreadySatisfied) {
 // `let`, not `const`: the Deploy phase below can send the run back through Green when the
 // DEPLOYED dev environment fails its smoke tests, and the redeploy must build on the fix
 // rather than on the artifact the deployed environment just disproved.
+// The first two are the Green EVIDENCE and are constitutive; the third is a quality
+// judgment about the shape of the change, and a quality judgment that blocks is exactly
+// the over-strict failure this classification exists to stop. It flags instead.
 const GREEN_CRITERIA = [
-  'The previously-failing test now passes',
-  'No other tests regressed',
-  'The change is minimal and the test was not weakened',
+  { class: 'constitutive', text: 'The previously-failing test now passes' },
+  { class: 'constitutive', text: 'No other tests regressed' },
+  { class: 'competitive', text: 'The change is minimal and the test was not weakened' },
 ]
 const GREEN_CHECKS = [
   { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
@@ -1379,10 +1387,12 @@ let refactor = cpGet('refactor')
 if (refactor === undefined) {
 refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
+  // Refactor is behavior-preserving CLEANUP on already-green code. Only the green
+  // evidence is constitutive here; the other two are quality judgments.
   criteria: [
-    'Tests still green',
-    'Behavior preserved (no regression)',
-    'Complexity/duplication reduced',
+    { class: 'constitutive', text: 'Tests still green' },
+    { class: 'competitive', text: 'Behavior preserved (no regression)' },
+    { class: 'competitive', text: 'Complexity/duplication reduced' },
   ],
   escalateTargets: ['green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
@@ -1399,13 +1409,13 @@ if (integration === undefined) {
 integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
   criteria: [
-    'Integration/contract/E2E suites pass across the event chain',
-    'Contracts valid across service boundaries',
+    { class: 'constitutive', text: 'Integration/contract/E2E suites pass across the event chain' },
+    { class: 'competitive', text: 'Contracts valid across service boundaries' },
     // "Coverage met" is unsatisfiable for two legitimate change classes and rejected
     // correct work at 1.88M tokens on ssbd-ew3t. bug-fix.js learned this; this gate
     // still carried the bare version.
-    'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.',
-    'No flaky tests',
+    { class: 'competitive', text: 'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.' },
+    { class: 'competitive', text: 'No flaky tests' },
   ],
   escalateTargets: ['green', 'red', 'spec-freshness'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
@@ -1421,6 +1431,9 @@ let adversarial = cpGet('adversarial')
 if (adversarial === undefined) {
 adversarial = await gateLoop({
   gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+  // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
+  // criterion is constitutive by construction and the class marker has no meaning — it
+  // renders criteria as strings, so a {text, class} entry would print as [object Object].
   criteria: [
     'No open constitutive findings (no vulns, injection, auth bypass, permission escalation, or data exposure)',
     'All confirmed findings adjudicated; security findings not downgraded by implementers',

@@ -1026,10 +1026,14 @@ log(`Infra change ${bead.id || '(no id)'} — ${bead.title || ''}`)
 const g1Loop = await gateLoop({
   gate: 'G1',
   phaseName: 'Infra Intent',
+  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag
+  // routed to the advantage-evaluator. Two entries here are constitutive on their face:
+  // the first carries a PLATFORM BAN ("no banned constructs") and the third is a SECURITY
+  // criterion — the cost half of it rides along, which is the conservative reading.
   criteria: [
-    'Provisioning intent is concrete and CDK-expressible (S3 versioning+SSE-S3 where buckets exist, no banned constructs)',
-    'No dependency change invalidates the intent',
-    'Security and cost reviewers raised no open blocking finding',
+    { class: 'constitutive', text: 'Provisioning intent is concrete and CDK-expressible (S3 versioning+SSE-S3 where buckets exist, no banned constructs)' },
+    { class: 'competitive', text: 'No dependency change invalidates the intent' },
+    { class: 'constitutive', text: 'Security and cost reviewers raised no open blocking finding' },
   ],
   escalateTargets: ['infra-intent'],
   initialFeedback: a.priorFindings || '',
@@ -1079,11 +1083,12 @@ settleRepoPath = tailContract.repoPath
 enterPhase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
+  // Only the Red EVIDENCE and the ban on manufacturing the failure are hard stops.
   criteria: [
-    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
-    'A failing infra test/synth assertion encodes the provisioning intent',
-    'The assertion fails for the intended reason (the intent is not yet expressed in CDK)',
-    'No production CDK code changed yet — tests/assertions only',
+    { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
+    { class: 'constitutive', text: 'A failing infra test/synth assertion encodes the provisioning intent' },
+    { class: 'constitutive', text: 'The assertion fails for the intended reason (the intent is not yet expressed in CDK)' },
+    { class: 'constitutive', text: 'No production CDK code changed yet — tests/assertions only' },
   ],
   checks: [
     { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
@@ -1122,10 +1127,13 @@ if (red.alreadySatisfied) {
 // The criteria are named once: the Deploy phase can send the run back through Green when
 // the DEPLOYED dev environment fails its smoke tests, and a second copy would be free to
 // drift away from this one. `let`, not `const`, for the same reason.
+// All three are Green EVIDENCE — a synth that does not succeed is not a matter of
+// opinion — and this gate carries no deterministic checks, so they are the only thing
+// standing between an unbuilt stack and Integration. Constitutive.
 const GREEN_CRITERIA = [
-  'The previously-failing infra test/synth assertion now passes',
-  'No other stacks regressed',
-  'cdk synth succeeds with the change',
+  { class: 'constitutive', text: 'The previously-failing infra test/synth assertion now passes' },
+  { class: 'constitutive', text: 'No other stacks regressed' },
+  { class: 'constitutive', text: 'cdk synth succeeds with the change' },
 ]
 enterPhase('Green')
 let green = await gateLoop({
@@ -1152,10 +1160,12 @@ async function failAfterDoc(stage, detail) {
 enterPhase('Integration')
 const integration = await gateLoop({
   gate: 'G3', phaseName: 'Integration Testing',
+  // The third carries a PLATFORM BAN (SSM, never CloudFormation exports), so it is a hard
+  // stop; drift is a judgment and flags instead.
   criteria: [
-    'Infra integration/contract checks pass',
-    'No drift introduced across stacks',
-    'Cross-stack SSM references resolve (no CloudFormation exports)',
+    { class: 'constitutive', text: 'Infra integration/contract checks pass' },
+    { class: 'competitive', text: 'No drift introduced across stacks' },
+    { class: 'constitutive', text: 'Cross-stack SSM references resolve (no CloudFormation exports)' },
   ],
   escalateTargets: ['green', 'red', 'infra-intent'],
   // Infra declares surfaces: [] because it needs no specialist TEST WRITERS, but it
@@ -1175,6 +1185,9 @@ if (RUN_ADVERSARIAL) {
   enterPhase('Adversarial')
   const adv = await gateLoop({
     gate: 'G4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+    // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
+    // criterion is constitutive by construction and the class marker has no meaning — it
+    // renders criteria as strings, so a {text, class} entry would print as [object Object].
     criteria: [
       'No open constitutive findings (no infra misconfiguration, unpatched CVE, or data exposure)',
       'All confirmed findings adjudicated',

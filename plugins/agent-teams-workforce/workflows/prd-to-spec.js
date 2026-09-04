@@ -1085,10 +1085,15 @@ let validation = cpGet('validation')
 if (validation === undefined) {
 validation = await gateLoop({
   gate: 'G1', phaseName: 'PRD Validation',
+  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag
+  // routed to the advantage-evaluator. Every criterion at this gate is a COMPLETENESS or
+  // CLARITY judgment about a document, and none of them invalidates the work — a thin PRD
+  // produces a thin spec, which the downstream gates then see. Nothing here is a security
+  // finding, a test result, or a platform ban, so nothing here is a hard stop.
   criteria: [
-    'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)',
-    'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.',
-    'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.',
+    { class: 'competitive', text: 'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)' },
+    { class: 'competitive', text: 'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.' },
+    { class: 'competitive', text: 'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.' },
   ],
   // NO escalation target. prd-creation only runs when there is no PRD at all (`!prd && a.request`),
   // so naming it here declared an exit that could never be taken: the escalate verdict fell through
@@ -1364,6 +1369,9 @@ if (!archNeeded) {
 
   architecture = await gateLoop({
     gate: 'G2', phaseName: 'Architecture', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+    // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
+    // criterion is constitutive by construction and the class marker has no meaning — it
+    // renders criteria as strings, so a {text, class} entry would print as [object Object].
     criteria: [
       'The chosen architecture honors all platform constitutive bans (no Step Functions, no HTTP API v2, no FastAPI/Flask/Django, REST v1 only, Powertools-only, service isolation, SSM-not-CFN-exports, dot-only event naming)',
       'Every significant decision is ruled by the decider and recorded in the SAD/arc42 source feed',
@@ -1559,10 +1567,12 @@ let trdAuthoring = cpGet('trd-authoring')
 if (trdAuthoring === undefined) {
 trdAuthoring = await gateLoop({
   gate: 'G2b', phaseName: 'TRD Authoring',
+  // Every criterion here is a completeness or traceability judgment about a document.
+  // Competitive: a partial TRD is flagged and carried forward, not looped over.
   criteria: [
-    'The TRD derives only from the PRD and the SAD source extract (no invented requirements)',
-    'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.',
-    'The TRD validator and traceability verifier both pass',
+    { class: 'competitive', text: 'The TRD derives only from the PRD and the SAD source extract (no invented requirements)' },
+    { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
+    { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
   ],
   escalateTargets: ['architecture', 'prd-validation'],
   phaseFn: (feedback) =>
@@ -1665,11 +1675,14 @@ async function authorSpecForRepo(repo, repoIndex) {
   if (specAuthoring === undefined) {
   specAuthoring = await gateLoop({
     gate: 'G3', phaseName: repos.length > 1 ? `Spec Authoring — ${repo}` : 'Spec Authoring',
+    // Completeness and internal-consistency judgments about authored documents. A spec
+    // defect surfaces again at Red, where a test has to encode the contract — so blocking
+    // here spends the loop budget on something the tail proves for free.
     criteria: [
-      'API/data-model/event/error specs are internally consistent and spec-first (OpenAPI before handlers)',
-      'Each spec passed its independent checker; deadlocks were ruled by the spec-decider',
-      'Acceptance criteria and Definition of Done are present and testable',
-      'Event names are dot-form and schemas validate',
+      { class: 'competitive', text: 'API/data-model/event/error specs are internally consistent and spec-first (OpenAPI before handlers)' },
+      { class: 'competitive', text: 'Each spec passed its independent checker; deadlocks were ruled by the spec-decider' },
+      { class: 'competitive', text: 'Acceptance criteria and Definition of Done are present and testable' },
+      { class: 'competitive', text: 'Event names are dot-form and schemas validate' },
     ],
     escalateTargets: ['trd-authoring', 'architecture'],
     phaseFn: (feedback) =>
@@ -1878,11 +1891,14 @@ async function decomposeStory(pair) {
     phaseName: specPairs.length > 1
       ? `Task Decomposition — ${pair.story.key || pair.repoPath}`
       : 'Task Decomposition',
+    // Format, traceability and sequencing judgments about emitted work items. None of
+    // them invalidates the work; an imperfect decomposition is repaired by editing beads,
+    // which is cheaper than re-running the phase.
     criteria: [
-      'Tasks are atomic and each traces to a spec element',
-      'The dependency DAG is acyclic and sequencing is valid',
-      'Every task is WSJF-scored. The score is a prioritization aid, NOT a correctness gate — do NOT block emission on the value of a score or on review of it.',
-      'Beads format validates for every emitted task',
+      { class: 'competitive', text: 'Tasks are atomic and each traces to a spec element' },
+      { class: 'competitive', text: 'The dependency DAG is acyclic and sequencing is valid' },
+      { class: 'competitive', text: 'Every task is WSJF-scored. The score is a prioritization aid, NOT a correctness gate — do NOT block emission on the value of a score or on review of it.' },
+      { class: 'competitive', text: 'Beads format validates for every emitted task' },
     ],
     escalateTargets: ['spec-authoring'],
     phaseFn: (feedback) =>

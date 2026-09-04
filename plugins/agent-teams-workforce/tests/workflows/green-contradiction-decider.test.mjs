@@ -109,7 +109,10 @@ test('the re-authored Red gate makes the ruling BINDING, not advisory', async ()
   const { calls } = await runWithContradiction()
   const gates = workflowCalls(calls, 'agent-teams-workforce:gate-enforce').filter((c) => c.payload.gate === '2a')
   const last = gates[gates.length - 1]
-  const criterion = last.payload.criteria.find((c) => c.includes('test-strategy-decider'))
+  // A gate criterion is EITHER a plain string or `{ text, class }` — the plain form is the
+  // default path and stays supported forever, so this reads the text from either shape.
+  const text = (c) => (typeof c === 'string' ? c : (c && typeof c.text === 'string' ? c.text : ''))
+  const criterion = last.payload.criteria.map(text).find((c) => c.includes('test-strategy-decider'))
   assert.ok(criterion, 'without a criterion carrying the ruling, the gate has no ground to reject the original pair')
   assert.match(criterion, /has not applied the ruling/, 'and it must say what non-compliance looks like')
 })

@@ -110,8 +110,20 @@ async function runBugFixThroughBothRedGates() {
   return { result, redGatePayloads }
 }
 
+/**
+ * A gate criterion is EITHER a plain string or `{ text, class }`. The plain form is the
+ * default path and must keep working forever; the classed form carries constitutive vs
+ * competitive. Both are read for their text here, so this assertion is about the
+ * criterion's WORDING regardless of which form carries it.
+ */
+function criterionText(c) {
+  if (typeof c === 'string') return c
+  if (c && typeof c === 'object' && typeof c.text === 'string') return c.text
+  return ''
+}
+
 function deployedRedEntries(criteria) {
-  return (criteria || []).filter((c) => typeof c === 'string' && /Deployed red/i.test(c))
+  return (criteria || []).map(criterionText).filter((t) => /Deployed red/i.test(t))
 }
 
 // ─── H1-AC1 (AC28) — single source for the deployed-red criterion ─────────────

@@ -1206,8 +1206,13 @@ const red = cpGreen !== undefined
   ? { ok: true, artifact: cpGreen.redArtifact }
   : await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
+  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag and
+  // is routed to the advantage-evaluator. An unmarked criterion would default to
+  // competitive — every entry here is marked so the intent is on the page. Only what
+  // genuinely invalidates a Red is constitutive: the evidence itself, and the ban on
+  // manufacturing the failure by editing production code.
   criteria: [
-    'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)',
+    { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
     // Red is satisfied by EITHER a failure at HEAD or a DIFFERENTIAL failure at the
     // pre-fix revision. A bead whose defect was already repaired cannot fail at HEAD;
     // demanding it there fails correct work and burns a full pipeline proving a bug is
@@ -1225,11 +1230,11 @@ const red = cpGreen !== undefined
     // whose evidence was airtight — 676k tokens to reject a correct finding.
     // Red against the deployed environment is the STRONGEST form of red available, not a
     // weaker one: it observes the defect in the artifact users actually receive.
-    DEPLOYED_RED_CRITERION,
+    { class: 'constitutive', text: DEPLOYED_RED_CRITERION },
     // When red is deployed-only the remediation is a DEPLOY, not an implementation. Green
     // will correctly find no production code to write, so the verdict must name the real
     // action instead of sending Green hunting for a change that does not exist.
-    'If red was obtained ONLY against the deployed environment, say so explicitly in the evidence and name the remediation as deploy-and-invalidate rather than a code change.',
+    { class: 'competitive', text: 'If red was obtained ONLY against the deployed environment, say so explicitly in the evidence and name the remediation as deploy-and-invalidate rather than a code change.' },
     // MISSING-CAPABILITY CARVE-OUT. The older wording ("not a harness or import error")
     // was structurally unsatisfiable for any defect whose fix INTRODUCES a symbol. If the
     // bug is "ConfigurationError is never raised" and ConfigurationError does not exist
@@ -1239,9 +1244,9 @@ const red = cpGreen !== undefined
     // is the same family of false rejection the differential-red carve-out above fixed.
     // The distinction that actually matters is WHOSE absence: the code under test
     // (legitimate red) versus the test's own scaffolding (a broken test).
-    'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
-    'The test asserts the real post-fix behavior, not merely that a symbol is absent. Once the capability exists the test must still be meaningful — it must exercise the behavior (the raise, the log record, the persistence call), not just that an import now succeeds.',
-    'No production code was changed to manufacture the failure',
+    { class: 'constitutive', text: 'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.' },
+    { class: 'competitive', text: 'The test asserts the real post-fix behavior, not merely that a symbol is absent. Once the capability exists the test must still be meaningful — it must exercise the behavior (the raise, the log record, the persistence call), not just that an import now succeeds.' },
+    { class: 'constitutive', text: 'No production code was changed to manufacture the failure' },
   ],
   checks: [
     { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
@@ -1286,10 +1291,13 @@ const MAX_ESCALATIONS = a.maxEscalations || 2
 // The Green gate's criteria and deterministic checks, named once. The Deploy phase can
 // send the run back through Green when the DEPLOYED dev environment fails its smoke tests,
 // and a second copy of these would be free to drift away from the first.
+// The first two are the Green EVIDENCE and are constitutive; the third is a quality
+// judgment about the shape of the change, and a quality judgment that blocks is exactly
+// the over-strict failure this classification exists to stop. It flags instead.
 const GREEN_CRITERIA = [
-  'The previously-failing test now passes',
-  'No other tests regressed',
-  'The change is minimal and the test was not weakened',
+  { class: 'constitutive', text: 'The previously-failing test now passes' },
+  { class: 'constitutive', text: 'No other tests regressed' },
+  { class: 'competitive', text: 'The change is minimal and the test was not weakened' },
 ]
 const GREEN_CHECKS = [
   { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
@@ -1336,12 +1344,12 @@ for (;;) {
       // Names the un-passable case so it reliably produces escalate:"red" instead of a
       // loop. The implementer may not modify a test and the gate is right to fail a test
       // that does not pass, so neither role can break the deadlock — only Red can.
-      'If a test cannot be made to pass AS AUTHORED — it is pinned to a pre-fix import path, patches a symbol at a module path the fix does not use, or its own source defeats its assertion — that is a TEST defect, not an implementation failure. Escalate to red; do NOT loop Green over it and do NOT weaken the test to pass it.',
+      { class: 'competitive', text: 'If a test cannot be made to pass AS AUTHORED — it is pinned to a pre-fix import path, patches a symbol at a module path the fix does not use, or its own source defeats its assertion — that is a TEST defect, not an implementation failure. Escalate to red; do NOT loop Green over it and do NOT weaken the test to pass it.' },
       // A CONTRADICTION is not a defective test and must not be looped as one. Both tests
       // are internally coherent; they disagree about what the system should do, so no
       // implementation satisfies both and every Green attempt spends the budget proving
       // the same impossibility. It routes out of Green to a decider — see ruleContradiction.
-      'If the phase reports a CONTRADICTION — the failing test asserts one outcome for an input and another ALREADY-PASSING test asserts the opposite outcome for the identical input — that is neither an implementation failure nor a defective test. No implementation can satisfy both. Escalate to red; do NOT loop Green over it and do NOT pick a side yourself.',
+      { class: 'competitive', text: 'If the phase reports a CONTRADICTION — the failing test asserts one outcome for an input and another ALREADY-PASSING test asserts the opposite outcome for the identical input — that is neither an implementation failure nor a defective test. No implementation can satisfy both. Escalate to red; do NOT loop Green over it and do NOT pick a side yourself.' },
     ],
     checks: GREEN_CHECKS,
     escalateTargets: ['triage', 'red'],
@@ -1405,17 +1413,17 @@ for (;;) {
     criteria: [
       // Same deployed-artifact carve-out as the first Red gate — the SHARED constant
       // guarantees the two gates can never diverge. See the comment at its definition.
-      DEPLOYED_RED_CRITERION,
-      'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.',
-      'The test asserts the real post-fix behavior, not merely that a symbol is absent.',
-      'No production code was changed to manufacture the failure',
-      'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.',
+      { class: 'constitutive', text: DEPLOYED_RED_CRITERION },
+      { class: 'constitutive', text: 'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.' },
+      { class: 'competitive', text: 'The test asserts the real post-fix behavior, not merely that a symbol is absent.' },
+      { class: 'constitutive', text: 'No production code was changed to manufacture the failure' },
+      { class: 'competitive', text: 'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.' },
       // Only present when a contradiction was actually ruled. The criterion is what makes
       // the ruling binding on the re-author: without it the phase may hand back the same
       // pair of contradictory tests and the gate has no ground to reject them.
       ...(contradictionRuling
         ? [
-            `A test contradiction was ruled by the test-strategy-decider: "${contradictionRuling.bindingTest}" states the binding contract and "${contradictionRuling.losingTest}" must now assert ${contradictionRuling.correctedExpectation}. The losing test IS corrected accordingly and the binding test is left as it stands. A phase that hands back both original expectations has not applied the ruling.`,
+            { class: 'competitive', text: `A test contradiction was ruled by the test-strategy-decider: "${contradictionRuling.bindingTest}" states the binding contract and "${contradictionRuling.losingTest}" must now assert ${contradictionRuling.correctedExpectation}. The losing test IS corrected accordingly and the binding test is left as it stands. A phase that hands back both original expectations has not applied the ruling.` },
           ]
         : []),
     ],
@@ -1460,7 +1468,14 @@ let refactor = cpGet('refactor')
 if (refactor === undefined) {
 refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
-  criteria: ['Tests still green', 'Behavior preserved (no regression)', 'Complexity/duplication reduced'],
+  // Refactor is behavior-preserving CLEANUP on already-green code. Only the green
+  // evidence is constitutive here; the other two are quality judgments, and a failed
+  // refactor already degrades rather than failing the run.
+  criteria: [
+    { class: 'constitutive', text: 'Tests still green' },
+    { class: 'competitive', text: 'Behavior preserved (no regression)' },
+    { class: 'competitive', text: 'Complexity/duplication reduced' },
+  ],
   escalateTargets: ['green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
 })
@@ -1487,8 +1502,8 @@ if (integration === undefined) {
 integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
   criteria: [
-    'Integration/contract/E2E suites pass',
-    'Contracts valid across boundaries',
+    { class: 'constitutive', text: 'Integration/contract/E2E suites pass' },
+    { class: 'competitive', text: 'Contracts valid across boundaries' },
     // "Coverage met" was unsatisfiable for two legitimate change classes, and rejected
     // correct work at 1.88M tokens on ssbd-ew3t alone.
     //   1. A DELETION. Its correct test asserts ABSENCE — repo-wide greps, path checks,
@@ -1497,8 +1512,8 @@ integration = await gateLoop({
     //   2. A repo with NO integration suite at all. Demanding coverage of a suite that
     //      does not exist fails the change for a pre-existing gap it did not cause.
     // Judge coverage against what the change could possibly cover, not an absolute.
-    'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.',
-    'No flaky tests',
+    { class: 'competitive', text: 'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.' },
+    { class: 'competitive', text: 'No flaky tests' },
   ],
   escalateTargets: ['green', 'red', 'triage'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
@@ -1514,6 +1529,9 @@ let adversarial = cpGet('adversarial')
 if (adversarial === undefined) {
 adversarial = await gateLoop({
   gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+  // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
+  // criterion is constitutive by construction and the class marker has no meaning — it
+  // renders criteria as strings, so a {text, class} entry would print as [object Object].
   criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
   escalateTargets: ['green', 'triage'],
   // priorRulings is what makes a re-run adjudication accountable to the one before it.
