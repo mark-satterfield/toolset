@@ -64,6 +64,50 @@ END STANDING RULINGS
   : ''
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 
+// ── A DEAD DISPATCH ARRIVES AS A THROW, NOT AS A NULL ───────────────────────────
+//
+// This mini was written against one runtime behaviour and meets two. `agent()` hands
+// back NULL when a subagent is skipped or dies on a terminal API error, and the
+// `!reality` guard below was built for exactly that. But a subagent that RUNS and then
+// finishes WITHOUT emitting its structured output THROWS, and the throw leaves the mini,
+// leaves the composite, and aborts the whole run — the same crash bug-fix.js records at
+// 1.13M tokens on ssbd-mqkq. Nothing catches it here, so every line below, including the
+// entire `dispatchFailed` contract this mini owes its caller, is unreachable for the
+// failure mode that actually happens. ssbd-nc8z died this way twice, at the same phase,
+// and both times the supervisor was handed a bare abort with no classification.
+//
+// So dispatch through here. A throw and a null are the same event — "no account came
+// back" — and both must reach the guards as null so the caller learns it was the
+// ENVIRONMENT that failed and not the PRD.
+//
+// The single retry is the other half. A reconciliation cannot degrade: proceeding
+// without knowing what already ships is precisely the greenfield assumption this phase
+// exists to remove, so a dead dispatch has no fallback except to run again. One extra
+// attempt is the difference between a coin-flip and a phase that completes; more than
+// one turns a systematic failure into an expensive systematic failure.
+const MAX_DISPATCH_ATTEMPTS = 2
+const dispatchNotes = []
+
+async function dispatch(label, prompt, opts) {
+  let why = null
+  for (let attempt = 1; attempt <= MAX_DISPATCH_ATTEMPTS; attempt++) {
+    let out = null
+    try {
+      out = await agent(prompt, opts)
+    } catch (e) {
+      out = null
+      why = `threw: ${e && e.message ? e.message : String(e)}`
+    }
+    if (out) return out
+    if (!why) why = 'returned nothing — skipped, or died on a terminal API error'
+    dispatchNotes.push(`${label} attempt ${attempt}/${MAX_DISPATCH_ATTEMPTS} — ${why}`)
+    if (attempt < MAX_DISPATCH_ATTEMPTS) log(`${label}: dispatch died (${why}) — dispatching once more.`)
+    why = null
+  }
+  log(`${label}: dispatch failed on all ${MAX_DISPATCH_ATTEMPTS} attempt(s) — ${dispatchNotes[dispatchNotes.length - 1]}`)
+  return null
+}
+
 // `extra` carries `dispatchFailed` when the failure is a dead agent rather than a
 // finding — see the reconciler check below. The caller reads that field to decide
 // whether it holds a verdict about the PRD or an account that never came back.
@@ -100,7 +144,8 @@ const repoBlock = repos.length
 // applies a fixed rule to the typed findings.
 phase('Reconciliation checks')
 
-const combined = await agent(
+const combined = await dispatch(
+  'reconcile:reality-and-dependencies',
   `${rulingsBlock}Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere. Two checks, one pass — return both.
 
 ═══ CHECK 1 — PRD vs reality ═══
@@ -145,7 +190,13 @@ ${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') 
 Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved. Return this check under \`dependencyChanges\`:
 - current: true if no invalidating upstream change is found, false otherwise.
 - changeFindings: each invalidating change (dependency, change describing what changed, invalidates describing which PRD assumption it breaks).
-- evidence: how you verified the dependency state (one paragraph, under 60 words).`,
+- evidence: how you verified the dependency state (one paragraph, under 60 words).
+
+═══ YOUR BUDGET ═══
+
+Your structured output IS the deliverable. Nothing you read reaches anybody except through it, so an exhaustive investigation that ends without it is worth exactly as much as no investigation at all — and it is how this phase has failed in practice: the reconciler explored until it ran out of room and returned nothing, so the whole run aborted and the work was re-dispatched from zero.
+
+You have roughly 50 tool calls. Spend them breadth-first: cover EVERY requirement at least once before you deepen any of them, because a requirement you never looked at defaults to absent and gets rebuilt. By call 50, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not. Report thin coverage in \`evidenceSummary\` rather than spending more turns on it.`,
   {
     label: 'reconcile:reality-and-dependencies',
     phase: 'Reconciliation checks',
@@ -214,19 +265,21 @@ const dependencyChanges = (combined && combined.dependencyChanges) || null
 
 // ── A DEAD AGENT IS NOT A FINDING ───────────────────────────────────────────────
 //
-// `agent()` returns null when the subagent was skipped or died on a terminal API error
-// after the runtime's own retries — the session wall, most of the time. That is not the
-// same event as a reconciler that ran and returned a malformed inventory, and folding
-// them together is what turned two of the five real prd-to-spec runs into work failures
-// at stage 'prd-reconciliation': the supervisor charged the bead for an account limit.
+// A dispatch dies in two ways — skipped or dead on a terminal API error (null), or run
+// to completion without ever emitting its structured output (a throw). `dispatch()`
+// above normalizes both to null and has already spent its retry. Neither is the same
+// event as a reconciler that ran and returned a malformed inventory, and folding them
+// together is what turned two of the five real prd-to-spec runs into work failures at
+// stage 'prd-reconciliation': the supervisor charged the bead for an account limit.
 // Both still stop the run — reading "we could not establish what exists" as "nothing
 // exists" is the greenfield assumption this phase removes — but only one of them is
 // anybody's fault, and the caller needs to be able to tell which.
 if (!reality) {
   return fail(
-    'the reality reconciler returned nothing — it was skipped or died on a terminal API error, so no reconciliation ' +
-      'was performed. This is a DISPATCH failure, not a verdict on the PRD or on what already ships.',
-    { dispatchFailed: true, dispatchFailures: ['reconcile:combined (prd-reality-reconciler)'] }
+    'the reality reconciler never came back with an account of what already ships, on any attempt, so no ' +
+      `reconciliation was performed (${dispatchNotes.join('; ')}). This is a DISPATCH failure, not a verdict on ` +
+      'the PRD or on what already ships.',
+    { dispatchFailed: true, dispatchFailures: dispatchNotes.slice() }
   )
 }
 if (!Array.isArray(reality.requirements)) {
@@ -325,7 +378,8 @@ let deltaPrdPath = null
 let deltaPrdBody = null
 if (deltaCount > 0) {
   const suggestedPath = a.deltaPath || (hasText(prdPath) ? `${prdPath.replace(/\.md$/i, '')}.delta.md` : '')
-  const written = await agent(
+  const written = await dispatch(
+    'delta:write',
     `${rulingsBlock}Write the DELTA PRD: this PRD rewritten to contain ONLY the requirements that are still absent or partial. Everything downstream of here — validation, architecture, the TRD, the specs, the tasks — reads THIS document and never the original, so a requirement you carry across is a requirement that gets built again.
 
 Original PRD:
@@ -363,10 +417,16 @@ Rules:
     }
   )
   if (!written || written.ok !== true || !hasText(written.path) || !hasText(written.body)) {
+    // An author that never came back is an environment failure, exactly as a reconciler
+    // that never came back is. An author that RAN and reported it could not write is a
+    // finding about the work. Same stop, different owner — so they are classified apart.
+    const authorDied = !written
     return fail(
       `${deltaCount} requirement(s) remain but the delta PRD was not written` +
+        `${authorDied ? ` — the author never came back on any attempt (${dispatchNotes.join('; ')})` : ''}` +
         `${written && written.error ? `: ${written.error}` : ''}. ` +
-        'Downstream phases must never be handed the original PRD, so the run stops here rather than specifying shipped behaviour.'
+        'Downstream phases must never be handed the original PRD, so the run stops here rather than specifying shipped behaviour.',
+      authorDied ? { dispatchFailed: true, dispatchFailures: dispatchNotes.slice() } : undefined
     )
   }
   deltaPrdPath = written.path
