@@ -8,6 +8,12 @@ A Claude Code plugin monorepo. It publishes reusable extensions to the Claude Co
 
 Everything ships as a **plugin**: `plugins/<name>/`. There is no longer a top-level `skills/` directory — skills now live inside the plugin that owns them. Loose, miscellaneous skills live in the catch-all `plugins/skills` plugin.
 
+## How Work Lands
+
+This repo does not use pull requests. Work merges directly to `main`.
+
+Commit messages carry no `Co-Authored-By` and no `Claude-Session` trailer.
+
 ## Plugins
 
 These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that a few **marketplace names differ from their directory names** (left column ≠ path).
