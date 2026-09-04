@@ -16,7 +16,19 @@
 //
 // The charter was the licence: it listed "Validated PRD (Gate 1 passed)" as an input
 // the coordinator must verify, and "whether required inputs are present" as an
-// allowed decision. These tests pin both the dispatch prompt and the agent file.
+// allowed decision.
+//
+// THE DISPATCH IS GONE. `proposals:frame` no longer exists: its two inputs
+// (`decisionHeader` and `activeDimensions`) are handed to the analysts raw in the very
+// next dispatch, so the session paid a full session-start to reformat text its own
+// readers also received unformatted, on the critical path of every contested
+// architecture run. architecture.js writes the framing itself now.
+//
+// So the three prompt tests that pinned that dispatch are replaced by ONE test that the
+// dispatch does not happen at all — which is the stronger form of the same guarantee: an
+// agent that is never asked cannot form a view on gate status. The charter test stays,
+// because the coordinator remains on the roster and the prohibition must survive
+// wherever it is dispatched next.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -29,7 +41,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const SCRIPT = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
 const CHARTER = path.resolve(HERE, '..', '..', 'agents', 'architecture-decision-workflow-coordinator.md')
 
-async function framePrompt() {
+test('a contested decision dispatches NO coordinator session at all — the script frames the panel', async () => {
   const { calls } = await runWorkflowScript(SCRIPT, {
     args: { decision: { id: 'D1', title: 'a contested question', context: 'c' } },
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
@@ -45,39 +57,22 @@ async function framePrompt() {
       }
     },
   })
-  const c = calls.find((x) => x.label === 'proposals:frame')
-  assert.ok(c, 'the coordinator must be dispatched to frame a contested decision')
-  return c.prompt
-}
 
-test('the dispatch tells the coordinator it has no gate authority', async () => {
-  const p = await framePrompt()
-  assert.match(p, /NO gate authority/, 'the prompt must deny gate authority outright')
-  assert.match(
-    p,
-    /settled by the phase-gate-enforcer before you were dispatched/,
-    'the coordinator must be told the gate already ruled, so there is nothing left for it to assess',
+  assert.equal(
+    calls.filter((x) => x.label === 'proposals:frame').length, 0,
+    'the framing session is gone — it reformatted text the analysts receive raw in the next dispatch',
   )
-})
-
-test('the dispatch forbids treating analyst severities as gate status', async () => {
-  const p = await framePrompt()
-  assert.match(
-    p,
-    /PROPOSALS the enforcer has already adjudicated/,
-    'analyst severities are proposals, not verdicts — this is the exact confusion that caused the HOLD',
+  assert.ok(
+    !calls.some((x) => x.opts && x.opts.agentType === 'agent-teams-workforce:architecture-decision-workflow-coordinator'),
+    'the coordinator is not dispatched anywhere in this mini; an agent never asked cannot form a view on gate status',
   )
-  assert.match(p, /not yours to re-open/)
-})
-
-test('the dispatch removes HOLD as an available move', async () => {
-  const p = await framePrompt()
+  const proposal = calls.find((x) => String(x.label || '').startsWith('proposals:'))
+  assert.ok(proposal, 'the analysts still run — removing the router must not remove the panel')
   assert.match(
-    p,
-    /no HOLD in your output schema because there is no HOLD in your authority/,
-    'an agent with no legal way to express a refusal will jam one into prose — say plainly that it has none',
+    proposal.prompt,
+    /Panel framing \(set by the workflow, not by an agent\)/,
+    'the framing the analysts receive must say plainly that no agent authored it',
   )
-  assert.match(p, /report a genuinely ABSENT input/, 'a missing artifact is still reportable; a disliked one is not')
 })
 
 test('the coordinator charter no longer grants gate-status authority', () => {

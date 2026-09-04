@@ -1,8 +1,8 @@
 export const meta = {
   name: 'documentation',
   description:
-    'Cross-cutting mini — Documentation. Runs alongside the build (not as a phase): audits whether the change leaves docs stale, then a READ-ONLY documentation-lead routes each stale doc to the matching writer (API, README, changelog, user-guide), the writers author in parallel, and an INDEPENDENT accuracy reviewer checks the result against shipped behavior. Its currency result feeds the deployment readiness review. Code is not done until its documentation is current.',
-  phases: [{ title: 'Documentation', detail: 'currency audit + routed writes + accuracy review' }],
+    'Cross-cutting mini — Documentation. Runs alongside the build (not as a phase): ONE read-only auditor names which docs the change leaves stale AND which writer owns each (it authors no documentation, so naming the writer is not judging its own work), the writers author in parallel, and an INDEPENDENT accuracy reviewer checks the result against shipped behavior. No routing session sits between the audit and the writers — an unusable or absent assignment falls back to a deterministic path-based mapping. Its currency result feeds the deployment readiness review. Code is not done until its documentation is current.',
+  phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes + accuracy review' }],
 }
 
 // args: { contract, green }
@@ -15,9 +15,39 @@ const changedFiles = (green.changedFiles || []).join(', ') || 'n/a'
 
 phase('Documentation')
 
-// Audit currency first (read-only) — only route writers if something is actually stale.
+// The four Documentation writers. Each owns one doc kind; sending a stale doc to the
+// matching writer keeps authorship inside the writer's specialty.
+const WRITERS = [
+  'api-documentation-writer',
+  'readme-writer',
+  'changelog-writer',
+  'user-guide-writer',
+]
+
+// Audit currency first (read-only) — only dispatch writers if something is actually stale.
+//
+// ── THE AUDITOR NAMES THE WRITER; NO ROUTER SESSION SITS BETWEEN ───────────────
+//
+// This used to be two sessions: `docs:audit` returned `staleDocs` — the documents and
+// WHY each was stale — and `docs:route` then spent a whole documentation-lead session
+// mapping those same strings onto four fixed names from an enum. The auditor has
+// already read the change and the docs; the second session added no information, only
+// a session-start, on every build run of all three composites.
+//
+// Segregation of duties is untouched: the auditor AUTHORS NO DOCUMENTATION, so naming
+// which writer owns a stale doc is not judging its own work — and the writers are
+// still checked afterwards by an independent accuracy reviewer, which is the
+// maker/checker pair that actually matters here.
 const audit = await agent(
-  `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY. List exactly which docs need updating and why. Work within: ${repo}
+  `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY — you write no documentation. List exactly which docs need updating and why. Work within: ${repo}
+
+Then ASSIGN each stale doc to the writer that owns its kind, drawn ONLY from this roster:
+- api-documentation-writer — API reference / OpenAPI / GraphQL docs
+- readme-writer — setup, onboarding, repo README, or a new repo
+- changelog-writer — version bump / changelog entry derived from commits
+- user-guide-writer — user-facing feature guide or walkthrough
+
+Use the FEWEST writers that cover the stale docs, list the stale docs assigned to each, and assign no writer whose kind nothing changed. Assigning a writer is not a judgment on any work — you author none of it, and an independent reviewer checks what the writers produce.
 
 Change: ${changeLabel}
 Changed files: ${changedFiles}`,
@@ -32,6 +62,18 @@ Changed files: ${changedFiles}`,
       properties: {
         docsCurrent: { type: 'boolean' },
         staleDocs: { type: 'array', items: { type: 'string' } },
+        assignments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['writer', 'docs'],
+            properties: {
+              writer: { type: 'string', enum: WRITERS },
+              docs: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
       },
     },
   }
@@ -40,79 +82,51 @@ Changed files: ${changedFiles}`,
 const staleDocs = (audit && Array.isArray(audit.staleDocs) ? audit.staleDocs : []).filter(Boolean)
 const needsWork = !!(audit && !audit.docsCurrent && staleDocs.length)
 
-// The four Documentation writers the lead routes to. Each owns one doc kind; routing
-// to the matching writer keeps authorship inside the writer's specialty.
-const WRITERS = [
-  'api-documentation-writer',
-  'readme-writer',
-  'changelog-writer',
-  'user-guide-writer',
-]
+// Deterministic fallback mapping, used when the auditor assigned nothing usable. It is
+// a lookup over the doc PATH, not a guess about meaning: these four filename shapes are
+// what the four writer specialties are defined against.
+const writerForPath = (docPath) => {
+  const p = String(docPath || '')
+  if (/(^|\/)changelog(\.[a-z]+)?$/i.test(p) || /changelog/i.test(p)) return 'changelog-writer'
+  if (/(^|\/)readme(\.[a-z]+)?$/i.test(p) || /readme/i.test(p)) return 'readme-writer'
+  if (/openapi|swagger|(^|\/)api(\/|\.|-|_)|\/api-reference/i.test(p)) return 'api-documentation-writer'
+  return 'user-guide-writer'
+}
 
-let routing = null
 let writerResults = []
 let reviewResult = null
 let selectionMode = 'default'
 let writersChosen = []
 
 if (needsWork) {
-  // documentation-lead SELECTS which writer handles each stale doc — a READ-ONLY router
-  // that authors no documentation itself. Segregation of duties: the lead routes, the
-  // writers write, an independent reviewer validates.
-  routing = await agent(
-    `You are the documentation-lead — a READ-ONLY router. Do NOT write any documentation. Route each stale doc to the matching writer, drawn ONLY from this Documentation writer roster:
-- api-documentation-writer — API reference / OpenAPI / GraphQL docs changed
-- readme-writer — setup, onboarding, repo README, or a new repo
-- changelog-writer — version bump / changelog entry derived from commits
-- user-guide-writer — user-facing feature guide or walkthrough
-
-Return the FEWEST writers that cover the stale docs. For each chosen writer, list the stale docs assigned to it. A doc kind with no matching change is not assigned. Work within: ${repo}
-
-Change: ${changeLabel}
-Changed files: ${changedFiles}
-Stale docs to route: ${staleDocs.join(', ')}`,
-    {
-      label: 'docs:route',
-      phase: 'Documentation',
-      agentType: 'agent-teams-workforce:documentation-lead',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['assignments', 'rationale'],
-        properties: {
-          assignments: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['writer', 'docs'],
-              properties: {
-                writer: { type: 'string', enum: WRITERS },
-                docs: { type: 'array', items: { type: 'string' } },
-              },
-            },
-          },
-          rationale: { type: 'string' },
-        },
-      },
-    }
-  )
-
-  // Normalize the lead's assignments: keep only valid roster writers that were given docs.
-  const validAssignments = (routing && Array.isArray(routing.assignments) ? routing.assignments : [])
+  // Normalize the auditor's assignments: keep only valid roster writers that were given docs.
+  const validAssignments = (audit && Array.isArray(audit.assignments) ? audit.assignments : [])
     .filter((x) => x && WRITERS.includes(x.writer) && Array.isArray(x.docs) && x.docs.filter(Boolean).length)
     .map((x) => ({ writer: x.writer, docs: x.docs.filter(Boolean) }))
 
-  if (validAssignments.length) {
-    selectionMode = 'selected'
-    writersChosen = validAssignments.map((x) => x.writer)
-  } else {
-    // The lead routed nothing usable — fall back to the README writer on every stale doc,
-    // so stale docs are never left unwritten.
-    selectionMode = 'default'
-    validAssignments.push({ writer: 'readme-writer', docs: staleDocs })
-    writersChosen = ['readme-writer']
+  // Every stale doc must reach a writer. An assignment set that covers only some of them
+  // is not a reason to drop the rest — the auditor said they were stale, and the audit is
+  // what `docsCurrent` is computed against below.
+  const assigned = new Set()
+  for (const asg of validAssignments) for (const doc of asg.docs) assigned.add(doc)
+  const unassigned = staleDocs.filter((doc) => !assigned.has(doc))
+  if (unassigned.length) {
+    // Map the leftovers deterministically by path rather than paying a session to route
+    // them. Merge into an existing assignment where the writer already has work.
+    for (const doc of unassigned) {
+      const writer = writerForPath(doc)
+      const existing = validAssignments.find((x) => x.writer === writer)
+      if (existing) existing.docs.push(doc)
+      else validAssignments.push({ writer, docs: [doc] })
+    }
+    log(
+      `${unassigned.length} stale doc(s) the audit did not assign were mapped by path: ` +
+        unassigned.map((doc) => `${doc} -> ${writerForPath(doc)}`).join('; ')
+    )
   }
+
+  selectionMode = audit && Array.isArray(audit.assignments) && audit.assignments.length ? 'assigned' : 'derived'
+  writersChosen = validAssignments.map((x) => x.writer)
 
   const WRITE_SCHEMA = {
     type: 'object',
@@ -203,11 +217,11 @@ const docsCurrent = !!(
 )
 
 // Decision ledger — what this phase actually did, for over-time mining.
-// chosen = [currency-auditor, lead (when it routed), ...selected writers, accuracy-reviewer].
-// mode 'selected' = the lead routed to specific writers; 'default' = docs already current
-// (no writers run) OR the lead routed nothing usable and the mini fell back to readme-writer.
+// chosen = [currency-auditor, ...selected writers, accuracy-reviewer]. There is no
+// documentation-lead in this list any more: the routing session it existed for is gone.
+// mode 'assigned' = the auditor named the writers; 'derived' = it named none and the
+// script mapped every stale doc by path; 'default' = docs already current, no writers run.
 const chosen = ['documentation-currency-auditor']
-  .concat(needsWork ? ['documentation-lead'] : [])
   .concat(writersChosen)
   .concat(needsWork ? ['documentation-accuracy-reviewer'] : [])
 

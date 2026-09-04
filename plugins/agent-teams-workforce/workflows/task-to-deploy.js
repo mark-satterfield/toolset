@@ -1248,13 +1248,27 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const iterationFeedback = smokeFeedback
   deployReady = await gateLoop({
     gate: '5', phaseName: `Deploy to dev (iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS})`,
-    criteria: [
-      'CDK synth valid, no unresolved drift',
-      'Smoke tests present',
-      'Deployed to the dev environment',
-      'Smoke tests pass against the deployed dev endpoints',
-    ],
+    // ── EVERY CRITERION HERE IS MECHANICAL, SO NOTHING IS ADJUDICATED ──────────
+    //
+    // All four were judgment criteria and two of them — synth validity and smoke-test
+    // presence — were argued about in prose only because the values behind them were
+    // nested inside deploy's `cdk` and `smoke` where a flat check could not reach.
+    // deploy.js now hoists `cdkSynthOk` (which already folds in the not-applicable
+    // carve-out) and `smokeTestFiles` to the top level of its result, exactly as it
+    // did for `smokePassed`. With all four measurable, gate-enforce.js short-circuits
+    // to a verdict with NO model turn (`!criteria.length` after the checks hold), and
+    // a phase that plainly failed one is looped with the observed value instead of
+    // paying a full enforcer round-trip to be told so — up to MAX_DEPLOY_ITERATIONS
+    // times.
+    //
+    // "no unresolved drift" is not among the checks and is not silently dropped:
+    // whether drift is unresolved and worsened by this change is a judgment, and it is
+    // made inside deploy.js by its own independent phase-gate-enforcer, whose ruling
+    // gates the rollout. An artifact with deployedToDev:true has already passed it.
+    criteria: [],
     checks: [
+      { field: 'cdkSynthOk', equals: true, label: 'CDK synth is valid (or this repo owns no CDK app, which cannot fail a synth)' },
+      { field: 'smokeTestFiles', nonEmpty: true, label: 'a smoke test suite exists to run against the deployed environment' },
       { field: 'deployedToDev', equals: true, label: 'the change was deployed to the AWS dev environment' },
       { field: 'smokePassed', equals: true, label: 'the smoke tests passed against the deployed dev endpoints' },
     ],

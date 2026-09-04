@@ -105,10 +105,55 @@ test('no triage verdict FAILS OPEN to running the wave', async () => {
   assert.equal(dead.ranWave, true, 'a triage failure must never be indistinguishable from "nothing to challenge"')
 
   const forced = await run({ triage: benignTriage }, { dimensions: ['integration'] })
-  assert.equal(forced.ranWave, true, 'caller-forced dimensions skip triage, so there is no verdict to skip the wave on')
+  assert.equal(forced.ranWave, true, 'caller-forced dimensions with NO classification leave no verdict to skip the wave on')
 
   const full = await run({ triage: benignTriage }, { forceFullPanel: true })
   assert.equal(full.ranWave, true, 'forceFullPanel means the full panel, wave included')
+})
+
+// ── The skip has to be REACHABLE from the pipeline, not only from a direct dispatch ──
+//
+// prd-to-spec.js always passes `dimensions`, which skips this mini's own triage and used
+// to leave `triage === null` — read above as ambiguity, so the wave fired on 100% of
+// pipeline runs and the carefully-written skip could only ever be exercised by
+// dispatching this mini by hand. A caller that sizes the panel has already classified the
+// decision; handing the two booleans down with the dimensions is what makes the skip
+// evaluable. Half a verdict is still no verdict.
+
+test('a caller that sizes the panel AND affirms low stakes can skip the wave', async () => {
+  const { ranWave, result } = await run(
+    { triage: benignTriage },
+    { dimensions: ['integration'], triageVerdict: { highStakes: false, reversalRisk: false } },
+  )
+  assert.equal(ranWave, false, 'the composite path must be able to reach the skip, or the skip is dead code')
+  assert.equal(result.challengeWave.ran, false)
+  assert.match(result.challengeWave.reason, /affirmed/)
+  assert.equal(
+    result.triage && result.triage.source, 'caller',
+    'the journal must show the verdict came from the caller, not from a guardian session that never ran',
+  )
+})
+
+test("a caller's verdict still triggers the wave when it affirms risk", async () => {
+  const reversal = await run(
+    { triage: benignTriage },
+    { dimensions: ['integration'], triageVerdict: { highStakes: false, reversalRisk: true } },
+  )
+  assert.equal(reversal.ranWave, true)
+  const stakes = await run(
+    { triage: benignTriage },
+    { dimensions: ['integration'], triageVerdict: { highStakes: true, reversalRisk: false } },
+  )
+  assert.equal(stakes.ranWave, true)
+})
+
+test('a HALF-stated caller verdict is not a verdict — the wave runs', async () => {
+  const partial = await run(
+    { triage: benignTriage },
+    { dimensions: ['integration'], triageVerdict: { highStakes: false } },
+  )
+  assert.equal(partial.ranWave, true, 'an unstated flag is unknown, and unknown challenges by default')
+  assert.equal(partial.result.triage, null, 'a partial verdict must not be dressed up as a triage result')
 })
 
 test('a re-proposal round runs the wave regardless of the round-1 trigger', async () => {

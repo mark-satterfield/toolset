@@ -155,6 +155,81 @@ test('D5-AC4: applicable=true reports synthValid/drift AND the details string, w
   )
 })
 
+// ─── cdkSynthOk / smokeTestFiles are HOISTED so the outer Gate 5 can MEASURE them ──
+//
+// The composite's Gate 5 carries "CDK synth valid" and "Smoke tests present" as criteria.
+// Both values existed here already but only nested inside `cdk` and `smoke`, where a flat
+// deterministic check cannot reach — so both were adjudicated in prose by a full enforcer
+// turn, per deploy iteration. This is the same fix already applied to `smokePassed`, and
+// it is the SAFETY CONDITION for making that gate deterministic-only: a gate that stops
+// asserting synth validity is worse than a slower gate.
+
+test('cdkSynthOk and smokeTestFiles are top-level fields a flat gate check can read', async () => {
+  const { result } = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN },
+    agentImpl: deployResponders(),
+  })
+  assert.equal(result.cdkSynthOk, true, 'a valid synth must be readable without walking into result.cdk')
+  assert.deepEqual(result.smokeTestFiles, ['smoke/test_site.py'], 'the smoke file list must be flat, not nested in result.smoke')
+})
+
+test('a broken synth is cdkSynthOk=false at the top level, and a not-applicable repo is true', async () => {
+  const broken = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN },
+    agentImpl: deployResponders({
+      'deploy:cdk-validate': { applicable: true, synthValid: false, driftDetected: false },
+      'deploy:gate5-verdict': { ready: false, findings: ['broken synth'] },
+    }),
+  })
+  assert.equal(broken.result.cdkSynthOk, false, 'a repo that HAS a CDK app and cannot synth must fail the check')
+
+  const na = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN },
+    agentImpl: deployResponders({
+      'deploy:cdk-validate': { applicable: false, synthValid: false, driftDetected: false, details: 'no cdk.json; deploys by s3 sync' },
+    }),
+  })
+  assert.equal(na.result.cdkSynthOk, true, 'a repo that owns no CDK app cannot fail a synth it does not have')
+
+  const missing = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN },
+    agentImpl: deployResponders({ 'deploy:cdk-validate': null }),
+  })
+  assert.equal(missing.result.cdkSynthOk, false, 'no cdk result at all is unknown, and unknown is never absolution')
+})
+
+// ─── The three removed pre-rollout sessions ──────────────────────────────────
+
+test('no deployment-lead, no strategy decider on a single-repo dev deploy, and no readiness facilitator', async () => {
+  const { calls, result } = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN },
+    agentImpl: deployResponders(),
+  })
+  assert.equal(agentCalls(calls, 'deploy:plan').length, 0, 'artifact selection is derived from surfaces and changed paths')
+  assert.equal(
+    agentCalls(calls, 'deploy:strategy').length, 0,
+    'a single-repo deploy to dev has one legal rollout plan, so there is nothing for a decider to decide',
+  )
+  assert.equal(
+    agentCalls(calls, 'deploy:readiness-packet').length, 0,
+    'the facilitator restated fields the script holds and was charter-forbidden from ruling on any of them',
+  )
+  // The evidence it used to restate must still reach the only role permitted to rule.
+  const gate = singlePrompt(calls, 'deploy:gate5-verdict')
+  assert.match(gate, /Smoke tests AUTHORED: PRESENT/, 'smoke presence must still reach the enforcer')
+  assert.match(gate, /Unit\/integration tests: GREEN/, 'green evidence must still reach the enforcer')
+  assert.match(gate, /Documentation currency/, 'doc currency must still reach the enforcer')
+  assert.equal(result.deployedToDev, true, 'and the deploy still happens')
+})
+
+test('a multi-repo deploy DOES dispatch the strategy decider — wave order is a real question there', async () => {
+  const { calls } = await runWorkflowScript(DEPLOY_JS, {
+    args: { contract: CONTRACT, green: VALID_GREEN, multiRepo: true },
+    agentImpl: deployResponders(),
+  })
+  assert.equal(agentCalls(calls, 'deploy:strategy').length, 1)
+})
+
 // ─── D5-AC5 (AC27) — no cdk result at all (regression guard) ─────────────────
 test('D5-AC5: a null cdk result yields the CDK: not reported line and no NOT APPLICABLE absolution', async () => {
   const { calls } = await runWorkflowScript(DEPLOY_JS, {

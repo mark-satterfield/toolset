@@ -16,7 +16,12 @@ export const meta = {
 //   sadPath?: string,        // path to the arc42 SAD (defaults to the vault arch42 tree)
 //   feedback?: string,       // optional upstream gate feedback to fold in
 //   maxLoops?: number,       // SAD maker-checker passes before decider deadlock (default 2)
+//   maxDecideLoops?: number, // re-proposal rounds after an inadmissible ruling (default 2)
 //   dimensions?: string[],   // override: force the analyst panel to exactly these axes (triage is skipped)
+//   triageVerdict?: { highStakes: boolean, reversalRisk: boolean, rationale?: string },
+//                            // the caller's OWN triage classification, supplied alongside `dimensions`.
+//                            // Without it a caller-sized panel leaves no verdict for the challenge-wave
+//                            // trigger to read, and the wave fires unconditionally — see Phase 0.
 //   forceFullPanel?: boolean,// override: skip triage and run the full panel + challenge wave as today
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -176,7 +181,52 @@ if (a.forceFullPanel === true) {
   log('Triage skipped: forceFullPanel=true — running the full analyst panel and challenge wave')
 } else if (forcedDimensions && forcedDimensions.length) {
   activeDimensions = forcedDimensions
-  log(`Triage skipped: caller forced the panel — analysts selected: ${activeDimensions.join(', ')}`)
+  // ── WHY A CALLER-SIZED PANEL MUST ALSO CARRY A CLASSIFICATION ────────────────
+  //
+  // Sizing the panel from the caller saves this mini's own triage call. It also used
+  // to leave `triage === null`, and the challenge-wave trigger in Phase 2 reads a null
+  // triage as AMBIGUITY and challenges by default. The composite path ALWAYS passes
+  // `dimensions`, so on that path the affirmative-evidence skip was unreachable: the
+  // wave fired on 100% of pipeline runs, and the skip could only ever be exercised by
+  // dispatching this mini directly. That is a defect, not a conservative default —
+  // the trigger was carefully written and then could never fire the other way.
+  //
+  // A caller that sized the panel has already classified the decision; the two
+  // booleans the trigger reads were simply never handed down. When they are, they
+  // stand in for the triage verdict this mini did not run, and a converged decision
+  // genuinely skips the wave. When they are NOT supplied, `triage` stays null and the
+  // ambiguity default is untouched — silence is still never read as consensus, and a
+  // contested decision still gets the wave either way.
+  const callerVerdict = a.triageVerdict
+  if (
+    callerVerdict &&
+    typeof callerVerdict.highStakes === 'boolean' &&
+    typeof callerVerdict.reversalRisk === 'boolean'
+  ) {
+    triage = {
+      settled: false,
+      rationale:
+        typeof callerVerdict.rationale === 'string' && callerVerdict.rationale.trim()
+          ? callerVerdict.rationale.trim()
+          : "classified by the caller's own triage, which also sized the panel",
+      relevantDecisions: [],
+      dimensions: activeDimensions,
+      highStakes: callerVerdict.highStakes,
+      reversalRisk: callerVerdict.reversalRisk,
+      // Recorded so the journal shows this verdict came from the caller rather than
+      // from an architecture-boundary-guardian session that never ran.
+      source: 'caller',
+    }
+    log(
+      `Triage skipped: caller forced the panel — analysts selected: ${activeDimensions.join(', ')}; ` +
+        `caller classified highStakes=${callerVerdict.highStakes}, reversalRisk=${callerVerdict.reversalRisk}`
+    )
+  } else {
+    log(
+      `Triage skipped: caller forced the panel — analysts selected: ${activeDimensions.join(', ')}. ` +
+        'The caller supplied no highStakes/reversalRisk classification, so there is no verdict to skip the challenge wave on and it runs by default.'
+    )
+  }
 } else {
   triage = await agent(
     `${rulingsBlock}You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
@@ -300,9 +350,9 @@ ${decisionHeader}`,
 // Up to five INDEPENDENT makers propose from their lens, plus two analysis advisors
 // (context map, failure modes), all concurrently — but ONLY the ones triage or the
 // caller selected, because a one-dimension decision does not deserve a seven-agent
-// fan-out, and a settled decision dispatches none at all. The coordinator is a
-// read-only router only — it frames the decisions and dispatches; it authors and
-// rules nothing.
+// fan-out, and a settled decision dispatches none at all. Nothing routes them: the
+// panel is the selected slice of the fixed roster below, and the framing is written
+// by the script (see `frameBlock`).
 const makers = [
   {
     agentType: 'agent-teams-workforce:integration-pattern-architect',
@@ -336,7 +386,6 @@ const makers = [
   },
 ]
 
-let frame = null
 let proposals = []
 let contextMap = null
 let failureModes = []
@@ -351,30 +400,24 @@ if (settled) {
 } else {
   phase('Proposals')
 
-  frame = await agent(
-    `You are the architecture-decision-workflow-coordinator — a READ-ONLY router. Do NOT author any option and do NOT rule on anything. You have NO gate authority: gate status was settled by the phase-gate-enforcer before you were dispatched, so do not assess it, do not recompute it, and do not withhold or condition this framing on it. Analyst-assigned severities in any upstream package are PROPOSALS the enforcer has already adjudicated — they are not live objections and are not yours to re-open. There is no HOLD in your output schema because there is no HOLD in your authority; frame the decision or report a genuinely ABSENT input, nothing else. Frame the decision so the analysts can each propose from their lens: state the sub-decisions to be made, the constraints that bound them, and which lens each analyst should focus on. Triage scaled the panel to these dimensions — frame for them only: ${activeDimensions.join(', ')}.
-
-${decisionHeader}`,
-    {
-      label: 'proposals:frame',
-      phase: 'Proposals',
-      agentType: 'agent-teams-workforce:architecture-decision-workflow-coordinator',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['subDecisions', 'constraints', 'dispatch'],
-        properties: {
-          subDecisions: { type: 'array', items: { type: 'string' } },
-          constraints: { type: 'array', items: { type: 'string' } },
-          dispatch: { type: 'string' },
-        },
-      },
-    }
-  )
-
-  frameBlock = `Framing from the coordinator:
-Sub-decisions: ${((frame && frame.subDecisions) || []).join('; ') || 'n/a'}
-Constraints: ${((frame && frame.constraints) || []).join('; ') || 'n/a'}`
+  // ── THE PANEL IS FRAMED BY THE SCRIPT, NOT BY A ROUTER SESSION ───────────────
+  //
+  // This used to be an `architecture-decision-workflow-coordinator` dispatch
+  // (`proposals:frame`) that restated the decision as sub-decisions and constraints.
+  // Both of its inputs — `decisionHeader` and `activeDimensions` — are handed to the
+  // analysts RAW in the very next dispatch, appended alongside the framing itself, so
+  // the session paid a full session-start to reformat text its readers also received
+  // unformatted. It ruled nothing (its own prompt spent a paragraph saying so, after a
+  // run where it invented gate authority and stood the whole panel down: wf_e1736f55-1fe),
+  // and it was on the critical path of every contested architecture run and every
+  // re-proposal round.
+  //
+  // What the analysts actually need from a framing is which axis is theirs and which
+  // are covered by someone else, so they propose from one lens instead of drifting
+  // across all seven. That is the dimension list, and the script holds it.
+  frameBlock = `Panel framing (set by the workflow, not by an agent):
+Analysis axes on this decision: ${activeDimensions.join(', ') || '(none named)'}
+Propose from YOUR lens only. The other axes above are covered by the analysts dispatched alongside you, and the architecture-decider composes one ruling from all of them — so do not hedge into a lens that is not yours, and do not withhold your own on account of one. The sub-decisions, constraints and drivers are stated in the decision header above; read them there.`
 
   // Dispatch only the selected slice of the panel. The two advisors are dimensions
   // like any other — a decision with no boundary or failure-mode stake does not pay

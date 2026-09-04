@@ -848,7 +848,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // worktree for the same bead, which is where the checkpointed code lives); Deploy
 // and Settle always re-run, because deployment evidence must be fresh. A completed
 // run deletes its checkpoint.
-const CHECKPOINT_VERSION = '6.9.1' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.2' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
@@ -1525,8 +1525,17 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const iterationFeedback = smokeFeedback
   deployReady = await gateLoop({
     gate: '5', phaseName: `Deploy to dev (iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS})`,
-    criteria: ['CDK synth valid, no unresolved drift', 'Smoke tests present', 'Deployed to the dev environment', 'Smoke tests pass against the deployed dev endpoints'],
+    // Every criterion here is MECHANICAL, so gate-enforce.js returns a verdict with no
+    // model turn. deploy.js hoists `cdkSynthOk` (which folds in the not-applicable
+    // carve-out) and `smokeTestFiles` to the top level of its result, exactly as it
+    // already did for `smokePassed`, so the two criteria that used to be argued in
+    // prose are now measured against the artifact. "No unresolved drift" stays a
+    // judgment and is still made — inside deploy.js, by its own independent enforcer,
+    // whose ruling gates the rollout.
+    criteria: [],
     checks: [
+      { field: 'cdkSynthOk', equals: true, label: 'CDK synth is valid (or this repo owns no CDK app, which cannot fail a synth)' },
+      { field: 'smokeTestFiles', nonEmpty: true, label: 'a smoke test suite exists to run against the deployed environment' },
       { field: 'deployedToDev', equals: true, label: 'the fix was deployed to the AWS dev environment' },
       { field: 'smokePassed', equals: true, label: 'the smoke tests passed against the deployed dev endpoints' },
     ],

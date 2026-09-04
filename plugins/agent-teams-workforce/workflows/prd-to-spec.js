@@ -258,7 +258,7 @@ async function persistRun(outcome) {
 // the run-ledger-writer — already this pipeline's journal-plumbing seam — writes and
 // deletes it. Both are non-fatal: a checkpoint that cannot be written costs only the
 // ability to resume, never the run.
-const CHECKPOINT_VERSION = '6.9.1' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.2' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
@@ -332,9 +332,28 @@ function cpGet(key) {
   log(`Phase '${key}' SKIPPED — completed result reused from checkpoint`)
   return cp.loaded[key]
 }
+// ── CHECKPOINT WRITES ARE SERIALIZED ──────────────────────────────────────────
+//
+// The checkpoint file is rewritten WHOLE on every save. That was safe while every phase
+// ran in sequence; the per-repo and per-Story fan-outs below now complete CONCURRENTLY,
+// and two concurrent saves would each snapshot `cp.phases` at their own moment and race
+// to overwrite the same path. Whichever landed last would win — and if that were the one
+// that snapshotted first, the other repo's completed phase would vanish from the
+// checkpoint and be re-run on a resume, which is the one thing the checkpoint exists to
+// prevent.
+//
+// Chaining them means the snapshot is taken INSIDE the queued write, after the previous
+// one has landed, so the file only ever grows. A failed write does not poison the queue.
+let cpWriteChain = Promise.resolve()
 async function cpSave(key, payload) {
   if (!cp.active) return
   cp.phases[key] = payload
+  const queued = cpWriteChain.then(() => cpWriteOne(key))
+  cpWriteChain = queued.catch(() => {})
+  await queued
+}
+async function cpWriteOne(key) {
+  // Snapshot HERE, not at enqueue time — that ordering is the whole point of the queue.
   const file = JSON.stringify({ composite: 'prd-to-spec', subject: subjectId, pluginVersion: CHECKPOINT_VERSION, inputHash: cp.inputHash, phases: cp.phases })
   try {
     await agent(
@@ -1112,7 +1131,11 @@ if (a.skipArchitecture === true) {
       `This is a STARTING POINT, not the span — which repositories this PRD lands in is ruled later in this run, after you answer. Do not treat the count as evidence about scope.\n` +
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
       `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}` +
-      `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.`
+      `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.` +
+      `\n\nWhen needed is true, ALSO classify two things. You are CLASSIFYING, not ruling — these decide whether an adversarial challenge pass runs after the analysts, and nothing else:\n` +
+      `- highStakes: true when the question implicates a constitutive constraint — a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban. Difficulty alone is NOT high stakes.\n` +
+      `- reversalRisk: true when a plausible ruling on this question could REVERSE or contradict a decision the SAD already records. false when the SAD is silent here, or any ruling would merely extend it.\n` +
+      `Classify both on evidence. Omitting either is read as "unknown", which runs the challenge pass by default — that is the safe answer and it costs a session, so do not state a flag you cannot support, and do not omit one you can.`
   const triageOpts = {
     label: 'triage:architecture-needed',
     phase: 'Architecture',
@@ -1127,6 +1150,13 @@ if (a.skipArchitecture === true) {
         decisions: { type: 'array', items: { type: 'string' } },
         settledBy: { type: 'string' },
         dimensions: { type: 'array', items: { type: 'string', enum: ARCH_DIMENSIONS } },
+        // The two booleans architecture.js's own triage returns. This composite sizes
+        // the panel from its triage, which makes the mini skip its triage entirely —
+        // and the mini's challenge-wave trigger then had no verdict to read, so it
+        // challenged by default on every pipeline run. Asking for them here is what
+        // makes that skip reachable; see the `triageVerdict` argument below.
+        highStakes: { type: 'boolean' },
+        reversalRisk: { type: 'boolean' },
       },
     },
   }
@@ -1170,12 +1200,31 @@ if (!archNeeded) {
       : triageDimensions.length
         ? triageDimensions
         : undefined
+  // The classification that travels WITH the sized panel. Forwarded only when triage
+  // stated BOTH booleans: a partially-stated verdict is not a verdict, and the mini
+  // reads an absent one as unknown and challenges by default — which is the behaviour
+  // that must survive, not be defaulted away. A caller-pinned `dimensions` list has no
+  // classification behind it, so none is invented for it either.
+  const archTriageVerdict =
+    !(callerDimensions && callerDimensions.length) &&
+    archTriage &&
+    typeof archTriage.highStakes === 'boolean' &&
+    typeof archTriage.reversalRisk === 'boolean'
+      ? {
+          highStakes: archTriage.highStakes,
+          reversalRisk: archTriage.reversalRisk,
+          rationale: archTriage.reason || undefined,
+        }
+      : undefined
   if (a.forceFullPanel === true) {
     log('Architecture panel: FULL — caller passed forceFullPanel')
   } else if (archDimensions) {
     log(
       `Architecture panel sized to ${archDimensions.length}/${ARCH_DIMENSIONS.length} axes ` +
-        `(${callerDimensions && callerDimensions.length ? 'caller' : 'triage'}): ${archDimensions.join(', ')}`
+        `(${callerDimensions && callerDimensions.length ? 'caller' : 'triage'}): ${archDimensions.join(', ')}` +
+        (archTriageVerdict
+          ? `; classification forwarded — highStakes=${archTriageVerdict.highStakes}, reversalRisk=${archTriageVerdict.reversalRisk}`
+          : '; no classification forwarded, so the mini runs its challenge wave by default')
     )
   } else {
     log('Architecture panel: not sized here — the mini will run its own triage')
@@ -1241,7 +1290,36 @@ if (!archNeeded) {
         },
         sadPath: a.sadPath,
         dimensions: archDimensions,
+        // Handed down WITH the dimensions, and only meaningful alongside them. Sizing
+        // the panel from here makes the mini skip its own triage, which left its
+        // challenge-wave trigger with no verdict to read — and a null verdict is
+        // ambiguity, so the wave fired on 100% of pipeline runs. The mini's
+        // affirmative-evidence skip was unreachable from this file. Both booleans must
+        // be present for the skip to become evaluable; an unstated one stays unknown
+        // and the wave still runs, which is the correct default and the reason this is
+        // forwarded verbatim rather than defaulted to false.
+        triageVerdict: archTriageVerdict,
         forceFullPanel: a.forceFullPanel === true ? true : undefined,
+        // ── THE LAST THREE-DEEP RETRY NEST, CAPPED ──────────────────────────────
+        //
+        // This file already passes maxLoops:1 to spec-authoring and trd-authoring for
+        // exactly this reason, and passed nothing here — so architecture composed
+        // MAX_LOOPS (this gate, 2) x MAX_DECIDE_LOOPS (2) x MAX_SAD_LOOPS (2) and a
+        // single phase could spend ~30 sequential sessions, against the <=4 total
+        // attempts every other composite/mini pair is bounded at.
+        //
+        // The SAD loop is the one that costs on EVERY run: sad-maintainer and
+        // sad-conformance-reviewer always run at least once, and a second pass is a
+        // straight repeat of the pair. Capped to one, with the decider's deadlock
+        // ruling — which already exists below it — carrying the reject case.
+        //
+        // maxDecideLoops is deliberately LEFT at 2. It costs nothing on the normal
+        // path: the loop breaks the moment a ruling is admissible. It fires only when
+        // the decider can rule on nothing, and then it re-dispatches just the analyst
+        // panel with the blocking constraints attached — strictly cheaper, and better
+        // aimed, than the alternative of failing the mini and letting this gate re-run
+        // the whole thing including triage. 2 x 2 x 1 = 4 attempts, which is the bar.
+        maxLoops: 1,
         feedback,
       }),
   })
@@ -1251,7 +1329,12 @@ if (architecture.ok) await cpSave('architecture', { archTriage, architecture })
 if (architecture.artifact && architecture.artifact.ledger) runLedger.push(architecture.artifact.ledger)
 produced.architecture = architecture.artifact || null
 if (!architecture.ok) return partial('architecture', architecture)
-const sadExtract = architecture.artifact && architecture.artifact.sadUpdate
+// NOTE: there is deliberately no `sadExtract` binding here. One used to be assigned
+// from `architecture.artifact.sadUpdate` and read by nothing in this file. It is not
+// the packet trd-authoring consumes either — `sadUpdate` is a change summary
+// ({updatedSections, changedFiles, summary}), while the TRD needs the typed §2/§4/§8
+// extract over the WHOLE SAD, which its own sad-source-extractor produces. Reusing the
+// update-scoped summary would silently narrow the TRD's inputs.
 
 // ── Repo Scoping (no gate) ───────────────────────────────────────────────────────
 //
@@ -1436,10 +1519,45 @@ const specFailures = [] // repos whose spec failed G3 — kept so they cannot si
 // found a hole in that ruling from the one vantage point that could see it. Discarding them
 // meant the span could only ever be confirmed, never contradicted.
 const outOfSpanFindings = []
+// ── THE REPOS ARE AUTHORED CONCURRENTLY ───────────────────────────────────────
+//
+// This was a strictly serial `for` loop: each repo's whole spec-authoring mini (~7
+// sessions) plus its G3 gate finished before the next repo started. Repo *i* consumes
+// NOTHING from repo *j* — each iteration reads the PRD, the TRD, the access patterns,
+// the Epic, its own repo path, and a `storyKey` derived from its INDEX rather than from
+// the previous iteration's result. The checkpoint key is per-repo. `specPairs`,
+// `specFailures` and `outOfSpanFindings` are append-only accumulators, and they are
+// filled below in repo order from the settled batch, so the result is identical to the
+// serial one whatever order the batch completes in.
+//
+// The genuinely dependent step is the Story dependency mapping further down, which reads
+// ALL of `specPairs`. That is the natural join, and it is what makes this a barrier
+// (`parallel`) rather than a pipeline.
+//
+// WHAT THE RUN-ATTEMPT CEILING NOW MEANS. `budgetStop()` is consulted inside each
+// gateLoop before it spends an attempt, and the batch starts every repo at once — so all
+// N read the same `attemptsSpent` and the ceiling can be overshot by at most N-1
+// attempts in a batch. That is a deliberate, bounded change, not an oversight: the
+// ceiling is already scaled by repo count (`FIXED_GATES + GATES_PER_REPO * N +
+// headroom`), so a clean run fits by construction, and its purpose — runaway protection
+// — is untouched because each repo's own gateLoop still refuses to start a RETRY once
+// the budget is spent. What is lost is the ability to stop a batch partway through, and
+// a batch is one attempt per repo.
+//
+// Checked once for the batch, since a budget already spent means nothing should start.
+const specBudgetStop = budgetStop()
+if (specBudgetStop) {
+  return partial('spec-authoring', {
+    reason: `spec authoring did not start: ${specBudgetStop}`,
+  })
+}
 // Each repo's Story needs a distinct key: they become sibling beads under one Epic
 // and the dependency graph addresses them by key, so a repeated key would collapse
 // several repos' work onto one phantom Story.
-for (const [repoIndex, repo] of repos.entries()) {
+const specResults = await parallel(
+  repos.map((repo, repoIndex) => () => authorSpecForRepo(repo, repoIndex))
+)
+async function authorSpecForRepo(repo, repoIndex) {
   const storyKey = `S${repoIndex + 1}`
   let specAuthoring = cpGet(`spec:${repo}`)
   if (specAuthoring === undefined) {
@@ -1471,6 +1589,22 @@ for (const [repoIndex, repo] of repos.entries()) {
       }),
   })
   if (specAuthoring.ok) await cpSave(`spec:${repo}`, specAuthoring)
+  }
+  return { repo, specAuthoring }
+}
+// Reduce the settled batch IN REPO ORDER. Every accumulator below is append-only and
+// every decision is a function of one repo's own result, so ordering here — not
+// completion order — is what makes a concurrent batch produce the serial answer.
+for (const [repoIndex, repo] of repos.entries()) {
+  const settled = specResults[repoIndex]
+  // A thunk that threw resolves to null in `parallel`'s result array. That is a repo
+  // whose spec never completed, and it is recorded as a failure rather than skipped —
+  // the whole reason `specFailures` exists is that a repo must not silently vanish.
+  const specAuthoring = settled && settled.specAuthoring
+  if (!specAuthoring) {
+    log(`Spec Authoring produced no result at all for repo ${repo} — recorded as a failure, not dropped`)
+    specFailures.push({ repoPath: repo, reason: 'the spec-authoring phase returned nothing (the dispatch failed or was skipped)' })
+    continue
   }
   if (specAuthoring.artifact && specAuthoring.artifact.ledger) runLedger.push(specAuthoring.artifact.ledger)
   if (!specAuthoring.ok) {
@@ -1619,7 +1753,21 @@ const stories = specPairs.map((p) => p.story)
 const decompositions = [] // one { repoPath, storyKey, artifact } per Story that passed G4
 const decompositionFailures = [] // Stories whose task set failed G4 — kept, never dropped
 const tasks = []
-for (const pair of specPairs) {
+// Decomposed CONCURRENTLY, for the same reason and under the same rules as the per-repo
+// spec fan-out above: Story *i* consumes nothing from Story *j* — each reads its own
+// spec, its own Story, and the shared PRD/TRD — the checkpoint key is per-Story, and the
+// task keys are namespaced by Story key during the reduction below, in Story order, so a
+// concurrent batch produces the serial answer. The run-attempt ceiling is checked once
+// for the batch and can be overshot by at most (Stories - 1); see the fan-out above for
+// why that is bounded and acceptable.
+const decompBudgetStop = budgetStop()
+if (decompBudgetStop) {
+  return partial('task-decomposition', {
+    reason: `task decomposition did not start: ${decompBudgetStop}`,
+  })
+}
+const decompResults = await parallel(specPairs.map((pair) => () => decomposeStory(pair)))
+async function decomposeStory(pair) {
   const cpDecompKey = `decomposition:${pair.story.key || pair.repoPath}`
   let decomposition = cpGet(cpDecompKey)
   if (decomposition === undefined) {
@@ -1654,6 +1802,24 @@ for (const pair of specPairs) {
       }),
   })
   if (decomposition.ok) await cpSave(cpDecompKey, decomposition)
+  }
+  return { pair, decomposition }
+}
+// Reduce the settled batch IN STORY ORDER — the task-key namespacing below depends on
+// it, and so does the order tasks reach bd.
+for (const [pairIndex, pair] of specPairs.entries()) {
+  const settled = decompResults[pairIndex]
+  const decomposition = settled && settled.decomposition
+  // A thunk that threw resolves to null. That Story decomposed to nothing and is
+  // recorded as a failure rather than skipped, on the same rule as the spec fan-out.
+  if (!decomposition) {
+    log(`Task Decomposition produced no result at all for story ${pair.story.key || '(no key)'} (${pair.repoPath}) — recorded as a failure`)
+    decompositionFailures.push({
+      repoPath: pair.repoPath,
+      storyKey: pair.story.key || null,
+      reason: 'the task-decomposition phase returned nothing (the dispatch failed or was skipped)',
+    })
+    continue
   }
   if (decomposition.artifact && decomposition.artifact.ledger) runLedger.push(decomposition.artifact.ledger)
   if (!decomposition.ok) {
