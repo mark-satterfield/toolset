@@ -377,6 +377,59 @@ console.log(
     : `all ${GUARDED.length} telemetry-path instruction files name no shell command that can block on a permission prompt`,
 )
 
+// ── PASS 6: THE BACKFILL REPAIR CANNOT MOVE THE EMISSION VERDICT ──────────────
+//
+// prd-to-spec's Emit Beads phase does two different things. It WRITES this run's Epic →
+// Story → Task hierarchy — that is the composite's product, and `emission.verdict` /
+// `emissionOk` / `beadsEmitted` report whether it landed. Beside it, it RETIRES the
+// backfilled roll-up Stories the Epic was carrying: housekeeping on beads this run did
+// not author.
+//
+// Those two must stay separated, because the supervisor demotes a run on `emissionOk`.
+// If a failed close of somebody else's stand-in Story could turn a complete emission
+// into a partial one, a run whose entire hierarchy is durable would be re-dispatched to
+// write beads that already exist — and the duplicate-hierarchy defect this phase was
+// built to prevent comes back through the repair that was meant to tidy up after it.
+//
+// So the rule is textual and absolute: the statements that decide the verdict never
+// mention the repair. `emission.heal` is reported, and it is reported only.
+const VERDICT_LINE = /emission\.verdict\s*=|const\s+emissionOk\s*=|const\s+beadsEmitted\s*=|const\s+durable\s*=|const\s+unwritten\s*=/
+const healBleed = []
+{
+  const abs = path.join(here, '..', 'workflows', 'prd-to-spec.js')
+  let text = null
+  try {
+    text = readFileSync(abs, 'utf8')
+  } catch {
+    healBleed.push({ line: 0, text: 'workflows/prd-to-spec.js is missing — the guard cannot protect it' })
+  }
+  if (text != null) {
+    if (!/emission\.heal\b/.test(text)) {
+      healBleed.push({ line: 0, text: 'no `emission.heal` is reported — the backfill repair reports nothing a caller can read' })
+    }
+    text.split('\n').forEach((raw, i) => {
+      if (raw.trim().startsWith('//')) return
+      if (!VERDICT_LINE.test(raw)) return
+      if (!/\bheal\b/.test(raw)) return
+      healBleed.push({ line: i + 1, text: raw.trim().slice(0, 120) })
+    })
+  }
+}
+
+for (const f of healBleed) {
+  console.log(
+    `FAIL  workflows/prd-to-spec.js:${f.line}  —  the emission verdict is computed from the backfill repair. ` +
+      `Retiring another run's stand-in Story is housekeeping; it must never make this run's own durable ` +
+      `hierarchy report as partial, because the supervisor re-dispatches on emissionOk.`,
+  )
+  console.log(`        ${f.text}`)
+}
+console.log(
+  healBleed.length
+    ? `\n${healBleed.length} heal/verdict bleed(s) — a failed repair could demote a fully durable run`
+    : 'the emission verdict in prd-to-spec.js is computed from the write alone, never from the backfill repair',
+)
+
 process.exit(
-  failures.length || refErrors.length || escapees.length || strictness.length || promptable.length ? 1 : 0,
+  failures.length || refErrors.length || escapees.length || strictness.length || promptable.length || healBleed.length ? 1 : 0,
 )

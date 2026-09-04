@@ -1,15 +1,20 @@
 # Unattended-mode routing policy
 
-How `/loop` drains the ready queue: each tick claims the next ready bead, asks
+How the ready queue is drained: each tick claims the next ready bead, asks
 the router that owns its kind of work — [`route-build`](route-build.js) for a Task or Bug, [`route-elaboration`](route-elaboration.js) for an Epic, Story, or feature — which composite owns it, runs that composite, reports,
 and moves on. This file is the human-readable policy; each router is its
 executable form. Keep them in sync — edit both when the policy changes.
+
+**The tick is driven from OUTSIDE this folder. Do not look here for a sweep or
+driver script: there is none, and there cannot be one — see
+[The driver is not a workflow script](#the-driver-is-not-a-workflow-script)
+before writing one.**
 
 ## The four composites
 
 | Composite | Front-end | For |
 |---|---|---|
-| `prd-to-spec` | prd-reconciliation → prd-validation → architecture → repo-scoping → trd-authoring → spec-authoring → task-decomposition → emit-beads | a feature with no implementation-ready contract yet. Reconciliation runs FIRST and before any gate: a PRD whose requirements already ship is closed, a delta that is really a defect or an infrastructure switch is rerouted to `bug-fix` / `infra-change`, and everything that continues is specified against the DELTA PRD. The repo span is RULED by `repo-scoping` after the architecture decision — it is an output of the run, recomputed every time and never pre-staged; a repository the work needs and the project does not have comes back as a human action, never created here. The final phase WRITES the Epic → Story → Task hierarchy into beads itself, parent before child, and reports what landed on `emissionOk` / `beadsEmitted` / `emission` — the caller does not run `bd` for it |
+| `prd-to-spec` | prd-reconciliation → prd-validation → architecture → repo-scoping → trd-authoring → spec-authoring → task-decomposition → emit-beads | a feature with no implementation-ready contract yet. Reconciliation runs FIRST and before any gate: a PRD whose requirements already ship is closed, a delta that is really a defect or an infrastructure switch is rerouted to `bug-fix` / `infra-change`, and everything that continues is specified against the DELTA PRD. The repo span is RULED by `repo-scoping` after the architecture decision — it is an output of the run, recomputed every time and never pre-staged; a repository the work needs and the project does not have comes back as a human action, never created here. The final phase WRITES the Epic → Story → Task hierarchy into beads itself, parent before child, and reports what landed on `emissionOk` / `beadsEmitted` / `emission` — the caller does not run `bd` for it. It also RETIRES the stand-in roll-up Stories the Epic was carrying: a Task that reached the build lane parentless had one minted for it on the side, and once this run authors the Spec-backed Story that work belongs under, the stand-in's Tasks are re-parented onto a real Story and it is closed. That repair is reported on `emission.heal` and never moves the emission verdict |
 | `task-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
 | `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior |
 | `infra-change` | infra-intent → shared tail (subset) | an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing) |
@@ -78,7 +83,9 @@ a feature whose contract already exists.
 ## How `/loop` self-paces — "until `bd ready` is empty"
 
 `/loop` runs **self-paced** (no fixed interval): it works as fast as each
-composite completes and stops on a queue condition, not a clock. One tick:
+composite completes and stops on a queue condition, not a clock. Every step below is
+performed by the SESSION — `bd` through Bash, the composite through the Workflow tool.
+None of it is a script in this folder. One tick:
 
 1. **Check the queue.** Run `bd ready`. If it is empty, **stop** — the loop is done.
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
@@ -95,6 +102,32 @@ The terminating condition is **`bd ready` empty**, not a tick count. Skipped bea
 do not block the loop (they're reported and stepped over), and they do not falsely
 empty the queue (their status is untouched, so they remain visible to the
 operator). The loop ends only when no claimable, routable work remains.
+
+## The driver is not a workflow script
+
+The loop above is a description of what a DRIVER does. Nothing in this folder
+implements it, and adding a `sweep.js` here would not work.
+
+**The Workflow runtime permits one level of nesting.** A leaf mini calls `agent()`
+and returns an artifact; a composite calls `workflow()` to stitch minis together.
+That is the one level, and it is already spent: `bug-fix` calls `tdd-red`,
+`prd-to-spec` calls `spec-authoring`, and so on. A sweep script that read `bd ready`
+and called `workflow('bug-fix')` per bead would be sweep → composite → mini, which is
+two levels, and the runtime throws. This is not a limitation to work around; it is why
+composites stay flat and why a full run is sequenced from outside rather than by
+nesting one composite inside another (see `AGENT-TEAMS-WORKFORCE.md`, "The doctrine is
+realized as `Workflow` scripts of two kinds").
+
+So the driver is a caller of the Workflow tool, never a workflow script. Two exist:
+
+| Driver | What it is | When it drives |
+|---|---|---|
+| **The orchestrating session** (`/loop`, or `/agent-teams-workforce:next-task` / `:work-bead` one bead at a time) | A Claude Code session running the loop below with the Workflow tool | Interactive and semi-attended work |
+| **`ops/sdlc-automation` in the SkillSpoke repo** | A Python supervisor that claims beads, dispatches headless sessions, and journals every run | Long unattended campaigns |
+
+The consequence is worth stating plainly: **"unattended" is only as unattended as
+whatever is driving it.** A `/loop` sweep stops when its session stops. The Python
+supervisor is the one that survives a session ending, and it is not part of this plugin.
 
 ### Both run modes use the same composites
 

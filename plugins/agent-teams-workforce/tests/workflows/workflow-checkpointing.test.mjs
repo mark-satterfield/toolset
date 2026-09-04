@@ -88,14 +88,23 @@ async function runP2S({ checkpointFile = null, workflowOpts = {}, args = {} } = 
     workflowImpl: compositeWorkflows(workflowOpts),
     agentImpl: (call) => {
       const l = String(call.label)
-      if (l === 'checkpoint:load') return checkpointFile ? { found: true, content: checkpointFile } : { found: false, content: '' }
+      // prd-to-spec reads the checkpoint together with the standing rulings, and RETIRES
+      // it inside the journal write. Two files read in one session and two written in
+      // one session — a fresh agent session costs its session start, not its work.
+      if (l === 'resolve:run-inputs') {
+        return {
+          files: [
+            { key: 'checkpoint', found: Boolean(checkpointFile), content: checkpointFile || '' },
+            { key: 'rulings', found: false, content: '' },
+          ],
+        }
+      }
       if (l.startsWith('checkpoint:save:')) {
         saves.push(call)
         return { ok: true }
       }
-      if (l === 'checkpoint:delete') return { ok: true }
       if (l === 'triage:architecture-needed') return { needed: false, reason: 'no decision', settledBy: 'test' }
-      if (l === 'ledger:persist') return { written: true, path: '/journal' }
+      if (l === 'ledger:persist') return { written: true, path: '/journal', retired: true }
       return writer(call)
     },
   })
@@ -119,16 +128,33 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
   assert.equal(last.phases.reconciliation.deltaPrd.body, 'delta-body')
 })
 
-test('a completed successful run DELETES its checkpoint', async () => {
+/** True when the run's journal write also carried the checkpoint retirement. */
+function retiredInJournal(calls) {
+  const [journal] = agentCalls(calls, 'ledger:persist')
+  return Boolean(journal && /RETIRE the workflow checkpoint at this exact path/.test(String(journal.prompt)))
+}
+
+test('a completed successful run RETIRES its checkpoint — inside the journal write, not in a session of its own', async () => {
   const { calls } = await runP2S()
-  assert.equal(agentCalls(calls, 'checkpoint:delete').length, 1, 'resuming finished work would replay it')
+  assert.equal(agentCalls(calls, 'checkpoint:delete').length, 0, 'a second agent session to write one small file is a session wasted')
+  assert.ok(retiredInJournal(calls), 'resuming finished work would replay it, so the retirement must still happen')
+  const [journal] = agentCalls(calls, 'ledger:persist')
+  assert.match(
+    String(journal.prompt),
+    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json/,
+    'the retirement names the run\'s own checkpoint path',
+  )
+  // The ledger payload is LAST in the prompt so it stays parseable to the end — a reader
+  // that slices from the marker must not find prose after the JSON.
+  const payload = String(journal.prompt).slice(String(journal.prompt).indexOf('JSON payload:\n') + 'JSON payload:\n'.length)
+  JSON.parse(payload)
 })
 
 test('a FAILED run keeps its checkpoint so the next dispatch resumes', async () => {
   const { result, calls, saves } = await runP2S({ workflowOpts: { failSpec: true } })
   assert.equal(result.ok, false)
   assert.ok(saves.length >= 4, 'the phases that completed were still checkpointed')
-  assert.equal(agentCalls(calls, 'checkpoint:delete').length, 0, 'a kept checkpoint is the whole point of pausing')
+  assert.equal(retiredInJournal(calls), false, 'a kept checkpoint is the whole point of pausing')
 })
 
 test('the create-repos exit keeps the checkpoint — its purpose is a re-run after a human acts', async () => {
@@ -137,7 +163,7 @@ test('the create-repos exit keeps the checkpoint — its purpose is a re-run aft
   })
   assert.equal(result.ok, true)
   assert.equal(result.action, 'create-repos')
-  assert.equal(agentCalls(calls, 'checkpoint:delete').length, 0)
+  assert.equal(retiredInJournal(calls), false)
 })
 
 test('a resumed run SKIPS completed phases, REUSES their results, and journals the resume', async () => {

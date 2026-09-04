@@ -22,9 +22,9 @@ export function writerPayload(call) {
   }
 }
 
-/** True for the write/link dispatches this composite makes. */
+/** True for the write/link/survey/heal dispatches this composite makes. */
 export function isWriterCall(call) {
-  return call.kind === 'agent' && /^beads:(write-|link)/.test(String(call.label || ''))
+  return call.kind === 'agent' && /^beads:(write-|link|survey|heal)/.test(String(call.label || ''))
 }
 
 /**
@@ -34,14 +34,21 @@ export function isWriterCall(call) {
  * @param {string[]} [opts.failKeys]  local keys whose create must come back failed
  * @param {boolean}  [opts.failLinks] refuse every dependency edge
  * @param {(key: string) => string} [opts.idFor] id minting, default `bd-<key>`
+ * @param {(parentId: string) => object[]} [opts.nodesFor] survey answer, default no children
+ * @param {string[]} [opts.failMutations] mutation keys whose apply must come back failed
  * @returns {(call: object) => object|null} the reply, or null when it is not a writer call
  */
-export function beadWriter({ failKeys = [], failLinks = false, idFor = (k) => `bd-${k}` } = {}) {
+export function beadWriter({ failKeys = [], failLinks = false, idFor = (k) => `bd-${k}`, nodesFor = () => [], failMutations = [] } = {}) {
   const fail = new Set(failKeys)
+  const failMut = new Set(failMutations)
   return (call) => {
     if (!isWriterCall(call)) return null
     const payload = writerPayload(call) || { beads: [], links: [] }
     return {
+      surveys: (payload.surveys || []).map((s) => ({ key: s.key, ok: true, nodes: nodesFor(s.parentId) })),
+      mutations: (payload.mutations || []).map((m) =>
+        failMut.has(m.key) ? { key: m.key, ok: false, error: 'scripted failure' } : { key: m.key, ok: true },
+      ),
       results: (payload.beads || []).map((b) =>
         fail.has(b.key)
           ? { key: b.key, id: null, ok: false, error: 'scripted failure' }

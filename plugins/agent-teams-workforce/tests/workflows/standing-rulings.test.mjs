@@ -186,6 +186,17 @@ async function runComposite({ found, content = RULINGS }) {
     args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha' },
     workflowImpl: compositeWorkflows(),
     agentImpl: (call) => {
+      // prd-to-spec reads the checkpoint and the rulings in ONE dispatch — two small
+      // files in the same tree, and a fresh agent session costs its session start, not
+      // its work. bug-fix still reads the rulings on its own label.
+      if (call.label === 'resolve:run-inputs') {
+        return {
+          files: [
+            { key: 'checkpoint', found: false, content: '' },
+            { key: 'rulings', found, content: found ? content : '' },
+          ],
+        }
+      }
       if (call.label === 'resolve:standing-rulings') return { found, content: found ? content : '' }
       if (call.label === 'triage:architecture-needed') return { needed: true, reason: 'open', decisions: [], dimensions: ['integration'] }
       return writer(call)
@@ -196,7 +207,8 @@ async function runComposite({ found, content = RULINGS }) {
 test('file present: resolved once, threaded to every judgment mini, and injected into the composite\'s own judgment dispatch', async () => {
   const { result, calls } = await runComposite({ found: true })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
-  assert.equal(agentCalls(calls, 'resolve:standing-rulings').length, 1, 'the file is read once per run, not once per agent')
+  assert.equal(agentCalls(calls, 'resolve:run-inputs').length, 1, 'the file is read once per run, not once per agent')
+  assert.equal(agentCalls(calls, 'resolve:standing-rulings').length, 0, 'and not in a session of its own — it rides with the checkpoint read')
   for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'task-decomposition']) {
     const [wf] = workflowCalls(calls, `agent-teams-workforce:${mini}`)
     assert.ok(wf, `${mini} must have been dispatched`)

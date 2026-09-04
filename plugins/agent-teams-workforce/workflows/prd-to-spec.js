@@ -239,11 +239,18 @@ const carriedFlags = []
 // decide whether re-running is cheaper than reading. What changed is only that the caller
 // opens the artifacts deliberately instead of receiving them whether it wanted them or not.
 let runDetail = null
-async function persistRun(outcome) {
-  if (!runLedger.length && !runDetail) return null
+// `retirePath` folds the checkpoint retirement into this same dispatch. Both are writes
+// by the same agent to the same tree at the same moment in the run, and every fresh agent
+// session costs a full session-start context — so two sessions to write two files at the
+// end of a run is one session more than the work needs. Both stay non-fatal.
+async function persistRun(outcome, retirePath) {
+  if (!runLedger.length && !runDetail && !retirePath) return null
   try {
     const written = await agent(
-      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
+      (retirePath
+        ? `TWO WRITES, in this order.\n\nFIRST: RETIRE the workflow checkpoint at this exact path by using the Write tool to REPLACE the whole file with exactly the two characters {} and nothing else. The run it belonged to has COMPLETED, so resuming from it would replay finished work, and a checkpoint recording no phases is not honoured by the loader — that is what retires it. Report retired=true only if that write succeeded.\n\nCheckpoint path: ${retirePath}\n\nSECOND, and separately:\n\n`
+        : '') +
+        `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. Touch no file but those two. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
       {
         label: 'ledger:persist',
         phase: 'Run Ledger',
@@ -258,10 +265,15 @@ async function persistRun(outcome) {
             path: { type: 'string' },
             lines: { type: 'number' },
             runId: { type: 'string' },
+            retired: { type: 'boolean' },
           },
         },
       }
     )
+    if (retirePath) {
+      if (written && written.retired === true) log('Checkpoint retired — the run completed')
+      else log('checkpoint retirement was not confirmed (non-fatal — a stale checkpoint is invalidated by its plugin version and PRD hash on the next run)')
+    }
     return (written && written.path) || null
   } catch (e) {
     log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
@@ -286,13 +298,14 @@ async function persistRun(outcome) {
 // deletes its checkpoint — except the create-repos exit, whose whole point is a
 // re-run after a human acts, for which the completed phases remain valid.
 //
-// A workflow script has no filesystem, so one effort-low reader loads the file and
-// the run-ledger-writer — already this pipeline's journal-plumbing seam — writes it and
-// retires it (by overwriting it with {}, which the loader declines to honour; the writer
-// has no shell command it can rely on being approved, so it never tries to rm). Both are
-// non-fatal: a checkpoint that cannot be written costs only the ability to resume, never
-// the run.
-const CHECKPOINT_VERSION = '6.9.6' // MUST equal the plugin version — a test enforces the pairing
+// A workflow script has no filesystem, so one effort-low reader loads the file — together
+// with the standing rulings, in the same dispatch — and the run-ledger-writer, already
+// this pipeline's journal-plumbing seam, writes it and retires it (by overwriting it with
+// {}, which the loader declines to honour; the writer has no shell command it can rely on
+// being approved, so it never tries to rm). The retirement rides along with the run's
+// journal write rather than paying for a session of its own. Both are non-fatal: a
+// checkpoint that cannot be written costs only the ability to resume, never the run.
+const CHECKPOINT_VERSION = '6.10.0' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
@@ -311,29 +324,12 @@ const CP_IO_SCHEMA = {
   required: ['ok'],
   properties: { ok: { type: 'boolean' }, error: { type: 'string' } },
 }
-async function cpLoad() {
+/**
+ * Apply a checkpoint file's text, whoever read it. The read itself is not done here:
+ * it rides along with the standing-rulings read in one dispatch — see `readRunInputs`.
+ */
+function cpApply(read) {
   if (!cp.active) return
-  let read = null
-  try {
-    read = await agent(
-      `Check whether a workflow checkpoint file exists and read it. Path: ${cp.path}
-
-If the file exists, return found=true and its FULL text verbatim in \`content\` — no summarizing, no reformatting. If it does not exist, return found=false with content "". Do not read any other file.`,
-      {
-        label: 'checkpoint:load',
-        phase: currentPhase || 'PRD Reconciliation',
-        effort: 'low',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['found', 'content'],
-          properties: { found: { type: 'boolean' }, content: { type: 'string' } },
-        },
-      }
-    )
-  } catch (e) {
-    log(`checkpoint load failed (non-fatal, starting fresh): ${(e && e.message) || e}`)
-  }
   if (!read || read.found !== true || !read.content) return
   let parsed = null
   try { parsed = JSON.parse(read.content) } catch (e) { parsed = null }
@@ -378,12 +374,29 @@ function cpGet(key) {
 //
 // Chaining them means the snapshot is taken INSIDE the queued write, after the previous
 // one has landed, so the file only ever grows. A failed write does not poison the queue.
+//
+// And because the file is written WHOLE from `cp.phases`, a write that is already QUEUED
+// behind the one in flight will pick this phase up too. So a concurrent save JOINS that
+// queued write instead of adding another one. Nothing is lost — the snapshot is taken
+// when the write starts, after this phase is already in `cp.phases`, and the caller still
+// returns only once its own phase is on disk — but a four-repo fan-out stops paying four
+// fresh agent sessions to write the same file four times. Sequential saves are unchanged:
+// each awaits its own write, so there is never a queued one to join.
 let cpWriteChain = Promise.resolve()
+let cpQueued = null
 async function cpSave(key, payload) {
   if (!cp.active) return
   cp.phases[key] = payload
-  const queued = cpWriteChain.then(() => cpWriteOne(key))
-  cpWriteChain = queued.catch(() => {})
+  if (cpQueued) {
+    await cpQueued
+    return
+  }
+  const queued = cpWriteChain.then(() => {
+    cpQueued = null // it is STARTING now, so it is no longer joinable
+    return cpWriteOne(key)
+  })
+  cpQueued = queued.catch(() => {})
+  cpWriteChain = cpQueued
   await queued
 }
 async function cpWriteOne(key) {
@@ -404,19 +417,9 @@ ${file}`,
     log(`checkpoint save for '${key}' failed (non-fatal — the run continues; a resume just cannot reuse this phase): ${(e && e.message) || e}`)
   }
 }
-async function cpDelete() {
-  if (!cp.active || !cp.touched) return
-  try {
-    await agent(
-      `RETIRE the workflow checkpoint at this exact path: use the Write tool to REPLACE the whole file with exactly the two characters {} and nothing else. The run it belonged to has COMPLETED, so resuming from it would replay finished work, and a checkpoint recording no phases is not honoured by the loader — that is what retires it. Do NOT use rm, mkdir, or any shell command: rm is not allowlisted, so it would block on an approval prompt that no one is there to answer. Touch nothing else.
-
-Path: ${cp.path}`,
-      { label: 'checkpoint:delete', phase: 'Run Ledger', effort: 'low', agentType: 'agent-teams-workforce:run-ledger-writer', schema: CP_IO_SCHEMA }
-    )
-    log('Checkpoint retired — the run completed')
-  } catch (e) {
-    log(`checkpoint delete failed (non-fatal): ${(e && e.message) || e}`)
-  }
+/** The checkpoint path to retire, or null when there is nothing to retire. */
+function cpRetirePath() {
+  return cp.active && cp.touched ? cp.path : null
 }
 
 // ── The meta phase currently in progress ──────────────────────────────────────
@@ -826,7 +829,55 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 // The checkpoint identity is established from the ORIGINAL PRD, before the delta
 // rebinding below — a changed PRD text is exactly what must invalidate a resume.
 cpInit(repoPath, subjectId, cpHash(prd.body))
-await cpLoad()
+
+// ── ONE read for both of the run's input files ──────────────────────────────────
+// The checkpoint and the standing rulings are two small files in the same tree, read
+// back to back, neither of which can fail the run. They used to cost two fresh agent
+// sessions, and a fresh session's cost is its SESSION START, not the work it does — so
+// two sessions to read two files was one session more than the work needed. One reader
+// returns both; either half being absent or unreadable is the normal case and is handled
+// exactly as it was when they were separate.
+const RULINGS_PATH = repoPath ? `${repoPath}/.claude/standing-rulings.md` : null
+let runInputs = null
+if (cp.active || RULINGS_PATH) {
+  const wanted = [
+    ...(cp.active ? [{ key: 'checkpoint', path: cp.path }] : []),
+    ...(RULINGS_PATH ? [{ key: 'rulings', path: RULINGS_PATH }] : []),
+  ]
+  try {
+    runInputs = await agent(
+      `Read the files listed below, if they exist. For EACH one return an entry with the same \`key\`, \`found\`, and its FULL text verbatim in \`content\` — no summarizing, no reformatting, no commentary. A file that does not exist or is empty is found=false with content "". Read no other file, and write nothing.
+
+${wanted.map((w) => `- key "${w.key}": ${w.path}`).join('\n')}`,
+      {
+        label: 'resolve:run-inputs',
+        phase: currentPhase || 'PRD Reconciliation',
+        effort: 'low',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['files'],
+          properties: {
+            files: {
+              type: 'array',
+              items: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['key', 'found'],
+                properties: { key: { type: 'string' }, found: { type: 'boolean' }, content: { type: 'string' } },
+              },
+            },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`run-input read failed (non-fatal — starting fresh, nothing injected): ${(e && e.message) || e}`)
+  }
+}
+const runInput = (key) =>
+  ((runInputs && Array.isArray(runInputs.files) ? runInputs.files : []).find((f) => f && f.key === key)) || null
+cpApply(runInput('checkpoint'))
 
 enterPhase('PRD Reconciliation')
 
@@ -842,31 +893,8 @@ enterPhase('PRD Reconciliation')
 // tokens are wasted. Capped so a bloated file cannot blow up every brief.
 const RULINGS_CAP = 8192
 let standingRulings = null
-if (repoPath) {
-  let rulingsRead = null
-  try {
-    rulingsRead = await agent(
-      `Check whether a standing-rulings file exists and read it. Path: ${repoPath}/.claude/standing-rulings.md
-
-If the file exists and contains text, return found=true and its FULL text verbatim in \`content\` — do not summarize, reformat, or comment on it. If it does not exist or is empty, return found=false with content "". Do not invent content and do not read any other file.`,
-      {
-        label: 'resolve:standing-rulings',
-        phase: 'PRD Reconciliation',
-        effort: 'low',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['found', 'content'],
-          properties: {
-            found: { type: 'boolean' },
-            content: { type: 'string' },
-          },
-        },
-      }
-    )
-  } catch (e) {
-    log(`standing-rulings resolution failed (non-fatal, nothing injected): ${(e && e.message) || e}`)
-  }
+if (RULINGS_PATH) {
+  const rulingsRead = runInput('rulings')
   if (rulingsRead && rulingsRead.found === true && typeof rulingsRead.content === 'string' && rulingsRead.content.trim()) {
     standingRulings = rulingsRead.content.trim().slice(0, RULINGS_CAP)
     log(`Standing rulings found (${standingRulings.length} chars${rulingsRead.content.trim().length > RULINGS_CAP ? ', capped' : ''}) — injecting into every judgment-bearing brief`)
@@ -2028,6 +2056,11 @@ const emission = {
   failed: [],
   skipped: [],
   links: { attempted: 0, linked: 0, failed: [] },
+  // The backfill repair, reported SEPARATELY from the verdict below. Retiring a stand-in
+  // parent is housekeeping on beads this run did not author; it can fail without making
+  // this run's own hierarchy any less durable, and it must never be able to turn a
+  // complete emission into a partial one.
+  heal: { ran: false, reason: null, wrappers: 0, reparented: 0, closed: 0, failed: [] },
   verdict: 'none',
   reason: null,
 }
@@ -2060,6 +2093,52 @@ const WRITE_SCHEMA = {
         properties: {
           fromId: { type: 'string' },
           dependsOnId: { type: 'string' },
+          ok: { type: 'boolean' },
+          error: { type: 'string' },
+        },
+      },
+    },
+    // A survey REPORTS the tracker; it changes nothing. The reply is FLAT — every node
+    // the writer saw, each carrying the parent `bd` reported for it — so the tree is
+    // rebuilt HERE rather than shaped by the agent that read it.
+    surveys: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'ok'],
+        properties: {
+          key: { type: 'string' },
+          ok: { type: 'boolean' },
+          error: { type: 'string' },
+          nodes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id'],
+              properties: {
+                id: { type: 'string' },
+                type: { type: ['string', 'null'] },
+                status: { type: ['string', 'null'] },
+                title: { type: ['string', 'null'] },
+                description: { type: ['string', 'null'] },
+                labels: { type: ['array', 'null'], items: { type: 'string' } },
+                parent: { type: ['string', 'null'] },
+              },
+            },
+          },
+        },
+      },
+    },
+    mutations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['key', 'ok'],
+        properties: {
+          key: { type: 'string' },
           ok: { type: 'boolean' },
           error: { type: 'string' },
         },
@@ -2130,6 +2209,10 @@ const asText = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
 // 1) THE EPIC. Adopted when it is already a bead, written when it is only a spec, and
 //    nothing below it is attempted if neither holds.
 let epicId = null
+// Was this Epic already a bead before the run started? A freshly minted Epic cannot have
+// children, so the backfill heal below is skipped outright for one — that is what keeps
+// the repair free on the runs where there is nothing to repair.
+let epicAdopted = false
 if (emitPathFault) {
   emission.reason = `nothing was written — ${emitPathFault}`
   skipAll('epic', [epic.key], emission.reason)
@@ -2139,6 +2222,7 @@ if (emitPathFault) {
   const epicExistingId = epic.id || epic.beadId || null
   if (epicExistingId) {
     epicId = String(epicExistingId)
+    epicAdopted = true
     emission.adopted += 1
   } else {
     const got = await writeWave('epic', [
@@ -2299,6 +2383,174 @@ if (pendingLinks.length) {
   }
 }
 
+// ── Retire the backfilled roll-up parents this Epic was carrying ──────────────
+// A Task that reached the build lane with no Story got one MINTED for it on the side —
+// a stand-in roll-up parent, labelled `backfill-parent` and described as such, created
+// so the board could nest the Task under its Epic. It was always temporary: the moment
+// this composite authors the Spec-backed Story that Task's work really belongs under,
+// the stand-in is a second Story under the same Epic saying nothing, and its Tasks are
+// filed under a parent with no Spec behind it.
+//
+// So the run that makes the real Story retires the stand-in: its children are RE-PARENTED
+// under a real Story of this run, and it is then CLOSED. Both are decided HERE — which
+// wrapper, which child, which destination, which reason — and handed to the writer as a
+// list of named mutations. The writer picks nothing.
+//
+// It runs at most once per run and only when there is somewhere for the work to go:
+//
+//   * a MINTED Epic is skipped outright — it did not exist a moment ago, so it cannot be
+//     carrying anything, and the survey would cost a session to learn that;
+//   * an Epic whose Stories all failed to land is skipped — re-parenting a Task onto a
+//     Story that was not written is the orphan this phase exists to prevent;
+//   * a failure anywhere in here is RECORDED and nothing else. The repair is not this
+//     composite's product and it never fails the run that carried it.
+const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
+const healableStories = stories
+  .filter((x) => storyIds.has(x.key))
+  .map((x) => ({ key: x.key, id: storyIds.get(x.key), repoPath: asText(x.repoPath), order: x.buildOrderIndex == null ? Infinity : x.buildOrderIndex }))
+  .sort((x, y) => x.order - y.order)
+if (emitPathFault) emission.heal.reason = 'nothing was surveyed — the beads path was refused'
+else if (!epicId) emission.heal.reason = 'no Epic id — there was nothing to survey under'
+else if (!epicAdopted) emission.heal.reason = 'the Epic was minted by this run, so it cannot be carrying a backfilled Story'
+else if (!healableStories.length) emission.heal.reason = 'no Story of this run is durable, so there is nowhere to re-parent a stand-in\u2019s Tasks'
+else {
+  emission.heal.ran = true
+  let survey = null
+  try {
+    survey = await agent(
+      `${writerPreamble}${JSON.stringify({
+        repoPath: emitTarget,
+        level: 'survey',
+        beads: [],
+        links: [],
+        surveys: [{ key: 'epic-children', parentId: epicId, depth: 2 }],
+        mutations: [],
+      })}`,
+      { label: 'beads:survey', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+    )
+  } catch (e) {
+    emission.heal.reason = `the survey dispatch failed: ${(e && e.message) || e}`
+  }
+  const surveyed = ((survey && Array.isArray(survey.surveys) ? survey.surveys : []).find((x) => x && x.key === 'epic-children')) || null
+  const nodes = surveyed && surveyed.ok === true && Array.isArray(surveyed.nodes) ? surveyed.nodes : []
+  if (!emission.heal.reason && (!surveyed || surveyed.ok !== true)) {
+    emission.heal.reason = `the Epic's children could not be listed: ${(surveyed && surveyed.error) || 'the writer reported no survey'}`
+  }
+  // Every id that goes back out lands in command text another agent runs verbatim, so an
+  // id that is not shaped like one is REFUSED rather than cleaned — the same argument the
+  // repository path above is held to. Every field beside the id is DATA written by whoever
+  // filed the bead; it is read here and never interpolated anywhere.
+  const seen = new Map()
+  for (const n of nodes) {
+    const id = n && typeof n.id === 'string' ? n.id.trim() : ''
+    if (!SAFE_BEAD_ID.test(id) || seen.has(id)) continue
+    seen.set(id, {
+      id,
+      type: String((n && n.type) || '').toLowerCase(),
+      status: String((n && n.status) || '').toLowerCase(),
+      text: `${(n && n.title) || ''} ${(n && n.description) || ''}`,
+      labels: (Array.isArray(n && n.labels) ? n.labels : []).map((l) => String(l || '').toLowerCase()),
+      parent: n && typeof n.parent === 'string' ? n.parent.trim() : null,
+    })
+  }
+  // What marks a stand-in: the label the healer applies, or the sentence it writes into
+  // the description. Either alone is enough — the label can be dropped by hand and the
+  // description is what a person actually reads.
+  const isStandIn = (n) =>
+    n.labels.includes('backfill-parent') || n.text.toLowerCase().includes('backfilled by the sdlc automation')
+  const ours = new Set(storyIds.values())
+  const wrappers = Array.from(seen.values()).filter(
+    (n) => n.parent === epicId && n.type === 'story' && n.status !== 'closed' && !ours.has(n.id) && isStandIn(n)
+  )
+  emission.heal.wrappers = wrappers.length
+  // Where a stand-in's Task goes — decided PER TASK, not per wrapper. One stand-in can be
+  // holding work for more than one repository (it was minted from a Task's parentage, not
+  // from a repo span), so moving all of its children to one Story would file some of them
+  // against the wrong Spec.
+  //
+  // One real Story is the whole answer. Several means the work spans repositories, and the
+  // TASK's own text is the only evidence available for which one it belongs to. When it
+  // names none, the earliest Story in the build order takes it — under the right EPIC and
+  // under a Story with a Spec behind it, which is the point, and the basis is recorded so
+  // a wrong placement is visible rather than silent.
+  const destinationFor = (node) => {
+    if (healableStories.length === 1) return { story: healableStories[0], basis: 'the sole Story of this run' }
+    const t = node.text.toLowerCase()
+    const matched = healableStories.find((x) => {
+      const repo = x.repoPath.toLowerCase()
+      const base = repo.split('/').filter(Boolean).pop() || ''
+      return (repo && t.includes(repo)) || (base.length > 2 && t.includes(base))
+    })
+    if (matched) return { story: matched, basis: `its text names ${matched.repoPath}` }
+    return { story: healableStories[0], basis: 'first in the build order — its text named no repository' }
+  }
+  const mutations = []
+  const plan = []
+  for (const w of wrappers) {
+    const children = Array.from(seen.values()).filter((n) => n.parent === w.id)
+    // A stand-in holds Tasks and Bugs. Anything else under it was not put there by the
+    // healer, so the wrapper is left alone entirely rather than half-moved and closed.
+    const foreign = children.filter((c) => c.type !== 'task' && c.type !== 'bug')
+    if (foreign.length) {
+      emission.heal.failed.push({
+        wrapper: w.id,
+        reason: `left open: it holds ${foreign.length} child(ren) that are not Tasks or Bugs (${foreign.map((c) => `${c.id} [${c.type || 'untyped'}]`).join(', ')})`,
+      })
+      continue
+    }
+    const moves = children.map((c) => ({ child: c, dest: destinationFor(c) }))
+    for (const m of moves) {
+      mutations.push({ key: `reparent:${m.child.id}`, op: 'reparent', id: m.child.id, newParentId: m.dest.story.id })
+    }
+    const destinations = Array.from(new Set(moves.map((m) => m.dest.story.id)))
+    mutations.push({
+      key: `close:${w.id}`,
+      op: 'close',
+      id: w.id,
+      reason:
+        `Retired by prd-to-spec: this was a backfilled roll-up parent standing in for a Story that did not exist yet. ` +
+        (moves.length
+          ? `${moves.length} Task(s) were re-parented onto ${destinations.length === 1 ? `Story ${destinations[0]}` : `Stories ${destinations.join(', ')}`}, ` +
+            `which cover this work with a Spec behind them (${moves.map((m) => `${m.child.id} -> ${m.dest.story.id}: ${m.dest.basis}`).join('; ')}).`
+          : 'It was holding nothing, and the Spec-backed Stories of this Epic now exist.'),
+    })
+    plan.push({ wrapper: w.id, destinations, children: moves.map((m) => ({ id: m.child.id, to: m.dest.story.id, basis: m.dest.basis })) })
+  }
+  if (mutations.length) {
+    let applied = null
+    try {
+      applied = await agent(
+        `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'heal', beads: [], links: [], surveys: [], mutations })}`,
+        { label: 'beads:heal', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+      )
+    } catch (e) {
+      emission.heal.failed.push({ wrapper: '(all)', reason: `the heal dispatch failed: ${(e && e.message) || e}` })
+    }
+    const ok = new Set()
+    for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
+      if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+    }
+    for (const m of mutations) {
+      if (ok.has(m.key)) {
+        if (m.op === 'reparent') emission.heal.reparented += 1
+        else emission.heal.closed += 1
+      } else {
+        emission.heal.failed.push({ wrapper: m.id, reason: `the ${m.op} was not confirmed by the writer` })
+      }
+    }
+    log(
+      `Backfill heal: ${emission.heal.closed}/${wrappers.length} stand-in Story/Stories retired, ` +
+        `${emission.heal.reparented} Task(s) re-parented onto a Spec-backed Story` +
+        `${emission.heal.failed.length ? `, ${emission.heal.failed.length} not applied` : ''}. ` +
+        plan.map((x) => `${x.wrapper} -> ${x.destinations.join(' + ') || '(nothing to move)'}`).join('; ')
+    )
+  } else if (!emission.heal.reason) {
+    emission.heal.reason = wrappers.length
+      ? 'every stand-in found was left open — see emission.heal.failed'
+      : 'the Epic carried no backfilled roll-up Story'
+  }
+}
+
 // ── The verdict on durability ─────────────────────────────────────────────────
 // Three outcomes, and they are not degrees of the same thing:
 //
@@ -2360,6 +2612,13 @@ const emissionLine =
         .join('; ') || '(none named)'}` +
       `${unwritten > 5 ? ` +${unwritten - 5} more` : ''}. ` +
       'The full hierarchy is returned so the remainder can be written without re-running the pipeline. '
+// The repair is reported BESIDE the emission, never folded into it — see pass 6 of the
+// syntax checker. It only says anything when it actually did something.
+const healLine = emission.heal.closed || emission.heal.reparented || emission.heal.failed.length
+  ? `BACKFILL REPAIR: ${emission.heal.closed} stand-in roll-up Story/Stories retired and ` +
+    `${emission.heal.reparented} Task(s) re-parented onto a Spec-backed Story` +
+    `${emission.heal.failed.length ? `; ${emission.heal.failed.length} repair(s) NOT applied — ${emission.heal.failed.map((f) => `${f.wrapper} (${f.reason})`).join('; ')}` : ''}. `
+  : ''
 
 // A run that emitted a usable hierarchy is ok:true even if some repo or Story fell
 // out along the way — `degraded` says so without pretending the run failed, because
@@ -2452,6 +2711,7 @@ return {
         ? `THE RULED SPAN MAY BE TOO NARROW: spec authoring found ${outOfSpanFindings.length} piece(s) of implied work OUTSIDE it (${outOfSpanFindings.map((f) => f.finding).join(' | ')}). No Story covers them. Widen the span and re-run, or confirm the work belongs to another PRD. `
         : '') +
       emissionLine +
+      healLine +
       (specFailures.length || decompositionFailures.length
         ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — details in the run journal.`
         : '') +
@@ -2485,11 +2745,13 @@ return {
   // and the caller's `detailPath` is the path this returns. A journal that could not be
   // written yields detailPath:null — an honest "the detail is gone", never a path to a file
   // nobody wrote.
-  const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
-  if (result) result.detailPath = detailPath || null
-  // A COMPLETED run deletes its checkpoint — resuming finished work replays it. The
+  // A COMPLETED run retires its checkpoint — resuming finished work replays it. The
   // create-repos exit is the one ok:true that KEEPS it: its whole point is a re-run
   // after a human creates the repositories, and the completed phases remain valid.
-  if (result && result.ok === true && result.action !== 'create-repos') await cpDelete()
+  // The retirement rides along with the journal write rather than paying for a session
+  // of its own; see persistRun.
+  const retire = result && result.ok === true && result.action !== 'create-repos' ? cpRetirePath() : null
+  const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`, retire)
+  if (result) result.detailPath = detailPath || null
 }
 return result
