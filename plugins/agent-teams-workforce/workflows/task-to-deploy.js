@@ -849,7 +849,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // run-ledger-writer — already this pipeline's journal-plumbing seam — writes it. Both
 // are non-fatal: a checkpoint that cannot be written costs only the ability to resume,
 // never the run.
-const CHECKPOINT_VERSION = '6.9.5' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.6' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {

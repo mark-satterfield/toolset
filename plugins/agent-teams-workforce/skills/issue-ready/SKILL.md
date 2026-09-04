@@ -122,6 +122,14 @@ comments. See Recipes for the exact hashing command.
    - **Fresh:** reuse stored values. If `review_status=COMPLETE` and `wsjf` present →
      `Pipeline result: READY`. If `review_status=INCOMPLETE` → `Pipeline result:
      INCOMPLETE`. Rerun nothing. `Comments posted: 0`.
+   - **Fresh but `review_status=COMPLETE` with NO `wsjf`:** do not reuse — **go to step
+     6** and score. The review is current, so rerunning it would buy nothing; the score
+     is the only thing missing. This state is reachable and it is not rare: step 5 writes
+     `review_status` and the hash, step 6 writes `wsjf`, and a session that dies between
+     them — a spend or session limit, most often — leaves exactly this. Reusing it would
+     report a verdict with no score, the caller would find the attributes still
+     incomplete and dispatch this skill again, and it would reuse again: a permanent loop
+     costing a full session every sweep and never able to end.
    - **Stale/missing:** go to step 5.
 5. **Run review** (the `issue-review` skill) against the issue. Post the review comment
    (Audit Trail). Write `review_status` and `reviewed_at` and `ready_content_hash=H`.
