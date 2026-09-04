@@ -1086,12 +1086,18 @@ if (validation === undefined) {
 validation = await gateLoop({
   gate: 'G1', phaseName: 'PRD Validation',
   // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag
-  // routed to the advantage-evaluator. Every criterion at this gate is a COMPLETENESS or
-  // CLARITY judgment about a document, and none of them invalidates the work — a thin PRD
-  // produces a thin spec, which the downstream gates then see. Nothing here is a security
-  // finding, a test result, or a platform ban, so nothing here is a hard stop.
+  // routed to the advantage-evaluator. Nearly every criterion at this gate is a COMPLETENESS
+  // or CLARITY judgment about a document, and none of those invalidates the work — a thin PRD
+  // produces a thin spec, which the downstream gates then see. Exactly one criterion is not
+  // of that kind, and it is marked below.
   criteria: [
-    { class: 'competitive', text: 'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)' },
+    // The ONE hard stop at G1. A self-contradictory PRD cannot be specified: there is no
+    // "proceed under a flag" that yields a coherent spec, because architecture, TRD and spec
+    // would each run on an incoherent input and fail several phases later, expensively. That
+    // is the case the constitutive class exists for — not the borderline call the competitive
+    // default is for. It also keeps the gate able to LOOP, which is what makes
+    // repairPrdForGate above reachable at all: the repair only runs on attempt 2.
+    { class: 'constitutive', text: 'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)' },
     { class: 'competitive', text: 'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.' },
     { class: 'competitive', text: 'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.' },
   ],
