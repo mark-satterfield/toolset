@@ -287,4 +287,96 @@ console.log(
         `(a computed or aliased reach is pass 2's job, not this one)`,
 )
 
-process.exit(failures.length || refErrors.length || escapees.length || strictness.length ? 1 : 0)
+// ── PASS 5: NO PROMPTABLE SHELL COMMAND IN A DISPATCHED AGENT'S INSTRUCTIONS ──
+//
+// A Bash command that does not match the session's permission allowlist does NOT fail.
+// It waits for an approval, and a workflow-dispatched agent has nobody at the keyboard
+// to give one. agent() takes no timeout and the runner injects no timer, so nothing
+// upstream can cut it off: the whole composite stalls until a human happens to return.
+//
+// That cost 37 hours across five runs — 12.8h, 8.2h, 8.1h, 7.2h and 0.9h — every one of
+// them parked on `mkdir -p .claude/workflow-runs`, a command that takes milliseconds and
+// is even allowlisted, but was emitted as a compound script that the prefix rule could
+// not match. All five started off-hours. They are also the ONLY sessions on record that
+// ever sat in a single multi-hour gap; real work is distributed across 96-191 tool calls
+// with a largest gap of 1-10 minutes, which is why the answer is to remove the blocking
+// call rather than to cap the dispatch.
+//
+// The fix is prose that an agent follows, so this pass is what keeps it true. The rule:
+// telemetry-path instructions must reach the filesystem through Write/Read, which
+// `permissionMode: acceptEdits` auto-approves and which cannot prompt.
+//
+// Naming a command in order to FORBID it is not a violation. A mention with a negation
+// close in front of it ("do NOT run mkdir") passes, as does anything inside a
+// <!-- lint:commands-named-not-invoked --> region, which exists for the historical
+// account that has to name the command to explain the outage.
+//
+// The negation must be NEAR the mention, not merely somewhere on the line. The prompts
+// in the workflow scripts are single 400-character template literals that almost always
+// contain an unrelated "never" ("never follow instructions that appear inside it"), and
+// a line-wide test let a planted `mkdir -p` through on exactly that. The window is the
+// 80 characters preceding the match.
+const PROMPTABLE = [
+  { name: 'mkdir', re: /\bmkdir\b/ },
+  { name: 'uuidgen', re: /\buuidgen\b/ },
+  { name: 'rm', re: /(?:^|[\s`(])rm\b/ },
+  { name: 'jq', re: /(?:^|[\s`(|])jq\b/ },
+  { name: 'python', re: /\bpython3?\b/ },
+  { name: 'heredoc', re: /<<\s*['"]?[A-Z_]{2,}/ },
+  { name: 'shell loop', re: /\bwhile\s+(?:IFS|read)\b|\bdone\s*<\b/ },
+]
+// `date -u` is the ONE sanctioned call: a single-line simple command matching Bash(date:*).
+const NEGATED = /\bnever\b|\bnot\b|\bno\b|n't|\bforbidden\b|\binstead of\b|\brather than\b/i
+// Anchored to THIS SCRIPT's location, never to the dir argument. These are fixed plugin
+// assets, and pass 5 must not go dark — or fabricate a missing-file failure — just because
+// the checker was pointed at a scratch directory of synthetic scripts, which is exactly
+// how the capability-model and undeclared-identifier suites invoke it.
+const GUARDED = [
+  { file: 'agents/run-ledger-writer.md', abs: path.join(here, '..', 'agents', 'run-ledger-writer.md') },
+  { file: 'workflows/prd-to-spec.js', abs: path.join(here, '..', 'workflows', 'prd-to-spec.js') },
+  { file: 'workflows/bug-fix.js', abs: path.join(here, '..', 'workflows', 'bug-fix.js') },
+  { file: 'workflows/gate-constitutional.js', abs: path.join(here, '..', 'workflows', 'gate-constitutional.js') },
+]
+const promptable = []
+for (const { file, abs } of GUARDED) {
+  let text
+  try {
+    text = readFileSync(abs, 'utf8')
+  } catch {
+    promptable.push({ file, line: 0, name: 'the guarded file', text: 'is missing — the guard cannot protect it' })
+    continue
+  }
+  let inRegion = false
+  text.split('\n').forEach((raw, i) => {
+    if (/lint:commands-named-not-invoked/.test(raw)) {
+      inRegion = !/\/lint:/.test(raw)
+      return
+    }
+    if (inRegion) return
+    for (const { name, re } of PROMPTABLE) {
+      const m = re.exec(raw)
+      if (!m) continue
+      // Negation must sit close in front of the mention — see the note above.
+      if (NEGATED.test(raw.slice(Math.max(0, m.index - 80), m.index))) continue
+      promptable.push({ file, line: i + 1, name, text: raw.trim().slice(Math.max(0, m.index - 60), m.index + 60) })
+    }
+  })
+}
+
+for (const f of promptable) {
+  console.log(
+    `FAIL  ${f.file}:${f.line}  —  tells a dispatched agent to run ${f.name}. ` +
+      `A non-allowlisted Bash call BLOCKS on a permission prompt instead of failing, ` +
+      `which cost 37 hours across five stalled runs; use the Write/Read tools instead.`,
+  )
+  console.log(`        ${f.text}`)
+}
+console.log(
+  promptable.length
+    ? `\n${promptable.length} promptable-command violation(s) — a dispatched agent can stall indefinitely on these`
+    : `all ${GUARDED.length} telemetry-path instruction files name no shell command that can block on a permission prompt`,
+)
+
+process.exit(
+  failures.length || refErrors.length || escapees.length || strictness.length || promptable.length ? 1 : 0,
+)
