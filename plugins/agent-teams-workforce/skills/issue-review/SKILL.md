@@ -10,10 +10,24 @@ free-form description — for completeness. This is not a pass/fail gate. It is 
 completeness assessment that also determines whether the item has enough information to
 be sized and scored, even if it is not yet fully complete.
 
-Completeness is judged **relative to the work**. A one-line constant correction and a
-cross-repo schema migration are not held to the same evidence, because the same evidence
-does not make them safe. The rubric therefore classifies the item first and only then
-decides which dimensions are allowed to refuse it.
+## What this rubric may demand, and why it is short
+
+Contracts are consumer-defined: a consumer declares the schema it needs, and the producer
+produces to it. This review is a producer. It may therefore demand **only** what something
+downstream actually reads off the work item, and every dimension below names its consumer.
+
+That test removed four dimensions this rubric used to carry. It demanded two dependency
+graphs, a three-environment deployment sequence (Local / AWS staging / Production), a test
+plan, and INVEST / IEEE 830 conformance — and nothing anywhere in the pipeline read any of
+them off a work item. `workflows/deploy.js` derives its own rollout and deploys to exactly
+one environment; `workflows/tdd-red.js` writes the tests from the acceptance criteria. Those
+sections were this skill's own invention, they refused well-specified work for lacking a
+document nobody read, and they held 106 beads blocked for two months. They are gone — not
+demoted to advisory, because advisory ceremony still costs the reader's attention and still
+comes back as a finding.
+
+If a future consumer starts reading something new off a work item, add the dimension then,
+and name that consumer beside it.
 
 Never ask clarifying questions. Assess with what you have. Flag gaps explicitly.
 
@@ -33,16 +47,12 @@ Extract and identify:
 - Description / body
 - Type (feature, bug, enabler, spike, chore)
 - Acceptance criteria (if present)
-- Dependencies (explicit or implied)
-- Testing notes (if present)
-- UI impact (yes / no / unclear)
-- Related tickets (if referenced)
 
 ## Step 2 — Classify the Scope
 
-Before assessing any dimension, classify the item into **exactly one** class. Derive the
-class from the item itself — its stated change, its surfaces, its fix if one is already
-written down — not from its priority, its age, or who filed it.
+Classify the item into **exactly one** class. Derive the class from the item itself — its
+stated change, its surfaces, its fix if one is already written down — not from its
+priority, its age, or who filed it.
 
 - **trivial** — a single-file or single-value correction with a stated or obvious fix, no
   interface change, no new behavior. A version string that disagrees with reality, a
@@ -54,46 +64,29 @@ written down — not from its priority, its age, or who filed it.
 When the class is genuinely ambiguous, choose the **more demanding** one and say why in
 the findings. Ambiguity resolves upward, never downward.
 
-The class is a statement about blast radius, not importance. A trivial item can be
-urgent; a cross-cutting one can be small in lines.
+The class is a statement about blast radius, not importance. A trivial item can be urgent;
+a cross-cutting one can be small in lines.
+
+**The class does not change which dimensions can refuse the item** — both surviving
+dimensions are blocking at every class. It calibrates how much Acceptance Criteria demands
+(see that dimension), and it tells whoever picks the item up what they are walking into.
+
+Consumed by: this skill's own Acceptance Criteria calibration, and the human reading the
+review comment `issue-ready` posts to the tracker.
 
 ## Step 3 — Completeness Assessment
 
 Evaluate each dimension. Mark each as: ✅ Present | ⚠ Partial | ❌ Missing
 
-### Which dimensions can refuse the item
-
-A dimension is either **blocking** — a ❌ there makes the item INCOMPLETE — or
-**advisory** — assessed and reported in full, but never able to change the verdict.
-
-| Dimension | trivial | contained | cross-cutting |
-|---|---|---|---|
-| Description Quality | blocking | blocking | blocking |
-| Acceptance Criteria | blocking | blocking | blocking |
-| Dependency Graph 1 — Service / Component Impact | advisory | advisory | blocking |
-| Dependency Graph 2 — Deployment Sequence | advisory | advisory | blocking |
-| Testing Coverage | advisory | advisory | blocking |
-| Standards Compliance | advisory | advisory | advisory |
-
-**Why this split, and not a single universal checklist.** Two of these dimensions ask the
-work item to pre-compute analysis that a later phase of the pipeline exists to produce.
-The TDD Red phase writes the tests from the acceptance criteria; the deploy mini derives
-its own rollout plan from the declared surfaces and the changed paths. Demanding a test
-plan and a three-environment deployment sequence on the item itself duplicates phases that
-already own that job, and the duplicate is written earlier, with less information, by
-whoever filed the ticket. That is the worse of the two artifacts, and requiring it
-refuses well-specified work for lacking a document nobody downstream reads.
-
-The exception is where the sequencing genuinely has to be settled **before** anyone
-starts: when a change spans repos or deployed surfaces, or moves an interface, schema, or
-auth path, the order of operations is a design decision, not an implementation detail. A
-downstream phase cannot infer it after the fact from one repo's diff. That is why all
-three become blocking at the cross-cutting class and only there.
-
-Standards Compliance is advisory at every class. It is a quality signal about how the
-item is written, not evidence about whether the work is understood.
+Both dimensions are **blocking** at every class: a ❌ makes the item INCOMPLETE.
 
 ### Description Quality
+
+Consumed by: `workflows/route-build.js` and `workflows/route-elaboration.js` — each renders
+`bead.description` into the routing prompt that decides which composite the item is
+dispatched to; `workflows/bug-triage.js` renders it into the reproduction and root-cause
+prompts that produce the bug's implementation contract. A description that does not state
+the problem sends those routers into a guess.
 
 Is the problem or intent stated clearly enough that an engineer could begin design without
 asking questions?
@@ -103,6 +96,12 @@ asking questions?
 - ❌ Vague, ambiguous, or too brief to act on
 
 ### Acceptance Criteria
+
+Consumed by: `workflows/tdd-red.js` — it reads `contract.acceptanceCriteria` and derives
+the failing tests from it, then an independent coverage reviewer checks the authored tests
+back against those same criteria. `workflows/task-to-deploy.js` carries them onto the
+contract; `workflows/bug-triage.js` authors the equivalent contract for a bug. An item with
+no verifiable pass condition gives the Red phase nothing to encode.
 
 Judge **verifiability, not notation.** Criteria are ✅ when they state an unambiguous pass
 condition that a test could assert. Prose that names a concrete observable outcome passes.
@@ -136,109 +135,10 @@ actual major; a 2.x elements file does not trip `ELEMENTS_VERSION_MISMATCH`" —
 ✅. It names two concrete observable outcomes, either of which a test can assert directly,
 and no Given/When/Then wrapper would make it more checkable.
 
-### Dependency Graph 1 — Service / Component Impact
-
-Identifies:
-
-- Every service, component, or module that is modified or affected
-- The issue numbers of the work items covering each impacted area
-- Direction of dependency (this issue depends on X / X depends on this issue)
-
-Format when present:
-
-```text
-[this issue] → modifies → [component/service]
-[this issue] → depends on → [bd-xxxx: issue title]
-[bd-yyyy: issue title] → blocked by → [this issue]
-```
-
-Mark ⚠ if some dependencies are identified but cross-service or downstream impacts are unclear.
-Mark ❌ if no dependency analysis is present.
-
-For a trivial or contained item this is advisory: a ❌ is reported, never a refusal. An
-item confined to one file inside one repo has already answered this dimension by saying
-so. It becomes blocking only at the cross-cutting class, where the impact set is the
-thing a reviewer cannot reconstruct on their own.
-
-### Dependency Graph 2 — Deployment Sequence
-
-Specifies the ordered deployment steps for:
-
-- Local testing (dev environment)
-- AWS testing (staging / integration)
-- Production release
-
-Format when present:
-
-```text
-Local:
-  1. [step]
-  2. [step]
-
-AWS (staging):
-  1. [step]
-  2. [step]
-
-Production:
-  1. [step]
-  2. [step]
-```
-
-Mark ⚠ if some environments are covered but not all three.
-Mark ❌ if absent entirely.
-
-For a trivial or contained item this is advisory. A change with no deployed surface has no
-deployment sequence to state, and the deploy phase derives the rollout for everything
-else. It becomes blocking only at the cross-cutting class, where the ordering across
-repos or surfaces is a decision that must exist before work starts.
-
-### Testing Coverage
-
-Covers all of the following that apply:
-
-Unit tests — specific functions, classes, or modules under test
-Integration tests — service boundaries, API contracts, DB interactions
-End-to-end tests — full user flow from entry point to outcome
-UI / Browser tests — required if this issue has any UI impact (functional + regression)
-Performance tests — required if latency, throughput, or load is affected
-Security tests — required if auth, permissions, or data handling is affected
-
-If testing of this issue is consolidated under a related ticket, that ticket number must be
-explicitly stated: "Testing covered under bd-xxxx".
-
-Mark ⚠ if some test types are present but UI testing is missing despite UI impact, or
-consolidated coverage is implied but not cited.
-Mark ❌ if no testing plan is present.
-
-For a trivial or contained item this is advisory, because the Red phase writes the tests
-from the acceptance criteria — a test plan on the ticket is a second, earlier, weaker
-version of an artifact the pipeline produces from better information. It becomes blocking
-only at the cross-cutting class, where the test surface spans boundaries the Red phase
-cannot see from one repo.
-
-### Standards Compliance
-
-Advisory at every class.
-
-INVEST criteria (for user stories):
-
-- Independent — can be developed without depending on another incomplete story
-- Negotiable — not a rigid contract, leaves room for conversation
-- Valuable — delivers value to user or business
-- Estimable — enough detail to size it
-- Small — fits within a sprint
-- Testable — acceptance criteria exist and are verifiable
-
-IEEE 830 alignment (for specs/requirements):
-
-- Correct, Unambiguous, Complete, Consistent, Ranked, Verifiable, Modifiable, Traceable
-
-Flag specific violations. Do not just state "non-compliant."
-
 ### What still fails
 
-Scaling the rubric to the work is not a rubber stamp. Two things are exactly what this
-gate exists to catch, and neither is excused by a small scope:
+A short rubric is not a rubber stamp. Two things are exactly what this gate exists to
+catch, and neither is excused by a small scope:
 
 1. **No clear intent.** A vague item whose problem, outcome, or scope cannot be
    established from what is written. Description Quality is ❌ and the item is refused, at
@@ -246,8 +146,8 @@ gate exists to catch, and neither is excused by a small scope:
 2. **No verifiable pass condition.** An item nobody can prove finished. Acceptance
    Criteria is ❌ and the item is refused, at every class.
 
-Under-specified work is still refused. What is no longer refused is well-specified
-**small** work that lacks ceremony.
+Under-specified work is still refused. What is no longer refused is well-specified work
+that lacks ceremony.
 
 ## Step 4 — Sufficient to Size
 
@@ -257,23 +157,25 @@ After the completeness assessment, make an independent determination:
 
 Rules:
 
-- Yes: Description is clear enough to estimate relative effort, even if AC or testing
-  details are incomplete.
+- Yes: Description is clear enough to estimate relative effort, even if the acceptance
+  criteria are incomplete.
 - Marginal: Scope is partially defined. Sizing is possible but confidence will be low.
   State what would improve it.
 - No: Too vague to estimate. Sizing would be a guess. State what is needed.
 
+Consumed by: `skills/issue-ready` — a COMPLETE verdict is what releases the item to WSJF
+scoring, and the score is stored on the issue as `wsjf`.
+
 ### Consistency rule — sizing and the verdict must agree
 
-If Sufficient to Size is `Yes` **and** the class is `trivial`, the blocking set is
-Description Quality and Acceptance Criteria only. A `Yes` sizing verdict with both of
-those at ✅ or ⚠ **must** yield COMPLETE.
+The blocking set is Description Quality and Acceptance Criteria. A `Yes` sizing verdict
+with both of those at ✅ or ⚠ **must** yield COMPLETE.
 
 If you find yourself about to report `Sufficient to Size: Yes` alongside INCOMPLETE,
-stop and re-check the blocking dimensions. One of the two judgments is wrong — either the
-item is understood well enough to size, in which case find the blocking ❌ that actually
-justifies the refusal, or it is not, in which case the sizing verdict is not `Yes`.
-Reporting both is a contradiction, not a nuanced position.
+stop and re-check the two blocking dimensions. One of the two judgments is wrong — either
+the item is understood well enough to size, in which case find the blocking ❌ that
+actually justifies the refusal, or it is not, in which case the sizing verdict is not
+`Yes`. Reporting both is a contradiction, not a nuanced position.
 
 ## Step 5 — Output
 
@@ -292,29 +194,22 @@ demanding class was chosen.]
 #### Completeness Status
 
 ```text
-COMPLETE  (every blocking dimension is ✅ or ⚠)
+COMPLETE  (both dimensions are ✅ or ⚠)
 — or —
-INCOMPLETE  ([n] blocking dimension(s) at ❌)
+INCOMPLETE  ([n] dimension(s) at ❌)
 ```
-
-The count is the number of **blocking** dimensions at ❌. It is not the number of
-dimensions needing attention.
 
 #### Dimension Summary
 
 ```text
-Description Quality:      [✅ / ⚠ / ❌]   [blocking / advisory]
-Acceptance Criteria:      [✅ / ⚠ / ❌]   [blocking / advisory]
-Dependency Graph 1:       [✅ / ⚠ / ❌]   [blocking / advisory]
-Dependency Graph 2:       [✅ / ⚠ / ❌]   [blocking / advisory]
-Testing Coverage:         [✅ / ⚠ / ❌]   [blocking / advisory]
-Standards Compliance:     [✅ / ⚠ / ❌]   [blocking / advisory]
+Description Quality:      [✅ / ⚠ / ❌]
+Acceptance Criteria:      [✅ / ⚠ / ❌]
 ```
 
-#### Blocking Findings
+#### Findings
 
-[One section per non-✅ **blocking** dimension. Be specific. Reference what is present and
-what is missing. Do not summarize dimensions that are ✅. If there are none, state "None."]
+[One section per non-✅ dimension. Be specific. Reference what is present and what is
+missing. Do not summarize dimensions that are ✅. If there are none, state "None."]
 
 ##### [Dimension Name]
 
@@ -322,12 +217,6 @@ Status: ⚠ Partial / ❌ Missing
 What's present: [brief]
 What's missing: [specific, actionable]
 Example of what's needed: [concrete example in correct format where applicable]
-
-#### Advisory Findings — do not affect the verdict
-
-[One section per non-✅ **advisory** dimension, same shape as above. These are reported in
-full and are genuinely useful to whoever picks the item up. They did not and cannot change
-the Completeness Status. If there are none, state "None."]
 
 #### Sufficient to Size
 
@@ -337,6 +226,6 @@ the Completeness Status. If there are none, state "None."]
 #### Recommended Next Actions
 
 [Numbered. Each action is specific and directly addresses a finding. Not generic advice.
-Order blocking findings first — they are what stands between this item and dispatch.]
+If there are no findings, state "None — dispatch it."]
 
 ---

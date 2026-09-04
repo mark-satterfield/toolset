@@ -1030,6 +1030,10 @@ const g1Loop = await gateLoop({
   // routed to the advantage-evaluator. Two entries here are constitutive on their face:
   // the first carries a PLATFORM BAN ("no banned constructs") and the third is a SECURITY
   // criterion — the cost half of it rides along, which is the conservative reading.
+  // Platform bans and a security property — never deleted. Consumed by: Red (G2a) encodes
+  // this intent as the failing synth assertion and Green writes the CDK that satisfies it,
+  // so an intent that is not CDK-expressible has no reachable Green. The banned-construct
+  // half is the platform ban the constitutional gate enforces downstream.
   criteria: [
     { class: 'constitutive', text: 'Provisioning intent is concrete and CDK-expressible (S3 versioning+SSE-S3 where buckets exist, no banned constructs)' },
     { class: 'competitive', text: 'No dependency change invalidates the intent' },
@@ -1084,6 +1088,9 @@ enterPhase('Red')
 const red = await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
   // Only the Red EVIDENCE and the ban on manufacturing the failure are hard stops.
+  // Consumed by: Green (G2b) exists solely to make this failing synth assertion pass, and
+  // its own criteria name it; deploy.js then gates its rollout on the green evidence that
+  // traces back here. Every criterion is test evidence — never deleted.
   criteria: [
     { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
     { class: 'constitutive', text: 'A failing infra test/synth assertion encodes the provisioning intent' },
@@ -1130,6 +1137,8 @@ if (red.alreadySatisfied) {
 // All three are Green EVIDENCE — a synth that does not succeed is not a matter of
 // opinion — and this gate carries no deterministic checks, so they are the only thing
 // standing between an unbuilt stack and Integration. Constitutive.
+// Consumed by: deploy.js gates its rollout on the green evidence and on `cdkSynthOk` —
+// the synth this gate requires is the same one Deploy re-runs before it will roll out.
 const GREEN_CRITERIA = [
   { class: 'constitutive', text: 'The previously-failing infra test/synth assertion now passes' },
   { class: 'constitutive', text: 'No other stacks regressed' },
@@ -1162,6 +1171,10 @@ const integration = await gateLoop({
   gate: 'G3', phaseName: 'Integration Testing',
   // The third carries a PLATFORM BAN (SSM, never CloudFormation exports), so it is a hard
   // stop; drift is a judgment and flags instead.
+  // Consumed by: Deploy (G5) rolls out to AWS dev only past this gate, and deploy.js reads
+  // `cdkDriftDetected` and `cdkSynthOk` off its own run — the drift criterion here is the
+  // judgment half that a flat check cannot reach. "No CloudFormation exports" is a
+  // platform ban the constitutional gate enforces; never deleted.
   criteria: [
     { class: 'constitutive', text: 'Infra integration/contract checks pass' },
     { class: 'competitive', text: 'No drift introduced across stacks' },
@@ -1188,6 +1201,10 @@ if (RUN_ADVERSARIAL) {
     // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
     // criterion is constitutive by construction and the class marker has no meaning — it
     // renders criteria as strings, so a {text, class} entry would print as [object Object].
+    // Security properties — never deleted. Consumed by: this gate routes through
+    // gate-constitutional, where a security finding is a HARD stop no advantage ruling can
+    // downgrade, and it is the last thing standing between the change and a live AWS dev
+    // rollout at G5.
     criteria: [
       'No open constitutive findings (no infra misconfiguration, unpatched CVE, or data exposure)',
       'All confirmed findings adjudicated',

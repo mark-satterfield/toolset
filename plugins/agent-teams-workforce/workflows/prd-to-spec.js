@@ -1108,6 +1108,11 @@ validation = await gateLoop({
   // or CLARITY judgment about a document, and none of those invalidates the work — a thin PRD
   // produces a thin spec, which the downstream gates then see. Exactly one criterion is not
   // of that kind, and it is marked below.
+  // Consumed by: architecture (G2), trd-authoring (G2b) and spec-authoring (G3) all read
+  // this PRD as their source document — a contradiction admitted here is re-derived by
+  // each of them and fails several phases later, expensively. The actor/trigger/outcome
+  // criterion is consumed by the acceptance criteria spec-authoring derives from it, which
+  // tdd-red then turns into tests.
   criteria: [
     // The ONE hard stop at G1. A self-contradictory PRD cannot be specified: there is no
     // "proceed under a flag" that yields a coherent spec, because architecture, TRD and spec
@@ -1396,6 +1401,10 @@ if (!archNeeded) {
     // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
     // criterion is constitutive by construction and the class marker has no meaning — it
     // renders criteria as strings, so a {text, class} entry would print as [object Object].
+    // Platform bans and a security property — never deleted. Consumed by: the SAD source
+    // feed this gate requires is read by trd-authoring (G2b) via the sad-source-extractor
+    // and by spec-authoring (G3); an unrecorded decision is invisible to both. The bans
+    // are re-asserted at infra-change's own gates and enforced in the built artifacts.
     criteria: [
       'The chosen architecture honors all platform constitutive bans (no Step Functions, no HTTP API v2, no FastAPI/Flask/Django, REST v1 only, Powertools-only, service isolation, SSM-not-CFN-exports, dot-only event naming)',
       'Every significant decision is ruled by the decider and recorded in the SAD/arc42 source feed',
@@ -1593,6 +1602,10 @@ trdAuthoring = await gateLoop({
   gate: 'G2b', phaseName: 'TRD Authoring',
   // Every criterion here is a completeness or traceability judgment about a document.
   // Competitive: a partial TRD is flagged and carried forward, not looped over.
+  // Consumed by: spec-authoring (G3) takes the TRD as its input packet and elaborates the
+  // API, data model, event and error specs from it. The validator/verifier criterion is a
+  // control-boundary assertion (Rule 4): trd-authoring.js runs both checkers structurally
+  // and loops on reject, and this criterion is what makes that binding at the gate.
   criteria: [
     { class: 'competitive', text: 'The TRD derives only from the PRD and the SAD source extract (no invented requirements)' },
     { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
@@ -1702,6 +1715,18 @@ async function authorSpecForRepo(repo, repoIndex) {
     // Completeness and internal-consistency judgments about authored documents. A spec
     // defect surfaces again at Red, where a test has to encode the contract — so blocking
     // here spends the loop budget on something the tail proves for free.
+    // Consumed by: task-to-deploy carries `apiSpec` and `eventContracts` onto the build
+    // contract, and tdd-red derives its test writers from the surfaces they declare. The
+    // acceptance criteria are the strongest consumer in the pipeline — tdd-red.js reads
+    // `contract.acceptanceCriteria` and authors the failing tests from them. Dot-form event
+    // naming is a platform ban; never deleted.
+    //
+    // NOTE — the "Definition of Done" half of the acceptance criterion has NO downstream
+    // consumer. `definitionOfDone` is authored by spec-authoring, returned in its artifact,
+    // and read by nothing else in the plugin. It is KEPT rather than deleted because
+    // deleting the criterion while the artifact still exists would leave a mutable output
+    // with no independent review, which Rule 4 forbids. Retiring the DoD is a decision
+    // about the artifact, not about this criterion, and belongs to the owner.
     criteria: [
       { class: 'competitive', text: 'API/data-model/event/error specs are internally consistent and spec-first (OpenAPI before handlers)' },
       { class: 'competitive', text: 'Each spec passed its independent checker; deadlocks were ruled by the spec-decider' },
@@ -1918,6 +1943,11 @@ async function decomposeStory(pair) {
     // Format, traceability and sequencing judgments about emitted work items. None of
     // them invalidates the work; an imperfect decomposition is repaired by editing beads,
     // which is cheaper than re-running the phase.
+    // Consumed by: the acyclic DAG is checked mechanically — task-decomposition.js rejects
+    // a cyclic graph outright and prd-to-spec.js does the same for the Story graph — and it
+    // is what `bd ready` walks to release work. The WSJF score is written into the emitted
+    // bead's notes and stored on the issue by skills/issue-ready, which reports it as
+    // `wsjf`. Beads format is consumed by the bead-writer's `bd` calls, which fail without it.
     criteria: [
       { class: 'competitive', text: 'Tasks are atomic and each traces to a spec element' },
       { class: 'competitive', text: 'The dependency DAG is acyclic and sequencing is valid' },

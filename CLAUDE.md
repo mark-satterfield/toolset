@@ -14,6 +14,16 @@ This repo does not use pull requests. Work merges directly to `main`.
 
 Commit messages carry no `Co-Authored-By` and no `Claude-Session` trailer.
 
+### Contracts are consumer-defined
+
+A consumer declares the schema it needs; a producer produces to that schema. A producer never invents a requirement and never decides unilaterally what must be produced.
+
+So every required field, section, or artifact must name the consumer that reads it — `Consumed by: <workflow/agent/script> — <what it does with it>`. **If nothing downstream consumes it, the requirement does not exist: delete it.** Do not soften it to optional or advisory — advisory ceremony still costs the reader's attention and still shows up as a finding.
+
+The same test governs gate criteria: a criterion asserts a property, and something downstream must depend on that property holding. A criterion no step reads, checks, or branches on is ceremony, not rigor.
+
+Full statement and the failure that motivated it: Rule 12 in `plugins/agent-teams-workforce/AGENT-TEAMS-WORKFORCE.md`.
+
 ## Plugins
 
 These 15 plugins are registered in `.claude-plugin/marketplace.json`. Note that a few **marketplace names differ from their directory names** (left column ≠ path).

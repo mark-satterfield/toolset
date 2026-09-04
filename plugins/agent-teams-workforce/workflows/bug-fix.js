@@ -1230,6 +1230,11 @@ const red = cpGreen !== undefined
   // competitive — every entry here is marked so the intent is on the page. Only what
   // genuinely invalidates a Red is constitutive: the evidence itself, and the ban on
   // manufacturing the failure by editing production code.
+  // Consumed by: Green (Gate 2b) exists solely to turn the failing test this gate admits
+  // into a passing one, and its own criteria name "the previously-failing test"; deploy.js
+  // then gates its rollout on greenEvidenceOk, which traces back to this test. The
+  // deployed-red carve-out is consumed by the Green criteria's remediation wording, which
+  // names deploy-and-invalidate rather than sending Green hunting for absent code.
   criteria: [
     { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
     // Red is satisfied by EITHER a failure at HEAD or a DIFFERENTIAL failure at the
@@ -1313,6 +1318,9 @@ const MAX_ESCALATIONS = a.maxEscalations || 2
 // The first two are the Green EVIDENCE and are constitutive; the third is a quality
 // judgment about the shape of the change, and a quality judgment that blocks is exactly
 // the over-strict failure this classification exists to stop. It flags instead.
+// Consumed by: deploy.js gates its rollout on `greenEvidenceOk` — the executed passing
+// output captured here IS that evidence, and no deploy happens without it. Integration
+// (Gate 3) then runs the wider suites over the same tree.
 const GREEN_CRITERIA = [
   { class: 'constitutive', text: 'The previously-failing test now passes' },
   { class: 'constitutive', text: 'No other tests regressed' },
@@ -1490,10 +1498,17 @@ refactor = await gateLoop({
   // Refactor is behavior-preserving CLEANUP on already-green code. Only the green
   // evidence is constitutive here; the other two are quality judgments, and a failed
   // refactor already degrades rather than failing the run.
+  // Consumed by: "Tests still green" — Integration (Gate 3) runs the suites over this
+  // tree and deploy.js gates its rollout on greenEvidenceOk. "Behavior preserved" is
+  // the code-correctness-reviewer's finding, measured by the criterion above it.
+  //
+  // "Complexity/duplication reduced" was a THIRD criterion here and is deleted, for the
+  // same reason as the identical one in task-to-deploy.js: the refactor artifact reaches
+  // only the run journal, and tdd-refactor is designed to return `alreadySatisfied: true`
+  // with nothing reduced whenever the complexity-analyzer finds nothing to do. See Rule 12.
   criteria: [
     { class: 'constitutive', text: 'Tests still green' },
     { class: 'competitive', text: 'Behavior preserved (no regression)' },
-    { class: 'competitive', text: 'Complexity/duplication reduced' },
   ],
   escalateTargets: ['green'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
@@ -1520,6 +1535,10 @@ let integration = cpGet('integration')
 if (integration === undefined) {
 integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
+  // Consumed by: Deploy (Gate 5) rolls out to AWS dev only past this gate, and its smoke
+  // run exercises the same boundaries against the deployed endpoints; a smoke failure
+  // re-enters Green. "No flaky tests" is consumed by the flaky-test-detector's verdict,
+  // which decides whether a failure escalates to code, test, or environment.
   criteria: [
     { class: 'constitutive', text: 'Integration/contract/E2E suites pass' },
     { class: 'competitive', text: 'Contracts valid across boundaries' },
@@ -1551,6 +1570,10 @@ adversarial = await gateLoop({
   // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
   // criterion is constitutive by construction and the class marker has no meaning — it
   // renders criteria as strings, so a {text, class} entry would print as [object Object].
+  // Security properties — never deleted. Consumed by: this gate routes through
+  // gate-constitutional, where a security finding is a HARD stop no advantage ruling can
+  // downgrade, and it is the last thing standing between the fix and a live AWS dev
+  // rollout at Gate 5.
   criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
   escalateTargets: ['green', 'triage'],
   // priorRulings is what makes a re-run adjudication accountable to the one before it.
