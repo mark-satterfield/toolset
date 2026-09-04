@@ -6,9 +6,13 @@
 // minutes, ~10 from finishing architecture, and every minute was lost. These tests
 // pin the five behaviors that make resume real: each completed phase's RESULT is
 // SAVED to a durable per-bead file; a resumed run SKIPS completed phases and REUSES
-// their results; a checkpoint whose PRD content hash or plugin version differs is
-// INVALIDATED (fresh start, journalled); and a completed run DELETES its checkpoint
+// their results; a checkpoint whose PRD content hash or PHASE SEMANTICS version differs
+// is INVALIDATED (fresh start, journalled); and a completed run DELETES its checkpoint
 // while a failed one keeps it.
+//
+// The semantics version is deliberately NOT the plugin version. It was, and every plugin
+// release then discarded every checkpoint in every composite — 6.11.0 was a markdown edit
+// to one skill — so a checkpoint surviving a plugin bump is itself a pinned behavior here.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -34,6 +38,14 @@ const fnv = (v) => {
 const PLUGIN_VERSION = JSON.parse(
   fs.readFileSync(path.resolve(HERE, '..', '..', '.claude-plugin', 'plugin.json'), 'utf8')
 ).version
+
+/** The phase-semantics version a composite declares. Hand-bumped; never the plugin's. */
+const CHECKPOINTING_COMPOSITES = ['prd-to-spec.js', 'bug-fix.js', 'task-to-deploy.js']
+const semanticsOf = (file) => {
+  const src = fs.readFileSync(path.join(WF, file), 'utf8')
+  const m = src.match(/const CHECKPOINT_SEMANTICS = '([^']*)'/)
+  return m ? m[1] : null
+}
 
 /** Pull the checkpoint JSON out of a save dispatch's prompt. */
 function savedPayload(call) {
@@ -122,7 +134,8 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
     assert.match(c.prompt, /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json/, 'the file lives in the repo the run operates on, keyed by bead+composite')
   }
   const last = savedPayload(saves[saves.length - 1])
-  assert.equal(last.pluginVersion, PLUGIN_VERSION, 'the staleness guard keys on the plugin version')
+  assert.equal(last.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the staleness guard keys on the composite\'s phase-semantics version')
+  assert.equal(last.pluginVersion, undefined, 'the plugin version is deliberately NOT written — it is not what makes a checkpoint stale')
   assert.equal(last.inputHash, fnv(PRD.body), 'the staleness guard keys on the PRD content hash')
   assert.ok(last.phases.reconciliation, 'the saved payload is the actual RESULT the next phase consumes, not a marker')
   assert.equal(last.phases.reconciliation.deltaPrd.body, 'delta-body')
@@ -202,15 +215,55 @@ test('a checkpoint written against DIFFERENT PRD content is invalidated — fres
   assert.match(journal.prompt, /PRD content changed/)
 })
 
-test('a checkpoint written by a DIFFERENT plugin version is invalidated', async () => {
+test('a checkpoint written under DIFFERENT phase semantics is invalidated', async () => {
   const first = await runP2S()
   const payload = savedPayload(first.saves[first.saves.length - 1])
-  payload.pluginVersion = '0.0.1'
+  payload.semanticsVersion = '0'
   const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
   assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1)
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
   assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /plugin version/)
+  assert.match(journal.prompt, /phase semantics/)
+})
+
+test('a PRE-GUARD checkpoint — pluginVersion, no semanticsVersion — is invalidated exactly once, not crashed on', async () => {
+  const first = await runP2S()
+  const payload = savedPayload(first.saves[first.saves.length - 1])
+  delete payload.semanticsVersion
+  payload.pluginVersion = '6.10.1' // what the old code wrote
+  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  assert.equal(second.result.ok, true, 'an unrecognised shape must not take the run down with it')
+  assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'its phases cannot be trusted, so it is discarded')
+  const journal = agentCalls(second.calls, 'ledger:persist')[0]
+  assert.match(journal.prompt, /"event":"invalidated"/)
+  assert.match(journal.prompt, /predates the phase-semantics guard/)
+  // And the fresh run rewrites it in the new shape, so the discard happens ONCE.
+  const rewritten = savedPayload(second.saves[second.saves.length - 1])
+  assert.equal(rewritten.semanticsVersion, semanticsOf('prd-to-spec.js'))
+})
+
+test('a checkpoint SURVIVES a plugin version change when the phase semantics are unchanged', async () => {
+  // This is the defect the semantics version exists to fix: 6.11.0 was a markdown edit to
+  // one skill and it discarded every resumable run in all three composites. A checkpoint
+  // carrying a stale plugin version — however it got there — must still be honoured.
+  const first = await runP2S()
+  const payload = savedPayload(first.saves[first.saves.length - 1])
+  payload.pluginVersion = '0.0.1'
+  assert.notEqual(payload.pluginVersion, PLUGIN_VERSION, 'the fixture must actually differ from the shipped plugin version')
+  assert.equal(payload.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the semantics version is the one thing left unchanged')
+
+  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
+  for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
+    assert.equal(
+      workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
+      0,
+      `${mini} must NOT re-run — a plugin release is not a change to what a phase means`,
+    )
+  }
+  const journal = agentCalls(second.calls, 'ledger:persist')[0]
+  assert.match(journal.prompt, /"event":"resumed"/)
+  assert.doesNotMatch(journal.prompt, /"event":"invalidated"/)
 })
 
 // ── bug-fix ───────────────────────────────────────────────────────────────────
@@ -220,7 +273,7 @@ test('bug-fix resumes triage, red+green, and refactor from a checkpoint', async 
   const file = JSON.stringify({
     composite: 'bug-fix',
     subject: BEAD.id,
-    pluginVersion: PLUGIN_VERSION,
+    semanticsVersion: semanticsOf('bug-fix.js'),
     inputHash: fnv(`${BEAD.title}|${BEAD.description}`),
     phases: {
       triage: { repoPath: null, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [], bead: null },
@@ -258,16 +311,22 @@ test('bug-fix resumes triage, red+green, and refactor from a checkpoint', async 
   assert.equal(result.ok, false, 'the scripted integration escalation still fails the run — resume is not a free pass')
 })
 
-// ── The version constant cannot drift from the manifest ───────────────────────
+// ── The semantics constant is declared, and is NOT the manifest version ───────
 
-test('CHECKPOINT_VERSION in every checkpointing composite equals the plugin version', () => {
-  // The staleness guard keys on the plugin version, but a workflow script cannot read
-  // plugin.json at runtime — it carries a constant instead. This test is what makes
-  // that constant trustworthy: a version bump that forgets the constants fails here.
-  for (const file of ['prd-to-spec.js', 'bug-fix.js', 'task-to-deploy.js']) {
+test('every checkpointing composite declares a CHECKPOINT_SEMANTICS counter, decoupled from the plugin version', () => {
+  // Each composite owns its own phase sequence, so the three are free to diverge and
+  // nothing here asserts they agree — a bump belongs to the one composite whose phases
+  // actually changed. What IS pinned is the shape: a declared, non-empty, hand-bumped
+  // counter that is not the manifest version. The old constant was pinned to the plugin
+  // version, and the plugin bumps constantly, so every release threw every checkpoint
+  // away. Re-coupling it would restore the defect, so the coupling is what fails here.
+  for (const file of CHECKPOINTING_COMPOSITES) {
     const src = fs.readFileSync(path.join(WF, file), 'utf8')
-    const m = src.match(/const CHECKPOINT_VERSION = '([^']+)'/)
-    assert.ok(m, `${file} must declare CHECKPOINT_VERSION`)
-    assert.equal(m[1], PLUGIN_VERSION, `${file}: CHECKPOINT_VERSION (${m[1]}) must equal the plugin version (${PLUGIN_VERSION}) — bump them together`)
+    const v = semanticsOf(file)
+    assert.ok(typeof v === 'string' && v.length > 0, `${file} must declare a non-empty CHECKPOINT_SEMANTICS`)
+    assert.notEqual(v, PLUGIN_VERSION, `${file}: CHECKPOINT_SEMANTICS must NOT be the plugin version (${PLUGIN_VERSION}) — that coupling discarded every checkpoint on every release`)
+    assert.doesNotMatch(v, /\./, `${file}: CHECKPOINT_SEMANTICS (${v}) is a plain counter, not a semver — a semver reads as a release marker and invites re-coupling`)
+    assert.doesNotMatch(src, /CHECKPOINT_VERSION/, `${file} must not carry the retired plugin-version-pinned constant`)
+    assert.doesNotMatch(src, /pluginVersion:/, `${file} must not write pluginVersion into the checkpoint payload`)
   }
 })
