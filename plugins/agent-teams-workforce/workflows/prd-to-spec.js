@@ -305,7 +305,7 @@ async function persistRun(outcome, retirePath) {
 // being approved, so it never tries to rm). The retirement rides along with the run's
 // journal write rather than paying for a session of its own. Both are non-fatal: a
 // checkpoint that cannot be written costs only the ability to resume, never the run.
-const CHECKPOINT_VERSION = '6.10.1' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.11.0' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
