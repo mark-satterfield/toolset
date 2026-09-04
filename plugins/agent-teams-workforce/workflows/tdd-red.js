@@ -114,6 +114,15 @@ phase('Red')
 // So a dead dispatch is recorded as itself and reported as itself. The composite turns
 // it into an ENVIRONMENT-stage handback, which spends no gate budget, blames no bead,
 // and leaves the work dispatchable once the wall is down.
+//
+// ONLY A DEAD WRITER FAILS THE PHASE, and the asymmetry is deliberate. `redConfirmed`
+// is computed FROM the writers, so a writer that never ran makes the verdict a verdict
+// on work that is partly absent. The three auxiliary dispatches — discovery, the
+// existing-test confirmation, the coverage review — each degrade CONSERVATIVELY when
+// they die: the phase authors more and claims less. Failing the run on one of those
+// would throw away a Red the writers genuinely obtained, which is the same class of
+// false rejection this change exists to remove. They are recorded and reported; they
+// do not stop anything.
 const deadAgents = []
 const noteDead = (who) => {
   deadAgents.push(who)
@@ -490,7 +499,7 @@ const ledger = {
   beadId: (c.bead && c.bead.id) || null,
   chosen: [...writersFinal, 'test-coverage-gap-reviewer'],
   mode: selectionMode,
-  ok: redConfirmed && !deadAgents.length,
+  ok: redConfirmed && !deadWriters.length,
   ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
 }
 
@@ -498,14 +507,14 @@ const ledger = {
 // the caller records it and a resume reuses the files on disk — but `dispatchFailed`
 // says the missing half is missing because a dispatch died, so no gate spends its
 // budget adjudicating it and no bead is charged for it.
-if (deadAgents.length) {
+if (deadWriters.length) {
   return {
     ok: false,
     dispatchFailed: true,
     dispatchFailures: deadAgents,
     reason:
-      `${deadAgents.length} Red dispatch(es) returned nothing — ${deadAgents.join(', ')}. ` +
-      'The agents were skipped or died on a terminal API error, so this phase never ran to a verdict. ' +
+      `${deadWriters.length} of ${writersFinal.length} Red test writer(s) returned nothing — ${deadAgents.join(', ')}. ` +
+      'They were skipped or died on a terminal API error, so this phase never ran to a verdict. ' +
       'Nothing here is a judgement about the tests or the contract.',
     testFiles,
     redConfirmed: false,
@@ -530,6 +539,10 @@ return {
   greenReachable,
   greenPathChecked: true,
   greenPathFindings,
+  // Auxiliary dispatches that died without stopping the phase. Carried so the gate's
+  // reader can tell "discovery found nothing" from "discovery never ran", which are the
+  // same empty array otherwise.
+  ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
   writers: writersFinal,
   surfaces,
   strategy,

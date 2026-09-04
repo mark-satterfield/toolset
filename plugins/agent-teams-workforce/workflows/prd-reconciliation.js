@@ -64,7 +64,10 @@ END STANDING RULINGS
   : ''
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 
-const fail = (reason) => ({
+// `extra` carries `dispatchFailed` when the failure is a dead agent rather than a
+// finding — see the reconciler check below. The caller reads that field to decide
+// whether it holds a verdict about the PRD or an account that never came back.
+const fail = (reason, extra) => ({
   ok: false,
   reason,
   verdict: 'greenfield',
@@ -73,6 +76,7 @@ const fail = (reason) => ({
   deltaPrdPath: null,
   sizeVerdict: 'close',
   infraOnly: false,
+  ...(extra || {}),
 })
 
 if (!hasText(prdBody)) {
@@ -208,7 +212,24 @@ Determine whether any upstream contract, shared schema, event, library version, 
 const reality = combined
 const dependencyChanges = (combined && combined.dependencyChanges) || null
 
-if (!reality || !Array.isArray(reality.requirements)) {
+// ── A DEAD AGENT IS NOT A FINDING ───────────────────────────────────────────────
+//
+// `agent()` returns null when the subagent was skipped or died on a terminal API error
+// after the runtime's own retries — the session wall, most of the time. That is not the
+// same event as a reconciler that ran and returned a malformed inventory, and folding
+// them together is what turned two of the five real prd-to-spec runs into work failures
+// at stage 'prd-reconciliation': the supervisor charged the bead for an account limit.
+// Both still stop the run — reading "we could not establish what exists" as "nothing
+// exists" is the greenfield assumption this phase removes — but only one of them is
+// anybody's fault, and the caller needs to be able to tell which.
+if (!reality) {
+  return fail(
+    'the reality reconciler returned nothing — it was skipped or died on a terminal API error, so no reconciliation ' +
+      'was performed. This is a DISPATCH failure, not a verdict on the PRD or on what already ships.',
+    { dispatchFailed: true, dispatchFailures: ['reconcile:combined (prd-reality-reconciler)'] }
+  )
+}
+if (!Array.isArray(reality.requirements)) {
   return fail('the reality reconciler returned no requirement inventory — reconciliation cannot be reduced to a verdict.')
 }
 

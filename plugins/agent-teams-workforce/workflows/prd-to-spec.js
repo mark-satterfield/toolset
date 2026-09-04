@@ -153,6 +153,20 @@ const subjectId = (a.prd && (a.prd.id || a.prd.path)) || (a.request && a.request
 // on EVERY exit path. A spec with one open question is worth more than {ok:false},
 // and the caller — not this script — decides whether it is enough to act on.
 const produced = {}
+
+// ── THE STAGE A DEAD DISPATCH IS REPORTED UNDER ───────────────────────────────
+//
+// The supervisor classifies a failed handback by its `stage`: a stage in its
+// ENVIRONMENT set is never charged to the bead, never sent to the repair tier, and
+// never counted toward quarantine, because no workflow script failed a line for it.
+// `agent()` hands back null when a subagent is skipped or dies on a terminal API error
+// after the runtime's own retries — an account limit, most of the time — and a phase
+// reporting `dispatchFailed` is saying exactly that: it never ran to a verdict.
+// Reported under its own phase name it reads as "the PRD was found wanting", and three
+// of those quarantine the bead for a wall nobody could have avoided. The phase name
+// stays in the headline and in the journal, so nothing is lost about WHERE it stopped.
+const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
+
 const partial = (stage, detail, extra) => {
   const salvage = { ...produced, ...(extra || {}) }
   runDetail = { stage, detail, partial: salvage }
@@ -165,7 +179,7 @@ const partial = (stage, detail, extra) => {
   const keys = Object.keys(salvage)
   return {
     ok: false,
-    stage,
+    stage: detail && detail.dispatchFailed ? DISPATCH_FAILED_STAGE : stage,
     beadId: subjectId,
     headline:
       `${stage}: ${why}${unmet.length ? ` — unmet: ${unmet[0].criterion}` : ''}${unmet.length > 1 ? ` (+${unmet.length - 1} more)` : ''}. ` +
@@ -189,6 +203,24 @@ const partial = (stage, detail, extra) => {
 // reported a full Epic → Story → Task emission for a run that never reached
 // Architecture. Telemetry must never be able to paint a work phase complete, so
 // it reports under a phase that claims nothing about the work.
+//
+// THERE IS NO TIMEOUT ON THIS DISPATCH, AND THERE CANNOT BE ONE. agent() takes no
+// timeout or abort option, and the runner injects exactly seven globals — args,
+// agent, workflow, phase, log, parallel, budget — so there is no setTimeout to race
+// a dispatch against. Do not add one on the strength of a green test run: the test
+// harness compiles scripts through a code-generation intrinsic that is strictly MORE
+// permissive than the real runner, and that gap is exactly how 6.0.6 shipped a
+// workspace.js that could not load at all. The authority on what the runner accepts
+// is scripts/workflow-runner-constraints.mjs, not a passing suite.
+//
+// A GENERAL cap over every agent() would be worse than the problem even if it were
+// possible. Legitimate sessions here run to eight minutes and beyond — one ledger
+// write took 541 seconds because it was composing a large payload, and it completed
+// correctly. A cap tight enough to catch a stall would kill work that was going to
+// succeed, and for a reasoning agent that is a regression, not a fix. The way this
+// class of hang is closed is at the source: an agent must never issue an operation
+// that can BLOCK. See agents/run-ledger-writer.md for the five stalls that taught
+// this and the rule that came out of them.
 const runLedger = []
 // Findings a gate could not get resolved inside its retry budget and that the
 // advantage-evaluator then ruled COMPETITIVE — carried forward rather than fatal. See
@@ -571,6 +603,29 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       unmetCriteria: lastVerdict ? ((lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))) : [],
     })
     lastArtifact = artifact
+    // ── A PHASE THAT NEVER RAN IS NOT A PHASE THAT FAILED ──────────────────────
+    //
+    // `agent()` hands back null when a subagent is skipped or dies on a terminal API
+    // error after the runtime's own retries. A phase whose producing agents did that
+    // has no artifact to judge, so every deterministic check the gate would run against
+    // the absent artifact fails by construction. The gate loops, the re-dispatch meets
+    // the same wall, the budget is spent, and the run dies with the bead blamed for an
+    // account limit. Two of the five real prd-to-spec runs on record died exactly that
+    // way at Gate G1.
+    //
+    // So a phase that reports `dispatchFailed` is not adjudicated at all — no gate
+    // dispatch, no retry spent — and `partial()` reports it under the environment stage.
+    if (artifact && artifact.dispatchFailed === true) {
+      const why =
+        artifact.reason ||
+        `${(artifact.dispatchFailures || []).length || 'one or more'} agent dispatch(es) in ${phaseName} returned nothing`
+      log(`${phaseName}: DISPATCH FAILURE — ${why} Gate ${gate} is NOT run: there is nothing to judge, and a retry would meet the same wall.`)
+      recordGate(attempt, null, {
+        terminal: 'dispatch-failed',
+        dispatchFailures: artifact.dispatchFailures || [],
+      })
+      return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
+    }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
@@ -850,6 +905,11 @@ if (!reconciliation || reconciliation.ok === false) {
     reason:
       (reconciliation && reconciliation.reason) ||
       'PRD reconciliation returned nothing — what already ships could not be established.',
+    // A reconciler that DIED is not a reconciler that found the PRD wanting. The mini
+    // says which it was; a null result from the mini itself is the same event one level
+    // up, so both route to the environment stage rather than to the bead's record.
+    dispatchFailed: !reconciliation || reconciliation.dispatchFailed === true,
+    dispatchFailures: (reconciliation && reconciliation.dispatchFailures) || ['prd-reconciliation (returned nothing)'],
     detail: reconciliation || null,
   })
 }

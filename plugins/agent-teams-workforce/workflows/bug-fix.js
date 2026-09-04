@@ -468,6 +468,18 @@ function handback(ok, stage, headline, detail) {
   }
 }
 
+// ── THE STAGE A DEAD DISPATCH IS REPORTED UNDER ───────────────────────────────
+//
+// The supervisor classifies a failed handback by its `stage`: a stage in its
+// ENVIRONMENT set is never charged to the bead, never sent to the repair tier, and
+// never counted toward quarantine, because no workflow script failed a line for it.
+// A phase whose producing agents died — skipped, or killed by a terminal API error
+// after the runtime's own retries — is exactly that: the harness failed, not the work.
+// Reported under the phase name it reads as "the tests were bad" for what was an
+// account limit, and three of those quarantine the bead.
+const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
+const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
+
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
 // WHAT was unmet and on what evidence; a headline that says only "green failed" makes
 // the caller open the journal to learn anything at all.
@@ -689,6 +701,31 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     if (artifact && artifact.alreadySatisfied === true) {
       log(`${phaseName}: ALREADY SATISFIED — nothing to build; gate ${gate} skipped`)
       return { ok: true, artifact, alreadySatisfied: true }
+    }
+    // ── A PHASE THAT NEVER RAN IS NOT A PHASE THAT FAILED ──────────────────────
+    //
+    // `agent()` hands back null when a subagent is skipped or dies on a terminal API
+    // error after the runtime's own retries. A phase whose producing agents did that
+    // has no artifact to judge — and every deterministic check the gate would run
+    // against the absent artifact fails, by construction. The gate then loops, the
+    // re-dispatch meets the same wall, the budget is spent, and because a MEASURED
+    // check may not be ruled competitive the run dies. That is the whole record of
+    // Gate 2a: 6 of 6 bug-fix runs, 4.31 h, none of it a verdict about any test.
+    //
+    // So a phase that reports `dispatchFailed` is not adjudicated at all. No gate
+    // dispatch is made, no retry is spent, and the caller turns it into an
+    // ENVIRONMENT-stage handback so the supervisor charges no bead for an account
+    // limit and the work stays dispatchable once the wall is down.
+    if (artifact && artifact.dispatchFailed === true) {
+      const why =
+        artifact.reason ||
+        `${(artifact.dispatchFailures || []).length || 'one or more'} agent dispatch(es) in ${phaseName} returned nothing`
+      log(`${phaseName}: DISPATCH FAILURE — ${why} Gate ${gate} is NOT run: there is nothing to judge, and a retry would meet the same wall.`)
+      recordGate(attempt, null, {
+        terminal: 'dispatch-failed',
+        dispatchFailures: artifact.dispatchFailures || [],
+      })
+      return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
@@ -1269,7 +1306,7 @@ let contradictionRuling = null
 
 for (;;) {
   if (redResult.artifact && redResult.artifact.ledger) runLedger.push(redResult.artifact.ledger)
-  if (!redResult.ok) return handback(false, 'red', gateHeadline('red', redResult), redResult)
+  if (!redResult.ok) return handback(false, gateStage('red', redResult), gateHeadline('red', redResult), redResult)
   // Red found the expected behavior already asserted by PASSING tests: this defect
   // is already fixed, or was never real. Green would be asked to make a failing test
   // pass when none fails, and the Red⇄Green escalation below would ping-pong over a
@@ -1319,7 +1356,7 @@ for (;;) {
   // permitted to change either of them.
   const contradiction = (green.artifact && green.artifact.contradiction) || null
   const canRetryRed = (green.escalate === 'red' || !!contradiction) && escalations < MAX_ESCALATIONS
-  if (!canRetryRed) return handback(false, 'green', gateHeadline('green', green), green)
+  if (!canRetryRed) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
 
   // Rule WHICH CONTRACT BINDS before re-authoring. Without this the re-author simply
   // regenerates one side of the contradiction and the next Green attempt deadlocks on the
@@ -1414,7 +1451,7 @@ const docTrack = workflow('agent-teams-workforce:documentation', { contract, gre
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
 async function failAfterDoc(stage, detail) {
   await Promise.allSettled([docTrack])
-  return handback(false, stage, gateHeadline(stage, detail), detail)
+  return handback(false, gateStage(stage, detail), gateHeadline(stage, detail), detail)
 }
 
 // ── Refactor (Gate 2c) ────────────────────────────────────────────────────────
@@ -1569,7 +1606,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const smokeFailedInDev = deployArtifact.deployedToDev === true && deployArtifact.smokePassed !== true
   if (!smokeFailedInDev) {
     return {
-      ...handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
+      ...handback(false, gateStage('deploy-to-dev', deployReady), gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
       deployedToDev: deployArtifact.deployedToDev === true,
       smokePassed: deployArtifact.smokePassed === true,
       deployIteration,

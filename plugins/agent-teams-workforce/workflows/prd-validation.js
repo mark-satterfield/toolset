@@ -207,10 +207,21 @@ ${prdBlock}`,
   }
 )
 
+// ── A DEAD AGENT IS NOT A VERDICT ───────────────────────────────────────────────
+//
+// `agent()` returns null when the subagent was skipped or died on a terminal API error
+// after the runtime's own retries. The PRD was not found wanting; nobody looked at it.
+// Without `dispatchFailed` the caller's gate treats this as a failed validation, spends
+// its retry budget re-dispatching into the same wall, and hands the supervisor a work
+// failure at stage 'prd-validation' — which charges the bead for an account limit.
 if (!analysis) {
   return {
     ok: false,
-    reason: 'the validation analyst session returned nothing — the PRD was not judged.',
+    dispatchFailed: true,
+    dispatchFailures: ['validate:all-lenses (validation analyst)'],
+    reason:
+      'the validation analyst session returned nothing — it was skipped or died on a terminal API error, so the PRD ' +
+      'was not judged. This is a DISPATCH failure, not a finding against the PRD.',
     validatedPrd: null,
     findings: [],
     ambiguities: [],
