@@ -234,11 +234,11 @@ test('bug-fix resumes triage, red+green, and refactor from a checkpoint', async 
 
 // ── The version constant cannot drift from the manifest ───────────────────────
 
-test('CHECKPOINT_VERSION in both composites equals the plugin version', () => {
+test('CHECKPOINT_VERSION in every checkpointing composite equals the plugin version', () => {
   // The staleness guard keys on the plugin version, but a workflow script cannot read
   // plugin.json at runtime — it carries a constant instead. This test is what makes
   // that constant trustworthy: a version bump that forgets the constants fails here.
-  for (const file of ['prd-to-spec.js', 'bug-fix.js']) {
+  for (const file of ['prd-to-spec.js', 'bug-fix.js', 'task-to-deploy.js']) {
     const src = fs.readFileSync(path.join(WF, file), 'utf8')
     const m = src.match(/const CHECKPOINT_VERSION = '([^']+)'/)
     assert.ok(m, `${file} must declare CHECKPOINT_VERSION`)

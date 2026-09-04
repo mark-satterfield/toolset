@@ -886,7 +886,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // and Settle always re-run, because deployment evidence must be fresh. A completed
 // run retires its checkpoint by overwriting it with {}, which the loader declines to
 // honour — never with rm, which is not allowlisted and would block on approval.
-const CHECKPOINT_VERSION = '6.9.4' // MUST equal the plugin version — a test enforces the pairing
+const CHECKPOINT_VERSION = '6.9.5' // MUST equal the plugin version — a test enforces the pairing
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
 function cpInit(repo, subject, inputHash) {
