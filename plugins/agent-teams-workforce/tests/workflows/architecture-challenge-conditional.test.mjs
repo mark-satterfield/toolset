@@ -13,10 +13,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runWorkflowScript } from './helpers/run-workflow.mjs'
+import { runWorkflowScript, readWorkflowSource } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const architecture = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
+const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
 const goodDecision = {
   admissible: true, ruling: 'r', chosenApproach: 'o', imposedConstraints: [],
@@ -254,6 +255,34 @@ test('the journal line names the judgment both ways — "challenge ran:" / "chal
   assert.match(skipped.result.challengeWave.reason, /affirmed/, 'a skip must stand on affirmative evidence, and say so')
   const ran = await run({ triage: benignTriage, contested: true })
   assert.match(ran.result.challengeWave.reason, /^challenge ran: /)
+})
+
+// ── The composite half of the same fix ────────────────────────────────────────
+//
+// The mini can only skip on a verdict the composite actually sends. Both booleans
+// must be REQUIRED on the composite's triage schema: as optional properties they
+// would be omitted often — a schema-optional field is not one you can rely on — and
+// every omission puts the verdict back to undefined and fires the wave exactly as
+// before, so the fix would silently do nothing while looking present.
+
+test('prd-to-spec REQUIRES highStakes and reversalRisk from its own triage, and forwards them', () => {
+  const src = readWorkflowSource(prdToSpec)
+
+  assert.match(
+    src,
+    /required:\s*\['needed',\s*'reason',\s*'highStakes',\s*'reversalRisk'\]/,
+    'optional booleans would be omitted, and an omitted verdict fires the wave — the skip would be dead code again',
+  )
+  assert.match(
+    src,
+    /triageVerdict:\s*archTriageVerdict/,
+    'the classification has to reach the mini alongside the dimensions that suppress its own triage',
+  )
+  assert.match(
+    src,
+    /typeof archTriage\.highStakes === 'boolean' &&\s*\n\s*typeof archTriage\.reversalRisk === 'boolean'/,
+    'a half-stated verdict must be refused rather than defaulted — unknown challenges by default',
+  )
 })
 
 test('the trigger is computed by the script — no agent is spent deciding whether to challenge', async () => {

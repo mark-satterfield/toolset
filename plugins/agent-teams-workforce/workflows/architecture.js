@@ -887,7 +887,35 @@ Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 // Fitness functions and diagrams used to be two separate maker sessions reading the
 // same ruling; both are makers writing FROM the ruling with no judging anywhere, so
 // one session authors both. Same argument for the design drafts below.
-const authored = await agent(
+//
+// ── AND THE TWO SURVIVING MAKER SESSIONS RUN CONCURRENTLY ───────────────────
+//
+// `author:decision-artifacts` and `design:drafts` were sequential, and neither reads
+// the other: both are makers writing FROM `decisionContext`, which is fixed before
+// either starts. These are ANALYST-CLASS sessions — minutes each, not the seconds a
+// router costs — so overlapping them removes a multi-minute step from the critical
+// path of every admissible architecture run, which is every run that gets this far.
+// Session count is unchanged; wall-clock is not.
+//
+// No segregation of duties is touched: no judging relationship exists between two
+// makers, and the independent conformance review below still judges the SAD edit.
+const surfaces = Array.isArray(decision.surfaces) ? decision.surfaces : []
+const designSpecs = []
+if (surfaces.includes('events')) {
+  designSpecs.push(['eventSchema', 'Design the event schema(s) within the event API envelope format for the decided events.'])
+  designSpecs.push(['domainEvents', 'Model the domain events, flows, and contracts the ruling introduces.'])
+}
+if (surfaces.includes('restApi')) designSpecs.push(['apiContract', 'Produce the OpenAPI contract proposal for the decided REST surface.'])
+if (surfaces.includes('graphql')) designSpecs.push(['graphql', 'Design the GraphQL schema proposal for the decided AppSync surface.'])
+if (surfaces.includes('newDomain')) designSpecs.push(['ubiquitousLanguage', 'Capture the ubiquitous language — terms, definitions, usage rules — for the new or affected bounded context.'])
+
+const [authored, draftsResult] = await parallel([
+  () => authorDecisionArtifacts(),
+  () => (designSpecs.length ? authorDesignDrafts() : null),
+])
+
+function authorDecisionArtifacts() {
+  return agent(
   `Author the decision artifacts FROM the ruling below — do NOT re-decide anything. Two artifacts, each under its own key:
 
 1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis".
@@ -899,26 +927,13 @@ ${decisionContext}`,
       fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
       diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } },
     } } }
-)
-const authoredArtifacts = {
-  fitnessFunctions: (authored && authored.fitnessFunctions) || [],
-  diagrams: (authored && authored.diagrams) || [],
+  )
 }
 
 // SELECTED design drafts — only the surfaces the ruling actually creates, all
 // authored in ONE maker session (one draft per selected design, each under its key).
-const surfaces = Array.isArray(decision.surfaces) ? decision.surfaces : []
-const designSpecs = []
-if (surfaces.includes('events')) {
-  designSpecs.push(['eventSchema', 'Design the event schema(s) within the event API envelope format for the decided events.'])
-  designSpecs.push(['domainEvents', 'Model the domain events, flows, and contracts the ruling introduces.'])
-}
-if (surfaces.includes('restApi')) designSpecs.push(['apiContract', 'Produce the OpenAPI contract proposal for the decided REST surface.'])
-if (surfaces.includes('graphql')) designSpecs.push(['graphql', 'Design the GraphQL schema proposal for the decided AppSync surface.'])
-if (surfaces.includes('newDomain')) designSpecs.push(['ubiquitousLanguage', 'Capture the ubiquitous language — terms, definitions, usage rules — for the new or affected bounded context.'])
-let designDrafts = []
-if (designSpecs.length) {
-  const draftsResult = await agent(
+function authorDesignDrafts() {
+  return agent(
     `Author the design draft(s) the ruling below creates — one per key, drawn FROM the ruling; do NOT re-decide anything.
 
 ${designSpecs.map(([key, ask]) => `- \`${key}\`: ${ask}`).join('\n')}
@@ -936,10 +951,15 @@ ${decisionContext}`,
       },
     }
   )
-  designDrafts = draftsResult
-    ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
-    : []
 }
+
+const authoredArtifacts = {
+  fitnessFunctions: (authored && authored.fitnessFunctions) || [],
+  diagrams: (authored && authored.diagrams) || [],
+}
+const designDrafts = draftsResult
+  ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
+  : []
 
 const SAD_UPDATE_SCHEMA = {
   type: 'object',

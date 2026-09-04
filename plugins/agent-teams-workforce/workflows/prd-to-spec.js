@@ -1132,10 +1132,10 @@ if (a.skipArchitecture === true) {
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
       `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}` +
       `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.` +
-      `\n\nWhen needed is true, ALSO classify two things. You are CLASSIFYING, not ruling — these decide whether an adversarial challenge pass runs after the analysts, and nothing else:\n` +
+      `\n\nALSO classify two things. Both are REQUIRED on every answer. You are CLASSIFYING, not ruling — these decide whether an adversarial challenge pass runs after the analysts, and nothing else:\n` +
       `- highStakes: true when the question implicates a constitutive constraint — a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban. Difficulty alone is NOT high stakes.\n` +
       `- reversalRisk: true when a plausible ruling on this question could REVERSE or contradict a decision the SAD already records. false when the SAD is silent here, or any ruling would merely extend it.\n` +
-      `Classify both on evidence. Omitting either is read as "unknown", which runs the challenge pass by default — that is the safe answer and it costs a session, so do not state a flag you cannot support, and do not omit one you can.`
+      `Answer both on evidence, and answer TRUE when you are genuinely unsure — an unnecessary challenge pass costs one wave, while a wrongly-skipped one lets an unexamined high-stakes decision through. State them even when needed is false, where they simply describe a decision no panel will convene on.`
   const triageOpts = {
     label: 'triage:architecture-needed',
     phase: 'Architecture',
@@ -1143,18 +1143,30 @@ if (a.skipArchitecture === true) {
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['needed', 'reason'],
+      // ── BOTH BOOLEANS ARE REQUIRED, AND THAT IS THE WHOLE FIX ─────────────────
+      //
+      // This composite sizes the panel from its own triage, which makes the mini skip
+      // its triage entirely — leaving the mini's challenge-wave trigger with no verdict
+      // to read. A null verdict is ambiguity, and ambiguity challenges, so the wave
+      // fired on 100% of pipeline runs.
+      //
+      // Asking for the two booleans is only half of it. As OPTIONAL properties they
+      // would be omitted often — a schema-optional field is not a field you can rely
+      // on — and every omission puts the verdict back to undefined and fires the wave
+      // exactly as before, so the fix would silently do nothing. They are required
+      // here, which is also what architecture.js's own TRIAGE_SCHEMA requires: the two
+      // triages now answer the same question with the same contract.
+      //
+      // Required is safe because the SEMANTICS still fail open. A half-stated verdict
+      // is refused downstream, and an honest `true` still runs the wave — what is no
+      // longer available is silence.
+      required: ['needed', 'reason', 'highStakes', 'reversalRisk'],
       properties: {
         needed: { type: 'boolean' },
         reason: { type: 'string' },
         decisions: { type: 'array', items: { type: 'string' } },
         settledBy: { type: 'string' },
         dimensions: { type: 'array', items: { type: 'string', enum: ARCH_DIMENSIONS } },
-        // The two booleans architecture.js's own triage returns. This composite sizes
-        // the panel from its triage, which makes the mini skip its triage entirely —
-        // and the mini's challenge-wave trigger then had no verdict to read, so it
-        // challenged by default on every pipeline run. Asking for them here is what
-        // makes that skip reachable; see the `triageVerdict` argument below.
         highStakes: { type: 'boolean' },
         reversalRisk: { type: 'boolean' },
       },
