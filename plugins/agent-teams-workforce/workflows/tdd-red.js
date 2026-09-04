@@ -93,6 +93,33 @@ const feedbackBlock = a.feedback
 
 phase('Red')
 
+// ── A DEAD AGENT IS NOT A VERDICT ──────────────────────────────────────────────
+//
+// `agent()` returns null for exactly two reasons, and NEITHER of them is "the agent
+// looked at the work and the answer is no": the user skipped it, or the subagent died
+// on a terminal API error after the runtime's own retries — the session wall, most of
+// the time. Every consumer below used to fold that null in with a real answer:
+// `.filter(Boolean)` dropped the dead writers, `redConfirmed` was then computed over
+// whoever survived, and the phase reported `redConfirmed:false` — a QUALITY verdict on
+// work that was never performed.
+//
+// The cost of that conflation is the whole of Gate 2a's record. The gate's deterministic
+// checks (Red confirmed / failing-output evidence / green-reachable) cannot be met by an
+// artifact nobody produced, so the gate loops, re-dispatches into the same wall, fails
+// the same three checks, exhausts its budget, and — because those are MEASURED checks,
+// which the advantage-evaluator is correctly forbidden to rule competitive — fails the
+// run. The supervisor then reads a work failure at stage 'red', charges the bead, and
+// after three of them quarantines it. Every bug-fix run on record (6 of 6) died there.
+//
+// So a dead dispatch is recorded as itself and reported as itself. The composite turns
+// it into an ENVIRONMENT-stage handback, which spends no gate budget, blames no bead,
+// and leaves the work dispatchable once the wall is down.
+const deadAgents = []
+const noteDead = (who) => {
+  deadAgents.push(who)
+  log(`⚠ Red: '${who}' returned nothing — it was skipped or died on a terminal API error. This is a DISPATCH failure, not a verdict.`)
+}
+
 const taskBlock = `${c.bead ? `Bug ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature under test'}
 Reproduction: ${c.reproduction || 'n/a'}
 Root cause: ${c.rootCause || 'n/a'}
@@ -197,6 +224,11 @@ ${taskBlock}`,
       }
     )
 
+// A discovery that was ATTEMPTED and came back empty-handed is not "the repository has
+// no tests" — it is "nobody looked". Reading it as the former is how a second file gets
+// authored over behavior an existing suite already covers, which the comment above calls
+// worse than no test at all. `skipDiscovery` is the deliberate null and is exempt.
+if (a.skipDiscovery !== true && !discovery) noteDead('red:discovery (test-coverage-gap-reviewer)')
 const foundFiles = (discovery && discovery.existingTestFiles) || []
 const openGaps = (discovery && discovery.gaps) || []
 
@@ -244,6 +276,12 @@ ${taskBlock}`,
       },
     }
   )
+
+  // A confirmation that DIED is not the 'not-encoded' verdict it degrades into below.
+  // The degradation is still the right conservative behaviour for a malformed reply —
+  // it authors rather than skips — but a dead dispatch must additionally be reported as
+  // one, or the phase carries on writing tests into a wall it has already hit.
+  if (!confirmation) noteDead('red:confirm-existing (test-coverage-gap-reviewer)')
 
   // A verdict without executed output is a claim, and a claim may not skip work.
   const evidenced = !!(confirmation && String(confirmation.evidence || '').trim())
@@ -334,7 +372,7 @@ const RED_SCHEMA = {
     notes: { type: 'string' },
   },
 }
-const writerResults = (await parallel(writersFinal.map((w) => () =>
+const writerResultsRaw = (await parallel(writersFinal.map((w) => () =>
   agent(
     `Write the failing test(s) that encode the expected behavior below, then RUN them and confirm they FAIL for the intended reason (Red). Write test code ONLY — do not change production code. You are '${w}' — author only the tests of your specialty.
 
@@ -362,7 +400,16 @@ Deliver: the test file paths you created/modified, whether Red is confirmed, the
       schema: RED_SCHEMA,
     }
   )
-))).filter(Boolean)
+)))
+
+// ANY dead writer poisons the phase, not just all of them. Two of three writers
+// returning real work and the third dying yields a `redConfirmed` computed over
+// two-thirds of the contract — a verdict on partial work, presented as a verdict on
+// the whole. The surviving writers' output is still returned (it is real, and a resume
+// can reuse the files on disk), but the phase reports that it did not complete.
+const deadWriters = writersFinal.filter((_w, i) => !writerResultsRaw[i])
+for (const w of deadWriters) noteDead(`red:${w}`)
+const writerResults = writerResultsRaw.filter(Boolean)
 
 const testFiles = writerResults.flatMap((r) => (r && r.testFiles) || [])
 const redConfirmed = writerResults.length > 0 && writerResults.every((r) => r && r.redConfirmed)
@@ -431,6 +478,10 @@ Authored test files: ${testFiles.join(', ') || 'none'}`,
   }
 )
 
+// The coverage reviewer is a CHECK on what the writers produced. A dead reviewer means
+// nothing was checked — reported, but it never turns coverageGaps into a false "none".
+if (!coverage) noteDead('red:coverage (test-coverage-gap-reviewer)')
+
 // test-design-lead and test-strategy-decider no longer run here: writers are
 // derived from the contract's declared surfaces and the strategy is inherited
 // from the spec, so neither is a choice this phase makes.
@@ -439,7 +490,36 @@ const ledger = {
   beadId: (c.bead && c.bead.id) || null,
   chosen: [...writersFinal, 'test-coverage-gap-reviewer'],
   mode: selectionMode,
-  ok: redConfirmed,
+  ok: redConfirmed && !deadAgents.length,
+  ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
+}
+
+// The phase did not complete. Everything real it managed to produce is still returned —
+// the caller records it and a resume reuses the files on disk — but `dispatchFailed`
+// says the missing half is missing because a dispatch died, so no gate spends its
+// budget adjudicating it and no bead is charged for it.
+if (deadAgents.length) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: deadAgents,
+    reason:
+      `${deadAgents.length} Red dispatch(es) returned nothing — ${deadAgents.join(', ')}. ` +
+      'The agents were skipped or died on a terminal API error, so this phase never ran to a verdict. ' +
+      'Nothing here is a judgement about the tests or the contract.',
+    testFiles,
+    redConfirmed: false,
+    evidence,
+    greenPath,
+    greenReachable: false,
+    greenPathChecked: true,
+    greenPathFindings,
+    writers: writersFinal,
+    surfaces,
+    strategy,
+    coverageGaps: (coverage && coverage.gaps) || [],
+    ledger,
+  }
 }
 
 return {

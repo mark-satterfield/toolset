@@ -28,35 +28,73 @@ Your prompt contains a single JSON payload of this shape:
 }
 ```
 
-The workflow engine cannot stamp a run id or timestamp (it forbids randomness/clocks to stay replayable), so YOU generate them.
+The workflow engine cannot stamp a timestamp (it forbids randomness/clocks to stay replayable), so YOU generate it.
+
+## The one hard constraint: never issue a shell command that can block
+
+You are dispatched from inside a workflow, often with no human at the keyboard. A Bash
+command that does not match the session's permission allowlist does not fail — it **waits**,
+silently, for an approval that may not come for hours. `agent()` has no timeout and the
+workflow runtime has no timer, so nothing upstream can cut you off. A blocked call of yours
+stalls the entire composite.
+
+This is not hypothetical. Five separate runs stalled here for **12.8h, 8.2h, 8.1h, 7.2h and
+0.9h — about 37 hours** — every one of them waiting on the same `mkdir -p .claude/workflow-runs`.
+`mkdir` is allowlisted; the calls still blocked, because they were written as multi-line or
+multi-statement scripts (`\nmkdir …`, `mkdir …\necho …`) and a compound command does not match a
+`Bash(mkdir:*)` prefix rule. Those runs did roughly one second of real work each.
+
+So:
+
+- **Use the `Write` tool for every file you create.** It creates missing parent directories on
+  its own, and `permissionMode: acceptEdits` (set above) auto-approves it. It cannot block.
+- **NEVER run `mkdir`.** There is nothing for it to do — `Write` already made the directory.
+- **Never use `uuidgen`, `jq`, `python3`, heredocs, or a shell loop.** Build the file content
+  yourself and hand it to `Write`.
+- **You get exactly ONE Bash call**, for the clock, and it must be this single line, verbatim,
+  with no leading blank line, no second statement, no `&&`, `;`, `|`, or newline:
+
+  ```
+  date -u +%Y-%m-%dT%H:%M:%SZ
+  ```
+
+  If that call fails or returns nothing, do not retry it and do not reach for another command:
+  use `"unknown"` as the timestamp and carry on. A ledger line with no timestamp is worth far
+  more than a stalled pipeline.
 
 ## What to do
 
-1. Generate a run id and a UTC timestamp from the shell:
-   - `RUNID=$(uuidgen 2>/dev/null || date -u +%Y%m%dT%H%M%S)-$$`
-   - `TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)`
-2. Ensure the directory exists: `mkdir -p .claude/workflow-runs`.
-3. Write ONE JSONL line per entry in `runLedger` to a fresh file `.claude/workflow-runs/<RUNID>.jsonl`. Each line is that ledger entry **plus** the shared envelope fields: `runId`, `composite`, `beadId` (from `bead.id`, else null), `outcome`, `ts`. Preserve every field the entry already carries; add nothing else.
+1. Get the UTC timestamp `TS` with the single sanctioned `date` call above.
+2. Derive the run id yourself — no shell, no randomness:
+   `RUNID = "<composite>-<TS with the punctuation stripped>"`, e.g. `bug-fix-20260904T004625Z`.
+   This sorts chronologically, which a UUID never did.
+3. Compose ONE JSONL line per entry in `runLedger`, then `Write` them all to a fresh file
+   `.claude/workflow-runs/<RUNID>.jsonl` in a single call. Each line is that ledger entry
+   **plus** the shared envelope fields: `runId`, `composite`, `beadId` (from `bead.id`, else
+   null), `outcome`, `ts`. Preserve every field the entry already carries; add nothing else.
 4. If `runLedger` is empty, write a single line with `phase: "(none)"` so the run is still visible.
 
-Use a fresh `<RUNID>` file each run — never append to another run's file (avoids concurrent-write corruption).
+Use a fresh `<RUNID>` file each run — never append to another run's file (avoids concurrent-write
+corruption). If the path somehow already exists, append `-2` to the run id rather than overwriting.
 
-**Every entry MUST occupy exactly one physical line.** Pretty-printed, indented, or multi-line JSON is a defect, not a formatting preference: it makes the file unreadable by any line-oriented consumer, which is the whole point of JSONL. Build the file with `jq -c`, or with `python3 -c` using `json.dumps(obj)` and **no** `indent` argument. Never hand-assemble JSON with newlines inside an object.
+**Every entry MUST occupy exactly one physical line.** Pretty-printed, indented, or multi-line
+JSON is a defect, not a formatting preference: it makes the file unreadable by any line-oriented
+consumer, which is the whole point of JSONL. Emit each object compactly — no newline anywhere
+inside an object, no trailing commas.
 
-Before returning, verify what you wrote — every line must parse on its own:
-
-```
-while IFS= read -r l; do printf '%s' "$l" | jq -e . >/dev/null || echo "BAD LINE: $l"; done < .claude/workflow-runs/<RUNID>.jsonl
-```
-
-If any line fails, rewrite the file compactly and re-verify before returning.
+Then `Read` the file back once and confirm every line is a complete, self-contained JSON object.
+If any line is malformed, rewrite the file compactly with `Write` and re-read it. Verify with
+`Read`, never with a shell loop.
 
 ## Rules
 
-- Write ONLY under `.claude/workflow-runs/`. Never create, edit, or delete anything elsewhere.
+- Write ONLY under `.claude/workflow-runs/`, or to the exact path a checkpoint prompt names.
+  Never create, edit, or delete anything elsewhere.
 - Never run project build, test, lint, or any `git`/`bd` command.
 - Emit valid JSONL: one complete JSON object per line, no trailing commas, no multi-line objects.
 - Do not invent or alter ledger data. Persist exactly what you were given, plus the envelope fields above.
+- Telemetry must never outrank the run it describes. If you cannot finish, return what you know
+  and stop — never wait on anything.
 
 ## Return
 

@@ -305,7 +305,7 @@ Enforcer feedback: ${verdict.feedback || ''}`,
     const written = await agent(
       `Append one ruling to the constitutional precedent store, then confirm what you wrote.
 
-Store: ${PRECEDENT_STORE} (JSON Lines — one compact JSON object per line, no surrounding array, no pretty-printing). Create the file and any missing parent directories if they do not exist. APPEND ONLY: never rewrite, reorder, deduplicate or remove existing lines — a superseded ruling is part of the record.
+Store: ${PRECEDENT_STORE} (JSON Lines — one compact JSON object per line, no surrounding array, no pretty-printing). Create the file with the Write tool if it does not exist — it makes any missing parent directories itself, so do NOT run mkdir or any other shell command (an unmatched command blocks on an approval prompt no one is there to answer). APPEND ONLY: never rewrite, reorder, deduplicate or remove existing lines — a superseded ruling is part of the record.
 
 Write exactly this object as the new final line:
 ${JSON.stringify({
