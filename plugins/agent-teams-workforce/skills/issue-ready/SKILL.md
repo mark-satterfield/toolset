@@ -85,7 +85,12 @@ ready_content_hash=ab12cd34ef56a7b8
 -->
 ```
 
-Read state from the most recent such marker; write a fresh marker each real run.
+Read state from the most recent such marker; write a fresh marker each real run. Every
+marker carries `ready_content_hash=$H` — a marker written without it is the same defect as
+a Beads write that omits it, and step 7 verifies GitHub by re-reading the marker just as
+it verifies Beads by re-reading the metadata. On the score-only path, carry the stored
+`review_status` / `reviewed_at` forward into the new marker unchanged rather than
+restamping them.
 
 ## Staleness — the reason work is skipped
 
@@ -100,6 +105,12 @@ comments. See Recipes for the exact hashing command.
   stored verdict; rerun nothing; post nothing.
 - **Stale or missing** — no stored hash, or it differs → rerun (review, then score if the
   review is COMPLETE), overwrite the stored attributes, post the comments.
+
+**One hash, computed once.** The value compared and the value stored are the same string
+from the same command, computed once at step 3 and held in `$H` for the rest of the
+invocation. A stored hash that disagrees with the compared hash is worse than none: it
+makes a changed issue look fresh. Never recompute after a write, never truncate to a
+different length, never hash a different field set.
 
 ## Algorithm
 
@@ -117,8 +128,16 @@ comments. See Recipes for the exact hashing command.
    After the contract block, append one chat-only line — `Issue <id> was closed on
    <closed_at>.` — using the issue's close date; never post it to the tracker. Emit, stop.
 3. **Read stored state** (`review_status`, `reviewed_at`, `wsjf`, `wsjf_calculated_at`,
-   `ready_content_hash`) and **compute the current content hash** `H`.
-4. **Decide freshness.** Fresh = stored hash exists and equals `H`.
+   `ready_content_hash`) and **compute the current content hash into `$H`** — always,
+   before anything else runs, using the Content hash recipe verbatim.
+
+   Compute it even when there is no stored hash to compare against. `$H` is what steps 5
+   and 6 **write**; the comparison is its second use, not its only one. Short-circuiting
+   on "no stored hash, so obviously stale — skip the hash and go review" is the single
+   failure this whole attribute exists to prevent: the run then has nothing to store, the
+   next run again finds no hash, and every sweep pays for a full review and a full
+   scoring session forever. If you took that shortcut, you have broken the skill.
+4. **Decide freshness.** Fresh = stored hash exists and equals `$H`.
    - **Fresh:** reuse stored values. If `review_status=COMPLETE` and `wsjf` present →
      `Pipeline result: READY`. If `review_status=INCOMPLETE` → `Pipeline result:
      INCOMPLETE`. Rerun nothing. `Comments posted: 0`.
@@ -132,16 +151,28 @@ comments. See Recipes for the exact hashing command.
      costing a full session every sweep and never able to end.
    - **Stale/missing:** go to step 5.
 5. **Run review** (the `issue-review` skill) against the issue. Post the review comment
-   (Audit Trail). Write `review_status` and `reviewed_at` and `ready_content_hash=H`.
+   (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
+   `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The three keys land
+   together or the run has failed; a write that sets the status without the hash is the
+   defect, not a partial success.
    - If review is **INCOMPLETE** → `Pipeline result: INCOMPLETE`; do not score. Skip to
      step 7.
    - If review is **COMPLETE** → continue.
 6. **Run scoring** (the `wsjf` skill) against the issue. Post the WSJF comment and the
-   ready-declaration comment. Write `wsjf` and `wsjf_calculated_at`. `Pipeline result:
-   READY`.
-7. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
+   ready-declaration comment. Then run the **score write** in Recipes — `wsjf`,
+   `wsjf_calculated_at` and `ready_content_hash=$H` in one `bd update`. Re-setting the
+   hash to the same value is idempotent; it is what leaves a complete attribute set on
+   the step-4 path where the review was already fresh and only the score was missing.
+   `Pipeline result: READY`.
+7. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
+   `ready_content_hash` is present and equals `$H`, alongside `review_status` /
+   `reviewed_at` — and `wsjf` / `wsjf_calculated_at` when step 6 ran. If the hash is
+   absent or different, the write did not land: redo it and read back again. Never emit
+   the contract on an unverified write. A run that reports `READY` with no stored hash
+   has thrown away everything it just paid for and guarantees the next run reruns it.
+8. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
    Tracker-ready-state: Beads → issue appears in `bd ready`; GitHub → issue state `OPEN`.
-8. **Emit the contract block.** Stop.
+9. **Emit the contract block.** Stop.
 
 ## Audit Trail
 
@@ -174,19 +205,20 @@ comments. See Recipes for the exact hashing command.
 Beads commands run read-only where possible (`--readonly`); writes use `bd update`. The
 `jq` selectors tolerate both array and `{issue:…}`/flat shapes and missing keys.
 
-**Content hash (Beads):**
+**Content hash (Beads)** — capture it into `$H`; this is the only place the hash is
+computed, and both the freshness comparison and every write use `$H`:
 ```
-bd show <id> --json --readonly \
+H=$(bd show <id> --json --readonly \
   | jq -S 'if type=="array" then .[0] else (.issue // .) end
            | {title,description,acceptance,design,type,issue_type,priority,labels,dependencies,deps}' \
-  | shasum -a 256 | cut -c1-16
+  | shasum -a 256 | cut -c1-16)
 ```
 
 **Content hash (GitHub):**
 ```
-gh issue view <n> --json title,body,labels \
+H=$(gh issue view <n> --json title,body,labels \
   | jq -S '{title,body,labels:[.labels[].name]}' \
-  | shasum -a 256 | cut -c1-16
+  | shasum -a 256 | cut -c1-16)
 ```
 
 **Read stored state (Beads):**
@@ -211,14 +243,37 @@ bd ready --json -n 0 --readonly \
   | jq -e --arg id "<id>" '[.[]?,(.issues[]?)] | any(.id==$id)' >/dev/null && echo ready || echo not-ready
 ```
 
-**Write attributes after a real run (Beads):**
+**Write attributes after a real run (Beads).** Two commands, neither optional in its
+step, both carrying `$H` from the content-hash recipe. Copy them as written — there is no
+variant of either that omits `ready_content_hash`.
+
+Review write (step 5 — the whole write when the review is INCOMPLETE):
 ```
 bd update <id> \
   --set-metadata review_status=<COMPLETE|INCOMPLETE> \
   --set-metadata reviewed_at=<ISO8601> \
-  --set-metadata ready_content_hash=<H> \
-  [--set-metadata wsjf=<score> --set-metadata wsjf_calculated_at=<ISO8601>]   # only when scored
+  --set-metadata ready_content_hash=$H
 ```
+
+Score write (step 6):
+```
+bd update <id> \
+  --set-metadata wsjf=<score> \
+  --set-metadata wsjf_calculated_at=<ISO8601> \
+  --set-metadata ready_content_hash=$H
+```
+
+`--set-metadata` merges into existing metadata, so the score write leaves `review_status`
+and `reviewed_at` alone — never bump `reviewed_at` for a review that did not rerun. Do
+not reach for `--metadata`: it replaces the whole object and would drop the other keys.
+
+**Verify the write (step 7, Beads):**
+```
+bd show <id> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
+           | "ready_content_hash=\(.ready_content_hash//"MISSING")"'
+```
+`MISSING`, or anything other than `$H`, means the write did not land — redo it.
 
 **Post a comment:** Beads `bd comment add <id> --body "..."` · GitHub `gh issue comment <n> --body "..."`.
 
