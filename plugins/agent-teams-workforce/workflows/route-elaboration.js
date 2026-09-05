@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-elaboration',
   description:
-    'Leaf mini — the ELABORATION router. Routes a PRD/Epic or a Spec/Story to the document pipeline that takes it forward: an Epic to reconciling its PRD, authoring the TRD, and producing the Specs, Stories and Tasks beneath it; a Story to keeping it in sync with its Spec and its Tasks current and covering it. This is real work, but it is NOT development work — a Task or a Bug belongs to route-build and is skipped here with a pointer to it. Child count is never consulted: a container that already has children can still have drifted from the document above it. Elaboration is a product decision, so it requires an explicit human-initiated invocation; an unattended sweep gets a skip and the command to run. Returns { bead, action, composite, reason }: action is "elaborate" or "skip".',
+    'Leaf mini — the ELABORATION router. Routes a PRD/Epic or a Spec/Story to the document pipeline that takes it forward: an Epic to reconciling its PRD, authoring the TRD, and producing the Specs, Stories and Tasks beneath it; a Story to keeping it in sync with its Spec and its Tasks current and covering it. This is real work, but it is NOT development work — a Task belongs to route-build and is skipped here with a pointer to it. A Bug belongs to neither router: it is a reporting mechanism, triaged by a person into an Epic, a Task, or a closure, and is skipped here with a reason naming triage. Child count is never consulted: a container that already has children can still have drifted from the document above it. Elaboration is a product decision, so it requires an explicit human-initiated invocation; an unattended sweep gets a skip and the command to run. Returns { bead, action, composite, reason }: action is "elaborate" or "skip".',
   phases: [
     { title: 'Classify', detail: 'document-side hierarchy rules; never force-fit' },
   ],
@@ -122,20 +122,29 @@ function deterministicRoute() {
     )
   }
 
-  // 4) DEVELOPMENT-SIDE kinds — real work, but not elaboration work.
-  if (type === 'task' || type === 'bug' || type === 'infra' || type === 'infrastructure' ||
-      hasLabel('task', 'bug', 'defect', 'regression', 'hotfix', 'infra', 'infrastructure')) {
+  // 4) BUG — neither elaboration work nor development work. A bug is a REPORTING
+  //    MECHANISM: it is TRIAGED by a person into an Epic, a Task, or a closure.
+  //    Pointing it at route-build would be wrong — that router skips it too.
+  if (type === 'bug' || hasLabel('bug', 'defect', 'regression', 'hotfix')) {
+    return skip(
+      `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}) — it is TRIAGED into an Epic, a Task, or a closure, and that is a person's judgment call. Not elaboration work, and not development work either → SKIP (route-build skips it for the same reason; no triage composite exists to dispatch)`,
+    )
+  }
+
+  // 5) DEVELOPMENT-SIDE kinds — real work, but not elaboration work.
+  if (type === 'task' || type === 'infra' || type === 'infrastructure' ||
+      hasLabel('task', 'infra', 'infrastructure')) {
     return skip(
       `${type || 'this bead'} carries DEVELOPMENT work — code, tests, infrastructure, deployment to dev. → SKIP here. Route it through route-build.js instead.`,
     )
   }
 
-  // 5) Explicitly out-of-pipeline kinds.
+  // 6) Explicitly out-of-pipeline kinds.
   if (type === 'chore' || type === 'docs' || type === 'research' || type === 'spike') {
     return skip(`type="${type}" is out of the automated pipeline (no composite handles it) → SKIP (reported, not force-fit)`)
   }
 
-  // 6) Unknown — defer to the ambiguity agent if allowed.
+  // 7) Unknown — defer to the ambiguity agent if allowed.
   return null
 }
 
@@ -174,7 +183,7 @@ The work-item kinds:
 - story   — a container scoped to ONE repo, corresponding to a Spec. Holds Tasks. Its work is elaboration.
 - feature — requirement-shaped work that has no Epic/Story/Task structure yet.
 - task    — one agent's unit of DEVELOPMENT work within ONE repo.
-- bug     — a defect or regression in EXISTING behavior. Development work.
+- bug     — a REPORT of a defect or regression in EXISTING behavior. Neither elaboration nor development work: a bug is triaged by a person into an Epic, a Task, or a closure.
 - infra   — a provisioning/IaC change (CDK, AWS resources, deploy plumbing).
 - other   — chore, docs-only, research spike, or too underspecified to classify.
 
@@ -223,6 +232,10 @@ if (kind === 'epic' || kind === 'story' || kind === 'feature') {
   final = humanInitiated
     ? elaborate('prd-to-spec', `classified as ${what} and the run is human-initiated: ${agentReason} → prd-to-spec`)
     : skip(`classified as ${what}: ${agentReason}. Elaborating its document is a decision to build, which is a human's call, not a sweep's → SKIP (invoke /agent-teams-workforce:work-bead ${id} to proceed)`)
+} else if (kind === 'bug') {
+  final = skip(
+    `classified as a bug: ${agentReason}. A bug is a REPORTING MECHANISM and is never implemented directly — it is TRIAGED into an Epic, a Task, or a closure by a person. Neither elaboration nor development work → SKIP (no triage composite exists to dispatch)`,
+  )
 } else {
   final = skip(
     `classified as ${kind === 'infra' ? 'an infrastructure change' : `a ${kind}`}: ${agentReason}. That is DEVELOPMENT work, not elaboration → SKIP here. Route it through route-build.js.`,

@@ -1,5 +1,5 @@
 ---
-description: "Claim the next ready Task or Bug and run it through to deploy-in-dev"
+description: "Claim the next ready Task and run it through to deploy-in-dev"
 argument-hint: "[--dry-run]"
 allowed-tools: [Bash, Read, Workflow]
 ---
@@ -30,8 +30,11 @@ deferred or hooked:
 
 ```bash
 bd ready --type task --json -n 0 --readonly > /tmp/ready-tasks.json
-bd ready --type bug  --json -n 0 --readonly > /tmp/ready-bugs.json
 ```
+
+**Bugs are not candidates.** A bug is a reporting mechanism, triaged by a person
+into an Epic, a Task, or a closure — `route-build` skips it and there is no
+triage composite to dispatch. Do not query for them here.
 
 **Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata by the
 `issue-ready` skill — read it, do not recompute it:
@@ -137,8 +140,9 @@ Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
 `$REPO` is the repository from step 2. The composite's `workspace` phase turns it into
 the worktree; do not pre-cut one.
 
-`<composite>` is whatever the router named — `task-to-deploy`, `bug-fix`, or
-`infra-change`. Do not substitute your own.
+`<composite>` is whatever the router named — `task-to-deploy` or `infra-change`.
+Do not substitute your own. (`bug-fix` is reachable only on demand, after a
+person has triaged a bug and decided it is a fix; the router never names it.)
 
 ## 6. Report, in five lines
 

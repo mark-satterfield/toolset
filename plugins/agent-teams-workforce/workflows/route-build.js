@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-build',
   description:
-    'Leaf mini — the BUILD router. Routes a Task or a Bug to the composite that takes it through code, test, and deployment to dev. Development work is the only thing routed here: a Task (workable with or without a parent Story — a Story is a roll-up parent for reporting, never a dispatch precondition) or a Bug (workable standing alone). An Epic, Story, or feature belongs to route-elaboration and is skipped here with a pointer to it. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite) or "skip" (with the reason). Pure routing logic; it authors nothing and force-fits nothing.',
+    'Leaf mini — the BUILD router. Routes a Task to the composite that takes it through code, test, and deployment to dev. Development work is the only thing routed here: a Task, workable with or without a parent Story — a Story is a roll-up parent for reporting, never a dispatch precondition. A BUG IS NEVER ROUTED HERE: a bug is a reporting mechanism, not development work, and becomes an Epic, a Task, or a closure only by TRIAGE, which is a person\'s judgment call; it is skipped with a reason naming triage. An Epic, Story, or feature belongs to route-elaboration and is skipped here with a pointer to it. Returns { bead, action, composite, reason }: action is "work" (dispatch the composite) or "skip" (with the reason). Pure routing logic; it authors nothing, classifies no bug\'s outcome, and force-fits nothing.',
   phases: [
     { title: 'Classify', detail: 'workability rules for development work; never force-fit' },
   ],
@@ -67,10 +67,11 @@ const hasEpicAncestor = () => ancestorTypes.includes('epic')
 // ── What this router is for ───────────────────────────────────────────────────
 //
 //   Files:  PRD ──> TRD ──> Spec
-//   Beads:  Epic ──1:many──> Story ──> Task          Bug stands alone
+//   Beads:  Epic ──1:many──> Story ──> Task          Bug is a REPORT, never a parent
+//                                                    and never worked directly
 //
 //   DEVELOPMENT work — writing code, tests, infrastructure, and deploying to dev —
-//   belongs to a Task or a Bug and to nothing else. A Task is scoped to one agent's
+//   belongs to a Task and to nothing else. A Task is scoped to one agent's
 //   work within one repo. Its Story and Epic are ROLL-UP PARENTS FOR REPORTING: they
 //   say where the work reports, and they NEVER gate whether it is worked. A Task with
 //   no Story is routed exactly like one with a Story; the missing parent is a
@@ -83,10 +84,22 @@ const hasEpicAncestor = () => ancestorTypes.includes('epic')
 //   An Epic or a Story IS workable, but its work is elaboration, not development.
 //   That belongs to route-elaboration.
 function deterministicRoute() {
-  // 1) BUG — workable standing alone. No parent required: a defect in existing
-  //    behavior is its own contract, manufactured by bug-triage.
+  // 1) BUG — a REPORTING MECHANISM, never development work. Standing ruling: a bug
+  //    is never worked directly. Every bug is TRIAGED — a person's judgment call —
+  //    and becomes an Epic, a Task, or a closure as a non-defect. Bugs never have
+  //    parents and never acquire one here.
+  //
+  //    This router used to send a bug straight to `bug-fix` as work; that is the
+  //    ruling's opposite and produced 2,534 wrong dispatches in the run ledger.
+  //    There is no triage route to hand it to instead: `bug-triage` exists only as
+  //    a READ-ONLY mini inside `bug-fix` that manufactures a fix contract — it
+  //    neither mints the Epic/Task a triaged bug becomes nor closes a non-defect.
+  //    So this rule STOPS the wrong routing and names triage as the destination; it
+  //    does not build the road, and it decides nothing about the bug's outcome.
   if (type === 'bug' || hasLabel('bug', 'defect', 'regression', 'hotfix')) {
-    return work('bug-fix', `bug is workable standing alone (type="${type || 'n/a'}"${labelTail}) → bug-fix`)
+    return skip(
+      `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}) — it is TRIAGED into an Epic, a Task, or a closure, and that is a person's judgment call, not a routing rule. No triage composite exists to dispatch (\`bug-triage\` is a read-only mini inside \`bug-fix\` that neither mints nor closes anything) → SKIP (reported by name, not force-fit into bug-fix)`,
+    )
   }
 
   // 2) TASK — the unit of development work. Its parents never gate it.
@@ -166,7 +179,7 @@ ${bead.description || '(none)'}
 
 The work-item kinds:
 - task    — one agent's unit of work within ONE repo. Development work, with or without a Story above it.
-- bug     — a defect or regression in EXISTING behavior. Development work, standing alone.
+- bug     — a REPORT of a defect or regression in EXISTING behavior. Not development work: a bug is triaged by a person into an Epic, a Task, or a closure.
 - infra   — a provisioning/IaC change (CDK, AWS resources, deploy plumbing).
 - epic    — a container for a whole PRD's worth of work, spanning repos. Not development work.
 - story   — a container scoped to ONE repo, corresponding to a Spec. Not development work.
@@ -215,7 +228,9 @@ if (!kind || kind === 'other' || !confident) {
 // not it has a Story, exactly as the deterministic rule works one.
 let final
 if (kind === 'bug') {
-  final = work('bug-fix', `classified as a bug: ${agentReason} → bug-fix`)
+  final = skip(
+    `classified as a bug: ${agentReason}. A bug is a REPORTING MECHANISM and is never implemented directly — it is TRIAGED into an Epic, a Task, or a closure by a person → SKIP here (no triage composite exists to dispatch)`,
+  )
 } else if (kind === 'infra') {
   final = work('infra-change', `classified as an infrastructure change: ${agentReason} → infra-change`)
 } else if (kind === 'task') {

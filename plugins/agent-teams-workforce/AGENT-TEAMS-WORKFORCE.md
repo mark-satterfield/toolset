@@ -76,6 +76,14 @@ Each artifact in the PRD-to-Spec pipeline answers a different question and lands
 | Spec | Specifics | The TRD — one TRD may produce several Specs, each scoped to a single repository | `story` | Granular functionality, data flow, and testing criteria, ready for decomposition. |
 | Task | — | Decomposing a Spec's Story | `task` | Individually implementable, WSJF-scored, dependency-mapped. |
 
+**A Bug is not in this table, and that is the point.** A bug is a **reporting
+mechanism**, not an artifact in the chain and not a unit of work. It is never
+worked directly: every bug is **TRIAGED** — a judgment call requiring reason and
+common sense, made by a person — and becomes an Epic, a Task, or a closure as a
+non-defect. Bugs never have parents. Both routers SKIP a bug and name triage;
+`bug-fix` is reachable only on demand, after a person has triaged one and decided
+it is a fix. See [A Bug is never routed](workflows/ROUTING.md#a-bug-is-never-routed).
+
 **Beads type gap.** `bd`'s installed type enum is `bug|feature|task|epic|chore|decision` — it has no native `story` or `whisp` type today. `story` is already assumed by the routers and `ROUTING.md`, and `task-decomposition.js`'s type enum (`feature|bug|task|chore|epic`) doesn't include it either. Registering `story` and `whisp` as custom types (`types.custom` in `.beads/config.yaml`) and updating those two scripts is required before this mapping is anything more than doctrine — tracked as follow-up, not done as part of this document.
 
 ### Spec to Deployment

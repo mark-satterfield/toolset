@@ -4,11 +4,11 @@
 //              |                   |
 //              | created together  | created together
 //              v                   v
-//   Beads:   Epic --1:many--> Story --> Task        Bug (stands alone)
+//   Beads:   Epic --1:many--> Story --> Task        Bug (a REPORT, never worked)
 //
 // A Story is scoped to one repo; a Task to one agent's work within one repo.
-// ONLY a Task or a Bug is workable, and a Task only with a parent Story and an
-// ancestor Epic. Epics and Stories are containers: never worked, and NEVER
+// ONLY a Task is workable. A Bug is a REPORTING MECHANISM: it is triaged by a
+// person into an Epic, a Task, or a closure, and is never routed to a composite. Epics and Stories are containers: never worked, and NEVER
 // decomposed — nothing decomposes a bead. The FILE chain decomposes (PRD -> TRD
 // -> Spec) and the beads are what that chain deposits beneath them.
 //
@@ -32,7 +32,7 @@ const taskDecomposition = path.join(WORKFLOWS, 'task-decomposition.js')
 
 /**
  * Runs the BUILD router deterministically (no classifier agent). Development
- * work only: a Task or a Bug. There is no humanInitiated gate here — a Task
+ * work only: a Task. There is no humanInitiated gate here — a Task
  * under a Story under an Epic was already authorised upstream, which is what
  * lets an unattended build loop run.
  */
@@ -53,12 +53,27 @@ function routeElab(bead, humanInitiated = false) {
   }).then((r) => r.result)
 }
 
-// ── Routing: only a Task or a Bug is workable ─────────────────────────────────
+// ── Routing: only a Task is workable; a Bug is a report ──────────────────────
 
-test('a Bug is workable standing alone — it needs no parent', async () => {
-  const r = await route({ type: 'bug' })
-  assert.equal(r.action, 'work')
-  assert.equal(r.composite, 'bug-fix')
+test('a Bug is NEVER routed to a composite — it is a report awaiting triage', async () => {
+  // A bug is a reporting mechanism. It is triaged by a person into an Epic, a Task, or a
+  // closure. This router used to dispatch it straight to bug-fix as work, which is the
+  // ruling's opposite; 2,534 such dispatches are in the run ledger.
+  for (const bead of [{ type: 'bug' }, { type: 'task', labels: ['regression'] }]) {
+    const r = await route(bead)
+    assert.equal(r.action, 'skip')
+    assert.equal(r.composite, null)
+    assert.match(r.reason, /triag/i, 'the skip names triage as the destination')
+    assert.match(r.reason, /reporting mechanism/i)
+  }
+})
+
+test('a Bug is not elaboration work either — route-elaboration skips it naming triage', async () => {
+  const r = await routeElab({ type: 'bug' }, true)
+  assert.equal(r.action, 'skip')
+  assert.equal(r.composite, null)
+  assert.match(r.reason, /triag/i)
+  assert.doesNotMatch(r.reason, /route-build\.js/, 'it must not be bounced to the build router')
 })
 
 test('a Task under a Story under an Epic is workable', async () => {

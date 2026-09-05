@@ -1,7 +1,8 @@
 # Unattended-mode routing policy
 
 How the ready queue is drained: each tick claims the next ready bead, asks
-the router that owns its kind of work — [`route-build`](route-build.js) for a Task or Bug, [`route-elaboration`](route-elaboration.js) for an Epic, Story, or feature — which composite owns it, runs that composite, reports,
+the router that owns its kind of work — [`route-build`](route-build.js) for a Task, [`route-elaboration`](route-elaboration.js) for an Epic, Story, or feature — which composite owns it, runs that composite, reports,
+(a Bug belongs to neither: it is a report awaiting triage, and both routers skip it — see [A Bug is never routed](#a-bug-is-never-routed))
 and moves on. This file is the human-readable policy; each router is its
 executable form. Keep them in sync — edit both when the policy changes.
 
@@ -16,7 +17,7 @@ before writing one.**
 |---|---|---|
 | `prd-to-spec` | prd-reconciliation → prd-validation → architecture → repo-scoping → trd-authoring → spec-authoring → task-decomposition → emit-beads | a feature with no implementation-ready contract yet. Reconciliation runs FIRST and before any gate: a PRD whose requirements already ship is closed, a delta that is really a defect or an infrastructure switch is rerouted to `bug-fix` / `infra-change`, and everything that continues is specified against the DELTA PRD. The repo span is RULED by `repo-scoping` after the architecture decision — it is an output of the run, recomputed every time and never pre-staged; a repository the work needs and the project does not have comes back as a human action, never created here. The final phase WRITES the Epic → Story → Task hierarchy into beads itself, parent before child, and reports what landed on `emissionOk` / `beadsEmitted` / `emission` — the caller does not run `bd` for it. It also RETIRES the stand-in roll-up Stories the Epic was carrying: a Task that reached the build lane parentless had one minted for it on the side, and once this run authors the Spec-backed Story that work belongs under, the stand-in's Tasks are re-parented onto a real Story and it is closed. That repair is reported on `emission.heal` and never moves the emission verdict |
 | `task-to-deploy` | spec-freshness → red → green → refactor → integration → adversarial → deploy | work whose spec/contract already exists and is implementation-ready |
-| `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior |
+| `bug-fix` | bug-triage → shared tail | a defect/regression in existing behavior. **On-demand only** — nothing routes here automatically; a bug reaches it after a person triages it (see [A Bug is never routed](#a-bug-is-never-routed)) |
 | `infra-change` | infra-intent → shared tail (subset) | an infrastructure/provisioning change (CDK/IaC, AWS resources, deploy plumbing) |
 
 ## Type / label → composite
@@ -28,7 +29,7 @@ bead is never mis-typed.
 
 | # | Condition (type, or any label) | Composite |
 |---|---|---|
-| 1 | type `bug`; or label `bug` / `defect` / `regression` / `hotfix` | `bug-fix` |
+| 1 | type `bug`; or label `bug` / `defect` / `regression` / `hotfix` | **SKIP** — awaiting triage |
 | 2 | type `infra` / `infrastructure`; or label `infra` / `infrastructure` / `cdk` / `iac` / `provisioning` | `infra-change` |
 | 3 | label `spec` / `spec-ready` / `implementation` / `implement` / `task-to-deploy` | `task-to-deploy` |
 | 4 | type `feature` / `epic` / `story`; or label `feature` / `prd` / `requirement` / `prd-to-spec` | `prd-to-spec` |
@@ -38,7 +39,8 @@ bead is never mis-typed.
 Notes on order:
 
 - **Bug and infra are checked before feature.** A bead can carry both a base
-  `feature` type and a `bug`/`infra` label; the more specific kind wins.
+  `feature` type and a `bug`/`infra` label; the more specific kind wins. A bug
+  identified this way is skipped, not dispatched.
 - **Spec-ready (rule 3) is checked before feature (rule 4)** on purpose. A
   feature that *already* has an implementation-ready spec skips prd-to-spec
   re-derivation and goes straight to the build-and-deploy tail. Without a
@@ -59,6 +61,29 @@ confidence. The router applies the verdict defensively:
 Set `allowAmbiguityAgent: false` to force a deterministic-only pass — genuinely
 ambiguous beads then SKIP without spawning an agent.
 
+### A Bug is never routed
+
+A bug is a **reporting mechanism**, not a unit of work. It is never worked
+directly. Every bug is **TRIAGED** — a judgment call requiring reason and common
+sense, made by a person — and becomes an Epic, a Task, or a closure as a
+non-defect. Bugs never have parents.
+
+Both routers therefore SKIP a bug, naming triage as the destination:
+
+- `route-build` skips it because it is not development work;
+- `route-elaboration` skips it because it is not elaboration work either.
+
+**There is no triage composite to dispatch, by design.** `bug-triage` exists only
+as a read-only mini *inside* `bug-fix`: it manufactures a fix contract, and it
+neither mints the Epic/Task a triaged bug becomes nor closes a non-defect.
+Building the triage route is deferred until a normal Task builds all the way
+through to AWS dev. Until then the routers stop the wrong dispatch and report the
+bug by name every pass — no automation classifies a bug's outcome, because that
+classification is the judgment triage exists to make.
+
+`bug-fix` remains dispatchable **on demand**, by a person who has already triaged
+a bug and decided it is a fix. Nothing routes to it automatically.
+
 ## What `/loop` skips — and that skips are reported, never force-fit
 
 A SKIP is a `null` composite from either router, carrying a `reason`. `/loop`
@@ -66,6 +91,8 @@ A SKIP is a `null` composite from either router, carrying a `reason`. `/loop`
 does **not** force an unmatched bead into the nearest-looking composite — a
 mis-route costs more than a skip. Beads are skipped when they are:
 
+- a **bug** (rule 1) — a report awaiting triage, not work. See
+  [A Bug is never routed](#a-bug-is-never-routed).
 - an **out-of-pipeline kind** — `chore`, `docs`, `task`, `research`, `spike`
   (rule 5). These are real work, just not work this pipeline automates.
 - **unclassifiable** — type/labels match nothing and the ambiguity agent could
@@ -76,9 +103,11 @@ sees the reported reason and decides: relabel it so it routes, handle it manuall
 or leave it. Routing is **advisory triage**, not a state mutation — the routers
 reads a bead and returns a decision; it never closes, claims, or relabels.
 
-To make a skipped bead route, give it a type/label from the table above — e.g.
-add a `bug` label to a defect filed as a plain `task`, or a `spec-ready` label to
-a feature whose contract already exists.
+To make a skipped bead route, give it a type/label from the table above — e.g. a
+`spec-ready` label to a feature whose contract already exists. Labelling
+something a `bug` does the opposite: it takes the bead OUT of the routed lane and
+into the triage queue, which is the correct place for a defect report and the
+wrong place for work already decided.
 
 ## How `/loop` self-paces — "until `bd ready` is empty"
 
@@ -90,7 +119,7 @@ None of it is a script in this folder. One tick:
 1. **Check the queue.** Run `bd ready`. If it is empty, **stop** — the loop is done.
 2. **Claim the next bead.** Take the top ready bead and mark it in-progress
    (`bd update --status` / claim), so a second runner can't grab the same bead.
-3. **Route it.** Call `route-build` with `{ bead }` for a Task, Bug, or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. Neither reads `childCount`.
+3. **Route it.** Call `route-build` with `{ bead }` for a Task or Infra bead; call `route-elaboration` with `{ bead, humanInitiated }` for an Epic, Story, or feature. A Bug can be handed to either — both skip it, naming triage. Neither reads `childCount`.
    - composite is non-null → run that composite on-demand, dispatched by path
      (`Workflow({ scriptPath: 'plugins/agent-teams-workforce/workflows/<composite>.js', args: { bead } })`).
    - composite is null → **report the skip** (id + reason) and leave the bead's

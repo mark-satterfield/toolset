@@ -34,7 +34,7 @@ workflow dispatch guard.
 There are two routers, split by the kind of work. Pick by the bead's type — do not
 guess, and do not send a bead to both.
 
-**Task, Bug, or Infra — DEVELOPMENT work:**
+**Task or Infra — DEVELOPMENT work:**
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/route-build.js",
@@ -55,6 +55,11 @@ Workflow({scriptPath: "$ROOT/workflows/route-elaboration.js",
                 parentType, ancestorTypes},
          humanInitiated: true}})
 ```
+
+**Bug — neither.** A bug is a reporting mechanism, not work. It is TRIAGED by a
+person into an Epic, a Task, or a closure. Both routers skip it, naming triage;
+there is no triage composite to dispatch. Hand a bug to `route-build.js` and
+report the skip — do not force it into `bug-fix`.
 
 `humanInitiated: true` is correct here and **only** here: a person typed this command.
 Existence is not readiness — an Epic sitting there is not a request to elaborate it.
