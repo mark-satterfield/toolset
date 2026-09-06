@@ -484,6 +484,143 @@ test('workspace.js: a REUSED tree is verified, not merely reported — both reus
   }
 })
 
+
+// ── ssbd-2dqw: the provisioner's FLAGS chose which tree got verified ──────────
+//
+// ssbd-4qzi fixed half of this and the other half reproduced it within the week.
+//
+// Both incidents are one sentence: the script pointed its one independent control at the
+// tree an AGENT named. In 4qzi the provisioner cut the right tree, verified it, wrote the
+// evidence out in full — and filled `repoPath` with the caller's REPOSITORY, which is a
+// legal member of the acceptable set because reuse-in-place needs it there. The verifier
+// was dispatched at the main working tree, reported one, and a correct worktree was
+// refused. The fix pinned the CUT path and left the REUSE path adopting whatever was
+// reported. 2dqw arrived with the same misfill plus `reused: true`, took the unpinned
+// branch, and failed identically — twice, on consecutive dispatches.
+//
+// So no agent-authored value selects the tree any more. The script names the candidates
+// it BUILT, git characterises every one of them in a single read-only turn, and the first
+// one git shows to be a linked worktree of the caller's repository on a writable branch
+// wins. These tests are the two incidents, and the case that must keep working.
+
+/** The caller's path as git sees a MAIN working tree: git-dir and git-common-dir equal. */
+const callerIsMainTree = {
+  callerGitDir: CALLER_COMMON_DIR,
+  callerCommonDir: CALLER_COMMON_DIR,
+  callerBranch: 'main',
+  callerDefaultBranch: 'main',
+}
+
+for (const reused of [true, false]) {
+  test(`workspace.js: THE ssbd-2dqw reproduction — a misfiled repoPath (reused=${reused}) no longer refuses a good tree`, async () => {
+    const { result, calls } = await provision(
+      // The misfill: the tree it actually cut is at WORKTREE and its own evidence says so,
+      // but the FIELD carries the repository it was handed.
+      { ok: true, repoPath: CALLER_REPO, branch: 'fix/ssbd-mz1w', reused, isLinkedWorktree: true, evidence: 'cut a new linked worktree' },
+      undefined,
+      {
+        ok: true,
+        // FIRST PATH — the tree step 5 was told to cut. It is really there.
+        gitDir: WORKTREE_GIT_DIR,
+        gitCommonDir: CALLER_COMMON_DIR,
+        branch: 'fix/ssbd-mz1w',
+        // SECOND PATH — the caller's repository, which really is a main working tree.
+        ...callerIsMainTree,
+      },
+    )
+    assert.equal(result.ok, true, 'a tree git confirms is fine must not be refused because a field named the wrong path')
+    assert.equal(result.repoPath, WORKTREE, 'the tree returned is the one git verified, not the one the field named')
+    assert.equal(result.branch, 'fix/ssbd-mz1w')
+    assert.equal(result.independentlyVerified, true)
+
+    const verify = calls.find((c) => c.label === 'workspace:independent-verify')
+    assert.ok(verify.prompt.includes(WORKTREE), 'the verifier is pointed at the built path, not at the misfiled one')
+    assert.ok(
+      result.blocked.some((b) => /not adopted|not taken on/.test(String(b))),
+      'and the disagreement is recorded rather than swallowed',
+    )
+  })
+}
+
+test('workspace.js: `reused` is inert — it cannot steer the verification either way', async () => {
+  // The whole class: an agent-authored boolean must not decide which tree the only
+  // independent control inspects. Same inputs, both spellings, same ruling.
+  const honest = {
+    ok: true,
+    gitDir: WORKTREE_GIT_DIR,
+    gitCommonDir: CALLER_COMMON_DIR,
+    branch: 'fix/ssbd-mz1w',
+    ...callerIsMainTree,
+  }
+  const yes = await provision({ ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true }, undefined, honest)
+  const no = await provision({ ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true }, undefined, honest)
+  assert.equal(yes.result.repoPath, no.result.repoPath, 'the flag must not change which tree is returned')
+  assert.equal(yes.result.ok, no.result.ok)
+  assert.equal(yes.result.repoPath, WORKTREE)
+})
+
+test('workspace.js: reuse IN PLACE still works — the caller\'s own path wins when git says it is a worktree', async () => {
+  // The one case the script genuinely cannot derive, and the reason the caller's path is
+  // on the acceptable list at all. Nothing exists at the built path; the path the caller
+  // handed in IS a linked worktree on a feature branch. It must be taken — and taken on
+  // git's evidence, not on the provisioner having said `reused`.
+  const CALLER_WT_GIT_DIR = `${CALLER_COMMON_DIR}/worktrees/handed-in`
+  const { result } = await provision(
+    { ok: true, repoPath: CALLER_REPO, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true },
+    undefined,
+    {
+      ok: true,
+      // FIRST PATH — nothing is there; an empty observation, honestly reported.
+      gitDir: '',
+      gitCommonDir: '',
+      branch: '',
+      // SECOND PATH — a genuine linked worktree of the caller's repository.
+      callerGitDir: CALLER_WT_GIT_DIR,
+      callerCommonDir: CALLER_COMMON_DIR,
+      callerBranch: 'fix/ssbd-mz1w',
+      callerDefaultBranch: 'main',
+    },
+  )
+  assert.equal(result.ok, true, 'a resumed run handed its own established worktree must land in it')
+  assert.equal(result.repoPath, CALLER_REPO)
+  assert.equal(result.branch, 'fix/ssbd-mz1w')
+})
+
+test('workspace.js: when NEITHER candidate is a usable worktree the step still refuses', async () => {
+  // The fallback must not become a way through. Nothing at the built path, and the
+  // caller's path is the main working tree on main — the original incident.
+  const { result } = await provision(
+    { ok: true, repoPath: CALLER_REPO, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true },
+    undefined,
+    { ok: true, gitDir: '', gitCommonDir: '', branch: '', ...callerIsMainTree },
+  )
+  assert.equal(result.ok, false, 'no tree means no workspace — falling back to the caller\'s repository is the bug')
+  assert.equal(result.repoPath, null)
+  assert.match(String(result.blocked[0]), /incomplete for/, 'the refusal must account for BOTH candidates')
+  assert.match(String(result.blocked[0]), /MAIN working tree/)
+})
+
+test('workspace.js: the two accounts must still agree about the branch of the tree BOTH name', async () => {
+  // Guard (e) survives the restructure: where the chosen tree IS the one the provisioner
+  // named, a branch it reported over a tree git says is on another one is the affirmative
+  // lie the second dispatch exists to catch. Neither branch here is a default branch, so
+  // this is the disagreement itself failing, not the default-branch floor.
+  const { result } = await provision(
+    { ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true },
+    undefined,
+    {
+      ok: true,
+      gitDir: WORKTREE_GIT_DIR,
+      gitCommonDir: CALLER_COMMON_DIR,
+      branch: 'fix/some-other-bead',
+      ...callerIsMainTree,
+    },
+  )
+  assert.equal(result.ok, false, 'a tree whose own branch is in dispute is not a tree any writing phase may inherit')
+  assert.equal(result.repoPath, null)
+  assert.match(String(result.blocked[0]), /disagree/)
+})
+
 // The 6.0.6 in-script git cross-check is GONE, and could never have worked: the runner
 // refuses a dynamic import statically, so the script carrying it could not load at all.
 // Its job — catching a claim the provisioner did not earn — is now done by the

@@ -269,7 +269,7 @@ test('workspace: every path in the VERIFIER prompt is one the script built', asy
 
   const verify = calls.find((c) => c.label === 'workspace:independent-verify')
   // The two path lines it carries, extracted from the prompt itself.
-  const named = [...verify.prompt.matchAll(/^(?:PATH UNDER INSPECTION|CALLER'S REPOSITORY):\s*(\S+)$/gm)].map((m) => m[1])
+  const named = [...verify.prompt.matchAll(/^(?:FIRST|SECOND) PATH:\s*(\S+)$/gm)].map((m) => m[1])
   assert.deepEqual(named, [BUILT_WORKTREE, CALLER_REPO], 'both, and only these two')
   assert.ok(verify.prompt.includes('[BEGIN PATH DATA]'), 'and they are fenced as data, not offered as prose')
 })

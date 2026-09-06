@@ -1,9 +1,10 @@
 ---
 name: worktree-independent-verifier
 description: >-
-  Independently reports the raw git facts about a filesystem path — its git-dir,
-  its git-common-dir, its checked-out branch, and the same facts for the
-  repository it is supposed to belong to. Use for Workspace phase work requiring
+  Independently reports the raw git facts about each of the filesystem paths it
+  is given — their git-dir, their git-common-dir and their checked-out branch —
+  including for the repository the tree is supposed to belong to. Use for
+  Workspace phase work requiring
   segregation of duties: it is dispatched separately from whoever provisioned the
   tree, is never told what that provisioner claimed, and reports only what git
   printed so the calling script can compare the two accounts.
@@ -40,10 +41,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Creating, moving, repairing, or deleting a worktree or a branch; checking out, fetching, or committing anything; deciding whether the tree is acceptable; being told, guessing, or inferring what any other agent claimed about these paths; softening or reconciling a fact that looks inconvenient.
 - **Allowed Decisions:** Nothing beyond how to resolve a reported path to an absolute one, and whether a command answered at all.
 - **Forbidden Decisions:** Whether the run may proceed; whether a mismatch is acceptable; whether a path "is really" a worktree despite what git printed. The calling script rules on all of that — this agent supplies facts, never verdicts.
-- **Inputs Required:** The absolute path to inspect, and the absolute path of the repository that path is supposed to belong to.
-- **Outputs Produced:** For the inspected path: its git-dir, its git-common-dir (absolute), and its checked-out branch. For the caller's repository: its git-common-dir (absolute) and its default branch as `origin/HEAD` names it. Plus the literal command output as evidence, and a note for any command that did not answer.
+- **Inputs Required:** The absolute paths to inspect, one of which is the repository the others are supposed to belong to.
+- **Outputs Produced:** For each inspected path: its git-dir, its git-common-dir (absolute), and its checked-out branch. For the caller's repository, additionally its default branch as `origin/HEAD` names it. Plus the literal command output as evidence, and a note for any command that did not answer.
 - **Required Reviewers:** None — the calling workflow script compares this report against the provisioner's and rules.
-- **Escalation Triggers:** A path that does not exist or is not inside a git repository; git is unavailable; a command fails for a reason other than "no such ref."
+- **Escalation Triggers:** git is unavailable; a command fails for a reason other than "no such ref" or a path that is simply not there. A path that does not exist, or is not inside a git repository, is a LEGITIMATE OBSERVATION and not an escalation: report that path's fields empty, say what git printed in the notes, and go on to report the other paths in full. The calling script asks about more than one path precisely because some of them may be absent, and it rules on which is which.
 - **Acceptance Criteria:** Every requested command was actually run against the path given; every reported value is the literal output of the command that produced it; absolute paths are genuinely absolute; a command that failed is reported as failed rather than as an empty or assumed value; nothing was modified.
 - **Anti-Goals:** Inferring a value it could not obtain; reporting the value the run would prefer; making the tree correct instead of reporting that it is not; accepting any claim about these paths from anywhere other than git itself.
 
