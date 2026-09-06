@@ -451,6 +451,39 @@ test('workspace.js: a verified linked worktree on a feature branch is still ACCE
   assert.equal(result.isLinkedWorktree, true, 'the returned field is now earned, not fabricated by the script')
 })
 
+// ── ssbd-89pi: a guard nobody could satisfy on purpose ────────────────────────
+//
+// Guard (a) refuses the run unless the provisioner affirms isLinkedWorktree=true. The
+// prompt never named that field, the schema left it optional, and BOTH reuse paths told
+// the provisioner to report and stop BEFORE step 6 — the step that produces the finding.
+// So a run that reused an existing tree could only clear the guard by luck, and every
+// re-dispatch of a bead whose tree already existed hit the same refusal identically.
+//
+// Refusing an unearned claim and never asking for the earned one are the same bug from
+// two ends. These assert the asking end; guard (a) above is the refusing end.
+
+test('workspace.js: the provisioning prompt ASKS for every field the script refuses without', async () => {
+  const { calls } = await provision({ ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: false, isLinkedWorktree: true })
+  const call = calls.find((c) => c.label === 'workspace:provision')
+  assert.match(call.prompt, /isLinkedWorktree/, 'guard (a) refuses the run over this field, so the instruction must name it')
+  assert.ok(
+    call.opts.schema.required.includes('isLinkedWorktree'),
+    'a field the script treats as mandatory must be mandatory in the schema too — optional invited the omission',
+  )
+})
+
+test('workspace.js: a REUSED tree is verified, not merely reported — both reuse paths reach step 6', async () => {
+  const { calls } = await provision({ ok: true, repoPath: WORKTREE, branch: 'fix/ssbd-mz1w', reused: true, isLinkedWorktree: true })
+  const prompt = calls.find((c) => c.label === 'workspace:provision').prompt
+  assert.ok(
+    !/reused=true and stop/.test(prompt),
+    'stopping at reuse skips the only step that produces isLinkedWorktree, so the run refuses a tree that was fine',
+  )
+  for (const step of [/STEP 1[\s\S]*?run STEP 6 against it/, /STEP 3[\s\S]*?run STEP 6 against it/]) {
+    assert.match(prompt, step, 'every path to a reported tree — cut or reused — must run the verification')
+  }
+})
+
 // The 6.0.6 in-script git cross-check is GONE, and could never have worked: the runner
 // refuses a dynamic import statically, so the script carrying it could not load at all.
 // Its job — catching a claim the provisioner did not earn — is now done by the

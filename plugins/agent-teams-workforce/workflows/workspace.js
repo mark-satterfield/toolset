@@ -221,7 +221,7 @@ git -C "${repoPath}" rev-parse --git-dir
 git -C "${repoPath}" rev-parse --git-common-dir
 git -C "${repoPath}" rev-parse --abbrev-ref HEAD
 \`\`\`
-When --git-dir and --git-common-dir DIFFER, the path is already a linked worktree. If it is also on a branch that is not the default branch, REUSE IT: report it as the worktree with reused=true and stop. A resumed or re-dispatched run must land in the same tree as the attempt before it — in a fresh tree it cannot see the earlier run's tests, and the most expensive phase in the pipeline is paid for twice.
+When --git-dir and --git-common-dir DIFFER, the path is already a linked worktree. If it is also on a branch that is not the default branch, REUSE IT: set \`WT\` to that path, run STEP 6 against it, and report it with reused=true. Do not cut a second tree, and do not skip STEP 6 — a reused tree is reported through the same fields as a cut one, and those fields carry a STEP 6 finding. A resumed or re-dispatched run must land in the same tree as the attempt before it — in a fresh tree it cannot see the earlier run's tests, and the most expensive phase in the pipeline is paid for twice.
 
 STEP 2 — OTHERWISE THE PATH IS A MAIN WORKING TREE. Find the repository root and the default branch:
 \`\`\`
@@ -234,7 +234,7 @@ STEP 3 — LOOK BEFORE YOU CUT. A tree for this bead may already exist:
 \`\`\`
 git -C "$REPO" worktree list --porcelain
 \`\`\`
-If one is already registered for ${beadId}, REUSE it. Report its path and its branch with reused=true and stop.
+If one is already registered for ${beadId}, REUSE it: set \`WT\` to its path, run STEP 6 against it, and report it with reused=true. Do not cut a second tree, and do not skip STEP 6.
 
 STEP 4 — BRANCH FROM THE CURRENT TIP, NOT A STALE REF. A worktree cut from an older commit silently omits work that already landed, and the Red survey — looking for tests that ARE committed but absent from this tree — finds nothing and re-authors what was just paid for:
 \`\`\`
@@ -250,7 +250,7 @@ git -C "$REPO" worktree add -b "${BRANCH}" "$WT" "$(git -C "$REPO" rev-parse "$D
 If \`$REPO\` is not the directory you were handed, that path may not sit beside this repository — report ok=false and say so in \`blocked\` rather than cutting a tree somewhere else.
 If the branch name is already taken, add the existing branch instead of creating it (\`git -C "$REPO" worktree add "$WT" "${BRANCH}"\`) rather than inventing a second branch name.
 
-STEP 6 — VERIFY, DO NOT ASSUME. The whole point of this step is that the tree is real and is NOT the main working tree:
+STEP 6 — VERIFY, DO NOT ASSUME. EVERY path through this step ends here — cut in STEP 5, reused from STEP 1, or reused from STEP 3. The whole point of the step is that the tree is real and is NOT the main working tree:
 \`\`\`
 git -C "$WT" rev-parse --git-dir
 git -C "$WT" rev-parse --git-common-dir
@@ -259,7 +259,16 @@ git -C "$WT" log --oneline -1
 \`\`\`
 The two dir values MUST differ, and HEAD MUST NOT be the default branch. If either check fails, report ok=false with the observed values in \`blocked\` — do not report a worktree you did not actually verify.
 
-Report: the absolute worktree path, its branch, whether you reused an existing tree, and the verification output as evidence. The path you report must be one of these EXACTLY — the script compares it byte for byte and refuses anything else, because the path it accepts is one it built rather than one you chose. They are directory names, nothing more:
+REPORT — FIELD BY FIELD. The script reads ONLY these fields. A correct account written in prose alongside a field that says something else is read as what the FIELD says, so fill each one deliberately:
+
+- \`repoPath\` — THE WORKTREE, never the repository you were handed. The name is inherited from the value this step RETURNS to its caller, and it is the single most misfilled field here: the repository named in the PATH DATA block above belongs in it ONLY in the STEP 1 case, where that path was already a linked worktree and you reused it in place. If you cut a tree in STEP 5, this field is \`$WT\` — the tree you created — even though STEP 5's own commands were addressed to the repository.
+- \`branch\` — the branch STEP 6 printed for \`$WT\`.
+- \`reused\` — true if you reused an existing tree (STEP 1 or STEP 3), false if you cut one in STEP 5.
+- \`isLinkedWorktree\` — REQUIRED, and it is a STEP 6 finding rather than a statement of intent: true ONLY when you saw, on the tree you are reporting, that --git-dir and --git-common-dir DIFFER. If you did not run STEP 6 against that exact path, report false. The script refuses the whole run when this is anything but true, because an unverified tree is a main working tree until proven otherwise — so an honest false is a usable answer and a guessed true is not.
+- \`evidence\` — the literal output of the commands you ran.
+- \`blocked\` — anything that stopped you or that you worked around.
+
+The path you report must be one of these EXACTLY — the script compares it byte for byte and refuses anything else, because the path it accepts is one it built rather than one you chose. They are directory names, nothing more:
 [BEGIN ACCEPTABLE PATHS]
 ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
 [END ACCEPTABLE PATHS]`,
@@ -270,7 +279,7 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['ok', 'repoPath', 'branch', 'reused'],
+      required: ['ok', 'repoPath', 'branch', 'reused', 'isLinkedWorktree'],
       properties: {
         ok: { type: 'boolean' },
         repoPath: { type: 'string' },
@@ -321,9 +330,18 @@ const normalizeBranch = (b) =>
     .replace(/^origin\//, '')
     .toLowerCase()
 
-// (a) The linked-worktree claim must be AFFIRMATIVE. `isLinkedWorktree` is optional in
-// the schema, so the previous `!== false` test handed the safe answer to exactly the
+// (a) The linked-worktree claim must be AFFIRMATIVE. The original defect read
+// `provisioned.isLinkedWorktree !== false`, which handed the safe answer to exactly the
 // model that never looked. Absent is not verified. Absent refuses.
+//
+// A guard the prompt never mentioned, though, is a guard nobody can satisfy on purpose.
+// The field was ALSO optional in the schema and named nowhere in the provisioning
+// instruction, while the reuse paths told the provisioner to report and stop BEFORE the
+// step that produces the finding — so a run that reused a tree could only clear this
+// guard by luck. The instruction now names the field, defines it as a step-6 finding,
+// and routes every path — cut or reused — through step 6; the schema now REQUIRES it.
+// Refusing an unearned claim and never asking for the earned one are the same bug seen
+// from two ends.
 if (provisioned.isLinkedWorktree !== true) {
   return refuse(
     `the provisioner did not affirm isLinkedWorktree=true for ${String(provisioned.repoPath).trim()} ` +
