@@ -345,18 +345,48 @@ if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
   )
 }
 
-// The path every later comparison is about. Trimmed once, here: a trailing space
-// silently breaks every `git -C` after it.
-const verifiedPath = String(provisioned.repoPath).trim()
+// ── WHICH TREE IS THIS? THE SCRIPT ANSWERS WHERE IT ALREADY KNOWS ─────────────
+//
+// There are two cases, and only ONE of them is genuinely unknown to this script.
+//
+// A tree the provisioner CUT is at `plannedWorktreePath`. Step 5 hands it that literal
+// string, tells it the layout is not its to choose, and every guard here refuses any
+// other — so the answer was never in doubt, and asking for it back buys nothing.
+//
+// Asking for it back anyway is what broke this step in practice, on ssbd-4qzi. The
+// provisioner cut the right tree at the right path, ran step 6 against it, and said so
+// in its own evidence — then filled `repoPath` with the CALLER'S REPOSITORY. That value
+// is a legal member of the acceptable set, because the set must admit the caller's path
+// for the reuse-in-place case, so (b2) and (b3) both passed and the independent verifier
+// was dispatched against the MAIN working tree. The verifier did its job perfectly and
+// reported a main working tree; guard (c) fired; and a correct, verified worktree was
+// refused. Nobody lied and nothing was insecure — the script simply pointed its one
+// control at the wrong tree, on the say-so of an agent that had no say in the matter.
+//
+// So a freshly-cut tree is pinned to the path this script built. The reported path is
+// compared and any disagreement is carried out in the result, but it is never ADOPTED:
+// a value the script already holds is not improved by an agent's recollection of it.
+// This is the same principle (b3) was reaching for, applied where it actually bites —
+// picking from a list is still authorship when one of the list's entries is the caller's
+// own main working tree.
+//
+// A tree the provisioner REUSED is the one case the script cannot derive: step 1 reuses
+// the caller's own path, step 3 reuses whatever `git worktree list` already had
+// registered. There the reported entry IS the answer — and reuse-in-place is the ONLY
+// circumstance in which the caller's own repository is a legitimate one.
+let verifiedPath
+const reportedPath = String(provisioned.repoPath).trim()
+const reusedTree = provisioned.reused === true
+const pathNotes = []
 
-// (b2) The PROVISIONER-supplied path is untrusted input, exactly as the caller's was. It
-// is about to be interpolated into a second prompt as `git -C "<path>"` command text that
-// the independent verifier is told to run exactly as written, so a provisioner that
-// returns a quote-bearing path is not naming a tree — it is writing that verifier's shell.
-// The two accounts of the tree are only worth anything if the second one is still asking
-// about the tree the first one named.
-const verifiedPathFault = pathFault('the provisioned repoPath', verifiedPath)
-if (verifiedPathFault) return refuse(verifiedPathFault)
+// (b2) The PROVISIONER-supplied path is untrusted input, exactly as the caller's was, and
+// it is checked WHETHER OR NOT this script goes on to use it. A provisioner that returns a
+// quote-bearing path is not naming a tree — it is writing a prompt — and that is a fact
+// about the provisioner, not about the path: an agent doing that is not one whose worktree
+// this step wants either. So the refusal stands on its own, and pinning the path below is
+// a second control rather than a replacement for this one.
+const reportedPathFault = pathFault('the provisioned repoPath', reportedPath)
+if (reportedPathFault) return refuse(reportedPathFault)
 
 // (b3) AND it must be a path THIS SCRIPT BUILT. The allowlist above stops a path being
 // read as a sentence; this stops it being provisioner-authored text at all, which is the
@@ -364,14 +394,31 @@ if (verifiedPathFault) return refuse(verifiedPathFault)
 // independent verifier is the only control standing between a lying provisioner and a
 // writing phase, and it reads its prompt as prose. So the provisioner does not get to
 // write into that prompt: it picks from a list, and the script compares byte for byte.
-if (!ACCEPTABLE_WORKTREE_PATHS.includes(verifiedPath)) {
+if (!ACCEPTABLE_WORKTREE_PATHS.includes(reportedPath)) {
   return refuse(
-    `the provisioner reported the worktree path ${JSON.stringify(verifiedPath)}, which is not one of ` +
+    `the provisioner reported the worktree path ${JSON.stringify(reportedPath)}, which is not one of ` +
       'the paths this step built. The worktree path is derived here from the caller\'s repository and ' +
       'the bead id precisely so that no agent authors the text that reaches the independent verifier — ' +
       'a provisioner that proposes its own path is writing that verifier\'s prompt, whatever the path ' +
       `says. Acceptable: ${ACCEPTABLE_WORKTREE_PATHS.map((x) => JSON.stringify(x)).join(', ')}.`
   )
+}
+
+// Picking from a list is still a choice, and one entry on that list is the caller's own
+// MAIN WORKING TREE. Which entry is correct is not open: it follows from what the
+// provisioner DID, so the script settles it rather than accepting the entry that was named.
+if (reusedTree) {
+  verifiedPath = reportedPath
+} else {
+  verifiedPath = plannedWorktreePath
+  if (reportedPath !== plannedWorktreePath) {
+    pathNotes.push(
+      `the provisioner reported ${JSON.stringify(reportedPath)} as the tree it cut, but step 5 gave it ` +
+        `${JSON.stringify(plannedWorktreePath)} and no latitude over the layout. The path this script built ` +
+        'is the one verified and returned; the reported one is recorded, not adopted. If no tree exists at ' +
+        'the built path, the independent check below finds nothing there and this step refuses.'
+    )
+  }
 }
 
 // ── SEGREGATION OF DUTIES: a SECOND, INDEPENDENT account of the same tree ──────
@@ -547,8 +594,9 @@ if (DEFAULT_BRANCHES.has(observedNormalized) || observedNormalized === 'head' ||
 }
 
 log(
-  `Workspace: ${provisioned.reused ? 'REUSED' : 'created'} worktree ${verifiedPath} on ${effectiveBranch} — ` +
-    'independently verified as a linked worktree of the caller\'s repository; every writing phase inherits this tree'
+  `Workspace: ${reusedTree ? 'REUSED' : 'created'} worktree ${verifiedPath} on ${effectiveBranch} — ` +
+    'independently verified as a linked worktree of the caller\'s repository; every writing phase inherits this tree' +
+    (pathNotes.length ? ` (${pathNotes.length} path disagreement recorded, not adopted)` : '')
 )
 
 return {
@@ -556,7 +604,7 @@ return {
   applicable: true,
   repoPath: verifiedPath,
   branch: effectiveBranch,
-  reused: provisioned.reused === true,
+  reused: reusedTree,
   isLinkedWorktree: true,
   // The affirmative marker the composites require before they will run a writing phase.
   // A 6.0.5-shaped result — or any result that skipped the independent account — carries
@@ -575,12 +623,15 @@ return {
     notes: Array.isArray(verified.notes) ? verified.notes : [],
   },
   evidence: provisioned.evidence || null,
-  blocked: provisioned.blocked || [],
+  // The provisioner's own notes, plus anything the script had to overrule. A disagreement
+  // it resolved in its own favour is not a reason to fail — the independent check ruled on
+  // the path it chose — but it is not a thing to swallow either.
+  blocked: [...(Array.isArray(provisioned.blocked) ? provisioned.blocked : []), ...pathNotes],
   ledger: {
     phase: 'workspace',
     beadId,
     branch: effectiveBranch,
-    reused: provisioned.reused === true,
+    reused: reusedTree,
     independentlyVerified: true,
     ok: true,
   },
