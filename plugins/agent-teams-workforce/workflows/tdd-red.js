@@ -378,6 +378,17 @@ const RED_SCHEMA = {
         },
       },
     },
+    // ── THE UNAUTHORABLE DECLARATION ─────────────────────────────────────────
+    // A writer that finds no test is obtainable for this contract had nowhere to
+    // say so. Its only shape was redConfirmed:false, which is the same shape as
+    // "I wrote tests and they did not fail" — an ordinary quality failure the gate
+    // answers by looping. So the objection was re-dispatched, the writer restated
+    // it verbatim, the budget was spent, and a MEASURED check cannot be ruled
+    // competitive, so the run died. It died the same way twice, because a loop
+    // cannot repair an objection that is structural rather than about the tests.
+    // This field is that objection, said in a shape the script can act on.
+    unauthorable: { type: 'boolean' },
+    unauthorableReason: { type: 'string' },
     notes: { type: 'string' },
   },
 }
@@ -401,6 +412,10 @@ ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.f
 
 DECLARE THE PATH TO GREEN. For every test you author, name the PRODUCTION file and symbol whose change will make it pass, and what the test actually asserts about that symbol. This is not paperwork: a test whose mock is patched at the module path the code used BEFORE the fix fails perfectly and can never go green, and this declaration is the only thing that distinguishes it from a correct Red. The targetFile must be a production file this change will actually touch${affectedFiles.length ? ` — the contract names these: ${affectedFiles.join(', ')}` : ''}. If you cannot name one, you have not written a test the fix can satisfy.
 
+IF NO TEST IS OBTAINABLE, SAY THAT — DO NOT RETURN A BARE FAILURE. There is exactly one honest way to author nothing: set \`unauthorable\` true and state in \`unauthorableReason\` why this contract admits no failing test at all. That is a narrow claim and it stops the work, so the bar is high — it means the contract names no software behavior a test could assert (a manual or console-only operation, an account or data cleanup, a decision still owed by a human), or the repository's own rules forbid a test in the only place the change could land. It does NOT mean the work is awkward, the fixtures are missing, the module is untested today, or you would rather not. If you can name any production symbol whose behavior this contract changes, a test is obtainable and you must write it.
+
+Returning \`redConfirmed\` false with prose explaining that you were blocked is NOT this declaration and never has been: that shape is read as "the tests I wrote did not fail", it is sent back for rework, and you will be asked the same question again with nothing changed.
+
 Deliver: the test file paths you created/modified, whether Red is confirmed, the greenPath declaration, and the captured failing output as evidence.`,
     {
       label: `red:${w}`,
@@ -423,6 +438,73 @@ const writerResults = writerResultsRaw.filter(Boolean)
 const testFiles = writerResults.flatMap((r) => (r && r.testFiles) || [])
 const redConfirmed = writerResults.length > 0 && writerResults.every((r) => r && r.redConfirmed)
 const evidence = writerResults.map((r) => r && r.evidence).filter(Boolean).join('\n---\n')
+
+// ── A CONTRACT THAT ADMITS NO TEST IS NOT A FAILED PHASE ──────────────────────
+//
+// Every writer ran, none died, none authored a file, and each of them independently
+// reported the same structural objection: this contract names no behavior a failing
+// test could assert. Looping that is futile by construction — the re-dispatch asks
+// the identical question of the identical contract and gets the identical answer,
+// which is exactly what happened twice on a Cognito account-cleanup item that has no
+// code deliverable at all. Two rounds of the gate, both unmet on the same measured
+// check, and a measured check cannot be ruled competitive, so the run died having
+// judged nothing.
+//
+// So this is reported UP rather than round again. It is deliberately not
+// `alreadySatisfied`: nothing here claims the behavior exists, and the phase does not
+// pass. It is not `dispatchFailed` either — the agents worked fine; the contract is
+// the problem, and the answer is a human re-scoping or re-routing the item, not a
+// retry.
+//
+// The bar is narrow on purpose, so it cannot become the cheap way out of writing a
+// test: every writer must say it, none may have authored a file, and each must give a
+// reason. One writer authoring anything, or one declining to make the claim, and this
+// is an ordinary Red failure the gate should judge normally.
+const unauthorableWriters = writerResults.filter(
+  (r) => r && r.unauthorable === true && String(r.unauthorableReason || '').trim()
+)
+if (
+  !deadWriters.length &&
+  writerResults.length > 0 &&
+  !testFiles.length &&
+  unauthorableWriters.length === writerResults.length
+) {
+  // No writer died, so writerResults is index-aligned with writersFinal and each
+  // reason can be attributed to the writer that raised it.
+  const reasons = writerResults.map((r, i) => `${writersFinal[i] || 'writer'}: ${String(r.unauthorableReason).trim()}`)
+  const blockedReason =
+    `every Red writer reports this contract admits no failing test and authored none — ${reasons.join(' | ')}. ` +
+    'This is a property of the contract, not of the tests, so re-dispatching the phase would return the same answer; ' +
+    'it needs a human to re-scope or re-route the work item.'
+  log(`Red BLOCKED: ${blockedReason}`)
+  return {
+    ok: false,
+    phaseBlocked: true,
+    blockedReason,
+    unauthorableReasons: reasons,
+    testFiles: [],
+    redConfirmed: false,
+    evidence,
+    greenPath: [],
+    greenReachable: false,
+    greenPathChecked: false,
+    greenPathFindings: [],
+    ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
+    writers: writersFinal,
+    surfaces,
+    strategy,
+    coverageGaps: [],
+    ledger: {
+      phase: 'red',
+      beadId: (c.bead && c.bead.id) || null,
+      chosen: writersFinal,
+      mode: selectionMode,
+      ok: false,
+      blocked: 'contract-unauthorable',
+      ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
+    },
+  }
+}
 
 // ── Green reachability, settled in script ─────────────────────────────────────
 //

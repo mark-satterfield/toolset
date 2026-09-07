@@ -627,6 +627,25 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`${phaseName}: ALREADY SATISFIED — nothing to build; gate ${gate} skipped`)
       return { ok: true, artifact, alreadySatisfied: true }
     }
+    // ── A PHASE THAT CANNOT PRODUCE A VERDICT IS NOT A PHASE THAT FAILED ───────
+    //
+    // A phase may report that the WORK IT WAS GIVEN admits no artifact at all — Red
+    // finding a contract that names no behavior a failing test could assert, for
+    // instance. That is not a quality complaint about what the phase produced, so
+    // looping it cannot repair it: the re-dispatch puts the identical question to the
+    // identical input and gets the identical answer, the budget is spent, and the
+    // measured check that never moved kills the run having judged nothing.
+    //
+    // So a phase that reports `phaseBlocked` is not adjudicated and not retried. It is
+    // reported under its own phase — the work is genuinely stuck and a human must
+    // re-scope or re-route the item — which is why it is neither `alreadySatisfied`
+    // (nothing here passes) nor `dispatchFailed` (the agents worked fine).
+    if (artifact && artifact.phaseBlocked === true) {
+      const why = artifact.blockedReason || `${phaseName} reported that its input admits no artifact it could produce`
+      log(`${phaseName}: BLOCKED — ${why} Gate ${gate} is NOT run: there is nothing to judge, and a retry would return the same answer.`)
+      recordGate(gate, phaseName, attempt, null, { terminal: 'phase-blocked', blockedReason: why })
+      return { ok: false, phaseBlocked: true, reason: why, artifact }
+    }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
       gate, phaseName, criteria, checks, artifact, escalateTargets,
     })
