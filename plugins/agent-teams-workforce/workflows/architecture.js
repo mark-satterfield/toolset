@@ -353,6 +353,35 @@ ${decisionHeader}`,
 // fan-out, and a settled decision dispatches none at all. Nothing routes them: the
 // panel is the selected slice of the fixed roster below, and the framing is written
 // by the script (see `frameBlock`).
+// ── THE PROPOSAL PANEL IS BOUNDED SURVEY, NOT DISCOVERY ───────────────────────
+//
+// These makers are read-only ADVISORS: they propose options and tradeoffs for the
+// decider to rule on. They are not the decider, and they are not an audit.
+//
+// Unbounded, they were the single largest cost in the whole pipeline. Measured over
+// seven prd-to-spec runs, the five proposal analysts alone accounted for roughly two
+// thirds of every run — the CDK analyst averaged ~95 tool-call turns and grew its
+// context past 250k tokens, because "propose the CDK construct topology" against a
+// sixty-repository polyrepo, at the session's inherited HIGH effort, reads as an
+// invitation to survey all sixty. It would then propose the same three options a
+// bounded read of the framing produces.
+//
+// So the panel is bounded on both axes. `effort: 'low'` on the dispatch, because
+// generating options is not the hard reasoning step here — ADJUDICATING them is, and
+// the decider keeps the session's effort. And an explicit reading budget in the
+// prompt, because effort alone does not stop a tool loop.
+const SURVEY_BOUND = `READING BUDGET — this is a bounded proposal, not a codebase audit.
+Your inputs are the framing above and the SAD extract it carries. Reason from those first.
+Open files ONLY to resolve a specific question the framing leaves genuinely unanswered, and
+prefer one targeted search over browsing. Do not survey the repository, do not enumerate
+services or repositories to build a picture, and do not read a file to confirm something the
+framing already states. Roughly ten tool calls is the expected shape; if you find yourself
+past that, you are auditing rather than proposing — stop and return what you have.
+
+Returning three well-reasoned options with honest tradeoffs is the whole job. An option set
+is not improved by having read more of the repository, and an incomplete survey stated as
+fact is worse than an option marked with the uncertainty you actually have.`
+
 const makers = [
   {
     agentType: 'agent-teams-workforce:integration-pattern-architect',
@@ -428,12 +457,13 @@ Propose from YOUR lens only. The other axes above are covered by the analysts di
 
   const jobs = activeMakers.map((m) => () =>
     agent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${SURVEY_BOUND}`,
       {
         label: `proposals:${m.lens}`,
         phase: 'Proposals',
         agentType: m.agentType,
         schema: PROPOSAL_SCHEMA,
+        effort: 'low',
       }
     )
   )
@@ -451,10 +481,13 @@ ${wantsContextMap ? `
 
 ${decisionHeader}
 
-${frameBlock}`,
+${frameBlock}
+
+${SURVEY_BOUND}`,
         {
           label: 'proposals:analysis-advisors',
           phase: 'Proposals',
+          effort: 'low',
           agentType: wantsContextMap
             ? 'agent-teams-workforce:bounded-context-mapper'
             : 'agent-teams-workforce:failure-mode-analyst',
@@ -816,8 +849,8 @@ Propose a NEW option set. Requirements for this round:
 
   const reJobs = activeMakers.map((m) => () =>
     agent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}`,
-      { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA }
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}\n\n${SURVEY_BOUND}`,
+      { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA, effort: 'low' }
     )
   )
   const reProposed = (await parallel(reJobs)).filter(Boolean)

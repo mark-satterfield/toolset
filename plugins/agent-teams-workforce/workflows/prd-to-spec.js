@@ -1262,6 +1262,10 @@ if (a.skipArchitecture === true) {
       `Answer both on evidence, and answer TRUE when you are genuinely unsure — an unnecessary challenge pass costs one wave, while a wrongly-skipped one lets an unexamined high-stakes decision through. State them even when needed is false, where they simply describe a decision no panel will convene on.`
   const triageOpts = {
     label: 'triage:architecture-needed',
+    // Triage rules on a question the framing already answers — it decides WHETHER the
+    // panel convenes, it does not do the panel's reasoning. At the session's inherited
+    // high effort it was averaging ~23 tool-call turns to return one boolean.
+    effort: 'low',
     phase: 'Architecture',
     agentType: 'agent-teams-workforce:architecture-decider',
     schema: {

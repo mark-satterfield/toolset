@@ -146,7 +146,20 @@ phase('Reconciliation checks')
 
 const combined = await dispatch(
   'reconcile:reality-and-dependencies',
-  `${rulingsBlock}Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query all you need, but change nothing anywhere. Two checks, one pass — return both.
+  `${rulingsBlock}Reconcile this PRD against what is ALREADY BUILT AND DEPLOYED, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase and the cloud account: read, search and query what the verdict needs, but change nothing anywhere. Two checks, one pass — return both.
+
+SEARCH BUDGET — you are answering one question per requirement, not auditing the estate.
+Work requirement by requirement and stop searching for each the moment its status is settled:
+one decisive hit (the file:line that implements it, or a live endpoint that answers) settles
+"shipped" and you move on. Two or three well-aimed searches that all miss settles "absent" —
+absence is a legitimate finding, not a reason to keep looking. Prefer one targeted search over
+browsing a repository, and never re-open a file to confirm something you already read.
+Roughly six tool calls per requirement is the expected shape.
+
+An unsettled status is reported as unsettled with the evidence you actually have. That is a
+correct answer. Exhaustively proving a negative across every repository is not more rigorous
+than saying "no implementation found after targeted search" — it costs far more and says the
+same thing, and a status with no evidence behind it is dropped downstream regardless.
 
 ═══ CHECK 1 — PRD vs reality ═══
 

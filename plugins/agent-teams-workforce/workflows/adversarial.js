@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial',
   description:
-    'Shared-tail mini — Adversarial Validation (feeds the constitutional Gate 4). Attackers run concurrently against the change in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adversarial-critique-adjudicator referees severity. The lane set is DERIVED from the surfaces the contract declares — most attack classes need a surface to attack — over a BASELINE of data-exposure and dependency-CVE scanning that always runs and that no surface list can remove, because those apply to any code change. An undeclared surface list means unknown, not empty, and runs every lane; a caller-supplied trimmedScope wins. Security findings are constitutive and cannot be downgraded by implementers.',
+    'Shared-tail mini — Adversarial Validation (feeds constitutional Gate 4). Attackers run concurrently in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adjudicator referees severity. Lanes are DERIVED from the surfaces the contract declares, over a baseline of data-exposure and dependency-CVE scanning conditioned on the change itself — data-exposure when source changed, dependency-CVE when a dependency manifest changed. Undeclared surfaces or unknown changed files mean unknown, not empty, and run every lane; a caller-supplied trimmedScope wins. When no lane applies the phase reports alreadySatisfied and the gate is skipped. Security findings are constitutive and cannot be downgraded by implementers.',
   phases: [
     { title: 'Attack', detail: 'access-control + data-integrity and infra + exposure lanes (concurrent)' },
     { title: 'Adjudicate', detail: 'referee severity; classify constitutive vs competitive' },
@@ -97,14 +97,41 @@ if (Array.isArray(a.trimmedScope) && a.trimmedScope.length && !requested.length)
 // Running all nine against a change that touches none of them buys nothing and is
 // most of this phase's cost.
 //
-// The BASELINE is never empty and is not derived: data exposure and dependency CVEs
-// apply to any code change at all — a fix confined to internal logic can still leak a
-// field into a log or pull a vulnerable transitive package. Security findings are
-// constitutive here, so the floor never drops to zero and no surface list can remove it.
+// The BASELINE is the floor for a change that CAN produce its findings: data exposure
+// and dependency CVEs are not tied to a declared surface — a fix confined to internal
+// logic can still leak a field into a log or pull a vulnerable transitive package.
 //
-// As everywhere else, an UNDECLARED surface list means unknown, not empty, and runs
-// every lane. Only a contract that positively declares its surfaces gets a narrowed set.
-const BASELINE_ATTACKERS = ['data-exposure-scanner', 'dependency-cve-auditor']
+// But a floor is only a safety property where the lane could find something. A lane
+// that structurally cannot is not a floor, it is a session-start bill: dependency-CVE
+// scanning a change that touched no dependency manifest re-audits the same lockfile
+// that was already clean, and data-exposure scanning a docs-and-tests-only change has
+// no code path that logs, returns, or stores anything. Both are then charged on every
+// build of all three composites forever.
+//
+// So the baseline is conditioned on EVIDENCE FROM THE CHANGE ITSELF, never on a
+// judgment about how risky the work felt. Each lane runs when the change contains the
+// kind of file that lane reads. `changedFiles` absent means UNKNOWN, not empty, and
+// both lanes run — the same rule the surface list follows.
+const changedFiles = Array.isArray(green.changedFiles) && green.changedFiles.length ? green.changedFiles : null
+const DEP_MANIFEST_RE = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|requirements[^/]*\.txt|uv\.lock|poetry\.lock|Pipfile|Pipfile\.lock|go\.mod|go\.sum|Cargo\.toml|Cargo\.lock|Gemfile|Gemfile\.lock|pom\.xml|build\.gradle(\.kts)?)$/
+const NON_SOURCE_DIR_RE = /(^|\/)(tests?|spec|__tests__|__mocks__|docs?|\.github|fixtures)\//i
+const NON_SOURCE_EXT_RE = /\.(md|mdx|rst|txt|ya?ml|json|toml|ini|cfg|lock|snap|csv)$/i
+
+const depsChanged = changedFiles === null || changedFiles.some((f) => DEP_MANIFEST_RE.test(f))
+const sourceChanged =
+  changedFiles === null ||
+  changedFiles.some((f) => !NON_SOURCE_DIR_RE.test(f) && !NON_SOURCE_EXT_RE.test(f))
+
+const BASELINE_ATTACKERS = [
+  sourceChanged ? 'data-exposure-scanner' : null,
+  depsChanged ? 'dependency-cve-auditor' : null,
+].filter(Boolean)
+if (changedFiles && BASELINE_ATTACKERS.length < 2) {
+  log(
+    `Adversarial baseline narrowed by the change itself: source ${sourceChanged ? 'changed' : 'unchanged'}, ` +
+      `dependency manifests ${depsChanged ? 'changed' : 'unchanged'} → baseline [${BASELINE_ATTACKERS.join(', ') || 'none'}]`
+  )
+}
 const SURFACE_ATTACKERS = {
   auth: ['auth-bypass-tester', 'permission-escalation-tester'],
   'api-contract': ['injection-attack-tester', 'contract-violation-tester'],
@@ -133,6 +160,31 @@ if (requested.length) {
   attackers = allAttackers
   laneMode = 'all-lanes'
   log('Adversarial: contract declares no surface list — running every lane')
+}
+
+// A derived lane set that came out EMPTY means the change declares no attackable
+// surface AND contains neither source nor dependency changes for the baseline to read.
+// There is no attack to run and therefore nothing for Gate 4 to adjudicate, so the
+// phase reports already-satisfied and the caller's gateLoop skips the gate too — the
+// same contract integration.js uses when no suite has a boundary to exercise. Without
+// this the phase still paid an adjudicator session and a gate session to rule on an
+// empty findings list.
+if (!attackers.length) {
+  log('Adversarial: no attackable surface and no source or dependency change — no lane applies; skipping')
+  return {
+    findings: [],
+    adjudication: { rulings: [], constitutiveOpen: 0 },
+    packetIntegrity: { ok: true },
+    selfContradictory: false,
+    attackers: [],
+    laneMode: 'no-applicable-lane',
+    surfaces: declaredSurfaces,
+    passed: true,
+    alreadySatisfied: true,
+    reason:
+      'the contract declares no attackable surface, and the change touches neither source nor dependency manifests, so no attack lane has anything to read',
+    ledger: { phase: 'adversarial', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'no-applicable-lane', ok: true },
+  }
 }
 
 phase('Attack')

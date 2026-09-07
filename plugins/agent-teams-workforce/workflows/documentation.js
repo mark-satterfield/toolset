@@ -15,6 +15,32 @@ const changedFiles = (green.changedFiles || []).join(', ') || 'n/a'
 
 phase('Documentation')
 
+// ── A CHANGE THAT CANNOT STALE A DOCUMENT DOES NOT NEED AN AUDITOR ────────────
+//
+// The auditor is already the cheap path — it runs first and dispatches writers only
+// when something is genuinely stale. But it ran on EVERY build of all three composites,
+// including changes that cannot make a document stale no matter what they contain: a
+// test-only change, or a change confined to fixtures. Nothing user-facing, no public
+// interface, no behavior a README or a changelog describes.
+//
+// Only that narrow, provable case skips. A source change still gets the auditor even
+// when it touches no doc — deciding whether it stales one is exactly the auditor's job,
+// and this must not become a heuristic that quietly stops documenting real work.
+// Unknown changed files mean unknown, not empty, and the auditor runs.
+const DOC_INERT_RE = /(^|\/)(tests?|spec|__tests__|__mocks__|fixtures)\//i
+const changedList = (green.changedFiles || []).filter(Boolean)
+if (changedList.length && changedList.every((f) => DOC_INERT_RE.test(f))) {
+  log(`Documentation: change is confined to tests and fixtures (${changedList.length} files) — nothing it could stale; skipping the audit`)
+  return {
+    docsCurrent: true,
+    audit: null,
+    update: null,
+    alreadySatisfied: true,
+    reason: 'every changed file is a test or fixture, which no README, API reference, changelog or user guide describes',
+    ledger: { phase: 'documentation', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'no-documentable-change', ok: true },
+  }
+}
+
 // The four Documentation writers. Each owns one doc kind; sending a stale doc to the
 // matching writer keeps authorship inside the writer's specialty.
 const WRITERS = [
