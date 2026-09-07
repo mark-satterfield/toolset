@@ -475,6 +475,7 @@ For each, return: repoPath (echoed back EXACTLY as given), exists (true only if 
 An unconfirmed repository is dropped from the span by the caller, so answering exists:true out of helpfulness routes real work into a repository that is not there. If you cannot confirm one, say exists:false and say what you checked.`,
     {
       label: 'scope:verify-span',
+      effort: 'low',
       phase: 'Verify the span',
       agentType: 'agent-teams-workforce:polyrepo-cartographer',
       schema: {

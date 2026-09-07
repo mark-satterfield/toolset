@@ -140,6 +140,7 @@ ${repo}
 ${taskBlock}`,
     {
       label: 'green:select-implementers',
+      effort: 'low',
       phase: 'Green',
       agentType: 'agent-teams-workforce:implementation-lead',
       schema: {

@@ -241,6 +241,7 @@ These two decide whether an adversarial challenge pass runs after the analysts, 
 ${decisionHeader}`,
     {
       label: 'triage:classify',
+      effort: 'low',
       phase: 'Triage',
       agentType: 'agent-teams-workforce:architecture-boundary-guardian',
       schema: TRIAGE_SCHEMA,
@@ -292,6 +293,7 @@ Triage rationale: ${triage.rationale}
 ${decisionHeader}`,
         {
           label: 'triage:verify-citations',
+          effort: 'low',
           phase: 'Triage',
           agentType: 'agent-teams-workforce:sad-conformance-reviewer',
           schema: {

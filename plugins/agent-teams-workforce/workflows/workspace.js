@@ -520,6 +520,7 @@ If \`--path-format=absolute\` is not supported by this git, run the same rev-par
 A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIMATE OBSERVATION and not a failure of yours: leave that path's fields EMPTY, say what git printed in \`notes\`, and go on to report the other path in full. Every value you report must be the literal output of the command that produced it. If a command does not answer, leave its field EMPTY and name the failure in \`notes\` — one failing probe must not discard an answer another probe already gave, and an inferred value is worse than an absent one, because the script cannot tell them apart. Set \`ok\` false only if you could not run git at all.`,
   {
     label: 'workspace:independent-verify',
+    effort: 'low',
     phase: 'Workspace',
     agentType: 'agent-teams-workforce:worktree-independent-verifier',
     schema: {

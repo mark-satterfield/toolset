@@ -92,6 +92,7 @@ Work within the repository at: ${repo}
 ${surfaces}`,
     {
       label: 'integration:select-suites',
+      effort: 'low',
       phase: 'Integration',
       agentType: 'agent-teams-workforce:integration-testing-lead',
       schema: {

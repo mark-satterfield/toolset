@@ -102,6 +102,7 @@ Changed files from the fix: ${changedFromGreen}
 Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}`,
   {
     label: 'refactor:select-optimizers',
+    effort: 'low',
     phase: 'Refactor',
     agentType: 'agent-teams-workforce:code-quality-lead',
     schema: {
