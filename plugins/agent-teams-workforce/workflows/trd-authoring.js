@@ -20,7 +20,11 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const prd = a.prd || {}
 const sad = a.sad || {}
 const repo = a.repoPath || '(repo path not provided — ask before editing files)'
-const trdPath = a.trdPath || '(TRD path not provided)'
+// A missing trdPath used to render as a placeholder string, which told the author to
+// write the TRD to nowhere. Deciding where a document belongs is NOT this workflow's
+// judgment to make — the project's filing clerk owns that, so when the caller names no
+// path we ask it rather than inventing one under .claude/. Its ruling is used verbatim.
+let trdPath = a.trdPath || null
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
 // This was 3, and nested minis carried their own bound of 2 on top, so a single
@@ -127,6 +131,42 @@ let traceabilityMatrix = null
 let decision = null
 let feedback = ''
 
+// ── WHERE THE TRD LIVES IS THE FILING CLERK'S RULING ─────────────────────────
+// A TRD is a durable document, so it needs a real home before it is authored, not a
+// path this workflow made up. The clerk already owns that decision for this knowledge
+// base: it searches the vault, applies the single-source-of-truth rule, and returns the
+// one correct location. Asked once per run, before the authoring loop.
+if (!trdPath) {
+  const home = await agent(
+    `Decide the ONE correct absolute file path for the Technical Requirements Document described below, using this project's documentation conventions and knowledge base. Do not author the TRD and do not create the file — return only where it belongs.
+
+If a TRD for this subject already exists, return ITS path so the document is updated in place rather than duplicated.
+
+Subject: ${prd.id || prd.title || 'TRD'}
+PRD title: ${prd.title || '(untitled)'}
+Repository the run is working in: ${repo}`,
+    {
+      label: 'trd:filing-home',
+      phase: 'Author TRD',
+      effort: 'low',
+      agentType: 'filing-clerk',
+      schema: {
+        type: 'object', additionalProperties: false, required: ['ok'],
+        properties: { ok: { type: 'boolean' }, path: { type: 'string' }, existing: { type: 'boolean' }, error: { type: 'string' } },
+      },
+    }
+  )
+  if (home && home.ok === true && typeof home.path === 'string' && home.path.startsWith('/')) {
+    trdPath = home.path
+    log(`TRD home ruled by the filing clerk: ${trdPath}${home.existing ? ' (updating an existing TRD in place)' : ''}`)
+  } else {
+    // The clerk is the authority on location; if it cannot rule, this workflow does not
+    // get to substitute a guess. Authoring proceeds and the author is told to ask.
+    trdPath = '(no path supplied — ask the filing clerk before writing)'
+    log('Filing clerk returned no usable path for the TRD — the author is instructed to ask before writing')
+  }
+}
+
 for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
   phase('Author TRD')
@@ -135,7 +175,12 @@ for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   trd = await agent(
     `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
 
-Target TRD path: ${trdPath}
+WRITE THE TRD TO THIS FILE BEFORE YOU RETURN: ${trdPath}
+Create any missing parent directories. A TRD is a durable document, not a value passed
+between phases: returning its text without saving the file means a run that ends early
+leaves no TRD anywhere, and the next run re-derives it from nothing. Saving the file is
+part of authoring it, not an optional extra, and `trdPath` in your result must be the
+path you actually wrote.
 
 PRD (source of product requirements):
 ${prdText}

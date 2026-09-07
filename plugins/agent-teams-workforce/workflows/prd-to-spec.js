@@ -42,6 +42,10 @@ export const meta = {
 //   dependencies?: string[],      // upstream contracts/schemas/libs the PRD assumes — fed to reconciliation
 //   deltaPath?: string,           // where the delta PRD is written; derived from prd.path when absent
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
+//   prdReviewed?: boolean,        // the caller recorded a COMPLETE readiness review for this PRD.
+//                                 // EVIDENCE, not preference — set only from a stored review
+//                                 // status. True skips PRD Validation and Gate 1, which would
+//                                 // otherwise re-derive a verdict already on the tracker.
 //   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
 //   dimensions?: string[],        // size the analyst panel to exactly these axes; overrides both triage steps
 //   forceFullPanel?: boolean,     // run every analyst axis and the challenge wave, skipping both triage steps
@@ -324,6 +328,9 @@ async function persistRun(outcome, retirePath) {
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false }
+function cpSlug(subject) {
+  return String(subject == null ? '' : subject).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120)
+}
 function cpInit(repo, subject, inputHash) {
   const r = String(repo == null ? '' : repo)
   const slug = String(subject == null ? '' : subject).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120)
@@ -846,7 +853,14 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 // analysts and G2 an architecture panel against work that does not need doing.
 // The checkpoint identity is established from the ORIGINAL PRD, before the delta
 // rebinding below — a changed PRD text is exactly what must invalidate a resume.
-cpInit(repoPath, subjectId, cpHash(prd.body))
+// The checkpoint root is NOT the ruled repo span. prd-to-spec is dispatched with no
+// repoPath on purpose — it rules its own span in the repo-scoping phase — so deriving
+// the checkpoint path from repoPath disabled checkpointing for this composite entirely,
+// silently, on every run. Eighteen consecutive runs of one Epic each started from zero,
+// each cost more than a session allocation, and each died at the limit with its TRD and
+// specs still in memory. `emitTarget` below already resolves the same way; cpInit simply
+// never got the fallback.
+cpInit(repoPath || a.beadsRepoPath, subjectId, cpHash(prd.body))
 
 // ── ONE read for both of the run's input files ──────────────────────────────────
 // The checkpoint and the standing rulings are two small files in the same tree, read
@@ -855,7 +869,10 @@ cpInit(repoPath, subjectId, cpHash(prd.body))
 // two sessions to read two files was one session more than the work needed. One reader
 // returns both; either half being absent or unreadable is the normal case and is handled
 // exactly as it was when they were separate.
-const RULINGS_PATH = repoPath ? `${repoPath}/.claude/standing-rulings.md` : null
+// Same defect as cpInit above: no repoPath meant the standing rulings never loaded
+// for this composite either, so every prior ruling was re-litigated from scratch.
+const ARTIFACT_ROOT = repoPath || a.beadsRepoPath || null
+const RULINGS_PATH = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/.claude/standing-rulings.md` : null
 let runInputs = null
 if (cp.active || RULINGS_PATH) {
   const wanted = [
@@ -1098,8 +1115,34 @@ async function repairPrdForGate(feedback, unmet) {
 }
 
 // ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
+//
+// A PRD THAT ALREADY PASSED A READINESS GATE IS NOT RE-VALIDATED.
+//
+// This phase asks whether the PRD is complete, unambiguous, internally consistent and
+// bounded to one domain. When the caller has already run its readiness gate over this
+// work item and recorded COMPLETE, every one of those questions has an answer that was
+// reached by the same kind of read this phase performs. Asking again spends the
+// validation analyst, the G1 enforcer, and — whenever G1 flags anything competitive —
+// an advantage-evaluator too, to re-derive a verdict already on the tracker.
+//
+// `prdReviewed` is EVIDENCE FROM THE CALLER, not a preference: the dispatcher sets it
+// only from a recorded review status. Absent, this phase runs exactly as before, which
+// is the correct default for a PRD nobody has vouched for.
 enterPhase('PRD Validation')
 let validation = cpGet('validation')
+if (validation === undefined && a.prdReviewed === true) {
+  log('PRD Validation: the caller reports this PRD already passed its readiness review — skipping validation and Gate 1')
+  validation = {
+    ok: true,
+    artifact: {
+      validatedPrd: prd,
+      alreadySatisfied: true,
+      reason: 'the caller recorded a COMPLETE readiness review for this PRD; re-validating re-derives a verdict already on the tracker',
+      ledger: { phase: 'prd-validation', beadId: subjectId, chosen: [], mode: 'reviewed-upstream', ok: true },
+    },
+  }
+  await cpSave('validation', validation)
+}
 if (validation === undefined) {
 validation = await gateLoop({
   gate: 'G1', phaseName: 'PRD Validation',
@@ -1626,6 +1669,9 @@ trdAuthoring = await gateLoop({
         acceptanceCriteria: prd.acceptanceCriteria,
       },
       sad: a.sad || { path: a.sadPath },
+      // A TRD is not transient — it must reach a file. WHERE is not this composite's
+      // call: when no path is supplied, trd-authoring asks the project's filing clerk,
+      // which owns document placement. Passing undefined is what triggers that.
       trdPath: a.trdPath,
       repoPath,
       maxLoops: 1,
