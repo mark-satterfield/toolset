@@ -1,6 +1,6 @@
 ---
 name: issue-ready
-description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review status and WSJF score when fresh, reruns review then scoring only when missing or stale, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
+description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), refuses any issue with no lineage (a Task with no parent Story, or a Story with no parent Epic) before spending a review on it, reuses the stored review status and WSJF score when fresh, reruns review then scoring only when missing or stale, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
 ---
 
 # Issue Ready — Readiness Gate
@@ -41,7 +41,8 @@ Comments posted: [n]
 - **`Pipeline result`** describes the review+score verdict only (it does not fold in
   blocker or closed state):
   - `READY` — review COMPLETE and a WSJF score exists.
-  - `INCOMPLETE` — review found gaps; not scored.
+  - `INCOMPLETE` — review found gaps, **or the hierarchy gate failed** (step 4: no
+    parent Story, or a parent Story with no Epic); not scored.
   - `MISSING` — no such issue in the tracker.
   - `ERROR` — a `bd`/`gh` call failed or the input could not be resolved.
 - A **closed** issue is never recomputed: it reports the verdict already stored on it
@@ -87,7 +88,7 @@ ready_content_hash=ab12cd34ef56a7b8
 
 Read state from the most recent such marker; write a fresh marker each real run. Every
 marker carries `ready_content_hash=$H` — a marker written without it is the same defect as
-a Beads write that omits it, and step 7 verifies GitHub by re-reading the marker just as
+a Beads write that omits it, and step 8 verifies GitHub by re-reading the marker just as
 it verifies Beads by re-reading the metadata. On the score-only path, carry the stored
 `review_status` / `reviewed_at` forward into the new marker unchanged rather than
 restamping them.
@@ -131,48 +132,88 @@ different length, never hash a different field set.
    `ready_content_hash`) and **compute the current content hash into `$H`** — always,
    before anything else runs, using the Content hash recipe verbatim.
 
-   Compute it even when there is no stored hash to compare against. `$H` is what steps 5
-   and 6 **write**; the comparison is its second use, not its only one. Short-circuiting
+   Compute it even when there is no stored hash to compare against. `$H` is what steps 4, 6
+   and 7 **write**; the comparison is its second use, not its only one. Short-circuiting
    on "no stored hash, so obviously stale — skip the hash and go review" is the single
    failure this whole attribute exists to prevent: the run then has nothing to store, the
    next run again finds no hash, and every sweep pays for a full review and a full
    scoring session forever. If you took that shortcut, you have broken the skill.
-4. **Decide freshness.** Fresh = stored hash exists and equals `$H`.
+4. **Hierarchy gate — no lineage, not ready.** Read the issue's own type and walk its
+   parents (Hierarchy recipe). The requirement, by type:
+
+   | Type | Requires |
+   | --- | --- |
+   | `epic` | nothing above it — passes |
+   | `story` | a parent whose type is `epic` |
+   | `task` (and any other implementable type) | a parent whose type is `story`, **and** that Story a parent whose type is `epic` |
+
+   If the requirement is unmet → `Pipeline result: INCOMPLETE`, `Ready: FALSE`. Run the
+   **hierarchy write** in Recipes, post the hierarchy comment (Audit Trail), skip review
+   AND scoring, and go to step 8. Name what is missing in `Review`, e.g.
+   `INCOMPLETE — no parent Story` or `INCOMPLETE — parent Story ssbd-vjbqx has no Epic`.
+
+   **This runs on EVERY invocation, before freshness, and its result is never reused from
+   the stored hash.** Parentage is not part of the content fingerprint — re-parenting an
+   issue changes no hashed field — so a cached verdict would survive the very repair that
+   fixed it, and an issue whose hierarchy was completed would stay INCOMPLETE forever.
+   Equally, running it before the freshness check is what stops an unparented task paying
+   for a full review session and a full scoring session to be told it has no parent.
+
+   **Why lineage is readiness.** A Task with no Story, or a Story with no Epic, did not
+   come from `prd-to-spec` — that composite emits the Story, the Epic, the repo and the
+   acceptance criteria together. Missing lineage is therefore evidence of an issue filed
+   by hand or by a sweep, with no spec behind it and nothing that says what "done" means.
+   `ssbd-2aqw` was the case that prompted this: a hand-filed DNS ticket from 2026-07-27,
+   scored `wsjf: 18` and ruled COMPLETE, hanging off a synthesized roll-up wrapper that
+   itself had no Epic. It was selected and dispatched as ordinary work.
+
+   **A backfilled roll-up parent is not lineage.** `parentage.py` synthesizes a Story from
+   a Task's own title when nothing else is derivable, labelled `backfill-parent`. That
+   Story satisfies "has a parent" and fails "that Story has an Epic", which is the correct
+   outcome and needs no special case here: the wrapper exists to make the board's reporting
+   nest, and it is explicitly temporary. Do not treat the label as a pass.
+
+   **Bugs do not come here.** A bug is a reporting mechanism that a person triages into an
+   Epic, a Task, or a closure; it has no acceptance criteria and no lineage requirement. A
+   caller that sends one is the defect. Report `Pipeline result: INCOMPLETE` with
+   `Review: INCOMPLETE — a bug is triaged by a person, not gated here` and write nothing.
+
+5. **Decide freshness.** Fresh = stored hash exists and equals `$H`.
    - **Fresh:** reuse stored values. If `review_status=COMPLETE` and `wsjf` present →
      `Pipeline result: READY`. If `review_status=INCOMPLETE` → `Pipeline result:
      INCOMPLETE`. Rerun nothing. `Comments posted: 0`.
    - **Fresh but `review_status=COMPLETE` with NO `wsjf`:** do not reuse — **go to step
-     6** and score. The review is current, so rerunning it would buy nothing; the score
-     is the only thing missing. This state is reachable and it is not rare: step 5 writes
-     `review_status` and the hash, step 6 writes `wsjf`, and a session that dies between
+     7** and score. The review is current, so rerunning it would buy nothing; the score
+     is the only thing missing. This state is reachable and it is not rare: step 6 writes
+     `review_status` and the hash, step 7 writes `wsjf`, and a session that dies between
      them — a spend or session limit, most often — leaves exactly this. Reusing it would
      report a verdict with no score, the caller would find the attributes still
      incomplete and dispatch this skill again, and it would reuse again: a permanent loop
      costing a full session every sweep and never able to end.
-   - **Stale/missing:** go to step 5.
-5. **Run review** (the `issue-review` skill) against the issue. Post the review comment
+   - **Stale/missing:** go to step 6.
+6. **Run review** (the `issue-review` skill) against the issue. Post the review comment
    (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
    `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The three keys land
    together or the run has failed; a write that sets the status without the hash is the
    defect, not a partial success.
    - If review is **INCOMPLETE** → `Pipeline result: INCOMPLETE`; do not score. Skip to
-     step 7.
+     step 8.
    - If review is **COMPLETE** → continue.
-6. **Run scoring** (the `wsjf` skill) against the issue. Post the WSJF comment and the
+7. **Run scoring** (the `wsjf` skill) against the issue. Post the WSJF comment and the
    ready-declaration comment. Then run the **score write** in Recipes — `wsjf`,
    `wsjf_calculated_at` and `ready_content_hash=$H` in one `bd update`. Re-setting the
    hash to the same value is idempotent; it is what leaves a complete attribute set on
    the step-4 path where the review was already fresh and only the score was missing.
    `Pipeline result: READY`.
-7. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
+8. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
    `ready_content_hash` is present and equals `$H`, alongside `review_status` /
-   `reviewed_at` — and `wsjf` / `wsjf_calculated_at` when step 6 ran. If the hash is
+   `reviewed_at` — and `wsjf` / `wsjf_calculated_at` when step 7 ran. If the hash is
    absent or different, the write did not land: redo it and read back again. Never emit
    the contract on an unverified write. A run that reports `READY` with no stored hash
    has thrown away everything it just paid for and guarantees the next run reruns it.
-8. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
+9. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
    Tracker-ready-state: Beads → issue appears in `bd ready`; GitHub → issue state `OPEN`.
-9. **Emit the contract block.** Stop.
+10. **Emit the contract block.** Stop.
 
 ## Audit Trail
 
@@ -183,6 +224,17 @@ different length, never hash a different field set.
   review iteration. (The machine-readable attributes are current-state and *are*
   overwritten — that is separate from the audit trail.)
 - Comment templates (post only the ones whose step ran):
+
+  ```
+  ## Not Ready — Hierarchy — [ISO 8601 timestamp]
+
+  [what is missing: no parent Story, or the parent Story's own Epic]
+
+  This issue has no lineage, so nothing states what it is part of or what "done" means
+  for it. Work that comes through prd-to-spec arrives with its Story, Epic, repo and
+  acceptance criteria together; this did not. Attach it to a Story under an Epic — or
+  close it — and it becomes ready on the next pass. Review and scoring were not run.
+  ```
 
   ```
   ## Issue Review — [ISO 8601 timestamp]
@@ -228,6 +280,33 @@ bd show <id> --json --readonly \
            | "review_status=\(.review_status//"")\nreviewed_at=\(.reviewed_at//"")\nwsjf=\(.wsjf//"")\nwsjf_calculated_at=\(.wsjf_calculated_at//"")\nready_content_hash=\(.ready_content_hash//"")"'
 ```
 
+**Hierarchy (Beads)** — the issue's own type and its parent chain. Two reads: the issue,
+then its parent. A `task` needs `parent_type=story` AND `grandparent_type=epic`:
+```
+bd show <id> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end
+           | "type=\(.issue_type//"")\nparent=\(.parent//"")"'
+# then, for a non-empty parent:
+bd show <parent> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end
+           | "parent_type=\(.issue_type//"")\ngrandparent=\(.parent//"")"'
+# and for a task, one more read of <grandparent> for grandparent_type.
+```
+
+**Hierarchy write (step 4, Beads)** — records the failed gate and CLEARS any stored score.
+Clearing is not cosmetic: `readiness.assess` in the pipeline rules a bead ready on
+`review_status=COMPLETE` **AND** a finite `wsjf`, and `ssbd-2aqw` sat at `wsjf: 18` from an
+earlier pass. Leaving the score behind would publish a stale number beside a verdict that
+contradicts it.
+```
+bd update <id> \
+  --set-metadata review_status=INCOMPLETE \
+  --set-metadata reviewed_at=<ISO8601> \
+  --set-metadata wsjf= \
+  --set-metadata ready_content_hash=$H
+```
+An empty `wsjf` reads back as absent, which is exactly what "not scored" means.
+
 **Status / closed check (Beads):**
 ```
 bd show <id> --json --readonly \
@@ -247,7 +326,7 @@ bd ready --json -n 0 --readonly \
 step, both carrying `$H` from the content-hash recipe. Copy them as written — there is no
 variant of either that omits `ready_content_hash`.
 
-Review write (step 5 — the whole write when the review is INCOMPLETE):
+Review write (step 6 — the whole write when the review is INCOMPLETE):
 ```
 bd update <id> \
   --set-metadata review_status=<COMPLETE|INCOMPLETE> \
@@ -255,7 +334,7 @@ bd update <id> \
   --set-metadata ready_content_hash=$H
 ```
 
-Score write (step 6):
+Score write (step 7):
 ```
 bd update <id> \
   --set-metadata wsjf=<score> \
@@ -267,7 +346,7 @@ bd update <id> \
 and `reviewed_at` alone — never bump `reviewed_at` for a review that did not rerun. Do
 not reach for `--metadata`: it replaces the whole object and would drop the other keys.
 
-**Verify the write (step 7, Beads):**
+**Verify the write (step 8, Beads):**
 ```
 bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
