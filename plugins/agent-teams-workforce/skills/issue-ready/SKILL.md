@@ -1,6 +1,6 @@
 ---
 name: issue-ready
-description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), refuses any issue with no lineage (a Task with no parent Story, or a Story with no parent Epic) before spending a review on it, reuses the stored review status and WSJF score when fresh, reruns review then scoring only when missing or stale, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
+description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), refuses any issue with no lineage or no repository (a Task with no parent Story, a Story with no parent Epic, or a task whose chain names no repoPath — there would be nowhere to open the session) before spending a review on it, reuses the stored review status and WSJF score when fresh, reruns review then scoring only when missing or stale, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
 ---
 
 # Issue Ready — Readiness Gate
@@ -41,8 +41,8 @@ Comments posted: [n]
 - **`Pipeline result`** describes the review+score verdict only (it does not fold in
   blocker or closed state):
   - `READY` — review COMPLETE and a WSJF score exists.
-  - `INCOMPLETE` — review found gaps, **or the hierarchy gate failed** (step 4: no
-    parent Story, or a parent Story with no Epic); not scored.
+  - `INCOMPLETE` — review found gaps, **or the step-4 gate failed** (no parent Story, a
+    parent Story with no Epic, or no repository anywhere in the chain); not scored.
   - `MISSING` — no such issue in the tracker.
   - `ERROR` — a `bd`/`gh` call failed or the input could not be resolved.
 - A **closed** issue is never recomputed: it reports the verdict already stored on it
@@ -138,19 +138,26 @@ different length, never hash a different field set.
    failure this whole attribute exists to prevent: the run then has nothing to store, the
    next run again finds no hash, and every sweep pays for a full review and a full
    scoring session forever. If you took that shortcut, you have broken the skill.
-4. **Hierarchy gate — no lineage, not ready.** Read the issue's own type and walk its
-   parents (Hierarchy recipe). The requirement, by type:
+4. **Lineage and repo gate — no home, not ready.** Read the issue's own type, walk its
+   parents, and read the `repoPath:` marker off each (Hierarchy recipe). Requirements:
 
-   | Type | Requires |
-   | --- | --- |
-   | `epic` | nothing above it — passes |
-   | `story` | a parent whose type is `epic` |
-   | `task` (and any other implementable type) | a parent whose type is `story`, **and** that Story a parent whose type is `epic` |
+   | Type | Lineage | Repository |
+   | --- | --- | --- |
+   | `epic` | nothing above it | **none** — an Epic may span repos, so it is never required to name one |
+   | `story` | a parent whose type is `epic` | its own `repoPath:` — a Story is scoped to exactly one repo |
+   | `task` (and any other implementable type) | a parent `story`, **and** that Story a parent `epic` | its own `repoPath:`, or its Story's |
 
-   If the requirement is unmet → `Pipeline result: INCOMPLETE`, `Ready: FALSE`. Run the
-   **hierarchy write** in Recipes, post the hierarchy comment (Audit Trail), skip review
-   AND scoring, and go to step 8. Name what is missing in `Review`, e.g.
-   `INCOMPLETE — no parent Story` or `INCOMPLETE — parent Story ssbd-vjbqx has no Epic`.
+   **The repository is not metadata — it is where the session opens.** A build dispatch
+   runs a headless session with the repo as its working directory. A task that names no
+   repo, and whose Story names none either, cannot be worked at all: there is no directory
+   to start in. That is why this is a readiness condition and not a nice-to-have, and it is
+   why an Epic is exempt — an Epic is never worked, only decomposed.
+
+   If any requirement is unmet → `Pipeline result: INCOMPLETE`, `Ready: FALSE`. Run the
+   **gate write** in Recipes, post the gate comment (Audit Trail), skip review AND scoring,
+   and go to step 8. Name what is missing in `Review`, e.g. `INCOMPLETE — no parent Story`,
+   `INCOMPLETE — parent Story ssbd-vjbqx has no Epic`, or
+   `INCOMPLETE — no repoPath on the task or its Story`.
 
    **This runs on EVERY invocation, before freshness, and its result is never reused from
    the stored hash.** Parentage is not part of the content fingerprint — re-parenting an
@@ -226,14 +233,16 @@ different length, never hash a different field set.
 - Comment templates (post only the ones whose step ran):
 
   ```
-  ## Not Ready — Hierarchy — [ISO 8601 timestamp]
+  ## Not Ready — [ISO 8601 timestamp]
 
-  [what is missing: no parent Story, or the parent Story's own Epic]
+  [what is missing: a parent Story, the Story's own Epic, or a repository]
 
-  This issue has no lineage, so nothing states what it is part of or what "done" means
-  for it. Work that comes through prd-to-spec arrives with its Story, Epic, repo and
-  acceptance criteria together; this did not. Attach it to a Story under an Epic — or
-  close it — and it becomes ready on the next pass. Review and scoring were not run.
+  Work that comes through prd-to-spec arrives with its Story, its Epic, its repository
+  and its acceptance criteria together; this did not. A missing repository is the harder
+  stop of the two: a build dispatch opens a headless session IN the repository, so a task
+  that names none — and whose Story names none — has nowhere to run. Attach it to a Story
+  under an Epic, give that Story a repoPath, or close it; it becomes ready on the next
+  pass. Review and scoring were not run.
   ```
 
   ```
@@ -293,7 +302,19 @@ bd show <parent> --json --readonly \
 # and for a task, one more read of <grandparent> for grandparent_type.
 ```
 
-**Hierarchy write (step 4, Beads)** — records the failed gate and CLEARS any stored score.
+The `repoPath:` marker, read from the same records — notes first, then description. It is a
+LINE-ANCHORED marker, so read the line, not the whole field:
+```
+bd show <id> --json --readonly \
+  | jq -r 'if type=="array" then .[0] else (.issue // .) end
+           | ((.notes // "") + "\n" + (.description // ""))' \
+  | grep -iE '^[[:space:]]*[-*>[:space:]]*`?(repoPath|repo|repository)`?[[:space:]]*[:=]' \
+  | head -1
+```
+Absent on the task, read the Story's. Absent on both, the gate fails. `repo:` and
+`repository:` are accepted spellings of the same marker.
+
+**Gate write (step 4, Beads)** — records the failed lineage-or-repo gate and CLEARS any stored score.
 Clearing is not cosmetic: `readiness.assess` in the pipeline rules a bead ready on
 `review_status=COMPLETE` **AND** a finite `wsjf`, and `ssbd-2aqw` sat at `wsjf: 18` from an
 earlier pass. Leaving the score behind would publish a stale number beside a verdict that
