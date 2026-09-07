@@ -265,8 +265,8 @@ REPORT — FIELD BY FIELD. The script reads ONLY these fields. A correct account
 - \`branch\` — the branch STEP 6 printed for \`$WT\`.
 - \`reused\` — true if you reused an existing tree (STEP 1 or STEP 3), false if you cut one in STEP 5.
 - \`isLinkedWorktree\` — REQUIRED, and it is a STEP 6 finding rather than a statement of intent: true ONLY when you saw, on the tree you are reporting, that --git-dir and --git-common-dir DIFFER. If you did not run STEP 6 against that exact path, report false. The script refuses the whole run when this is anything but true, because an unverified tree is a main working tree until proven otherwise — so an honest false is a usable answer and a guessed true is not.
-- \`evidence\` — the literal output of the commands you ran.
-- \`blocked\` — anything that stopped you or that you worked around.
+- \`evidence\` — the STEP 6 values ONLY, at most 400 characters: the git-dir, the git-common-dir and the branch, one short line each, exactly as git printed them. NOT a transcript, and not the output of the other steps. THIS FIELD IS WHY RUNS DIE: the result you are filling in is a small structured payload with a hard size limit, it is discarded as unparseable the moment it exceeds that limit, and it is discarded WHOLE — every other field you filled in correctly goes with it. A pasted command log overruns the limit every time, so an over-long \`evidence\` fails the run exactly as surely as a wrong \`repoPath\`. Report what you saw in as few characters as it takes, and paste nothing you were not asked for.
+- \`blocked\` — anything that stopped you or that you worked around: at most 3 entries, one short sentence each, under the same size limit. Do not quote command output into it.
 
 The path you report must be one of these EXACTLY — the script compares it byte for byte and refuses anything else, because the path it accepts is one it built rather than one you chose. They are directory names, nothing more:
 [BEGIN ACCEPTABLE PATHS]
@@ -286,8 +286,23 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         branch: { type: 'string' },
         reused: { type: 'boolean' },
         isLinkedWorktree: { type: 'boolean' },
-        evidence: { type: 'string' },
-        blocked: { type: 'array', items: { type: 'string' } },
+        // ssbd-6mg5 — BOUNDED BY THE SCHEMA, not merely asked for in prose.
+        //
+        // The structured-output channel truncates a payload at a fixed size, and a
+        // truncated payload is not a short answer — it is invalid JSON, cut mid-string.
+        // This step asked for "the literal output of the commands you ran" in an
+        // unbounded string, so the provisioner returned a verbatim git log, every attempt
+        // was cut at exactly 2048 characters inside `evidence`, and the retry cap was
+        // spent re-sending the same oversized report five times. The answer was CORRECT
+        // on the first attempt and on all four retries; nothing about the worktree was
+        // wrong, and no retry could ever have repaired it.
+        //
+        // So the size limit is stated where it binds. A diagnostic field is never worth
+        // a run: `evidence` is echoed into the return value and the journal and NOTHING
+        // in this script or downstream branches on it, which is precisely why it must not
+        // be allowed to grow until it destroys the fields that ARE load-bearing.
+        evidence: { type: 'string', maxLength: 400 },
+        blocked: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 200 } },
       },
     },
   }
@@ -515,7 +530,7 @@ Report these as \`callerGitDir\`, \`callerCommonDir\`, \`callerBranch\` and \`ca
 
 If \`--path-format=absolute\` is not supported by this git, run the same rev-parse without it and resolve each result to an absolute path yourself against the path it was run in, and say so in \`notes\`.
 
-3. Report the literal output of every command you ran as \`evidence\`.
+3. Report a SHORT digest as \`evidence\` — at most 300 characters, naming only anything the fields above could not carry (a command that failed, a fallback you had to use). It is NOT a transcript of the commands. The result you are filling in is a small structured payload with a hard size limit, and it is discarded WHOLE as unparseable the moment it exceeds that limit — every correctly-observed path goes with it. The fields above are the report; \`evidence\` is a footnote.
 
 A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIMATE OBSERVATION and not a failure of yours: leave that path's fields EMPTY, say what git printed in \`notes\`, and go on to report the other path in full. Every value you report must be the literal output of the command that produced it. If a command does not answer, leave its field EMPTY and name the failure in \`notes\` — one failing probe must not discard an answer another probe already gave, and an inferred value is worse than an absent one, because the script cannot tell them apart. Set \`ok\` false only if you could not run git at all.`,
   {
@@ -536,8 +551,14 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
         callerCommonDir: { type: 'string' },
         callerBranch: { type: 'string' },
         callerDefaultBranch: { type: 'string' },
-        evidence: { type: 'string' },
-        notes: { type: 'array', items: { type: 'string' } },
+        // ssbd-6mg5, the same bound for the same reason. This report carries eight
+        // absolute paths before `evidence` contributes a byte, so it is the MORE exposed
+        // of the two dispatches, not the less: it survived the failing run only because
+        // the provisioner died first and it was never dispatched. Its observations are
+        // the primary control this whole step rests on — losing them to an oversized
+        // footnote would refuse a perfectly good worktree.
+        evidence: { type: 'string', maxLength: 300 },
+        notes: { type: 'array', maxItems: 4, items: { type: 'string', maxLength: 200 } },
       },
     },
   }

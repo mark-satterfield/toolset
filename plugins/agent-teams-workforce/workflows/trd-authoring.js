@@ -179,7 +179,7 @@ WRITE THE TRD TO THIS FILE BEFORE YOU RETURN: ${trdPath}
 Create any missing parent directories. A TRD is a durable document, not a value passed
 between phases: returning its text without saving the file means a run that ends early
 leaves no TRD anywhere, and the next run re-derives it from nothing. Saving the file is
-part of authoring it, not an optional extra, and `trdPath` in your result must be the
+part of authoring it, not an optional extra, and \`trdPath\` in your result must be the
 path you actually wrote.
 
 PRD (source of product requirements):
