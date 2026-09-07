@@ -2448,9 +2448,15 @@ if (!emitPathFault && epicId) {
       description: asText(t.description),
       parentId,
       acceptanceCriteria: Array.isArray(t.acceptanceCriteria) && t.acceptanceCriteria.length ? t.acceptanceCriteria : null,
+      // ONE MARKER PER LINE. `reposcope.recorded_repo` matches `repoPath:` with a
+      // line-anchored regex, so joining these with '; ' put both on one line and the
+      // capture ran to the end of it: a task carrying a repo AND a score yielded the
+      // path `/Users/.../repo; wsjf: 8`, which no manifest confirms, so the hint was
+      // dropped and the task looked repo-less. EVERY task this composite emits has a
+      // score, so every one of them was affected.
       notes: [t.repoPath ? `repoPath: ${t.repoPath}` : null, t.wsjf == null ? null : `wsjf: ${t.wsjf}`]
         .filter(Boolean)
-        .join('; ') || null,
+        .join('\n') || null,
       labels: null,
     }))
   )
