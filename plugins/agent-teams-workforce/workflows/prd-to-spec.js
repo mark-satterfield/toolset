@@ -42,6 +42,10 @@ export const meta = {
 //   dependencies?: string[],      // upstream contracts/schemas/libs the PRD assumes — fed to reconciliation
 //   deltaPath?: string,           // where the delta PRD is written; derived from prd.path when absent
 //   maxLoops?: number,            // gate retry-in-phase bound (default 3)
+//   runInputs?: { files: [{ key:'checkpoint'|'rulings', found:boolean, content?:string }] },
+//                                 // the run's two input files, already read by the caller.
+//                                 // Supplying them skips the `resolve:run-inputs` session,
+//                                 // which exists only because scripts cannot open a file.
 //   prdReviewed?: boolean,        // the caller recorded a COMPLETE readiness review for this PRD.
 //                                 // EVIDENCE, not preference — set only from a stored review
 //                                 // status. True skips PRD Validation and Gate 1, which would
@@ -874,7 +878,19 @@ cpInit(repoPath || a.beadsRepoPath, subjectId, cpHash(prd.body))
 const ARTIFACT_ROOT = repoPath || a.beadsRepoPath || null
 const RULINGS_PATH = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/.claude/standing-rulings.md` : null
 let runInputs = null
-if (cp.active || RULINGS_PATH) {
+// A CALLER THAT ALREADY READ THESE FILES HAS ALREADY PAID FOR THEM.
+//
+// The dispatcher is ordinary code with filesystem access and it knows both paths
+// before it spawns anything — the checkpoint is derived from the same beadsRepoPath
+// and subject this composite uses, and the rulings sit at a fixed location beside it.
+// When it passes the text inline, this reader has nothing left to discover, and the
+// only reason the session existed was that workflow scripts cannot open a file.
+// Absent, the reader runs exactly as before.
+if (a.runInputs && Array.isArray(a.runInputs.files)) {
+  runInputs = a.runInputs
+  const found = runInputs.files.filter((f) => f && f.found).map((f) => f.key)
+  log(`Run inputs supplied by the caller (${found.length ? found.join(', ') : 'none present'}) — no reader session needed`)
+} else if (cp.active || RULINGS_PATH) {
   const wanted = [
     ...(cp.active ? [{ key: 'checkpoint', path: cp.path }] : []),
     ...(RULINGS_PATH ? [{ key: 'rulings', path: RULINGS_PATH }] : []),
