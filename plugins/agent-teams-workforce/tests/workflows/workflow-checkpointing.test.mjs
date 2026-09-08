@@ -252,6 +252,12 @@ test('a checkpointed reconciliation from the DELTA contract is discarded — res
   // The checkpoint hash is over the PRD text, so an unchanged PRD would not invalidate it,
   // and the absent field reads as "no architecture question" — a wrongly-skipped panel
   // nothing reports. So the shape itself is the guard.
+  //
+  // And it never travels alone. Reconciliation is the FIRST phase, so every entry after it
+  // was derived from a `prd` binding the old contract had rebound to the DELTA PRD — the
+  // narrowed requirement set. A real checkpoint on disk carried a `validation` entry
+  // recording a Gate 1 verdict granted to that delta; the inputHash is over the PRD text,
+  // which did not change, so nothing else invalidates it. The whole file goes.
   const first = await runP2S()
   const payload = savedPayload(first.saves[first.saves.length - 1])
   payload.phases.reconciliation = { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }
@@ -262,8 +268,21 @@ test('a checkpointed reconciliation from the DELTA contract is discarded — res
     1,
     'one read-only reconciliation is cheaper than resuming onto a shape that no longer means what it reads as',
   )
+  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
+    assert.equal(
+      workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
+      1,
+      `${mini} read the narrowed delta PRD, so its checkpointed result is exactly as stale as the reconciliation that produced it`,
+    )
+  }
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
   assert.match(journal.prompt, /pre-inventory reconciliation shape/)
+  assert.match(journal.prompt, /"discardedAll":true/, 'the invalidation must STATE what it dropped, not just that reconciliation went')
+  assert.match(journal.prompt, /"discarded":\["reconciliation","validation"/)
+  // And the discarded entries must not be written straight back: the file is rewritten
+  // WHOLE from cp.phases, so a stale entry left there would greet the next resume.
+  const rewritten = savedPayload(second.saves[0])
+  assert.deepEqual(Object.keys(rewritten.phases), ['reconciliation'], 'the first save after a full discard carries only the phase that just completed')
 })
 
 test('a checkpoint SURVIVES a plugin version change when the phase semantics are unchanged', async () => {

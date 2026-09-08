@@ -390,6 +390,29 @@ function cpGet(key) {
   log(`Phase '${key}' SKIPPED — completed result reused from checkpoint`)
   return cp.loaded[key]
 }
+/**
+ * Discard EVERY phase in the loaded checkpoint, not just the one that was found stale.
+ *
+ * A stale phase is never stale alone. Every phase this composite checkpoints is derived
+ * from the phase before it, so a result that no longer means what this file reads it as
+ * has already been read by everything downstream of it — a `validation` verdict granted
+ * to a narrowed PRD is exactly as wrong as the reconciliation that narrowed it, and the
+ * checkpoint's `inputHash` (over the PRD text, which did not change) will not catch it.
+ * Reconciliation is the FIRST phase here, so a stale one means the whole file predates
+ * the contract and none of it is trustworthy.
+ *
+ * `cp.phases` is cleared too, because the file is rewritten WHOLE from it: leaving the
+ * discarded entries there would write them straight back on the next save and hand the
+ * next resume the same stale results.
+ */
+function cpDiscardAll(key, reason) {
+  const discarded = cp.loaded ? Object.keys(cp.loaded) : []
+  cp.loaded = null
+  cp.phases = {}
+  cp.touched = true // a file exists; a completed run still cleans it up
+  runLedger.push({ phase: 'checkpoint', event: 'invalidated', key, reason, discarded, discardedAll: true })
+  log(`Checkpoint DISCARDED IN FULL — ${reason}. ${discarded.length} phase(s) dropped: ${discarded.join(', ')}. Starting fresh.`)
+}
 // ── CHECKPOINT WRITES ARE SERIALIZED ──────────────────────────────────────────
 //
 // The checkpoint file is rewritten WHOLE on every save. That was safe while every phase
@@ -980,9 +1003,13 @@ let reconciliation = cpGet('reconciliation')
 // checkpoint hash is over the PRD text, so an unchanged PRD would not invalidate it either.
 // Cheaper to re-run one read-only reconciliation than to resume onto a shape that no longer
 // means what this file reads it as.
+//
+// And the reconciliation entry is never the only casualty. Every phase checkpointed after
+// it read a PRD that the old contract had NARROWED to the delta — a `validation` entry in
+// one of these files records a Gate 1 pass granted to a document holding 12 of the PRD's
+// 19 requirements — so the whole file goes, not just this key.
 if (reconciliation !== undefined && !(reconciliation && typeof reconciliation.architectureNeeded === 'boolean')) {
-  log('Checkpointed reconciliation predates the material-inventory contract (no architectureNeeded) — discarding it and reconciling afresh')
-  runLedger.push({ phase: 'checkpoint', event: 'invalidated', key: 'reconciliation', reason: 'pre-inventory reconciliation shape' })
+  cpDiscardAll('reconciliation', 'pre-inventory reconciliation shape (no architectureNeeded) — every phase after it derived from the narrowed delta PRD')
   reconciliation = undefined
 }
 const reconResumed = reconciliation !== undefined
