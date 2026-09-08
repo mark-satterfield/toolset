@@ -96,7 +96,7 @@ function compositeWorkflows({ failSpec = false, scopingRepos = ['/repos/alpha'],
 
 const PRD = { id: 'P1', title: 'P', body: 'R1. thing' }
 
-async function runP2S({ checkpointFile = null, workflowOpts = {}, args = {} } = {}) {
+async function runP2S({ checkpointFile = null, walFile = null, workflowOpts = {}, args = {} } = {}) {
   const writer = beadWriter()
   const saves = []
   const result = await runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
@@ -104,17 +104,21 @@ async function runP2S({ checkpointFile = null, workflowOpts = {}, args = {} } = 
     workflowImpl: compositeWorkflows(workflowOpts),
     agentImpl: (call) => {
       const l = String(call.label)
-      // prd-to-spec reads the checkpoint together with the standing rulings, and RETIRES
-      // it inside the journal write. Two files read in one session and two written in
-      // one session — a fresh agent session costs its session start, not its work.
+      // prd-to-spec reads the checkpoint, its write-ahead copy and the standing rulings in
+      // ONE session — a fresh agent session costs its session start, not its work. The
+      // RETIREMENT, by contrast, gets its own session on purpose: folding it into the
+      // journal write handed one agent a verbatim-JSON errand and a JSONL errand at once,
+      // and it blended the two contracts and corrupted real checkpoints.
       if (l === 'resolve:run-inputs') {
         return {
           files: [
             { key: 'checkpoint', found: Boolean(checkpointFile), content: checkpointFile || '' },
+            { key: 'checkpointWal', found: Boolean(walFile), content: walFile || '' },
             { key: 'rulings', found: false, content: '' },
           ],
         }
       }
+      if (l === 'checkpoint:retire') return { retired: true }
       if (l.startsWith('checkpoint:save:')) {
         saves.push(call)
         return { ok: true }
@@ -146,21 +150,30 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
   assert.equal(last.phases.reconciliation.architectureNeeded, false)
 })
 
-/** True when the run's journal write also carried the checkpoint retirement. */
-function retiredInJournal(calls) {
-  const [journal] = agentCalls(calls, 'ledger:persist')
-  return Boolean(journal && /RETIRE the workflow checkpoint at this exact path/.test(String(journal.prompt)))
+/** True when the run retired its checkpoint. */
+function retired(calls) {
+  return agentCalls(calls, 'checkpoint:retire').length > 0
 }
 
-test('a completed successful run RETIRES its checkpoint — inside the journal write, not in a session of its own', async () => {
+test('a completed successful run RETIRES its checkpoint — and its write-ahead copy — in its OWN dispatch', async () => {
   const { calls } = await runP2S()
-  assert.equal(agentCalls(calls, 'checkpoint:delete').length, 0, 'a second agent session to write one small file is a session wasted')
-  assert.ok(retiredInJournal(calls), 'resuming finished work would replay it, so the retirement must still happen')
+  assert.ok(retired(calls), 'resuming finished work would replay it, so the retirement must happen')
   const [journal] = agentCalls(calls, 'ledger:persist')
-  assert.match(
+  assert.doesNotMatch(
     String(journal.prompt),
+    /RETIRE/,
+    'the retirement is NOT folded into the journal write: one agent handed a verbatim-JSON errand and a JSONL errand blended the two contracts and corrupted real checkpoints',
+  )
+  const [retire] = agentCalls(calls, 'checkpoint:retire')
+  assert.match(
+    String(retire.prompt),
     /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json/,
     'the retirement names the run\'s own checkpoint path',
+  )
+  assert.match(
+    String(retire.prompt),
+    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json\.wal/,
+    'BOTH files, or the loader recovers the finished run from the copy and replays every phase',
   )
   // The ledger payload is LAST in the prompt so it stays parseable to the end — a reader
   // that slices from the marker must not find prose after the JSON.
@@ -172,7 +185,7 @@ test('a FAILED run keeps its checkpoint so the next dispatch resumes', async () 
   const { result, calls, saves } = await runP2S({ workflowOpts: { failSpec: true } })
   assert.equal(result.ok, false)
   assert.ok(saves.length >= 4, 'the phases that completed were still checkpointed')
-  assert.equal(retiredInJournal(calls), false, 'a kept checkpoint is the whole point of pausing')
+  assert.equal(retired(calls), false, 'a kept checkpoint is the whole point of pausing')
 })
 
 test('the create-repos exit keeps the checkpoint — its purpose is a re-run after a human acts', async () => {
@@ -181,7 +194,7 @@ test('the create-repos exit keeps the checkpoint — its purpose is a re-run aft
   })
   assert.equal(result.ok, true)
   assert.equal(result.action, 'create-repos')
-  assert.equal(retiredInJournal(calls), false)
+  assert.equal(retired(calls), false)
 })
 
 test('a resumed run SKIPS completed phases, REUSES their results, and journals the resume', async () => {
@@ -217,7 +230,7 @@ test('a checkpoint written against DIFFERENT PRD content is invalidated — fres
   assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'stale results must not be reused')
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
   assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /PRD content changed/)
+  assert.match(journal.prompt, /written against a different PRD text/)
 })
 
 test('a checkpoint written under DIFFERENT phase semantics is invalidated', async () => {
