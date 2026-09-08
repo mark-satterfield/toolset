@@ -15,7 +15,7 @@
 // laxer than the runner, a green suite means nothing — see assertRunnerLoadable below.
 
 import { readFileSync } from 'node:fs'
-import { assertRunnerLoadable, compileWorkflowBody } from '../../../scripts/workflow-runner-constraints.mjs'
+import { assertRunnerLoadable, compileWorkflowBody, neutralizeMetaExport } from '../../../scripts/workflow-runner-constraints.mjs'
 
 /** Read the raw workflow source (for source-text assertions, e.g. D1-AC1's grep clause). */
 export function readWorkflowSource(absPath) {
@@ -57,7 +57,9 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
   // checker uses. A test that passes here is now at least a test of a loadable script.
   assertRunnerLoadable(raw, absPath)
 
-  const transformed = raw.replace(/^export\s+const\s+meta\b/m, 'const meta')
+  // Neutralized the way the RUNNER does it: the literal is kept, the binding is not.
+  // A body that reads `meta` is a ReferenceError here because it is one in production.
+  const transformed = neutralizeMetaExport(raw)
 
   const calls = []
   const agent = async (prompt, opts = {}) => {

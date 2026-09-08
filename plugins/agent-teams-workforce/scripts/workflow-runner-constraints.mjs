@@ -799,13 +799,35 @@ export function createCapabilityProbe() {
 }
 
 /**
+ * Neutralize the one top-level export a workflow script is allowed to carry, the way the
+ * REAL runner does: `meta` is EXTRACTED from the file and the body is then executed
+ * WITHOUT it in scope.
+ *
+ * Both models used to rewrite the declaration to `const meta = {...}`, which left `meta`
+ * bound and made them laxer than the runner in the one place it matters. A script that
+ * read `meta.phases` in its body therefore passed the syntax check and the whole unit
+ * suite, and then died at dispatch with `ReferenceError: meta is not defined` before any
+ * phase started. Binding nothing reproduces the runner: the same read is a ReferenceError
+ * here too.
+ *
+ * The object literal is kept (as the operand of `void`) rather than deleted, so a syntax
+ * error inside `meta` is still a syntax error, and every line below it keeps its number.
+ *
+ * @param {string} source raw workflow script text
+ * @returns {string} the body as the runner executes it
+ */
+export function neutralizeMetaExport(source) {
+  return String(source).replace(/^export\s+const\s+meta\s*=/m, 'void')
+}
+
+/**
  * Compile a workflow script body the way both executing models must: the seven injected
  * globals, then a tripwire for every out-of-contract name.
  *
  * `typeof` on a shadowed name does NOT trip — reading a binding's type touches no trap —
  * so a script's own `typeof budget !== 'undefined'` style guard still behaves.
  *
- * @param {string} source the workflow script body, with `export const meta` already neutralized
+ * @param {string} source the workflow script body, with `neutralizeMetaExport` already applied
  * @returns {{invoke: (globals: Record<string, unknown>) => Promise<unknown>, escapes: Array<object>}}
  * @throws {SyntaxError} when the body does not parse
  */

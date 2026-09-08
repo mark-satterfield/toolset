@@ -924,8 +924,28 @@ let currentPhase = null
 // entry carries what the script knows — order, name, status, ruling, artifacts — and
 // the reader (ops/sdlc-automation/phaserec.py) stamps the clock from the workflow
 // journal it is joining this against. An unknown value is null and named, never zeroed.
+//
+// THE PHASE LIST IS DUPLICATED HERE ON PURPOSE, and it must stay a literal. The runner
+// EXTRACTS `export const meta` from the file and evaluates the body without it, so `meta`
+// is not a binding at runtime: reading it — even behind a `meta &&` guard — is a
+// ReferenceError that kills the composite at load, before a single phase starts. That is
+// exactly how this run died. `meta.phases` must also stay a pure literal for the
+// permission dialog, so it cannot read this constant either; the two are kept in step by
+// hand, and the workflow test suite is the thing that notices when they drift.
+const EXPECTED_PHASES = [
+  'PRD Creation',
+  'PRD Validation',
+  'Epic',
+  'Architecture',
+  'Repo Scoping',
+  'TRD Authoring',
+  'Spec Authoring',
+  'Task Decomposition',
+  'Emit Beads',
+  'Run Ledger',
+]
 const runRecord = {
-  expectedPhases: (meta && Array.isArray(meta.phases) ? meta.phases.map((p) => p && p.title).filter((t) => typeof t === 'string') : null),
+  expectedPhases: EXPECTED_PHASES.slice(),
   phases: [],
 }
 /** The entry for the phase in progress, or null before the first `enterPhase`. */

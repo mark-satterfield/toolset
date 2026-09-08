@@ -24,16 +24,17 @@
 // That is exactly how 5.0.0 shipped with an unescaped apostrophe inside a
 // single-quoted description string.
 //
-// So this reproduces how the runtime loads the file: `export const meta` becomes
-// a plain declaration, the body is wrapped in an async arrow, and the result is
-// parsed as CommonJS. Both legal-in-a-workflow constructs stay legal, and a real
-// syntax error is still a real syntax error.
+// So this reproduces how the runtime loads the file: `export const meta` is
+// neutralized the way the runner extracts it — the literal is kept, the BINDING is
+// not — the body is wrapped in an async arrow, and the result is parsed as CommonJS.
+// Both legal-in-a-workflow constructs stay legal, and a real syntax error is still a
+// real syntax error.
 import { readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findForbiddenConstructs, compileWorkflowBody, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
+import { findForbiddenConstructs, compileWorkflowBody, neutralizeMetaExport, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dir = process.argv[2] || path.join(here, '..', 'workflows')
@@ -45,8 +46,7 @@ const failures = []
 try {
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) {
     checked++
-    const src = readFileSync(path.join(dir, file), 'utf8')
-      .replace(/^export\s+const\s+meta\s*=/m, 'const meta =')
+    const src = neutralizeMetaExport(readFileSync(path.join(dir, file), 'utf8'))
     const probe = path.join(scratch, file.replace(/\.js$/, '.cjs'))
     writeFileSync(probe, `(async () => {\n${src}\n})()\n`)
     try {
