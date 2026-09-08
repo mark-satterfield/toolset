@@ -121,6 +121,10 @@ No build step and no npm scripts — plugins are plain Markdown/YAML. They are d
 
 `package.json` declares `plugins/*` as workspaces.
 
+### Version bumps go through `/version`
+
+Every plugin version bump in this repo runs `/version` (the `version-plugins` skill). It bumps `.claude-plugin/marketplace.json` and each bumped plugin's `plugins/<name>/.claude-plugin/plugin.json` together and commits them in one commit — the marketplace resolves plugins by version, and a version that moves in only one of those two files ships nothing. Pass `--push` to land it.
+
 <!-- BEGIN AGENT TEAMS WORKFORCE: v:5.2.1 hash:bd363e8 -->
 
 ## Instructions for Agent Teams Workforce
