@@ -72,9 +72,7 @@ function compositeWorkflows({ failSpec = false, scopingRepos = ['/repos/alpha'],
         conformsCount: 0, contradictsCount: 0, absentCount: 1,
         removalWork: [], reuseWork: [],
         repos: scopingRepos, existingRepos: [], spansMultipleRepos: scopingRepos.length > 1,
-        architectureNeeded: false, architectureQuestions: [],
         uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-        infraOnly: false,
       }
     }
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'validated-body' }, findings: [] }

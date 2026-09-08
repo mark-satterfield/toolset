@@ -71,9 +71,6 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
       if (call.label === 'reconcile:reality-and-dependencies') {
         return {
           requirements: [{ id: 'R1', requirement: 'migrate data', status: 'absent', evidence: ['no match in services/'] }],
-          infraOnly: false,
-          architectureNeeded: false,
-          architectureQuestions: [],
           evidenceSummary: 's',
           dependencyChanges: { current: true, changeFindings: [], evidence: 'e' },
         }
@@ -163,12 +160,10 @@ function compositeWorkflows() {
         conformsCount: 0, contradictsCount: 0, absentCount: 1,
         removalWork: [], reuseWork: [],
         repos: ['/repos/alpha'], existingRepos: [], spansMultipleRepos: false,
-        // True so the architecture mini is dispatched at all — this file asserts that
-        // every judgment mini receives the rulings, and a skipped phase receives nothing.
-        architectureNeeded: true,
-        architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+        // What dispatches the architecture mini at all is the `triage:architecture-needed`
+        // stub below, which answers needed:true. This file asserts that every judgment mini
+        // receives the rulings, and a skipped phase receives nothing.
         uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-        infraOnly: false,
       }
     }
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'b' }, findings: [] }

@@ -325,10 +325,7 @@ const RECON_OK = {
   repos: ['/repo/auth'],
   existingRepos: ['/repo/auth'],
   spansMultipleRepos: false,
-  architectureNeeded: false,
-  architectureQuestions: [],
   uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-  infraOnly: false,
   ledger: { phase: 'prd-reconciliation' },
 }
 
@@ -459,8 +456,10 @@ test('a PRD whose requirements ALL conform is not closed — the run carries on 
 })
 
 test('an infrastructure-only PRD is not rerouted away from the pipeline', async () => {
-  // `infraOnly` survives as a fact about the PRD; the reroute it used to trigger was
-  // computed off the subtracted remainder and is gone.
+  // `infraOnly` was retired with check 1c and the mini no longer emits it. The fixture is
+  // kept SYNTHETIC on purpose: it is the only thing that makes this a regression guard
+  // against reintroducing the reroute, which was computed off the subtracted remainder.
+  // Drop it and the test asserts nothing.
   const { result, seen } = await composite({ ...RECON_OK, infraOnly: true })
   assert.notEqual(result.action, 'reroute')
   assert.equal(result.composite, undefined)

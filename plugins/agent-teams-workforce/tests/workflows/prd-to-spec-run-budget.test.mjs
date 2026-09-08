@@ -22,8 +22,10 @@ import { beadWriter } from './helpers/bead-writer.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
-// Reconciliation is unconditional and runs before every gate, so every prd-to-spec fixture
-// has to answer it. `architectureNeeded` is true here so the run still spends G2 — the
+// Reconciliation runs per repo inside spec authoring, so every prd-to-spec fixture still
+// has to answer it. What spends G2 is the `triage:architecture-needed` agent: this file's
+// agentImpl answers only writer calls, so the triage returns null, the composite fails
+// OPEN after one retry, and the architecture panel convenes — which is the third of the
 // three fixed gates the budget arithmetic below is written against.
 const RECONCILED = {
   ok: true,
@@ -36,10 +38,7 @@ const RECONCILED = {
   repos: [],
   existingRepos: [],
   spansMultipleRepos: false,
-  architectureNeeded: true,
-  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
   uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-  infraOnly: false,
 }
 
 /** Every gate passes first time; every mini succeeds. A perfect run — zero retries. */

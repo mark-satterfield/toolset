@@ -36,10 +36,7 @@ const RECONCILED = {
   repos: [],
   existingRepos: [],
   spansMultipleRepos: false,
-  architectureNeeded: true,
-  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
   uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-  infraOnly: false,
 }
 
 /** Every gate passes; every mini returns a minimal well-formed artifact. */

@@ -219,10 +219,7 @@ const RECONCILED = {
   repos: ['/repos/where-the-code-already-is'],
   existingRepos: ['/repos/where-the-code-already-is'],
   spansMultipleRepos: false,
-  architectureNeeded: true,
-  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
   uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-  infraOnly: false,
 }
 
 /** Every gate passes; every mini answers minimally. `scopingResult` is what repo-scoping returns. */
