@@ -44,10 +44,41 @@ line-oriented consumer, and the run that reads it has already died once.
   recovered. Do both, in that order, with identical content.
 - No `date` call. A checkpoint carries no timestamp.
 
-This is not a stylistic preference. Two real checkpoints were destroyed by applying LEDGER
-habits to a CHECKPOINT write: one had `outcome`, `ts` and `runId` stamped inside its
-`phases` object, and one had a newline and the tail of a second object appended to it. Both
-were unusable, silently, and each cost a ~100-minute composite a full cold start.
+#### READ BEFORE YOU WRITE, and never route around the refusal
+
+The `Write` tool **refuses to overwrite a file this session has not read** — it answers
+`File has not been read yet. Read it first before writing to it.` That is a harness
+precondition, not a review step. So for each path the prompt names: `Read` it, then
+`Write` it. A `Read` that fails because the file does not exist is the expected answer for
+a first save; go straight to the `Write`.
+
+When that refusal arrives, the ONLY correct response is to `Read` and retry the `Write`.
+Do not reach for `cat`, a shell heredoc, `tee`, or a `python3` script to get the bytes onto
+disk. On 2026-09-08 a checkpoint write met that refusal and did exactly that, and the file
+it left behind was **26,852 characters where the payload was 104,689** — a silently
+truncated checkpoint that parsed, so the loader honoured it.
+
+#### LENGTH IS THE ONLY CHECK WORTH MAKING
+
+That same errand re-read its own output, found valid JSON, and certified it complete. It
+was not. Plausibility is not a check on a copy.
+
+- A checkpoint prompt states the payload's exact character count. Every character goes in
+  each file.
+- If you check anything, check the **length**.
+- If you cannot write the whole payload verbatim to every path, **write nothing** and
+  return `{ ok: false, error: "<what stopped you, and the count you managed>" }`.
+- Report the count you wrote as `chars` when the schema has the field. The workflow
+  compares it with what it asked for, so a wrong number is caught rather than believed.
+
+Reporting failure costs one cold start. Reporting success over a truncated file costs a
+wrong answer nobody can see.
+
+This is not a stylistic preference. Three real checkpoints were destroyed this way: one had
+`outcome`, `ts` and `runId` stamped inside its `phases` object, one had a newline and the
+tail of a second object appended to it, and one was truncated to a quarter of its length by
+a writer that had improvised around a Write refusal. All three were unusable, silently, and
+each cost a ~100-minute composite a full cold start.
 
 ### LEDGER mode — the JSONL contract below
 
