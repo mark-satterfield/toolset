@@ -10,7 +10,12 @@ description: >-
   printed so the calling script can compare the two accounts.
 tools: Read, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Edit, Write, Agent
-model: opus
+# PLUMBING. This agent runs git commands over the paths it is handed and reports what git
+# printed — git-dir, git-common-dir, branch. The SCRIPT compares the two accounts and rules;
+# this agent rules on nothing, so a reasoning model buys it nothing and costs a full
+# high-capability session start on every workspace phase. Never move an agent that authors,
+# reviews, adjudicates, rules or classifies onto this tier.
+model: haiku
 permissionMode: acceptEdits
 maxTurns: 20
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]

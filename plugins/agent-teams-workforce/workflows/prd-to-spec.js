@@ -1010,6 +1010,12 @@ Return the entire file contents in \`body\`. Do NOT summarize it, do NOT truncat
 If the path does not resolve to a readable file, set ok=false and say why in \`error\`. Do not invent content and do not substitute a different file.`,
       {
         label: 'resolve:prd-text',
+        // PLUMBING. The prompt is "return its FULL text verbatim" — no summarizing, no
+        // reformatting, no commentary, and nothing to decide. A session's cost is dominated
+        // by its start, not its work, so a verbatim file read has no business paying for the
+        // session model. It carries no agentType, so without this it inherits whatever the
+        // run is on.
+        model: 'haiku',
         phase: 'PRD Creation',
         effort: 'low',
         schema: {
@@ -1130,6 +1136,9 @@ ${wanted.map((w) => `- key "${w.key}": ${w.path}`).join('\n')}`,
       {
         label: 'resolve:run-inputs',
         phase: currentPhase || 'PRD Reconciliation',
+        // PLUMBING — see resolve:prd-text. Reads a named list of files and returns each
+        // one's text verbatim; it decides nothing about any of them.
+        model: 'haiku',
         effort: 'low',
         schema: {
           type: 'object',
@@ -1173,6 +1182,8 @@ ${cp.walPath}`,
       {
         label: 'resolve:checkpoint-wal',
         phase: currentPhase || 'PRD Reconciliation',
+        // PLUMBING — see resolve:prd-text. One file, returned verbatim or reported absent.
+        model: 'haiku',
         effort: 'low',
         schema: {
           type: 'object',
