@@ -40,7 +40,8 @@ Your prompt contains a single JSON payload of this shape:
       "parentId": "<a REAL bd id, or null for a top-level bead>",
       "acceptanceCriteria": ["..."] | null,
       "notes": "<one line to record on the bead, or null>",
-      "labels": ["..."] | null
+      "labels": ["..."] | null,
+      "metadata": { "<key>": "<value>" } | null
     }
   ],
   "links": [ { "fromId": "<real bd id>", "dependsOnId": "<real bd id>" } ],
@@ -69,11 +70,31 @@ GIVEN. For each bead, run exactly ONE create:
 bd -C <repoPath> create --silent \
   --title '<title>' --type <type> --description '<description>' \
   [--parent <parentId>] [--acceptance '<acceptanceCriteria joined by newlines>'] \
-  [--notes '<notes>'] [--labels <labels joined by commas>]
+  [--notes '<notes>'] [--labels <labels joined by commas>] \
+  [--metadata '<metadata as one line of compact JSON>']
 ```
 
-`--silent` prints only the new issue id; that id is what you report. Then, after every bead
-in the list has been attempted, add each entry of `links`:
+`--silent` prints only the new issue id; that id is what you report.
+
+### Metadata — first-class fields, not a note
+
+`metadata` is a flat object of key/value pairs the caller has already decided. Pass it to
+`bd create` as ONE compact JSON object in single quotes — `--metadata '{"wsjf":"7.5","repoPath":"/abs/path"}'` —
+exactly the keys you were given, with no key added, renamed, or dropped.
+
+**This is not interchangeable with `--notes`.** A note is prose a person reads; metadata is
+a field a program reads. `readiness.assess` reads `wsjf` out of the bead's METADATA and
+nowhere else, so a score that lands only in the notes is a score no gate can see, and the
+bead is never dispatchable. When `metadata` is present it goes on the create — never
+deferred, never folded into the notes line, never left for a later `bd update`.
+
+If `bd create` rejects `--metadata` (an older `bd`), do NOT drop the fields: create the bead
+without the flag, then immediately set them with one follow-up
+`bd -C <repoPath> update <newId> --set-metadata k=v --set-metadata k2=v2`, and report the
+bead as `ok: true` only when that follow-up also succeeded. `--set-metadata` merges; never
+use `--metadata` on an update, which replaces the whole object.
+
+Then, after every bead in the list has been attempted, add each entry of `links`:
 
 ```bash
 bd -C <repoPath> dep add <fromId> <dependsOnId>
@@ -126,7 +147,9 @@ landed, so a failure is reported, never worked around.
   calling script about one specific bead; it is not permission to tidy up anything else,
   to close a bead that "looks finished", or to reparent a bead whose placement looks wrong
   to you. With an empty or absent `mutations` list you add and you survey; you change
-  nothing.
+  nothing. The ONE exception is the metadata fallback above, and it is not a change to
+  anything that existed before you ran: it sets the payload's own `metadata` on a bead THIS
+  dispatch just created, with the keys you were handed and nothing else.
 - **`bd delete` is never available.** No payload can ask for it, and you never run it.
 - **Never run `git`**, never commit, never push, never touch `.beads` files directly.
 - If `repoPath` is missing, or every list you were given is empty, do nothing and report it.

@@ -11,7 +11,7 @@ export const meta = {
     { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
     { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
-    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, and report what actually landed' },
+    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — readiness makes a bead eligible for dispatch and WSJF sorts the eligible ones, so both exist before it is ever a candidate — and report what actually landed' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -3806,6 +3806,10 @@ const emission = {
   // this run's own hierarchy any less durable, and it must never be able to turn a
   // complete emission into a partial one.
   heal: { ran: false, reason: null, wrappers: 0, reparented: 0, closed: 0, failed: [] },
+  // The readiness verdict established on each Task the moment it became a bead. Reported
+  // separately from the emission verdict for the same reason `heal` is: a Task that landed
+  // is durable whether or not the gate that ran a second later could reach the tracker.
+  readiness: { ran: false, reason: null, attempted: 0, ready: 0, verdicts: [], failed: [] },
   verdict: 'none',
   reason: null,
 }
@@ -3885,6 +3889,32 @@ const WRITE_SCHEMA = {
         properties: {
           key: { type: 'string' },
           ok: { type: 'boolean' },
+          error: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+// One entry per Task the readiness gate was pointed at. `ready` and `result` are copied
+// out of the skill's own contract block — the runner reports the verdict, it never forms one.
+const READINESS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdicts'],
+  properties: {
+    verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'ok'],
+        properties: {
+          id: { type: 'string' },
+          ok: { type: 'boolean' },
+          ready: { type: ['boolean', 'null'] },
+          result: { type: ['string', 'null'] },
+          wsjf: { type: ['string', 'null'] },
           error: { type: 'string' },
         },
       },
@@ -4017,6 +4047,10 @@ if (!emitPathFault) {
         acceptanceCriteria: Array.isArray(s.acceptanceCriteria) && s.acceptanceCriteria.length ? s.acceptanceCriteria : null,
         notes: s.repoPath ? `repoPath: ${s.repoPath}` : null,
         labels: null,
+        // Metadata, not only a note — see the task wave below for why the two are not
+        // interchangeable. A Story is scoped to exactly one repo, so its repoPath is a
+        // fact about the bead and belongs in a field.
+        metadata: s.repoPath ? { repoPath: String(s.repoPath) } : null,
       }))
     )
     for (const s of pendingStories) {
@@ -4067,6 +4101,21 @@ if (!emitPathFault && epicId) {
         .filter(Boolean)
         .join('\n') || null,
       labels: null,
+      // THE SCORE IS A FIELD, NOT PROSE. The notes line above is for a person; this is
+      // the one a program reads. `readiness.assess` pulls `wsjf` out of the bead's
+      // METADATA — `beadsio.metadata_of(...)` then `meta.get("wsjf")` — and never falls
+      // back to parsing the notes, so a Task carrying its score only in the notes line
+      // reads as unscored and is refused for a missing finite score. Every Task this
+      // composite has ever minted was in exactly that state. The score is decided here,
+      // at decomposition, so it is written here, at the create, and the readiness step
+      // below then has nothing left to compute.
+      metadata:
+        (() => {
+          const m = {}
+          if (t.repoPath) m.repoPath = String(t.repoPath)
+          if (t.wsjf != null) m.wsjf = String(t.wsjf)
+          return Object.keys(m).length ? m : null
+        })(),
     }))
   )
   for (const { task: t } of pendingTasks) {
@@ -4134,6 +4183,74 @@ if (pendingLinks.length) {
   }
 }
 
+// Every id that leaves this script lands in command text another agent runs verbatim, so
+// an id that is not shaped like one is REFUSED rather than cleaned. Declared here because
+// the readiness gate below is the first thing that hands ids back out; the backfill heal
+// further down holds it to the same rule.
+const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
+
+// ── THE READINESS GATE RUNS HERE, ON THE TASK THAT WAS JUST WRITTEN ───────────
+//
+// Readiness makes a bead ELIGIBLE for dispatch and WSJF SORTS the eligible ones. Both are
+// PRECONDITIONS of dispatch, so both must exist before the bead is ever a dispatch
+// candidate — which means the moment it exists at all. A Task must never enter the tracker
+// unready and wait for some later sweep to notice; there is no such thing as dispatching an
+// unready bead in order to make it ready, and that inversion is what this step removes.
+//
+// The score is already on the bead — it was decided at decomposition and written as
+// metadata at the create above — so `issue-ready` finds it present and scores nothing. What
+// this step buys is the review verdict and the freshness watermark, established once, here,
+// while the run still knows what it just wrote.
+//
+// It NEVER fails the run. A Task that landed is durable; a readiness gate that could not
+// reach the tracker is recorded and nothing more, exactly as the backfill heal below is.
+const readyTaskIds = Array.from(taskIds.values()).filter((id) => SAFE_BEAD_ID.test(String(id)))
+if (emitPathFault) emission.readiness.reason = 'the beads path was refused, so nothing was written to gate'
+else if (!readyTaskIds.length) emission.readiness.reason = 'no Task became durable, so there is nothing to gate'
+else {
+  emission.readiness.ran = true
+  emission.readiness.attempted = readyTaskIds.length
+  let verdicts = null
+  try {
+    verdicts = await agent(
+      'Run the readiness gate on each of these Task beads, which were written into the tracker moments ago. ' +
+        'Gate every id in the list, one at a time, and report the verdict the skill emitted for each. ' +
+        'Judge nothing yourself and repair nothing — the skill owns the verdict.\n\nJSON payload:\n' +
+        JSON.stringify({ repoPath: emitTarget, ids: readyTaskIds }),
+      {
+        label: 'beads:readiness',
+        phase: 'Emit Beads',
+        effort: 'low',
+        agentType: 'agent-teams-workforce:task-readiness-runner',
+        schema: READINESS_SCHEMA,
+      }
+    )
+  } catch (e) {
+    emission.readiness.reason = `the readiness dispatch failed: ${(e && e.message) || e}`
+  }
+  const seenVerdict = new Set()
+  for (const v of (verdicts && Array.isArray(verdicts.verdicts) ? verdicts.verdicts : [])) {
+    const id = v && typeof v.id === 'string' ? v.id.trim() : ''
+    if (!id || seenVerdict.has(id)) continue
+    seenVerdict.add(id)
+    if (v.ok === true) {
+      emission.readiness.verdicts.push({ id, ready: v.ready === true, result: v.result || null, wsjf: v.wsjf == null ? null : String(v.wsjf) })
+      if (v.ready === true) emission.readiness.ready += 1
+    } else {
+      emission.readiness.failed.push({ id, reason: v.error || 'the runner reported no verdict for this Task' })
+    }
+  }
+  for (const id of readyTaskIds) {
+    if (!seenVerdict.has(id)) {
+      emission.readiness.failed.push({ id, reason: emission.readiness.reason || 'the runner did not report on this Task' })
+    }
+  }
+  log(
+    `Readiness: ${emission.readiness.ready}/${emission.readiness.attempted} Task(s) ready at write time` +
+      `${emission.readiness.failed.length ? `, ${emission.readiness.failed.length} not gated` : ''}.`
+  )
+}
+
 // ── Retire the backfilled roll-up parents this Epic was carrying ──────────────
 // A Task that reached the build lane with no Story got one MINTED for it on the side —
 // a stand-in roll-up parent, labelled `backfill-parent` and described as such, created
@@ -4155,7 +4272,6 @@ if (pendingLinks.length) {
 //     Story that was not written is the orphan this phase exists to prevent;
 //   * a failure anywhere in here is RECORDED and nothing else. The repair is not this
 //     composite's product and it never fails the run that carried it.
-const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
 const healableStories = stories
   .filter((x) => storyIds.has(x.key))
   .map((x) => ({ key: x.key, id: storyIds.get(x.key), repoPath: asText(x.repoPath), order: x.buildOrderIndex == null ? Infinity : x.buildOrderIndex }))
