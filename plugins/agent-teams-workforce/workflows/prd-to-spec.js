@@ -175,6 +175,22 @@ const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
 
 const partial = (stage, detail, extra) => {
   const salvage = { ...produced, ...(extra || {}) }
+  // The phase in progress FAILED, and the record says so with the reason. A run that
+  // returns normally carries this out through the run journal below; a run that is
+  // KILLED mid-phase never reaches here at all, which is why the reader stamps a
+  // failure of its own from the handback rather than trusting this to be present.
+  recRuled(null, {
+    status: 'failed',
+    failure: {
+      stage,
+      reason: String(
+        (detail && detail.reason) ||
+          (detail && detail.headline) ||
+          (detail && detail.escalate ? `escalated to ${detail.escalate}` : '') ||
+          `the ${stage} phase did not pass its gate`
+      ).slice(0, 400),
+    },
+  })
   runDetail = { stage, detail, partial: salvage }
   const why =
     (detail && detail.reason) ||
@@ -266,7 +282,7 @@ async function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
   try {
     const written = await agent(
-      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. Touch no file but those two. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
+      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. Touch no file but those two. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`,
       {
         label: 'ledger:persist',
         phase: 'Run Ledger',
@@ -567,7 +583,27 @@ function cpDiscardAll(key, reason) {
 // each awaits its own write, so there is never a queued one to join.
 let cpWriteChain = Promise.resolve()
 let cpQueued = null
-async function cpSave(key, payload) {
+/** Checkpoint key -> the run-record phase entry that saved it. */
+const cpKeyOwner = {}
+async function cpSave(key, payload, decision) {
+  // The phase reached its end, and THAT is recorded whether or not checkpointing is
+  // active. A run with no usable checkpoint root is exactly the run whose per-phase
+  // record matters most, and returning early used to cost it every ruling it made.
+  recRuled(decision, { status: 'done' })
+  const entry = recCurrent()
+  if (entry) {
+    if (!Array.isArray(entry.checkpointKeys)) entry.checkpointKeys = []
+    if (!entry.checkpointKeys.includes(key)) entry.checkpointKeys.push(key)
+    // The KEY is what this phase saved; `checkpointWrites` is how many agent
+    // dispatches it actually cost, and the reader needs the second, not the
+    // first. Concurrent saves JOIN a queued write (see the queue below), so a
+    // four-repo fan-out can register four keys against one dispatch — and a
+    // reader counting keys would consume the NEXT phase's fencepost and hand it
+    // this phase's end time. It is incremented in cpWriteOne, where a write
+    // genuinely happens.
+    if (typeof entry.checkpointWrites !== 'number') entry.checkpointWrites = 0
+    cpKeyOwner[key] = entry
+  }
   if (!cp.active) return
   cp.phases[key] = payload
   if (cpQueued) {
@@ -585,7 +621,12 @@ async function cpSave(key, payload) {
 async function cpWriteOne(key) {
   // Snapshot HERE, not at enqueue time — that ordering is the whole point of the queue.
   cp.seq += 1
-  const file = JSON.stringify({ composite: 'prd-to-spec', subject: subjectId, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, seq: cp.seq, phases: cp.phases })
+  // `run` is the per-phase RECORD (see runRecord). It sits beside `phases`, never
+  // inside it, because `cpJudge` reads only `composite`, `semanticsVersion`,
+  // `inputHash` and `phases` — so this field can be malformed, truncated or absent
+  // without costing the run its resume, which is the property that permits it here at
+  // all. `cpGet` never sees it, so no phase can be handed it as a completed result.
+  const file = JSON.stringify({ composite: 'prd-to-spec', subject: subjectId, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, seq: cp.seq, run: runRecord, phases: cp.phases })
   try {
     await agent(cpWritePrompt(file), {
       label: `checkpoint:save:${key}`,
@@ -595,10 +636,23 @@ async function cpWriteOne(key) {
       schema: CP_IO_SCHEMA,
     })
     cp.touched = true
+    cpCountWrite(key)
     log(`Checkpoint generation ${cp.seq} persisted after '${key}' — ${Object.keys(cp.phases).length} phase(s) now resumable`)
   } catch (e) {
+    // A FAILED WRITE IS STILL A FENCEPOST. The dispatch happened, it is in the
+    // journal, and it took as long as it took — one on a run measured today ran
+    // 513 seconds and then failed, which is exactly the kind of fact the record
+    // exists to surface. Not counting it would slide every later phase's end
+    // time onto the wrong dispatch.
+    cpCountWrite(key)
     log(`checkpoint save for '${key}' failed (non-fatal — the run continues; a resume just cannot reuse this phase): ${(e && e.message) || e}`)
   }
+}
+/** Attribute one completed checkpoint-writer dispatch to the phase that caused it. */
+function cpCountWrite(key) {
+  const entry = cpKeyOwner[key]
+  if (!entry) return
+  entry.checkpointWrites = (typeof entry.checkpointWrites === 'number' ? entry.checkpointWrites : 0) + 1
 }
 /**
  * The prompt for one checkpoint commit: the SAME bytes to the write-ahead copy first and
@@ -681,8 +735,148 @@ Do NOT use rm, mv, mkdir or any shell command — an unmatched command blocks on
 // not one of them, so the title is captured here as the composite enters each phase and
 // the ruling dispatched from inside gateLoop can name it correctly.
 let currentPhase = null
+
+// ── THE RUN RECORD: what this run RULED, phase by phase ───────────────────────
+//
+// The owner's complaint about this composite was not that it was slow. It was that an
+// hour of it produced "zero information as to what work has been done, where the things
+// are currently in the workflow, what decisions were made". Everything the script knows
+// that would answer that — the ordered phase list, which phase it is in, and what each
+// completed phase RULED — died inside the script, because a workflow script has no
+// filesystem and its `log()` narration never leaves the session: this composite is
+// dispatched as a BACKGROUND task, and the poller that watches it is handed
+// `<status>running</status>` and nothing else.
+//
+// So the record travels on the ONE channel that already reaches disk mid-run: the phase
+// checkpoint, which is written by a real agent dispatch after every completed phase.
+// It rides at the TOP LEVEL of the checkpoint envelope and NEVER inside `phases` —
+// `cpJudge` treats every key under `phases` as a completed phase result and drops
+// anything that is not an object, and `cpGet` would otherwise hand a phase this record
+// as its own reusable output. At the top level it is a field the loader does not read
+// at all, so a malformed record cannot cost a run its resume. That property is the
+// reason for the placement and must not be traded away.
+//
+// TIMES ARE NOT STAMPED HERE. `Date.now()` throws in the workflow sandbox, so every
+// entry carries what the script knows — order, name, status, ruling, artifacts — and
+// the reader (ops/sdlc-automation/phaserec.py) stamps the clock from the workflow
+// journal it is joining this against. An unknown value is null and named, never zeroed.
+const runRecord = {
+  expectedPhases: (meta && Array.isArray(meta.phases) ? meta.phases.map((p) => p && p.title).filter((t) => typeof t === 'string') : null),
+  phases: [],
+}
+/** The entry for the phase in progress, or null before the first `enterPhase`. */
+function recCurrent() {
+  return runRecord.phases.length ? runRecord.phases[runRecord.phases.length - 1] : null
+}
+/**
+ * Record what the phase in progress RULED or PRODUCED — one human-readable sentence,
+ * which is the highest-value field in the record and the one the owner asked for by
+ * name. A phase that ruled nothing says so by leaving it null; it is never filled with
+ * a plausible-sounding restatement of the phase title.
+ */
+function recRuled(decision, extra) {
+  const entry = recCurrent()
+  if (!entry) return
+  // APPENDED, not replaced. Spec Authoring and Task Decomposition fan out and reach
+  // this once PER REPO and per Story inside a single meta phase, so replacing would
+  // report only whichever repo happened to finish last and silently lose the rest.
+  if (typeof decision === 'string' && decision.trim()) {
+    const one = decision.trim()
+    entry.decision = entry.decision ? `${entry.decision}; ${one}`.slice(0, 1200) : one.slice(0, 1200)
+  }
+  if (extra && Array.isArray(extra.artifacts)) {
+    for (const p of extra.artifacts) if (typeof p === 'string' && p.trim() && !entry.artifacts.includes(p)) entry.artifacts.push(p)
+  }
+  if (extra && typeof extra.status === 'string') entry.status = extra.status
+  if (extra && extra.failure) entry.failure = extra.failure
+  if (extra && typeof extra.skipReason === 'string') entry.skipReason = extra.skipReason
+}
+/** Record a phase that did not run at all, with the reason it did not. */
+function recSkipped(title, reason) {
+  runRecord.phases.push({
+    seq: runRecord.phases.length + 1,
+    name: title,
+    status: 'skipped',
+    decision: null,
+    artifacts: [],
+    failure: null,
+    skipReason: String(reason || 'no reason recorded'),
+  })
+}
+// ── The rulings, one sentence each ────────────────────────────────────────────
+//
+// Each of these reads ONLY fields the phase's artifact actually carries and says what
+// it found. A count that is not reported comes back as the word "unreported" — never as
+// zero, and never as a plausible number, because a fabricated figure in a diagnostic
+// record is worse than an admitted gap: it is acted on.
+const recN = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : Array.isArray(v) ? String(v.length) : 'an unreported number of')
+const recFlags = (r) => {
+  const f = (r && Array.isArray(r.flags) && r.flags) || []
+  return f.length ? ` Passed under ${f.length} competitive flag(s): ${f.join('; ')}.` : ''
+}
+function validationRuling(validation) {
+  const art = (validation && validation.artifact) || {}
+  const summary = typeof art.summary === 'string' && art.summary.trim() ? ` ${art.summary.trim()}` : ''
+  return `Gate G1 ruled the PRD valid enough to specify against.${summary}${recFlags(validation)}`
+}
+function architectureRuling(triage, architecture) {
+  const art = (architecture && architecture.artifact) || {}
+  const dims = (triage && Array.isArray(triage.dimensions) && triage.dimensions.length) ? ` on ${triage.dimensions.join(', ')}` : ''
+  const sad = art.sadUpdate && Array.isArray(art.sadUpdate.updatedSections) && art.sadUpdate.updatedSections.length
+    ? ` SAD sections updated: ${art.sadUpdate.updatedSections.join(', ')}.`
+    : ' The SAD reports no updated sections.'
+  return `Architecture ruled${dims} and the ruling passed Gate G2.${sad}${recFlags(architecture)}`
+}
+function scopingRuling(scoping) {
+  const repos = (scoping && Array.isArray(scoping.repos) && scoping.repos) || []
+  const newOnes = (scoping && Array.isArray(scoping.newRepos) && scoping.newRepos) || []
+  const obsolete = (scoping && Array.isArray(scoping.obsoleteCode) && scoping.obsoleteCode) || []
+  const actions = (scoping && Array.isArray(scoping.requiredHumanActions) && scoping.requiredHumanActions) || []
+  return `Repo span ruled = ${repos.length ? repos.join(', ') : 'no repository at all'}` +
+    (newOnes.length ? `; ${newOnes.length} repository/ies must be CREATED by a person first (${newOnes.join(', ')})` : '') +
+    (obsolete.length ? `; ${obsolete.length} existing item(s) ruled obsolete and to be deleted` : '') +
+    (actions.length ? `; ${actions.length} required human action(s) recorded` : '') +
+    (scoping && scoping.spanVerified === false ? '; the span could NOT be independently verified' : '') + '.'
+}
+function trdRuling(trdAuthoring) {
+  const trd = (trdAuthoring && trdAuthoring.artifact && trdAuthoring.artifact.trd) || null
+  const where = trd && typeof trd.path === 'string' && trd.path ? ` written to ${trd.path}` : ' with no path reported'
+  return `TRD authored${where} and accepted at Gate G2b.${recFlags(trdAuthoring)}`
+}
+function reconRuling(repo, recon) {
+  const dep = recon && Array.isArray(recon.dependencyChanges) && recon.dependencyChanges.length
+    ? ` ${recon.dependencyChanges.length} upstream dependency change(s) detected.`
+    : ''
+  return `Reconciliation of ${repo}: ${recN(recon && recon.conformsCount)} requirement(s) conform (reuse), ` +
+    `${recN(recon && recon.contradictsCount)} contradict the PRD (remove), ` +
+    `${recN(recon && recon.absentCount)} absent (build), out of ${recN(recon && recon.requirements)} stated.${dep}`
+}
+function specRuling(repo, specAuthoring) {
+  const art = (specAuthoring && specAuthoring.artifact) || {}
+  const story = art.story && (art.story.key || art.story.title) ? ` Story ${art.story.key || art.story.title} paired with it.` : ' No Story was reported alongside it.'
+  const out = Array.isArray(art.outOfRepoFindings) && art.outOfRepoFindings.length
+    ? ` ${art.outOfRepoFindings.length} finding(s) name work outside ${repo}.`
+    : ''
+  return `Spec authored for ${repo} and accepted at Gate G3.${story}${out}${recFlags(specAuthoring)}`
+}
+function decompRuling(pair, decomposition) {
+  const art = (decomposition && decomposition.artifact) || {}
+  const set = Array.isArray(art.beadSet) ? art.beadSet : null
+  const where = (pair && pair.repoPath) || 'an unreported repo'
+  return `Task decomposition of the ${where} Story produced ${set ? set.length : 'an unreported number of'} task specification(s), accepted at Gate G4.${recFlags(decomposition)}`
+}
+
 function enterPhase(title) {
   currentPhase = title
+  runRecord.phases.push({
+    seq: runRecord.phases.length + 1,
+    name: title,
+    status: 'running',
+    decision: null,
+    artifacts: [],
+    failure: null,
+    skipReason: null,
+  })
   phase(title)
 }
 
@@ -992,6 +1186,14 @@ if (!prd && a.request) {
 } else {
   log(prd ? 'PRD supplied — skipping creation' : 'No request and no PRD — nothing to create')
 }
+recRuled(
+  creation
+    ? `PRD authored from raw request ${(a.request && a.request.id) || '(no id)'}.`
+    : prd
+      ? 'No PRD was authored: the caller supplied one, so creation was skipped.'
+      : 'No PRD was authored and none was supplied — there is nothing to validate.',
+  creation ? { status: 'done' } : { status: 'skipped', skipReason: prd ? 'the caller supplied a PRD' : 'neither a request nor a PRD was supplied' }
+)
 if (!prd) return handback(false, 'prd-creation', 'no PRD available to validate (supply args.prd or args.request)')
 
 // ── PRD text resolution ─────────────────────────────────────────────────────────
@@ -1357,7 +1559,7 @@ if (validation === undefined && a.prdReviewed === true) {
       ledger: { phase: 'prd-validation', beadId: subjectId, chosen: [], mode: 'reviewed-upstream', ok: true },
     },
   }
-  await cpSave('validation', validation)
+  await cpSave('validation', validation, 'PRD Validation SKIPPED as already satisfied — the caller carried a stored COMPLETE readiness review for this PRD, so Gate 1 was not spent re-deriving a verdict already on the tracker.')
 }
 if (validation === undefined) {
 validation = await gateLoop({
@@ -1404,7 +1606,7 @@ validation = await gateLoop({
     })
   },
 })
-if (validation.ok) await cpSave('validation', validation)
+if (validation.ok) await cpSave('validation', validation, validationRuling(validation))
 }
 if (validation.artifact && validation.artifact.ledger) runLedger.push(validation.artifact.ledger)
 produced.prd = prd
@@ -1462,6 +1664,7 @@ if (a.epic) {
 }
 produced.epic = epic
 produced.epicPath = epicPath
+recRuled(`Epic ${epic.key || '(no key)'} established via ${epicPath}.`, { status: 'done' })
 log(
   `Epic ${epic.key || '(no key)'} via ${epicPath}${
     epicPath === 'epic-minted' ? ` — bead face minted for existing PRD ${epic.prdRef || '(unreferenced)'}` : ''
@@ -1605,6 +1808,10 @@ if (a.skipArchitecture === true) {
 }
 if (!archNeeded) {
   log(`Architecture SKIPPED — ${(archTriage && archTriage.reason) || 'no architecture decision in this PRD'}`)
+  recRuled(`Architecture convened NO panel: ${(archTriage && archTriage.reason) || 'triage found no architecture decision in this PRD'}.`, {
+    status: 'skipped',
+    skipReason: (archTriage && archTriage.reason) || 'triage found no architecture decision in this PRD',
+  })
   architecture = { ok: true, skipped: true, artifact: { skipped: true, triage: archTriage } }
 } else {
   if (archTriage && archTriage.decisions && archTriage.decisions.length) {
@@ -1793,7 +2000,7 @@ if (!archNeeded) {
       }),
   })
 }
-if (architecture.ok) await cpSave('architecture', { archTriage, architecture })
+if (architecture.ok) await cpSave('architecture', { archTriage, architecture }, architectureRuling(archTriage, architecture))
 }
 if (architecture.artifact && architecture.artifact.ledger) runLedger.push(architecture.artifact.ledger)
 produced.architecture = architecture.artifact || null
@@ -1891,7 +2098,7 @@ if (callerRepos.length) {
         'repo scoping returned nothing — which repositories this PRD lands in could not be established, and the run will not guess.',
     })
   }
-  if (cpScope === undefined) await cpSave('repo-scoping', scoping)
+  if (cpScope === undefined) await cpSave('repo-scoping', scoping, scopingRuling(scoping))
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
 }
 const repoActions = (scoping && scoping.requiredHumanActions) || []
@@ -2071,7 +2278,7 @@ trdAuthoring = await gateLoop({
       feedback,
     }),
 })
-if (trdAuthoring.ok) await cpSave('trd-authoring', trdAuthoring)
+if (trdAuthoring.ok) await cpSave('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
 }
 if (trdAuthoring.artifact && trdAuthoring.artifact.ledger) runLedger.push(trdAuthoring.artifact.ledger)
 produced.trdAuthoring = trdAuthoring.artifact || null
@@ -2392,7 +2599,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       repos: [repo],
       dependencies: a.dependencies,
     })
-    if (recon && recon.ok !== false) await cpSave(`recon:${repo}`, recon)
+    if (recon && recon.ok !== false) await cpSave(`recon:${repo}`, recon, reconRuling(repo, recon))
   }
   if (recon && recon.ledger) runLedger.push(recon.ledger)
   // ── A FAILED RECONCILIATION IS NOT AN EMPTY ONE ───────────────────────────────
@@ -2465,7 +2672,7 @@ async function authorSpecForRepo(repo, repoIndex) {
         constraints: specConstraints(recon, repo, feedback),
       }),
   })
-  if (specAuthoring.ok) await cpSave(`spec:${repo}`, specAuthoring)
+  if (specAuthoring.ok) await cpSave(`spec:${repo}`, specAuthoring, specRuling(repo, specAuthoring))
   }
   return { repo, recon, specAuthoring }
 }
@@ -3216,7 +3423,7 @@ async function decomposeStory(pair) {
         maxScoringPasses: 2,
       }),
   })
-  if (decomposition.ok) await cpSave(cpDecompKey, decomposition)
+  if (decomposition.ok) await cpSave(cpDecompKey, decomposition, decompRuling(pair, decomposition))
   }
   return { pair, decomposition }
 }
@@ -3379,6 +3586,10 @@ if (!decompositions.length) {
 enterPhase('Emit Beads')
 const beadSet = tasks
 const hierarchy = { epic, stories, tasks, storyDependencies }
+recRuled(
+  `Hierarchy ready to write into beads: 1 Epic, ${stories.length} Story/Stories, ${tasks.length} Task(s), ${storyDependencies.edges.length} Story dependency edge(s).`,
+  { status: 'running' }
+)
 log(
   `Hierarchy ready to write: 1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and WSJF-scored, ` +
     `${storyDependencies.edges.length} story dependency edge(s), no epic-level graph.`
