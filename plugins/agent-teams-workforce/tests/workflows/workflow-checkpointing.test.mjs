@@ -47,16 +47,74 @@ const semanticsOf = (file) => {
   return m ? m[1] : null
 }
 
-/** Pull the checkpoint JSON out of a save dispatch's prompt. */
-function savedPayload(call) {
-  const marker = 'JSON payload:\n'
-  const i = String(call.prompt || '').indexOf(marker)
-  if (i < 0) return null
-  try {
-    return JSON.parse(String(call.prompt).slice(i + marker.length))
-  } catch {
-    return null
+/**
+ * Pull every file one save dispatch writes out of its prompt: `{ path -> text }`.
+ *
+ * The checkpoint is a DIRECTORY as of semantics 3 — a small envelope naming the phase
+ * files it owns, plus one write-once file per completed phase — so a save prompt names
+ * several paths rather than one payload. Each block reads `N. <heading> — <path>` on one
+ * line and the JSON on the next.
+ */
+function savedFiles(call) {
+  const out = {}
+  for (const chunk of String(call.prompt || '').split('\n\n')) {
+    const m = chunk.match(/^\d+\.[^\n]*— (\S+)\n([\s\S]+)$/)
+    if (!m) continue
+    try {
+      JSON.parse(m[2])
+    } catch {
+      continue
+    }
+    out[m[1]] = m[2]
   }
+  return out
+}
+
+/** The ENVELOPE one save wrote, parsed. */
+function savedPayload(call) {
+  const files = savedFiles(call)
+  const envelope = Object.keys(files).find((k) => k.endsWith('/envelope.json'))
+  return envelope ? JSON.parse(files[envelope]) : null
+}
+
+/**
+ * Reconstruct the checkpoint DIRECTORY a run left on disk, as the reader would list it:
+ * `[{ name, found, content }]` keyed on the bare filename.
+ *
+ * This is what makes a resume test a real differential: the second dispatch is handed
+ * exactly the bytes the first one wrote, discovered the same way the live reader
+ * discovers them, rather than a hand-authored fixture that can drift from the writer.
+ */
+function checkpointDir(saves) {
+  const merged = {}
+  for (const call of saves) Object.assign(merged, savedFiles(call))
+  return Object.keys(merged).map((full) => ({
+    name: full.slice(full.lastIndexOf('/') + 1),
+    found: true,
+    content: merged[full],
+  }))
+}
+
+/** Replace the envelope inside a reconstructed directory listing. */
+function withEnvelope(entries, mutate) {
+  return entries.map((e) => {
+    if (e.name !== 'envelope.json' && e.name !== 'envelope.json.wal') return e
+    const parsed = JSON.parse(e.content)
+    mutate(parsed)
+    return { ...e, content: JSON.stringify(parsed) }
+  })
+}
+
+/** Add one phase file to a listing and name it in the envelope's manifest. */
+function withPhase(entries, key, payload) {
+  const name = `99-${key.replace(/[^A-Za-z0-9._-]+/g, '_')}.json`
+  const body = JSON.stringify(payload)
+  return [
+    ...withEnvelope(entries, (env) => {
+      env.files[key] = name
+    }),
+    { name, found: true, content: JSON.stringify({ key, chars: body.length, payload }) },
+  ]
 }
 
 // ── prd-to-spec fixture (mirrors standing-rulings' minimal happy path) ─────────
@@ -94,7 +152,7 @@ function compositeWorkflows({ failSpec = false, scopingRepos = ['/repos/alpha'],
 
 const PRD = { id: 'P1', title: 'P', body: 'R1. thing' }
 
-async function runP2S({ checkpointFile = null, walFile = null, workflowOpts = {}, args = {} } = {}) {
+async function runP2S({ onDisk = null, workflowOpts = {}, args = {} } = {}) {
   const writer = beadWriter()
   const saves = []
   const result = await runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
@@ -109,11 +167,7 @@ async function runP2S({ checkpointFile = null, walFile = null, workflowOpts = {}
       // and it blended the two contracts and corrupted real checkpoints.
       if (l === 'resolve:run-inputs') {
         return {
-          files: [
-            { key: 'checkpoint', found: Boolean(checkpointFile), content: checkpointFile || '' },
-            { key: 'checkpointWal', found: Boolean(walFile), content: walFile || '' },
-            { key: 'rulings', found: false, content: '' },
-          ],
+          files: [...(onDisk || []), { name: 'rulings', found: false, content: '' }],
         }
       }
       if (l === 'checkpoint:retire') return { retired: true }
@@ -140,16 +194,27 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
     assert.ok(keys.includes(expected), `phase '${expected}' must be checkpointed as it completes; saved: ${keys.join(', ')}`)
   }
   for (const c of saves) {
-    assert.match(c.prompt, /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json/, 'the file lives in the repo the run operates on, keyed by bead+composite')
+    assert.match(c.prompt, /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json/, 'the checkpoint directory lives in the repo the run operates on, keyed by subject+composite')
   }
   const last = savedPayload(saves[saves.length - 1])
   assert.equal(last.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the staleness guard keys on the composite\'s phase-semantics version')
   assert.equal(last.pluginVersion, undefined, 'the plugin version is deliberately NOT written — it is not what makes a checkpoint stale')
   assert.equal(last.inputHash, fnv(PRD.body), 'the staleness guard keys on the PRD content hash')
-  const recon = last.phases['recon:/repos/alpha']
-  assert.ok(recon, 'the saved payload is the actual RESULT the next phase consumes, not a marker')
-  assert.equal(recon.requirements.length, 1, "the repository's own material inventory is what resumes")
-  assert.ok(last.phases['spec:/repos/alpha'], 'and the spec it fed is checkpointed beside it, per repo')
+  // The RESULTS live in their own write-once files now; the envelope only names them.
+  assert.equal(last.phases, undefined, 'the envelope carries no phase results — that is what stopped it growing to 99 KB')
+  const onDisk = checkpointDir(saves)
+  const named = last.files['recon:/repos/alpha']
+  assert.ok(named, 'every completed phase is named in the envelope manifest')
+  const file = onDisk.find((e) => e.name === named)
+  const parsed = JSON.parse(file.content)
+  assert.equal(parsed.key, 'recon:/repos/alpha')
+  assert.equal(parsed.chars, JSON.stringify(parsed.payload).length, 'each phase file declares its own payload length so a partial copy is detectable')
+  assert.equal(parsed.payload.requirements.length, 1, "the repository's own material inventory is what resumes")
+  assert.ok(last.files['spec:/repos/alpha'], 'and the spec it fed is checkpointed beside it, per repo')
+  // ONE PHASE PER WRITE is the property the redesign exists for: the save that follows six
+  // completed phases must not be carrying all six.
+  const lastPhaseFiles = Object.keys(savedFiles(saves[saves.length - 1])).filter((k) => !k.includes('envelope.json'))
+  assert.equal(lastPhaseFiles.length, 1, 'the last save writes ONE phase file, not the accumulated total')
 })
 
 /** True when the run retired its checkpoint. */
@@ -169,13 +234,13 @@ test('a completed successful run RETIRES its checkpoint — and its write-ahead 
   const [retire] = agentCalls(calls, 'checkpoint:retire')
   assert.match(
     String(retire.prompt),
-    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json/,
-    'the retirement names the run\'s own checkpoint path',
+    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json/,
+    'the retirement names the run\'s own envelope path',
   )
   assert.match(
     String(retire.prompt),
-    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\.json\.wal/,
-    'BOTH files, or the loader recovers the finished run from the copy and replays every phase',
+    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json\.wal/,
+    'BOTH envelopes, or the loader recovers the finished run from the copy and replays every phase',
   )
   // The ledger payload is LAST in the prompt so it stays parseable to the end — a reader
   // that slices from the marker must not find prose after the JSON.
@@ -203,9 +268,9 @@ test('a resumed run SKIPS completed phases, REUSES their results, and journals t
   // First run produces the real checkpoint file content; the second run is a fresh
   // dispatch (different session) that finds it on disk.
   const first = await runP2S()
-  const file = JSON.stringify(savedPayload(first.saves[first.saves.length - 1]))
+  const onDisk = checkpointDir(first.saves)
 
-  const second = await runP2S({ checkpointFile: file })
+  const second = await runP2S({ onDisk })
   assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
   for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
     assert.equal(
@@ -225,9 +290,11 @@ test('a resumed run SKIPS completed phases, REUSES their results, and journals t
 
 test('a checkpoint written against DIFFERENT PRD content is invalidated — fresh start, journalled', async () => {
   const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  payload.inputHash = fnv('a completely different PRD body')
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  const second = await runP2S({
+    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
+      env.inputHash = fnv('a completely different PRD body')
+    }),
+  })
   assert.equal(second.result.ok, true)
   assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'stale results must not be reused')
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
@@ -237,9 +304,11 @@ test('a checkpoint written against DIFFERENT PRD content is invalidated — fres
 
 test('a checkpoint written under DIFFERENT phase semantics is invalidated', async () => {
   const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  payload.semanticsVersion = '0'
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  const second = await runP2S({
+    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
+      env.semanticsVersion = '0'
+    }),
+  })
   assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1)
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
   assert.match(journal.prompt, /"event":"invalidated"/)
@@ -248,10 +317,12 @@ test('a checkpoint written under DIFFERENT phase semantics is invalidated', asyn
 
 test('a PRE-GUARD checkpoint — pluginVersion, no semanticsVersion — is invalidated exactly once, not crashed on', async () => {
   const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  delete payload.semanticsVersion
-  payload.pluginVersion = '6.10.1' // what the old code wrote
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  const second = await runP2S({
+    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
+      delete env.semanticsVersion
+      env.pluginVersion = '6.10.1' // what the old code wrote
+    }),
+  })
   assert.equal(second.result.ok, true, 'an unrecognised shape must not take the run down with it')
   assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'its phases cannot be trusted, so it is discarded')
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
@@ -278,9 +349,9 @@ test('a checkpoint carrying a FRONT-END reconciliation phase is discarded in ful
   // granted to a narrowed PRD, and the inputHash is over the PRD text, which did not
   // change, so nothing else would invalidate it.
   const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  payload.phases.reconciliation = { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  const second = await runP2S({
+    onDisk: withPhase(checkpointDir(first.saves), 'reconciliation', { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }),
+  })
   assert.equal(second.result.ok, true)
   // `architecture` is absent from this list because the triage fixture skips it — it is
   // never dispatched as a mini at all, so it has no checkpointed result to be stale.
@@ -295,10 +366,14 @@ test('a checkpoint carrying a FRONT-END reconciliation phase is discarded in ful
   assert.match(journal.prompt, /which this sequence cannot produce/)
   assert.match(journal.prompt, /"discardedAll":true/, 'the invalidation must STATE what it dropped, not just that one key went')
   assert.match(journal.prompt, /"discarded":\["validation"/)
-  // And the discarded entries must not be written straight back: the file is rewritten
-  // WHOLE from cp.phases, so a stale entry left there would greet the next resume.
+  // And the discarded entries must not be written straight back. Under the per-phase
+  // layout that means the MANIFEST: the envelope is rewritten from `cp.files`, so a
+  // discarded key left there would name a stale phase file and greet the next resume with
+  // it — the phase file itself is still sitting in the directory, inert only because
+  // nothing names it.
   const rewritten = savedPayload(second.saves[0])
-  assert.deepEqual(Object.keys(rewritten.phases), ['validation'], 'the first save after a full discard carries only the phase that just completed')
+  assert.deepEqual(Object.keys(rewritten.files), ['validation'], 'the first save after a full discard names only the phase that just completed')
+  assert.equal(rewritten.files.reconciliation, undefined, 'the retired front-end phase must not be re-adopted by the manifest')
 })
 
 test('the semantics bump is what rejects a real version-1 checkpoint, and it says why', async () => {
@@ -307,22 +382,24 @@ test('the semantics bump is what rejects a real version-1 checkpoint, and it say
   // a deployed-state inventory that architecture and the TRD no longer read.
   const first = await runP2S()
   const payload = savedPayload(first.saves[first.saves.length - 1])
-  assert.equal(payload.semanticsVersion, '2', 'the relocation of the current-state comparison is a phase-sequence change')
-  payload.semanticsVersion = '1'
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  assert.equal(payload.semanticsVersion, '3', 'the move to a per-phase checkpoint directory is a layout change nothing older can be read as')
+  const second = await runP2S({
+    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
+      env.semanticsVersion = '1'
+    }),
+  })
   assert.equal(second.result.ok, true)
   for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'prd-reconciliation', 'spec-authoring']) {
     assert.equal(workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length, 1, `${mini} must re-run`)
   }
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
   assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /written under phase semantics 1 and this composite is at 2/, 'the rejection names the reason, never silently misapplies')
+  assert.match(journal.prompt, /written under phase semantics 1 and this composite is at 3/, 'the rejection names the reason, never silently misapplies')
 })
 
 test('a per-repo comparison is resumed per repo — a repo already inventoried is not read twice', async () => {
   const first = await runP2S()
-  const file = JSON.stringify(savedPayload(first.saves[first.saves.length - 1]))
-  const second = await runP2S({ checkpointFile: file })
+  const second = await runP2S({ onDisk: checkpointDir(first.saves) })
   assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
   assert.equal(
     workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length,
@@ -337,11 +414,14 @@ test('a checkpoint SURVIVES a plugin version change when the phase semantics are
   // carrying a stale plugin version — however it got there — must still be honoured.
   const first = await runP2S()
   const payload = savedPayload(first.saves[first.saves.length - 1])
-  payload.pluginVersion = '0.0.1'
-  assert.notEqual(payload.pluginVersion, PLUGIN_VERSION, 'the fixture must actually differ from the shipped plugin version')
+  assert.notEqual('0.0.1', PLUGIN_VERSION, 'the fixture must actually differ from the shipped plugin version')
   assert.equal(payload.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the semantics version is the one thing left unchanged')
 
-  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  const second = await runP2S({
+    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
+      env.pluginVersion = '0.0.1'
+    }),
+  })
   assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
   for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
     assert.equal(
