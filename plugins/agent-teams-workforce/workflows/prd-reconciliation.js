@@ -47,10 +47,17 @@ export const meta = {
 // PRD it is handed is always WHOLE: the search narrows to one repository, the requirements
 // never narrow at all.
 //
-// One consequence for the caller: check 1c below (`architectureNeeded` / `infraOnly` /
-// `architectureQuestions`) is no longer read by prd-to-spec. Whether an architecture panel
-// convenes is now a read-only triage over the PRD itself, upstream of here, because whether
-// something is already built has no bearing on whether the PRD leaves a CHOICE open.
+// CHECK 1c IS RETIRED, NOT MERELY UNREAD. It computed `architectureNeeded`, `infraOnly`
+// and `architectureQuestions`, and after the relocation nothing consumed any of them:
+// whether an architecture panel convenes is a read-only triage over the PRD itself,
+// upstream of here, because whether something is already built has no bearing on whether
+// the PRD leaves a CHOICE open. Left in place it was a whole judgment pass over the whole
+// PRD — with its own attribution rules and its own script-side UI guard — paid ONCE PER
+// REPOSITORY in the span, for output that was thrown away. It is gone from the brief, the
+// schema, the reduction and the return.
+//
+// If a caller ever needs the architecture question again, it belongs where it is now: over
+// the PRD, once, not over the material, once per repo.
 //
 // It exists to spend the existing material well, not to shrink the ask:
 //
@@ -184,8 +191,6 @@ const fail = (reason, extra) => ({
   repos: [],
   existingRepos: [],
   spansMultipleRepos: false,
-  architectureNeeded: false,
-  architectureQuestions: [],
   uiAuthority: {
     bundlePath: null,
     mocksDir: mocksDir || null,
@@ -193,7 +198,6 @@ const fail = (reason, extra) => ({
     shellsConsulted: [],
     pagesConsulted: [],
   },
-  infraOnly: false,
   ...(extra || {}),
 })
 
@@ -209,6 +213,40 @@ const prdBlock = `${prdHeader}\n\n${prdBody}`
 const repoBlock = repos.length
   ? repos.map((r, i) => `${i + 1}. ${r}`).join('\n')
   : '(no repo paths supplied — discover the repositories this PRD touches from the PRD text)'
+
+// ── THE SEARCH IS SCOPED TO WHAT THE CALLER NAMED; THE REQUIREMENTS NEVER ARE ────
+//
+// This brief was written when the mini ran ONCE, at the front of the pipeline, against
+// every repository the PRD might touch. It now runs once per repository in the ruled span,
+// with `repos` holding exactly one — so a brief that still says "the estate" and budgets
+// for it will crawl the estate once per repository, and the waste is multiplied by the
+// span rather than paid once.
+//
+// What narrows is the SEARCH. The PRD does not: `prdBlock` is the whole PRD in every case,
+// every requirement still comes back with a status, and an unevidenced conforms/contradicts
+// is still demoted to absent by the reduction below. A requirement whose material is not in
+// this repository is `absent` HERE — which is the honest answer for this repository — and it
+// is never dropped from the inventory.
+//
+// One repository is a smaller haystack than sixty, so the ceiling scales with the scope
+// actually given. An empty or multi-repo `repos` means the scope is NOT known to be one
+// repository, and that keeps the original wide budget: unknown is unknown, and the
+// fail-safe stays "search widely", never "search less".
+const singleRepo = repos.length === 1
+const CALLS_PER_REQUIREMENT = singleRepo ? 4 : 6
+const CALL_CEILING = singleRepo ? 30 : 50
+const scopeBlock = singleRepo
+  ? `THE ONE REPOSITORY YOU SEARCH — this run is scoped to it, and only it:
+${repoBlock}
+
+Search THIS repository. Do not survey the other repositories in the project, and do not go
+looking for a requirement's implementation elsewhere: another repository's copy of this run
+covers it, and a claim you cannot cite from here is not evidence about here. A requirement
+whose material is not in this repository is \`absent\` — that is the correct and complete
+answer for this repository, and it is never a reason to widen the search or to leave the
+requirement out of the inventory.`
+  : `Repositories in scope:
+${repoBlock}`
 
 // ── Phase 1: Reconciliation checks — ONE independent checker session, both checks ──
 // This used to be two parallel sessions, each paying a full session-start to read the
@@ -247,8 +285,7 @@ produces one thing: removal work, named precisely.
 
 ${prdBlock}
 
-Repositories in scope:
-${repoBlock}
+${scopeBlock}
 
 Enumerate EVERY requirement the PRD states, and for each one classify the MATERIAL — what
 exists today relative to what the PRD asks for. The status describes the material, not the
@@ -368,63 +405,24 @@ If neither the bundle nor the mocks directory exists, say so in \`evidenceSummar
 record the paths you looked for. Do not substitute the deployed UI as the authority in
 their place.
 
-═══ CHECK 1c — is architecture actually needed? ═══
-
-Judge across the WHOLE PRD:
-
-- infraOnly — true only if every requirement in this PRD is satisfied by an infrastructure
-  change alone (a flag, a stack parameter, a permission, a provisioned resource) with no
-  application code to write or remove. Judged across the whole PRD, not across a remainder.
-
-- architectureNeeded — true if, and ONLY if, THE PRD ITSELF leaves a genuine technical
-  question open that somebody must rule on before the work can be specified, in one of:
-  service boundaries, persistence, transport, event contracts, the auth model, or
-  deployment topology.
-
-  List each such question in \`architectureQuestions\`, and ATTRIBUTE EVERY ONE to the
-  requirement it arises from: \`{ requirementId, question }\`, where \`requirementId\` is the
-  \`id\` of a requirement in the inventory you just returned. The attribution is checked
-  mechanically, so use the ids you actually emitted. If a question genuinely arises from
-  the PRD as a whole rather than from one requirement, leave \`requirementId\` empty and say
-  so in the question text.
-
-  IT MUST BE FALSE FOR ALL OF THESE, WITHOUT EXCEPTION:
-    - a contradiction between the PRD and what is deployed. Settled: the PRD wins. That is
-      removal work, not a decision.
-    - ANY difference in UI or UX — layout, shells, navigation, components, visual design,
-      interaction. Settled: the design system wins — the packaged artifact, else the
-      composed mock. UI and architecture are symbiotic but not equivalent, and a design
-      difference has never been an architecture decision. THIS ONE IS ENFORCED: a question
-      attributed to a requirement whose \`surface\` is \`ui\` is dropped by the script, and if
-      every question you return is attributed to a \`ui\` requirement then
-      \`architectureNeeded\` is recorded as false whatever you set. An Epic once spent 45
-      minutes convening an architecture panel to choose an app shell that the design mocks
-      had settled months earlier; that is the failure this check exists to make impossible.
-    - a question an existing recorded decision, or an established pattern already in the
-      codebase, already answers. Follow the pattern.
-
-  When \`architectureNeeded\` is false, \`architectureQuestions\` MUST be empty. An empty
-  question list is read as "no architecture needed" regardless of the flag, so do not set
-  the flag true with nothing to ask.
-
 Do not soften a finding to be agreeable in either direction. Calling existing material
 absent causes it to be rebuilt alongside itself; calling contradicting material conforming
 leaves the product in the state the PRD was written to change.
 
 ═══ SEARCH BUDGET ═══
 
-You are answering one question per requirement, not auditing the estate. Work requirement
-by requirement and stop searching for each the moment its status is settled: one decisive
-hit — the file:line that implements it, the mock that defines it, a live endpoint that
-answers — settles \`conforms\` or \`contradicts\` and you move on. Two or three well-aimed
-searches that all miss settles \`absent\` — absence is a legitimate finding, not a reason to
-keep looking. Prefer one targeted search over browsing a repository, and never re-open a
-file to confirm something you already read. Roughly six tool calls per requirement is the
-expected shape.
+You are answering one question per requirement${singleRepo ? ' about ONE repository' : ''}, not
+auditing the estate. Work requirement by requirement and stop searching for each the moment
+its status is settled: one decisive hit — the file:line that implements it, the mock that
+defines it, a live endpoint that answers — settles \`conforms\` or \`contradicts\` and you move
+on. Two or three well-aimed searches that all miss settles \`absent\` — absence is a
+legitimate finding, not a reason to keep looking. Prefer one targeted search over browsing a
+repository, and never re-open a file to confirm something you already read. Roughly
+${CALLS_PER_REQUIREMENT} tool calls per requirement is the expected shape.
 
 "No implementation found after targeted search" is a correct and complete answer.
-Exhaustively proving a negative across every repository is not more rigorous — it costs far
-more and says the same thing, and an unevidenced claim is dropped downstream regardless.
+Exhaustively proving a negative is not more rigorous — it costs far more and says the same
+thing, and an unevidenced claim is dropped downstream regardless.
 
 ═══ CHECK 2 — upstream dependency changes ═══
 
@@ -440,7 +438,7 @@ Determine whether any upstream contract, shared schema, event, library version, 
 
 Your structured output IS the deliverable. Nothing you read reaches anybody except through it, so an exhaustive investigation that ends without it is worth exactly as much as no investigation at all — and it is how this phase has failed in practice: the reconciler explored until it ran out of room and returned nothing, so the whole run aborted and the work was re-dispatched from zero.
 
-You have roughly 50 tool calls. Spend them breadth-first: cover EVERY requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call 50, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not. Report thin coverage in \`evidenceSummary\` rather than spending more turns on it.`,
+You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVERY requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call ${CALL_CEILING}, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not. Report thin coverage in \`evidenceSummary\` rather than spending more turns on it.`,
   {
     label: 'reconcile:reality-and-dependencies',
     phase: 'Reconciliation checks',
@@ -449,7 +447,7 @@ You have roughly 50 tool calls. Spend them breadth-first: cover EVERY requiremen
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['requirements', 'infraOnly', 'architectureNeeded', 'architectureQuestions', 'evidenceSummary', 'dependencyChanges'],
+      required: ['requirements', 'evidenceSummary', 'dependencyChanges'],
       properties: {
         requirements: {
           type: 'array',
@@ -475,24 +473,6 @@ You have roughly 50 tool calls. Spend them breadth-first: cover EVERY requiremen
             },
           },
         },
-        infraOnly: { type: 'boolean' },
-        architectureNeeded: { type: 'boolean' },
-        architectureQuestions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['requirementId', 'question'],
-            properties: {
-              // The id of a requirement in the inventory above, or empty when the question
-              // arises from the PRD as a whole. Attribution is what makes the UI exclusion
-              // mechanically checkable rather than a hope about how the brief is read.
-              requirementId: { type: 'string' },
-              question: { type: 'string' },
-            },
-          },
-        },
-        decisionRationale: { type: 'string' },
         evidenceSummary: { type: 'string' },
         uiAuthority: {
           type: 'object',
@@ -739,49 +719,6 @@ for (const r of requirements) {
 }
 const spansMultipleRepos = allRepos.length > 1
 
-// A flag with no question behind it is not an architecture need, it is a shrug. The
-// exclusions (PRD-vs-deployed contradictions, UI/UX differences, questions an existing
-// decision already answers) are enforced in the brief; what is enforced here is the one
-// thing a script can check: architecture is needed only when something is actually being
-// asked.
-const surfaceById = {}
-for (const r of requirements) surfaceById[r.id] = r.surface
-
-const architectureQuestions = (Array.isArray(reality.architectureQuestions) ? reality.architectureQuestions : [])
-  .filter((q) => q && hasText(q.question))
-  .map((q) => ({ requirementId: hasText(q.requirementId) ? q.requirementId.trim() : null, question: q.question.trim() }))
-
-// THE UI EXCLUSION, ENFORCED RATHER THAN ASKED FOR.
-//
-// This is the concrete failure the whole change exists to prevent: an Epic spent 45
-// minutes convening an architecture panel to choose an app shell, when the shell had been
-// settled in the design mocks since August. UI and architecture are symbiotic but not
-// equivalent — layout, shells, navigation, components and interaction are the design
-// system's ruling, and no amount of architecture deliberation improves on it. Leaving that
-// entirely to the brief means it fails again the first time a model reads the brief
-// loosely, so the attribution on each question makes it checkable here.
-//
-// The direction of the guard matters. A question attributed to a `ui` requirement is
-// dropped. A question attributed to NOTHING, or to an id that is not in the inventory, is
-// NOT dropped: unknown is not the same as UI, and the safe error here is letting a genuine
-// question through, not silencing one.
-const uiQuestions = architectureQuestions.filter((q) => q.requirementId && surfaceById[q.requirementId] === 'ui')
-const liveQuestions = architectureQuestions.filter((q) => uiQuestions.indexOf(q) === -1)
-
-let architectureNeeded = !!reality.architectureNeeded && liveQuestions.length > 0
-if (reality.architectureNeeded && uiQuestions.length && !liveQuestions.length) {
-  architectureNeeded = false
-  log(
-    `Reconciliation: architectureNeeded was claimed, but every question attributed to a ui requirement ` +
-      `(${uiQuestions.map((q) => q.requirementId).join(', ')}) — the design system settles those, so no ` +
-      `architecture is needed. Questions dropped: ${uiQuestions.map((q) => q.question).join(' | ')}`
-  )
-} else if (reality.architectureNeeded && !architectureNeeded) {
-  log('Reconciliation: architectureNeeded was claimed with no open question behind it — recorded as not needed.')
-}
-
-const infraOnly = !!reality.infraOnly
-
 // `bundlePath` is the batch the reconciler actually selected — spec authoring reads the
 // bundle's build-specs rather than re-deriving UI from PRD prose, so the resolved path
 // travels with the inventory. Null when no bundle was found; the packages ROOT is not
@@ -798,9 +735,7 @@ const uiAuthority = {
 
 log(
   `Reconciliation: ${requirements.length} requirement(s) inventoried — ${conformsCount} conform (reuse), ` +
-    `${contradictsCount} contradict (remove), ${absentCount} absent (build)` +
-    `${infraOnly ? ' — infrastructure only' : ''}` +
-    `${architectureNeeded ? `; ${liveQuestions.length} architecture question(s) open` : '; no architecture needed'}.`
+    `${contradictsCount} contradict (remove), ${absentCount} absent (build).`
 )
 
 const uiCount = requirements.filter((r) => r.surface === 'ui').length
@@ -823,8 +758,6 @@ const ledger = {
   contradictsCount,
   absentCount,
   removalWork: removalWork.length,
-  architectureNeeded,
-  uiQuestionsDropped: uiQuestions.length,
   evidenceViolations: evidenceViolations.length,
   ok: true,
 }
@@ -845,18 +778,7 @@ return {
   // future consumer must read it as "this PRD touches more than one repo", never as "the
   // remaining work does".
   spansMultipleRepos,
-  architectureNeeded,
-  // Only the questions that survived the guard, and empty whenever architecture is not
-  // needed — a caller reading the list as the work to do must never find a dropped UI
-  // question sitting in it.
-  architectureQuestions: architectureNeeded ? liveQuestions : [],
   uiAuthority,
-  // Judged across the WHOLE PRD, not a remainder. Descriptive only — NOTHING reads this
-  // today. It USED to reroute an infrastructure-only delta to the infra-change pipeline,
-  // and that reroute was deleted on purpose in this rewrite: it was a decision about scope
-  // taken from an inventory, which is exactly what this phase must never do. Reporting the
-  // fact is fine; do not restore a caller that acts on it without a deliberate decision.
-  infraOnly,
   dependencyChanges,
   evidenceViolations,
   evidenceSummary: (reality && reality.evidenceSummary) || null,

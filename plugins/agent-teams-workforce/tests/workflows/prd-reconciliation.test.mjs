@@ -36,20 +36,11 @@ const PRD = {
 const DEPENDENCY_CLEAN = { current: true, changeFindings: [], evidence: 'lockfiles unchanged' }
 
 /** Scripted reconciler — the ONE checker session that carries both checks. */
-function reconcileAgents({
-  requirements,
-  infraOnly = false,
-  architectureNeeded = false,
-  architectureQuestions = [],
-  uiAuthority,
-}) {
+function reconcileAgents({ requirements, uiAuthority }) {
   return (call) => {
     if (call.label === 'reconcile:reality-and-dependencies') {
       return {
         requirements,
-        infraOnly,
-        architectureNeeded,
-        architectureQuestions,
         evidenceSummary: 'read the auth service and queried the deployed pool',
         dependencyChanges: DEPENDENCY_CLEAN,
         ...(uiAuthority ? { uiAuthority } : {}),
@@ -240,42 +231,13 @@ test('`repos` unions every requirement; `existingRepos` only where material was 
   assert.equal(result.spansMultipleRepos, true)
 })
 
-// ── architecture is needed only when the PRD leaves a question open ─────────────
-
-test('a claimed architecture need with no question behind it is recorded as not needed', async () => {
-  const { result } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'], surface: 'service' }],
-    architectureNeeded: true,
-    architectureQuestions: [],
-  })
-  assert.equal(result.architectureNeeded, false, 'a flag with no question behind it is a shrug, not a need')
-  assert.deepEqual(result.architectureQuestions, [])
-})
-
-test('a question attributed to a UI requirement is DROPPED — the design system settles layout', async () => {
-  // The concrete failure this exists to prevent: an Epic spent 45 minutes convening an
-  // architecture panel to choose an app shell the design mocks had settled months earlier.
-  const { result, logs } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'the settings shell', status: 'absent', evidence: ['e'], surface: 'ui' }],
-    architectureNeeded: true,
-    architectureQuestions: [{ requirementId: 'R1', question: 'which app shell should settings use?' }],
-  })
-  assert.equal(result.architectureNeeded, false)
-  assert.deepEqual(result.architectureQuestions, [], 'a dropped question must never sit in the list as work to do')
-  assert.equal(result.ledger.uiQuestionsDropped, 1, 'and the drop is recorded rather than silent')
-  assert.ok(logs.some((l) => /design system settles/.test(l)))
-})
-
-test('a question attributed to NOTHING is not dropped — unknown is not the same as UI', async () => {
-  const { result } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'], surface: 'service' }],
-    architectureNeeded: true,
-    architectureQuestions: [{ requirementId: '', question: 'which datastore holds the session record?' }],
-  })
-  assert.equal(result.architectureNeeded, true, 'the safe error is letting a genuine question through, not silencing one')
-  assert.equal(result.architectureQuestions.length, 1)
-  assert.equal(result.architectureQuestions[0].requirementId, null, 'a whole-PRD question is attributed to no requirement')
-})
+// RETIRED WITH CHECK 1c. Three tests here asserted `architectureNeeded`,
+// `architectureQuestions` and the script-side UI-question guard. Nothing consumed any of
+// those after PRD Reconciliation moved into the per-repo spec step, so the check itself is
+// gone from the mini — and a test asserting behaviour the code no longer has is not a
+// regression net, it is a second copy of the dead code. Whether an architecture panel
+// convenes is covered where it is now decided: `triage:architecture-needed` over the PRD,
+// in the prd-to-spec tests.
 
 // ── the UI authority chain ──────────────────────────────────────────────────────
 
@@ -312,7 +274,6 @@ test('an empty PRD is refused rather than reported as an empty inventory', async
   assert.equal(result.ok, false)
   assert.deepEqual(result.requirements, [])
   assert.equal(result.conformsCount, 0)
-  assert.equal(result.architectureNeeded, false)
   assert.match(result.reason, /empty PRD body/)
 })
 
