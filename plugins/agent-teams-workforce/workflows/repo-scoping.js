@@ -19,7 +19,14 @@ export const meta = {
 //     body: string,               // contradicts the PRD still lands in a repository, because
 //   },                            // removing that implementation is part of this work.
 //   architecture?: object|null,   // the ruled architecture artifact, or { skipped: true }
-//   reconciliation?: {            // EVIDENCE FOR THE RULING STEP ONLY — see the firewall below
+//   reconciliation?: {            // NORMALLY ABSENT. prd-to-spec takes its material
+//                                 // inventory per repository at SPEC AUTHORING, which is
+//                                 // downstream of this ruling, so no inventory exists when
+//                                 // this mini runs. An absent key means NOBODY LOOKED — it
+//                                 // is never evidence that the repositories are empty, and
+//                                 // the ruling prompt says so explicitly. Honoured when a
+//                                 // caller does supply one.
+//                                 // EVIDENCE FOR THE RULING STEP ONLY — see the firewall below
 //     requirements?: object[],    // the material inventory, every requirement, never filtered
 //     repos?: string[],           // union across ALL requirements — includes the repos an
 //                                 // `absent` requirement merely PREDICTS. Not read here.

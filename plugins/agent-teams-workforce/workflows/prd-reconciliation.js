@@ -24,15 +24,35 @@ export const meta = {
 //
 // WHY THIS MINI EXISTS
 //
-// Nothing upstream of specification establishes what already exists, so the pipeline
-// walks into a codebase blind: it re-specifies capabilities that already ship, and it
-// leaves in place code that the PRD has since moved past. An audit of 20 Epics in one
-// project found ELEVEN written as greenfield against behaviour that was already there —
-// a 929-line MFA implementation that was merely disabled, a fully deployed passkey
+// Nothing else in the specification pipeline establishes what already exists, so without
+// this the pipeline walks into a codebase blind: it re-specifies capabilities that already
+// ship, and it leaves in place code that the PRD has since moved past. An audit of 20 Epics
+// in one project found ELEVEN written as greenfield against behaviour that was already
+// there — a 929-line MFA implementation that was merely disabled, a fully deployed passkey
 // ceremony, three live OAuth providers, a shipped session dashboard.
 //
-// So the pipeline establishes what exists FIRST. It does that to spend the existing
-// material well, not to shrink the ask:
+// WHERE IT RUNS, AND WHY THAT CHANGED. This used to run at the FRONT of prd-to-spec, ahead
+// of every gate, feeding PRD validation, the architecture panel and the TRD. That made what
+// is deployed in a dev account into a form of requirement. The three layers are blind to
+// different things on purpose: a PRD is WHAT and never knows what is deployed; a TRD is HOW,
+// derived from the PRD and the SAD on pure architecture and best practice, and blind to
+// deployed state too, because a design reverse-engineered from the existing implementation
+// inherits that implementation's mistakes and calls them requirements; and the SPEC is the
+// only layer that asks "X is what we want, Y is what we have, how do we turn Y into X" —
+// because it is the only layer scoped to ONE repository, which is the only scope at which
+// that question has a concrete answer.
+//
+// So prd-to-spec now dispatches this mini INSIDE its per-repo spec-authoring fan-out, once
+// per repository in the ruled span, with `repos` holding exactly that one repository. The
+// PRD it is handed is always WHOLE: the search narrows to one repository, the requirements
+// never narrow at all.
+//
+// One consequence for the caller: check 1c below (`architectureNeeded` / `infraOnly` /
+// `architectureQuestions`) is no longer read by prd-to-spec. Whether an architecture panel
+// convenes is now a read-only triage over the PRD itself, upstream of here, because whether
+// something is already built has no bearing on whether the PRD leaves a CHOICE open.
+//
+// It exists to spend the existing material well, not to shrink the ask:
 //
 //   - material that CONFORMS to the PRD is REUSED — the spec builds on it instead of
 //     re-deriving it, and decomposition emits no task to write it again;

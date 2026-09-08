@@ -1,16 +1,15 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. It FIRST reconciles the PRD against what already ships, before any gate is spent — but THE PRD IS CANONICAL and reconciliation never subtracts from it. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work and reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists, no requirement is dropped or narrowed because something was already built, and every phase downstream is specified against the ORIGINAL PRD with the material inventory threaded through as CONTEXT rather than as a filter on scope. Architecture runs when and only when it is needed: reconciliation rules whether the PRD leaves a genuine technical question open, and a UI/UX difference never is one — layout, shells, navigation, components and interaction are settled by the design-system mocks, never by an architecture panel. Stitches the leaf minis (PRD reconciliation, optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Epic, then Stories under its real id, then each Story\'s Tasks, then the dependency edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Epic, then Stories under its real id, then each Story\'s Tasks, then the dependency edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
-    { title: 'PRD Reconciliation', detail: 'inventory the MATERIAL that already exists BEFORE any gate is spent; the PRD stays canonical and every phase downstream reads it, with the inventory as context' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
     { title: 'PRD Validation' },
     { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
-    { title: 'Architecture', detail: 'runs only when reconciliation left a genuine technical question open — a contradiction with what is deployed and any UI/UX difference are both settled already, and convene no panel' },
+    { title: 'Architecture', detail: 'runs only when a read-only triage over the PRD finds a genuine technical choice open — a difference from what is deployed and any UI/UX difference are both settled already, and convene no panel' },
     { title: 'Repo Scoping', detail: 'rule the repo span from the architecture ruling and the PRD — an output of this run, never pre-staged' },
-    { title: 'TRD Authoring', detail: 'once per PRD — the TRD is per-PRD, never fanned out per repo' },
-    { title: 'Spec Authoring', detail: 'once per repo in the RULED span — a Spec and its Story are created together, one Story per repo' },
+    { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
+    { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
     { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, and report what actually landed' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
@@ -334,7 +333,18 @@ async function persistRun(outcome) {
 // cost a full cold start, and cold-starting a 100-minute composite is exactly what makes
 // the next token-limit death likelier. On one Epic that loop cost 12 dispatches and
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
-const CHECKPOINT_SEMANTICS = '1'
+//
+// '1' -> '2': PRD Reconciliation was REMOVED from the front of this composite and moved
+// inside the per-repo Spec Authoring fan-out. That changes the phase sequence, the phase
+// KEYS (the front-end `reconciliation` key is gone and a per-repo `recon:<repo>` key
+// exists in its place), and what several later phases were derived from — architecture and
+// the TRD no longer read a material inventory at all. A version-1 checkpoint therefore
+// carries a `validation`, `architecture` or `trd-authoring` result that WAS derived from a
+// deployed-state inventory, and resuming onto it would silently reinstate the arrangement
+// this bump exists to retire. The inputHash is over the PRD text, which did not change, so
+// it would not catch any of that; the semantics version is the guard that does, and
+// cpJudge rejects the whole file by name and reason rather than reusing part of it.
+const CHECKPOINT_SEMANTICS = '2'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, seq: 0 }
 function cpSlug(subject) {
@@ -517,8 +527,11 @@ function cpGet(key) {
  * has already been read by everything downstream of it — a `validation` verdict granted
  * to a narrowed PRD is exactly as wrong as the reconciliation that narrowed it, and the
  * checkpoint's `inputHash` (over the PRD text, which did not change) will not catch it.
- * Reconciliation is the FIRST phase here, so a stale one means the whole file predates
- * the contract and none of it is trustworthy.
+ * The normal case is now handled one level up by CHECKPOINT_SEMANTICS, which rejects a
+ * whole file written under a different phase sequence. This stays as the backstop for a
+ * file that claims the CURRENT semantics and still carries a key the current sequence
+ * cannot produce — a mislabelled or hand-edited checkpoint — because reusing part of one
+ * is exactly as wrong as reusing all of it.
  *
  * `cp.phases` is cleared too, because the file is rewritten WHOLE from it: leaving the
  * discarded entries there would write them straight back on the next save and hand the
@@ -1056,38 +1069,46 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
   }
 }
 
-// ── PRD Reconciliation (no gate) ────────────────────────────────────────────────
-// A PRD states what someone WANTED. It has never stated what is MISSING, and until
-// now nothing in this composite read the codebase at all — the six PRD-validation
-// analysts judge the document, not the system. So a PRD written against a capability
-// that partly or largely shipped got specified, decomposed, and built a second time
-// on top of working code. An audit of 20 Epics in one project found ELEVEN written
-// as greenfield against shipped behaviour: a 929-line MFA implementation that was
-// merely disabled at one CDK line, a fully deployed passkey ceremony, three of four
-// identity providers live, a shipped session dashboard with revoke and revoke-all.
+// ── RUN SETUP — and the phase that is deliberately NOT here ─────────────────────
 //
-// Reality is therefore established FIRST — as an INVENTORY OF MATERIAL, and never as a
-// narrowing of the PRD. That distinction is the whole rule, and getting it backwards is
-// what this phase was corrected from. The PRD states the latest and greatest requirements
-// and it OVERRIDES whatever is deployed:
+// PRD RECONCILIATION USED TO RUN AT THIS POINT, AHEAD OF EVERY GATE. It does not any
+// more, and its absence from the front of this composite is the whole shape of the file.
 //
-//   conforms    — an implementation exists and matches the PRD. Reuse it.
-//   contradicts — an implementation exists and differs from the PRD. The PRD wins, and
-//                 the material is REMOVED. That is settled by definition: it convenes no
-//                 panel, opens no question, and generates removal work rather than
-//                 architecture work.
-//   absent      — nothing exists. Build it.
+// The reason it was here was real and is not in dispute: nothing upstream of
+// specification established what already existed, so the pipeline walked into a codebase
+// blind. An audit of 20 Epics in one project found ELEVEN written as greenfield against
+// behaviour that was already shipping — a 929-line MFA implementation merely disabled at
+// one CDK line, a fully deployed passkey ceremony, three of four identity providers live,
+// a shipped session dashboard with revoke and revoke-all. That problem is real and it is
+// still solved. What changed is WHERE.
 //
-// Delivered code never subtracts from what the PRD asks for. No requirement is dropped,
-// narrowed, deferred or written off because something was already built, and no work item
-// is ever closed on the grounds that code exists. Every phase downstream reads the
-// ORIGINAL PRD; the inventory travels beside it as CONTEXT — "here is what exists; reuse
-// it or remove it" — never as a filter on scope.
+// Running it here made what is deployed in a dev account into a form of requirement, and
+// then built a whole pipeline concept on top of that: PRD validation, the architecture
+// panel and the TRD were all handed an inventory of deployed material, and the panel was
+// convened or skipped on the reconciler's own verdict. The layers are blind to different
+// things on purpose, and this collapsed the distinction:
 //
-// This phase spends NO GATE, and that is the point of its position: what already exists
-// is established for the cost of one read-only checker, before G1 convenes six analysts
-// and G2 an architecture panel — and the architecture panel is convened at all only when
-// this phase reports a genuine technical question still open.
+//   PRD  — WHAT. It never knows or cares what is currently deployed. Deployed state is
+//          not a requirements input, and it never narrows the ask.
+//   TRD  — HOW, from the PRD and the SAD, on pure expert architecture and best practice.
+//          Also blind to deployed state: a design reverse-engineered from the existing
+//          implementation inherits that implementation's mistakes and calls them
+//          requirements.
+//   SPEC — the ONLY layer that asks "X is what we want, Y is what we have, how do we turn
+//          Y into X". It is asked there because the spec is the only layer scoped to ONE
+//          repository, and that is the only scope at which the question has a concrete
+//          answer.
+//
+// So the reconciliation now runs inside the per-repo Spec Authoring fan-out below, once
+// per repository in the ruled span, and the PRD stays canonical there exactly as it did
+// here: material that conforms is REUSED, material that contradicts is REMOVED (the PRD
+// wins, by definition, convening no panel), and what is absent is BUILT. Removal is still
+// real work and still reaches task decomposition — it is simply DISCOVERED at spec time
+// rather than at PRD time.
+//
+// What remains at this point in the run is setup that carries no judgment: the checkpoint
+// identity, the two input files, and the owner's standing rulings.
+//
 // The checkpoint identity is established from the PRD text — a changed PRD is exactly
 // what must invalidate a resume.
 // The checkpoint root is NOT the ruled repo span. prd-to-spec is dispatched with no
@@ -1135,10 +1156,10 @@ if (a.runInputs && Array.isArray(a.runInputs.files)) {
 ${wanted.map((w) => `- key "${w.key}": ${w.path}`).join('\n')}`,
       {
         label: 'resolve:run-inputs',
-        phase: currentPhase || 'PRD Reconciliation',
         // PLUMBING — see resolve:prd-text. Reads a named list of files and returns each
         // one's text verbatim; it decides nothing about any of them.
         model: 'haiku',
+        phase: currentPhase || 'PRD Creation',
         effort: 'low',
         schema: {
           type: 'object',
@@ -1181,9 +1202,9 @@ if (cp.active && runInputs && Array.isArray(runInputs.files) && !runInputs.files
 ${cp.walPath}`,
       {
         label: 'resolve:checkpoint-wal',
-        phase: currentPhase || 'PRD Reconciliation',
         // PLUMBING — see resolve:prd-text. One file, returned verbatim or reported absent.
         model: 'haiku',
+        phase: currentPhase || 'PRD Creation',
         effort: 'low',
         schema: {
           type: 'object',
@@ -1199,8 +1220,6 @@ ${cp.walPath}`,
   }
 }
 cpApply(runInput('checkpoint'), runInput('checkpointWal'))
-
-enterPhase('PRD Reconciliation')
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Unattended multi-day runs mean Mark's standing rulings must live in the pipeline's
@@ -1229,215 +1248,23 @@ const rulingsBlock = standingRulings
   ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
   : ''
 
-let reconciliation = cpGet('reconciliation')
-// A checkpoint written before the contract changed carries the OLD shape — a delta count, a
-// size verdict, and no `architectureNeeded`. Resuming onto it would read the absent field as
-// "no architecture question" and skip the panel on a PRD that needs one, silently. The
-// checkpoint hash is over the PRD text, so an unchanged PRD would not invalidate it either.
-// Cheaper to re-run one read-only reconciliation than to resume onto a shape that no longer
-// means what this file reads it as.
-//
-// And the reconciliation entry is never the only casualty. Every phase checkpointed after
-// it read a PRD that the old contract had NARROWED to the delta — a `validation` entry in
-// one of these files records a Gate 1 pass granted to a document holding 12 of the PRD's
-// 19 requirements — so the whole file goes, not just this key.
-if (reconciliation !== undefined && !(reconciliation && typeof reconciliation.architectureNeeded === 'boolean')) {
-  cpDiscardAll('reconciliation', 'pre-inventory reconciliation shape (no architectureNeeded) — every phase after it derived from the narrowed delta PRD')
-  reconciliation = undefined
-}
-const reconResumed = reconciliation !== undefined
-if (!reconResumed) reconciliation = await workflow('agent-teams-workforce:prd-reconciliation', {
-  prd,
-  standingRulings,
-  // The SEED, deliberately, and not the span: the span has not been ruled yet and cannot
-  // be, because ruling it needs an architecture decision that needs a validated PRD that
-  // needs this reconciliation. Reconciliation is told where to START looking; its own
-  // reality check reports back which repositories it actually found the work in, and that
-  // report is one of the inputs the scoping phase rules on.
-  repos: seedRepos,
-  dependencies: a.dependencies,
-})
-if (reconciliation && reconciliation.ledger) runLedger.push(reconciliation.ledger)
-// There is no "original" any more — `prd` is never rebound, so this IS the PRD every
-// phase reads. It is recorded here as well as at validation because a run that stops in
-// reconciliation still has to show the journal what it was reconciling.
-produced.prd = prd
-produced.reconciliation = reconciliation || null
-if (!reconciliation || reconciliation.ok === false) {
-  // A failed reconciliation is NOT an empty inventory. Reading "we could not establish
-  // what exists" as "nothing exists" is the exact greenfield assumption this phase
-  // removes — it would have every conforming implementation rebuilt and every
-  // contradicting one left in place — so the run stops rather than proceeding blind.
-  return partial('prd-reconciliation', {
-    reason:
-      (reconciliation && reconciliation.reason) ||
-      'PRD reconciliation returned nothing — what already ships could not be established.',
-    // A reconciler that DIED is not a reconciler that found the PRD wanting. The mini
-    // says which it was; a null result from the mini itself is the same event one level
-    // up, so both route to the environment stage rather than to the bead's record.
-    dispatchFailed: !reconciliation || reconciliation.dispatchFailed === true,
-    dispatchFailures: (reconciliation && reconciliation.dispatchFailures) || ['prd-reconciliation (returned nothing)'],
-    detail: reconciliation || null,
-  })
-}
-if (!reconResumed) await cpSave('reconciliation', reconciliation)
-
-// ── The material inventory — CONTEXT for every phase downstream ─────────────────
-//
-// NOTHING IS SUBTRACTED HERE, and there is deliberately no exit from this phase. The
-// three exits that used to sit at this point were all the same mistake wearing three
-// hats:
-//
-//   - a `deltaCount === 0` close, which ended a PRD because code existed;
-//   - a `sizeVerdict === 'bug' || infraOnly` reroute, which sent a PRD to bug-fix or
-//     infra-change on the strength of what was left after that subtraction;
-//   - a rebinding of `prd` to a generated "delta PRD", which is what actually made every
-//     downstream phase blind to the requirements reconciliation had judged satisfied.
-//
-// Under the corrected rule none of them can be right. A PRD that contradicts what is
-// deployed is not smaller than it looks — it is the same size, and part of the work is
-// now REMOVAL. So the requirements stay whole, `prd` is never rebound, and what the
-// phases get in addition is this inventory: what exists, cited, and what to do with it.
-const reqInventory = Array.isArray(reconciliation.requirements) ? reconciliation.requirements : []
-const removalWork = Array.isArray(reconciliation.removalWork) ? reconciliation.removalWork : []
-const reuseWork = Array.isArray(reconciliation.reuseWork) ? reconciliation.reuseWork : []
-// TWO lists, one word apart, and reconciliation is explicit about the difference:
-//
-//   repos         — the union across ALL requirements, including `absent` ones, whose
-//                   repos are a PREDICTION about where their work will land.
-//   existingRepos — evidence only: the union across `conforms` and `contradicts`, where
-//                   material was actually FOUND behind citations that survived enforcement.
-//
-// Both are forwarded and NEITHER is derived here. Substituting one for the other is the
-// error that matters: handing the scoping ruling `repos` as though it were evidence of
-// existing material feeds it predicted repositories as facts, which is precisely what the
-// greenfield-first design is built to prevent.
-const reconRepos = Array.isArray(reconciliation.repos) ? reconciliation.repos : []
-const existingRepos = Array.isArray(reconciliation.existingRepos) ? reconciliation.existingRepos : []
-// Capped for the same reason the standing rulings are: this text is injected into several
-// briefs, and a PRD with a hundred requirements must not blow up every one of them.
-const INVENTORY_CAP = 12000
-const inventoryLine = (r) => {
-  const bits = [`- ${r.id}${r.surface ? ` (${r.surface})` : ''} [${r.status}] ${r.requirement}`]
-  if (r.status === 'conforms' && Array.isArray(r.conformingMaterial) && r.conformingMaterial.length) {
-    bits.push(`    REUSE (do not rebuild): ${r.conformingMaterial.join('; ')}`)
-  }
-  if (r.status === 'contradicts' && Array.isArray(r.removalTargets) && r.removalTargets.length) {
-    bits.push(`    REMOVE (the PRD wins): ${r.removalTargets.join('; ')}`)
-  }
-  if (r.status === 'absent' && hasText(r.missing)) bits.push(`    ABSENT: ${r.missing}`)
-  if (Array.isArray(r.evidence) && r.evidence.length) bits.push(`    evidence: ${r.evidence.join('; ')}`)
-  return bits.join('\n')
-}
-const materialInventory = reqInventory.length
-  ? (
-      'MATERIAL INVENTORY — what already exists for this PRD, established before this phase ran.\n\n' +
-      'THIS IS CONTEXT, NOT SCOPE. The PRD above is canonical and every requirement it states is in ' +
-      'scope regardless of what appears below. A status describes the MATERIAL, never the ' +
-      "requirement's fate:\n" +
-      '  conforms    — an implementation exists and matches the PRD. REUSE it; do not rebuild it.\n' +
-      '  contradicts — an implementation exists but differs from the PRD. The PRD wins: the named ' +
-      'material is REMOVED or replaced. This is settled by definition — it is not an open question, ' +
-      'it raises no architecture decision, and it generates removal work.\n' +
-      '  absent      — nothing exists. Build it.\n' +
-      'A UI/UX difference is settled by the design-system mocks, never by an architecture decision.\n' +
-      'Never drop, narrow, defer or close a requirement because material for it already exists.\n\n' +
-      `${reconciliation.conformsCount || 0} conform, ${reconciliation.contradictsCount || 0} contradict, ` +
-      `${reconciliation.absentCount || 0} absent — ${reqInventory.length} requirement(s), all in scope.\n\n` +
-      reqInventory.map(inventoryLine).join('\n')
-    ).slice(0, INVENTORY_CAP)
-  : ''
-// ── GROUND THAT MOVED ───────────────────────────────────────────────────────────
-//
-// Reconciliation schema-REQUIRES this check and runs an agent to answer it: has any
-// upstream contract, shared schema, event, or library version the PRD assumes changed in a
-// way that invalidates one of its assumptions? Nothing read the answer. The run paid for
-// the question and threw the result away, which is worse than not asking — a phase that
-// designs against an assumption the reconciler already knows is void does so with the
-// evidence sitting unread in the same object.
-//
-// It travels the same route as the material inventory, and under the same rule: it is
-// CONTEXT, never authority. A moved dependency does not narrow the PRD or excuse a
-// requirement — nothing does. It tells architecture, the TRD and the specs which ground
-// they cannot stand on while satisfying the requirement anyway.
-const dependencyChanges = reconciliation.dependencyChanges || null
-const dependencyFindings =
-  dependencyChanges && Array.isArray(dependencyChanges.changeFindings)
-    ? dependencyChanges.changeFindings.filter((f) => f && hasText(f.dependency))
-    : []
-const dependenciesMoved = !!dependencyChanges && dependencyChanges.current === false
-const dependencyBlock = dependenciesMoved
-  ? 'UPSTREAM DEPENDENCY CHANGES — ground the PRD assumed has MOVED since it was written.\n\n' +
-    'This is CONTEXT, not a licence to narrow anything. Every requirement still stands; what has changed is the ' +
-    'ground under it. Design and specify against what is true NOW, and where a requirement assumed something that ' +
-    'is no longer so, satisfy the requirement against current reality rather than restating the stale assumption.\n\n' +
-    (dependencyFindings.length
-      ? dependencyFindings
-          .map((f) => `- ${f.dependency}\n    changed: ${f.change || '(unstated)'}\n    invalidates: ${f.invalidates || '(unstated)'}`)
-          .join('\n')
-      : '(the check reported the ground moved but named no specific finding)') +
-    (hasText(dependencyChanges.evidence) ? `\n\nHow this was verified: ${dependencyChanges.evidence}` : '') +
-    (hasText(dependencyChanges.notes) ? `\n${dependencyChanges.notes}` : '')
-  : ''
-produced.dependencyChanges = dependencyChanges
-produced.materialInventory = {
-  requirements: reqInventory.length,
-  conforms: reconciliation.conformsCount || 0,
-  contradicts: reconciliation.contradictsCount || 0,
-  absent: reconciliation.absentCount || 0,
-  removalWork,
-  reuseWork,
-  repos: reconRepos,
-  existingRepos,
-  architectureNeeded: reconciliation.architectureNeeded === true,
-  uiAuthority: reconciliation.uiAuthority || null,
-  dependenciesMoved,
-}
-log(
-  `Reconciliation: ${reqInventory.length} requirement(s), all in scope — ` +
-    `${reconciliation.conformsCount || 0} conform (reuse), ${reconciliation.contradictsCount || 0} contradict ` +
-    `(remove: ${removalWork.length} removal work item(s)), ${reconciliation.absentCount || 0} absent (build). ` +
-    `Architecture ${reconciliation.architectureNeeded === true ? 'IS' : 'is NOT'} needed.` +
-    (existingRepos.length ? ` Material found in: ${existingRepos.join(', ')}.` : ' No existing material found.')
-)
-if (dependenciesMoved) {
-  log(
-    `UPSTREAM DEPENDENCIES MOVED: ${dependencyFindings.length || 'unspecified'} invalidating change(s) since the PRD was written — ` +
-      (dependencyFindings.map((f) => `${f.dependency} (${f.change || 'unstated'})`).join('; ') || '(none named)') +
-      '. Threaded into architecture, TRD authoring and spec authoring as context.'
+// A checkpoint that claims the CURRENT phase semantics and still carries a front-end
+// `reconciliation` phase cannot have been written by this sequence — there is no such
+// phase any more. CHECKPOINT_SEMANTICS rejects a version-1 file whole, one level up, so
+// reaching here means a mislabelled or hand-edited file, and every later entry in it was
+// derived from a deployed-state inventory that the current architecture and TRD phases
+// never see. Part of such a file is exactly as untrustworthy as all of it.
+if (cpGet('reconciliation') !== undefined) {
+  cpDiscardAll(
+    'reconciliation',
+    'the checkpoint claims the current phase semantics but carries a front-end `reconciliation` phase, which this sequence cannot produce — every later phase in it derived from a deployed-state inventory that architecture and the TRD no longer read'
   )
-} else if (!dependencyChanges) {
-  log('No dependency-change check came back from reconciliation — whether upstream ground moved is UNKNOWN, not clear.')
 }
-// Whether the cds hand-off bundle reached this run is worth its own line: a UI PRD
-// specified WITHOUT it and one specified against it look identical in the result, and the
-// difference between them is whether the spec restates a settled design or references it.
-//
-// A NULL bundlePath IS NOT A FINDING. It is the absence of one, and it has at least three
-// causes that this composite cannot tell apart: the artifacts are genuinely not in the
-// bundle (listed in `unpackaged.md`), no bundle exists at all, or the reconciler never
-// looked. The third is not hypothetical — a reconciler charter that called the loose mocks
-// authoritative would return null on every run with a perfectly good bundle sitting on
-// disk, and reporting that as "the artifacts are unpackaged" would state the one benign
-// reading as fact and hide the defect completely. Same rule the reconciliation phase
-// already applies when it separates a dead dispatch from a finding: "we checked and found
-// nothing" and "we never checked" are different, and a signal that could be either is
-// never reported as the first.
-{
-  const ua = reconciliation.uiAuthority || {}
-  const uiCount = reqInventory.filter((r) => r && r.surface === 'ui').length
-  if (uiCount) {
-    log(
-      `UI authority: ${uiCount} ui requirement(s) — ` +
-        (hasText(ua.bundlePath)
-          ? `cds hand-off bundle ${ua.bundlePath}, forwarded to spec authoring`
-          : 'NO cds hand-off bundle was resolved. That may mean the artifacts are not packaged, that no bundle ' +
-            'exists, or that reconciliation did not look — this run cannot tell which. Spec authoring falls back ' +
-            'to the composed mocks and is not blocked') +
-        `${Array.isArray(ua.artifactsConsulted) && ua.artifactsConsulted.length ? `, ${ua.artifactsConsulted.length} artifact(s) matched` : ''}.`
-    )
-  }
-}
+// `prd` is never rebound anywhere in this composite, so this IS the PRD every phase reads.
+// Recorded before the first gate so a run that stops at G1 still shows the journal what it
+// was validating.
+produced.prd = prd
+
 
 // A G1 loop that re-validates the SAME unedited document gets the same verdict every attempt,
 // spends the budget, and parks. That is not a quality control; it is a stall with a budget.
@@ -1652,27 +1479,38 @@ enterPhase('Architecture')
 // Analysts handed nothing to analyze do not return "nothing"; they invent scope,
 // and the invented scope then fails the gate.
 //
-// TWO things now decide whether the panel convenes, and the FIRST is reconciliation.
-// It has already read the PRD against what exists, so it is the step that knows which
-// differences are open questions and which are settled by definition. Under the rule this
-// pipeline encodes, most are settled:
+// WHAT DECIDES WHETHER THE PANEL CONVENES, AND WHAT NO LONGER DOES.
 //
-//   - a contradiction between the PRD and what is deployed is NOT an architecture
-//     question. The PRD wins. It generates removal work, not a panel.
-//   - a UI/UX difference is NEVER an architecture question. Layout, shells, navigation,
-//     components, visual design and interaction are settled by the design-system mocks.
-//   - a question an existing recorded decision or an established codebase pattern already
-//     answers is settled too.
+// This used to be ruled by PRD reconciliation, which read the PRD against what was
+// deployed and returned `architectureNeeded`. That is exactly the arrangement the layer
+// rule retires: it made the deployed state of a dev account an input to a decision about
+// the DESIGN, and it convened or stood down the most expensive phase in the composite on
+// the strength of a survey of the status quo. A panel is needed when the PRD leaves a
+// CHOICE open, and whether something is already built has no bearing on whether a choice
+// exists.
 //
-// `architectureNeeded` is true only when the PRD leaves a genuine technical question open
-// in service boundaries, persistence, transport, event contracts, the auth model, or
-// deployment topology. When it is false the phase is SKIPPED outright and the skip is
-// recorded with its reason — this is the change that stops a UI difference convening a
-// seventeen-agent panel, and the triage agent below is not even paid for.
+// So the judgment is a READ-ONLY TRIAGE OVER THE PRD ITSELF, which is where it belongs and
+// what the triage agent below already does. It is dispatched at effort `low`, reads the PRD
+// and the SAD location, and answers one question: does this PRD force a choice between
+// options whose consequences outlive the feature?
 //
-// When it IS needed, one cheap agent then sizes the panel. It CANNOT skip on its own
-// judgement of difficulty — only on the absence of a decision, or on the SAD having
-// already settled every one this PRD raises.
+// The three things that are SETTLED BY DEFINITION and can never be an architecture
+// question are told to the triage directly, because it can no longer be told them by a
+// reconciler:
+//
+//   - a difference between the PRD and what is deployed. The PRD wins, by definition. It
+//     is removal work discovered at spec time, not a panel.
+//   - ANY difference in UI or UX. Layout, shells, navigation, components, visual design
+//     and interaction are settled by the design-system artifacts. An Epic once spent 45
+//     minutes convening a panel to choose an app shell the mocks had settled months
+//     earlier; that is the failure this rule exists to make impossible.
+//   - a question an existing recorded decision, or an established pattern already in the
+//     codebase, already answers.
+//
+// The triage CANNOT skip on its own judgement of difficulty — only on the absence of a
+// choice, or on the SAD having already settled every one this PRD raises. It fails OPEN: a
+// dead dispatch runs the full panel, after one retry, because a wrongly-skipped panel
+// costs a bad decision and a wrongly-run one costs tokens.
 
 // The analyst axes the `architecture` mini can dispatch. Kept in step with
 // ALL_DIMENSIONS in architecture.js: this composite's triage names axes from this
@@ -1690,29 +1528,6 @@ if (cpArch !== undefined) {
 if (a.skipArchitecture === true) {
   archNeeded = false
   archTriage = { needed: false, reason: 'caller passed skipArchitecture:true', settledBy: 'caller' }
-} else if (reconciliation.architectureNeeded !== true && a.skipArchitecture !== false) {
-  // The gate that matters. `!== true` rather than `=== false` deliberately: a
-  // reconciliation that could not state the field has not found an open question either,
-  // and this composite does not convene the most expensive phase it owns on a silence.
-  // An explicit skipArchitecture:false from the caller still forces the panel on.
-  archNeeded = false
-  archTriage = {
-    needed: false,
-    reason:
-      'PRD reconciliation left no genuine technical question open — every difference between ' +
-      'this PRD and what is deployed is settled by definition (the PRD wins), by the ' +
-      'design-system mocks (UI), or by a decision already recorded.',
-    settledBy: 'prd-reconciliation',
-    architectureQuestions: [],
-  }
-  runLedger.push({
-    phase: 'Architecture',
-    event: 'skipped',
-    settledBy: 'prd-reconciliation',
-    reason: archTriage.reason,
-    chosen: [],
-    mode: 'skipped',
-  })
 } else if (a.skipArchitecture === false) {
   archTriage = { needed: true, reason: 'caller passed skipArchitecture:false', settledBy: 'caller' }
 } else {
@@ -1722,8 +1537,12 @@ if (a.skipArchitecture === true) {
     `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
       `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or a new access pattern, a new service or a new boundary between services, a new integration or transport, a new trust boundary, or a change to a crosscutting concern.\n\n` +
       `It does NOT exist merely because the work is hard, security-adjacent, or user-facing. A feature that composes existing decisions — a screen in an existing app, a field on an existing form, a call to an endpoint whose contract another PRD owns — raises NO architecture decision even when it is difficult.\n\n` +
-      `Answer needed:false when EITHER there is no such choice, OR the SAD already settles every choice this PRD raises (name the sections).\n` +
-      `Answer needed:true when even one unsettled choice remains. When uncertain, answer true: a wrongly-run panel costs tokens, a wrongly-skipped one costs a bad decision.\n\n` +
+      `THREE THINGS ARE SETTLED BY DEFINITION AND ARE NEVER AN ARCHITECTURE DECISION. You are judging the PRD as a statement of requirements; you are NOT surveying what is deployed, and you must not go looking for it:\n` +
+      `- A DIFFERENCE BETWEEN THIS PRD AND WHAT IS CURRENTLY BUILT OR DEPLOYED. The PRD is canonical and wins, by definition. It is not a tradeoff to weigh and it opens no question: the material that contradicts it is removed, and that removal is discovered per repository at spec authoring, later in this run. A PRD that changes existing behaviour therefore raises an architecture decision only if the NEW behaviour it asks for forces a choice on its own terms.\n` +
+      `- ANY DIFFERENCE IN UI OR UX — layout, shells, navigation, components, visual design, interaction. Settled by the design system's own artifacts. UI and architecture are symbiotic but not equivalent, and a design difference has never been an architecture decision.\n` +
+      `- A QUESTION AN EXISTING RECORDED DECISION OR AN ESTABLISHED CODEBASE PATTERN ALREADY ANSWERS. Following an existing pattern is not a choice.\n\n` +
+      `Answer needed:false when EITHER there is no such choice, OR every choice this PRD raises falls under one of the three above, OR the SAD already settles every choice it raises (name the sections).\n` +
+      `Answer needed:true when even one unsettled choice remains, and name each one in \`decisions\` — that list is what the panel is convened for and what it is told to rule on, so a question you leave out is a question nobody rules. When uncertain, answer true: a wrongly-run panel costs tokens, a wrongly-skipped one costs a bad decision.\n\n` +
       `Repositories the run was launched from (${seedRepos.length}): ${seedRepos.join(', ') || '(none named)'}. ` +
       `This is a STARTING POINT, not the span — which repositories this PRD lands in is ruled later in this run, after you answer. Do not treat the count as evidence about scope.\n` +
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
@@ -1865,11 +1684,13 @@ if (!archNeeded) {
   // analysts' voice, and reproducing that voice is what caused the panel to
   // stand down in the first place.
   const g1 = (validation.verdict && validation.verdict.verdict) || 'pass'
-  // Reconciliation returns these as { requirementId, question } — each question is
-  // attributed, because the attribution is what lets a `ui` question be dropped there
-  // rather than argued about here. A bare string is accepted too so a hand-built or
-  // resumed packet does not silently lose the panel's whole reason for convening.
-  const archQuestions = (Array.isArray(reconciliation.architectureQuestions) ? reconciliation.architectureQuestions : [])
+  // The open questions come from the TRIAGE that convened this panel, and from nowhere
+  // else. They used to come from reconciliation as attributed `{ requirementId, question }`
+  // pairs, which is how a survey of deployed material came to set the panel's agenda; the
+  // triage now names them in `decisions` from the PRD alone. A bare string is accepted
+  // either way so a hand-built or resumed packet does not silently lose the panel's whole
+  // reason for convening.
+  const archQuestions = (Array.isArray(archTriage && archTriage.decisions) ? archTriage.decisions : [])
     .map((q) => (hasText(q) ? q.trim() : q && hasText(q.question) ? `${q.requirementId ? `${q.requirementId}: ` : ''}${q.question.trim()}` : ''))
     .filter((q) => hasText(q))
   const archDrivers = [
@@ -1877,17 +1698,27 @@ if (!archNeeded) {
     'Findings raised during validation were adjudicated AT that gate. Any the gate did not uphold are closed. ' +
       'Do NOT treat validation-phase findings as open defects, and do NOT withhold analysis on account of them — ' +
       'if you believe the PRD is undecidable, say so about text you have read in the PRD itself.',
-    // What this panel is and is NOT convened for. Reconciliation has already settled every
-    // difference that is settled by definition, so a panel that re-opens one is spending
-    // seventeen agents on a question that has an answer.
-    'The PRD is CANONICAL. Where it contradicts what is already deployed, the PRD wins — that is settled, ' +
-      'not a tradeoff to weigh, and the deployed material is removed or replaced. Do NOT raise it as an option. ' +
-      'A UI/UX difference is settled by the design-system mocks and is NEVER an architecture decision.',
+    // ── WHAT THIS PANEL IS NOT TOLD, AND WHY ──────────────────────────────────────
+    //
+    // No material inventory. This panel used to receive one — every requirement, its
+    // deployed status, and cited evidence — and the effect was to make the design an
+    // argument about the status quo. A panel shown what already exists reliably reasons
+    // backwards from it and returns a rationalization of the current implementation
+    // wearing the vocabulary of a decision. Architecture derives from the PRD and the SAD:
+    // pure expert design and best practice, blind to what a dev account happens to hold.
+    //
+    // The rule below is still stated, because a PRD often DESCRIBES a change to existing
+    // behaviour in its own text and the panel must not treat that description as an open
+    // tradeoff. It is settled by definition, and the removal it implies is found per
+    // repository at spec authoring.
+    'The PRD is CANONICAL. Where it changes or contradicts what is already built, the PRD wins — that is settled, ' +
+      'not a tradeoff to weigh, and the superseded material is removed or replaced by work discovered later in this ' +
+      'run, per repository, at spec authoring. Do NOT raise it as an option and do NOT go surveying what is deployed: ' +
+      'your inputs are this PRD and the SAD. A UI/UX difference is settled by the design-system artifacts and is ' +
+      'NEVER an architecture decision.',
     ...(archQuestions.length
-      ? [`Reconciliation left these technical questions genuinely open, and they are what this panel is for: ${archQuestions.join(' | ')}`]
+      ? [`Triage found these choices genuinely open in the PRD, and they are what this panel is for: ${archQuestions.join(' | ')}`]
       : []),
-    ...(materialInventory ? [materialInventory] : []),
-    ...(dependencyBlock ? [dependencyBlock] : []),
     ...(Array.isArray(a.decision && a.decision.drivers) ? a.decision.drivers : []),
   ]
 
@@ -1986,9 +1817,21 @@ if (!architecture.ok) return partial('architecture', architecture)
 //   AFTER architecture, because the ruling is most of the input. Which services the
 //   design creates, which boundaries it crosses, which surfaces it stands up — those
 //   decide where the work lands, and none of them are known before the decider rules.
-//   The scoping mini also reads the repositories and code that already exist, which is
-//   the other half: a PRD lands in the repository that already owns the capability far
-//   more often than in a new one.
+//   The mini also SURVEYS the repositories the project has, which is the other half: a
+//   PRD lands in the repository that already owns the capability far more often than in
+//   a new one.
+//
+//   THAT SURVEY IS NOT A DEPLOYED-STATE SURVEY, and the distinction is why this phase can
+//   still run before the specs. It asks the polyrepo-steward which repositories EXIST and
+//   what each one OWNS — structural facts about the repositories themselves, which is the
+//   only kind of fact that can answer "where does this work go". It does not read the
+//   code, does not query the cloud account, and is not shown a material inventory: this
+//   mini used to receive one (existingRepos, removalWork, reuseWork, the rendered
+//   inventory) as evidence for its ruling step, and that channel is gone with the front-end
+//   reconciliation that filled it. What survives is the ruling's own output `obsoleteCode`
+//   — existing code the ruled DESIGN supersedes — which is a consequence of the design
+//   rather than a survey of what is deployed, and which still reaches decomposition
+//   through the removal pipeline below.
 //
 //   BEFORE the TRD and the specs, because everything downstream of here fans out per
 //   repo. The TRD is per-PRD so it does not care, but the span has to exist before the
@@ -2021,22 +1864,17 @@ if (callerRepos.length) {
   } else {
   scoping = await workflow('agent-teams-workforce:repo-scoping', {
     standingRulings,
-    // The WHOLE PRD, like every phase downstream of reconciliation. Scoping a subtracted
-    // version of it would leave the repositories that hold conforming or contradicting
-    // material out of the span — and the contradicting material has to be REMOVED by
-    // this work, which is exactly a reason for its repository to be in scope.
+    // The WHOLE PRD. Nothing in this run subtracts from it, and a span ruled against a
+    // subtracted version would leave out repositories whose only stake is material that
+    // has to come OUT — which is exactly a reason for a repository to be in scope.
     prd: { id: prd.id, title: prd.title, body: validatedPrd.body || prd.body },
     architecture: architecture.skipped ? { skipped: true } : architecture.artifact || null,
-    // Evidence for the RULING step only — the greenfield shaper is told none of it. See
-    // the firewall note in repo-scoping.js.
-    reconciliation: {
-      requirements: reqInventory,
-      repos: reconRepos,
-      existingRepos,
-      removalWork,
-      reuseWork,
-      materialInventory,
-    },
+    // NO `reconciliation` KEY, DELIBERATELY. This is where a material inventory used to be
+    // passed as evidence for the ruling step. There is no inventory at this point in the
+    // run any more — it is taken per repository at spec authoring — and the mini's own
+    // repository survey is what recognizes what exists. `repo-scoping` treats the key as
+    // optional and reads an absent one as "no material was found", which is the honest
+    // reading here: nobody has looked yet, and the span does not depend on it.
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
@@ -2098,57 +1936,26 @@ const obsoleteRemovalWork = obsoleteCode.map((o, i) => ({
 // so a slip upstream degrades the report rather than throwing inside it — and this is the
 // report that says destructive work went missing.
 const originsOf = (w) => (w && Array.isArray(w.origins) && w.origins.length ? w.origins : ['reconciliation'])
-// One list from here on. Reconciliation's items keep their own origins tag so neither door
-// is anonymous in the accounting.
-//
-// AND THE TWO DOORS CAN NAME THE SAME FILE. Nothing reconciled them, so a file that both
-// contradicts the PRD and is superseded by the ruled design produced TWO items — listed
-// twice in the brief under two rationales, which a decomposer can sort out, but counted
-// twice in `allRemovalWork.length`, which is the denominator of every fraction this
-// pipeline reports. "2 of 2 removal items reached a durable task" describing one file is
-// the same over-claim in miniature that the last four rounds have been closing.
-//
-// So they are deduplicated on the normalised target, and the survivor keeps BOTH
-// rationales: the two origins are saying different true things about the same file, and a
-// decomposer that knows it is both contradicting AND superseded knows more than one that
-// sees either alone.
+// Target normalisation, for the fold below. A `file:line` or `file:line:col` citation and a
+// bare path name the same file, and the two doors write them differently.
 const targetKey = (t) =>
   String(t == null ? '' : t)
     .trim()
     .toLowerCase()
     .replace(/^\.\//, '')
-    // A `file:line` or `file:line:col` citation and a bare path name the same file.
     .replace(/:\d+(:\d+)?$/, '')
     .replace(/\/+$/, '')
-const allRemovalWork = removalWork.map((w) => ({
-  ...w,
-  origins: originsOf(w),
-}))
-let mergedObsolete = 0
-for (const o of obsoleteRemovalWork) {
-  const key = targetKey(o.targets[0])
-  const existing = key
-    ? allRemovalWork.find((w) => (w.targets || []).some((t) => targetKey(t) === key))
-    : null
-  if (existing) {
-    mergedObsolete += 1
-    if (existing.origins.indexOf('repo-scoping') === -1) existing.origins.push('repo-scoping')
-    // Both rationales, kept side by side. Neither supersedes the other — one says the PRD
-    // contradicts this material, the other says the design has replaced it, and both are
-    // reasons it must go.
-    existing.requirement = `${existing.requirement} ALSO named by the span ruling: ${o.requirement}.`
-    continue
-  }
-  allRemovalWork.push({ ...o, origins: ['repo-scoping'] })
-}
-if (obsoleteRemovalWork.length) {
-  log(
-    `Span ruling named ${obsoleteRemovalWork.length} piece(s) of OBSOLETE code to delete — folded into the removal ` +
-      `pipeline alongside reconciliation's ${removalWork.length}` +
-      `${mergedObsolete ? `, ${mergedObsolete} of them naming material reconciliation had already named (merged, both rationales kept)` : ''}` +
-      `, for ${allRemovalWork.length} distinct removal item(s) in total.`
-  )
-}
+// THE FOLD OF THE TWO DOORS HAPPENS AFTER SPEC AUTHORING, NOT HERE.
+//
+// It used to happen at this point, because both doors were open by now: reconciliation ran
+// at the front of the composite and the span ruling had just landed. Reconciliation is
+// per-repo and downstream now, so at this line only ONE of the two lists exists. Folding
+// here would produce an `allRemovalWork` holding the span ruling's items alone, and every
+// denominator in the accounting — "N of M removal items reached a durable task" — would be
+// computed against a list missing the door that finds most of them.
+//
+// `obsoleteRemovalWork` is complete here and is carried forward untouched; the fold, its
+// deduplication and its log all sit immediately after the per-repo spec fan-out reduces.
 if (scoping) {
   log(
     `Span ruled: ${repos.length} repositor(ies) — ${repos.join(', ') || '(none)'}` +
@@ -2235,19 +2042,23 @@ trdAuthoring = await gateLoop({
         // The inventory used to be fenced on as an appendix here, and the reasoning for
         // it was sound as far as it went — an author who cannot see the existing code
         // re-specifies working code and leaves contradicting code standing. But that is a
-        // SPEC-layer concern and spec authoring already receives the same inventory
-        // through its `constraints` channel (see the spec phase below), at per-repo scope,
-        // where reuse-or-remove is a decision someone can actually make. Feeding it to the
-        // TRD as well bought nothing the spec layer was not already doing and cost the
-        // design its independence from the status quo.
+        // SPEC-layer concern, and spec authoring receives the inventory through its
+        // `constraints` channel (see the spec phase below) at per-repo scope, where
+        // reuse-or-remove is a decision someone can actually make. Feeding it to the TRD as
+        // well bought nothing the spec layer was not already doing and cost the design its
+        // independence from the status quo.
         //
-        // `dependencyBlock` stays: an upstream contract or schema that MOVED is a
-        // constraint on the design itself, not an inventory of what is built, and a TRD
-        // written against an assumption already known to be void is wrong on its own terms.
-        content:
-          hasText(dependencyBlock)
-            ? `${validatedPrd.body || prd.body}\n\n=== END OF PRD — everything above is the canonical requirement set ===\n\n${dependencyBlock}`
-            : validatedPrd.body || prd.body,
+        // THE UPSTREAM-DEPENDENCY APPENDIX IS GONE TOO, and that one was a closer call. An
+        // upstream contract or schema that MOVED is a constraint on the design rather than
+        // an inventory of what is built, so on its own terms it belonged here. But the only
+        // thing that established it was the reconciler's dependency check, which now runs
+        // per repository at spec authoring — downstream of this phase. Keeping the appendix
+        // would mean keeping a deployed-state survey at the front of the run to fill it,
+        // which is the arrangement being retired, and reinstating it under a narrower name
+        // is still reinstating it. So the TRD is written from the PRD and the SAD, and the
+        // moved ground is applied where it is discovered: in the specs, per repo, which is
+        // the layer that has to turn Y into X anyway.
+        content: validatedPrd.body || prd.body,
         acceptanceCriteria: prd.acceptanceCriteria,
       },
       sad: a.sad || { path: a.sadPath },
@@ -2312,11 +2123,111 @@ log(
     'it is not trimmed to reduce this number.'
 )
 runLedger.push({ phase: 'fan-out', repos: repos.length, projectedSessions, maxTotalAttempts: MAX_TOTAL_ATTEMPTS })
-// `constraints` is spec-authoring's free-form context channel, so the material inventory
-// rides in on it alongside any gate feedback. It is CONTEXT, not a narrowing: a spec still
-// covers every requirement the PRD states, and what the inventory changes is whether the
-// spec reuses an existing contract, or specifies the removal of one that contradicts the
-// PRD, instead of quietly re-specifying either.
+
+// ════════════════════════════════════════════════════════════════════════════════
+// THE CURRENT-STATE COMPARISON LIVES HERE, AND ONLY HERE
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// "It's not until Specs that we should start to say 'X is what we want, and Y is what we
+// currently have. How do we turn Y into X?'"
+//
+// This is that layer. A PRD is WHAT and never asks the question; a TRD is HOW and derives
+// it from the PRD and the SAD, on best practice, deliberately blind to the status quo. The
+// spec is where the two meet a real repository, and the repository is the point: a Spec and
+// its Story are scoped to exactly ONE, which is the only scope at which "how do we turn Y
+// into X" has a concrete answer. Asked across a whole PRD it produces a survey; asked
+// against one repository it produces a spec that reuses this contract, replaces that table
+// and deletes that handler.
+//
+// So `prd-reconciliation` runs INSIDE this fan-out, once per repository in the ruled span,
+// scoped to that repository. Every repo reconciles the WHOLE PRD — the PRD is canonical and
+// nothing here narrows it — and what changes per repo is where the material is looked for.
+//
+// The rules that governed it at the front of the run are unchanged, because they were never
+// about position:
+//
+//   conforms    — an implementation exists in THIS repo and matches the PRD. Reuse it.
+//   contradicts — an implementation exists in THIS repo and differs from the PRD. The PRD
+//                 wins, by definition: no panel, no question, removal work.
+//   absent      — nothing here. Build it.
+//
+// No requirement is dropped, narrowed, deferred or closed because material exists.
+//
+// WHAT IT COSTS AND WHY THAT IS THE RIGHT TRADE. One read-only checker per repo instead of
+// one for the run, so an N-repo span pays N. In exchange each checker searches ONE
+// repository rather than the whole span, which is where most of a reconciler's tool calls
+// went, and its findings arrive already attributed to a repository — which retires an entire
+// class of defect below: reconciliation's `repos` used to be agent-written free text that
+// had to be fuzzy-matched against the Stories, and an item that matched nothing reached no
+// Story at all while the headline reported it handled.
+const INVENTORY_CAP = 12000
+const inventoryLine = (r) => {
+  const bits = [`- ${r.id}${r.surface ? ` (${r.surface})` : ''} [${r.status}] ${r.requirement}`]
+  if (r.status === 'conforms' && Array.isArray(r.conformingMaterial) && r.conformingMaterial.length) {
+    bits.push(`    REUSE (do not rebuild): ${r.conformingMaterial.join('; ')}`)
+  }
+  if (r.status === 'contradicts' && Array.isArray(r.removalTargets) && r.removalTargets.length) {
+    bits.push(`    REMOVE (the PRD wins): ${r.removalTargets.join('; ')}`)
+  }
+  if (r.status === 'absent' && hasText(r.missing)) bits.push(`    ABSENT: ${r.missing}`)
+  if (Array.isArray(r.evidence) && r.evidence.length) bits.push(`    evidence: ${r.evidence.join('; ')}`)
+  return bits.join('\n')
+}
+// The inventory as a brief, for ONE repository. Capped for the same reason the standing
+// rulings are: a PRD with a hundred requirements must not blow up every brief it reaches.
+const renderInventory = (recon, repo) => {
+  const reqs = Array.isArray(recon && recon.requirements) ? recon.requirements : []
+  if (!reqs.length) return ''
+  return (
+    `MATERIAL INVENTORY FOR ${repo} — what already exists in THIS repository for this PRD.\n\n` +
+    'THIS IS CONTEXT, NOT SCOPE. The PRD is canonical and every requirement it states is in ' +
+    'scope regardless of what appears below. A status describes the MATERIAL, never the ' +
+    "requirement's fate:\n" +
+    '  conforms    — an implementation exists and matches the PRD. REUSE it; do not rebuild it.\n' +
+    '  contradicts — an implementation exists but differs from the PRD. The PRD wins: the named ' +
+    'material is REMOVED or replaced. This is settled by definition — it is not an open question, ' +
+    'it raises no architecture decision, and it generates removal work that must reach the tasks.\n' +
+    '  absent      — nothing exists here. Build it.\n' +
+    'A UI/UX difference is settled by the design-system artifacts, never by an architecture decision.\n' +
+    'Never drop, narrow, defer or close a requirement because material for it already exists.\n\n' +
+    'THIS IS THE LAYER THAT ANSWERS "HOW DO WE TURN Y INTO X". The PRD said what we want; the ' +
+    'TRD said how it should be built on best-practice grounds, blind to what is here. Below is ' +
+    'what is actually here. Specify the path from one to the other: reuse what conforms, ' +
+    'specify the removal of what contradicts, and build what is absent.\n\n' +
+    `${recon.conformsCount || 0} conform, ${recon.contradictsCount || 0} contradict, ` +
+    `${recon.absentCount || 0} absent — ${reqs.length} requirement(s), all in scope.\n\n` +
+    reqs.map(inventoryLine).join('\n')
+  ).slice(0, INVENTORY_CAP)
+}
+// ── GROUND THAT MOVED ───────────────────────────────────────────────────────────
+//
+// Reconciliation schema-REQUIRES this check and runs an agent to answer it: has any upstream
+// contract, shared schema, event, or library version the PRD assumes changed in a way that
+// invalidates one of its assumptions? It used to travel to architecture and the TRD as well.
+// It does not any more — both of those derive from the PRD and the SAD alone — so it is
+// applied where it is now discovered, which is here, per repo, in the layer that has to
+// satisfy the requirement against current reality anyway.
+//
+// Same rule as the inventory: CONTEXT, never authority. A moved dependency does not narrow
+// the PRD or excuse a requirement. Nothing does.
+const renderDependencies = (recon) => {
+  const dc = (recon && recon.dependencyChanges) || null
+  if (!dc || dc.current !== false) return ''
+  const findings = Array.isArray(dc.changeFindings) ? dc.changeFindings.filter((f) => f && hasText(f.dependency)) : []
+  return (
+    'UPSTREAM DEPENDENCY CHANGES — ground the PRD assumed has MOVED since it was written.\n\n' +
+    'This is CONTEXT, not a licence to narrow anything. Every requirement still stands; what has changed is the ' +
+    'ground under it. Specify against what is true NOW, and where a requirement assumed something that is no ' +
+    'longer so, satisfy the requirement against current reality rather than restating the stale assumption.\n\n' +
+    (findings.length
+      ? findings
+          .map((f) => `- ${f.dependency}\n    changed: ${f.change || '(unstated)'}\n    invalidates: ${f.invalidates || '(unstated)'}`)
+          .join('\n')
+      : '(the check reported the ground moved but named no specific finding)') +
+    (hasText(dc.evidence) ? `\n\nHow this was verified: ${dc.evidence}` : '') +
+    (hasText(dc.notes) ? `\n${dc.notes}` : '')
+  )
+}
 // ── THE cds HAND-OFF BUNDLE REACHES THE SPEC AUTHOR, OR IT REACHES NOBODY ───────
 //
 // The cds `package-change` skill produces a hand-off bundle — the boundary between
@@ -2339,50 +2250,70 @@ runLedger.push({ phase: 'fan-out', repos: repos.length, projectedSessions, maxTo
 // is how a reconciler that stopped looking would go unnoticed. The BEHAVIOUR is the same
 // under all three: drop to the composed mock, record what was used, never block, and never
 // turn any of it into an architecture question.
-const uiAuthority = (reconciliation && reconciliation.uiAuthority) || {}
-const uiArtifacts = (Array.isArray(uiAuthority.artifactsConsulted) ? uiAuthority.artifactsConsulted : []).filter((x) =>
-  hasText(x)
-)
-const uiRequirementIds = reqInventory.filter((r) => r && r.surface === 'ui').map((r) => r.id)
-const uiAuthorityNote = uiRequirementIds.length || hasText(uiAuthority.bundlePath) || hasText(uiAuthority.mocksDir)
-  ? [
-      'UI AUTHORITY — for any requirement whose surface is `ui`, the cds design artifacts are the source of truth, ' +
-        'ABOVE the PRD prose and far above what is currently deployed. Authority runs: (1) the packaged cds bundle ' +
-        "artifact — its `spec/build-spec.md` plus the composed HTML beside it; (2) the composed artifact under " +
-        'design-mocks/; (3) the PRD prose; (4) what is deployed, which is never authoritative.',
-      uiRequirementIds.length ? `UI requirements in this PRD: ${uiRequirementIds.join(', ')}.` : '',
-      hasText(uiAuthority.bundlePath)
-        ? `cds HAND-OFF BUNDLE: ${uiAuthority.bundlePath}\n` +
-          "Specify each UI requirement from that artifact's `spec/build-spec.md` — it already states the ordered " +
-          'Sections, the Shapes and Components, the token/class contract and the accessibility contracts. Reference ' +
-          'them; do NOT re-derive them from prose and do NOT restate them in your own vocabulary, because a second ' +
-          'description of a settled design is a second thing to drift.\n' +
-          `STYLING: the bundle ships ONE shared stylesheet set for every artifact in it — ${uiAuthority.bundlePath}/styles/ ` +
-          '(tokens.css, components.css, themes.css, manifest.json) plus shared assets/. The app repo does NOT ' +
-          'regenerate these. Point at that set; never specify new CSS, new tokens, or a new component stylesheet.'
-        : 'NO cds hand-off bundle was resolved for this PRD. Do not read that as "the artifacts are unpackaged" — ' +
-          'it may equally mean no bundle exists, or that reconciliation did not look for one, and this run cannot ' +
-          'tell those apart. Fall back to the composed artifact under design-mocks/, specify against it, and RECORD ' +
-          'in the spec that no bundle was resolved and which artifact you used instead. It is still a settled design ' +
-          'either way — "no bundle" never means "not decided" — and this does not block the spec.',
-      hasText(uiAuthority.mocksDir) ? `Composed mocks: ${uiAuthority.mocksDir}` : '',
-      uiArtifacts.length
-        ? `Artifacts reconciliation matched to these requirements (read these, not others):\n${uiArtifacts.map((x) => `  - ${x}`).join('\n')}`
-        : '',
-      'A UI difference is settled by these artifacts. It is never an open question, never a tradeoff to weigh, and ' +
-        'never an architecture decision.',
-    ]
-      .filter((x) => hasText(x))
-      .join('\n\n')
-  : ''
-const specConstraints = (feedback) => {
+//
+// It is per-repo now, and that is a strict improvement for the UI case specifically: the
+// bundle is resolved by the reconciler running in the repository that actually holds the
+// frontend, rather than by one reconciler seeded from wherever the run was launched.
+const renderUiAuthority = (recon) => {
+  const ua = (recon && recon.uiAuthority) || {}
+  const artifacts = (Array.isArray(ua.artifactsConsulted) ? ua.artifactsConsulted : []).filter((x) => hasText(x))
+  const uiIds = (Array.isArray(recon && recon.requirements) ? recon.requirements : [])
+    .filter((r) => r && r.surface === 'ui')
+    .map((r) => r.id)
+  if (!uiIds.length && !hasText(ua.bundlePath) && !hasText(ua.mocksDir)) return ''
+  return [
+    'UI AUTHORITY — for any requirement whose surface is `ui`, the cds design artifacts are the source of truth, ' +
+      'ABOVE the PRD prose and far above what is currently deployed. Authority runs: (1) the packaged cds bundle ' +
+      "artifact — its `spec/build-spec.md` plus the composed HTML beside it; (2) the composed artifact under " +
+      'design-mocks/; (3) the PRD prose; (4) what is deployed, which is never authoritative.',
+    uiIds.length ? `UI requirements in this PRD: ${uiIds.join(', ')}.` : '',
+    hasText(ua.bundlePath)
+      ? `cds HAND-OFF BUNDLE: ${ua.bundlePath}\n` +
+        "Specify each UI requirement from that artifact's `spec/build-spec.md` — it already states the ordered " +
+        'Sections, the Shapes and Components, the token/class contract and the accessibility contracts. Reference ' +
+        'them; do NOT re-derive them from prose and do NOT restate them in your own vocabulary, because a second ' +
+        'description of a settled design is a second thing to drift.\n' +
+        `STYLING: the bundle ships ONE shared stylesheet set for every artifact in it — ${ua.bundlePath}/styles/ ` +
+        '(tokens.css, components.css, themes.css, manifest.json) plus shared assets/. The app repo does NOT ' +
+        'regenerate these. Point at that set; never specify new CSS, new tokens, or a new component stylesheet.'
+      : 'NO cds hand-off bundle was resolved for this PRD. Do not read that as "the artifacts are unpackaged" — ' +
+        'it may equally mean no bundle exists, or that reconciliation did not look for one, and this run cannot ' +
+        'tell those apart. Fall back to the composed artifact under design-mocks/, specify against it, and RECORD ' +
+        'in the spec that no bundle was resolved and which artifact you used instead. It is still a settled design ' +
+        'either way — "no bundle" never means "not decided" — and this does not block the spec.',
+    hasText(ua.mocksDir) ? `Composed mocks: ${ua.mocksDir}` : '',
+    artifacts.length
+      ? `Artifacts reconciliation matched to these requirements (read these, not others):\n${artifacts.map((x) => `  - ${x}`).join('\n')}`
+      : '',
+    'A UI difference is settled by these artifacts. It is never an open question, never a tradeoff to weigh, and ' +
+      'never an architecture decision.',
+  ]
+    .filter((x) => hasText(x))
+    .join('\n\n')
+}
+// `constraints` is spec-authoring's free-form context channel, so this repository's material
+// inventory rides in on it alongside any gate feedback. It is CONTEXT, not a narrowing: the
+// spec still covers every requirement the PRD states, and what the inventory changes is
+// whether the spec reuses an existing contract, or specifies the removal of one that
+// contradicts the PRD, instead of quietly re-specifying either.
+const specConstraints = (recon, repo, feedback) => {
   const c = []
-  if (materialInventory) c.push(materialInventory)
-  if (dependencyBlock) c.push(dependencyBlock)
-  if (uiAuthorityNote) c.push(uiAuthorityNote)
+  const inv = renderInventory(recon, repo)
+  const dep = renderDependencies(recon)
+  const ui = renderUiAuthority(recon)
+  if (inv) c.push(inv)
+  if (dep) c.push(dep)
+  if (ui) c.push(ui)
   if (feedback) c.push(feedback)
   return c.length ? c : undefined
 }
+// Per-repo reconciliation results, keyed by repo, kept whatever the spec then did with
+// them. A repository whose reconciliation succeeded and whose SPEC failed still found
+// material — including material that has to be removed — and that finding must not vanish
+// with the spec. It reappears in the removal accounting as an item no Story can carry,
+// which is the honest reading rather than a silent drop.
+const reconByRepo = new Map()
+const reconFailures = [] // repos whose current-state comparison could not be established
 const specPairs = [] // one { repoPath, spec, story } per repo that passed G3
 const specFailures = [] // repos whose spec failed G3 — kept so they cannot silently vanish
 // Work the spec set implies in a repository OTHER than the one its Story covers.
@@ -2433,6 +2364,63 @@ const specResults = await parallel(
 )
 async function authorSpecForRepo(repo, repoIndex) {
   const storyKey = `S${repoIndex + 1}`
+  // ── STEP 1: WHAT IS ACTUALLY HERE ─────────────────────────────────────────────
+  //
+  // The current-state comparison for THIS repository, before its spec is authored. It
+  // spends no gate, for the same reason it never did: the output is a typed inventory whose
+  // every conforms/contradicts claim the mini has already enforced against cited evidence,
+  // and a gate here would buy an adjudication of a list at the price of an attempt against
+  // the run budget before a single spec exists.
+  //
+  // Its own checkpoint key, so a resume that already paid for one repository's inventory
+  // does not pay again — and so a repo whose SPEC failed can be re-run without re-reading
+  // the repository.
+  let recon = cpGet(`recon:${repo}`)
+  if (recon === undefined) {
+    recon = await workflow('agent-teams-workforce:prd-reconciliation', {
+      // The WHOLE PRD, always. Scoping the SEARCH to one repository is not the same thing
+      // as scoping the REQUIREMENTS to it: every requirement the PRD states comes back with
+      // a status for this repository, including `absent`, because "nothing here" is a
+      // finding this spec has to act on.
+      prd: { ...prd, repoPath: repo },
+      standingRulings,
+      // ONE repository. This is the whole point of the relocation: at the front of the run
+      // the reconciler was handed the seed span and had to guess which repositories the
+      // work touched, and its answers came back as free text nothing could match against a
+      // Story. Here the repository is a ruled, verified path out of repo-scoping, and every
+      // finding it returns is attributable to it by construction.
+      repos: [repo],
+      dependencies: a.dependencies,
+    })
+    if (recon && recon.ok !== false) await cpSave(`recon:${repo}`, recon)
+  }
+  if (recon && recon.ledger) runLedger.push(recon.ledger)
+  // ── A FAILED RECONCILIATION IS NOT AN EMPTY ONE ───────────────────────────────
+  //
+  // Reading "we could not establish what exists here" as "nothing exists here" is the exact
+  // greenfield assumption this phase removes: it would have every conforming implementation
+  // re-specified alongside itself and every contradicting one left standing. So this repo's
+  // spec is NOT authored blind. It is recorded as a failure for this repository and the
+  // other repositories carry on — the same independence the spec and decomposition fan-outs
+  // already have, and for the same reason: a Story is scoped to one repo by construction.
+  if (!recon || recon.ok === false) {
+    const why =
+      (recon && recon.reason) ||
+      'prd-reconciliation returned nothing — what already exists in this repository could not be established.'
+    log(
+      `Spec Authoring for ${repo}: the current-state comparison FAILED — ${why} ` +
+        'No spec is authored for this repository: specifying it blind would re-specify working material and leave ' +
+        'contradicting material standing, which is the defect this phase exists to prevent.'
+    )
+    return {
+      repo,
+      recon: recon || null,
+      reconFailed: true,
+      reconReason: why,
+      reconDispatchFailed: !recon || recon.dispatchFailed === true,
+      specAuthoring: null,
+    }
+  }
   let specAuthoring = cpGet(`spec:${repo}`)
   if (specAuthoring === undefined) {
   specAuthoring = await gateLoop({
@@ -2474,18 +2462,41 @@ async function authorSpecForRepo(repo, repoIndex) {
         storyKey,
         epic,
         maxLoops: 1,
-        constraints: specConstraints(feedback),
+        constraints: specConstraints(recon, repo, feedback),
       }),
   })
   if (specAuthoring.ok) await cpSave(`spec:${repo}`, specAuthoring)
   }
-  return { repo, specAuthoring }
+  return { repo, recon, specAuthoring }
 }
 // Reduce the settled batch IN REPO ORDER. Every accumulator below is append-only and
 // every decision is a function of one repo's own result, so ordering here — not
 // completion order — is what makes a concurrent batch produce the serial answer.
 for (const [repoIndex, repo] of repos.entries()) {
   const settled = specResults[repoIndex]
+  // The inventory is kept FIRST and unconditionally, before anything can `continue`. It was
+  // paid for, its findings are about the repository rather than about the spec, and a repo
+  // that found material to REMOVE and then lost its spec has still found material to
+  // remove — which reappears below as an item no Story can carry rather than disappearing.
+  if (settled && settled.recon && settled.recon.ok !== false) reconByRepo.set(repo, settled.recon)
+  // The current-state comparison could not be established for this repository, so no spec
+  // was attempted for it. Recorded in BOTH lists: `reconFailures` says what actually
+  // happened, and `specFailures` is what every downstream accounting reads, so a repo
+  // missing from it would silently stop being a repo.
+  if (settled && settled.reconFailed) {
+    reconFailures.push({
+      repoPath: repo,
+      reason: settled.reconReason || 'the current-state comparison returned nothing',
+      dispatchFailed: settled.reconDispatchFailed === true,
+    })
+    specFailures.push({
+      repoPath: repo,
+      reason:
+        `no spec was authored: the current-state comparison for this repository failed — ${settled.reconReason || 'it returned nothing'} ` +
+        'Specifying blind would re-specify working material and leave contradicting material standing.',
+    })
+    continue
+  }
   // A thunk that threw resolves to null in `parallel`'s result array. That is a repo
   // whose spec never completed, and it is recorded as a failure rather than skipped —
   // the whole reason `specFailures` exists is that a repo must not silently vanish.
@@ -2515,6 +2526,200 @@ for (const [repoIndex, repo] of repos.entries()) {
   }
   specPairs.push({ repoPath: repo, spec: specAuthoring.artifact, story })
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// WHAT THE PER-REPO COMPARISONS ADD UP TO
+// ════════════════════════════════════════════════════════════════════════════════
+//
+// Each repository reconciled the WHOLE PRD, so the SAME requirement comes back once per
+// repository with a status for that repository. Two things follow, and getting either wrong
+// is how a report starts over-claiming:
+//
+//   THE COUNTS ARE NOT SUMS. Summing them multiplies every requirement by the span, so an
+//   8-requirement PRD across 3 repos would report 24 requirements in scope. They are merged
+//   by requirement id instead.
+//
+//   THE MERGE ORDER IS contradicts > conforms > absent, and it is not arbitrary. A
+//   requirement whose material contradicts the PRD in ONE repository has contradicting
+//   material, whatever the other repositories hold — that is real removal work and the
+//   strongest fact about it. Conforming material in one repository is likewise a real
+//   reuse. `absent` is the weakest claim: it only means nothing was found HERE, and every
+//   repository that found nothing is saying the same thing.
+//
+// A requirement the whole span reports `absent` is genuinely absent across the span, which
+// is the one case where the merge is also the answer.
+const mergedRequirements = new Map()
+const STATUS_RANK = { contradicts: 3, conforms: 2, absent: 1 }
+for (const [repo, recon] of reconByRepo) {
+  for (const r of Array.isArray(recon.requirements) ? recon.requirements : []) {
+    if (!r || !hasText(r.id)) continue
+    const prior = mergedRequirements.get(r.id)
+    const rank = STATUS_RANK[r.status] || 0
+    if (!prior || rank > (STATUS_RANK[prior.status] || 0)) {
+      mergedRequirements.set(r.id, { ...r, foundIn: repo })
+    }
+  }
+}
+const reqInventory = Array.from(mergedRequirements.values())
+const mergedCounts = {
+  conforms: reqInventory.filter((r) => r.status === 'conforms').length,
+  contradicts: reqInventory.filter((r) => r.status === 'contradicts').length,
+  absent: reqInventory.filter((r) => r.status === 'absent').length,
+}
+// The removal work from every repository that produced an inventory, ALREADY ATTRIBUTED.
+//
+// This is the class of defect the relocation retires. Reconciliation's `repos` used to be
+// free text an agent wrote while reading the codebase — `alpha`, or `SkillSpoke-alpha`, or
+// a path with a trailing slash — and it was fuzzy-matched against the Stories below. An
+// item that matched nothing reached no Story at all, silently, while the headline reported
+// it handled; an item naming a bare generic segment like `api` matched three unrelated
+// Stories at once and was reported handled in all of them. The repository is now the ruled,
+// verified path the reconciler was dispatched with, so `repos` is stamped from THIS side
+// rather than read from the agent's prose, and the match below is exact by construction.
+// The matcher stays loose — it still has the span ruling's own door to serve — but nothing
+// coming through this door needs it.
+const reconRemovalWork = []
+const reuseWork = []
+for (const [repo, recon] of reconByRepo) {
+  for (const w of Array.isArray(recon.removalWork) ? recon.removalWork : []) {
+    if (!w) continue
+    reconRemovalWork.push({ ...w, repos: [repo], origins: ['reconciliation'] })
+  }
+  for (const w of Array.isArray(recon.reuseWork) ? recon.reuseWork : []) {
+    if (w) reuseWork.push({ ...w, repos: [repo] })
+  }
+}
+// ── THE TWO DOORS FOLD HERE ─────────────────────────────────────────────────────
+//
+// Both lists exist at last: reconciliation finds material that CONTRADICTS the PRD (per
+// repo, just now), and the span ruling found material the DESIGN SUPERSEDES (back at repo
+// scoping). Both are code that has to come out, and code nobody wrote a task to delete
+// stays deployed.
+//
+// They MERGE rather than running in parallel. One pipeline already carries a removal item
+// through placement, decomposition and the write and reports every way it can be lost; a
+// second one would be a second thing to keep honest.
+//
+// AND THE TWO DOORS CAN NAME THE SAME FILE. A file that both contradicts the PRD and is
+// superseded by the ruled design would produce TWO items — listed twice in the brief under
+// two rationales, which a decomposer can sort out, but counted twice in
+// `allRemovalWork.length`, which is the denominator of every fraction this pipeline
+// reports. So they are deduplicated on the normalised target, and the survivor keeps BOTH
+// rationales: the two origins say different true things about the same file, and a
+// decomposer that knows it is both contradicting AND superseded knows more than one that
+// sees either alone.
+const allRemovalWork = reconRemovalWork.map((w) => ({ ...w, origins: originsOf(w) }))
+let mergedObsolete = 0
+for (const o of obsoleteRemovalWork) {
+  const key = targetKey(o.targets[0])
+  const existing = key
+    ? allRemovalWork.find((w) => (w.targets || []).some((t) => targetKey(t) === key))
+    : null
+  if (existing) {
+    mergedObsolete += 1
+    if (existing.origins.indexOf('repo-scoping') === -1) existing.origins.push('repo-scoping')
+    // Both rationales, kept side by side. Neither supersedes the other — one says the PRD
+    // contradicts this material, the other says the design has replaced it, and both are
+    // reasons it must go.
+    existing.requirement = `${existing.requirement} ALSO named by the span ruling: ${o.requirement}.`
+    continue
+  }
+  allRemovalWork.push({ ...o, origins: ['repo-scoping'] })
+}
+// The dependency check and the UI authority, aggregated for REPORTING only. Each spec
+// already received its own repository's copy through `specConstraints`; these exist so the
+// headline can say what happened without re-reading the journal.
+const dependencyFindings = []
+for (const [, recon] of reconByRepo) {
+  const dc = recon.dependencyChanges || null
+  if (!dc || dc.current !== false) continue
+  for (const f of Array.isArray(dc.changeFindings) ? dc.changeFindings : []) {
+    if (f && hasText(f.dependency)) dependencyFindings.push(f)
+  }
+}
+const dependenciesMoved = dependencyFindings.length > 0
+// UNKNOWN IS NOT THE SAME AS CLEAR. A repository whose reconciler returned no
+// `dependencyChanges` object at all has not reported that the ground is firm — it has
+// reported nothing, and the headline must not turn that into an all-clear.
+const dependencyUnchecked = Array.from(reconByRepo.values()).filter((r) => !r.dependencyChanges).length
+// The first bundle any repository resolved. There is one design system for the project, so
+// one bundle is the expected answer; taking the first RESOLVED one rather than the first
+// repo's means a span whose frontend is not the first repository still reports it.
+const uiAuthority =
+  Array.from(reconByRepo.values())
+    .map((r) => r.uiAuthority || {})
+    .find((ua) => hasText(ua.bundlePath)) ||
+  Array.from(reconByRepo.values()).map((r) => r.uiAuthority || {})[0] ||
+  {}
+const uiRequirementIds = reqInventory.filter((r) => r && r.surface === 'ui').map((r) => r.id)
+produced.reconciliationByRepo = Array.from(reconByRepo, ([repoPath, recon]) => ({ repoPath, recon }))
+produced.reconFailures = reconFailures
+produced.materialInventory = {
+  scope: 'per-repo, merged for reporting — each repository reconciled the whole PRD',
+  reposReconciled: reconByRepo.size,
+  reposFailed: reconFailures.length,
+  requirements: reqInventory.length,
+  ...mergedCounts,
+  removalWork: reconRemovalWork,
+  reuseWork,
+  dependenciesMoved,
+  dependencyUnchecked,
+  uiAuthority: uiAuthority || null,
+}
+if (reconByRepo.size) {
+  log(
+    `Current-state comparison across ${reconByRepo.size}/${repos.length} repositor(ies): ` +
+      `${reqInventory.length} requirement(s), all in scope — ${mergedCounts.conforms} conform (reuse), ` +
+      `${mergedCounts.contradicts} contradict (remove), ${mergedCounts.absent} absent (build). ` +
+      `${reconRemovalWork.length} removal work item(s) from the PRD contradicting existing material` +
+      `${obsoleteRemovalWork.length ? `, ${obsoleteRemovalWork.length} from the span ruling superseding it${mergedObsolete ? ` (${mergedObsolete} naming the same material, merged with both rationales kept)` : ''}` : ''}` +
+      ` — ${allRemovalWork.length} distinct item(s) in total.`
+  )
+} else {
+  log(
+    `NO repository produced a current-state comparison (${reconFailures.length} failed of ${repos.length}) — ` +
+      'what already exists is UNKNOWN, not empty, and nothing below claims otherwise.'
+  )
+}
+if (dependenciesMoved) {
+  log(
+    `UPSTREAM DEPENDENCIES MOVED: ${dependencyFindings.length} invalidating change(s) since the PRD was written — ` +
+      dependencyFindings.map((f) => `${f.dependency} (${f.change || 'unstated'})`).join('; ') +
+      '. Each spec was told, in its own repository; no requirement was narrowed for it.'
+  )
+}
+if (dependencyUnchecked) {
+  log(
+    `${dependencyUnchecked} repositor(ies) returned no dependency-change check at all — whether upstream ground ` +
+      'moved there is UNKNOWN, not clear.'
+  )
+}
+if (uiRequirementIds.length) {
+  log(
+    `UI authority: ${uiRequirementIds.length} ui requirement(s) — ` +
+      (hasText(uiAuthority.bundlePath)
+        ? `cds hand-off bundle ${uiAuthority.bundlePath}, forwarded to spec authoring`
+        : 'NO cds hand-off bundle was resolved. That may mean the artifacts are not packaged, that no bundle ' +
+          'exists, or that reconciliation did not look — this run cannot tell which. Spec authoring fell back ' +
+          'to the composed mocks and was not blocked') +
+      '.'
+  )
+}
+if (reconFailures.length) {
+  log(
+    `CURRENT-STATE COMPARISON FAILED for ${reconFailures.length} repositor(ies) — ${reconFailures
+      .map((f) => `${f.repoPath}: ${f.reason}`)
+      .join(' | ')}. No spec was authored for them, and any material there that contradicts the PRD is unfound.`
+  )
+  runLedger.push({
+    phase: 'Spec Authoring',
+    event: 'reconciliation-failed',
+    count: reconFailures.length,
+    of: repos.length,
+    items: reconFailures,
+  })
+}
+
 produced.specPairs = specPairs
 produced.specFailures = specFailures
 produced.outOfSpanFindings = outOfSpanFindings
@@ -2644,28 +2849,38 @@ enterPhase('Task Decomposition')
 // A requirement whose deployed implementation CONTRADICTS the PRD does not get smaller
 // because something exists — it gets a second half. The PRD wins, so the contradicting
 // material has to come out, and code that nobody wrote a task to delete does not get
-// deleted. Reconciliation names the targets; this is where they become tasks alongside
-// the build tasks, in the same Story, so they are sequenced and scored with everything
-// else rather than left as a note in a journal.
+// deleted. The per-repo reconciliation at spec authoring names the targets — that is the
+// half of this that MOVED, and it is the half that had to survive the move — and this is
+// where they become tasks alongside the build tasks, in the same Story, so they are
+// sequenced and scored with everything else rather than left as a note in a journal.
 //
-// Scoped to the Story's repository where reconciliation named repositories. An entry that
-// named NONE goes to every Story deliberately: an unplaced removal target that is dropped
-// is material left standing, while one that appears twice is a duplicate a decomposer can
-// see and reconcile.
+// Scoped to the Story's repository where the item named repositories. An entry that named
+// NONE goes to every Story deliberately: an unplaced removal target that is dropped is
+// material left standing, while one that appears twice is a duplicate a decomposer can see
+// and reconcile.
 //
 // ── REPO IDENTITY, NOT REPO STRING ──────────────────────────────────────────────
 //
-// The two sides of this match do not come from the same place and never did. A Story's
+// The two sides of this match did not used to come from the same place. A Story's
 // `repoPath` is an absolute path out of repo-scoping's VERIFIED inventory; a removal
-// item's `repos` is free text an agent wrote while reading the codebase. Comparing them
+// item's `repos` was free text an agent wrote while reading the codebase. Comparing them
 // with `includes()` meant a reconciler that wrote `alpha`, or `SkillSpoke-alpha`, or a
 // path with a trailing slash, matched NOTHING — and a removal item that matches nothing
 // used to reach no Story at all, silently, while the headline went on reporting it
-// handled. That is the exact failure this whole rewrite exists to prevent: contradicting
-// code left deployed, with the run saying it was dealt with.
+// handled: contradicting code left deployed, with the run saying it was dealt with.
 //
-// So identities are compared, not strings, and everything that still fails to place is
-// COUNTED and REPORTED rather than dropped.
+// MOVING RECONCILIATION INTO THE PER-REPO FAN-OUT CLOSED THAT DOOR AT THE SOURCE. A
+// reconciler is now dispatched with exactly one repository — the ruled, verified path — and
+// its `repos` is stamped from THIS side at the fold above rather than read from the agent's
+// prose, so every item coming through that door matches `exact` by construction. The span
+// ruling's own door (`obsoleteCode`) is likewise keyed on a verified placement path.
+//
+// The machinery below is KEPT IN FULL anyway, and that is deliberate rather than
+// leftover. Both invariants live in other producers, a caller may still hand this composite
+// items it did not mint, and every warning here answers a question the exact-match
+// improvement does not make unaskable. Deleting an alarm because the current inputs cannot
+// trip it is how the next input trips it silently. So identities are compared, not strings,
+// and everything that still fails to place is COUNTED and REPORTED rather than dropped.
 //
 // ── AND THE MATCH RECORDS ITS OWN STRENGTH ──────────────────────────────────────
 //
@@ -3878,25 +4093,29 @@ const runJournal = {
   prd: validatedPrd,
   stagesComplete: [
     creation ? 'prd-creation' : 'prd-supplied',
-    'prd-reconciliation',
     'prd-validation',
     epicPath,
     architecture.skipped ? 'architecture-skipped' : 'architecture',
     scoping ? 'repo-scoping' : 'repo-span-pinned-by-caller',
     'trd-authoring',
+    // The current-state comparison is part of spec authoring now, and it is named
+    // separately because it can partly fail while specs still get authored: the fraction
+    // is the honest record of how many repositories were actually compared.
+    `spec-reconciliation(${reconByRepo.size}/${repos.length})`,
     'spec-authoring',
     'task-decomposition',
     'emit-beads',
   ],
   carriedFlags,
   specFailures,
+  reconFailures,
   decompositionFailures,
   removal: removalAccounting,
   emission,
   budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
   results: {
     creation,
-    reconciliation,
+    reconciliationByRepo: Array.from(reconByRepo, ([repoPath, recon]) => ({ repoPath, recon })),
     validation: validation.artifact,
     architecture: architecture.artifact,
     architectureTriage: archTriage,
@@ -3950,8 +4169,18 @@ return {
   ...handback(
     true,
     'emit-beads',
-    `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced, WSJF-scored and Beads-format valid, against the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'} — all ${reqInventory.length} requirement(s) in scope ` +
-      `(${reconciliation.conformsCount || 0} reuse existing material, ${reconciliation.contradictsCount || 0} require its REMOVAL, ${reconciliation.absentCount || 0} are built fresh). ` +
+    `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced, WSJF-scored and Beads-format valid, against the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
+      // The comparison is per repository now, so the counts are MERGED across the span by
+      // requirement id and not summed — see the merge above. A span where nothing could be
+      // compared says so rather than reporting zeroes, because "we found no existing
+      // material" and "we never looked" are different facts and only one of them is safe.
+      (reconByRepo.size
+        ? `Current state compared in ${reconByRepo.size}/${repos.length} repositor(ies) at spec time: all ${reqInventory.length} requirement(s) in scope ` +
+          `(${mergedCounts.conforms} reuse existing material, ${mergedCounts.contradicts} require its REMOVAL, ${mergedCounts.absent} are built fresh). ` +
+          (reconFailures.length
+            ? `NOT COMPARED: ${reconFailures.length} repositor(ies) — ${reconFailures.map((f) => `${f.repoPath} (${f.reason})`).join(' | ')}. No spec was authored for them and any contradicting material there is unfound. `
+            : '')
+        : `NO repository could be compared against current state (${reconFailures.length} of ${repos.length} failed), so what already exists is UNKNOWN rather than absent. `) +
       (allRemovalWork.length
         ? `${removalEmitted} of ${allRemovalWork.length} removal work item(s) reached a Story whose tasks are durable in beads` +
           (removalAccounting.byOrigin.repoScoping
@@ -3976,10 +4205,13 @@ return {
             : '')
         : '') +
       (dependenciesMoved
-        ? `UPSTREAM GROUND MOVED: reconciliation found ${dependencyFindings.length || 'unspecified'} invalidating dependency change(s) since the PRD was written` +
-          (dependencyFindings.length ? ` — ${dependencyFindings.map((f) => `${f.dependency} (${f.change || 'unstated'})`).join(' | ')}` : '') +
-          '. Architecture, the TRD and the specs were all told; no requirement was narrowed for it. '
-        : '') +
+        ? `UPSTREAM GROUND MOVED: the spec-time comparison found ${dependencyFindings.length} invalidating dependency change(s) since the PRD was written` +
+          ` — ${dependencyFindings.map((f) => `${f.dependency} (${f.change || 'unstated'})`).join(' | ')}` +
+          '. Each spec was told, in its own repository; no requirement was narrowed for it. Architecture and the TRD were NOT told, because both derive from the PRD and the SAD alone. ' +
+          (dependencyUnchecked ? `${dependencyUnchecked} repositor(ies) returned no dependency check at all, so their ground is UNKNOWN. ` : '')
+        : dependencyUnchecked
+          ? `${dependencyUnchecked} of ${reconByRepo.size} repositor(ies) returned no dependency-change check, so whether upstream ground moved there is UNKNOWN rather than clear. `
+          : '') +
       (uiRequirementIds.length
         ? hasText(uiAuthority.bundlePath)
           ? `UI was specified against the cds hand-off bundle ${uiAuthority.bundlePath}. `

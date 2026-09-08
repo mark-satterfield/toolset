@@ -282,30 +282,39 @@ test('with no args.repos the composite RULES the span and fans out over what it 
     ruled,
     'one Story per RULED repository — not one per repository the caller happened to be standing in',
   )
-  // This run already traverses a removal LOSS: the inventory's removal item names
-  // /repos/where-the-code-already-is, which the ruling did not include, so it reaches no
-  // Story and no task is emitted to delete it. A test that passed through that silently
-  // would read green while demonstrating the exact shape of the defect — so it is observed.
-  const [lost, ...alsoLost] = result.removalNotEmitted || []
+  // THE REMOVAL ITEM CANNOT GO ASTRAY ANY MORE, AND THAT IS THE POINT OF THE MOVE.
+  //
+  // This run used to traverse a removal LOSS. One reconciler ran at the front of the
+  // composite, and the repository it named for its finding — `/repos/where-the-code-
+  // already-is`, in the fixture's own prose — was not in the span the ruling then
+  // produced, so the item matched no Story, nothing was authored to delete the material,
+  // and the run reported the shortfall. The fixture is unchanged and the assertion is
+  // inverted, because the mechanism is.
+  //
+  // Reconciliation now runs INSIDE the per-repo fan-out, dispatched once per ruled
+  // repository with that repository as its whole search scope, and the composite stamps
+  // `repos: [<the ruled path>]` onto every item it returns rather than reading the
+  // agent's prose. So a finding is attributable to a Story by construction: there is no
+  // free-text repository name left to fail to match.
   assert.deepEqual(
-    { ...lost, reason: Boolean(lost && lost.reason), alsoLost: alsoLost.length },
-    {
-      requirementId: 'R1',
-      requirement: 'r',
-      targets: ['f.py'],
-      repos: ['/repos/where-the-code-already-is'],
-      // Nothing in the ruled span answered to it — not exactly, not by basename, not even
-      // by a suffix guess. An empty `matched` is what "reached no Story" IS.
-      matched: [],
-      // Removal reaches the pipeline from two places — reconciliation's contradictions and
-      // repo-scoping's obsolete code — and they share one denominator, so which one an item
-      // came from has to survive on the item. A list, because one item can be both.
-      origins: ['reconciliation'],
-      reason: true,
-      alsoLost: 0,
-    },
-    'removal work that reached no Story must come back whole — named, targeted, and reasoned — never silently dropped',
+    result.removalNotEmitted,
+    undefined,
+    'a per-repo reconciler cannot name a repository outside the span, so nothing can fail to place',
   )
+  assert.deepEqual(
+    result.removalWeaklyPlaced,
+    undefined,
+    'and nothing places on a guess: the repository is the ruled path the reconciler was dispatched with',
+  )
+  const recons = workflowCalls(calls, 'agent-teams-workforce:prd-reconciliation')
+  assert.deepEqual(
+    recons.map((c) => c.payload.repos),
+    ruled.map((r) => [r]),
+    'one reconciliation per ruled repository, each scoped to exactly that repository',
+  )
+  for (const c of recons) {
+    assert.equal(c.payload.prd.body, 'b', 'each one reconciles the WHOLE PRD — the search narrows, the requirements never do')
+  }
 })
 
 test('the launch repository is passed to scoping as a seed, and is NOT the span', async () => {
@@ -319,22 +328,45 @@ test('the launch repository is passed to scoping as a seed, and is NOT the span'
   assert.deepEqual(result.repoSpan, ['/repos/alpha'], 'and it loses to the ruling')
 })
 
-test('the ruling receives the material inventory as EVIDENCE — found repos, removal work, and the rendered inventory', async () => {
-  // The scoping ruling has to be able to put the span where the material that must come
-  // OUT lives. Threading only the delta's repositories was what hid those repositories
-  // from it; the inventory replaces that with evidence, and the shaper still sees none of it.
+test('the ruling receives NO material inventory — the span is ruled before anything has looked at what is deployed', async () => {
+  // This used to thread reconciliation's findings in as evidence for the ruling step, and
+  // the reasoning was sound on its own terms: the span has to be able to include a
+  // repository whose only stake is material that must come OUT.
+  //
+  // It is gone because the inventory is gone from this point in the run. A PRD is WHAT and
+  // a TRD is HOW; the comparison against what exists happens at SPEC AUTHORING, per repo,
+  // which is downstream of this ruling. So there is nothing to thread, and the ruling turns
+  // on the design plus the mini's own survey of which repositories EXIST and what each one
+  // OWNS — repository facts, not deployed-code facts.
+  //
+  // What must NOT happen is the absence being read as a finding. "Nobody has looked" and
+  // "there is nothing there" are different, and only one of them licenses treating every
+  // repository as greenfield.
   const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood' },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
     agentImpl: beadWriter(),
   })
   const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
-  const recon = scoping.payload.reconciliation
-  assert.deepEqual(recon.existingRepos, ['/repos/where-the-code-already-is'])
-  assert.equal(recon.removalWork.length, 1, 'material to delete is work, and its repository is a reason to be in the span')
-  assert.equal(recon.requirements.length, 1)
-  assert.match(String(recon.materialInventory), /THIS IS CONTEXT, NOT SCOPE/)
-  assert.equal(scoping.payload.prd.body, 'b', 'scoping rules against the WHOLE PRD, never a subtracted one')
+  assert.equal(scoping.payload.reconciliation, undefined, 'no deployed-state inventory reaches the span ruling')
+  assert.equal(scoping.payload.prd.body, 'b', 'scoping still rules against the WHOLE PRD, never a subtracted one')
+  // And the ruling is dispatched before the first reconciliation, which is what makes the
+  // absence structural rather than a caller's omission.
+  const scopingIdx = calls.findIndex((c) => String(c.name || '').endsWith('repo-scoping'))
+  const reconIdx = calls.findIndex((c) => String(c.name || '').endsWith('prd-reconciliation'))
+  assert.ok(scopingIdx >= 0 && reconIdx >= 0, 'both ran')
+  assert.ok(scopingIdx < reconIdx, 'the span is ruled first; the comparison happens per repo afterwards')
+})
+
+test('the span ruling gets the honest UNKNOWN, not an all-clear it never earned', async () => {
+  // repo-scoping renders the absent-inventory case itself. The words matter: they used to
+  // say "PRD reconciliation named no repositories holding related material", which is a
+  // negative claim nobody established, addressed to the one agent whose job is weighing
+  // evidence.
+  const { readWorkflowSource } = await import('./helpers/run-workflow.mjs')
+  const src = readWorkflowSource(path.join(WF, 'repo-scoping.js'))
+  assert.match(src, /NO MATERIAL INVENTORY WAS TAKEN before this ruling/)
+  assert.match(src, /does NOT mean the repositories are empty or that this is greenfield work/)
 })
 
 test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is dispatched', async () => {

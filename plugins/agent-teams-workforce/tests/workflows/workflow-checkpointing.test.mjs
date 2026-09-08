@@ -135,7 +135,10 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
   const { result, saves } = await runP2S()
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   const keys = saves.map((c) => String(c.label).replace('checkpoint:save:', ''))
-  for (const expected of ['reconciliation', 'validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec:/repos/alpha', 'decomposition:S1']) {
+  // `recon:<repo>` rather than a front-end `reconciliation`: the current-state comparison
+  // runs per repository inside spec authoring, so it checkpoints per repository too — a
+  // resume that already paid for one repository's inventory must not pay again.
+  for (const expected of ['validation', 'architecture', 'repo-scoping', 'trd-authoring', 'recon:/repos/alpha', 'spec:/repos/alpha', 'decomposition:S1']) {
     assert.ok(keys.includes(expected), `phase '${expected}' must be checkpointed as it completes; saved: ${keys.join(', ')}`)
   }
   for (const c of saves) {
@@ -145,9 +148,10 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
   assert.equal(last.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the staleness guard keys on the composite\'s phase-semantics version')
   assert.equal(last.pluginVersion, undefined, 'the plugin version is deliberately NOT written — it is not what makes a checkpoint stale')
   assert.equal(last.inputHash, fnv(PRD.body), 'the staleness guard keys on the PRD content hash')
-  assert.ok(last.phases.reconciliation, 'the saved payload is the actual RESULT the next phase consumes, not a marker')
-  assert.equal(last.phases.reconciliation.requirements.length, 1, 'the material inventory itself is what resumes')
-  assert.equal(last.phases.reconciliation.architectureNeeded, false)
+  const recon = last.phases['recon:/repos/alpha']
+  assert.ok(recon, 'the saved payload is the actual RESULT the next phase consumes, not a marker')
+  assert.equal(recon.requirements.length, 1, "the repository's own material inventory is what resumes")
+  assert.ok(last.phases['spec:/repos/alpha'], 'and the spec it fed is checkpointed beside it, per repo')
 })
 
 /** True when the run retired its checkpoint. */
@@ -260,42 +264,73 @@ test('a PRE-GUARD checkpoint — pluginVersion, no semanticsVersion — is inval
   assert.equal(rewritten.semanticsVersion, semanticsOf('prd-to-spec.js'))
 })
 
-test('a checkpointed reconciliation from the DELTA contract is discarded — resuming onto it would skip the panel silently', async () => {
-  // The old shape carried a delta count and a size verdict and no `architectureNeeded`.
-  // The checkpoint hash is over the PRD text, so an unchanged PRD would not invalidate it,
-  // and the absent field reads as "no architecture question" — a wrongly-skipped panel
-  // nothing reports. So the shape itself is the guard.
+test('a checkpoint carrying a FRONT-END reconciliation phase is discarded in full — this sequence cannot produce one', async () => {
+  // PRD Reconciliation used to be phases[0] and used to feed PRD validation, the
+  // architecture panel and the TRD. It now runs per repository INSIDE spec authoring, under
+  // the key `recon:<repo>`, and nothing before the specs is handed a deployed-state
+  // inventory at all. So a top-level `reconciliation` key is a phase this sequence has no
+  // way of writing.
   //
-  // And it never travels alone. Reconciliation is the FIRST phase, so every entry after it
-  // was derived from a `prd` binding the old contract had rebound to the DELTA PRD — the
-  // narrowed requirement set. A real checkpoint on disk carried a `validation` entry
-  // recording a Gate 1 verdict granted to that delta; the inputHash is over the PRD text,
-  // which did not change, so nothing else invalidates it. The whole file goes.
+  // The normal case is caught one level up: bumping CHECKPOINT_SEMANTICS rejects every
+  // version-1 file whole, by name and reason. This is the BACKSTOP for a file that claims
+  // the current semantics and carries the key anyway — mislabelled, hand-edited, or written
+  // by something else — and the point is that PART of such a file is exactly as
+  // untrustworthy as all of it. Every entry after the old front-end phase was derived from
+  // it: a real checkpoint on disk carried a `validation` entry recording a Gate 1 verdict
+  // granted to a narrowed PRD, and the inputHash is over the PRD text, which did not
+  // change, so nothing else would invalidate it.
   const first = await runP2S()
   const payload = savedPayload(first.saves[first.saves.length - 1])
   payload.phases.reconciliation = { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }
   const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
   assert.equal(second.result.ok, true)
-  assert.equal(
-    workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length,
-    1,
-    'one read-only reconciliation is cheaper than resuming onto a shape that no longer means what it reads as',
-  )
-  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
+  // `architecture` is absent from this list because the triage fixture skips it — it is
+  // never dispatched as a mini at all, so it has no checkpointed result to be stale.
+  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'prd-reconciliation', 'spec-authoring', 'task-decomposition']) {
     assert.equal(
       workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
       1,
-      `${mini} read the narrowed delta PRD, so its checkpointed result is exactly as stale as the reconciliation that produced it`,
+      `${mini}'s checkpointed result is exactly as stale as the retired phase it was derived from`,
     )
   }
   const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /pre-inventory reconciliation shape/)
-  assert.match(journal.prompt, /"discardedAll":true/, 'the invalidation must STATE what it dropped, not just that reconciliation went')
-  assert.match(journal.prompt, /"discarded":\["reconciliation","validation"/)
+  assert.match(journal.prompt, /which this sequence cannot produce/)
+  assert.match(journal.prompt, /"discardedAll":true/, 'the invalidation must STATE what it dropped, not just that one key went')
+  assert.match(journal.prompt, /"discarded":\["validation"/)
   // And the discarded entries must not be written straight back: the file is rewritten
   // WHOLE from cp.phases, so a stale entry left there would greet the next resume.
   const rewritten = savedPayload(second.saves[0])
-  assert.deepEqual(Object.keys(rewritten.phases), ['reconciliation'], 'the first save after a full discard carries only the phase that just completed')
+  assert.deepEqual(Object.keys(rewritten.phases), ['validation'], 'the first save after a full discard carries only the phase that just completed')
+})
+
+test('the semantics bump is what rejects a real version-1 checkpoint, and it says why', async () => {
+  // The primary guard for this change, as opposed to the backstop above. A file written by
+  // the previous sequence carries semanticsVersion '1'; every phase in it was derived from
+  // a deployed-state inventory that architecture and the TRD no longer read.
+  const first = await runP2S()
+  const payload = savedPayload(first.saves[first.saves.length - 1])
+  assert.equal(payload.semanticsVersion, '2', 'the relocation of the current-state comparison is a phase-sequence change')
+  payload.semanticsVersion = '1'
+  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  assert.equal(second.result.ok, true)
+  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'prd-reconciliation', 'spec-authoring']) {
+    assert.equal(workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length, 1, `${mini} must re-run`)
+  }
+  const journal = agentCalls(second.calls, 'ledger:persist')[0]
+  assert.match(journal.prompt, /"event":"invalidated"/)
+  assert.match(journal.prompt, /written under phase semantics 1 and this composite is at 2/, 'the rejection names the reason, never silently misapplies')
+})
+
+test('a per-repo comparison is resumed per repo — a repo already inventoried is not read twice', async () => {
+  const first = await runP2S()
+  const file = JSON.stringify(savedPayload(first.saves[first.saves.length - 1]))
+  const second = await runP2S({ checkpointFile: file })
+  assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
+  assert.equal(
+    workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length,
+    0,
+    'the inventory for this repository was already paid for; re-reading the repository is the cost the checkpoint exists to avoid',
+  )
 })
 
 test('a checkpoint SURVIVES a plugin version change when the phase semantics are unchanged', async () => {

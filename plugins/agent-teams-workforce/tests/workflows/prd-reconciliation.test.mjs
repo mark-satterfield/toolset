@@ -18,6 +18,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, workflowCalls, agentCalls } from './helpers/run-workflow.mjs'
+import { beadWriter } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
@@ -370,37 +371,117 @@ const RECON_OK = {
   ledger: { phase: 'prd-reconciliation' },
 }
 
-/** Run prd-to-spec far enough to observe what reconciliation did, with G1 stubbed to loop out. */
-async function composite(reconResult, { onCalls } = {}) {
+// WHERE THE COMPARISON RUNS IS THE WHOLE SUBJECT OF THIS SECTION, AND IT MOVED.
+//
+// It used to run at the front of prd-to-spec, ahead of every gate, and feed PRD
+// validation, the architecture panel and the TRD. That made what is deployed in a dev
+// account into a form of requirement. A PRD is WHAT and never knows what is deployed; a
+// TRD is HOW and derives it from the PRD and the SAD on best-practice grounds, blind to
+// the status quo; the SPEC is the only layer that asks "X is what we want, Y is what we
+// have, how do we turn Y into X", and it asks it there because it is the only layer scoped
+// to ONE repository — the only scope at which the question has a concrete answer.
+//
+// So `composite` now runs the pipeline all the way to spec authoring, where the
+// reconciliation lives. Everything the old tests pinned still holds; what changed is when
+// it is observable.
+
+/** Run prd-to-spec all the way through, with every gate passing and every mini minimal. */
+async function composite(reconResult, { onCalls, args } = {}) {
   const seen = []
+  let storyN = 0
   const { result, calls, logs } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { ...PRD }, repoPath: '/repo/auth' },
+    args: { prd: { ...PRD }, repoPath: '/repo/auth', ...(args || {}) },
     workflowImpl: (call) => {
       seen.push(call)
-      if (call.name === 'agent-teams-workforce:prd-reconciliation') return reconResult
-      if (call.name === 'agent-teams-workforce:prd-validation') {
+      const name = String(call.name || '')
+      if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
+        return { verdict: 'pass', criteria: [], flags: [] }
+      }
+      if (name.endsWith('prd-reconciliation')) return reconResult
+      if (name.endsWith('prd-validation')) {
         return { ok: true, validationVerdict: 'pass', validatedPrd: { body: call.payload.prd.body }, findings: [] }
       }
-      // Any gate: stop the run right after validation so the test stays about reconciliation.
-      if (call.name === 'agent-teams-workforce:gate-enforce') {
-        return { verdict: 'escalate', escalateTo: 'stop-here', criteria: [], feedback: 'test stop' }
+      if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
+      if (name.endsWith('repo-scoping')) {
+        return {
+          ok: true,
+          repos: ['/repo/auth'],
+          placements: [{ repoPath: '/repo/auth', repoName: 'auth', workUnitIds: [], rationale: 'r', verified: true }],
+          newRepos: [],
+          requiredHumanActions: [],
+          reclassified: [],
+          blocked: [],
+          spanVerified: true,
+        }
+      }
+      if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
+      if (name.endsWith('spec-authoring')) {
+        storyN += 1
+        const repoPath = (call.payload && call.payload.repoPath) || null
+        return {
+          ok: true,
+          specSet: { apiSpec: {} },
+          story: { key: `S${storyN}`, type: 'story', title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
+          outOfRepoFindings: [],
+        }
+      }
+      if (name.endsWith('task-decomposition')) {
+        const sk = ((call.payload && call.payload.story) || {}).key || 'S?'
+        return { ok: true, beadSet: [{ key: 'T1', type: 'task', parentStoryId: sk, title: 't', description: 'd', acceptanceCriteria: ['a'] }] }
       }
       return null
     },
-    agentImpl: () => ({ written: true }),
+    agentImpl: beadWriter(),
   })
   if (onCalls) onCalls(calls)
   return { result, seen, calls, logs }
 }
 
-test('reconciliation runs BEFORE any gate is spent', async () => {
+test('the comparison runs at SPEC AUTHORING — after G1 and the TRD, never before them', async () => {
   const { seen } = await composite(RECON_OK)
-  const reconIdx = seen.findIndex((c) => c.name === 'agent-teams-workforce:prd-reconciliation')
-  const gateIdx = seen.findIndex((c) => c.name === 'agent-teams-workforce:gate-enforce')
-  const validationIdx = seen.findIndex((c) => c.name === 'agent-teams-workforce:prd-validation')
-  assert.ok(reconIdx >= 0, 'the composite reconciles at all')
-  assert.ok(reconIdx < validationIdx, 'and it does so before PRD validation')
-  assert.ok(gateIdx === -1 || reconIdx < gateIdx, 'and before the first gate')
+  const idx = (suffix) => seen.findIndex((c) => String(c.name || '').endsWith(suffix))
+  const reconIdx = idx('prd-reconciliation')
+  assert.ok(reconIdx >= 0, 'the composite still reconciles')
+  assert.ok(reconIdx > idx('prd-validation'), 'PRD validation judges the document, not the system')
+  assert.ok(reconIdx > idx('architecture'), 'the architecture panel designs from the PRD and the SAD')
+  assert.ok(reconIdx > idx('repo-scoping'), 'the span is ruled before anything looks at what is deployed')
+  assert.ok(reconIdx > idx('trd-authoring'), 'the TRD is HOW, derived from best practice and blind to the status quo')
+  assert.ok(reconIdx < idx('spec-authoring'), 'and it lands immediately before the spec that has to turn Y into X')
+})
+
+test('neither PRD validation, nor architecture, nor the TRD is handed a deployed-state inventory', async () => {
+  // The negative half, and the one that matters: the relocation is only real if the
+  // upstream phases genuinely stop receiving the material. The inventory's own header text
+  // is the marker — it is what `renderInventory` emits and nothing else in the run does.
+  const { seen, calls } = await composite(RECON_OK)
+  const INVENTORY = /MATERIAL INVENTORY FOR/
+  for (const suffix of ['prd-validation', 'architecture', 'trd-authoring', 'repo-scoping']) {
+    const call = seen.find((c) => String(c.name || '').endsWith(suffix))
+    assert.ok(call, `${suffix} ran`)
+    assert.ok(
+      !INVENTORY.test(JSON.stringify(call.payload)),
+      `${suffix} must derive from the PRD and the SAD, never from what happens to be deployed`,
+    )
+  }
+  // The architecture triage is dispatched by the composite directly rather than through a
+  // mini, so it is checked at the agent level.
+  for (const c of agentCalls(calls, 'triage:architecture-needed')) {
+    assert.ok(!INVENTORY.test(c.prompt), 'the triage judges the PRD, not the deployed system')
+  }
+  // And it DOES reach the spec, through the constraints channel that already existed.
+  const spec = seen.find((c) => String(c.name || '').endsWith('spec-authoring'))
+  assert.ok(
+    spec.payload.constraints.some((x) => INVENTORY.test(String(x))),
+    'the spec is the layer that reuses, removes or builds, so it is the layer that gets the inventory',
+  )
+})
+
+test('the comparison is scoped to ONE repository, and it is the ruled path', async () => {
+  const { seen } = await composite(RECON_OK)
+  const recons = seen.filter((c) => String(c.name || '').endsWith('prd-reconciliation'))
+  assert.equal(recons.length, 1, 'one per repository in the ruled span')
+  assert.deepEqual(recons[0].payload.repos, ['/repo/auth'], 'the search narrows to the repository the Story covers')
+  assert.equal(recons[0].payload.prd.body, PRD.body, 'the REQUIREMENTS never narrow — only the search does')
 })
 
 test('a PRD whose requirements ALL conform is not closed — the run carries on and validates it', async () => {
@@ -433,20 +514,25 @@ test('downstream phases receive the ORIGINAL PRD — there is no delta to rebind
   assert.equal(validation.payload.prd.path, PRD.path)
 })
 
-test('every phase that sees a PRD sees the same one reconciliation was handed', async () => {
+test('every phase that sees a PRD sees the same text — none of them a narrowed one', async () => {
+  // The run reaches every phase now, so this sweeps the whole pipeline rather than
+  // stopping at validation. Phases carry the text under different keys — trd-authoring
+  // takes `content`, the rest take `body` — so the invariant is the TEXT, not the field
+  // name: no phase anywhere receives a subtracted or rewritten PRD.
   const { seen } = await composite(RECON_OK)
-  const withPrd = seen.filter((c) => c.payload && c.payload.prd)
-  assert.ok(withPrd.length >= 2, 'more than one phase reads the PRD')
+  const withPrd = seen.filter((c) => c.payload && c.payload.prd && typeof c.payload.prd === 'object')
+  assert.ok(withPrd.length >= 4, `more than one phase reads the PRD (saw ${withPrd.length})`)
   for (const c of withPrd) {
-    assert.equal(c.payload.prd.body, PRD.body, `${c.name} must receive the original PRD, not a narrowed one`)
+    const text = c.payload.prd.body || c.payload.prd.content
+    assert.equal(text, PRD.body, `${c.name} must receive the original PRD, not a narrowed one`)
   }
 })
 
 test('a contradiction is reported as removal work, and the requirement count is unchanged by it', async () => {
   // The composite must never report a smaller PRD because material contradicts it. The
-  // phases downstream read the inventory as CONTEXT (repo scoping, the TRD and the spec
-  // each receive the rendered text); what is pinned here is that nothing was subtracted.
-  const { logs } = await composite({
+  // spec reads the inventory as CONTEXT; what is pinned here is that nothing was subtracted
+  // and that the removal was counted as work.
+  const { logs, result } = await composite({
     ...RECON_OK,
     requirements: [
       { id: 'R1', requirement: 'a', status: 'contradicts', evidence: ['x:1'], removalTargets: ['old.py'], surface: 'service', repos: ['/repo/auth'] },
@@ -457,35 +543,71 @@ test('a contradiction is reported as removal work, and the requirement count is 
     removalWork: [{ requirementId: 'R1', requirement: 'a', targets: ['old.py'], repos: ['/repo/auth'] }],
     reuseWork: [],
   })
-  const line = logs.find((l) => /^Reconciliation: /.test(l))
-  assert.ok(line, 'the run must say what the inventory found')
+  const line = logs.find((l) => /^Current-state comparison across /.test(l))
+  assert.ok(line, 'the run must say what the comparison found')
   assert.match(line, /1 requirement\(s\), all in scope/)
   assert.match(line, /1 removal work item\(s\)/, 'removal is work, and work that is never mentioned is never done')
+  // And it reached a Story, which is what makes it reach decomposition at all.
+  assert.equal(result.removalNotEmitted, undefined, 'per-repo findings place exactly — nothing is left standing silently')
 })
 
-test('a failed reconciliation stops the run — it is never read as an empty inventory', async () => {
-  const { result, calls, seen } = await composite({ ok: false, reason: 'could not read the repository' })
+test('removal discovered at spec time still reaches the task briefs', async () => {
+  // The half of the old front-end phase that MUST survive the move. A contradiction that
+  // nobody writes a task to delete stays deployed, so the item has to travel from the
+  // per-repo comparison, through placement, into the decomposition brief.
+  const { seen, result } = await composite({
+    ...RECON_OK,
+    requirements: [
+      { id: 'R1', requirement: 'a', status: 'contradicts', evidence: ['x:1'], removalTargets: ['old.py'], surface: 'service', repos: [] },
+    ],
+    conformsCount: 0,
+    contradictsCount: 1,
+    absentCount: 0,
+    removalWork: [{ requirementId: 'R1', requirement: 'a', targets: ['old.py'], repos: [] }],
+    reuseWork: [],
+  })
+  const decomp = seen.find((c) => String(c.name || '').endsWith('task-decomposition'))
+  assert.ok(decomp, 'decomposition ran')
+  assert.match(decomp.payload.spec.description, /REMOVAL WORK — part of this Story/)
+  assert.match(decomp.payload.spec.description, /old\.py/, 'the target itself has to be in the brief')
+  assert.equal(result.ok, true)
+  assert.equal(result.removalNotEmitted, undefined)
+})
+
+test('a failed comparison does not author a spec for that repository — it is never read as an empty inventory', async () => {
+  // Reading "we could not establish what exists here" as "nothing exists here" is the
+  // greenfield assumption the whole phase removes. With one repository in the span, no
+  // comparison means no spec at all, so the run stops at spec authoring rather than
+  // specifying blind.
+  const { result, seen, calls } = await composite({ ok: false, reason: 'could not read the repository' })
   assert.equal(result.ok, false)
-  assert.equal(result.stage, 'prd-reconciliation')
-  assert.equal(seen.filter((c) => c.name === 'agent-teams-workforce:prd-validation').length, 0)
-  // The salvage principle is intact, but the artifacts travel to the run journal rather
-  // than back to the caller — a composite that returned everything it had produced killed
-  // the dispatching session over a campaign. The RETURN names what is salvageable; the
-  // journal holds it.
-  assert.ok(result.partialProduced.includes('prd'), 'the return must name what was produced before it stopped')
+  assert.equal(result.stage, 'spec-authoring')
+  assert.equal(
+    seen.filter((c) => String(c.name || '').endsWith('spec-authoring')).length,
+    0,
+    'no spec is authored against an unknown current state',
+  )
   const { journalDetail } = await import('./helpers/run-workflow.mjs')
-  assert.ok(journalDetail(calls).partial.prd, 'and the PRD it was handed is in the journal with it')
+  const partial = journalDetail(calls).partial
+  assert.ok(partial.prd, 'the PRD is still in the journal')
+  assert.equal(partial.reconFailures.length, 1, 'and the failure is named as what it was')
+  assert.match(partial.reconFailures[0].reason, /could not read the repository/)
 })
 
-test('the composite declares PRD Reconciliation as phases[0]', async () => {
+test('the composite declares NO PRD Reconciliation phase, and Spec Authoring owns the comparison', async () => {
   const { readWorkflowSource } = await import('./helpers/run-workflow.mjs')
   const src = readWorkflowSource(prdToSpec)
   const phasesIdx = src.indexOf('phases: [')
-  const first = src.slice(phasesIdx, phasesIdx + 300)
-  assert.match(first, /phases: \[\s*\{ title: 'PRD Reconciliation'/)
+  const phases = src.slice(phasesIdx, src.indexOf('\n  ],', phasesIdx))
+  assert.ok(
+    !/\{ title: 'PRD Reconciliation'/.test(phases),
+    'a front-end reconciliation phase is what made deployed state a requirements input',
+  )
+  assert.match(phases, /phases: \[\s*\{ title: 'PRD Creation'/, 'the run now opens on the PRD itself')
+  assert.match(phases, /\{ title: 'Spec Authoring', detail: '[^']*current-state reconciliation runs HERE/)
 })
 
-test('reconciliation and validation are separate workflow dispatches', async () => {
+test('the comparison and validation are separate workflow dispatches', async () => {
   const { seen } = await composite(RECON_OK)
   assert.equal(workflowCalls(seen, 'agent-teams-workforce:prd-reconciliation').length, 1)
   assert.equal(workflowCalls(seen, 'agent-teams-workforce:prd-validation').length, 1)
