@@ -61,7 +61,7 @@ test('the greenfield shaper is told NOTHING about which repositories exist', asy
     args: {
       prd: PRD,
       seedRepos: ['/repos/where-the-human-stood'],
-      reconciliation: { sizing: { deltaRepos: ['/repos/where-the-code-already-is'] } },
+      reconciliation: { existingRepos: ['/repos/where-the-code-already-is'] },
     },
     agentImpl: scopingAgents(),
   })
@@ -70,7 +70,7 @@ test('the greenfield shaper is told NOTHING about which repositories exist', asy
   assert.ok(shaper, 'the shaper must run')
   assert.ok(
     !shaper.prompt.includes('/repos/where-the-code-already-is'),
-    'deltaRepos is the single most biasing input there is — it names where the EXISTING work lives, ' +
+    'existingRepos is the single most biasing input there is — it names where the EXISTING material lives, ' +
       'and it must not reach the step whose whole job is to ignore what exists',
   )
   assert.ok(
@@ -80,11 +80,11 @@ test('the greenfield shaper is told NOTHING about which repositories exist', asy
 })
 
 test('the existing-code evidence DOES reach the ruling step — the firewall is ordering, not censorship', async () => {
-  // The other half. Withholding deltaRepos from the decider too would make the ruling
+  // The other half. Withholding existingRepos from the decider too would make the ruling
   // blind to what exists, which is a different defect: recognizing existing repositories
   // is step 2 of the ordering and the whole point of the ruling step.
   const { calls } = await runWorkflowScript(SCOPING, {
-    args: { prd: PRD, seedRepos: ['/repos/alpha'], reconciliation: { sizing: { deltaRepos: ['/repos/where-the-code-already-is'] } } },
+    args: { prd: PRD, seedRepos: ['/repos/alpha'], reconciliation: { existingRepos: ['/repos/where-the-code-already-is'] } },
     agentImpl: scopingAgents(),
   })
 
@@ -193,25 +193,45 @@ test('a required NEW repository comes back as a human action and is never in the
 
 // ── The composite: how the span reaches the per-repo fan-out ───────────────────
 
+/**
+ * The material inventory the composite threads into the scoping ruling. It carries a
+ * CONTRADICTING requirement deliberately: the repository holding material that has to be
+ * DELETED is exactly a repository the span must be able to reach.
+ */
+const RECONCILED = {
+  ok: true,
+  requirements: [
+    {
+      id: 'R1',
+      requirement: 'r',
+      status: 'contradicts',
+      evidence: ['f.py:1'],
+      removalTargets: ['f.py'],
+      surface: 'service',
+      repos: ['/repos/where-the-code-already-is'],
+    },
+  ],
+  conformsCount: 0,
+  contradictsCount: 1,
+  absentCount: 0,
+  removalWork: [{ requirementId: 'R1', requirement: 'r', targets: ['f.py'], repos: ['/repos/where-the-code-already-is'] }],
+  reuseWork: [],
+  repos: ['/repos/where-the-code-already-is'],
+  existingRepos: ['/repos/where-the-code-already-is'],
+  spansMultipleRepos: false,
+  architectureNeeded: true,
+  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+  uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+  infraOnly: false,
+}
+
 /** Every gate passes; every mini answers minimally. `scopingResult` is what repo-scoping returns. */
 function compositeWorkflows({ scopingResult, outOfRepoFindings = [] }) {
   let storyN = 0
   return (call) => {
     const name = String(call.name || '')
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
-    if (name.endsWith('prd-reconciliation')) {
-      return {
-        ok: true,
-        verdict: 'partial',
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-        deltaCount: 1,
-        deltaPrdPath: '/prd/PRD-1.delta.md',
-        deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-        sizeVerdict: 'story',
-        infraOnly: false,
-        sizing: { deltaRepos: ['/repos/where-the-code-already-is'] },
-      }
-    }
+    if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
     if (name.endsWith('repo-scoping')) return scopingResult
@@ -262,6 +282,30 @@ test('with no args.repos the composite RULES the span and fans out over what it 
     ruled,
     'one Story per RULED repository — not one per repository the caller happened to be standing in',
   )
+  // This run already traverses a removal LOSS: the inventory's removal item names
+  // /repos/where-the-code-already-is, which the ruling did not include, so it reaches no
+  // Story and no task is emitted to delete it. A test that passed through that silently
+  // would read green while demonstrating the exact shape of the defect — so it is observed.
+  const [lost, ...alsoLost] = result.removalNotEmitted || []
+  assert.deepEqual(
+    { ...lost, reason: Boolean(lost && lost.reason), alsoLost: alsoLost.length },
+    {
+      requirementId: 'R1',
+      requirement: 'r',
+      targets: ['f.py'],
+      repos: ['/repos/where-the-code-already-is'],
+      // Nothing in the ruled span answered to it — not exactly, not by basename, not even
+      // by a suffix guess. An empty `matched` is what "reached no Story" IS.
+      matched: [],
+      // Removal reaches the pipeline from two places — reconciliation's contradictions and
+      // repo-scoping's obsolete code — and they share one denominator, so which one an item
+      // came from has to survive on the item. A list, because one item can be both.
+      origins: ['reconciliation'],
+      reason: true,
+      alsoLost: 0,
+    },
+    'removal work that reached no Story must come back whole — named, targeted, and reasoned — never silently dropped',
+  )
 })
 
 test('the launch repository is passed to scoping as a seed, and is NOT the span', async () => {
@@ -273,6 +317,24 @@ test('the launch repository is passed to scoping as a seed, and is NOT the span'
   const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
   assert.deepEqual(scoping.payload.seedRepos, ['/repos/where-the-human-stood'], 'the seed travels as a seed')
   assert.deepEqual(result.repoSpan, ['/repos/alpha'], 'and it loses to the ruling')
+})
+
+test('the ruling receives the material inventory as EVIDENCE — found repos, removal work, and the rendered inventory', async () => {
+  // The scoping ruling has to be able to put the span where the material that must come
+  // OUT lives. Threading only the delta's repositories was what hid those repositories
+  // from it; the inventory replaces that with evidence, and the shaper still sees none of it.
+  const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood' },
+    workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
+    agentImpl: beadWriter(),
+  })
+  const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
+  const recon = scoping.payload.reconciliation
+  assert.deepEqual(recon.existingRepos, ['/repos/where-the-code-already-is'])
+  assert.equal(recon.removalWork.length, 1, 'material to delete is work, and its repository is a reason to be in the span')
+  assert.equal(recon.requirements.length, 1)
+  assert.match(String(recon.materialInventory), /THIS IS CONTEXT, NOT SCOPE/)
+  assert.equal(scoping.payload.prd.body, 'b', 'scoping rules against the WHOLE PRD, never a subtracted one')
 })
 
 test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is dispatched', async () => {

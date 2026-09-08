@@ -16,6 +16,27 @@ import { beadWriter, withBeadWriter } from './helpers/bead-writer.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
+// Reconciliation is unconditional and runs before every gate, so every prd-to-spec fixture
+// has to answer it or the run stops at the first phase. It returns an INVENTORY of the
+// material behind each requirement — never a narrowed PRD — so nothing here shrinks what
+// the rest of the run is asked to specify.
+const RECONCILED = {
+  ok: true,
+  requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: [] }],
+  conformsCount: 0,
+  contradictsCount: 0,
+  absentCount: 1,
+  removalWork: [],
+  reuseWork: [],
+  repos: [],
+  existingRepos: [],
+  spansMultipleRepos: false,
+  architectureNeeded: true,
+  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+  uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+  infraOnly: false,
+}
+
 /** Every gate passes; every mini returns a minimal well-formed artifact. */
 function makeWorkflowImpl({ repos, withEpic }) {
   let storyN = 0
@@ -31,20 +52,7 @@ function makeWorkflowImpl({ repos, withEpic }) {
         ...(withEpic ? { epic: { key: 'E1', type: 'epic', title: 'Created PRD', description: 'd', prdRef: 'PRD-1' } } : {}),
       }
     }
-if (name.endsWith('prd-reconciliation')) {
-  // Reconciliation is unconditional and runs before every gate, so every
-  // prd-to-spec fixture has to answer it or the run stops at the new phase.
-  return {
-    ok: true,
-    verdict: 'partial',
-    requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-    deltaCount: 1,
-    deltaPrdPath: '/prd/PRD-1.delta.md',
-    deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-    sizeVerdict: 'story',
-    infraOnly: false,
-  }
-}
+      if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) {
       return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     }
@@ -235,20 +243,7 @@ test('each repo gets a DISTINCT Story key — sibling Stories must not collide',
       if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
         return { verdict: 'pass', criteria: [], flags: [] }
       }
-if (name.endsWith('prd-reconciliation')) {
-  // Reconciliation is unconditional and runs before every gate, so every
-  // prd-to-spec fixture has to answer it or the run stops at the new phase.
-  return {
-    ok: true,
-    verdict: 'partial',
-    requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-    deltaCount: 1,
-    deltaPrdPath: '/prd/PRD-1.delta.md',
-    deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-    sizeVerdict: 'story',
-    infraOnly: false,
-  }
-}
+      if (name.endsWith('prd-reconciliation')) return RECONCILED
       if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
       if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
       if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 's' } }
@@ -307,20 +302,7 @@ test('task keys are unique ACROSS Stories, not just within one', async () => {
     workflowImpl: (call) => {
       const name = String(call.name || '')
       if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
-if (name.endsWith('prd-reconciliation')) {
-  // Reconciliation is unconditional and runs before every gate, so every
-  // prd-to-spec fixture has to answer it or the run stops at the new phase.
-  return {
-    ok: true,
-    verdict: 'partial',
-    requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-    deltaCount: 1,
-    deltaPrdPath: '/prd/PRD-1.delta.md',
-    deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-    sizeVerdict: 'story',
-    infraOnly: false,
-  }
-}
+      if (name.endsWith('prd-reconciliation')) return RECONCILED
       if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
       if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
       if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 's' } }

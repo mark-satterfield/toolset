@@ -1,7 +1,7 @@
 export const meta = {
   name: 'repo-scoping',
   description:
-    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its remaining work lands in. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the delta PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. An independent cartographer then verifies every repository the ruling named, and a deterministic reduction drops any it could not confirm rather than trusting the claim. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, the decider never surveys, and the verifier never adds to what it verifies.',
+    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its work lands in, including the repositories holding material that must be REMOVED because it contradicts the PRD. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the WHOLE PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist or what material is already in them. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. An independent cartographer then verifies every repository the ruling named, and a deterministic reduction drops any it could not confirm rather than trusting the claim. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, the decider never surveys, and the verifier never adds to what it verifies.',
   phases: [
     {
       title: 'Shape and survey',
@@ -14,14 +14,20 @@ export const meta = {
 }
 
 // args: {
-//   prd: {                        // the DELTA PRD — required. Scoping the original
-//     id?, title?,                // ambition places work in repositories whose share of
-//     body: string,               // it already shipped.
-//   },
+//   prd: {                        // the PRD — required, and WHOLE. Not a subtracted version
+//     id?, title?,                // of it: a requirement whose deployed implementation
+//     body: string,               // contradicts the PRD still lands in a repository, because
+//   },                            // removing that implementation is part of this work.
 //   architecture?: object|null,   // the ruled architecture artifact, or { skipped: true }
 //   reconciliation?: {            // EVIDENCE FOR THE RULING STEP ONLY — see the firewall below
-//     requirements?: object[],
-//     sizing?: { deltaRepos?: string[] },
+//     requirements?: object[],    // the material inventory, every requirement, never filtered
+//     repos?: string[],           // union across ALL requirements — includes the repos an
+//                                 // `absent` requirement merely PREDICTS. Not read here.
+//     existingRepos?: string[],   // evidence: where material was actually FOUND. This is
+//                                 // the one the ruling step is shown.
+//     removalWork?: object[],     // material that contradicts the PRD and must be deleted
+//     reuseWork?: object[],       // material that conforms and should be reused
+//     materialInventory?: string, // the inventory rendered for a brief
 //   },
 //   seedRepos?: string[],         // where the run was launched from — a hint to the ruling
 //                                 // step, never an answer, and never shown to the shaper
@@ -43,9 +49,10 @@ export const meta = {
 // single-repo PRD once the run is under way.
 //
 // It cannot be supplied, because it cannot be KNOWN in advance. The span is a property of
-// the DELTA — the work that no repository contains yet — and of the design ruled for it.
-// Both are outputs of the same run. Anyone naming the span up front is naming it from what
-// they could see before either existed.
+// the WORK — everything the PRD requires, which includes deleting material that
+// contradicts it — and of the design ruled for it. Both are outputs of the same run.
+// Anyone naming the span up front is naming it from what they could see before either
+// existed.
 //
 // It is equally not something to pre-stage into a file. A stored span is an answer computed
 // against a PRD that has since been adjusted, and a re-run that reads one succeeds against
@@ -69,13 +76,14 @@ export const meta = {
 //
 // So the ordering is enforced STRUCTURALLY rather than by instruction. The shaper's prompt
 // is assembled from the PRD and the architecture ruling and from nothing else: no
-// repository inventory, no `seedRepos`, and specifically not prd-reconciliation's
-// `deltaRepos` — which is a list of the repositories where reconciliation found the
-// EXISTING work, and is therefore the single most biasing thing that could be handed to a
-// step whose whole job is to ignore what exists. It is real evidence and it belongs in the
-// ruling step, where recognizing what exists is the point. It just must not arrive one
-// step earlier. The survey runs CONCURRENTLY with the shaper for the same reason: two
-// parallel dispatches cannot influence each other even by accident.
+// repository inventory, no `seedRepos`, no material inventory, and specifically not
+// prd-reconciliation's `existingRepos` — which is a list of the repositories where
+// reconciliation found the EXISTING material, and is therefore the single most biasing
+// thing that could be handed to a step whose whole job is to ignore what exists. It is
+// real evidence and it belongs in the ruling step, where recognizing what exists is the
+// point. It just must not arrive one step earlier. The survey runs CONCURRENTLY with the
+// shaper for the same reason: two parallel dispatches cannot influence each other even by
+// accident.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const prdInput = a.prd || {}
@@ -85,7 +93,25 @@ const prdTitle = (typeof prdInput === 'string' ? '' : prdInput.title) || ''
 const epic = a.epic || {}
 const seedRepos = (Array.isArray(a.seedRepos) ? a.seedRepos : []).filter((r) => hasText(r)).map((r) => r.trim())
 const reconciliation = a.reconciliation || {}
-const deltaRepos = ((reconciliation.sizing && reconciliation.sizing.deltaRepos) || []).filter((r) => hasText(r))
+// Repositories where reconciliation FOUND related material — conforming, contradicting, or
+// both. Evidence for the ruling step and nothing more: a repository that holds material is
+// not thereby the right home for the work, and it may be the right home precisely because
+// what it holds has to come out.
+// `existingRepos` ONLY, and never `repos` in its place. Reconciliation emits both and they
+// are one word apart: `repos` is the union across every requirement INCLUDING the `absent`
+// ones, whose repos are a prediction about where work will land, while `existingRepos` is
+// the union across `conforms` and `contradicts` — where material was actually found, behind
+// citations that survived enforcement. This value is presented to the decider as EVIDENCE
+// of what exists, so falling back to `repos` would hand it predictions dressed as evidence
+// and defeat the greenfield-first ordering. Absent means no material was found, which is a
+// real answer.
+const existingRepos = (Array.isArray(reconciliation.existingRepos) ? reconciliation.existingRepos : []).filter((r) =>
+  hasText(r)
+)
+const removalWork = (Array.isArray(reconciliation.removalWork) ? reconciliation.removalWork : []).filter(
+  (w) => w && Array.isArray(w.targets) && w.targets.length
+)
+const materialInventory = hasText(reconciliation.materialInventory) ? reconciliation.materialInventory.trim() : ''
 const architecture = a.architecture || null
 const architectureSkipped = !architecture || architecture.skipped === true
 
@@ -191,7 +217,8 @@ phase('Shape and survey')
 
 const [shape, survey] = await parallel([
   // 1) GREENFIELD SHAPE. Note what is NOT in this prompt: no repository list, no
-  //    seedRepos, no deltaRepos. That absence is the mechanism, not an oversight.
+  //    seedRepos, no existingRepos, no material inventory. That absence is the mechanism,
+  //    not an oversight.
   () =>
     agent(
       `${rulingsBlock}Decompose this work into WORK UNITS and say what kind of home each one should have. You are designing on a BLANK SLATE.
@@ -200,7 +227,7 @@ ASSUME GREENFIELD. Nothing has been built. No repository exists. Decide what SHO
 
 You are deliberately not being told which repositories this project has, and you must not ask for them or guess at them. A later step reconciles your design against what exists. If you shape the work around a repository you imagine is already there, that step has nothing left to reconcile and the design becomes a description of the status quo.
 
-Delta PRD — the requirements that are genuinely absent or partial, which is ALL the work there is:
+The PRD — every requirement it states, which is ALL the work there is:
 ${prdBlock}
 
 Architecture ruling for this work:
@@ -337,16 +364,22 @@ log(
 // The decider RULES; it did not shape and it did not survey, so it is judging work it did
 // not produce. This is where existing code legitimately enters, and it enters as evidence
 // to be reconciled against a design that already exists — step 3 of the ordering, not
-// step 1. `deltaRepos` appears for the first time here.
+// step 1. `existingRepos` and the material inventory appear for the first time here.
 phase('Rule the span')
 
 const evidenceBlock = [
-  deltaRepos.length
-    ? `Repositories where PRD reconciliation found the EXISTING related work (evidence, not an answer):\n${deltaRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
-    : 'PRD reconciliation named no repositories for the remaining work.',
+  existingRepos.length
+    ? `Repositories where PRD reconciliation found EXISTING related material — some of it to reuse, some of it to delete (evidence, not an answer):\n${existingRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
+    : 'PRD reconciliation named no repositories holding related material.',
+  removalWork.length
+    ? `Material that CONTRADICTS the PRD and must be REMOVED. The PRD wins; deleting this is part of the work, so the repository holding it is in the span whether or not anything new is built there:\n${removalWork
+        .map((w, i) => `  ${i + 1}. ${w.requirementId || '(unidentified)'} — ${w.targets.join('; ')}${Array.isArray(w.repos) && w.repos.length ? ` [${w.repos.join(', ')}]` : ''}`)
+        .join('\n')}`
+    : 'Reconciliation found no material that contradicts the PRD.',
   seedRepos.length
     ? `Repository the run was LAUNCHED FROM (where the human happened to be standing; carries no authority at all):\n${seedRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
     : 'The run named no launch repository.',
+  ...(materialInventory ? [materialInventory] : []),
 ].join('\n\n')
 
 const ruling = await agent(
@@ -354,7 +387,7 @@ const ruling = await agent(
 
 The ordering that produced your inputs is binding on how you use them. A greenfield design was produced FIRST, deliberately blind to what exists. The inventory was produced separately. Your job is the third step: decide how the repositories that exist serve that design. Architectural best practice drives what is built — existing code does not. Where an existing repository serves the design, use it, because a new repository is a real and permanent cost. Where it does not, say so, and do not bend the design to fit it.
 
-That includes the case people skip: an existing repository may hold code the design makes OBSOLETE AND TO BE DELETED. Name it. Deleting superseded code is part of doing the work, and a design that silently leaves it in place has not been implemented.
+That includes the case people skip: an existing repository may hold code the design makes OBSOLETE AND TO BE DELETED. Name it. Deleting superseded code is part of doing the work, and a design that silently leaves it in place has not been implemented. The evidence below already names material that CONTRADICTS the PRD — the PRD is canonical and wins, so that material is removal work, not a competing option and not a reason to narrow the design. A repository whose only stake in this PRD is material that has to come out is still in the span.
 
 === THE GREENFIELD DESIGN (what should be built) ===
 ${JSON.stringify({ designSummary: shape.designSummary, workUnits: shape.workUnits }, null, 2)}
@@ -650,6 +683,15 @@ return {
   // of the greenfield ordering explicitly includes "an existing repository may hold
   // obsolete code that should be deleted", and a design whose superseded code is left in
   // place has not been implemented.
+  //
+  // CONSUMED, and that is recent. This was returned and read by nobody, which made it
+  // named destructive work that reached no task — the same defect as a removal item that
+  // matches no Story, arriving by a different door. prd-to-spec now folds these entries
+  // into its removal pipeline after the span ruling, tagged `origin: 'repo-scoping'`, so
+  // they flow through the same placement, decomposition and write reconciliations as the
+  // material reconciliation found contradicting the PRD. `repoPath` is what keys that
+  // fold, and it is a VERIFIED path from the reduction above rather than a claim — which
+  // is why it matches a Story's repository exactly.
   obsoleteCode,
   spanVerified,
   workUnits: shape.workUnits,

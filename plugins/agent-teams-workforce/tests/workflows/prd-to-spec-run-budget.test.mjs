@@ -22,6 +22,26 @@ import { beadWriter } from './helpers/bead-writer.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
+// Reconciliation is unconditional and runs before every gate, so every prd-to-spec fixture
+// has to answer it. `architectureNeeded` is true here so the run still spends G2 — the
+// three fixed gates the budget arithmetic below is written against.
+const RECONCILED = {
+  ok: true,
+  requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: [] }],
+  conformsCount: 0,
+  contradictsCount: 0,
+  absentCount: 1,
+  removalWork: [],
+  reuseWork: [],
+  repos: [],
+  existingRepos: [],
+  spansMultipleRepos: false,
+  architectureNeeded: true,
+  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+  uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+  infraOnly: false,
+}
+
 /** Every gate passes first time; every mini succeeds. A perfect run — zero retries. */
 function cleanRun(repos) {
   let storyN = 0
@@ -30,20 +50,7 @@ function cleanRun(repos) {
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
       return { verdict: 'pass', criteria: [], flags: [] }
     }
-if (name.endsWith('prd-reconciliation')) {
-  // Reconciliation is unconditional and runs before every gate, so every
-  // prd-to-spec fixture has to answer it or the run stops at the new phase.
-  return {
-    ok: true,
-    verdict: 'partial',
-    requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-    deltaCount: 1,
-    deltaPrdPath: '/prd/PRD-1.delta.md',
-    deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-    sizeVerdict: 'story',
-    infraOnly: false,
-  }
-}
+    if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) {
       return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     }

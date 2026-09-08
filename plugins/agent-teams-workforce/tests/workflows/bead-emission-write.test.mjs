@@ -23,6 +23,25 @@ import { beadWriter, writerPayload, isWriterCall } from './helpers/bead-writer.m
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
+// Reconciliation runs before every gate and returns an inventory of the material behind
+// each requirement — never a narrowed PRD. Every prd-to-spec fixture has to answer it.
+const RECONCILED = {
+  ok: true,
+  requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: [] }],
+  conformsCount: 0,
+  contradictsCount: 0,
+  absentCount: 1,
+  removalWork: [],
+  reuseWork: [],
+  repos: [],
+  existingRepos: [],
+  spansMultipleRepos: false,
+  architectureNeeded: true,
+  architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+  uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+  infraOnly: false,
+}
+
 /** Every gate passes; every mini returns a minimal well-formed artifact. */
 function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
   let storyN = 0
@@ -31,18 +50,7 @@ function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
       return { verdict: 'pass', criteria: [], flags: [] }
     }
-    if (name.endsWith('prd-reconciliation')) {
-      return {
-        ok: true,
-        verdict: 'partial',
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-        deltaCount: 1,
-        deltaPrdPath: '/prd/PRD-1.delta.md',
-        deltaPrd: { path: '/prd/PRD-1.delta.md', body: 'b' },
-        sizeVerdict: 'story',
-        infraOnly: false,
-      }
-    }
+    if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }
     if (name.endsWith('repo-scoping')) {

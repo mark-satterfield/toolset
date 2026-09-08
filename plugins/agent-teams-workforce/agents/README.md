@@ -114,7 +114,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | Reconciles a PRD against what is already built and deployed, classifying each requirement as shipped, partial, absent, or obsolete with cited file:line or live-endpoint evidence. |
+| prd-reality-reconciler | test | Builds the MATERIAL INVENTORY behind a PRD: for every requirement the PRD states, what already exists and whether it conforms — `conforms`, `contradicts`, or `absent` — with cited file:line or live-endpoint evidence. |
 | dependency-change-detector | test | Also serves this phase — detects upstream changes that invalidate what the PRD assumes. |
 
 ## Spec Freshness

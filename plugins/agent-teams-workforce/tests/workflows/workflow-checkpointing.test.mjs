@@ -67,13 +67,17 @@ function compositeWorkflows({ failSpec = false, scopingRepos = ['/repos/alpha'],
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) {
       return {
-        ok: true, verdict: 'partial',
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-        deltaCount: 1, deltaPrdPath: '/prd/p.delta.md', deltaPrd: { path: '/prd/p.delta.md', body: 'delta-body' },
-        sizeVerdict: 'story', infraOnly: false, sizing: { deltaRepos: scopingRepos },
+        ok: true,
+        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: scopingRepos }],
+        conformsCount: 0, contradictsCount: 0, absentCount: 1,
+        removalWork: [], reuseWork: [],
+        repos: scopingRepos, existingRepos: [], spansMultipleRepos: scopingRepos.length > 1,
+        architectureNeeded: false, architectureQuestions: [],
+        uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+        infraOnly: false,
       }
     }
-    if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'delta-body' }, findings: [] }
+    if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'validated-body' }, findings: [] }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
     if (name.endsWith('repo-scoping')) {
       return { ok: true, repos: scopingRepos, placements: [], newRepos, requiredHumanActions: newRepos.length ? ['create it via the polyrepo-steward'] : [], reclassified: [], blocked: [], spanVerified: true }
@@ -138,7 +142,8 @@ test('a fresh run SAVES each completed phase result to the per-bead checkpoint f
   assert.equal(last.pluginVersion, undefined, 'the plugin version is deliberately NOT written — it is not what makes a checkpoint stale')
   assert.equal(last.inputHash, fnv(PRD.body), 'the staleness guard keys on the PRD content hash')
   assert.ok(last.phases.reconciliation, 'the saved payload is the actual RESULT the next phase consumes, not a marker')
-  assert.equal(last.phases.reconciliation.deltaPrd.body, 'delta-body')
+  assert.equal(last.phases.reconciliation.requirements.length, 1, 'the material inventory itself is what resumes')
+  assert.equal(last.phases.reconciliation.architectureNeeded, false)
 })
 
 /** True when the run's journal write also carried the checkpoint retirement. */
@@ -240,6 +245,25 @@ test('a PRE-GUARD checkpoint — pluginVersion, no semanticsVersion — is inval
   // And the fresh run rewrites it in the new shape, so the discard happens ONCE.
   const rewritten = savedPayload(second.saves[second.saves.length - 1])
   assert.equal(rewritten.semanticsVersion, semanticsOf('prd-to-spec.js'))
+})
+
+test('a checkpointed reconciliation from the DELTA contract is discarded — resuming onto it would skip the panel silently', async () => {
+  // The old shape carried a delta count and a size verdict and no `architectureNeeded`.
+  // The checkpoint hash is over the PRD text, so an unchanged PRD would not invalidate it,
+  // and the absent field reads as "no architecture question" — a wrongly-skipped panel
+  // nothing reports. So the shape itself is the guard.
+  const first = await runP2S()
+  const payload = savedPayload(first.saves[first.saves.length - 1])
+  payload.phases.reconciliation = { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }
+  const second = await runP2S({ checkpointFile: JSON.stringify(payload) })
+  assert.equal(second.result.ok, true)
+  assert.equal(
+    workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length,
+    1,
+    'one read-only reconciliation is cheaper than resuming onto a shape that no longer means what it reads as',
+  )
+  const journal = agentCalls(second.calls, 'ledger:persist')[0]
+  assert.match(journal.prompt, /pre-inventory reconciliation shape/)
 })
 
 test('a checkpoint SURVIVES a plugin version change when the phase semantics are unchanged', async () => {

@@ -58,9 +58,10 @@ test('the injected content is capped so a bloated file cannot blow up every brie
   assert.equal(injected.length, 8192, 'first 8KB only — the cap is the guard against a runaway file')
 })
 
-test('prd-reconciliation: the reality checker AND the delta writer both receive the rulings', async () => {
-  // The delta writer decides what work REMAINS — exactly where the
-  // dev-data-is-disposable failure lived — so it is judgment, not plumbing.
+test('prd-reconciliation: the one checker session receives the rulings — and it is the only dispatch', async () => {
+  // This mini is where the dev-data-is-disposable failure lived: a checker judged reality
+  // and kept migration requirements the ruling invalidates. It judges, so it sees them.
+  // It also writes no document now, so there is no second dispatch to thread them to.
   const { calls } = await runWorkflowScript(path.join(WF, 'prd-reconciliation.js'), {
     args: {
       prd: { id: 'P1', title: 't', body: 'R1. migrate data', path: '/prd/p.md', repoPath: '/repo' },
@@ -70,20 +71,19 @@ test('prd-reconciliation: the reality checker AND the delta writer both receive 
       if (call.label === 'reconcile:reality-and-dependencies') {
         return {
           requirements: [{ id: 'R1', requirement: 'migrate data', status: 'absent', evidence: ['no match in services/'] }],
-          deltaIsInfraOnly: false,
-          unsettledTechnicalDecision: false,
+          infraOnly: false,
+          architectureNeeded: false,
+          architectureQuestions: [],
           evidenceSummary: 's',
           dependencyChanges: { current: true, changeFindings: [], evidence: 'e' },
         }
       }
-      if (call.label === 'delta:write') return { ok: true, path: '/prd/p.delta.md', body: 'delta' }
       return null
     },
   })
   const [checker] = agentCalls(calls, 'reconcile:reality-and-dependencies')
-  const [writer] = agentCalls(calls, 'delta:write')
   assert.ok(checker.prompt.includes(MARKER), 'the reconciliation checker judges reality against the rulings')
-  assert.ok(writer.prompt.includes(MARKER), 'the delta writer decides what remains and must see them too')
+  assert.equal(calls.filter((c) => c.kind === 'agent').length, 1, 'the mini authors nothing, so it dispatches once')
 })
 
 test('architecture: triage, analysts, advisors, and the decider get the rulings — the challenge wave and SAD plumbing do not', async () => {
@@ -158,10 +158,17 @@ function compositeWorkflows() {
     if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) {
       return {
-        ok: true, verdict: 'partial',
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'] }],
-        deltaCount: 1, deltaPrdPath: '/prd/p.delta.md', deltaPrd: { path: '/prd/p.delta.md', body: 'b' },
-        sizeVerdict: 'story', infraOnly: false, sizing: { deltaRepos: ['/repos/alpha'] },
+        ok: true,
+        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: ['/repos/alpha'] }],
+        conformsCount: 0, contradictsCount: 0, absentCount: 1,
+        removalWork: [], reuseWork: [],
+        repos: ['/repos/alpha'], existingRepos: [], spansMultipleRepos: false,
+        // True so the architecture mini is dispatched at all — this file asserts that
+        // every judgment mini receives the rulings, and a skipped phase receives nothing.
+        architectureNeeded: true,
+        architectureQuestions: [{ requirementId: 'R1', question: 'which service owns the record?' }],
+        uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+        infraOnly: false,
       }
     }
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'b' }, findings: [] }
