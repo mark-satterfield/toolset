@@ -384,6 +384,18 @@ async function persistRun(outcome) {
 //     names what it owns and a file that fails its length check is dropped by name.
 const CHECKPOINT_SEMANTICS = '3'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
+// HOW LONG A LEASE IS BELIEVED. A checkpoint is re-written after every phase, so
+// a lease older than this belongs to a run that is not writing any more — dead,
+// killed, or quit out from under. Generous on purpose: the cost of waiting out a
+// stale lease is one run that skips its checkpoint, and the cost of ignoring a
+// LIVE one is two runs overwriting each other's envelope, which is what happened
+// on 2026-09-08 when two prd-to-spec runs for myagent-identity-resolution ran
+// 21:16-21:27 against the same subject-keyed directory and the second reported
+// "the envelope files exist from a previous save with different content".
+const CP_LEASE_STALE_MS = 45 * 60 * 1000
+// Identifies THIS run to the checkpoint. The script has no pid and no run id it
+// can read, so it mints one: it only ever has to answer "is this lease mine".
+const CP_RUN_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 const cp = {
   active: false,
   dir: null,
@@ -475,6 +487,30 @@ const CP_IO_SCHEMA = {
  * whole point of the redesign: this is the only file rewritten on every save, and it is
  * now a few hundred characters instead of a hundred thousand.
  */
+/**
+ * Report a lease held by a DIFFERENT, still-live run, from whichever envelope copy carries one.
+ *
+ * Deliberately generous about what it will read: a torn or otherwise unusable envelope can
+ * still carry a legible lease, and a lease is the one field where a doubtful reading must be
+ * believed. Refusing a checkpoint costs one unresumable run; clobbering a live one costs two.
+ *
+ * @returns {{runId: string, ageMs: number}|null} the live foreign lease, or null.
+ */
+function cpLiveLease(texts) {
+  let held = null
+  for (const text of texts || []) {
+    let parsed = null
+    try { parsed = JSON.parse(text) } catch (e) { parsed = null }
+    const lease = parsed && typeof parsed === 'object' ? parsed.lease : null
+    if (!lease || typeof lease !== 'object') continue
+    if (typeof lease.runId !== 'string' || !lease.runId || lease.runId === CP_RUN_ID) continue
+    if (!Number.isFinite(lease.at)) continue
+    const ageMs = Date.now() - lease.at
+    if (ageMs < 0 || ageMs >= CP_LEASE_STALE_MS) continue
+    if (!held || ageMs < held.ageMs) held = { runId: lease.runId, ageMs }
+  }
+  return held
+}
 function cpJudgeEnvelope(text, label) {
   let parsed = null
   try { parsed = JSON.parse(text) } catch (e) { parsed = null }
@@ -553,6 +589,24 @@ function cpApply(entries) {
     return
   }
   cp.touched = true // something exists; a completed run still retires it either way
+  // A LIVE LEASE MEANS ANOTHER RUN OWNS THIS CHECKPOINT. The directory is keyed on
+  // the SUBJECT alone, so two runs of the same PRD share it, and the second used to
+  // adopt the first's phases and then overwrite its envelope mid-flight. Neither is
+  // survivable: the phases belong to a run still changing them. So this run gives the
+  // checkpoint up entirely — it reads nothing and writes nothing — and says so. It
+  // still does its work; it just does it without a shared file it cannot own.
+  const held = cpLiveLease(candidates.map((c) => byName[c.name]))
+  if (held) {
+    cp.active = false
+    log(
+      `CHECKPOINT SURRENDERED — another prd-to-spec run (${held.runId}) holds the lease on ${cp.dir}, ` +
+        `last refreshed ${Math.round(held.ageMs / 1000)}s ago. That run is still working on this subject. ` +
+        `This run will NOT read or write its checkpoint: adopting phases it is still changing, or overwriting ` +
+        `its envelope, would corrupt both. This run proceeds WITHOUT a checkpoint and cannot be resumed.`,
+    )
+    runLedger.push({ phase: 'checkpoint', event: 'lease-held', path: cp.envPath, holder: held.runId, ageMs: held.ageMs })
+    return
+  }
   const judged = candidates.map((c) => ({ ...c, verdict: cpJudgeEnvelope(byName[c.name], c.label) }))
   const usable = judged.filter((j) => j.verdict.ok)
   if (!usable.length) {
@@ -758,6 +812,10 @@ async function cpWriteOne(key) {
     semanticsVersion: CHECKPOINT_SEMANTICS,
     inputHash: cp.inputHash,
     seq: cp.seq,
+    // THE LEASE. Refreshed on every save, so its age is how long ago the owning
+    // run last made progress. A second run reads this before it adopts or
+    // overwrites anything.
+    lease: { runId: CP_RUN_ID, at: Date.now() },
     run: runRecord,
     files: manifest,
   })
