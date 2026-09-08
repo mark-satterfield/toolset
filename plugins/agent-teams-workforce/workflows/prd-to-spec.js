@@ -281,6 +281,13 @@ let runDetail = null
 // are separate now. Both stay non-fatal.
 async function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
+  // The tenth declared phase, and the only one that never announced itself: it
+  // runs from the `finally`, so it was reached by a path that calls no
+  // enterPhase. A watcher then saw the run go quiet after 'Emit Beads' with no
+  // way to tell the ledger write from a hang. Announced with the bare phase()
+  // rather than enterPhase() ON PURPOSE — enterPhase pushes onto runRecord,
+  // and runRecord is being serialized into this very dispatch's payload.
+  phase('Run Ledger')
   try {
     const written = await agent(
       `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. Touch no file but those two. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`,
