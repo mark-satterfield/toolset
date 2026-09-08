@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Leaf mini — turns a raw stakeholder request into a template-conformant PRD paired with its Epic. Intake captures the request, then the persona and OKRs are authored in parallel, then the PRD is drafted (WHAT-not-HOW) and independently checked for alignment with the intake brief, persona, and OKRs. A PRD and its Epic are created at the same time, so the mini emits exactly one Epic per PRD: a container bead spec derived from the PRD itself in the same authoring pass — no acceptance criteria, no repo scope (one Epic may span repos) — which the caller writes with bd. Maker, checker, and decider are distinct agents; the maker is re-run with checker feedback on reject (bounded 2 passes) and a spec-decider rules on deadlock. Authors no judgment of its own work.',
   phases: [
-    { title: 'Intake', detail: 'scope the request + capture a structured intake brief' },
+    { title: 'Intake', detail: 'ONE session scopes the request and captures the structured intake brief' },
     { title: 'Persona & OKR', detail: 'author the target persona and the OKRs in parallel' },
     { title: 'PRD Draft', detail: 'draft the PRD + independent alignment check (bounded loop)' },
   ],
@@ -43,66 +43,60 @@ const requestText = [
 // ── Intake ──────────────────────────────────────────────────────────────────
 phase('Intake')
 
-// Read-only router: scopes the effort and routes to the makers. Authors no content.
-const scope = await agent(
-  `You are the prd-creation-lead — a READ-ONLY router. Do NOT author PRD content, persona content, or OKRs. Read the raw stakeholder request below, scope the PRD effort, and route it to the maker agents.
+// ── ONE INTAKE SESSION, NOT TWO ─────────────────────────────────────────────────
+//
+// This was a `prd-creation-lead` router (`intake:scope`) followed by the intake writer.
+// The router authored nothing and ruled nothing — it framed the request as scope in/out
+// and open questions — and its ONLY reader was the writer below, which also received the
+// raw request verbatim. So the run paid a full session-start (the dominant cost of any
+// session, ahead of the work it does) to reformat text its one consumer already had.
+//
+// Segregation of duties is untouched: nothing here judges anything. The scope framing and
+// the brief are both intake authoring, and the independent alignment check downstream
+// still judges the PRD against this brief without having written any of it.
+const intake = await agent(
+  `Scope this stakeholder request and capture it as a structured intake brief. Both halves, one pass, each field under its own key. State the problem, the audience, and the desired outcome plainly — WHAT the job seeker needs, not HOW to build it. Do NOT write the PRD itself, the persona, or the OKRs; later makers own those.
 
 Raw stakeholder request:
 ${requestText}
 
 Working repository context: ${repo}
 
-Deliver:
+READING BUDGET (binding): the request above is your source. This is a framing task over a few paragraphs of stakeholder text — read at most 5 files, and only to resolve a term the request uses that you genuinely cannot interpret. Do not survey the repository or the polyrepo, and carry anything still unclear as an open question rather than investigating it.
+
+Deliver the scope framing:
 - scopeSummary: a one-paragraph framing of what this PRD must cover.
 - inScope: the concerns this PRD owns (array).
 - outOfScope: the concerns explicitly excluded (array).
-- openQuestions: ambiguities the makers must resolve or flag (array).`,
-  {
-    label: 'intake:scope',
-    phase: 'Intake',
-    agentType: 'agent-teams-workforce:prd-creation-lead',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['scopeSummary', 'inScope', 'outOfScope', 'openQuestions'],
-      properties: {
-        scopeSummary: { type: 'string' },
-        inScope: { type: 'array', items: { type: 'string' } },
-        outOfScope: { type: 'array', items: { type: 'string' } },
-        openQuestions: { type: 'array', items: { type: 'string' } },
-      },
-    },
-  }
-)
 
-// Maker: capture the raw request into a structured intake brief.
-const intakeBrief = await agent(
-  `Capture the raw stakeholder request into a structured intake brief. State the problem, the audience, and the desired outcome plainly — WHAT the job seeker needs, not HOW to build it. Do NOT write the PRD itself.
-
-Raw stakeholder request:
-${requestText}
-
-Scope from the lead:
-- Summary: ${scope.scopeSummary}
-- In scope: ${(scope.inScope || []).join('; ') || 'n/a'}
-- Out of scope: ${(scope.outOfScope || []).join('; ') || 'n/a'}
-- Open questions: ${(scope.openQuestions || []).join('; ') || 'none'}
-
-Deliver:
+And the intake brief:
 - problem: the job-seeker problem this addresses.
 - audience: who is affected (the job-seeker segment).
 - desiredOutcome: the outcome the feature must produce for that audience.
 - constraints: known constraints or non-negotiables (array).
 - openQuestions: unresolved ambiguities to carry forward (array).`,
   {
-    label: 'intake:brief',
+    label: 'intake:scope-and-brief',
+    effort: 'medium',
     phase: 'Intake',
     agentType: 'agent-teams-workforce:stakeholder-request-intake-writer',
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['problem', 'audience', 'desiredOutcome', 'constraints', 'openQuestions'],
+      required: [
+        'scopeSummary',
+        'inScope',
+        'outOfScope',
+        'problem',
+        'audience',
+        'desiredOutcome',
+        'constraints',
+        'openQuestions',
+      ],
       properties: {
+        scopeSummary: { type: 'string' },
+        inScope: { type: 'array', items: { type: 'string' } },
+        outOfScope: { type: 'array', items: { type: 'string' } },
         problem: { type: 'string' },
         audience: { type: 'string' },
         desiredOutcome: { type: 'string' },
@@ -112,6 +106,23 @@ Deliver:
     },
   }
 )
+if (!intake) {
+  return { ok: false, stage: 'intake', error: 'intake produced nothing — no scope framing and no brief to author a PRD from' }
+}
+// Both shapes the rest of this file already reads, assembled from the one session.
+const scope = {
+  scopeSummary: intake.scopeSummary,
+  inScope: intake.inScope,
+  outOfScope: intake.outOfScope,
+  openQuestions: intake.openQuestions,
+}
+const intakeBrief = {
+  problem: intake.problem,
+  audience: intake.audience,
+  desiredOutcome: intake.desiredOutcome,
+  constraints: intake.constraints,
+  openQuestions: intake.openQuestions,
+}
 
 // ── Persona & OKR (parallel makers) ───────────────────────────────────────────
 phase('Persona & OKR')
@@ -137,6 +148,7 @@ Deliver:
 - context: their situation/environment relevant to this feature.`,
       {
         label: 'persona:author',
+        effort: 'low',
         phase: 'Persona & OKR',
         agentType: 'agent-teams-workforce:persona-profile-writer',
         schema: {
@@ -165,6 +177,7 @@ Deliver:
 - keyResults: measurable results, each with a metric and a target (array).`,
       {
         label: 'okr:author',
+        effort: 'low',
         phase: 'Persona & OKR',
         agentType: 'agent-teams-workforce:okr-writer',
         schema: {
@@ -232,6 +245,7 @@ Deliver:
     }`,
     {
       label: 'prd:draft',
+      effort: 'medium',
       phase: 'PRD Draft',
       agentType: 'agent-teams-workforce:prd-writer',
       schema: {
@@ -284,6 +298,7 @@ Decide exactly one verdict:
 For each dimension (intake, persona, okr, template), state whether it is satisfied with evidence.`,
     {
       label: 'prd:alignment-check',
+      effort: 'medium',
       phase: 'PRD Draft',
       agentType: 'agent-teams-workforce:prd-alignment-verifier',
       schema: {
@@ -348,6 +363,7 @@ Decide exactly one verdict:
 - "reject": the PRD must not proceed — state the blocking gap the next attempt must close.`,
     {
       label: 'prd:deadlock-ruling',
+      effort: 'high',
       phase: 'PRD Draft',
       agentType: 'agent-teams-workforce:spec-decider',
       schema: {

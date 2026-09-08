@@ -157,6 +157,7 @@ Verdicts:
 If you encounter a NOVEL conflict between constitutive objectives that you cannot resolve from the criteria alone, set needsConstitutionalRuling=true and describe the conflict.`,
   {
     label: `gate-const:${a.gate || a.phaseName || 'phase'}`,
+    effort: 'high',
     phase: 'Gate (constitutional)',
     agentType: 'agent-teams-workforce:phase-gate-enforcer',
     schema: {
@@ -229,6 +230,7 @@ A stored ruling MATCHES only when it is about the SAME PAIR OF CONFLICTING CONST
 When you match, return the stored ruling's verdict, rationale and precedent VERBATIM. Do not re-reason it, do not improve it, and do not soften it.`,
     {
       label: `precedent:lookup:${a.gate || 'gate'}`,
+      effort: 'low',
       phase: 'Gate (constitutional)',
       schema: {
         type: 'object',
@@ -282,6 +284,7 @@ Conflict: ${verdict.conflict || '(unspecified)'}
 Enforcer feedback: ${verdict.feedback || ''}`,
     {
       label: `constitutional:${a.gate}`,
+      effort: 'high',
       phase: 'Gate (constitutional)',
       agentType: 'agent-teams-workforce:constitutional-agent',
       schema: {
@@ -321,6 +324,7 @@ ${JSON.stringify({
 Set \`key\` yourself before writing, to a short stable identifier for THE PAIR OF CONFLICTING CONSTRAINTS this ruling settles — not for this run, this gate, or this phase, because the whole point is that a different run hitting the same pair finds this line. Use the form CR-NNN, continuing the highest CR number already in the file (CR-001 if the file is new or has none).`,
       {
         label: `precedent:persist:${a.gate || 'gate'}`,
+        effort: 'low',
         phase: 'Gate (constitutional)',
         schema: {
           type: 'object',

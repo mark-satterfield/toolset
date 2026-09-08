@@ -198,9 +198,12 @@ THE DECISION RULE, in full:
 
 WHY IT IS SHAPED THIS WAY. The two errors are not symmetric. A wrongly-PASSED competitive flag costs a revert, which the advantage-evaluator exists to order. A wrongly-FAILED gate costs the phase's whole loop budget and then kills the run, and the correct work in it is lost. So a gate that blocks on a competitive concern is not being careful — it is destroying work that should have proceeded under a flag. When the class is marked competitive, honour it.
 
+READING BUDGET (binding): the artifact is quoted above in full and the deterministic checks already measured everything mechanical about it. Judge what is in front of you. Do not re-derive the artifact from the codebase, do not survey the repository or the polyrepo, and do not go looking for evidence a criterion does not name — the uncertainty default above already tells you what to do when evidence is thin. Roughly five tool calls is the expected shape; zero is normal for this role.
+
 For each criterion, state whether it is met with evidence.`,
   {
     label: `gate:${a.gate || a.phaseName || 'phase'}`,
+    effort: 'high',
     phase: 'Gate',
     agentType: 'agent-teams-workforce:phase-gate-enforcer',
     schema: {
@@ -288,6 +291,7 @@ Competitive flags:
 ${ruled.flags.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
     {
       label: `advantage:${a.gate || a.phaseName || 'phase'}`,
+      effort: 'medium',
       phase: 'Gate',
       agentType: 'agent-teams-workforce:advantage-evaluator',
       schema: {

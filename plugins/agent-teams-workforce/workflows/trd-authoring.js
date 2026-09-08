@@ -75,6 +75,8 @@ const sadExtract = await agent(
 SAD location: ${sadRef}
 SAD layout: ${sadLayout}
 
+READING BUDGET (binding): the SAD is at the location above. Read it and the files it points at — at most 12 files — and do not survey the repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.
+
 Locate and normalize each source feed reliably across both single-file and one-file-per-section arc42 layouts:
 - Section 2 — Constraints
 - Section 4 — Solution Strategy
@@ -84,6 +86,7 @@ For every entry: assign a stable ID, capture the verbatim-grounded statement, an
   {
     label: 'extract:sad',
     phase: 'Extract SAD',
+    effort: 'low',
     agentType: 'agent-teams-workforce:sad-source-extractor',
     schema: {
       type: 'object',
@@ -194,6 +197,7 @@ Each technical requirement must have a stable ID, trace upward to a PRD requirem
     {
       label: 'author:trd',
       phase: 'Author TRD',
+      effort: 'medium',
       agentType: 'agent-teams-workforce:trd-author',
       schema: {
         type: 'object',
@@ -252,6 +256,7 @@ ${extractText}`,
     {
       label: 'verify:trd-and-traceability',
       phase: 'Verify & Traceability',
+      effort: 'medium',
       agentType: 'agent-teams-workforce:trd-validator',
       schema: {
         type: 'object',
@@ -348,6 +353,7 @@ Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 
       {
         label: 'decide:trd',
         phase: 'Verify & Traceability',
+        effort: 'high',
         agentType: 'agent-teams-workforce:trd-decider',
         schema: {
           type: 'object',

@@ -424,6 +424,7 @@ You have roughly 50 tool calls. Spend them breadth-first: cover EVERY requiremen
   {
     label: 'reconcile:reality-and-dependencies',
     phase: 'Reconciliation checks',
+    effort: 'medium',
     agentType: 'agent-teams-workforce:prd-reality-reconciler',
     schema: {
       type: 'object',

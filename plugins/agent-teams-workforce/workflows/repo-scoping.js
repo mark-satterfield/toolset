@@ -244,9 +244,12 @@ For each work unit return:
 Also return:
 - designSummary — the shape of the whole, in a few sentences.
 
+READING BUDGET (binding): read NOTHING. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
+
 Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.`,
       {
         label: 'scope:greenfield-shape',
+        effort: 'medium',
         phase: 'Shape and survey',
         agentType: 'agent-teams-workforce:bounded-context-mapper',
         schema: {
@@ -307,12 +310,15 @@ For every repository that could plausibly bear on this work, return:
 
 Include repositories that are adjacent or arguably relevant. A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented.
 
+SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
+
 Also return:
 - conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
 - surveySummary — how many repositories exist in total and how you enumerated them.`,
       {
         label: 'scope:repository-survey',
         phase: 'Shape and survey',
+        effort: 'low',
         agentType: 'agent-teams-workforce:polyrepo-steward',
         schema: {
           type: 'object',
@@ -367,15 +373,32 @@ log(
 // step 1. `existingRepos` and the material inventory appear for the first time here.
 phase('Rule the span')
 
+// ── AN ABSENT INVENTORY IS "NOBODY LOOKED", NEVER "NOTHING IS THERE" ────────────
+//
+// `reconciliation` is now normally ABSENT: prd-to-spec takes its material inventory per
+// repository at spec authoring, which is downstream of this ruling, so at this point in a
+// run nobody has surveyed what exists. These lines used to report that absence as a
+// FINDING — "PRD reconciliation named no repositories holding related material",
+// "Reconciliation found no material that contradicts the PRD" — which is a negative claim
+// nobody established, addressed to the one agent whose job is to weigh evidence. It would
+// read as licence to treat every repository as greenfield.
+//
+// So the absent case says what is true: no inventory was taken, and the ruling turns on the
+// repository survey instead. The key is still honoured when a caller supplies one.
+const inventoryTaken = existingRepos.length > 0 || removalWork.length > 0 || hasText(materialInventory)
 const evidenceBlock = [
   existingRepos.length
-    ? `Repositories where PRD reconciliation found EXISTING related material — some of it to reuse, some of it to delete (evidence, not an answer):\n${existingRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
-    : 'PRD reconciliation named no repositories holding related material.',
+    ? `Repositories where a material inventory found EXISTING related material — some of it to reuse, some of it to delete (evidence, not an answer):\n${existingRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
+    : inventoryTaken
+      ? 'The material inventory named no repositories holding related material.'
+      : 'NO MATERIAL INVENTORY WAS TAKEN before this ruling, and that is by design — what already exists is established per repository at SPEC AUTHORING, which happens after you rule. So you are NOT being told what is deployed, and you must not infer anything from its absence: it does NOT mean the repositories are empty or that this is greenfield work. Rule from the design and from what each repository OWNS, per the inventory above.',
   removalWork.length
     ? `Material that CONTRADICTS the PRD and must be REMOVED. The PRD wins; deleting this is part of the work, so the repository holding it is in the span whether or not anything new is built there:\n${removalWork
         .map((w, i) => `  ${i + 1}. ${w.requirementId || '(unidentified)'} — ${w.targets.join('; ')}${Array.isArray(w.repos) && w.repos.length ? ` [${w.repos.join(', ')}]` : ''}`)
         .join('\n')}`
-    : 'Reconciliation found no material that contradicts the PRD.',
+    : inventoryTaken
+      ? 'The material inventory found no material that contradicts the PRD.'
+      : 'Whether any deployed material contradicts this PRD is UNKNOWN here and is not yours to establish. Name obsolete code only where the DESIGN you are placing supersedes something the repository survey describes.',
   seedRepos.length
     ? `Repository the run was LAUNCHED FROM (where the human happened to be standing; carries no authority at all):\n${seedRepos.map((r, i) => `  ${i + 1}. ${r}`).join('\n')}`
     : 'The run named no launch repository.',
@@ -417,6 +440,7 @@ Do not place work in a repository that is not in the inventory. If the repositor
   {
     label: 'scope:rule-span',
     phase: 'Rule the span',
+    effort: 'high',
     agentType: 'agent-teams-workforce:architecture-decider',
     schema: {
       type: 'object',

@@ -160,6 +160,7 @@ JOB 3 — WSJF SCORE (return in \`scores\`): assign a WSJF score to EVERY task. 
 ${specBlock}`,
   {
     label: 'decompose:sequence-and-score',
+    effort: 'medium',
     phase: 'Decompose',
     agentType: 'agent-teams-workforce:task-decomposer',
     schema: {
@@ -223,6 +224,7 @@ Build order (lower index builds first):
 ${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer feedback from the previous pass — address it:\n${feedback}` : ''}`,
     {
       label: 'wsjf:score',
+      effort: 'low',
       phase: 'Validate & emit',
       agentType: 'agent-teams-workforce:wsjf-scorer',
       schema: wsjfSchema,
@@ -263,6 +265,7 @@ WSJF scores under review:
 ${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}`,
     {
       label: `review:scores-and-format:${pass}`,
+      effort: 'medium',
       phase: 'Validate & emit',
       agentType: 'agent-teams-workforce:beads-format-validator',
       schema: {

@@ -199,9 +199,12 @@ ${context}
 Repository under consideration: ${repo}
 
 PRD under validation:
-${prdBlock}`,
+${prdBlock}
+
+READING BUDGET (binding): the PRD is quoted in full above and it is the entire object of every lens — a PRD is judged on what it SAYS, so the codebase cannot make an ambiguous requirement clear or a conflict go away. Read nothing unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document. Do not survey the repository or the polyrepo. Roughly five tool calls is the expected shape, and zero is a correct answer.`,
   {
     label: 'validate:all-lenses',
+    effort: 'medium',
     phase: 'Validate',
     schema: analysisSchema,
   }

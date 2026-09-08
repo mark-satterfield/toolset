@@ -749,6 +749,7 @@ ${JSON.stringify(ctx.artifact === undefined ? null : ctx.artifact, null, 2)}
 Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rule "competitive" and classify each finding.`,
       {
         label: `advantage:exhausted-${ctx.gate}`,
+        effort: 'medium',
         phase: currentPhase || 'PRD Validation',
         agentType: 'agent-teams-workforce:advantage-evaluator',
         schema: {
@@ -2278,6 +2279,28 @@ if (!repos.length) {
       'because a pinned span suppresses the ruling that is the thing actually broken.',
   })
 }
+// ── THE FAN-OUT IS STATED BEFORE IT IS SPENT ────────────────────────────────────
+//
+// Everything from here on is per-repo and then per-Story, and that multiplier is the
+// dominant term in what a run costs: roughly six agent sessions per repo for the spec
+// pass and its gate, and three more per Story for decomposition and its gate. Ruled at
+// one repo that is a rounding error; ruled at eight it is fifty sessions, and the only
+// way anyone learned the number was by watching the run go quiet.
+//
+// It is not CAPPED here, and capping it would be the wrong fix: a repository in the span
+// holds work the PRD requires, so truncating the fan-out would drop requirements to save
+// money — exactly the trade this pipeline refuses. The attempt ceiling rescaled above is
+// the real bound. What was missing was visibility, so the projection is logged before the
+// first repo runs and travels in the run journal with it.
+const PER_REPO_SESSIONS = 6
+const PER_STORY_SESSIONS = 3
+const projectedSessions = repos.length * (PER_REPO_SESSIONS + PER_STORY_SESSIONS)
+log(
+  `Fan-out: ${repos.length} repo(s) ruled -> ~${projectedSessions} agent session(s) across Spec Authoring (G3) and ` +
+    `Task Decomposition (G4), against an attempt ceiling of ${MAX_TOTAL_ATTEMPTS}. The span is what the PRD requires; ` +
+    'it is not trimmed to reduce this number.'
+)
+runLedger.push({ phase: 'fan-out', repos: repos.length, projectedSessions, maxTotalAttempts: MAX_TOTAL_ATTEMPTS })
 // `constraints` is spec-authoring's free-form context channel, so the material inventory
 // rides in on it alongside any gate feedback. It is CONTEXT, not a narrowing: a spec still
 // covers every requirement the PRD states, and what the inventory changes is whether the
@@ -2546,6 +2569,7 @@ Stories:
 ${depStories.map((s) => `- ${s.key} [${s.repoPath}]: ${s.title}${s.description ? ` — ${s.description}` : ''}`).join('\n')}`,
     {
       label: 'sequence:story-dag',
+      effort: 'low',
       phase: 'Spec Authoring',
       agentType: 'agent-teams-workforce:task-dependency-mapper',
       schema: {

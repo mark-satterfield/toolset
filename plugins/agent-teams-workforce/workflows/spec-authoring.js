@@ -151,6 +151,11 @@ function ctxBlock(s, trd, constraints) {
       : '',
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
+    // EXPLORATION BUDGET. The packet above is the input; the repository is reference.
+    // Without a stated bound, a session at inherited effort surveys a ~60-repository
+    // polyrepo looking for context it was already handed, and that unbounded survey —
+    // not the authoring — is what dominates the cost of this phase.
+    'READING BUDGET (binding): the packet above is your source. Read at most 15 files, and only inside the repository named above — never survey other repositories. Prefer one targeted search over a directory walk. If a fact you need is genuinely not in the packet and not in those files, record it as an open question rather than searching further for it.',
     constraints && constraints.length
       ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
@@ -241,6 +246,7 @@ ${ctx}`,
         {
           label: 'author:contracts',
           phase: 'Author specs',
+          effort: 'medium',
           agentType: 'agent-teams-workforce:api-specification-author',
           schema: CONTRACTS_SCHEMA,
         }
@@ -251,6 +257,7 @@ ${ctx}`,
         {
           label: 'author:data-model',
           phase: 'Author specs',
+          effort: 'medium',
           agentType: 'agent-teams-workforce:data-model-specification-author',
           schema: SPEC_SCHEMA,
         }
@@ -266,6 +273,7 @@ ${ctx}`,
         {
           label: 'author:criteria',
           phase: 'Author specs',
+          effort: 'low',
           agentType: 'agent-teams-workforce:acceptance-criteria-writer',
           schema: CRITERIA_SCHEMA,
         }
@@ -320,6 +328,7 @@ ${ctx}`,
       {
         label: `review:all-specs${attempt > 1 ? `:${attempt}` : ''}`,
         phase: 'Review specs',
+        effort: 'medium',
         agentType: 'agent-teams-workforce:api-design-reviewer',
         schema: {
           type: 'object',
@@ -348,20 +357,20 @@ ${ctx}`,
       const fb = contractRejects.map((k) => `${k}:\n${findingsText(lastReviews[k])}`).join('\n\n')
       const redone = await agent(
         `Revise the interface contract artifacts to resolve the reviewer's findings below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\nReviewer findings to address:\n${fb}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: drafts.apiSpec, eventContracts: drafts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}`,
-        { label: 'author:contracts', phase: 'Author specs', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
+        { label: 'author:contracts', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
       )
       for (const k of contractRejects) if (redone && redone[k]) drafts[k] = redone[k]
     }
     if (rejected.includes('dataModelSpec')) {
       drafts.dataModelSpec = await agent(
         `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}`,
-        { label: 'author:data-model', phase: 'Author specs', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
+        { label: 'author:data-model', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
     }
     if (rejected.includes('acceptance')) {
       const redone = await agent(
         `Revise the acceptance criteria and Definition of Done to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.acceptance)}\n\n${ctx}`,
-        { label: 'author:criteria', phase: 'Author specs', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
+        { label: 'author:criteria', phase: 'Author specs', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
       )
       if (redone) {
         drafts.acceptance = { acceptanceCriteria: redone.acceptanceCriteria, notes: redone.notes }
@@ -403,6 +412,7 @@ ${ctx}`,
       {
         label: 'decide:spec-decider',
         phase: 'Decide',
+        effort: 'high',
         agentType: 'agent-teams-workforce:spec-decider',
         schema: DECISION_SCHEMA,
       }
@@ -442,6 +452,7 @@ ${ctx}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
+      effort: 'low',
       agentType: 'agent-teams-workforce:user-story-writer',
       schema: STORY_SCHEMA,
     }

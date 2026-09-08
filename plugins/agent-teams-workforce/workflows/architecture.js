@@ -540,9 +540,12 @@ const runChallengeWave = async () => {
 ${decisionHeader}
 
 Proposals under challenge:
-${proposalsText}`,
+${proposalsText}
+
+READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.`,
     {
       label: 'challenge:all-lenses',
+      effort: 'medium',
       phase: 'Challenge',
       agentType: 'agent-teams-workforce:architecture-tradeoff-skeptic',
       schema: {
@@ -816,6 +819,7 @@ ${decisionHeader}
 ${evidence}`,
     {
       label: round === 1 ? 'decide:ruling' : `decide:ruling-r${round}`,
+      effort: 'high',
       phase: 'Decide',
       agentType: 'agent-teams-workforce:architecture-decider',
       schema: DECISION_SCHEMA,
@@ -957,7 +961,7 @@ function authorDecisionArtifacts() {
 2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
 
 ${decisionContext}`,
-  { label: 'author:decision-artifacts', phase: 'Update SAD', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
+  { label: 'author:decision-artifacts', phase: 'Update SAD', effort: 'medium', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
     schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions', 'diagrams'], properties: {
       fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
       diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } },
@@ -977,6 +981,7 @@ ${decisionContext}`,
     {
       label: 'design:drafts',
       phase: 'Update SAD',
+      effort: 'medium',
       agentType: 'agent-teams-workforce:api-contract-designer',
       schema: {
         type: 'object',
@@ -1046,6 +1051,7 @@ ${reviewerFeedback ? `\nConformance findings from the previous pass — address 
 Deliver: which §2/§4/§8 sections you changed, the file paths edited, and a one-line summary of the change.`,
     {
       label: 'sad:maintain',
+      effort: 'medium',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-maintainer',
       schema: SAD_UPDATE_SCHEMA,
@@ -1063,6 +1069,7 @@ SAD edit under review:
 ${JSON.stringify(sadUpdate, null, 2)}`,
     {
       label: 'sad:conformance',
+      effort: 'low',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-conformance-reviewer',
       schema: CONFORMANCE_SCHEMA,
@@ -1101,6 +1108,7 @@ Unresolved conformance findings:
 ${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none captured)'}`,
     {
       label: 'sad:deadlock-ruling',
+      effort: 'high',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:architecture-decider',
       schema: {
