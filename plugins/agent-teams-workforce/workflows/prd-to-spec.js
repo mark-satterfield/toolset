@@ -1726,6 +1726,96 @@ if (cp.active && cpClockMs === null) {
   )
   runLedger.push({ phase: 'checkpoint', event: 'no-clock', path: cp.envPath })
 }
+// ── A FILE REPORTED PRESENT MUST BE THE FILE, NOT A SENTENCE ABOUT IT ──────────
+// The directory reader is told, in its own brief, that a file it cannot return whole
+// must come back `found: false`. On 2026-09-09 it did the one thing that brief forbids:
+// `01-validation.json` (80 KB) came back `{"found": true, "content": "File exists but is
+// too large to include in response"}` — an excuse, flagged as the file. `cpJudgePhase`
+// caught it (the text is not JSON) and correctly refused to resume that phase, so the
+// resume after a session-limit park re-ran PRD Validation from zero: 989 seconds, six
+// agents, ~1M weighted tokens. THE PARK COST NOTHING; BELIEVING THE READER COST ALL OF IT.
+//
+// A session limit is a PAUSE. Its whole price should be the wall-clock the fleet spends
+// waiting, and a phase that completed before the wall went up must not be computed twice.
+// So a checkpoint file whose text cannot be what its name says it is gets ONE more read,
+// on its own, with its size stated and no other task in the brief — the conditions under
+// which a reader declines are exactly the conditions this removes. A file that fails
+// twice is reported absent and its phase re-runs, which is the honest outcome and the
+// one the design already handles.
+const cpSuspect = (entry) => {
+  if (!entry || typeof entry.name !== 'string' || entry.found !== true) return false
+  if (!/\.json$/.test(entry.name)) return false
+  if (!hasText(entry.content)) return true
+  try {
+    JSON.parse(entry.content)
+    return false
+  } catch {
+    return true
+  }
+}
+if (cp.active) {
+  const suspect = runFiles().map((f) => ({ ...f, name: f.name || f.key })).filter(cpSuspect)
+  if (suspect.length) {
+    const names = suspect.map((f) => f.name)
+    log(
+      `${suspect.length} checkpoint file(s) came back marked found but their text is not JSON ` +
+        `(${suspect.map((f) => `${f.name}: ${JSON.stringify(String(f.content || '').slice(0, 80))}`).join('; ')}). ` +
+        'Re-reading them one at a time before writing their phases off.'
+    )
+    runLedger.push({ phase: 'checkpoint', event: 'readback-suspect', names })
+    try {
+      const repair = await agent(
+        `Return the FULL VERBATIM TEXT of each file listed below. This is your only task.
+
+${names.map((n) => `- ${cp.dir}/${n}`).join('\n')}
+
+These are machine-readable JSON checkpoint files and something downstream parses them, so the text must be byte-for-byte what is on disk. Summarize nothing, reformat nothing, re-indent nothing, add no commentary, and truncate nothing. Read nothing else and WRITE NOTHING.
+
+SIZE IS NOT A REASON TO DECLINE. A previous read of these files answered with a sentence describing one of them instead of its contents, which is worse than useless: it is believed. Return each file with \`name\` set to the BARE FILENAME, \`found\`: true, and its entire text in \`content\`. If you genuinely cannot return one whole, return that one with \`found\`: false and the reason in \`content\` — never a partial file, and never a description of a file, marked as found.`,
+        {
+          label: 'resolve:checkpoint-reread',
+          model: 'haiku',
+          phase: currentPhase || 'PRD Creation',
+          schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['files'],
+            properties: {
+              files: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['name', 'found'],
+                  properties: { name: { type: 'string' }, found: { type: 'boolean' }, content: { type: 'string' } },
+                },
+              },
+            },
+          },
+        }
+      )
+      const recovered = []
+      for (const entry of (repair && Array.isArray(repair.files) ? repair.files : [])) {
+        const fixed = { ...entry, name: entry.name || entry.key }
+        if (!names.includes(fixed.name) || cpSuspect(fixed)) continue
+        const slot = runInputs.files.findIndex((f) => (f.name || f.key) === fixed.name)
+        if (slot >= 0) runInputs.files[slot] = fixed
+        else runInputs.files.push(fixed)
+        recovered.push(fixed.name)
+      }
+      const lost = names.filter((n) => !recovered.includes(n))
+      log(
+        `Checkpoint re-read: ${recovered.length} of ${names.length} recovered${recovered.length ? ` (${recovered.join(', ')})` : ''}` +
+          `${lost.length ? `; still unusable and their phases will re-run: ${lost.join(', ')}` : ''}.`
+      )
+      runLedger.push({ phase: 'checkpoint', event: 'readback-repaired', recovered, lost })
+    } catch (e) {
+      // Never fatal. Failing here leaves exactly the behaviour that shipped before
+      // this block existed: the suspect files are rejected and their phases re-run.
+      log(`checkpoint re-read failed (non-fatal — those phases will re-run): ${(e && e.message) || e}`)
+    }
+  }
+}
 cpApply(runFiles().map((f) => ({ ...f, name: f.name || f.key })))
 
 
