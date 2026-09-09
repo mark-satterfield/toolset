@@ -638,6 +638,104 @@ export function scanSource(source) {
   return { stripped: stripped.join(''), normalized: norm.join(''), normalizedOffsets: normAt }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// NONDETERMINISM — a SECOND static refusal, and not a capability escape
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The runner rejects a workflow script for two independent reasons, and only one of them
+// is the capability model above. Before it compiles anything it also parses the body and
+// refuses it outright if the source reads the wall clock or draws a random number:
+//
+//     workflow scripts must be deterministic: <clock>/<random>/<argless date construction>
+//     are unavailable (breaks resume). Stamp results after the workflow returns, or pass
+//     timestamps via args.
+//
+// This is NOT category C4. Those bindings genuinely exist in the sandbox — the refusal is
+// about RESUME, not about reaching a host capability — so it cannot be folded into
+// FORBIDDEN_CONSTRUCTS without lying to the capability model, whose every category must
+// have a runtime escape case. It is a separate list with a separate scan.
+//
+// It is here rather than in one consumer because that is this file's entire reason to
+// exist. On 2026-09-08 prd-to-spec.js added a checkpoint lease minted from the clock and
+// a random suffix. Neither the syntax checker nor the test harness modelled this refusal,
+// so 400-odd tests passed and the composite could not LOAD: it failed twice on ssbd-vvn8
+// with zero agents run and no phase reached. Same shape as the 6.0.6 outage, different
+// rule — which is the argument for one list rather than two copies.
+//
+// SCANNED WITHOUT COMMENTS, unlike the capability rules. The runner walks an AST, so a
+// comment cannot trip it, and these tokens have to be discussable in the prose that
+// explains why they are refused. Strings are still scanned: a prompt that spells one is a
+// false positive, and naming the construct instead costs nothing.
+const NONDETERMINISM = 'nondeterminism — the runner refuses it so that resume stays exact'
+
+/** @type {ReadonlyArray<{re: RegExp, name: string, why: string}>} */
+export const NONDETERMINISTIC_CONSTRUCTS = Object.freeze([
+  {
+    capability: NONDETERMINISM,
+    re: new RegExp(String.raw`\bDate` + GAP + OPTIONAL_MEMBER + GAP + String.raw`now\b`, 'g'),
+    name: 'reading the wall clock',
+    why:
+      'the runner refuses it STATICALLY — one occurrence anywhere in the file, even in a branch ' +
+      'that never runs, makes the whole script unloadable. Have a dispatched agent report the ' +
+      'time, or pass it in via args.',
+  },
+  {
+    capability: NONDETERMINISM,
+    re: new RegExp(String.raw`\bMath` + GAP + OPTIONAL_MEMBER + GAP + String.raw`random\b`, 'g'),
+    name: 'drawing a random number',
+    why:
+      'refused STATICALLY for the same reason: a resumed run would draw a different one. Derive the ' +
+      'value from something the script already holds, or have a dispatched agent mint it.',
+  },
+  {
+    capability: NONDETERMINISM,
+    re: new RegExp(String.raw`\bnew` + GAP1 + String.raw`Date` + GAP + String.raw`\(` + GAP + String.raw`\)`, 'g'),
+    name: 'constructing the current date',
+    why:
+      'an argless date construction is the clock by another spelling and is refused STATICALLY. ' +
+      'Constructing one FROM a timestamp is fine; reading the current one is not.',
+  },
+])
+
+/**
+ * Every nondeterministic construct in `source`, with the line each was found on.
+ *
+ * Reports EVERY occurrence, not the first: they are usually a cluster introduced together,
+ * and fixing one at a time costs a release each.
+ *
+ * @param {string} source raw workflow script text
+ * @returns {Array<{line: number, name: string, why: string, text: string, via: string}>} empty when clean
+ */
+export function findNondeterminism(source) {
+  const text = String(source)
+  const { stripped, normalized, normalizedOffsets } = scanSource(text)
+  const found = []
+  const seen = new Set()
+  const passes = [
+    { via: 'comment-stripped', body: stripped, at: (i) => i },
+    { via: 'escape-normalized', body: normalized, at: (i) => normalizedOffsets[i] ?? 0 },
+  ]
+  for (const { re, name, why } of NONDETERMINISTIC_CONSTRUCTS) {
+    for (const { via, body, at } of passes) {
+      const scan = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`)
+      let m
+      while ((m = scan.exec(body)) !== null) {
+        if (m[0].length === 0) { scan.lastIndex++; continue }
+        const rawIndex = at(m.index)
+        const key = `${name}@${rawIndex}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const line = lineAt(text, rawIndex)
+        const lineStart = text.lastIndexOf('\n', rawIndex - 1) + 1
+        const nextBreak = text.indexOf('\n', rawIndex)
+        const sourceLine = text.slice(lineStart, nextBreak === -1 ? text.length : nextBreak).trim().slice(0, 80)
+        found.push({ line, name, why, via, text: sourceLine })
+      }
+    }
+  }
+  return found.sort((a, b) => a.line - b.line)
+}
+
 /**
  * A copy of `source` with every comment blanked out, at IDENTICAL byte offsets.
  *
@@ -848,7 +946,9 @@ export function compileWorkflowBody(source) {
  * @throws {Error} naming every construct the runner would refuse
  */
 export function assertRunnerLoadable(source, label = 'workflow script') {
-  const found = findForbiddenConstructs(source)
+  // BOTH static refusals, because the runner applies both before it compiles anything and
+  // a test that passes on a script the runner will not load proves nothing at all.
+  const found = [...findForbiddenConstructs(source), ...findNondeterminism(source)]
   if (!found.length) return
   throw new Error(
     `${label}: the real workflow runner would REFUSE to load this script, so a passing test here ` +

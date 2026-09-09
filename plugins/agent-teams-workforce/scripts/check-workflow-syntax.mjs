@@ -34,7 +34,7 @@ import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { findForbiddenConstructs, compileWorkflowBody, neutralizeMetaExport, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
+import { findForbiddenConstructs, findNondeterminism, compileWorkflowBody, neutralizeMetaExport, RUNNER_GLOBALS } from './workflow-runner-constraints.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dir = process.argv[2] || path.join(here, '..', 'workflows')
@@ -287,6 +287,35 @@ console.log(
         `(a computed or aliased reach is pass 2's job, not this one)`,
 )
 
+// ── PASS 4b: NOTHING NONDETERMINISTIC ─────────────────────────────────────────
+//
+// The runner refuses a script for a SECOND static reason that has nothing to do with the
+// capability model: before it compiles anything it parses the body and rejects it outright
+// if the source reads the wall clock or draws a random number, because a resumed run would
+// read a different value.
+//
+// This pass exists because nothing modelled that. On 2026-09-08 prd-to-spec.js minted a
+// checkpoint lease from the clock and a random suffix; every test passed and the composite
+// could not LOAD, failing twice on ssbd-vvn8 with zero agents run. Same shape as the 6.0.6
+// outage — a checker laxer than the runner — and the same remedy: one shared list, used by
+// this checker and by the unit-test harness both.
+const nondeterminism = []
+for (const file of readdirSync(dir).filter((f) => f.endsWith('.js')).sort()) {
+  const raw = readFileSync(path.join(dir, file), 'utf8')
+  for (const f of findNondeterminism(raw)) nondeterminism.push({ file, ...f })
+}
+
+for (const f of nondeterminism) {
+  console.log(`FAIL  ${f.file}:${f.line}  —  ${f.name} is not available in a workflow script. ${f.why}`)
+  console.log(`        ${f.text}`)
+}
+console.log(
+  nondeterminism.length
+    ? `\n${nondeterminism.length} nondeterminism violation(s) — these scripts CANNOT LOAD in production`
+    : `all ${checked} workflow scripts are free of the wall clock and of random draws ` +
+        `(the runner refuses either statically, so that a resumed run reads what the first one read)`,
+)
+
 // ── PASS 5: NO PROMPTABLE SHELL COMMAND IN A DISPATCHED AGENT'S INSTRUCTIONS ──
 //
 // A Bash command that does not match the session's permission allowlist does NOT fail.
@@ -431,5 +460,7 @@ console.log(
 )
 
 process.exit(
-  failures.length || refErrors.length || escapees.length || strictness.length || promptable.length || healBleed.length ? 1 : 0,
+  failures.length || refErrors.length || escapees.length || strictness.length || nondeterminism.length || promptable.length || healBleed.length
+    ? 1
+    : 0,
 )
