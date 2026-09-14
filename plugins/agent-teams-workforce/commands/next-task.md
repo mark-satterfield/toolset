@@ -116,9 +116,15 @@ and does not belong to this command.
 
 Do not provision a tree here. **The composite establishes its own worktree.** Its first
 phase is `workspace` (`workflows/workspace.js`): it fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one under `.worktrees/<bead>-<repo>` on a
-feature branch, verifies the result really is a linked worktree, and returns the path
+existing tree for this bead or cuts a new one at `$SKILLSPOKE_WORKTREE_ROOT/<bead>-<repo>`
+on a feature branch, verifies the result really is a linked worktree, and returns the path
 that becomes `contract.repoPath` for every writing phase.
+
+**Read `$SKILLSPOKE_WORKTREE_ROOT` and pass it as `worktreeRoot`.** A workflow script has
+no process or filesystem access, so it cannot read the environment itself — if you do not
+pass the value, the composite falls back to a `.worktrees/` directory beside the
+repository, which puts worktrees in the directory that holds the repositories. If the
+variable is unset, say so in your report rather than inventing a path.
 
 This used to be shell in this file, executed by a model — and the runs that stranded
 production work in a main working tree are the runs that skipped it. An unattended
@@ -134,11 +140,13 @@ later run still finds the earlier attempt's tests.
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: {id, title, description, repoPath: "$REPO"}}})
+  args: {bead: {id, title, description, repoPath: "$REPO"},
+         worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
 ```
 
 `$REPO` is the repository from step 2. The composite's `workspace` phase turns it into
-the worktree; do not pre-cut one.
+the worktree; do not pre-cut one. `worktreeRoot` is the expanded value of
+`$SKILLSPOKE_WORKTREE_ROOT`, not the literal variable name.
 
 `<composite>` is whatever the router named — `task-to-deploy` or `infra-change`.
 Do not substitute your own. (`bug-fix` is reachable only on demand, after a

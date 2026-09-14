@@ -32,6 +32,10 @@ const DEPLOYED_RED_CRITERION =
 
 // args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
+//   worktreeRoot? — absolute directory every cut worktree is placed under. The caller
+//   reads it from SKILLSPOKE_WORKTREE_ROOT and passes it through; a workflow script has
+//   no process or filesystem access, so the environment cannot be read inside one.
+//   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
 //   bead.repoPath names the REPOSITORY when the caller knows it. It is NOT required: a Bug
 //   is filed against a symptom, and the repository the defect lives in is a FINDING of the
 //   triage — so with no repoPath the run triages FIRST, takes the repository the diagnosis
@@ -1095,6 +1099,9 @@ const workspace = await workflow('agent-teams-workforce:workspace', {
   beadId: bead.id,
   branchPrefix: 'fix',
   purpose: bead.title || 'bug fix',
+  // Configuration, read from SKILLSPOKE_WORKTREE_ROOT by whoever dispatched this run.
+  // Absent, workspace falls back to the legacy `.worktrees/` beside the repository.
+  worktreeRoot: a.worktreeRoot,
 })
 // RESIDUAL 5 — the writing phases get the same backstop settle already had.
 // `ok === true && repoPath` accepts a 6.0.5-shaped result: a version skew, a bypassed or

@@ -84,10 +84,16 @@ a Task that skips for a missing Story needs a Story, not a new label.
 
 Skip any thought of provisioning a tree here. **The composite establishes its own
 worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one under `.worktrees/<bead>-<repo>` on a
-feature branch, and verifies the result really is a linked worktree before any phase
+existing tree for this bead or cuts a new one at `$SKILLSPOKE_WORKTREE_ROOT/<bead>-<repo>`
+on a feature branch, and verifies the result really is a linked worktree before any phase
 writes a line. Its return value is the sole source of `contract.repoPath`, and every
 writing phase inherits it.
+
+**Read `$SKILLSPOKE_WORKTREE_ROOT` and pass it as `worktreeRoot`.** A workflow script has
+no process or filesystem access, so it cannot read the environment itself — if you do not
+pass the value, the composite falls back to a `.worktrees/` directory beside the
+repository, which puts worktrees in the directory that holds the repositories. If the
+variable is unset, say so in your report rather than inventing a path.
 
 This used to live here, as shell in a markdown file that a model executed — and the
 two runs that stranded production work in a main working tree are the two that skipped
@@ -108,11 +114,13 @@ bead specifications, so there is no feature branch for it to land on.
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: {id, title, description, repoPath: "$REPO"}}})
+  args: {bead: {id, title, description, repoPath: "$REPO"},
+         worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
 ```
 
 `$REPO` is the repository from step 1. The composite's `workspace` phase turns it into
-the worktree; do not pre-cut one.
+the worktree; do not pre-cut one. `worktreeRoot` is the expanded value of
+`$SKILLSPOKE_WORKTREE_ROOT`, not the literal variable name.
 
 Then go to step 6.
 

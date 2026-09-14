@@ -24,6 +24,10 @@ export const meta = {
 //                                                 // Workspace step, not from this value.
 //   runAdversarial?: boolean,                     // run the TRIMMED adversarial lane (default false)
 //   maxLoops?: number,                            // gate retry budget per phase (default 3)
+//   worktreeRoot? — absolute directory every cut worktree is placed under. The caller
+//   reads it from SKILLSPOKE_WORKTREE_ROOT and passes it through; a workflow script has
+//   no process or filesystem access, so the environment cannot be read inside one.
+//   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
 //   maxDeployIterations?: number,                 // bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -1348,6 +1352,9 @@ const workspace = await workflow('agent-teams-workforce:workspace', {
   beadId: bead.id,
   branchPrefix: 'infra',
   purpose: bead.title || 'infra change',
+  // Configuration, read from SKILLSPOKE_WORKTREE_ROOT by whoever dispatched this run.
+  // Absent, workspace falls back to the legacy `.worktrees/` beside the repository.
+  worktreeRoot: a.worktreeRoot,
 })
 // RESIDUAL 5 — the writing phases get the same backstop settle already had.
 // `ok === true && repoPath` accepts a 6.0.5-shaped result: a version skew, a bypassed or

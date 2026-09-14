@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch under `.worktrees/<bead>-<repo>` — and then a SECOND, independently dispatched read-only verifier, told nothing about what the provisioner claimed, reports the raw git facts for that path. The SCRIPT rules on the two accounts and refuses anything it cannot reconcile: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must be neither a default branch nor a detached HEAD, the independent account must agree about the branch, git-dir must differ from git-common-dir, and the tree must share a git-common-dir with the repository the CALLER named. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
+    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch at `<worktreeRoot>/<bead>-<repo>`, where the root is supplied by the caller from SKILLSPOKE_WORKTREE_ROOT and falls back to a `.worktrees/` directory beside the repository when none is configured — and then a SECOND, independently dispatched read-only verifier, told nothing about what the provisioner claimed, reports the raw git facts for that path. The SCRIPT rules on the two accounts and refuses anything it cannot reconcile: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must be neither a default branch nor a detached HEAD, the independent account must agree about the branch, git-dir must differ from git-common-dir, and the tree must share a git-common-dir with the repository the CALLER named. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 
@@ -10,10 +10,17 @@ export const meta = {
 //   beadId: string,        // the work item — names the branch and the worktree directory
 //   branchPrefix?: string, // 'fix' (bug), 'feat' (task), 'infra' (infra change). Default 'work'.
 //   purpose?: string,      // one line, for the log and the branch description
+//   worktreeRoot?: string, // absolute directory every cut tree is placed under. The caller reads
+//                          // it from SKILLSPOKE_WORKTREE_ROOT; a workflow script has no
+//                          // filesystem or process access, so the environment cannot be read
+//                          // here. Absent, the legacy layout applies: a `.worktrees/` directory
+//                          // beside the repository, which is what put 47 trees in the directory
+//                          // that is supposed to hold nothing but repositories.
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const repoPath = String(a.repoPath || '').trim()
 const beadId = String(a.beadId || '').trim()
+const worktreeRootArg = String(a.worktreeRoot || '').trim()
 const prefix = String(a.branchPrefix || 'work').trim().replace(/[^a-zA-Z0-9._-]/g, '') || 'work'
 
 // Fail closed. A workspace step that "succeeds" with no path hands the writing phases
@@ -123,6 +130,14 @@ const callerPathFault = pathFault("the caller's repoPath", repoPath)
 if (callerPathFault) {
   return { ok: false, applicable: false, repoPath: null, branch: null, reused: false, blocked: [callerPathFault] }
 }
+// The configured root is a caller-supplied path like any other, so it is held to the same
+// allowlist and REFUSED rather than ignored when it fails. Ignoring it would be worse than
+// refusing: the run would silently fall back to the layout the root exists to replace, and
+// nobody would learn that the configuration never took effect.
+const worktreeRootFault = worktreeRootArg ? pathFault("the caller's worktreeRoot", worktreeRootArg) : null
+if (worktreeRootFault) {
+  return { ok: false, applicable: false, repoPath: null, branch: null, reused: false, blocked: [worktreeRootFault] }
+}
 if (!BEAD_ID_SHAPE.test(beadId)) {
   return {
     ok: false,
@@ -163,12 +178,35 @@ const repoParent = dirOf(repoPath)
 const shortName = repoBase.replace(/^SkillSpoke-/, '') || repoBase
 const siblingWorktrees = joinPath(repoParent, '.worktrees')
 const nestedWorktrees = joinPath(repoPath, '.worktrees')
-const plannedWorktreePath = joinPath(siblingWorktrees, `${beadId}-${shortName}`)
+
+// WHERE THE TREE GOES IS CONFIGURATION, NOT A CONSTANT.
+//
+// The layout was hardcoded as `.worktrees` beside the repository, and "beside the
+// repository" is the parent directory — the one directory in this fleet that is supposed
+// to contain repositories and nothing else. Every run added a tree to it, so the working
+// directory filled with 47 of them plus whatever else landed there.
+//
+// So the root is now supplied by the caller, which reads SKILLSPOKE_WORKTREE_ROOT from the
+// environment and passes the value in. It cannot be read here: a workflow script has no
+// process or filesystem access at all, which is why this arrives as an argument rather
+// than as an env lookup a few lines down.
+//
+// The legacy sibling layout remains the fallback and stays in the ACCEPTABLE set either
+// way. That is not politeness toward old configuration — it is what lets a run RESUME into
+// a tree cut before the root was configured. Drop it and every in-flight tree becomes
+// unreachable, and the reuse guarantee this whole step exists to provide turns into a
+// second tree cut beside the first.
+const configuredRoot = worktreeRootArg ? worktreeRootArg.replace(/\/+$/, '') : ''
+const worktreeHome = configuredRoot || siblingWorktrees
+const plannedWorktreePath = joinPath(worktreeHome, `${beadId}-${shortName}`)
 
 const ACCEPTABLE_WORKTREE_PATHS = [
   ...new Set([
     repoPath,
     plannedWorktreePath,
+    joinPath(worktreeHome, `${beadId}-${repoBase}`),
+    joinPath(worktreeHome, beadId),
+    joinPath(siblingWorktrees, `${beadId}-${shortName}`),
     joinPath(siblingWorktrees, `${beadId}-${repoBase}`),
     joinPath(siblingWorktrees, beadId),
     joinPath(nestedWorktrees, `${beadId}-${shortName}`),
@@ -242,12 +280,12 @@ git -C "$REPO" fetch origin "$DEFAULT"
 \`\`\`
 Fast-forward the main tree onto origin only when it is safe to: the tree is clean, HEAD is the default branch, and the local branch is an ancestor of the remote one. Otherwise do NOT force anything — record the divergence in \`blocked\` and cut from the local tip anyway, naming what you saw.
 
-STEP 5 — CUT THE TREE AT THE PATH YOU WERE GIVEN. You do not choose it: it was built by the workflow script from the work item and the repository name, it follows the fleet convention of a \`.worktrees/\` directory beside the repository, and the script REFUSES any other path you report back. Do not improvise a layout.
+STEP 5 — CUT THE TREE AT THE PATH YOU WERE GIVEN. You do not choose it: it was built by the workflow script from the work item, the repository name and the worktree root this fleet is configured with, and the script REFUSES any other path you report back. The root is configuration, so do not reason about where it "should" be relative to the repository — it is deliberately somewhere else. Do not improvise a layout. Create the parent directory if it does not exist; that is the only thing about the path you may act on.
 \`\`\`
 WT="${plannedWorktreePath}"
+mkdir -p "$(dirname "$WT")"
 git -C "$REPO" worktree add -b "${BRANCH}" "$WT" "$(git -C "$REPO" rev-parse "$DEFAULT")"
 \`\`\`
-If \`$REPO\` is not the directory you were handed, that path may not sit beside this repository — report ok=false and say so in \`blocked\` rather than cutting a tree somewhere else.
 If the branch name is already taken, add the existing branch instead of creating it (\`git -C "$REPO" worktree add "$WT" "${BRANCH}"\`) rather than inventing a second branch name.
 
 STEP 6 — VERIFY, DO NOT ASSUME. EVERY path through this step ends here — cut in STEP 5, reused from STEP 1, or reused from STEP 3. The whole point of the step is that the tree is real and is NOT the main working tree:
