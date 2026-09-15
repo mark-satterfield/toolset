@@ -663,6 +663,9 @@ Name the BINDING test (the one whose expectation is correct), the LOSING test (t
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
+  // branch below.
+  let revertSpent = false
   // Carried across attempts so loop exhaustion can say WHAT was unmet and on what
   // evidence, instead of a bare count. Both are computed at every attempt already;
   // the exhaustion path simply never saw them.
@@ -782,6 +785,32 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
     })
     if (verdict.verdict === 'pass') {
+      // ── `revert` IS A DISPOSITION, NOT A NOTE ───────────────────────────────
+      //
+      // gate-enforce routes a PASSING gate's competitive flags to the advantage-evaluator,
+      // which rules proceed-under-flag or REVERT on each. Both rulings arrived here and
+      // neither was acted on, so the one disposition that asks for work to be redone was
+      // indistinguishable from the one that asks for it to be kept, and the evaluator was
+      // being asked a question nobody read.
+      //
+      // A revert re-runs the phase once with the reverted findings as its feedback. Bounded
+      // to a single revert per gate, and never past the loop budget: the evaluator's
+      // standing rule is that it NEVER halts the pipeline for a non-invalidating finding,
+      // so a second revert proceeds under flag rather than spending the run.
+      const reverts = ((verdict.advantage && verdict.advantage.dispositions) || []).filter(
+        (d) => d && d.disposition === 'revert'
+      )
+      if (reverts.length && !revertSpent && attempt < MAX_LOOPS) {
+        revertSpent = true
+        const detail = reverts.map((d) => `${d.flag}${d.rationale ? ` — ${d.rationale}` : ''}`).join('; ')
+        log(`Gate ${gate} (${phaseName}): PASS, but the advantage-evaluator ruled REVERT on ${reverts.length} flag(s) — re-running the phase once with them as feedback: ${detail}`)
+        recordGate(attempt, verdict, { terminal: 'advantage-revert', reverted: reverts.map((d) => d.flag) })
+        feedback = `The gate PASSED, but the advantage-evaluator ruled REVERT rather than proceed-under-flag on the following competitive finding(s). Address them: ${detail}`
+        continue
+      }
+      if (reverts.length) {
+        log(`Gate ${gate} (${phaseName}): PASS with ${reverts.length} REVERT ruling(s) that the revert budget cannot enact — proceeding under flag, which never halts the pipeline`)
+      }
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
     }
