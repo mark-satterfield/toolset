@@ -85,7 +85,7 @@ test('D4-AC1: the loop-exhausted gateLoop result carries `artifact` === the fina
   assert.ok(d, 'the composite must journal the gateLoop result')
   assert.equal(d.ok, false)
   assert.equal(d.loopExhausted, true, 'loopExhausted must be true')
-  assert.match(String(d.reason), /exceeded \d+ loops/, 'reason must match /exceeded \\d+ loops/')
+  assert.match(String(d.reason), /exceeded \d+ loop\(s\)/, 'reason must match /exceeded \\d+ loop\\(s\\)/')
   assert.ok(
     Object.prototype.hasOwnProperty.call(d, 'artifact'),
     "the loop-exhausted return must have an own property 'artifact' — it is currently the only exit that drops it"

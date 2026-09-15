@@ -661,7 +661,16 @@ Name the BINDING test (the one whose expectation is correct), the LOSING test (t
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
+//
+// `maxLoops` overrides the run-wide budget FOR ONE GATE. It exists for Gate 5, where a
+// retry is not a cheaper attempt at the same artifact: every attempt performs a real AWS
+// rollout, so a gate that retried twice inside an outer loop that iterates three times
+// could roll out six times for one bug — including rollouts of code nothing had changed
+// since the previous one. A gate whose checks are ALL deterministic gains nothing from a
+// retry anyway: re-dispatching the same phase over the same tree re-measures the same
+// values. Callers that do not pass it keep MAX_LOOPS.
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow, maxLoops }) {
+  const loopBudget = maxLoops || MAX_LOOPS
   let feedback = ''
   // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
   // branch below.
@@ -681,7 +690,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       gate,
       gatePhase: phaseName,
       attempt,
-      maxLoops: MAX_LOOPS,
+      maxLoops: loopBudget,
       verdict: (verdict && verdict.verdict) || 'no-verdict',
       criteria: ((verdict && verdict.criteria) || []).map((c) => ({
         criterion: c.criterion,
@@ -697,20 +706,20 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       ...(extra || {}),
     })
 
-  for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+  for (let attempt = 1; attempt <= loopBudget; attempt++) {
     // Announce the START of the attempt. The progress panel cannot tick this phase:
     // its work happens inside a nested workflow(), whose agents the engine puts in
     // their own "▸ <mini>" group rather than counting toward the parent phase. So
     // without this line a phase that is actively running reads as "Not started yet",
     // and only its verdict — logged below, after the fact — ever proves it ran.
-    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${MAX_LOOPS}`)
+    log(`Gate ${gate} (${phaseName}): running attempt ${attempt}/${loopBudget}`)
     // The second argument is the STRUCTURED loop channel. A free-text string cannot
     // carry which criteria were unmet, nor what the phase produced last time — and a
     // phase re-judged with no memory of the prior round regenerates the prior round's
     // contradiction. Existing call sites that take only `feedback` are unaffected.
     const artifact = await phaseFn(feedback, {
       attempt,
-      maxLoops: MAX_LOOPS,
+      maxLoops: loopBudget,
       feedback,
       priorArtifact: lastArtifact,
       priorVerdicts: attempts.map((x) => x.verdict).filter(Boolean),
@@ -800,7 +809,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       const reverts = ((verdict.advantage && verdict.advantage.dispositions) || []).filter(
         (d) => d && d.disposition === 'revert'
       )
-      if (reverts.length && !revertSpent && attempt < MAX_LOOPS) {
+      if (reverts.length && !revertSpent && attempt < loopBudget) {
         revertSpent = true
         const detail = reverts.map((d) => `${d.flag}${d.rationale ? ` — ${d.rationale}` : ''}`).join('; ')
         log(`Gate ${gate} (${phaseName}): PASS, but the advantage-evaluator ruled REVERT on ${reverts.length} flag(s) — re-running the phase once with them as feedback: ${detail}`)
@@ -818,7 +827,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'}`)
       return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact, verdict }
     }
-    log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${MAX_LOOPS} — ${verdict.feedback}`)
+    log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
   // The budget is spent. Before this is called a failure, the ONE agent with authority to
@@ -873,7 +882,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   // Record the REAL final verdict, not null, and the ruling made on it. A terminal ledger
   // row with `criteria: []` cannot distinguish a genuine defect from an over-strict
   // criterion — which is the one question anyone asks about an exhausted gate.
-  recordGate(MAX_LOOPS, lastVerdict, {
+  recordGate(loopBudget, lastVerdict, {
     verdict: competitive ? 'loop-exhausted-competitive' : 'loop-exhausted',
     terminal: competitive
       ? 'proceeded-under-flag'
@@ -911,7 +920,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     return {
       ok: false,
       reason:
-        `gate ${gate} exceeded ${MAX_LOOPS} loops with ${measuredFailures.length} deterministic check(s) still failing ` +
+        `gate ${gate} exceeded ${loopBudget} loop(s) with ${measuredFailures.length} deterministic check(s) still failing ` +
         `(${measuredFailures.join('; ')}). A deterministic check measured the artifact rather than forming a judgment about ` +
         'it, so it is constitutive by construction and no advantage ruling was requested.',
       loopExhausted: true,
@@ -931,7 +940,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   )
   return {
     ok: false,
-    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops and the remaining finding(s) were ruled constitutive${ruled ? '' : ' by default — the advantage-evaluator returned no ruling'}`,
+    reason: `gate ${gate} exceeded ${loopBudget} loop(s) and the remaining finding(s) were ruled constitutive${ruled ? '' : ' by default — the advantage-evaluator returned no ruling'}`,
     loopExhausted: true,
     ruledCompetitive: false,
     advantageRuling: ruling || null,
@@ -1694,6 +1703,24 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const iterationFeedback = smokeFeedback
   deployReady = await gateLoop({
     gate: '5', phaseName: `Deploy to dev (iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS})`,
+    // ── ONE ROLLOUT PER ITERATION: A GATE RETRY HERE IS A SECOND AWS DEPLOY ────
+    //
+    // Everywhere else in this pipeline a gate retry is a cheaper second attempt at an
+    // artifact. Not here: every attempt runs deploy.js, and deploy.js ROLLS OUT. So the
+    // run-wide budget of MAX_LOOPS attempts, inside an outer loop of
+    // MAX_DEPLOY_ITERATIONS iterations, authorized up to six real rollouts for one bug —
+    // and the extra ones deployed code that nothing had changed since the attempt before,
+    // because a gate retry re-dispatches the phase over the same tree.
+    //
+    // It also could not help. Every criterion at this gate is DETERMINISTIC (see below),
+    // so a retry re-measures the same values off the same tree and fails the same way.
+    // The only thing that moves a failed smoke check is a code change, and a code change
+    // is what the outer loop's Green repair is for.
+    //
+    // Hence one attempt, so the iteration bound reads literally: one rollout, then at most
+    // TWO CORRECTIONS. A smoke failure is handled by the correction path below, not by
+    // deploying again on the spot.
+    maxLoops: 1,
     // Every criterion here is MECHANICAL, so gate-enforce.js returns a verdict with no
     // model turn. deploy.js hoists `cdkSynthOk` (which folds in the not-applicable
     // carve-out) and `smokeTestFiles` to the top level of its result, exactly as it
