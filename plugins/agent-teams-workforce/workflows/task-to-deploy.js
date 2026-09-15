@@ -82,6 +82,13 @@ const MAX_LOOPS = a.maxLoops || 2
 // converging, and each iteration costs a real AWS rollout. On exhaustion the run FAILS and
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
+// Green may send the run back to Red — for a test that is defective, and for the
+// contradiction case below, which is the one Green cannot repair by trying harder.
+const MAX_ESCALATIONS = a.maxEscalations || 2
+let escalations = 0
+// The ruling that resolved a test contradiction, if one arose. Carried across the
+// re-entry so the Red re-author is told which contract binds.
+let contradictionRuling = null
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
 // A missing `bead.repoPath` is NOT refused here. It used to be — the same way a missing
 // bead.id is — and that made a repository a dispatch PRECONDITION nobody upstream could
@@ -606,9 +613,68 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
   }
 }
 
+// ── A CONTRADICTION IS A QUESTION ABOUT WHICH CONTRACT BINDS ────────────────────
+//
+// Green can be blocked by something no amount of implementation fixes: the failing test
+// asserts one outcome for an input, and ANOTHER test — already passing — asserts the
+// opposite outcome for the identical input. The implementer may not modify a test, the
+// gate is right to fail a test that does not pass, and re-authoring only REGENERATES one
+// side of the disagreement rather than resolving it.
+//
+// tdd-green has reported exactly this in a structured `contradiction` field for several
+// releases, and bug-fix.js has consumed it for as long. On THIS path the field arrived and
+// nothing read it: the run spent its budget at an unpassable gate while the one
+// observation that explains it sat unread in the artifact. The channel is not the defect —
+// the missing consumer is — so this is the consumer, built the way bug-fix.js already
+// builds it, routing to the agent whose charter is ruling which contract binds.
+async function ruleContradiction(contradiction, evidence) {
+  try {
+    return await agent(
+      `You are the test-strategy-decider. Two tests in this suite assert OPPOSITE outcomes for the identical input, so no implementation can satisfy both and no amount of re-authoring resolves it — re-authoring only regenerates one side. Rule which contract binds.
+
+You are not writing tests and you are not fixing code. Decide ONE thing: given the shared precondition below, which expected outcome is the correct contract for this system, and therefore which test is wrong and must be corrected.
+
+Shared GIVEN (identical for both tests): ${contradiction.sharedGiven || '(not stated)'}
+
+Test A: ${contradiction.testA || '(unnamed)'}
+  expects: ${contradiction.expectedA || '(not stated)'}
+
+Test B: ${contradiction.testB || '(unnamed)'}
+  expects: ${contradiction.expectedB || '(not stated)'}
+
+The implementer's evidence that these cannot both hold:
+${contradiction.evidence || evidence || '(none supplied)'}
+
+Name the BINDING test (the one whose expectation is correct), the LOSING test (the one that must be corrected), and state the corrected expectation the losing test must assert instead — concretely enough that a test author can apply it without re-deciding anything. If the binding contract is neither test's current expectation, say so and make the corrected expectation the one that is right.`,
+      {
+        label: 'green:contradiction-ruling',
+        phase: currentPhase || 'Green',
+        agentType: 'agent-teams-workforce:test-strategy-decider',
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['bindingTest', 'losingTest', 'correctedExpectation', 'rationale'],
+          properties: {
+            bindingTest: { type: 'string' },
+            losingTest: { type: 'string' },
+            correctedExpectation: { type: 'string' },
+            rationale: { type: 'string' },
+          },
+        },
+      }
+    )
+  } catch (e) {
+    log(`test-strategy-decider failed to rule on the test contradiction: ${e && e.message ? e.message : e}`)
+    return null
+  }
+}
+
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
+async function gateLoop({ gate, phaseName, criteria, checks, structural, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
+  // branch below.
+  let revertSpent = false
   // Carried across attempts so loop exhaustion can say WHAT was unmet and on what
   // evidence, instead of a bare count. Both are computed at every attempt already;
   // the exhaustion path simply never saw them.
@@ -713,7 +779,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, checks, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, structural, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -728,6 +794,32 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
     })
     if (verdict.verdict === 'pass') {
+      // ── `revert` IS A DISPOSITION, NOT A NOTE ───────────────────────────────
+      //
+      // gate-enforce routes a PASSING gate's competitive flags to the advantage-evaluator,
+      // which rules proceed-under-flag or REVERT on each. Both rulings arrived here and
+      // both were carried in the result and neither was acted on — so the one disposition
+      // that asks for work to be redone was indistinguishable from the one that asks for
+      // it to be kept, and the evaluator was being asked a question nobody read.
+      //
+      // A revert re-runs the phase once with the reverted findings as its feedback. Bounded
+      // to a single revert per gate, and never past the loop budget: the evaluator's
+      // standing rule is that it NEVER halts the pipeline for a non-invalidating finding,
+      // so a second revert proceeds under flag rather than spending the run.
+      const reverts = ((verdict.advantage && verdict.advantage.dispositions) || []).filter(
+        (d) => d && d.disposition === 'revert'
+      )
+      if (reverts.length && !revertSpent && attempt < MAX_LOOPS) {
+        revertSpent = true
+        const detail = reverts.map((d) => `${d.flag}${d.rationale ? ` — ${d.rationale}` : ''}`).join('; ')
+        log(`Gate ${gate} (${phaseName}): PASS, but the advantage-evaluator ruled REVERT on ${reverts.length} flag(s) — re-running the phase once with them as feedback: ${detail}`)
+        recordGate(attempt, verdict, { terminal: 'advantage-revert', reverted: reverts.map((d) => d.flag) })
+        feedback = `The gate PASSED, but the advantage-evaluator ruled REVERT rather than proceed-under-flag on the following competitive finding(s). Address them: ${detail}`
+        continue
+      }
+      if (reverts.length) {
+        log(`Gate ${gate} (${phaseName}): PASS with ${reverts.length} REVERT ruling(s) that the revert budget cannot enact — proceeding under flag, which never halts the pipeline`)
+      }
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
     }
@@ -1484,7 +1576,13 @@ freshness = await gateLoop({
     { class: 'competitive', text: 'The spec still matches current reality (no spec-currency drift)' },
     { class: 'competitive', text: 'No upstream dependency change invalidates the spec' },
   ],
-  escalateTargets: ['spec-authoring', 'architecture'],
+  // NEITHER is a phase this composite contains, so neither could ever be re-entered: an
+  // escalate here fell straight through to a failed handback while naming a repair the
+  // run had no way to perform. They say so now.
+  escalateTargets: [
+    'failed: the spec must be re-authored upstream (prd-to-spec), which this composite cannot do',
+    'failed: the architecture must be revisited upstream (prd-to-spec), which this composite cannot do',
+  ],
   phaseFn: () => workflow('agent-teams-workforce:spec-freshness', { spec }),
 })
 if (freshness.ok) await cpSave('freshness', freshness)
@@ -1550,6 +1648,36 @@ if (contractSurfaces && contractSurfaces.length) {
 }
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
+//
+// HOISTED so the re-authored Red below the Green gate judges by the SAME bar as the first
+// one. bug-fix.js learned this the expensive way: two Red gates with their criteria spelled
+// out separately are two gates that drift, and the second one is the one nobody reads.
+const RED_CRITERIA = [
+  { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
+  { class: 'constitutive', text: 'A failing test encodes the spec contract' },
+  { class: 'constitutive', text: 'The test fails for the intended reason' },
+  { class: 'constitutive', text: 'No production code changed yet' },
+]
+const RED_CHECKS = [
+  { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
+  { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
+  // Red proves a test fails NOW. It must also establish that a pass is REACHABLE:
+  // a test pinned to a pre-fix import path fails correctly and can never go green,
+  // and is otherwise indistinguishable from a correct Red.
+  { field: 'greenReachable', equals: true, label: 'every authored test names the production file whose change makes it pass' },
+  // NEGATIVE CONTROL over the captured output. Deliberately NARROW: a missing fixture
+  // is always a harness fault and never a product failure. ModuleNotFoundError,
+  // ImportError and "collected 0 items" are deliberately NOT in this pattern — for a
+  // missing-capability defect the only failure obtainable at HEAD IS the absence of
+  // the symbol the fix introduces, and pytest reports exactly that shape. Banning it
+  // would re-break the carve-out that cost 827k tokens on ssbd-cg27 to learn.
+  { field: 'evidence', notMatches: 'fixture .{0,80} not found', label: 'the captured failure is a product failure, not a missing fixture' },
+]
+// A Red that authored no test file has produced nothing for Green to turn green, and
+// `redConfirmed` alone cannot say so — a phase can report Red while naming no test.
+const RED_STRUCTURAL = { nonEmpty: ['testFiles'] }
+const RED_ESCALATE_TARGETS = ['failed: the spec is stale and must be re-authored upstream (prd-to-spec), which this composite cannot do']
+//
 // Red and Green checkpoint SEPARATELY here, unlike bug-fix.js. There, the two are one
 // unit because the contradiction loop between them can re-author tests, so a resume
 // landing between them would be incoherent. This composite has no such loop — Red runs
@@ -1565,28 +1693,10 @@ red = await gateLoop({
   // into a passing one, and its own criteria name "the previously-failing test". Deploy
   // then gates its rollout on greenEvidenceOk, which traces back to this test. Every
   // criterion here is test evidence — the property the whole tail depends on.
-  criteria: [
-    { class: 'constitutive', text: 'Tests assert against freshly generated artifacts, not checked-in build output (a test reading a committed cdk.out template or similar passes forever regardless of the code)' },
-    { class: 'constitutive', text: 'A failing test encodes the spec contract' },
-    { class: 'constitutive', text: 'The test fails for the intended reason' },
-    { class: 'constitutive', text: 'No production code changed yet' },
-  ],
-  checks: [
-    { field: 'redConfirmed', equals: true, label: 'the phase reports Red confirmed' },
-    { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
-    // Red proves a test fails NOW. It must also establish that a pass is REACHABLE:
-    // a test pinned to a pre-fix import path fails correctly and can never go green,
-    // and is otherwise indistinguishable from a correct Red.
-    { field: 'greenReachable', equals: true, label: 'every authored test names the production file whose change makes it pass' },
-    // NEGATIVE CONTROL over the captured output. Deliberately NARROW: a missing fixture
-    // is always a harness fault and never a product failure. ModuleNotFoundError,
-    // ImportError and "collected 0 items" are deliberately NOT in this pattern — for a
-    // missing-capability defect the only failure obtainable at HEAD IS the absence of
-    // the symbol the fix introduces, and pytest reports exactly that shape. Banning it
-    // would re-break the carve-out that cost 827k tokens on ssbd-cg27 to learn.
-    { field: 'evidence', notMatches: 'fixture .{0,80} not found', label: 'the captured failure is a product failure, not a missing fixture' },
-  ],
-  escalateTargets: ['spec-freshness'],
+  criteria: RED_CRITERIA,
+  checks: RED_CHECKS,
+  escalateTargets: RED_ESCALATE_TARGETS,
+  structural: RED_STRUCTURAL,
   // From attempt 2 the previous attempt's test is ON DISK. Discovery would re-find it,
   // report no gaps, and the confirm-existing branch would hand the gate back the very
   // test it just rejected — through a code path the gate's objection never reaches.
@@ -1628,6 +1738,11 @@ const GREEN_CRITERIA = [
   { class: 'constitutive', text: 'The previously-failing test now passes' },
   { class: 'constitutive', text: 'No other tests regressed' },
   { class: 'competitive', text: 'The change is minimal and the test was not weakened' },
+  // The contradiction is NOT an implementation failure and NOT a defective test, so it
+  // must not be looped over: no implementation satisfies both expectations, and every
+  // further attempt re-proves the same impossibility. It routes out of Green to the
+  // test-strategy-decider — see ruleContradiction and the re-entry loop below.
+  { class: 'competitive', text: 'If the phase reports a CONTRADICTION — the failing test asserts one outcome for an input and another ALREADY-PASSING test asserts the opposite outcome for the identical input — that is neither an implementation failure nor a defective test. No implementation can satisfy both. Escalate to red; do NOT loop Green over it and do NOT pick a side yourself.' },
 ]
 const GREEN_CHECKS = [
   { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
@@ -1636,13 +1751,111 @@ const GREEN_CHECKS = [
 enterPhase('Green')
 let green = cpGet('green')
 if (green === undefined) {
+const GREEN_ESCALATE_TARGETS = [
+  // `red` IS a real re-entry — the loop below re-runs the Red phase with the gate's
+  // feedback, and with a contradiction ruling when one was made. The other target names a
+  // repair this composite cannot perform, so it says so rather than promising it.
+  'red',
+  'failed: the spec is stale and must be re-authored upstream (prd-to-spec), which this composite cannot do',
+]
 green = await gateLoop({
   gate: '2b', phaseName: 'TDD Green',
   criteria: GREEN_CRITERIA,
   checks: GREEN_CHECKS,
-  escalateTargets: ['spec-freshness', 'red'],
+  escalateTargets: GREEN_ESCALATE_TARGETS,
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: red.artifact, implementer: a.implementer, feedback }),
 })
+// ── Green escalates to Red, and a CONTRADICTION is ruled before it does ─────────
+//
+// Two tests that assert opposite outcomes for the same input are neither an
+// implementation failure nor a defective test. The implementer may not modify a test, the
+// gate is right to fail a test that does not pass, and a re-author REGENERATES one side
+// rather than resolving it — so the loop cannot converge on a question nobody has
+// answered. tdd-green reports it in a structured `contradiction` field; on this path
+// nothing read that field, so the run spent its budget at an unpassable gate while the one
+// observation that explains it sat unread in the artifact.
+//
+// Ruling first, then re-authoring, is the order that matters: without the ruling the
+// re-author simply picks a side and the next Green deadlocks on the other one.
+while (!green.ok && escalations < MAX_ESCALATIONS) {
+  const contradiction = (green.artifact && green.artifact.contradiction) || null
+  // A reported contradiction is grounds to return to test authoring in its own right,
+  // whether or not the gate happened to phrase its verdict as escalate:"red".
+  if (green.escalate !== 'red' && !contradiction) break
+  if (contradiction) {
+    log(`Green reported a test contradiction (${contradiction.testA || '?'} vs ${contradiction.testB || '?'}) — dispatching the test-strategy-decider`)
+    contradictionRuling = await ruleContradiction(contradiction, green.artifact && green.artifact.evidence)
+    runLedger.push({
+      phase: 'green:contradiction',
+      beadId: bead.id || null,
+      contradiction,
+      ruling: contradictionRuling || null,
+      ok: !!contradictionRuling,
+    })
+    // No ruling means no decision was reached, and re-authoring against an unresolved
+    // contradiction is the thing that provably cannot work. Say what is unresolved rather
+    // than spending an escalation on a loop that will not converge.
+    if (!contradictionRuling) {
+      return handback(
+        false,
+        'green',
+        `two tests assert opposite outcomes for the same input (${contradiction.testA || '?'} vs ${contradiction.testB || '?'}) and the test-strategy-decider returned no ruling — no implementation can satisfy both, and re-authoring would regenerate one side of the contradiction`,
+        { green, contradiction }
+      )
+    }
+    log(`Contradiction ruled: ${contradictionRuling.bindingTest} binds; ${contradictionRuling.losingTest} must assert ${contradictionRuling.correctedExpectation}`)
+  }
+  escalations += 1
+  // The ruling is the instruction the re-author acts on, so it is stated as one.
+  const rulingBlock = contradictionRuling
+    ? `A TEST CONTRADICTION WAS RULED. Two tests asserted opposite outcomes for the identical input, and the test-strategy-decider ruled which contract binds. Apply the ruling — do not re-open it:\n` +
+      `- BINDING (correct, leave it alone): ${contradictionRuling.bindingTest}\n` +
+      `- LOSING (correct THIS one): ${contradictionRuling.losingTest}\n` +
+      `- The losing test must assert instead: ${contradictionRuling.correctedExpectation}\n` +
+      `- Rationale: ${contradictionRuling.rationale}\n` +
+      `Correcting the losing test to match the ruled contract is not weakening it.`
+    : ''
+  const why =
+    (green.verdict && (green.verdict.feedback || (green.verdict.criteria || []).filter((c) => !c.met).map((c) => `${c.criterion}: ${c.evidence}`).join('\n'))) ||
+    'Green escalated to Red without stated feedback.'
+  log(`Green escalated to Red (${escalations}/${MAX_ESCALATIONS}) — re-authoring tests`)
+  enterPhase('Red')
+  red = await gateLoop({
+    gate: '2a', phaseName: `TDD Red (re-authored after Green escalation ${escalations})`,
+    // The SAME bar as the first Red gate, plus — only when one was actually made — the
+    // criterion that makes the ruling binding on the re-author. Without it the phase may
+    // hand back both original expectations and the gate has no ground to reject them.
+    criteria: contradictionRuling
+      ? [
+          ...RED_CRITERIA,
+          { class: 'competitive', text: `A test contradiction was ruled by the test-strategy-decider: "${contradictionRuling.bindingTest}" states the binding contract and "${contradictionRuling.losingTest}" must now assert ${contradictionRuling.correctedExpectation}. The losing test IS corrected accordingly and the binding test is left as it stands. A phase that hands back both original expectations has not applied the ruling.` },
+        ]
+      : RED_CRITERIA,
+    checks: RED_CHECKS,
+    structural: RED_STRUCTURAL,
+    escalateTargets: RED_ESCALATE_TARGETS,
+    // Discovery is skipped: the previous attempt's tests are on disk, and a re-author
+    // after an escalation authors rather than shopping for what it already wrote.
+    phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-red', {
+      contract,
+      feedback: [rulingBlock, why, feedback].filter(Boolean).join('\n\n'),
+      skipDiscovery: true,
+    }),
+  })
+  if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
+  if (!red.ok) return handback(false, gateStage('red', red), gateHeadline('red', red), red)
+  enterPhase('Green')
+  green = await gateLoop({
+    gate: '2b', phaseName: `TDD Green (after Red re-author ${escalations}/${MAX_ESCALATIONS})`,
+    criteria: GREEN_CRITERIA,
+    checks: GREEN_CHECKS,
+    escalateTargets: GREEN_ESCALATE_TARGETS,
+    phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', {
+      contract, red: red.artifact, implementer: a.implementer,
+      feedback: [rulingBlock, feedback].filter(Boolean).join('\n\n'),
+    }),
+  })
+}
 if (green.ok) await cpSave('green', green)
 }
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
@@ -1683,7 +1896,10 @@ refactor = await gateLoop({
     { class: 'constitutive', text: 'Tests still green' },
     { class: 'competitive', text: 'Behavior preserved (no regression)' },
   ],
-  escalateTargets: ['green'],
+  // Green is behind this gate and is not re-entered from here — Refactor is cleanup on
+  // already-green code, and the run has no path back into the implementation phase at this
+  // point. The target says what it is rather than promising a re-entry.
+  escalateTargets: ['failed: the Green implementation would have to be redone, which this gate cannot re-enter'],
   phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
 })
 if (refactor.ok) await cpSave('refactor', refactor)
@@ -1710,7 +1926,13 @@ integration = await gateLoop({
     { class: 'competitive', text: 'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.' },
     { class: 'competitive', text: 'No flaky tests' },
   ],
-  escalateTargets: ['green', 'red', 'spec-freshness'],
+  // None of the three is re-entered from here: Red and Green are behind this gate and the
+  // spec is authored upstream. Naming them promised a repair this gate cannot perform.
+  escalateTargets: [
+    'failed: the Green implementation would have to be redone, which this gate cannot re-enter',
+    'failed: the tests would have to be re-authored in Red, which this gate cannot re-enter',
+    'failed: the spec is stale and must be re-authored upstream (prd-to-spec), which this composite cannot do',
+  ],
   phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
 })
 if (integration.ok) await cpSave('integration', integration)
@@ -1735,7 +1957,10 @@ adversarial = await gateLoop({
     'No open constitutive findings (no vulns, injection, auth bypass, permission escalation, or data exposure)',
     'All confirmed findings adjudicated; security findings not downgraded by implementers',
   ],
-  escalateTargets: ['green', 'spec-freshness'],
+  escalateTargets: [
+    'failed: the Green implementation would have to be redone, which this gate cannot re-enter',
+    'failed: the spec is stale and must be re-authored upstream (prd-to-spec), which this composite cannot do',
+  ],
   // priorRulings is what makes a re-run adjudication accountable to the one before it.
   // Without it the adjudicator is a fresh instance every round with no knowledge that it
   // ever ruled — it is not reversing a ruling, it has never been shown one.
@@ -1812,7 +2037,13 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
       { field: 'deployedToDev', equals: true, label: 'the change was deployed to the AWS dev environment' },
       { field: 'smokePassed', equals: true, label: 'the smoke tests passed against the deployed dev endpoints' },
     ],
-    escalateTargets: ['integration', 'green'],
+    // The deploy loop DOES re-enter Green — but on a smoke failure against the deployed
+    // environment, which it detects itself below, not on an escalate verdict from this
+    // gate. Neither name is a re-entry this gate can take, so neither is offered as one.
+    escalateTargets: [
+      'failed: the integration suites would have to be re-run, which this gate cannot re-enter',
+      'failed: the Green implementation would have to be redone, which this gate cannot re-enter',
+    ],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
       contract, green: green.artifact, docCurrency,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
@@ -1882,7 +2113,12 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     gate: '2b', phaseName: `TDD Green (deploy iteration ${deployIteration + 1}/${MAX_DEPLOY_ITERATIONS})`,
     criteria: GREEN_CRITERIA,
     checks: GREEN_CHECKS,
-    escalateTargets: ['spec-freshness', 'red'],
+    // This Green runs INSIDE the deploy loop, which owns its own iteration and has no path
+    // back into Red from here — so neither target is a re-entry this gate can take.
+    escalateTargets: [
+      'failed: the tests would have to be re-authored in Red, which the deploy loop cannot re-enter',
+      'failed: the spec is stale and must be re-authored upstream (prd-to-spec), which this composite cannot do',
+    ],
     phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', {
       contract, red: red.artifact, implementer: a.implementer,
       feedback: [smokeFeedback, feedback].filter(Boolean).join('\n\n'),

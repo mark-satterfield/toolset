@@ -33,7 +33,13 @@ function agentImpl(call) {
   if (label.startsWith('review:')) {
     return { apiSpec: APPROVE(), dataModelSpec: APPROVE(), eventContracts: APPROVE(), acceptance: APPROVE() }
   }
-  if (label.startsWith('decide') || label.includes('decider')) return { ruling: 'accept', rationale: 'r' }
+  // The spec-decider returns ONE ruling PER ARTIFACT now — it is asked about several at
+  // once, and a single verdict could not say which of them it was about. These fixtures
+  // approve every review so the decider is never reached; the shape is kept faithful so it
+  // does not quietly model a schema the mini no longer accepts.
+  if (label.startsWith('decide') || label.includes('decider')) {
+    return { rulings: [{ artifact: 'apiSpec', ruling: 'accept-maker', rationale: 'r' }] }
+  }
   return { approved: true, accepted: true, findings: [] }
 }
 

@@ -22,6 +22,11 @@ export const meta = {
 //                                 // against the field rendered as text.
 //   artifact: any,                // the phase output under review
 //   escalateTargets?: string[],   // upstream phases this gate may escalate to
+//   structural?: { requireOk?: boolean, required?: string[], nonEmpty?: string[] },
+//                                 // STRUCTURAL criteria — see below. Expressed here rather
+//                                 // than as hand-written `checks` because every gate needs
+//                                 // the same three questions answered and spelling them out
+//                                 // per call site is how they came to be answered nowhere.
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -85,7 +90,54 @@ const artifactText =
 // precisely so prose judgments can safely become flags. A gate that needs something to
 // be genuinely non-negotiable should express it here as a check wherever the artifact
 // can carry the field, and only fall back to a `constitutive` criterion when it cannot.
-const checks = Array.isArray(a.checks) ? a.checks : []
+// ── STRUCTURAL checks, derived BEFORE any quality judgment ────────────────────
+//
+// A gate used to ask a model whether work was good before anything established that the
+// work EXISTS. Three questions are not judgments at all — did the phase report ok, did it
+// produce the artifacts it is answerable for, and is the set it was asked to fill
+// non-empty — and a phase that fails one of them has produced nothing there is an opinion
+// to have about.
+//
+// Getting this wrong is not a near-miss, because of where the competitive path sits. A
+// gate whose criteria are all competitive converts a `loop` into a `pass` with flags (see
+// the conversion far below), which is correct for a reviewer's opinion and catastrophic
+// for an absent artifact: the run proceeds, flags "the spec set is incomplete", and the
+// phases downstream build on nothing. So a failed structural check must never reach that
+// conversion.
+//
+// It cannot, and the reason is structural rather than a second guard: these are ordinary
+// DETERMINISTIC checks — the concept this file already has — so they short-circuit to a
+// loop verdict above the model turn and far above the conversion, carrying the observed
+// value as feedback. They are simply derived from a declaration rather than hand-written
+// per call site, because every gate needs the same three questions asked and spelling them
+// out at each one is exactly how they came to be asked at none.
+const structural = a.structural && typeof a.structural === 'object' ? a.structural : null
+const structuralChecks = []
+if (structural) {
+  // `ok` is opt-in per gate, never universal: several minis legitimately return no `ok`
+  // field at all, and asserting one against them would fail every gate they sit behind.
+  // A gate declares this only when its phase genuinely reports `ok`.
+  if (structural.requireOk === true) {
+    structuralChecks.push({ field: 'ok', equals: true, label: 'the phase reports ok:true' })
+  }
+  // Presence, not shape. The default check arm treats undefined and null as unmet, which
+  // is the whole question here — the artifact either came back or it did not.
+  for (const field of Array.isArray(structural.required) ? structural.required : []) {
+    if (typeof field === 'string' && field) {
+      structuralChecks.push({ field, label: `the phase produced its required artifact '${field}'` })
+    }
+  }
+  // "A non-empty task set where one is expected" — a decomposition that emitted no task
+  // has not decomposed anything, however well it reads.
+  for (const field of Array.isArray(structural.nonEmpty) ? structural.nonEmpty : []) {
+    if (typeof field === 'string' && field) {
+      structuralChecks.push({ field, nonEmpty: true, label: `'${field}' is present and non-empty` })
+    }
+  }
+}
+// Structural first, so the feedback on a broken artifact names what is missing before it
+// names anything a caller's own check observed about it.
+const checks = [...structuralChecks, ...(Array.isArray(a.checks) ? a.checks : [])]
 function asText(value) {
   if (value === undefined || value === null) return ''
   if (typeof value === 'string') return value

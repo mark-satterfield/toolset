@@ -130,14 +130,42 @@ const REVIEW_SCHEMA = {
   },
 }
 
+// ── ONE RULING PER ARTIFACT, because the decider is asked about several ──────────
+//
+// The decider is handed EVERY deadlocked artifact — the API spec, the data model, the
+// event contracts, the acceptance criteria — and was given a schema that could express
+// exactly one ruling. So a run that deadlocked on two artifacts got one verdict applied to
+// both by whoever read it, and the second artifact's fate was decided by an accident of
+// which one the decider happened to write about.
+//
+// The ruling is also only half a disposition. "accept-reviewer" on a REJECTED artifact
+// says the reviewer was right — which means the draft is wrong and someone has to fix it.
+// Recorded and not acted on, that read as acceptance of the very draft the decider had
+// just rejected. It now routes back to the owning maker, which is the only role permitted
+// to change the artifact.
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['ruling', 'rationale'],
+  required: ['rulings'],
   properties: {
-    ruling: { type: 'string', enum: ['accept-maker', 'accept-reviewer', 'revise'] },
-    rationale: { type: 'string' },
-    directive: { type: 'string' },
+    rulings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['artifact', 'ruling', 'rationale'],
+        properties: {
+          // Must name one of the deadlocked keys it was given; a ruling naming anything
+          // else is dropped rather than applied to a guess.
+          artifact: { type: 'string' },
+          ruling: { type: 'string', enum: ['accept-maker', 'accept-reviewer', 'revise'] },
+          rationale: { type: 'string' },
+          // Required in practice for accept-reviewer and revise: it is what the re-run
+          // maker is given to act on.
+          directive: { type: 'string' },
+        },
+      },
+    },
   },
 }
 
@@ -570,12 +598,24 @@ ${ctx}`,
   const deadlocked = reviewables.map((r) => r.key).filter((k) => !reviewFindings[k].resolved)
 
   let decision = null
+  // Which artifacts the decider ruled on, and how — keyed by artifact, so a ruling is
+  // never applied to one it did not name.
+  const rulingFor = {}
   if (deadlocked.length) {
     log(
       `spec-authoring: ${deadlocked.length} artifact(s) deadlocked after ${MAX_LOOPS} passes — escalating to spec-decider`
     )
     decision = await agent(
-      `A maker/checker loop reached its retry limit without agreement on one or more spec artifacts. You only RULE — you do not author or re-review. For each deadlocked artifact below, rule: accept-maker, accept-reviewer, or revise (with a precise directive).\n\nDeadlocked artifacts and their latest review:\n${deadlocked
+      `A maker/checker loop reached its retry limit without agreement on one or more spec artifacts. You only RULE — you do not author or re-review.
+
+Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once, and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
+
+For each, rule:
+- "accept-maker" — the draft stands as it is; the reviewer's objection does not hold.
+- "accept-reviewer" — the reviewer is right, so THE DRAFT IS WRONG and goes back to its author to be corrected. State the \`directive\` that author must apply.
+- "revise" — neither side stands as it is. State the \`directive\` describing what the corrected artifact must do.
+
+"accept-reviewer" and "revise" both send the artifact back to the maker that owns it, so in both cases the directive must be precise enough to apply without re-deciding anything.\n\nDeadlocked artifacts and their latest review:\n${deadlocked
         .map(
           (k) =>
             `── ${k} ──\nLatest verdict: ${reviewFindings[k].verdict}\nFindings:\n${findingsText(reviewFindings[k])}\nCurrent draft:\n${JSON.stringify(finalArtifacts[k], null, 2)}`
@@ -589,6 +629,65 @@ ${ctx}`,
         schema: DECISION_SCHEMA,
       }
     )
+    for (const r of decision && Array.isArray(decision.rulings) ? decision.rulings : []) {
+      // A ruling naming something that did not deadlock is DROPPED, never guessed at.
+      if (r && typeof r.artifact === 'string' && deadlocked.includes(r.artifact)) rulingFor[r.artifact] = r
+    }
+
+    // ── Enact the rulings that send an artifact BACK to its maker ─────────────────
+    //
+    // "accept-reviewer" on a rejected artifact says the reviewer was right — which means
+    // the DRAFT is wrong and somebody has to correct it. Recorded and not acted on, that
+    // read as acceptance of the very draft the decider had just rejected, and the spec set
+    // went downstream carrying it. The decider does not author and the reviewer may not,
+    // so the correction goes to the maker that owns the artifact: the same makers the
+    // bounded loop above re-runs, given the decider's directive instead of the reviewer's
+    // findings. "revise" routes identically — it is the same statement about the draft.
+    const sentBack = deadlocked.filter((k) => rulingFor[k] && rulingFor[k].ruling !== 'accept-maker')
+    const directiveFor = (k) =>
+      `${
+        rulingFor[k].ruling === 'accept-reviewer'
+          ? 'The spec-decider ruled the REVIEWER correct: this draft is wrong and you are correcting it.'
+          : 'The spec-decider ruled that neither the draft nor the review stands as it is.'
+      }\nDirective (apply it; do not re-open it): ${rulingFor[k].directive || rulingFor[k].rationale || '(none stated)'}\nRationale: ${rulingFor[k].rationale || '(none stated)'}\n\nThe reviewer findings that led here:\n${findingsText(reviewFindings[k])}`
+
+    const contractSentBack = sentBack.filter((k) => k === 'apiSpec' || k === 'eventContracts')
+    if (contractSentBack.length) {
+      const redone = await agent(
+        `Correct the interface contract artifacts to apply the spec-decider's ruling below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\n${contractSentBack
+          .map((k) => `── ${k} ──\n${directiveFor(k)}`)
+          .join('\n\n')}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: finalArtifacts.apiSpec, eventContracts: finalArtifacts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}${contractsBrief}`,
+        { label: 'author:contracts', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
+      )
+      for (const k of contractSentBack) if (redone && redone[k]) finalArtifacts[k] = redone[k]
+      if (redone && redone.errorSpec) authored.errorSpec = redone.errorSpec
+    }
+    if (sentBack.includes('dataModelSpec')) {
+      const redone = await agent(
+        `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\n${ctx}${dataModelBrief}`,
+        { label: 'author:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
+      )
+      if (redone) finalArtifacts.dataModelSpec = redone
+    }
+    if (sentBack.includes('acceptance')) {
+      const redone = await agent(
+        `Correct the acceptance criteria and Definition of Done to apply the spec-decider's ruling below. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\n${directiveFor('acceptance')}\n\n${ctx}${criteriaBrief}`,
+        { label: 'author:criteria', phase: 'Decide', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
+      )
+      if (redone) {
+        finalArtifacts.acceptance = { acceptanceCriteria: redone.acceptanceCriteria, notes: redone.notes }
+        authored.dod = { definitionOfDone: redone.definitionOfDone, notes: redone.notes }
+      }
+    }
+    for (const k of deadlocked) {
+      if (!rulingFor[k]) continue
+      reviewFindings[k] = {
+        ...reviewFindings[k],
+        resolved: true,
+        ruling: rulingFor[k].ruling,
+        directive: rulingFor[k].directive || null,
+      }
+    }
   }
 
   // ── Phase 4: Emit story — a Spec and its Story are created together ────────────
@@ -649,9 +748,15 @@ ${ctx}`,
   }
 
   // ── Return: one object threading every phase output ───────────────────────────
+  // A deadlock is SETTLED when the decider ruled on every artifact that deadlocked and the
+  // rulings were enacted above. An artifact it never named is still unsettled, and the old
+  // test — one ruling, "not revise" — reported a whole spec set as agreed on the strength
+  // of a single verdict that may not even have been about it.
   const allResolved = deadlocked.length === 0
+  const unruledArtifacts = deadlocked.filter((k) => !rulingFor[k])
   return {
-    ok: allResolved || (decision && decision.ruling !== 'revise'),
+    ok: allResolved || unruledArtifacts.length === 0,
+    unruledArtifacts,
     story,
     spec: {
       id: s.id || null,

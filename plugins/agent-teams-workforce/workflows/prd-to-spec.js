@@ -1014,8 +1014,11 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
-async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow }) {
+async function gateLoop({ gate, phaseName, criteria, checks, structural, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
+  // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
+  // branch below.
+  let revertSpent = false
   // Every adjudication goes to the ledger. Without the verdict and its per-criterion
   // evidence, a run that stops at a gate records only `failed:<phase>` — which cannot
   // distinguish a genuine defect from an over-strict criterion or a loop exhaustion.
@@ -1102,7 +1105,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
     const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, checks, artifact, escalateTargets,
+      gate, phaseName, criteria, checks, structural, artifact, escalateTargets,
     })
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -1117,6 +1120,30 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
     })
     if (verdict.verdict === 'pass') {
+      // ── `revert` IS A DISPOSITION, NOT A NOTE ───────────────────────────────
+      //
+      // gate-enforce routes a PASSING gate's competitive flags to the advantage-evaluator,
+      // which rules proceed-under-flag or REVERT on each. Both rulings arrived here and
+      // neither was acted on, so the one disposition that asks for work to be redone was
+      // indistinguishable from the one that asks for it to be kept.
+      //
+      // A revert re-runs the phase once with the reverted findings as feedback. Bounded to
+      // a single revert per gate and never past the loop budget: the evaluator NEVER halts
+      // the pipeline for a non-invalidating finding, so a second one proceeds under flag.
+      const reverts = ((verdict.advantage && verdict.advantage.dispositions) || []).filter(
+        (d) => d && d.disposition === 'revert'
+      )
+      if (reverts.length && !revertSpent && attempt < MAX_LOOPS) {
+        revertSpent = true
+        const detail = reverts.map((d) => `${d.flag}${d.rationale ? ` — ${d.rationale}` : ''}`).join('; ')
+        log(`Gate ${gate} (${phaseName}): PASS, but the advantage-evaluator ruled REVERT on ${reverts.length} flag(s) — re-running the phase once with them as feedback: ${detail}`)
+        recordGate(attempt, verdict, { terminal: 'advantage-revert', reverted: reverts.map((d) => d.flag) })
+        feedback = `The gate PASSED, but the advantage-evaluator ruled REVERT rather than proceed-under-flag on the following competitive finding(s). Address them: ${detail}`
+        continue
+      }
+      if (reverts.length) {
+        log(`Gate ${gate} (${phaseName}): PASS with ${reverts.length} REVERT ruling(s) that the revert budget cannot enact — proceeding under flag, which never halts the pipeline`)
+      }
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
     }
@@ -1912,6 +1939,11 @@ validation = await gateLoop({
   // to partial() and was reported as a retryable failure, which re-dispatched the identical run.
   // A PRD that exists is repaired in place by the loop below, or it fails honestly at exhaustion.
   escalateTargets: [],
+  // Established in code before the criteria above are judged: a validation phase that
+  // returned no validated PRD has produced nothing there is an opinion to have about, and
+  // every criterion here is competitive but one — so without this the gate would convert
+  // its own loop into a pass and hand an absent document to architecture and the TRD.
+  structural: { requireOk: true, required: ['validatedPrd'] },
   phaseFn: async (feedback, ctx) => {
     // First attempt validates what reconciliation produced. Every attempt after that repairs the
     // document against the gate's own findings first — otherwise the retry is guaranteed to fail
@@ -2652,6 +2684,10 @@ trdAuthoring = await gateLoop({
     { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
   ],
   escalateTargets: ['architecture', 'prd-validation'],
+  // Every criterion at this gate is competitive, so an unmet one passes with a flag. That
+  // is right for "the TRD is thin" and wrong for "there is no TRD": spec authoring below
+  // takes this document as its input packet.
+  structural: { requireOk: true, required: ['trd'] },
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:trd-authoring', {
       standingRulings,
@@ -3139,6 +3175,13 @@ async function authorSpecForRepo(repo, repoIndex) {
       { class: 'competitive', text: 'Event names are dot-form and schemas validate' },
     ],
     escalateTargets: ['trd-authoring', 'architecture'],
+    // A Spec and its Story are created together, and the Story is what this composite
+    // carries forward — into task decomposition, and into the bead hierarchy it writes.
+    // All four criteria here are competitive, so a spec-authoring run that came back
+    // without one would otherwise pass under a flag and decompose a Story that does not
+    // exist. `ok` is asserted too: this mini genuinely reports it, including the ok:false
+    // it returns when no repoPath was supplied.
+    structural: { requireOk: true, required: ['story'] },
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:spec-authoring', {
         spec: a.spec || {
@@ -3994,6 +4037,11 @@ async function decomposeStory(pair) {
       { class: 'competitive', text: 'Beads format validates for every emitted task' },
     ],
     escalateTargets: ['spec-authoring'],
+    // THE non-empty task set this composite exists to produce. Decomposition into Tasks is
+    // what ends a PRD/Epic's life, so a decomposition that emitted none has decomposed
+    // nothing however well it reads — and with every criterion here competitive, that
+    // emptiness would pass under a flag and the run would report a decomposed Epic.
+    structural: { requireOk: true, nonEmpty: ['beadSet'] },
     phaseFn: (feedback) => workflow('agent-teams-workforce:task-decomposition', decompArgs(pair, feedback)),
   })
   if (decomposition.ok) {
