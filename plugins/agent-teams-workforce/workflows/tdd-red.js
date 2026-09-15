@@ -129,13 +129,55 @@ const noteDead = (who) => {
   log(`⚠ Red: '${who}' returned nothing — it was skipped or died on a terminal API error. This is a DISPATCH failure, not a verdict.`)
 }
 
-const taskBlock = `${c.bead ? `Bug ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature under test'}
-Reproduction: ${c.reproduction || 'n/a'}
-Root cause: ${c.rootCause || 'n/a'}
+// ── ACCEPTANCE CRITERIA ARRIVE IN TWO SHAPES, AND BOTH ARE CONTRACTS ──────────
+//
+// bug-triage AUTHORS `{ given, when, then }` objects, so the bug route carries fields.
+// The spec route does not: a Task's criteria are FLATTENED PROSE ("Given … When … Then …")
+// taken off the bead, because that is how the spec's criteria document states them, and
+// splitting one sentence back into three fields would invent structure the spec never
+// wrote. Rendering the object form against prose printed "GIVEN undefined WHEN undefined
+// THEN undefined" — every criterion on the Task route erased at the exact point the test
+// writers read it. Both shapes render as themselves; neither is reformatted into the other.
+const acLine = (x, i) => {
+  if (typeof x === 'string') return `${i + 1}. ${x.trim()}`
+  if (x && typeof x === 'object' && (x.given || x.when || x.then)) {
+    return `${i + 1}. GIVEN ${x.given || 'n/a'} WHEN ${x.when || 'n/a'} THEN ${x.then || 'n/a'}`
+  }
+  return `${i + 1}. ${JSON.stringify(x)}`
+}
+const acList = (empty) => (ac.length ? ac.map(acLine).join('\n') : empty)
+
+// The bug route is the one that has a reproduction and a root cause; the Task route has a
+// SPEC instead, and used to render neither — the prompt carried the title and nothing else,
+// so the writers authored against a one-line summary of work the spec describes in full.
+const isBugContract = !!(c.reproduction || c.rootCause)
+const beadDescription = c.bead && typeof c.bead.description === 'string' ? c.bead.description.trim() : ''
+const specBlock = (() => {
+  const s = c.spec && typeof c.spec === 'object' ? c.spec : null
+  if (!s) return ''
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => str(x)).map((x) => x.trim()) : [])
+  const docs = [...new Set([str(s.specPath), ...list(s.specPaths)].filter(Boolean))]
+  const lines = [
+    str(s.id) || str(s.title) ? `Spec ${str(s.id)}${str(s.title) ? `: ${str(s.title)}` : ''}` : '',
+    docs.length
+      ? `Spec documents — THE CONTRACT. Read the sections named below in these files; this prompt is a pointer to them, not a substitute for them:\n${docs.map((d) => `  - ${d}`).join('\n')}`
+      : '',
+    list(s.specSections).length ? `Spec sections defining this work: ${list(s.specSections).join(', ')}` : '',
+    list(s.requirementIds).length ? `Requirements satisfied: ${list(s.requirementIds).join(', ')}` : '',
+    list(s.definitionOfDone).length ? `Definition of Done:\n${list(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
+  ].filter(Boolean)
+  return lines.length ? `\n\n${lines.join('\n')}` : ''
+})()
+
+const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature under test'}${
+  beadDescription ? `\n\n${beadDescription}` : ''
+}${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}
+
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 
 Acceptance criteria to encode as tests:
-${ac.length ? ac.map((x, i) => `${i + 1}. GIVEN ${x.given} WHEN ${x.when} THEN ${x.then}`).join('\n') : '(none — derive minimal coverage from the reproduction)'}`
+${acList(isBugContract ? '(none — derive minimal coverage from the reproduction)' : '(none — derive minimal coverage from the spec documents and the description above)')}`
 
 // ── Writers: DERIVED from the contract's surfaces, not decided here ────────────
 //
@@ -553,7 +595,7 @@ const coverage = await agent(
   `You are the test-coverage-gap-reviewer — INDEPENDENT of the test writers. Check the authored tests against the acceptance criteria; flag any criterion with no covering test. Do NOT write tests.
 
 Acceptance criteria:
-${ac.length ? ac.map((x, i) => `${i + 1}. GIVEN ${x.given} WHEN ${x.when} THEN ${x.then}`).join('\n') : '(none)'}
+${acList('(none)')}
 
 Authored test files: ${testFiles.join(', ') || 'none'}`,
   {

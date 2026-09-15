@@ -1500,13 +1500,27 @@ if (!freshness.ok) return handback(false, gateStage('spec-freshness', freshness)
 // itself — an API spec means there is an API contract to verify, event contracts
 // mean there is a delivery chain to verify. Anything not structurally evident must
 // be declared by the spec; this does not infer surfaces from file paths or names.
-// An empty result means unit tests only, which is correct for internal-only work.
-const declaredSurfaces = Array.isArray(bead.surfaces) ? bead.surfaces : []
+// A DECLARED empty list means unit tests only, which is correct for internal-only work.
+//
+// UNDECLARED IS NOT EMPTY, and the difference is load-bearing downstream. integration.js,
+// adversarial.js and deploy.js all read `null` as "nobody classified this change" and fall
+// back — to their lead, to every attack lane, to file-path signals — while `[]` is a
+// positive statement that the change crosses no boundary and lets them skip. Coercing an
+// absent declaration to `[]` therefore did not lose a nuance; it silently SKIPPED
+// integration testing and every adversarial lane on any Task whose bead never recorded
+// surfaces. So an absent declaration stays absent here. Structural evidence still counts
+// where it exists — an authored API spec is a contract to verify whatever the bead says —
+// and it is the only thing that can turn an unclassified change into a classified one.
+const declaredSurfaces = Array.isArray(bead.surfaces) ? bead.surfaces : null
 const structuralSurfaces = [
   bead.apiSpec ? 'api-contract' : null,
   Array.isArray(bead.eventContracts) && bead.eventContracts.length ? 'event-chain' : null,
 ].filter(Boolean)
-const contractSurfaces = [...new Set([...declaredSurfaces, ...structuralSurfaces])]
+const contractSurfaces = declaredSurfaces
+  ? [...new Set([...declaredSurfaces, ...structuralSurfaces])]
+  : structuralSurfaces.length
+    ? structuralSurfaces
+    : null
 
 const contract = {
   spec,
@@ -1518,15 +1532,22 @@ const contract = {
   acceptanceCriteria: Array.isArray(bead.acceptanceCriteria) ? bead.acceptanceCriteria : [],
   surfaces: contractSurfaces,
   // Pyramid shape, coverage threshold, and environment matrix belong to the spec,
-  // not to each task built from it. Carried when the spec states one; absent when
-  // it does not — tdd-red does not invent a per-task substitute.
-  testStrategy: bead.testStrategy || null,
+  // not to each task built from it. Carried when the spec states one; NULL when it
+  // does not, on the same rule as `surfaces` above — unknown stays unknown, and
+  // tdd-red does not invent a per-task substitute for a strategy nobody ruled.
+  testStrategy: bead.testStrategy && typeof bead.testStrategy === 'object' ? bead.testStrategy : null,
   freshness: freshness.artifact,
 }
 // contract.repoPath IS the workspace step's return value; nothing downstream may
 // substitute the caller's path for it.
 settleRepoPath = contract.repoPath
-if (contractSurfaces.length) log(`Contract surfaces: ${contractSurfaces.join(', ')} — specialist test writers will be derived from these`)
+if (contractSurfaces && contractSurfaces.length) {
+  log(`Contract surfaces: ${contractSurfaces.join(', ')} — specialist test writers will be derived from these`)
+} else if (contractSurfaces) {
+  log('Contract surfaces: the bead declares NONE — an explicit empty declaration, so the boundary-exercising phases are entitled to skip')
+} else {
+  log('Contract surfaces: UNDECLARED — unknown, not empty, so integration and adversarial fall back rather than skipping')
+}
 
 // ── Red (Gate 2a) ─────────────────────────────────────────────────────────────
 // Red and Green checkpoint SEPARATELY here, unlike bug-fix.js. There, the two are one
