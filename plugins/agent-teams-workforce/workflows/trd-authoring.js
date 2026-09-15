@@ -15,8 +15,44 @@ export const meta = {
 //   trdPath?: string,        // where the TRD should be written/lives
 //   repoPath?: string,       // working repo for file reads/writes
 //   maxLoops?: number,       // bounded maker-checker passes (default 2)
+//   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
+//                            // the Epic working directory. When present the author writes the TRD to
+//                            // <dir>/trd.md and records it; trdPath is then the FILING home the
+//                            // document is copied to on Done, returned as `filingPath`.
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+
+// ── ARTIFACT PERSISTENCE ─────────────────────────────────────────────────────────
+// When the caller names an Epic working directory, the session that AUTHORED an output
+// writes it there once and runs the deterministic recorder, which hashes what is on disk.
+// No session copies another session's output. Absent, nothing is written.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+const ART = artifactsFrom(a.artifacts)
 const prd = a.prd || {}
 const sad = a.sad || {}
 const repo = a.repoPath || '(repo path not provided — ask before editing files)'
@@ -170,21 +206,30 @@ Repository the run is working in: ${repo}`,
   }
 }
 
-for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-  // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
-  phase('Author TRD')
-  log(`Authoring TRD (attempt ${attempt}/${MAX_LOOPS}) at ${trdPath}`)
-
-  trd = await agent(
-    `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
-
-WRITE THE TRD TO THIS FILE BEFORE YOU RETURN: ${trdPath}
+// With an Epic working directory the TRD is authored THERE, and the filing home ruled above
+// is where it is filed once the run reaches Done — so a TRD from an unfinished run never
+// lands in the vault as if it were accepted.
+const authorPath = ART ? `${ART.dir}/trd.md` : trdPath
+const filingPath = typeof trdPath === 'string' && trdPath.startsWith('/') ? trdPath : null
+const writeBrief = ART
+  ? `WRITE THE TRD AS MARKDOWN BEFORE YOU RETURN, as the steps at the end of this brief say. \`trdPath\` in your result must be ${authorPath}.${filingPath ? ` Do NOT write it to ${filingPath}: that is where it is filed once the run completes, and that copy is not yours to make.` : ''}\n`
+  : `WRITE THE TRD TO THIS FILE BEFORE YOU RETURN: ${trdPath}
 Create any missing parent directories. A TRD is a durable document, not a value passed
 between phases: returning its text without saving the file means a run that ends early
 leaves no TRD anywhere, and the next run re-derives it from nothing. Saving the file is
 part of authoring it, not an optional extra, and \`trdPath\` in your result must be the
 path you actually wrote.
+`
 
+for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+  // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
+  phase('Author TRD')
+  log(`Authoring TRD (attempt ${attempt}/${MAX_LOOPS}) at ${authorPath}`)
+
+  trd = await agent(
+    `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
+
+${writeBrief}
 PRD (source of product requirements):
 ${prdText}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
@@ -193,7 +238,7 @@ SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; 
 ${extractText}
 ${feedback ? `\nChecker feedback from the previous attempt — address every point:\n${feedback}` : ''}
 
-Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.`,
+Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
     {
       label: 'author:trd',
       phase: 'Author TRD',
@@ -377,7 +422,9 @@ const accepted = decision && (decision.verdict === 'pass' || decision.verdict ==
 
 return {
   ok: !!accepted,
-  trdPath: (trd && trd.trdPath) || trdPath,
+  trdPath: ART ? authorPath : (trd && trd.trdPath) || trdPath,
+  // The filing home ruled for this TRD, when one was ruled. Null means nobody ruled it.
+  filingPath,
   sadExtract,
   trd,
   trdValidation,

@@ -17,8 +17,54 @@ export const meta = {
 //                                                              // is parented to it
 //   repoPath?: string,                                         // fallback source of the same repository
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
+//   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
+//                                                              // Epic working directory: the maker, the
+//                                                              // re-scorer and the checker each save their
+//                                                              // own output as tasks-<slug>.json,
+//                                                              // tasks-<slug>.wsjf.json, tasks-<slug>.review.json
+//   replay?: { maker, rescore?, review? },                     // those saved outputs, read back from fresh
+//                                                              // artifacts: a supplied one replaces its session
+//                                                              // and the deterministic emission below still runs
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+
+// ── ARTIFACT PERSISTENCE ─────────────────────────────────────────────────────────
+// When the caller names an Epic working directory, the session that AUTHORED an output
+// writes it there once and runs the deterministic recorder, which hashes what is on disk.
+// No session copies another session's output. Absent, nothing is written.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+const ART = artifactsFrom(a.artifacts)
+const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(ART.slug) ? ART.slug : 'repo'
+const replay = a.replay && typeof a.replay === 'object' ? a.replay : {}
+const replayMaker = replay.maker && typeof replay.maker === 'object' && Array.isArray(replay.maker.tasks) && replay.maker.tasks.length ? replay.maker : null
+const replayRescore = replay.rescore && typeof replay.rescore === 'object' && Array.isArray(replay.rescore.scores) ? replay.rescore : null
+const replayReview =
+  replay.review && typeof replay.review === 'object' && replay.review.scoringReview && replay.review.beadsValidation ? replay.review : null
 const spec = a.spec || {}
 const story = a.story || {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
@@ -148,7 +194,8 @@ const wsjfSchema = {
   },
 }
 
-const maker = await agent(
+if (replayMaker) log(`Decompose REPLAYED from the saved maker output (${replayMaker.tasks.length} task(s)) — no maker session`)
+const maker = replayMaker || await agent(
   `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code, and do NOT judge your own output — an independent checker does that after you.
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into ATOMIC TASKS. Each task must be scoped to ONE agent's work within the single repository named below, be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Assign each a stable, human-readable local "key" (e.g. T1, T2). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature under any circumstance: the Epic was created with its PRD and the Story with this Spec, both already exist upstream, and every task you emit is a child of the Story named below. If the Spec looks too large for one Story, report that in your rationale (under 80 words) and still decompose only what this Spec covers.
@@ -157,7 +204,7 @@ JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`)
 
 JOB 3 — WSJF SCORE (return in \`scores\`): assign a WSJF score to EVERY task. WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme. Score each component on the standard scale, then compute wsjf = (userBusinessValue + timeCriticality + riskReductionOpportunityEnablement) / jobSize, jobSize > 0. Score every key exactly once, with a one-line rationale per task.
 
-${specBlock}`,
+${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
@@ -221,7 +268,7 @@ Tasks:
 ${taskList}
 
 Build order (lower index builds first):
-${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer feedback from the previous pass — address it:\n${feedback}` : ''}`,
+${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer feedback from the previous pass — address it:\n${feedback}` : ''}${persistBrief(ART, `tasks-${artSlug}.wsjf.json`, 'your complete structured result (scores and notes, exactly as you return them) as ONE JSON object')}`,
     {
       label: 'wsjf:score',
       effort: 'low',
@@ -232,17 +279,26 @@ ${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer fee
   )
 }
 
-let wsjfScores = { scores: maker.scores || [], notes: maker.notes }
+let wsjfScores = replayRescore || { scores: maker.scores || [], notes: maker.notes }
 let scoringReview = null
 let scoringAccepted = false
 let beadsValidation = null
+// A saved checker verdict stands in for the checker session. It judged the saved maker
+// output; only a rejected SCORING is ever redone after it, and the structural verdict it
+// carries is independent of the scores.
+if (replayReview) {
+  scoringReview = replayReview.scoringReview
+  beadsValidation = replayReview.beadsValidation
+  scoringAccepted = !!(scoringReview && scoringReview.accepted === true)
+  log(`Validate REPLAYED from the saved checker verdict (scores ${scoringAccepted ? 'accepted' : 'disputed'}, Beads format ${beadsValidation && beadsValidation.valid === true ? 'valid' : 'invalid'}) — no checker session`)
+}
 
 // ── One INDEPENDENT checker session: WSJF review + Beads-format validation ─────
 // These used to be two separate checker sessions. Both judge the maker's output and
 // neither authored any of it, so one session carrying both checks preserves
 // segregation of duties at half the session cost. On a scoring rejection only the
 // SCORING is redone (the standalone scorer above); the structural result stands.
-for (let pass = 1; pass <= MAX_SCORING_PASSES; pass++) {
+for (let pass = 1; !replayReview && pass <= MAX_SCORING_PASSES; pass++) {
   const check = await agent(
     `You are an INDEPENDENT checker. You did NOT produce any of the artifacts below; you only judge them. Perform BOTH checks in one pass and return each under its own key. Keep every problem/feedback item under 40 words.
 
@@ -262,7 +318,7 @@ Build order (lower index builds first):
 ${(dag.buildOrder || []).join(' -> ') || '(none)'}
 
 WSJF scores under review:
-${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}`,
+${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `tasks-${artSlug}.review.json`, 'your complete verdict (scoringReview and beadsValidation, exactly as you return them) as ONE JSON object')}`,
     {
       label: `review:scores-and-format:${pass}`,
       effort: 'medium',

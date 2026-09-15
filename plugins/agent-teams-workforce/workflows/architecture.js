@@ -23,8 +23,48 @@ export const meta = {
 //                            // Without it a caller-sized panel leaves no verdict for the challenge-wave
 //                            // trigger to read, and the wave fires unconditionally — see Phase 0.
 //   forceFullPanel?: boolean,// override: skip triage and run the full panel + challenge wave as today
+//   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
+//                            // Epic working directory: each analyst, the challenger, the decider, the
+//                            // decision-artifact and design-draft authors and the sad-maintainer save
+//                            // their own output there (architecture-proposal-<dim>.json,
+//                            // architecture-analysis.json, architecture-challenges.json,
+//                            // architecture-decision.md, architecture-fitness.json,
+//                            // architecture-design-drafts.json, sad-update.json)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+
+// ── ARTIFACT PERSISTENCE ─────────────────────────────────────────────────────────
+// When the caller names an Epic working directory, the session that AUTHORED an output
+// writes it there once and runs the deterministic recorder, which hashes what is on disk.
+// No session copies another session's output. Absent, nothing is written.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+const ART = artifactsFrom(a.artifacts)
+const PROPOSAL_WHAT = 'your complete structured result (every key, exactly as you return it) as ONE JSON object'
 const d = a.decision || {}
 const sadPath = a.sadPath || 'tech/architecture/arch42/ (skillspoke-docs vault)'
 const repo = d.repoPath || '(repo path not provided — ask before editing files)'
@@ -459,7 +499,7 @@ Propose from YOUR lens only. The other axes above are covered by the analysts di
 
   const jobs = activeMakers.map((m) => () =>
     agent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${SURVEY_BOUND}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
       {
         label: `proposals:${m.lens}`,
         phase: 'Proposals',
@@ -485,7 +525,7 @@ ${decisionHeader}
 
 ${frameBlock}
 
-${SURVEY_BOUND}`,
+${SURVEY_BOUND}${persistBrief(ART, 'architecture-analysis.json', PROPOSAL_WHAT)}`,
         {
           label: 'proposals:analysis-advisors',
           phase: 'Proposals',
@@ -542,7 +582,7 @@ ${decisionHeader}
 Proposals under challenge:
 ${proposalsText}
 
-READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.`,
+READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.${persistBrief(ART, 'architecture-challenges.json', PROPOSAL_WHAT)}`,
     {
       label: 'challenge:all-lenses',
       effort: 'medium',
@@ -816,7 +856,7 @@ Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
 ${decisionHeader}
 
-${evidence}`,
+${evidence}${persistBrief(ART, 'architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
     {
       label: round === 1 ? 'decide:ruling' : `decide:ruling-r${round}`,
       effort: 'high',
@@ -855,7 +895,7 @@ Propose a NEW option set. Requirements for this round:
 
   const reJobs = activeMakers.map((m) => () =>
     agent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}\n\n${SURVEY_BOUND}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
       { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA, effort: 'low' }
     )
   )
@@ -960,7 +1000,7 @@ function authorDecisionArtifacts() {
 1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis".
 2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
 
-${decisionContext}`,
+${decisionContext}${persistBrief(ART, 'architecture-fitness.json', PROPOSAL_WHAT)}`,
   { label: 'author:decision-artifacts', phase: 'Update SAD', effort: 'medium', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
     schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions', 'diagrams'], properties: {
       fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
@@ -977,7 +1017,7 @@ function authorDesignDrafts() {
 
 ${designSpecs.map(([key, ask]) => `- \`${key}\`: ${ask}`).join('\n')}
 
-${decisionContext}`,
+${decisionContext}${persistBrief(ART, 'architecture-design-drafts.json', PROPOSAL_WHAT)}`,
     {
       label: 'design:drafts',
       phase: 'Update SAD',
@@ -1048,7 +1088,7 @@ Decision artifacts already authored (consolidate references into the SAD; do NOT
 ${JSON.stringify({ fitnessFunctions: authoredArtifacts.fitnessFunctions, diagrams: authoredArtifacts.diagrams, designDrafts }, null, 2)}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
-Deliver: which §2/§4/§8 sections you changed, the file paths edited, and a one-line summary of the change.`,
+Deliver: which §2/§4/§8 sections you changed, the file paths edited, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
     {
       label: 'sad:maintain',
       effort: 'medium',

@@ -1,18 +1,11 @@
-// Composites are RESUMABLE ACROSS DISPATCHES via phase-level checkpointing.
+// Phase-level checkpointing behaviours that still exist.
 //
-// "If we reach a spend limit, then execution should pause, but when the spend limit
-// resets, it should pick back up." The supervisor re-dispatches a killed composite,
-// but the re-dispatch used to restart from minute zero — ssbd-qxeu died at 103
-// minutes, ~10 from finishing architecture, and every minute was lost. These tests
-// pin the five behaviors that make resume real: each completed phase's RESULT is
-// SAVED to a durable per-bead file; a resumed run SKIPS completed phases and REUSES
-// their results; a checkpoint whose PRD content hash or PHASE SEMANTICS version differs
-// is INVALIDATED (fresh start, journalled); and a completed run DELETES its checkpoint
-// while a failed one keeps it.
-//
-// The semantics version is deliberately NOT the plugin version. It was, and every plugin
-// release then discarded every checkpoint in every composite — 6.11.0 was a markdown edit
-// to one skill — so a checkpoint surviving a plugin bump is itself a pinned behavior here.
+// bug-fix and task-to-deploy write and resume their own checkpoints. prd-to-spec no longer
+// writes one: its makers save their artifacts into the Epic working directory, the host passes
+// the freshness plan in as `args.resume`, and its checkpoint loader is kept only as a migration
+// reader for directories written before that. What is pinned here is the create-repos exit
+// retiring nothing, bug-fix resuming from its checkpoint, and every checkpointing composite
+// declaring a CHECKPOINT_SEMANTICS counter decoupled from the plugin version.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -45,76 +38,6 @@ const semanticsOf = (file) => {
   const src = fs.readFileSync(path.join(WF, file), 'utf8')
   const m = src.match(/const CHECKPOINT_SEMANTICS = '([^']*)'/)
   return m ? m[1] : null
-}
-
-/**
- * Pull every file one save dispatch writes out of its prompt: `{ path -> text }`.
- *
- * The checkpoint is a DIRECTORY as of semantics 3 — a small envelope naming the phase
- * files it owns, plus one write-once file per completed phase — so a save prompt names
- * several paths rather than one payload. Each block reads `N. <heading> — <path>` on one
- * line and the JSON on the next.
- */
-function savedFiles(call) {
-  const out = {}
-  for (const chunk of String(call.prompt || '').split('\n\n')) {
-    const m = chunk.match(/^\d+\.[^\n]*— (\S+)\n([\s\S]+)$/)
-    if (!m) continue
-    try {
-      JSON.parse(m[2])
-    } catch {
-      continue
-    }
-    out[m[1]] = m[2]
-  }
-  return out
-}
-
-/** The ENVELOPE one save wrote, parsed. */
-function savedPayload(call) {
-  const files = savedFiles(call)
-  const envelope = Object.keys(files).find((k) => k.endsWith('/envelope.json'))
-  return envelope ? JSON.parse(files[envelope]) : null
-}
-
-/**
- * Reconstruct the checkpoint DIRECTORY a run left on disk, as the reader would list it:
- * `[{ name, found, content }]` keyed on the bare filename.
- *
- * This is what makes a resume test a real differential: the second dispatch is handed
- * exactly the bytes the first one wrote, discovered the same way the live reader
- * discovers them, rather than a hand-authored fixture that can drift from the writer.
- */
-function checkpointDir(saves) {
-  const merged = {}
-  for (const call of saves) Object.assign(merged, savedFiles(call))
-  return Object.keys(merged).map((full) => ({
-    name: full.slice(full.lastIndexOf('/') + 1),
-    found: true,
-    content: merged[full],
-  }))
-}
-
-/** Replace the envelope inside a reconstructed directory listing. */
-function withEnvelope(entries, mutate) {
-  return entries.map((e) => {
-    if (e.name !== 'envelope.json' && e.name !== 'envelope.json.wal') return e
-    const parsed = JSON.parse(e.content)
-    mutate(parsed)
-    return { ...e, content: JSON.stringify(parsed) }
-  })
-}
-
-/** Add one phase file to a listing and name it in the envelope's manifest. */
-function withPhase(entries, key, payload) {
-  const name = `99-${key.replace(/[^A-Za-z0-9._-]+/g, '_')}.json`
-  const body = JSON.stringify(payload)
-  return [
-    ...withEnvelope(entries, (env) => {
-      env.files[key] = name
-    }),
-    { name, found: true, content: JSON.stringify({ key, chars: body.length, payload }) },
-  ]
 }
 
 // ── prd-to-spec fixture (mirrors standing-rulings' minimal happy path) ─────────
@@ -183,77 +106,10 @@ async function runP2S({ onDisk = null, workflowOpts = {}, args = {} } = {}) {
   return { ...result, saves }
 }
 
-test('a fresh run SAVES each completed phase result to the per-bead checkpoint file', async () => {
-  const { result, saves } = await runP2S()
-  assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
-  const keys = saves.map((c) => String(c.label).replace('checkpoint:save:', ''))
-  // `recon:<repo>` rather than a front-end `reconciliation`: the current-state comparison
-  // runs per repository inside spec authoring, so it checkpoints per repository too — a
-  // resume that already paid for one repository's inventory must not pay again.
-  for (const expected of ['validation', 'architecture', 'repo-scoping', 'trd-authoring', 'recon:/repos/alpha', 'spec:/repos/alpha', 'decomposition:S1']) {
-    assert.ok(keys.includes(expected), `phase '${expected}' must be checkpointed as it completes; saved: ${keys.join(', ')}`)
-  }
-  for (const c of saves) {
-    assert.match(c.prompt, /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json/, 'the checkpoint directory lives in the repo the run operates on, keyed by subject+composite')
-  }
-  const last = savedPayload(saves[saves.length - 1])
-  assert.equal(last.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the staleness guard keys on the composite\'s phase-semantics version')
-  assert.equal(last.pluginVersion, undefined, 'the plugin version is deliberately NOT written — it is not what makes a checkpoint stale')
-  assert.equal(last.inputHash, fnv(PRD.body), 'the staleness guard keys on the PRD content hash')
-  // The RESULTS live in their own write-once files now; the envelope only names them.
-  assert.equal(last.phases, undefined, 'the envelope carries no phase results — that is what stopped it growing to 99 KB')
-  const onDisk = checkpointDir(saves)
-  const named = last.files['recon:/repos/alpha']
-  assert.ok(named, 'every completed phase is named in the envelope manifest')
-  const file = onDisk.find((e) => e.name === named)
-  const parsed = JSON.parse(file.content)
-  assert.equal(parsed.key, 'recon:/repos/alpha')
-  assert.equal(parsed.chars, JSON.stringify(parsed.payload).length, 'each phase file declares its own payload length so a partial copy is detectable')
-  assert.equal(parsed.payload.requirements.length, 1, "the repository's own material inventory is what resumes")
-  assert.ok(last.files['spec:/repos/alpha'], 'and the spec it fed is checkpointed beside it, per repo')
-  // ONE PHASE PER WRITE is the property the redesign exists for: the save that follows six
-  // completed phases must not be carrying all six.
-  const lastPhaseFiles = Object.keys(savedFiles(saves[saves.length - 1])).filter((k) => !k.includes('envelope.json'))
-  assert.equal(lastPhaseFiles.length, 1, 'the last save writes ONE phase file, not the accumulated total')
-})
-
 /** True when the run retired its checkpoint. */
 function retired(calls) {
   return agentCalls(calls, 'checkpoint:retire').length > 0
 }
-
-test('a completed successful run RETIRES its checkpoint — and its write-ahead copy — in its OWN dispatch', async () => {
-  const { calls } = await runP2S()
-  assert.ok(retired(calls), 'resuming finished work would replay it, so the retirement must happen')
-  const [journal] = agentCalls(calls, 'ledger:persist')
-  assert.doesNotMatch(
-    String(journal.prompt),
-    /RETIRE/,
-    'the retirement is NOT folded into the journal write: one agent handed a verbatim-JSON errand and a JSONL errand blended the two contracts and corrupted real checkpoints',
-  )
-  const [retire] = agentCalls(calls, 'checkpoint:retire')
-  assert.match(
-    String(retire.prompt),
-    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json/,
-    'the retirement names the run\'s own envelope path',
-  )
-  assert.match(
-    String(retire.prompt),
-    /\/repos\/alpha\/\.claude\/workflow-runs\/checkpoints\/P1-prd-to-spec\/envelope\.json\.wal/,
-    'BOTH envelopes, or the loader recovers the finished run from the copy and replays every phase',
-  )
-  // The ledger payload is LAST in the prompt so it stays parseable to the end — a reader
-  // that slices from the marker must not find prose after the JSON.
-  const payload = String(journal.prompt).slice(String(journal.prompt).indexOf('JSON payload:\n') + 'JSON payload:\n'.length)
-  JSON.parse(payload)
-})
-
-test('a FAILED run keeps its checkpoint so the next dispatch resumes', async () => {
-  const { result, calls, saves } = await runP2S({ workflowOpts: { failSpec: true } })
-  assert.equal(result.ok, false)
-  assert.ok(saves.length >= 4, 'the phases that completed were still checkpointed')
-  assert.equal(retired(calls), false, 'a kept checkpoint is the whole point of pausing')
-})
 
 test('the create-repos exit keeps the checkpoint — its purpose is a re-run after a human acts', async () => {
   const { result, calls } = await runP2S({
@@ -262,177 +118,6 @@ test('the create-repos exit keeps the checkpoint — its purpose is a re-run aft
   assert.equal(result.ok, true)
   assert.equal(result.action, 'create-repos')
   assert.equal(retired(calls), false)
-})
-
-test('a resumed run SKIPS completed phases, REUSES their results, and journals the resume', async () => {
-  // First run produces the real checkpoint file content; the second run is a fresh
-  // dispatch (different session) that finds it on disk.
-  const first = await runP2S()
-  const onDisk = checkpointDir(first.saves)
-
-  const second = await runP2S({ onDisk })
-  assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
-  for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
-    assert.equal(
-      workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
-      0,
-      `${mini} completed in the first dispatch and must never re-run — that is the lost 103 minutes`,
-    )
-  }
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"resumed"/, 'the trace must show the resume decision, not silence')
-  assert.match(journal.prompt, /"resumedAfter":/)
-  // The reused results flow into the product: the emitted hierarchy still carries the
-  // checkpointed story and tasks.
-  assert.equal(second.result.hierarchy.stories[0].key, 'S1')
-  assert.equal(second.result.hierarchy.tasks.length, 1)
-})
-
-test('a checkpoint written against DIFFERENT PRD content is invalidated — fresh start, journalled', async () => {
-  const first = await runP2S()
-  const second = await runP2S({
-    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
-      env.inputHash = fnv('a completely different PRD body')
-    }),
-  })
-  assert.equal(second.result.ok, true)
-  assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'stale results must not be reused')
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /written against a different PRD text/)
-})
-
-test('a checkpoint written under DIFFERENT phase semantics is invalidated', async () => {
-  const first = await runP2S()
-  const second = await runP2S({
-    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
-      env.semanticsVersion = '0'
-    }),
-  })
-  assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1)
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /phase semantics/)
-})
-
-test('a PRE-GUARD checkpoint — pluginVersion, no semanticsVersion — is invalidated exactly once, not crashed on', async () => {
-  const first = await runP2S()
-  const second = await runP2S({
-    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
-      delete env.semanticsVersion
-      env.pluginVersion = '6.10.1' // what the old code wrote
-    }),
-  })
-  assert.equal(second.result.ok, true, 'an unrecognised shape must not take the run down with it')
-  assert.equal(workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length, 1, 'its phases cannot be trusted, so it is discarded')
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /predates the phase-semantics guard/)
-  // And the fresh run rewrites it in the new shape, so the discard happens ONCE.
-  const rewritten = savedPayload(second.saves[second.saves.length - 1])
-  assert.equal(rewritten.semanticsVersion, semanticsOf('prd-to-spec.js'))
-})
-
-test('a checkpoint carrying a FRONT-END reconciliation phase is discarded in full — this sequence cannot produce one', async () => {
-  // PRD Reconciliation used to be phases[0] and used to feed PRD validation, the
-  // architecture panel and the TRD. It now runs per repository INSIDE spec authoring, under
-  // the key `recon:<repo>`, and nothing before the specs is handed a deployed-state
-  // inventory at all. So a top-level `reconciliation` key is a phase this sequence has no
-  // way of writing.
-  //
-  // The normal case is caught one level up: bumping CHECKPOINT_SEMANTICS rejects every
-  // version-1 file whole, by name and reason. This is the BACKSTOP for a file that claims
-  // the current semantics and carries the key anyway — mislabelled, hand-edited, or written
-  // by something else — and the point is that PART of such a file is exactly as
-  // untrustworthy as all of it. Every entry after the old front-end phase was derived from
-  // it: a real checkpoint on disk carried a `validation` entry recording a Gate 1 verdict
-  // granted to a narrowed PRD, and the inputHash is over the PRD text, which did not
-  // change, so nothing else would invalidate it.
-  const first = await runP2S()
-  const second = await runP2S({
-    onDisk: withPhase(checkpointDir(first.saves), 'reconciliation', { ok: true, verdict: 'partial', deltaCount: 1, sizeVerdict: 'story' }),
-  })
-  assert.equal(second.result.ok, true)
-  // `architecture` is absent from this list because the triage fixture skips it — it is
-  // never dispatched as a mini at all, so it has no checkpointed result to be stale.
-  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'prd-reconciliation', 'spec-authoring', 'task-decomposition']) {
-    assert.equal(
-      workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
-      1,
-      `${mini}'s checkpointed result is exactly as stale as the retired phase it was derived from`,
-    )
-  }
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /which this sequence cannot produce/)
-  assert.match(journal.prompt, /"discardedAll":true/, 'the invalidation must STATE what it dropped, not just that one key went')
-  assert.match(journal.prompt, /"discarded":\["validation"/)
-  // And the discarded entries must not be written straight back. Under the per-phase
-  // layout that means the MANIFEST: the envelope is rewritten from `cp.files`, so a
-  // discarded key left there would name a stale phase file and greet the next resume with
-  // it — the phase file itself is still sitting in the directory, inert only because
-  // nothing names it.
-  const rewritten = savedPayload(second.saves[0])
-  assert.deepEqual(Object.keys(rewritten.files), ['validation'], 'the first save after a full discard names only the phase that just completed')
-  assert.equal(rewritten.files.reconciliation, undefined, 'the retired front-end phase must not be re-adopted by the manifest')
-})
-
-test('the semantics bump is what rejects a real version-1 checkpoint, and it says why', async () => {
-  // The primary guard for this change, as opposed to the backstop above. A file written by
-  // the previous sequence carries semanticsVersion '1'; every phase in it was derived from
-  // a deployed-state inventory that architecture and the TRD no longer read.
-  const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  assert.equal(payload.semanticsVersion, '3', 'the move to a per-phase checkpoint directory is a layout change nothing older can be read as')
-  const second = await runP2S({
-    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
-      env.semanticsVersion = '1'
-    }),
-  })
-  assert.equal(second.result.ok, true)
-  for (const mini of ['prd-validation', 'repo-scoping', 'trd-authoring', 'prd-reconciliation', 'spec-authoring']) {
-    assert.equal(workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length, 1, `${mini} must re-run`)
-  }
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"invalidated"/)
-  assert.match(journal.prompt, /written under phase semantics 1 and this composite is at 3/, 'the rejection names the reason, never silently misapplies')
-})
-
-test('a per-repo comparison is resumed per repo — a repo already inventoried is not read twice', async () => {
-  const first = await runP2S()
-  const second = await runP2S({ onDisk: checkpointDir(first.saves) })
-  assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
-  assert.equal(
-    workflowCalls(second.calls, 'agent-teams-workforce:prd-reconciliation').length,
-    0,
-    'the inventory for this repository was already paid for; re-reading the repository is the cost the checkpoint exists to avoid',
-  )
-})
-
-test('a checkpoint SURVIVES a plugin version change when the phase semantics are unchanged', async () => {
-  // This is the defect the semantics version exists to fix: 6.11.0 was a markdown edit to
-  // one skill and it discarded every resumable run in all three composites. A checkpoint
-  // carrying a stale plugin version — however it got there — must still be honoured.
-  const first = await runP2S()
-  const payload = savedPayload(first.saves[first.saves.length - 1])
-  assert.notEqual('0.0.1', PLUGIN_VERSION, 'the fixture must actually differ from the shipped plugin version')
-  assert.equal(payload.semanticsVersion, semanticsOf('prd-to-spec.js'), 'the semantics version is the one thing left unchanged')
-
-  const second = await runP2S({
-    onDisk: withEnvelope(checkpointDir(first.saves), (env) => {
-      env.pluginVersion = '0.0.1'
-    }),
-  })
-  assert.equal(second.result.ok, true, `resumed composite failed at ${second.result.stage}: ${second.result.headline || ''}`)
-  for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'spec-authoring', 'task-decomposition']) {
-    assert.equal(
-      workflowCalls(second.calls, `agent-teams-workforce:${mini}`).length,
-      0,
-      `${mini} must NOT re-run — a plugin release is not a change to what a phase means`,
-    )
-  }
-  const journal = agentCalls(second.calls, 'ledger:persist')[0]
-  assert.match(journal.prompt, /"event":"resumed"/)
-  assert.doesNotMatch(journal.prompt, /"event":"invalidated"/)
 })
 
 // ── bug-fix ───────────────────────────────────────────────────────────────────

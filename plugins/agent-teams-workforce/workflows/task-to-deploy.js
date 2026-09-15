@@ -1110,13 +1110,22 @@ async function cpWriteOne(key) {
   cp.seq += 1
   const file = JSON.stringify({ composite: 'task-to-deploy', subject: bead.id || null, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, seq: cp.seq, phases: cp.phases })
   try {
-    await agent(cpWritePrompt(file), {
+    const written = await agent(cpWritePrompt(file), {
       label: `checkpoint:save:${key}`,
       phase: currentPhase || 'Run Ledger',
       effort: 'low',
       agentType: 'agent-teams-workforce:run-ledger-writer',
       schema: CP_IO_SCHEMA,
     })
+    // The writer's own verdict is the only evidence the file landed. A null dispatch or
+    // `ok: false` is a checkpoint that was NOT written, and is reported as one.
+    if (!written || written.ok !== true) {
+      log(
+        `CHECKPOINT NOT PERSISTED after '${key}' — the writer reported failure: ${(written && written.error) || 'no reason given'}. ` +
+          'A resume cannot reuse this phase.'
+      )
+      return
+    }
     cp.touched = true
     log(`Checkpoint generation ${cp.seq} persisted after '${key}' — ${Object.keys(cp.phases).length} phase(s) now resumable`)
   } catch (e) {

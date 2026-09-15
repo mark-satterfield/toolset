@@ -354,7 +354,12 @@ const PROMPTABLE = [
   { name: 'heredoc', re: /<<\s*['"]?[A-Z_]{2,}/ },
   { name: 'shell loop', re: /\bwhile\s+(?:IFS|read)\b|\bdone\s*<\b/ },
 ]
-// `date -u` is the ONE sanctioned call: a single-line simple command matching Bash(date:*).
+// `date -u` is a sanctioned call: a single-line simple command matching Bash(date:*).
+// So is the artifact recorder — `python3 <abs>/ops/sdlc-automation/artifactio.py record <file> ...`
+// — a single-line simple command matching Bash(python3:*), which a maker runs once over the
+// document it just wrote so the hashes come from what is on disk rather than from a model's copy.
+// The exemption is the recorder invocation and nothing else: any other python mention still fails.
+const SANCTIONED = [/python3 \S*\/ops\/sdlc-automation\/artifactio\.py record\b/, /python3 \$\{art\.script\} record\b/]
 const NEGATED = /\bnever\b|\bnot\b|\bno\b|n't|\bforbidden\b|\binstead of\b|\brather than\b/i
 // Anchored to THIS SCRIPT's location, never to the dir argument. These are fixed plugin
 // assets, and pass 5 must not go dark — or fabricate a missing-file failure — just because
@@ -387,6 +392,7 @@ for (const { file, abs } of GUARDED) {
       if (!m) continue
       // Negation must sit close in front of the mention — see the note above.
       if (NEGATED.test(raw.slice(Math.max(0, m.index - 80), m.index))) continue
+      if (name === 'python' && SANCTIONED.some((s) => s.test(raw.slice(m.index)))) continue
       promptable.push({ file, line: i + 1, name, text: raw.trim().slice(Math.max(0, m.index - 60), m.index + 60) })
     }
   })

@@ -11,8 +11,43 @@ export const meta = {
 //   prd: { id?, title?, body, repoPath? } | string,  // the raw PRD under validation (required)
 //   context?: string,                                 // optional bounded-context / service-boundary notes
 //   brd?: string,                                     // optional BRD objectives — enables the traceability audit
+//   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
+//                                                     // the Epic working directory the analyst saves its own
+//                                                     // result into (`prd-validation.json`) — see persistBrief
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+
+// ── ARTIFACT PERSISTENCE ─────────────────────────────────────────────────────────
+// When the caller names an Epic working directory, the session that AUTHORED an output
+// writes it there once and runs the deterministic recorder, which hashes what is on disk.
+// No session copies another session's output. Absent, nothing is written.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+const ART = artifactsFrom(a.artifacts)
 const prdInput = a.prd || {}
 const prdBody = typeof prdInput === 'string' ? prdInput : prdInput.body || ''
 const prdId = typeof prdInput === 'string' ? '' : prdInput.id || ''
@@ -201,7 +236,7 @@ Repository under consideration: ${repo}
 PRD under validation:
 ${prdBlock}
 
-READING BUDGET (binding): the PRD is quoted in full above and it is the entire object of every lens — a PRD is judged on what it SAYS, so the codebase cannot make an ambiguous requirement clear or a conflict go away. Read nothing unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document. Do not survey the repository or the polyrepo. Roughly five tool calls is the expected shape, and zero is a correct answer.`,
+READING BUDGET (binding): the PRD is quoted in full above and it is the entire object of every lens — a PRD is judged on what it SAYS, so the codebase cannot make an ambiguous requirement clear or a conflict go away. Read nothing unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document. Do not survey the repository or the polyrepo. Roughly five tool calls is the expected shape, and zero is a correct answer.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
   {
     label: 'validate:all-lenses',
     effort: 'medium',

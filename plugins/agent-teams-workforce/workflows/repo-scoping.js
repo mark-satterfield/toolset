@@ -93,6 +93,57 @@ export const meta = {
 // accident.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
+
+// ── ARTIFACT PERSISTENCE AND REPLAY ────────────────────────────────────────────────
+// args.artifacts: { dir, relDir?, epicId, script, phase, inputs?, beadId? } — when present,
+// each of the four sessions below saves ITS OWN output into the Epic working directory
+// (repo-scoping-shape.json, repo-scoping-survey.json, repo-scoping.json for the ruling,
+// repo-scoping-verification.json) and runs the deterministic recorder over it.
+//
+// args.replay: { shape?, survey?, ruling?, verification? } — those same saved outputs, read
+// back by the caller from fresh artifacts. A supplied output replaces its session, and the
+// deterministic reduction below still runs over them, so a replayed span is recomputed from
+// the saved inputs rather than read back as a stored answer.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+const ART = artifactsFrom(a.artifacts)
+const replay = a.replay && typeof a.replay === 'object' ? a.replay : {}
+const replayed = (v, check) => (v && typeof v === 'object' && check(v) ? v : null)
+const replayShape = replayed(replay.shape, (v) => Array.isArray(v.workUnits) && v.workUnits.length > 0)
+const replaySurvey = replayed(replay.survey, (v) => Array.isArray(v.repositories))
+const replayRuling = replayed(replay.ruling, (v) => Array.isArray(v.placements))
+const replayVerification = replayed(replay.verification, (v) => Array.isArray(v.results))
+const replayedNames = [
+  replayShape && 'shape',
+  replaySurvey && 'survey',
+  replayRuling && 'ruling',
+  replayVerification && 'verification',
+].filter(Boolean)
+if (replayedNames.length) log(`Repo scoping REPLAYING saved output for: ${replayedNames.join(', ')} — those sessions are not dispatched; the reduction runs over them as usual`)
 const prdInput = a.prd || {}
 const prdBody = typeof prdInput === 'string' ? prdInput : prdInput.body || ''
 const prdId = (typeof prdInput === 'string' ? '' : prdInput.id) || ''
@@ -227,7 +278,7 @@ const [shape, survey] = await parallel([
   //    seedRepos, no existingRepos, no material inventory. That absence is the mechanism,
   //    not an oversight.
   () =>
-    agent(
+    replayShape ? Promise.resolve(replayShape) : agent(
       `${rulingsBlock}Decompose this work into WORK UNITS and say what kind of home each one should have. You are designing on a BLANK SLATE.
 
 ASSUME GREENFIELD. Nothing has been built. No repository exists. Decide what SHOULD be built, and how it should be divided, on architectural best-practice grounds alone — bounded contexts, service boundaries, deployment independence, ownership, blast radius, and the platform's own conventions.
@@ -253,7 +304,7 @@ Also return:
 
 READING BUDGET (binding): read NOTHING. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
 
-Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.`,
+Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
       {
         label: 'scope:greenfield-shape',
         effort: 'medium',
@@ -294,7 +345,7 @@ Draw the smallest number of boundaries the design honestly needs. Every boundary
   //    knowledge belongs to the polyrepo-steward and is reached THROUGH it — the manifest
   //    is never read directly, here or anywhere else, so that one participant owns it.
   () =>
-    agent(
+    replaySurvey ? Promise.resolve(replaySurvey) : agent(
       `Inventory the repositories this project HAS. You are READ-ONLY: describe, change nothing, and create nothing.
 
 Use the polyrepo-steward's own knowledge and the polyrepo-* skills to answer. Do not open the polyrepo manifest yourself — repository knowledge flows through the steward, so that one participant owns it and the answer stays consistent with every other consumer.
@@ -321,7 +372,7 @@ SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold
 
 Also return:
 - conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
-- surveySummary — how many repositories exist in total and how you enumerated them.`,
+- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}`,
       {
         label: 'scope:repository-survey',
         phase: 'Shape and survey',
@@ -412,7 +463,7 @@ const evidenceBlock = [
   ...(materialInventory ? [materialInventory] : []),
 ].join('\n\n')
 
-const ruling = await agent(
+const ruling = replayRuling || await agent(
   `${rulingsBlock}Rule which repository hosts each unit of this work. You are DECIDING only: you did not produce the design below and you did not produce the inventory below, and you must not re-do either.
 
 The ordering that produced your inputs is binding on how you use them. A greenfield design was produced FIRST, deliberately blind to what exists. The inventory was produced separately. Your job is the third step: decide how the repositories that exist serve that design. Architectural best practice drives what is built — existing code does not. Where an existing repository serves the design, use it, because a new repository is a real and permanent cost. Where it does not, say so, and do not bend the design to fit it.
@@ -443,7 +494,7 @@ Rule, and return:
 
 Every work unit in the design must appear in exactly one placement or one newRepos entry. A unit you place nowhere is work that gets specified nowhere.
 
-Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.`,
+Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}`,
   {
     label: 'scope:rule-span',
     phase: 'Rule the span',
@@ -526,7 +577,7 @@ phase('Verify the span')
 
 let verification = null
 if (rawPlacements.length) {
-  verification = await agent(
+  verification = replayVerification || await agent(
     `Confirm whether each of these repositories exists, and report what it is. You are READ-ONLY and you are ANSWERING A LOOKUP: do not evaluate whether these are good choices, do not suggest alternatives, and do not add repositories to the list.
 
 Answer from the polyrepo-steward's records and from the filesystem. Do not open the polyrepo manifest directly.
@@ -536,7 +587,7 @@ ${rawPlacements.map((p, i) => `  ${i + 1}. ${p.repoPath}`).join('\n')}
 
 For each, return: repoPath (echoed back EXACTLY as given), exists (true only if you confirmed a repository at that path — not that a similar one exists elsewhere), name (what it is actually called, when it exists), lifecycle (active / deprecated / unknown), and evidence (how you confirmed it).
 
-An unconfirmed repository is dropped from the span by the caller, so answering exists:true out of helpfulness routes real work into a repository that is not there. If you cannot confirm one, say exists:false and say what you checked.`,
+An unconfirmed repository is dropped from the span by the caller, so answering exists:true out of helpfulness routes real work into a repository that is not there. If you cannot confirm one, say exists:false and say what you checked.${persistBrief(ART, 'repo-scoping-verification.json', 'your complete structured result (results and notes, exactly as you return them) as ONE JSON object')}`,
     {
       label: 'scope:verify-span',
       effort: 'low',

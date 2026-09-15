@@ -26,6 +26,11 @@ export const meta = {
 //                                 // mini once per repo and must give each Story a distinct key.
 //   epic: { key?, id?, title? },  // the parent Epic the Story hangs under; missing -> Story emitted unparented
 //   maxLoops?: number,            // bounded maker/checker retries per reviewable artifact (default 2)
+//   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
+//                                 // Epic working directory: each maker saves its own document —
+//                                 // spec-<slug>.md (API + events + errors), spec-<slug>.data-model.md,
+//                                 // spec-<slug>.criteria.md (acceptance criteria + DoD) — and the
+//                                 // story writer saves story-<slug>.json
 // }
 //
 // returns { ok, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
@@ -141,6 +146,37 @@ const STORY_SCHEMA = {
   },
 }
 
+// ── ARTIFACT PERSISTENCE ─────────────────────────────────────────────────────────
+// When the caller names an Epic working directory, the session that AUTHORED an output
+// writes it there once and runs the deterministic recorder, which hashes what is on disk.
+// No session copies another session's output. Absent, nothing is written.
+const SAFE_ART_PATH = /^\/[A-Za-z0-9._/-]+$/
+function artifactsFrom(x) {
+  if (!x || typeof x !== 'object') return null
+  if (typeof x.dir !== 'string' || !SAFE_ART_PATH.test(x.dir) || x.dir.split('/').includes('..')) return null
+  if (typeof x.script !== 'string' || !SAFE_ART_PATH.test(x.script) || x.script.split('/').includes('..')) return null
+  if (typeof x.epicId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(x.epicId)) return null
+  if (typeof x.phase !== 'string' || !/^[A-Za-z0-9._:-]+$/.test(x.phase)) return null
+  return x
+}
+const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
+function persistBrief(art, name, what, opts) {
+  if (!art) return ''
+  const o = opts || {}
+  const file = `${art.dir}/${name}`
+  const inputs = (Array.isArray(art.inputs) ? art.inputs : []).filter((p) => typeof p === 'string' && p.trim())
+  const record = `python3 ${art.script} record ${file} --epic ${art.epicId} --phase ${art.phase}${inputs.length ? ` --inputs ${inputs.map(shq).join(' ')}` : ''}`
+  const steps = [
+    `1. Write ${what} to ${file} with the Write tool, replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). Write no other file for this.`,
+    `2. Then run exactly this command${o.extraInputs ? `, adding ${o.extraInputs} as further --inputs values (add \`--inputs\` if the command has none)` : ''}:\n   ${record}\n   It hashes the file as it is on disk and prints the recorded metadata as JSON, including \`sha256\`.`,
+  ]
+  const relOk = typeof art.relDir === 'string' && /^[A-Za-z0-9._/-]+$/.test(art.relDir) && !art.relDir.startsWith('/')
+  if (o.beadKey && relOk && typeof art.beadId === 'string' && /^[A-Za-z0-9._-]+$/.test(art.beadId)) {
+    steps.push(`3. Then record it on the bead that owns it:\n   bd update ${art.beadId} --set-metadata artifact_${o.beadKey}_path=${art.relDir}/${name} --set-metadata artifact_${o.beadKey}_sha256=<the sha256 that step 2 printed>`)
+  }
+  return `\n\nSAVE WHAT YOU AUTHORED BEFORE YOU RETURN. This file is the durable copy a later run of this Epic resumes from instead of re-authoring it, and no other session will write it for you.\n${steps.join('\n')}\nIf a step fails, say so in your result and still return your result. Never improvise another way to write, move or record the file.`
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
 function ctxBlock(s, trd, constraints) {
@@ -159,6 +195,9 @@ function ctxBlock(s, trd, constraints) {
     constraints && constraints.length
       ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
+    trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
+      ? `The full TRD is the document at ${trd.trdPath}. Read it: it is the authoritative source for the technical requirements, and the packet below may carry only part of it.`
+      : '',
     trd ? `Upstream TRD / requirements packet:\n${JSON.stringify(trd, null, 2)}` : '',
   ]
     .filter(Boolean)
@@ -198,6 +237,12 @@ async function main(a) {
   }
   const MAX_LOOPS = (a && a.maxLoops) || 1
   const ctx = ctxBlock(s, trd, constraints)
+  const ART = artifactsFrom(a && a.artifacts)
+  const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(ART.slug) ? ART.slug : 'repo'
+  const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
+  const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document')
+  const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each')
+  const storyBrief = persistBrief(ART, `story-${artSlug}.json`, 'your complete structured result (title, description, outOfRepoFindings — exactly as you return them) as ONE JSON object')
 
   // ── Phase 1: Author specs — THREE maker sessions, six artifacts ───────────────
   // The six artifacts used to be six parallel maker sessions, each paying a full
@@ -242,7 +287,7 @@ async function main(a) {
 2. \`eventContracts\` — the event contracts/schemas. Dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema.
 3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
 
-${ctx}`,
+${ctx}${contractsBrief}`,
         {
           label: 'author:contracts',
           phase: 'Author specs',
@@ -253,7 +298,7 @@ ${ctx}`,
       ),
     () =>
       agent(
-        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${ctx}`,
+        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${ctx}${dataModelBrief}`,
         {
           label: 'author:data-model',
           phase: 'Author specs',
@@ -269,7 +314,7 @@ ${ctx}`,
 1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions.
 2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.).
 
-${ctx}`,
+${ctx}${criteriaBrief}`,
         {
           label: 'author:criteria',
           phase: 'Author specs',
@@ -356,20 +401,20 @@ ${ctx}`,
     if (contractRejects.length) {
       const fb = contractRejects.map((k) => `${k}:\n${findingsText(lastReviews[k])}`).join('\n\n')
       const redone = await agent(
-        `Revise the interface contract artifacts to resolve the reviewer's findings below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\nReviewer findings to address:\n${fb}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: drafts.apiSpec, eventContracts: drafts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}`,
+        `Revise the interface contract artifacts to resolve the reviewer's findings below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\nReviewer findings to address:\n${fb}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: drafts.apiSpec, eventContracts: drafts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}${contractsBrief}`,
         { label: 'author:contracts', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
       )
       for (const k of contractRejects) if (redone && redone[k]) drafts[k] = redone[k]
     }
     if (rejected.includes('dataModelSpec')) {
       drafts.dataModelSpec = await agent(
-        `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}`,
+        `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}${dataModelBrief}`,
         { label: 'author:data-model', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
     }
     if (rejected.includes('acceptance')) {
       const redone = await agent(
-        `Revise the acceptance criteria and Definition of Done to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.acceptance)}\n\n${ctx}`,
+        `Revise the acceptance criteria and Definition of Done to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.acceptance)}\n\n${ctx}${criteriaBrief}`,
         { label: 'author:criteria', phase: 'Author specs', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
       )
       if (redone) {
@@ -448,7 +493,7 @@ ${ctx}`,
   }
 
   const storyDraft = await agent(
-    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}`,
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
