@@ -15,6 +15,11 @@ export const meta = {
 //   story: { id?, title? },                                    // the Story the Spec pairs with —
 //                                                              // ALREADY EXISTS; every emitted task
 //                                                              // is parented to it
+//   specDocs?: [{ path, ref }],                                // the Spec's DOCUMENTS: `path` is where the
+//                                                              // maker reads the file, `ref` is the
+//                                                              // $SKILLSPOKE_ROOT-relative path recorded on
+//                                                              // each emitted Task. The contract is in these
+//                                                              // files; spec.description is navigation only
 //   repoPath?: string,                                         // fallback source of the same repository
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 //   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
@@ -124,11 +129,35 @@ if (!repoPath) {
   )
 }
 
+// ── THE SPEC DOCUMENTS ARE THE CONTRACT ────────────────────────────────────────
+// The maker reads the Spec's documents itself rather than a summary of them: the API
+// contract, data model, event contracts, error handling, acceptance criteria and Definition
+// of Done are in those files and nowhere else. `ref` is what each Task records; a document
+// whose `ref` is not a plain root-relative path is still readable but can never be cited.
+const SAFE_REL_PATH = /^[A-Za-z0-9._@-][A-Za-z0-9._@/-]*$/
+const specDocs = (Array.isArray(a.specDocs) ? a.specDocs : [])
+  .map((d) => (typeof d === 'string' ? { path: d, ref: null } : d && typeof d === 'object' ? d : null))
+  .filter((d) => d && typeof d.path === 'string' && d.path.trim())
+  .map((d) => {
+    const ref = typeof d.ref === 'string' && SAFE_REL_PATH.test(d.ref) && !d.ref.split('/').includes('..') ? d.ref : null
+    return { path: d.path.trim(), ref }
+  })
+const citableRefs = specDocs.map((d) => d.ref).filter(Boolean)
+const docsBlock = specDocs.length
+  ? `\n\nSPEC DOCUMENTS — THE CONTRACT. The text above is a navigation aid only; the API contract, data model, event contracts, error handling, acceptance criteria and Definition of Done are in these files. Read the sections each task needs before you decompose:\n${specDocs
+      .map((d) => `- ${d.path}${d.ref ? `  (cite as: ${d.ref})` : ''}`)
+      .join('\n')}`
+  : '\n\nSPEC DOCUMENTS: none were supplied, so the text above is all there is. Say so in your rationale.'
+
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
 ${spec.source ? `Source: ${spec.source}` : ''}
 Repository: ${spec.repoPath || '(repo path not provided)'}
-Parent Story: ${storyRef || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}`
+Parent Story: ${storyRef || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}${docsBlock}`
+
+// The surface vocabulary the build tail looks surfaces up in (tdd-red SURFACE_WRITERS,
+// integration SURFACE_SUITES). A value outside it selects nothing downstream.
+const SURFACES = ['api-contract', 'event-chain', 'auth', 'performance', 'web-ui', 'ios', 'android', 'cross-platform-mobile', 'ml', 'data-pipeline']
 
 // Shared sub-schema: one decomposed task.
 //
@@ -138,16 +167,39 @@ Parent Story: ${storyRef || '(none supplied)'}${story.title ? ` — ${story.titl
 // which decomposing a Story yields an Epic, a Story, or a loose feature. The
 // enum previously admitted feature/chore/epic, which let the decomposer emit a
 // second Epic underneath an existing one and corrupt the hierarchy.
+//
+// The contract fields are what the build lane reads off the Task bead: the spec link
+// (`specPaths`, `specSections`), the requirements it satisfies, its Definition of Done,
+// and the surfaces it touches. `surfaces` is null when the spec does not settle them —
+// unknown, which is not the same statement as a declared empty list.
 const taskSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria'],
+  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria', 'definitionOfDone', 'specPaths', 'specSections', 'requirementIds', 'surfaces'],
   properties: {
     key: { type: 'string' },
     title: { type: 'string' },
     description: { type: 'string' },
     type: { type: 'string', enum: ['task'] },
     acceptanceCriteria: { type: 'array', items: { type: 'string' } },
+    definitionOfDone: { type: 'array', items: { type: 'string' } },
+    specPaths: { type: 'array', items: { type: 'string' } },
+    specSections: { type: 'array', items: { type: 'string' } },
+    requirementIds: { type: 'array', items: { type: 'string' } },
+    surfaces: { type: ['array', 'null'], items: { type: 'string', enum: SURFACES } },
+  },
+}
+// Pyramid shape, coverage threshold and environment matrix belong to the Spec, so they are
+// read from it once for the whole task set. null when the spec states no strategy.
+const testStrategySchema = {
+  type: ['object', 'null'],
+  additionalProperties: false,
+  required: ['pyramid', 'coverageThreshold', 'envMatrix', 'source'],
+  properties: {
+    pyramid: { type: 'string' },
+    coverageThreshold: { type: 'string' },
+    envMatrix: { type: 'array', items: { type: 'string' } },
+    source: { type: 'string' },
   },
 }
 
@@ -200,11 +252,19 @@ const maker = replayMaker || await agent(
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into ATOMIC TASKS. Each task must be scoped to ONE agent's work within the single repository named below, be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Assign each a stable, human-readable local "key" (e.g. T1, T2). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature under any circumstance: the Epic was created with its PRD and the Story with this Spec, both already exist upstream, and every task you emit is a child of the Story named below. If the Spec looks too large for one Story, report that in your rationale (under 80 words) and still decompose only what this Spec covers.
 
+Every task also carries its CONTRACT, taken from the spec documents listed below — the build lane reads these fields off the Task and has nothing else to go on:
+- \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each (never an absolute path, never a path you were not given). At least one.
+- \`specSections\`: the headings or anchors inside those documents that define this task (e.g. "spec-x.md#POST /sessions", "spec-x.data-model.md#Sessions table").
+- \`requirementIds\`: the PRD/TRD requirement ids the task satisfies, as the documents write them. Empty only if the documents carry no ids.
+- \`definitionOfDone\`: the Definition of Done items that apply to this task, from the spec's DoD.
+- \`surfaces\`: the boundaries the task touches, from the enum only (${SURFACES.join(', ')}). An empty list means you checked and it touches none of them (internal-only work). null means the spec does not settle it — unknown, never guessed.
+And once for the whole set, \`testStrategy\`: the test strategy the spec states (pyramid, coverageThreshold, envMatrix, and the section it came from as \`source\`), or null when the spec states none. Do not invent one.
+
 JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`): map the dependencies between the tasks you just decomposed into a DIRECTED ACYCLIC graph and derive a valid topological build order. An edge "from -> to" means "from must be built before to". If the only honest reading implies a cycle, do not invent an order: set acyclic=false, list the cycle, and leave buildOrder empty.
 
 JOB 3 — WSJF SCORE (return in \`scores\`): assign a WSJF score to EVERY task. WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme. Score each component on the standard scale, then compute wsjf = (userBusinessValue + timeCriticality + riskReductionOpportunityEnablement) / jobSize, jobSize > 0. Score every key exactly once, with a one-line rationale per task.
 
-${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
+${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
@@ -213,9 +273,10 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['tasks', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores'],
+      required: ['tasks', 'testStrategy', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores'],
       properties: {
         tasks: { type: 'array', items: taskSchema },
+        testStrategy: testStrategySchema,
         rationale: { type: 'string' },
         edges: {
           type: 'array',
@@ -304,7 +365,7 @@ for (let pass = 1; !replayReview && pass <= MAX_SCORING_PASSES; pass++) {
 
 CHECK 1 — WSJF scores (return under \`scoringReview\`): every task scored exactly once, jobSize > 0, the wsjf arithmetic is correct, the component values are internally consistent across tasks (similar work scored comparably), and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation.
 
-CHECK 2 — Beads format (return under \`beadsValidation\`): every item's type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit (an Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else; report any such item as a violation on the "type" field). Each task is scoped to ONE agent's work within the single repository the Spec names. A valid id/key with the ssbd- prefix once emitted. All required Beads fields present: title, type, description, acceptance criteria. The dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic. valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only.
+CHECK 2 — Beads format (return under \`beadsValidation\`): every item's type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit (an Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else; report any such item as a violation on the "type" field). Each task is scoped to ONE agent's work within the single repository the Spec names. A valid id/key with the ssbd- prefix once emitted. All required Beads fields present: title, type, description, acceptance criteria, Definition of Done (\`definitionOfDone\`, non-empty), and the SPEC LINK — \`specPaths\` non-empty${citableRefs.length ? ` and every entry one of: ${citableRefs.join(', ')}` : ''}, plus \`specSections\` naming where in those documents the task is defined. \`surfaces\` is a list or null; null means unknown and is legal, a missing field is not. The dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic. valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only.
 
 Parent Story for this task set: ${storyRef || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
 
@@ -442,6 +503,19 @@ const orderIndex = {}
 // `type` is forced rather than copied: the schema already constrains it, and a
 // task set that silently carried anything else would corrupt the hierarchy
 // route-build depends on.
+// The contract each Task carries. A spec link the maker cited is kept only when it names a
+// document this run supplied, so no Task records a path that was not handed to it; a task
+// that cited nothing usable is linked to every supplied document rather than to none. A
+// saved maker output from before these fields existed replays the same way.
+const strList = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
+const refByPath = new Map(specDocs.filter((d) => d.ref).map((d) => [d.path, d.ref]))
+function taskSpecPaths(t) {
+  const cited = strList(t.specPaths).map((p) => refByPath.get(p) || p).filter((p) => citableRefs.includes(p))
+  return cited.length ? [...new Set(cited)] : citableRefs.slice()
+}
+const taskSurfaces = (t) =>
+  Array.isArray(t.surfaces) ? [...new Set(strList(t.surfaces).map((s) => s.toLowerCase()).filter((s) => SURFACES.includes(s)))] : null
+const testStrategy = maker.testStrategy && typeof maker.testStrategy === 'object' ? maker.testStrategy : null
 const beadSet = tasks
   .map((t) => ({
     key: t.key,
@@ -453,6 +527,12 @@ const beadSet = tasks
     // the `repoPath` resolution: the Story rules the repo, the Task records it.
     repoPath,
     acceptanceCriteria: t.acceptanceCriteria,
+    definitionOfDone: strList(t.definitionOfDone),
+    specPaths: taskSpecPaths(t),
+    specSections: strList(t.specSections),
+    requirementIds: strList(t.requirementIds),
+    surfaces: taskSurfaces(t), // null = unknown
+    testStrategy,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
     wsjf: wsjfByKey[t.key] ? wsjfByKey[t.key].wsjf : null,
     buildOrderIndex: t.key in orderIndex ? orderIndex[t.key] : null,
@@ -470,6 +550,8 @@ return {
   tasks,
   dependencyDag: { edges: dag.edges, acyclic: dag.acyclic, cycle: dag.cycle || [] },
   buildOrder: dag.buildOrder,
+  testStrategy,
+  specDocs: citableRefs,
   wsjfScores,
   scoringReview,
   scoringDisputed,

@@ -70,6 +70,9 @@ function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
       return {
         ok: true,
         specSet: { apiSpec: { summary: `spec for ${repoPath}` } },
+        // Every emitted Task must carry a $SKILLSPOKE_ROOT-relative spec reference, so the
+        // fixture's spec names a document under the root the run is given.
+        apiSpec: { summary: `spec for ${repoPath}`, artifactPaths: [`/ss/specs/spec-${String(repoPath).split('/').pop()}.md`] },
         story: { key, type: 'story', title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: epicKey },
       }
     }
@@ -91,7 +94,7 @@ function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
 function run({ repos = ['/repo-a'], args = {}, writerOpts, agentExtra } = {}) {
   const writer = beadWriter(writerOpts)
   return runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, ...args },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, skillspokeRoot: '/ss', ...args },
     workflowImpl: makeWorkflowImpl({ repos }),
     agentImpl: (call, calls) => writer(call) || (agentExtra ? agentExtra(call, calls) : null),
   })

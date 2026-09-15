@@ -3822,26 +3822,52 @@ if (decompBudgetStop) {
     reason: `task decomposition did not start: ${decompBudgetStop}`,
   })
 }
+/**
+ * The spec documents of one Story: `path` is where a session reads the file, `ref` is the
+ * $SKILLSPOKE_ROOT-relative path a Task records (decision 6). The Epic working directory
+ * holds them when artifacts are on; otherwise an absolute path a spec maker reported under
+ * $SKILLSPOKE_ROOT is used. A document with no root-relative form has `ref: null` and can
+ * be read but never recorded.
+ */
+function specDocsFor(pair) {
+  const slug = repoSlug(pair.repoPath)
+  const out = []
+  const seen = new Set()
+  const add = (path, ref) => {
+    if (!safeAbs(path) || seen.has(path)) return
+    seen.add(path)
+    out.push({ path, ref: ref || null })
+  }
+  if (ART_ON) for (const name of specFiles(slug)) add(artPath(name), ART_REL ? `${ART_REL}/${name}` : null)
+  const sp = pair.spec || {}
+  for (const part of [sp.apiSpec, sp.dataModelSpec, sp.eventContracts, sp.errorSpec]) {
+    for (const p of (part && Array.isArray(part.artifactPaths) ? part.artifactPaths : [])) {
+      if (typeof p !== 'string') continue
+      add(p, SS_ROOT && p.startsWith(`${SS_ROOT}/`) ? p.slice(SS_ROOT.length + 1) : null)
+    }
+  }
+  return out
+}
+const specRefsFor = (pair) => specDocsFor(pair).map((d) => d.ref).filter(Boolean)
 const decompResults = await parallel(specPairs.map((pair) => () => decomposeStory(pair)))
 /** The task-decomposition arguments for one Story, shared by a live run and a replay. */
 function decompArgs(pair, feedback) {
   const slug = repoSlug(pair.repoPath)
-  const specDocs = ART_ON ? specFiles(slug).map(artPath) : []
+  const docs = specDocsFor(pair)
+  const specDocs = docs.map((d) => d.path)
+  const summary = (pair.spec && pair.spec.apiSpec && pair.spec.apiSpec.summary) || (trd && trd.summary) || prd.body || ''
   return {
     standingRulings,
     spec: {
       id: prd.id,
       title: prd.title,
-      description:
-        ((pair.spec && pair.spec.apiSpec && pair.spec.apiSpec.summary) ||
-          (trd && trd.summary) ||
-          prd.body ||
-          '') +
-        (specDocs.length ? `\n\nSPEC DOCUMENTS for this Story — read the sections you need:\n${specDocs.map((p) => `- ${p}`).join('\n')}` : '') +
-        removalBrief(pair.repoPath),
+      // The summary is a NAVIGATION AID. The contract is in the documents the mini is handed
+      // as `specDocs`, which the maker reads section by section.
+      description: `SUMMARY (navigation aid only — the contract is in the spec documents):\n${summary}` + removalBrief(pair.repoPath),
       source: feedback ? `spec-authoring output (gate feedback: ${feedback})` : 'spec-authoring output',
       repoPath: pair.repoPath,
     },
+    specDocs: docs,
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
     maxScoringPasses: 2,
     artifacts: artFor(`tasks:${slug}`, [...specDocs, artPath(`story-${slug}.json`)], { slug }),
@@ -3939,6 +3965,15 @@ for (const [pairIndex, pair] of specPairs.entries()) {
   const localToNamespaced = new Map()
   const storyTasks = (decomposition.artifact && decomposition.artifact.beadSet) || []
   for (const t of storyTasks) localToNamespaced.set(t.key, `${storyKeyForTasks}-${t.key}`)
+  // The spec link is guaranteed HERE, where the Story's documents are known for certain: a
+  // task keeps the documents it cited from this Story's set, and one that cited none of
+  // them is linked to the whole set. A Story with no root-relative document leaves its
+  // tasks with an empty link, which the write below reports as a named failure.
+  const storyRefs = specRefsFor(pair)
+  for (const t of storyTasks) {
+    const cited = (Array.isArray(t.specPaths) ? t.specPaths : []).filter((p) => storyRefs.includes(p))
+    t.specPaths = cited.length ? [...new Set(cited)] : storyRefs.slice()
+  }
   for (const t of storyTasks) {
     tasks.push({
       ...t,
@@ -4117,6 +4152,9 @@ const emission = {
   written: [],
   failed: [],
   skipped: [],
+  // Tasks written with NO spec reference. The build lane has no contract to build such a
+  // Task against, so each one is named here and the verdict cannot be `complete`.
+  specReferenceMissing: [],
   links: { attempted: 0, linked: 0, failed: [] },
   // The backfill repair, reported SEPARATELY from the verdict below. Retiring a stand-in
   // parent is housekeeping on beads this run did not author; it can fail without making
@@ -4293,6 +4331,66 @@ async function writeWave(level, items) {
   return ids
 }
 
+// ── THE TASK CONTRACT, as the build lane reads it ────────────────────────────────
+// Every value is a string, because bd metadata is flat key=value. Lists and the strategy
+// object are compact JSON. `surfaces` and `test_strategy` are the literal `unknown` when
+// nothing was declared — never an empty list standing in for unknown.
+const strItems = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
+const acText = (x) =>
+  x && typeof x === 'object' && (x.given || x.when || x.then) ? `Given ${x.given || ''} When ${x.when || ''} Then ${x.then || ''}` : String(x == null ? '' : x).trim()
+const TASK_UNKNOWN = 'unknown'
+function taskContract(t) {
+  const specPaths = strItems(t.specPaths)
+  return {
+    specPaths,
+    specSections: strItems(t.specSections),
+    acceptanceCriteria: (Array.isArray(t.acceptanceCriteria) ? t.acceptanceCriteria : []).map(acText).filter(Boolean),
+    definitionOfDone: strItems(t.definitionOfDone),
+    requirementIds: strItems(t.requirementIds),
+    surfaces: Array.isArray(t.surfaces) ? strItems(t.surfaces) : null,
+    testStrategy: t.testStrategy && typeof t.testStrategy === 'object' ? t.testStrategy : null,
+  }
+}
+function taskContractMetadata(t) {
+  const c = taskContract(t)
+  const m = {
+    spec_sections: JSON.stringify(c.specSections),
+    acceptance_criteria: JSON.stringify(c.acceptanceCriteria),
+    definition_of_done: JSON.stringify(c.definitionOfDone),
+    requirement_ids: JSON.stringify(c.requirementIds),
+    surfaces: c.surfaces ? JSON.stringify(c.surfaces) : TASK_UNKNOWN,
+    test_strategy: c.testStrategy ? JSON.stringify(c.testStrategy) : TASK_UNKNOWN,
+  }
+  if (c.specPaths.length) {
+    m.spec_path = c.specPaths[0]
+    m.spec_paths = JSON.stringify(c.specPaths)
+  } else {
+    emission.specReferenceMissing.push({
+      key: t.key,
+      reason:
+        'spec-reference-missing: no $SKILLSPOKE_ROOT-relative spec document is known for its Story ' +
+        `(${SS_ROOT ? 'the spec documents were not saved under $SKILLSPOKE_ROOT' : 'no $SKILLSPOKE_ROOT was supplied as args.skillspokeRoot or args.resume.root'})`,
+    })
+  }
+  return m
+}
+function taskContractBlock(t) {
+  const c = taskContract(t)
+  const list = (xs) => (xs.length ? xs.map((x) => `- ${x}`).join('\n') : '- (none)')
+  const s = c.testStrategy
+  return [
+    '## Spec contract',
+    'Paths are relative to $SKILLSPOKE_ROOT.',
+    `Spec: ${c.specPaths[0] || 'MISSING — no spec reference could be recorded for this Task'}`,
+    ...(c.specPaths.length > 1 ? [`Spec documents:\n${list(c.specPaths)}`] : []),
+    `Spec sections:\n${list(c.specSections)}`,
+    `Requirement ids: ${c.requirementIds.join(', ') || '(none)'}`,
+    `Surfaces: ${c.surfaces ? c.surfaces.join(', ') || '(declared none — internal-only)' : 'unknown (none declared)'}`,
+    `Test strategy: ${s ? `pyramid=${s.pyramid || 'n/a'}; coverageThreshold=${s.coverageThreshold || 'n/a'}; envMatrix=${strItems(s.envMatrix).join(', ') || 'n/a'}${s.source ? ` (from ${s.source})` : ''}` : 'unknown (the spec states none)'}`,
+    `Definition of Done:\n${list(c.definitionOfDone)}`,
+  ].join('\n')
+}
+
 const skipAll = (level, keys, reason) => {
   for (const key of keys) emission.skipped.push({ level, key, reason })
 }
@@ -4431,7 +4529,7 @@ if (!emitPathFault && epicId) {
       key: t.key,
       type: 'task',
       title: asText(t.title) || String(t.key),
-      description: asText(t.description),
+      description: [asText(t.description), taskContractBlock(t)].filter(Boolean).join('\n\n'),
       parentId,
       acceptanceCriteria: Array.isArray(t.acceptanceCriteria) && t.acceptanceCriteria.length ? t.acceptanceCriteria : null,
       // ONE MARKER PER LINE. `reposcope.recorded_repo` matches `repoPath:` with a
@@ -4452,13 +4550,14 @@ if (!emitPathFault && epicId) {
       // composite has ever minted was in exactly that state. The score is decided here,
       // at decomposition, so it is written here, at the create, and the readiness step
       // below then has nothing left to compute.
-      metadata:
-        (() => {
-          const m = {}
-          if (t.repoPath) m.repoPath = String(t.repoPath)
-          if (t.wsjf != null) m.wsjf = String(t.wsjf)
-          return Object.keys(m).length ? m : null
-        })(),
+      // The CONTRACT is metadata too, for the same reason: the build lane reads these keys
+      // off the Task (decision 6 — the producer that creates the Task puts the paths on it).
+      metadata: (() => {
+        const m = {}
+        if (t.repoPath) m.repoPath = String(t.repoPath)
+        if (t.wsjf != null) m.wsjf = String(t.wsjf)
+        return Object.assign(m, taskContractMetadata(t))
+      })(),
     }))
   )
   for (const { task: t } of pendingTasks) {
@@ -4778,13 +4877,17 @@ else {
 const durable = emission.created + emission.adopted
 const unwritten = emission.failed.length + emission.skipped.length
 if (!durable) emission.verdict = 'none'
-else if (unwritten || emission.links.failed.length) emission.verdict = 'partial'
+else if (unwritten || emission.links.failed.length || emission.specReferenceMissing.length) emission.verdict = 'partial'
 else emission.verdict = 'complete'
 if (!emission.reason) {
   emission.reason =
     emission.verdict === 'complete'
       ? `all ${durable} bead(s) of this hierarchy are durable`
-      : `${durable} bead(s) durable, ${unwritten} NOT written, ${emission.links.failed.length} dependency edge(s) unlinked`
+      : `${durable} bead(s) durable, ${unwritten} NOT written, ${emission.links.failed.length} dependency edge(s) unlinked, ` +
+        `${emission.specReferenceMissing.length} Task(s) written with no spec reference`
+}
+if (emission.specReferenceMissing.length) {
+  log(`SPEC REFERENCE MISSING on ${emission.specReferenceMissing.length} Task(s): ${emission.specReferenceMissing.map((x) => x.key).join(', ')} — ${emission.specReferenceMissing[0].reason}`)
 }
 // ── emissionOk / beadsEmitted: the handback contract, now MEASURED ────────────
 // These two fields already existed — as a self-report the headless session filled in
