@@ -65,6 +65,7 @@ these are first-class metadata (set with `--set-metadata`, read from `bd show --
 | Key | Meaning |
 | --- | --- |
 | `review_status` | `COMPLETE` or `INCOMPLETE` from the last review |
+| `review_missing` | on an INCOMPLETE review, what the issue is MISSING — one line, the skill's own words. Empty/omitted when the review was COMPLETE |
 | `reviewed_at` | ISO 8601 timestamp of the last review |
 | `wsjf` | numeric WSJF score — written whenever it is missing, whatever the review said, and never cleared |
 | `wsjf_calculated_at` | ISO 8601 timestamp of the last scoring |
@@ -79,6 +80,7 @@ marker comment instead:
 ```
 <!-- issue-ready:state
 review_status=COMPLETE
+review_missing=
 reviewed_at=2026-06-30T12:00:00Z
 wsjf=8.75
 wsjf_calculated_at=2026-06-30T12:00:00Z
@@ -90,17 +92,46 @@ Read state from the most recent such marker; write a fresh marker each real run.
 marker carries `ready_content_hash=$H` — a marker written without it is the same defect as
 a Beads write that omits it, and step 8 verifies GitHub by re-reading the marker just as
 it verifies Beads by re-reading the metadata. On the score-only path, carry the stored
-`review_status` / `reviewed_at` forward into the new marker unchanged rather than
-restamping them.
+`review_status` / `review_missing` / `reviewed_at` forward into the new marker unchanged
+rather than restamping them.
 
 ## Staleness — the reason work is skipped
 
 The concept: **only run review and scoring when missing or stale; otherwise return the
 values already on the issue.** Freshness is decided by a content fingerprint, not by the
 tracker's `updated_at` (which the skill's own writes would bump, falsely invalidating the
-cache). The fingerprint covers only substantive content (title, description, acceptance,
-design, type, priority, labels, dependencies) — never metadata, timestamps, status, or
-comments. See Recipes for the exact hashing command.
+cache). See Recipes for the exact hashing command.
+
+**What the fingerprint ACTUALLY covers: `title`, `description`, `issue_type`, `priority`.**
+That is four fields, and it is narrower than it looks. The recipe selects a ten-key object,
+but `bd show --json` returns only sixteen keys and SIX of the ten are not among them —
+`acceptance`, `design`, `type`, `dependencies`, `deps` do not exist on the record at all and
+hash as `null` on every bead, and `labels` is deliberately nulled (see below). The extra keys
+are kept in the selector so the hashed object keeps its shape; they contribute nothing.
+
+Two consequences follow, and neither is a defect to be fixed here:
+
+- **Editing acceptance criteria does not change the hash.** `bd` exposes no acceptance-criteria
+  field on `bd show` OR on `bd list` — both return the same sixteen keys — so there is nothing
+  to widen the recipe to. A correction that only rewrites acceptance criteria leaves the
+  fingerprint identical, and a Task held on an INCOMPLETE verdict does not leave the hold on
+  that edit alone. Touch the title or the description as well, or clear the hold by removing
+  the `needs-correction` label. This is a limitation of the tracker, stated so nobody reads
+  the hold as a bug.
+- **`labels` is nulled ON PURPOSE.** The pipeline itself writes a `needs-correction` label onto
+  every held bead. If labels were hashed, the act of RECORDING a hold would change the
+  fingerprint, the bead would read as stale on the very next pass, and the skill would re-buy
+  the full review it just held to avoid — a fresh session per sweep, forever.
+
+Never metadata, timestamps, status, or comments — so storing a verdict never invalidates it.
+
+**THE RECIPE IS A JOINT CONTRACT. Change it on both sides or on neither.** The SkillSpoke
+pipeline reproduces this fingerprint byte for byte in `ops/sdlc-automation/readiness.py`, in
+the function `content_hash` (with `CONTENT_HASH_FIELDS`, `CONTENT_HASH_PRESENT` and
+`CONTENT_HASH_LENGTH` beside it), and compares its result against the `ready_content_hash`
+this skill stored. A recipe that drifts on one side re-invokes this skill forever on every
+affected bead: the Python reads a watermark it cannot reproduce, calls the bead stale, and the
+skill rewrites the same watermark the Python will reject again on the next pass.
 
 - **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
   stored verdict; rerun nothing; post nothing.
@@ -171,8 +202,9 @@ different length, never hash a different field set.
 
 5. **Decide freshness.** Fresh = stored hash exists and equals `$H`.
    - **Fresh AND `wsjf` present:** reuse stored values. `review_status=COMPLETE` →
-     `Pipeline result: READY`; `review_status=INCOMPLETE` → `Pipeline result: INCOMPLETE`.
-     Rerun nothing. `Comments posted: 0`.
+     `Pipeline result: READY`; `review_status=INCOMPLETE` → `Pipeline result: INCOMPLETE`,
+     and append the stored `review_missing` to the `Review` line so the reused verdict still
+     says what is missing. Rerun nothing. `Comments posted: 0`.
    - **Fresh but NO `wsjf`** (whatever the stored `review_status` says): do not reuse —
      **go to step 7** and score. The review is current, so rerunning it would buy nothing;
      the score is the only thing missing. This state is reachable and it is not rare: step
@@ -184,10 +216,19 @@ different length, never hash a different field set.
    - **Stale/missing:** go to step 6.
 6. **Run review** (the `issue-review` skill) against the issue. Post the review comment
    (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
-   `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The three keys land
-   together or the run has failed; a write that sets the status without the hash is the
+   `review_missing`, `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The keys
+   land together or the run has failed; a write that sets the status without the hash is the
    defect, not a partial success. Then **continue to step 7 either way** — a COMPLETE
    review and an INCOMPLETE one both go there.
+
+   **An INCOMPLETE verdict MUST carry what is missing, in `review_missing`.** This is not
+   bookkeeping. The pipeline no longer re-buys an INCOMPLETE verdict: on the next pass it
+   reads the stored verdict, sees the content hash unchanged, and HOLDS the bead rather than
+   spending a session to reach the identical conclusion. Nothing downstream regenerates the
+   reason, so if this write does not carry it, the only record of what to fix is a prose
+   comment, and a person is told a Task is blocked without being told why. Summarize the
+   review's findings in one line — the missing acceptance criteria, the unresolved
+   dependency, the absent scope — and write it. On a COMPLETE review write it empty.
 7. **Score whenever no score is stored.** The review verdict and the WSJF score are
    INDEPENDENT outputs of this gate. If `wsjf` is already stored and fresh, skip this step.
    Otherwise run the `wsjf` skill against the issue, post the WSJF comment, and run the
@@ -266,9 +307,20 @@ computed, and both the freshness comparison and every write use `$H`:
 ```
 H=$(bd show <id> --json --readonly \
   | jq -S 'if type=="array" then .[0] else (.issue // .) end
-           | {title,description,acceptance,design,type,issue_type,priority,labels,dependencies,deps}' \
+           | {title,description,acceptance,design,type,issue_type,priority,labels,dependencies,deps}
+           | .labels = null' \
   | shasum -a 256 | cut -c1-16)
 ```
+
+Copy it EXACTLY, `.labels = null` included. Of the ten keys, only `title`, `description`,
+`issue_type` and `priority` ever carry a value; the other six hash as `null` on every bead,
+and the object keeps all ten because the digest is taken over the ten-key shape. This is the
+half of the joint contract described under Staleness — `readiness.content_hash` in
+`ops/sdlc-automation/readiness.py` builds the identical object and takes the identical digest,
+verified equal on live beads (`ssbd-wjo5w` → `0176765d7f7488b5`, `ssbd-qxeu` →
+`f57fad77302c1ae0`). Dropping `.labels = null` breaks that equality on any bead that carries a
+label — which is every bead this pipeline has held, because holding one applies
+`needs-correction`.
 
 **Content hash (GitHub):**
 ```
@@ -306,8 +358,12 @@ bd show <id> --json --readonly \
   | grep -iE '^[[:space:]]*[-*>[:space:]]*`?(repoPath|repo|repository)`?[[:space:]]*[:=]' \
   | head -1
 ```
-Absent on the task, read the Story's. Absent on both, the gate fails. `repo:` and
-`repository:` are accepted spellings of the same marker.
+Absent on the task, read the Story's. **Absent on both, the gate does NOT fail** — it records
+"no repoPath on the task or its Story" as a note on the verdict and carries on to the review
+and the scoring, exactly as step 4 says. A recorded repository is a hint; the repository a
+piece of work lands in is ruled at dispatch, from the work itself. There is no path in this
+skill on which a missing repo sets `Pipeline result`. `repo:` and `repository:` are accepted
+spellings of the same marker.
 
 **Never clear a stored score.** There is no gate write and no path here that empties `wsjf`.
 An earlier version of this skill ran `--set-metadata wsjf=` on the lineage refusal, on the
@@ -341,9 +397,17 @@ Review write (step 6 — the whole write when the review is INCOMPLETE):
 ```
 bd update <id> \
   --set-metadata review_status=<COMPLETE|INCOMPLETE> \
+  --set-metadata review_missing=<one-line summary of what is missing, or "" when COMPLETE> \
   --set-metadata reviewed_at=<ISO8601> \
   --set-metadata ready_content_hash=$H
 ```
+
+`review_missing` is REQUIRED on an INCOMPLETE review and must name what to fix — not the word
+INCOMPLETE, not a dimension count. It is the only machine-readable record of the gap: the
+pipeline HOLDS a bead against an unchanged INCOMPLETE verdict instead of re-running this
+skill, so no later run regenerates the reason. Keep it to one line and avoid newlines and
+quotes, which do not survive the attribute round-trip. Metadata is outside the content hash,
+so writing it never invalidates the watermark.
 
 Score write (step 7):
 ```
