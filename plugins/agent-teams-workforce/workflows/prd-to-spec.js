@@ -1360,10 +1360,17 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 //   { root?, dir?, epicId?,
 //     phases: { '<phaseId>': { status: 'fresh' | 'stale', reason?, artifacts: [{ name, path, sha256?, data? }] } } }
 //
-// `data` is the parsed content of a `.json` artifact. This script cannot open a file, so a
-// phase whose downstream consumers need structured content — repo-scoping, spec:<slug> (its
-// story-<slug>.json), tasks:<slug> — is resumable only when the host inlines it. A bare
-// string ('fresh' / 'stale: <why>') is accepted for a phase that needs no content.
+// `data` is the parsed content of a `.json` artifact, when the host inlines one. IT USUALLY
+// CANNOT: the dispatch payload has a byte budget a single parsed repo-scoping ruling exceeds,
+// so a phase whose downstream consumers need structured content — repo-scoping, spec:<slug>
+// (its story-<slug>.json), tasks:<slug> — is resumed from the FILES instead. The plan names
+// the artifacts; this script hands the owning mini their absolute paths as `replay.files`,
+// and the mini reads them itself in ONE read-only session before replaying its own
+// deterministic reduction over them (decision 6: documents pass between agents as paths,
+// never as content). Inlined `data` still wins where it is present, because it costs no
+// session at all. A bare string ('fresh' / 'stale: <why>') is accepted for a phase that
+// needs no content — prd-validation, architecture with its ruling on disk, and trd, all of
+// which hand a path to the phase below them and nothing else.
 //
 // Phase ids and the files each one's sessions write:
 //   prd-validation  prd-validation.json
@@ -2428,13 +2435,32 @@ if (callerRepos.length) {
     const savedShape = artData(scopeHit, 'repo-scoping-shape.json')
     const savedSurvey = artData(scopeHit, 'repo-scoping-survey.json')
     const savedRuling = artData(scopeHit, 'repo-scoping.json')
+    const scopeNames = Object.keys(scopeHit.artifacts)
+    const scopeNeeded = ['repo-scoping-shape.json', 'repo-scoping-survey.json', 'repo-scoping.json']
     if (savedShape && savedSurvey && savedRuling) {
       // NOT a stored span. The mini re-runs its deterministic reduction over the saved shape,
       // survey, ruling and verification, so the span is recomputed from them on this run.
       scopeReplay = { shape: savedShape, survey: savedSurvey, ruling: savedRuling, verification: artData(scopeHit, 'repo-scoping-verification.json') || null }
       reuseFrom('repo-scoping', scopeHit, 'the saved shape, survey, ruling and verification are replayed through the reduction')
+    } else if (ART_ON && scopeNeeded.every((n) => scopeNames.indexOf(n) !== -1)) {
+      // The plan NAMED the files without inlining them, which is the normal case: the payload
+      // cannot carry a parsed ruling. The mini reads them itself and runs the same reduction,
+      // so the span is still recomputed rather than read back as a stored answer.
+      scopeReplay = {
+        files: {
+          shape: artPath('repo-scoping-shape.json'),
+          survey: artPath('repo-scoping-survey.json'),
+          ruling: artPath('repo-scoping.json'),
+          ...(scopeNames.indexOf('repo-scoping-verification.json') !== -1
+            ? { verification: artPath('repo-scoping-verification.json') }
+            : {}),
+        },
+      }
+      reuseFrom('repo-scoping', scopeHit, 'the mini reads the saved shape, survey, ruling and verification from disk and replays them through the reduction')
     } else {
-      log("Phase 'repo-scoping' is fresh but the host did not inline the shape, survey and ruling it needs — it runs")
+      log(
+        `Phase 'repo-scoping' is fresh but its shape, survey and ruling are neither inlined nor named as files this run can point at (${scopeNames.join(', ') || 'no artifact named'}) — it runs`
+      )
     }
   }
   const cpScope = scopeReplay ? undefined : cpGet('repo-scoping')
@@ -3041,7 +3067,29 @@ async function authorSpecForRepo(repo, repoIndex) {
   let specAuthoring
   const specHit = resumeFresh(specPhase)
   const storyData = artData(specHit, `story-${slug}.json`)
-  if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
+  const storyFile = `story-${slug}.json`
+  const specNames = specHit ? Object.keys(specHit.artifacts) : []
+  if (specHit && !(storyData && typeof storyData === 'object' && hasText(storyData.title)) && ART_ON && specNames.indexOf(storyFile) !== -1) {
+    // The plan NAMED the Story artifact without inlining it, which is the normal case. The
+    // mini reads its own saved output from disk in one read-only session and returns the
+    // Spec/Story pair; the spec documents themselves go downstream as paths, unread here.
+    const replayedSpec = await workflow('agent-teams-workforce:spec-authoring', {
+      spec: a.spec || { id: prd.id, title: prd.title, repoPath: repo },
+      repoPath: repo,
+      storyKey,
+      epic,
+      replay: { files: { story: artPath(storyFile) }, specPaths: specFiles(slug).map(artPath) },
+    })
+    if (replayedSpec && replayedSpec.ok && replayedSpec.story && hasText(replayedSpec.story.title)) {
+      reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
+      artPhases[specPhase] = 'reused'
+      specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
+      await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
+    } else {
+      log(`Phase '${specPhase}' is fresh but its saved Story could not be read back (${(replayedSpec && replayedSpec.reason) || 'no result'}) — it runs`)
+      specAuthoring = cpGet(`spec:${repo}`)
+    }
+  } else if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
     reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
     artPhases[specPhase] = 'reused'
     specAuthoring = {
@@ -3063,7 +3111,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     }
     await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
   } else {
-    if (specHit) log(`Phase '${specPhase}' is fresh but the host did not inline story-${slug}.json — it runs`)
+    if (specHit) log(`Phase '${specPhase}' is fresh but ${storyFile} is neither inlined nor named as a file this run can point at (${specNames.join(', ') || 'no artifact named'}) — it runs`)
     specAuthoring = cpGet(`spec:${repo}`)
   }
   if (specAuthoring === undefined) {
@@ -3878,21 +3926,43 @@ async function decomposeStory(pair) {
   const tasksPhase = `tasks:${slug}`
   const tasksHit = resumeFresh(tasksPhase)
   const makerData = artData(tasksHit, `tasks-${slug}.json`)
+  const tasksFile = `tasks-${slug}.json`
+  const tasksNames = tasksHit ? Object.keys(tasksHit.artifacts) : []
+  const inlineTasks = !!(tasksHit && makerData && Array.isArray(makerData.tasks) && makerData.tasks.length)
+  // The plan usually NAMES the saved decomposition without inlining it — the payload cannot
+  // carry a parsed task set — so the mini is handed the paths and reads them itself.
+  const fileTasks = !inlineTasks && !!tasksHit && ART_ON && tasksNames.indexOf(tasksFile) !== -1
+  const named = (name, slot) => (tasksNames.indexOf(name) !== -1 ? { [slot]: artPath(name) } : {})
   let decomposition
-  if (tasksHit && makerData && Array.isArray(makerData.tasks) && makerData.tasks.length) {
+  if (inlineTasks || fileTasks) {
     // Replayed, not skipped: the mini's deterministic emission runs again over the saved maker
     // output and checker verdict, so the bead set is rebuilt against this run's Story key.
     const replayed = await workflow('agent-teams-workforce:task-decomposition', {
       ...decompArgs(pair, ''),
-      replay: {
-        maker: makerData,
-        rescore: artData(tasksHit, `tasks-${slug}.wsjf.json`) || null,
-        review: artData(tasksHit, `tasks-${slug}.review.json`) || null,
-        wsjfReview: artData(tasksHit, `tasks-${slug}.wsjf-review.json`) || null,
-      },
+      replay: inlineTasks
+        ? {
+            maker: makerData,
+            rescore: artData(tasksHit, `tasks-${slug}.wsjf.json`) || null,
+            review: artData(tasksHit, `tasks-${slug}.review.json`) || null,
+            wsjfReview: artData(tasksHit, `tasks-${slug}.wsjf-review.json`) || null,
+          }
+        : {
+            files: {
+              maker: artPath(tasksFile),
+              ...named(`tasks-${slug}.wsjf.json`, 'rescore'),
+              ...named(`tasks-${slug}.review.json`, 'review'),
+              ...named(`tasks-${slug}.wsjf-review.json`, 'wsjfReview'),
+            },
+          },
     })
     if (replayed && replayed.ok) {
-      reuseFrom(tasksPhase, tasksHit, 'the saved decomposition was replayed through the emission step')
+      reuseFrom(
+        tasksPhase,
+        tasksHit,
+        inlineTasks
+          ? 'the saved decomposition was replayed through the emission step'
+          : 'the mini read the saved decomposition from disk and replayed it through the emission step'
+      )
       artPhases[tasksPhase] = 'reused'
       decomposition = { ok: true, resumed: true, artifact: replayed }
       await cpSave(cpDecompKey, decomposition, reusedDecision(tasksPhase))
@@ -3900,7 +3970,7 @@ async function decomposeStory(pair) {
       log(`Phase '${tasksPhase}' is fresh but its replay produced no valid task set (${(replayed && replayed.reason) || 'no result'}) — it runs`)
     }
   } else {
-    if (tasksHit) log(`Phase '${tasksPhase}' is fresh but the host did not inline tasks-${slug}.json — it runs`)
+    if (tasksHit) log(`Phase '${tasksPhase}' is fresh but ${tasksFile} is neither inlined nor named as a file this run can point at (${tasksNames.join(', ') || 'no artifact named'}) — it runs`)
     decomposition = cpGet(cpDecompKey)
   }
   if (decomposition === undefined) {
