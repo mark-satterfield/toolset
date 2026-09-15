@@ -491,6 +491,22 @@ function handback(ok, stage, headline, detail) {
   }
 }
 
+// ── WHAT THE DEPLOY LOOP HAS PROVEN, READ OFF ITS OWN ROWS ────────────────────
+// An exit from inside the deploy loop cannot take handback's defaults: once a rollout has
+// reached dev, `deployedToDev: false` is untrue, and a later Green re-entry or a redeploy
+// that never rolls out does not un-deploy it. Both scalars come from the per-iteration rows
+// the loop records from deploy.js's own result, never from a headline:
+//   deployedToDev — some iteration's rollout reached AWS dev.
+//   smokePassed   — the LATEST rollout reached dev and its smoke tests passed there.
+function deployEvidence(rows) {
+  const last = rows.length ? rows[rows.length - 1] : null
+  return {
+    deployedToDev: rows.some((r) => r.deployedToDev === true),
+    smokePassed: !!(last && last.deployedToDev === true && last.smokePassed === true),
+    deployIteration: rows.length,
+  }
+}
+
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
 // WHAT was unmet and on what evidence; a headline that says only "green failed" makes
 // the caller open the journal to learn anything at all.
@@ -1714,9 +1730,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   if (!smokeFailedInDev) {
     return {
       ...handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
-      deployedToDev: deployArtifact.deployedToDev === true,
-      smokePassed: deployArtifact.smokePassed === true,
-      deployIteration,
+      ...deployEvidence(deployIterations),
     }
   }
   const smokeEvidence =
@@ -1758,7 +1772,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     }),
   })
   if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
-  if (!green.ok) return await failAfterDoc('green', green)
+  if (!green.ok) return { ...(await failAfterDoc('green', green)), ...deployEvidence(deployIterations) }
 }
 
 // The success return is where the bloat was worst: the whole tail contract plus seven
