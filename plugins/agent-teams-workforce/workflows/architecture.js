@@ -1,7 +1,7 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
+    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. A CONSTITUTIVE rule, including the platform bans the constitutional gate asserts downstream, is honored instead of overridden: the decider rules on the options that respect it and returns a ruleChallenge if it thinks the rule is wrong. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
@@ -796,8 +796,14 @@ const DECISION_SCHEMA = {
           source: { type: 'string' },
           whyBlocking: { type: 'string' },
           // convention = a house rule this project wrote for itself. It MUST NOT
-          // halt delivery; it is challengeable. constitutive = a real external
-          // constraint (an AWS limit, a security fundamental, a legal obligation).
+          // halt delivery; it is challengeable, and best practice beats it.
+          // constitutive = a real external constraint (an AWS limit, a security
+          // fundamental, a legal obligation) OR one of the platform bans the
+          // constitutional gate asserts downstream (no Step Functions, REST v1
+          // only, Powertools-only, service isolation, SSM-not-CFN-exports,
+          // dot-only event naming). A constitutive rule is honored and, if it
+          // is wrong, CHALLENGED via ruleChallenges — never overridden here,
+          // because the gate would refuse the override anyway.
           classification: { type: 'string', enum: ['constitutive', 'convention'] },
         },
       },
@@ -826,9 +832,13 @@ const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architect
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
 - If NO proposed option can be ruled on, set admissible=false and leave chosenApproach empty. Populate blockingRules with the specific rules that eliminated every option. This is a reportable outcome, not a failure to do your job — do NOT manufacture a ruling to avoid it, and do NOT dress a rejection up as a decision.
-- Classify every blocking rule. A rule is "constitutive" ONLY if it is a real external constraint: an AWS service limit, a security fundamental, a legal or contractual obligation. A rule this project wrote for itself — a naming convention, a curated allowlist, a house pattern, a self-authored MUST in our own SAD — is a "convention", however normatively it is phrased.
+- Classify every blocking rule as "constitutive" or "convention".
+- CONSTITUTIVE is a real external constraint — an AWS service limit, a security fundamental, a legal or contractual obligation — AND the platform bans this project holds constitutive: no Step Functions, no HTTP API v2 (REST API v1 only), no FastAPI/Flask/Django, Powertools-only Lambdas, service isolation, SSM Parameter Store rather than CloudFormation exports for cross-stack refs, and dot-only event naming. Those bans are asserted as hard criteria at the constitutional gate downstream, so an option that breaks one cannot pass however good the design is.
+- CONVENTION is any other rule this project wrote for itself — a naming convention, a curated allowlist, a house pattern, a self-authored MUST in our own SAD — however normatively it is phrased.
 - A convention MUST NOT be the reason delivery halts. If a convention is the only thing eliminating an otherwise sound design, prefer the design: rule it admissible and record a ruleChallenge against the convention.
-- Where our own written rule conflicts with industry best practice or an AWS Well-Architected principle, BEST PRACTICE WINS and our rule is the defect. Record it in ruleChallenges with the change you recommend. ruleChallenges go to the human owner; they are never applied by this run.
+- Where a CONVENTION conflicts with industry best practice or an AWS Well-Architected principle, BEST PRACTICE WINS and our rule is the defect. Record it in ruleChallenges with the change you recommend.
+- A CONSTITUTIVE rule is never overridden on best-practice grounds. Rule on the options that honor it; if you believe the rule itself is wrong, HONOR IT AND CHALLENGE IT — record a ruleChallenge and let the human owner change the rule. Overriding one here only moves the failure to the gate, which will refuse it.
+- ruleChallenges go to the human owner; they are never applied by this run.
 
 Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).`
 
@@ -890,7 +900,7 @@ Propose a NEW option set. Requirements for this round:
 - Design the best solution to the problem FIRST, using industry best practice and AWS Well-Architected. Then check it against the rules above.
 - Do NOT re-present any option already eliminated.
 - A rule classified as [convention] is a house rule, not an external constraint. If the best design conflicts with one, propose the design anyway and say plainly in the option's cons which convention it breaks and why the convention should change.
-- Only a [constitutive] rule — a real AWS limit, a security fundamental, a legal obligation — is genuinely binding on your options.
+- A [constitutive] rule IS binding on your options: a real AWS limit, a security fundamental, a legal obligation, or one of this project's platform bans (no Step Functions, no HTTP API v2 — REST v1 only, no FastAPI/Flask/Django, Powertools-only, service isolation, SSM not CloudFormation exports, dot-only event naming). Do not propose an option that breaks one; the constitutional gate downstream refuses it. Say in the option's cons if honoring one costs you something, and the decider will record a rule challenge.
 - Existing deployed infrastructure is NOT a constraint on the design. If the right answer requires something that does not exist yet, propose it.`
 
   const reJobs = activeMakers.map((m) => () =>

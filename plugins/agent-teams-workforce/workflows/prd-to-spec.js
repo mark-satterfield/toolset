@@ -1374,7 +1374,8 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 //                   repo-scoping-verification.json
 //   trd             trd.md
 //   spec:<slug>     spec-<slug>.md, spec-<slug>.data-model.md, spec-<slug>.criteria.md, story-<slug>.json
-//   tasks:<slug>    tasks-<slug>.json, tasks-<slug>.wsjf.json, tasks-<slug>.review.json
+//   tasks:<slug>    tasks-<slug>.json, tasks-<slug>.wsjf.json, tasks-<slug>.review.json (Beads format),
+//                   tasks-<slug>.wsjf-review.json (WSJF scores)
 // where <slug> is the ruled repository directory's basename. A FRESH phase is skipped and its
 // artifact PATHS are handed to the next phase; a stale or absent one runs and overwrites.
 function normalizeResume(r) {
@@ -3887,6 +3888,7 @@ async function decomposeStory(pair) {
         maker: makerData,
         rescore: artData(tasksHit, `tasks-${slug}.wsjf.json`) || null,
         review: artData(tasksHit, `tasks-${slug}.review.json`) || null,
+        wsjfReview: artData(tasksHit, `tasks-${slug}.wsjf-review.json`) || null,
       },
     })
     if (replayed && replayed.ok) {

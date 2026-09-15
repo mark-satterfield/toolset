@@ -158,7 +158,7 @@ graph TD
 | `tdd-refactor` | shared-tail mini | Behavior-preserving cleanup plus an independent correctness review — no self-approval. |
 | `integration` | shared-tail mini | Runs integration/E2E/contract suites; a root-cause-analyst classifies where failures escalate. |
 | `adversarial` | shared-tail mini | Two concurrent attack lanes in test environments only; an adjudicator referees severity for G4. |
-| `deploy` | shared-tail mini | Validates CDK synth/drift, authors smoke tests, runs the readiness review; returns go/no-go only. |
+| `deploy` | shared-tail mini | Validates CDK synth/drift, authors smoke tests, runs the readiness review, and on a go ROLLS OUT to AWS dev and smoke-tests the deployed endpoints; a smoke failure re-enters Green, then redeploys and re-smokes, bounded. qa/prod rollout stays human-gated. |
 | `documentation` | cross-cutting mini | Parallel track: audits doc currency and updates stale docs; result feeds the readiness review. |
 | `bug-triage` | front-end | Read-only: turns a bug bead into a contract — reproduction, root cause, blast radius, acceptance criteria. |
 | `bug-fix` | composite | Stitches `bug-triage` onto the shared tail; owns loop/escalate; ends at readiness, not rollout. |
@@ -169,7 +169,7 @@ A composite runs two ways. **On-demand**, a single call drives one unit of work:
 
 ### Safety
 
-`deploy` stops at readiness. It validates CDK synth, checks for drift, authors smoke tests, and runs a production-readiness review that returns a go/no-go — and nothing more. The pipeline does not run `cdk deploy` to production. Rollout is a separate, human-gated, outward-affecting action triggered by a person, not by a composite. Adversarial agents operate in designated test environments only; the attack lanes are instructed never to touch production, and the composite ends with `deployedToProd: false`.
+`deploy` stops at dev. It validates CDK synth, checks for drift, authors smoke tests, and runs a readiness review that returns a go/no-go; on a go it deploys to the AWS dev environment and smoke-tests the deployed endpoints, because dev is where things are found out and deploying there is not human-gated. The pipeline does not run `cdk deploy` to qa or production. Outward-facing rollout is a separate, human-gated action triggered by a person, not by a composite. Adversarial agents operate in designated test environments only; the attack lanes are instructed never to touch production, and the composite ends with `deployedToProd: false`.
 
 ### Status
 

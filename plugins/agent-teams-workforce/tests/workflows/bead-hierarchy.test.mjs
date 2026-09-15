@@ -164,9 +164,10 @@ for (const kind of ['chore', 'docs', 'research', 'spike']) {
   })
 }
 
-// The decompose/sequence/score maker and the review/format checker are ONE session
-// each now (ssbd-qrpf0); this stub answers the merged labels, plus the standalone
-// re-scoring dispatch.
+// The decompose/sequence/score maker is ONE session (ssbd-qrpf0). The checkers are TWO,
+// because their charters differ: the scoring reviewer judges the WSJF scores and the
+// format validator judges Beads format and the hierarchy rule. This stub answers the
+// merged maker label and both checker labels, plus the standalone re-scoring dispatch.
 const score = (key) => ({ key, userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' })
 function decompStub({ tasks, buildOrder, review, validation }) {
   return (call) => {
@@ -174,11 +175,11 @@ function decompStub({ tasks, buildOrder, review, validation }) {
       return { tasks, rationale: 'r', edges: [], buildOrder, acyclic: true, scores: buildOrder.map(score) }
     }
     if (call.label === 'wsjf:score') return { scores: buildOrder.map(score) }
-    if (String(call.label).startsWith('review:scores-and-format')) {
-      return {
-        scoringReview: review || { accepted: true, feedback: '', issues: [] },
-        beadsValidation: validation || { valid: true, violations: [] },
-      }
+    if (String(call.label).startsWith('review:scores')) {
+      return { scoringReview: review || { accepted: true, feedback: '', issues: [] } }
+    }
+    if (call.label === 'review:format') {
+      return { beadsValidation: validation || { valid: true, violations: [] } }
     }
     return null
   }

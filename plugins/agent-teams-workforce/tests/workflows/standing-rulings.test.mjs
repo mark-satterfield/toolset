@@ -119,9 +119,8 @@ test('task-decomposition: the maker gets the rulings', async () => {
       if (call.label === 'decompose:sequence-and-score') {
         return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r', edges: [], buildOrder: ['T1'], acyclic: true, scores: [{ key: 'T1', userBusinessValue: 1, timeCriticality: 1, riskReductionOpportunityEnablement: 1, jobSize: 1, wsjf: 3, rationale: 'r' }] }
       }
-      if (String(call.label).startsWith('review:scores-and-format')) {
-        return { scoringReview: { accepted: true, feedback: '', issues: [] }, beadsValidation: { valid: true, violations: [] } }
-      }
+      if (String(call.label).startsWith('review:scores')) return { scoringReview: { accepted: true, feedback: '', issues: [] } }
+      if (call.label === 'review:format') return { beadsValidation: { valid: true, violations: [] } }
       return null
     },
   })

@@ -374,7 +374,7 @@ ${ctx}`,
         label: `review:all-specs${attempt > 1 ? `:${attempt}` : ''}`,
         phase: 'Review specs',
         effort: 'medium',
-        agentType: 'agent-teams-workforce:api-design-reviewer',
+        agentType: 'agent-teams-workforce:openapi-contract-reviewer',
         schema: {
           type: 'object',
           additionalProperties: false,

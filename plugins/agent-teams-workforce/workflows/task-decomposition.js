@@ -1,10 +1,10 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, sequences the acyclic dependency DAG with a build order, and WSJF-scores (the sole prioritization metric — no P0-P4); ONE independent checker session then reviews the scores AND validates the Beads format and the hierarchy rule in a bounded loop (a scoring rejection re-runs only the scorer). The maker never judges its own work — the independent checker does that.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, sequences the acyclic dependency DAG with a build order, and WSJF-scores (the sole prioritization metric — no P0-P4); TWO independent checker sessions then judge it, and they judge different things because their charters differ: the wsjf-scoring-reviewer rules on the scores, the beads-format-validator rules on the Beads format and the hierarchy rule and is forbidden from judging a score. They run concurrently, and only the scoring side loops — a scoring rejection re-runs the scorer and the scoring reviewer, never the format validation. The maker never judges its own work.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + acyclic DAG + WSJF scores' },
-    { title: 'Validate & emit', detail: 'one independent checker session: score review + Beads-format validation -> emit bead set' },
+    { title: 'Validate & emit', detail: 'two independent checkers, concurrent: WSJF score review + Beads-format validation -> emit bead set' },
   ],
 }
 
@@ -24,10 +24,12 @@ export const meta = {
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 //   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //                                                              // Epic working directory: the maker, the
-//                                                              // re-scorer and the checker each save their
-//                                                              // own output as tasks-<slug>.json,
-//                                                              // tasks-<slug>.wsjf.json, tasks-<slug>.review.json
-//   replay?: { maker, rescore?, review? },                     // those saved outputs, read back from fresh
+//                                                              // re-scorer and the two checkers each save
+//                                                              // their own output as tasks-<slug>.json,
+//                                                              // tasks-<slug>.wsjf.json,
+//                                                              // tasks-<slug>.review.json (format) and
+//                                                              // tasks-<slug>.wsjf-review.json (scores)
+//   replay?: { maker, rescore?, review?, wsjfReview? },        // those saved outputs, read back from fresh
 //                                                              // artifacts: a supplied one replaces its session
 //                                                              // and the deterministic emission below still runs
 // }
@@ -68,8 +70,15 @@ const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(
 const replay = a.replay && typeof a.replay === 'object' ? a.replay : {}
 const replayMaker = replay.maker && typeof replay.maker === 'object' && Array.isArray(replay.maker.tasks) && replay.maker.tasks.length ? replay.maker : null
 const replayRescore = replay.rescore && typeof replay.rescore === 'object' && Array.isArray(replay.rescore.scores) ? replay.rescore : null
+// The two verdicts replay independently, because they are now two sessions. A
+// tasks-<slug>.review.json written before the split carries BOTH keys; its scoring half is
+// still honored, so an Epic saved under the old shape resumes rather than re-running.
 const replayReview =
-  replay.review && typeof replay.review === 'object' && replay.review.scoringReview && replay.review.beadsValidation ? replay.review : null
+  replay.review && typeof replay.review === 'object' && replay.review.beadsValidation ? replay.review : null
+const replayScoring =
+  (replay.wsjfReview && typeof replay.wsjfReview === 'object' && replay.wsjfReview.scoringReview
+    ? replay.wsjfReview.scoringReview
+    : null) || (replayReview && replayReview.scoringReview) || null
 const spec = a.spec || {}
 const story = a.story || {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
@@ -341,33 +350,30 @@ ${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer fee
 }
 
 let wsjfScores = replayRescore || { scores: maker.scores || [], notes: maker.notes }
-let scoringReview = null
-let scoringAccepted = false
-let beadsValidation = null
-// A saved checker verdict stands in for the checker session. It judged the saved maker
-// output; only a rejected SCORING is ever redone after it, and the structural verdict it
-// carries is independent of the scores.
+let scoringReview = replayScoring
+let scoringAccepted = !!(scoringReview && scoringReview.accepted === true)
+let beadsValidation = replayReview ? replayReview.beadsValidation : null
 if (replayReview) {
-  scoringReview = replayReview.scoringReview
-  beadsValidation = replayReview.beadsValidation
-  scoringAccepted = !!(scoringReview && scoringReview.accepted === true)
-  log(`Validate REPLAYED from the saved checker verdict (scores ${scoringAccepted ? 'accepted' : 'disputed'}, Beads format ${beadsValidation && beadsValidation.valid === true ? 'valid' : 'invalid'}) — no checker session`)
+  log(`Beads format REPLAYED from the saved verdict (${beadsValidation && beadsValidation.valid === true ? 'valid' : 'invalid'}) — no format session`)
+}
+if (replayScoring) {
+  log(`WSJF review REPLAYED from the saved verdict (${scoringAccepted ? 'accepted' : 'disputed'}) — no scoring session`)
 }
 
-// ── One INDEPENDENT checker session: WSJF review + Beads-format validation ─────
-// These used to be two separate checker sessions. Both judge the maker's output and
-// neither authored any of it, so one session carrying both checks preserves
-// segregation of duties at half the session cost. On a scoring rejection only the
-// SCORING is redone (the standalone scorer above); the structural result stands.
-for (let pass = 1; !replayReview && pass <= MAX_SCORING_PASSES; pass++) {
-  const check = await agent(
-    `You are an INDEPENDENT checker. You did NOT produce any of the artifacts below; you only judge them. Perform BOTH checks in one pass and return each under its own key. Keep every problem/feedback item under 40 words.
-
-CHECK 1 — WSJF scores (return under \`scoringReview\`): every task scored exactly once, jobSize > 0, the wsjf arithmetic is correct, the component values are internally consistent across tasks (similar work scored comparably), and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation.
-
-CHECK 2 — Beads format (return under \`beadsValidation\`): every item's type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit (an Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else; report any such item as a violation on the "type" field). Each task is scoped to ONE agent's work within the single repository the Spec names. A valid id/key with the ssbd- prefix once emitted. All required Beads fields present: title, type, description, acceptance criteria, Definition of Done (\`definitionOfDone\`, non-empty), and the SPEC LINK — \`specPaths\` non-empty${citableRefs.length ? ` and every entry one of: ${citableRefs.join(', ')}` : ''}, plus \`specSections\` naming where in those documents the task is defined. \`surfaces\` is a list or null; null means unknown and is legal, a missing field is not. The dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic. valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only.
-
-Parent Story for this task set: ${storyRef || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
+// ── TWO INDEPENDENT checker sessions ──────────────────────────────────────────
+// They judge different things, and the split is what makes both charters true.
+// beads-format-validator is explicitly forbidden from judging whether a score is
+// defensible — that is wsjf-scoring-reviewer's job — so asking one session to do both
+// meant the dispatch contradicted the charter of the agent it dispatched.
+//
+// Neither checker authored any of what it judges, so segregation of duties holds on both
+// sides. They have no dependency on each other and run CONCURRENTLY, so two sessions cost
+// one session's wall clock. Only the scoring side loops: a rejected score re-runs the
+// scorer and then the scoring reviewer, while the structural verdict — which is about the
+// tasks and the DAG, not the scores — stands from its single pass.
+const CHECKER_PREAMBLE =
+  'You are an INDEPENDENT checker. You did NOT produce any of the artifacts below; you only judge them. Keep every problem/feedback item under 40 words.'
+const taskEvidence = `Parent Story for this task set: ${storyRef || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
 
 Tasks:
 ${JSON.stringify(tasks, null, 2)}
@@ -376,19 +382,28 @@ Dependency edges:
 ${JSON.stringify(dag.edges, null, 2)}
 
 Build order (lower index builds first):
-${(dag.buildOrder || []).join(' -> ') || '(none)'}
+${(dag.buildOrder || []).join(' -> ') || '(none)'}`
+
+/** Judge the WSJF scores, and nothing else. */
+async function reviewScores(pass) {
+  return await agent(
+    `${CHECKER_PREAMBLE}
+
+Judge the WSJF SCORES ONLY (return under \`scoringReview\`): every task scored exactly once, jobSize > 0, the wsjf arithmetic is correct, the component values are internally consistent across tasks (similar work scored comparably), and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
+
+${taskEvidence}
 
 WSJF scores under review:
-${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `tasks-${artSlug}.review.json`, 'your complete verdict (scoringReview and beadsValidation, exactly as you return them) as ONE JSON object')}`,
+${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `tasks-${artSlug}.wsjf-review.json`, 'your complete verdict (scoringReview, exactly as you return it) as ONE JSON object')}`,
     {
-      label: `review:scores-and-format:${pass}`,
+      label: `review:scores:${pass}`,
       effort: 'medium',
       phase: 'Validate & emit',
-      agentType: 'agent-teams-workforce:beads-format-validator',
+      agentType: 'agent-teams-workforce:wsjf-scoring-reviewer',
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['scoringReview', 'beadsValidation'],
+        required: ['scoringReview'],
         properties: {
           scoringReview: {
             type: 'object',
@@ -411,6 +426,30 @@ ${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `
               },
             },
           },
+        },
+      },
+    }
+  )
+}
+
+/** Judge the Beads format and the hierarchy rule, and nothing else. */
+async function validateFormat() {
+  return await agent(
+    `${CHECKER_PREAMBLE}
+
+Judge the BEADS FORMAT ONLY (return under \`beadsValidation\`): every item's type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit (an Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else; report any such item as a violation on the "type" field). Each task is scoped to ONE agent's work within the single repository the Spec names. A valid id/key with the ssbd- prefix once emitted. All required Beads fields present: title, type, description, acceptance criteria, Definition of Done (\`definitionOfDone\`, non-empty), and the SPEC LINK — \`specPaths\` non-empty${citableRefs.length ? ` and every entry one of: ${citableRefs.join(', ')}` : ''}, plus \`specSections\` naming where in those documents the task is defined. \`surfaces\` is a list or null; null means unknown and is legal, a missing field is not. The dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic. valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only. Do NOT judge whether a WSJF score is defensible: scoring review belongs to another checker and is outside your charter.
+
+${taskEvidence}${persistBrief(ART, `tasks-${artSlug}.review.json`, 'your complete verdict (beadsValidation, exactly as you return it) as ONE JSON object')}`,
+    {
+      label: 'review:format',
+      effort: 'medium',
+      phase: 'Validate & emit',
+      agentType: 'agent-teams-workforce:beads-format-validator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['beadsValidation'],
+        properties: {
           beadsValidation: {
             type: 'object',
             additionalProperties: false,
@@ -437,21 +476,43 @@ ${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `
       },
     }
   )
-  scoringReview = check && check.scoringReview
-  beadsValidation = check && check.beadsValidation
-  if (scoringReview && scoringReview.accepted) {
-    scoringAccepted = true
-    log(`WSJF review: ACCEPTED on pass ${pass}/${MAX_SCORING_PASSES}`)
-    break
+}
+
+// First wave: whichever verdicts this run still needs, concurrently.
+const firstWave = []
+if (!replayReview) firstWave.push(() => validateFormat())
+if (!replayScoring) firstWave.push(() => reviewScores(1))
+if (firstWave.length) {
+  const results = await parallel(firstWave)
+  let i = 0
+  if (!replayReview) {
+    const fmt = results[i++]
+    beadsValidation = fmt && fmt.beadsValidation
   }
+  if (!replayScoring) {
+    const sc = results[i++]
+    scoringReview = sc && sc.scoringReview
+    scoringAccepted = !!(scoringReview && scoringReview.accepted)
+    log(
+      scoringAccepted
+        ? `WSJF review: ACCEPTED on pass 1/${MAX_SCORING_PASSES}`
+        : `WSJF review: REJECTED pass 1/${MAX_SCORING_PASSES} — ${(scoringReview && scoringReview.feedback) || 'no feedback'}`
+    )
+  }
+}
+
+// Re-scoring loop: the scorer and the scoring reviewer only. The structural verdict is
+// about the tasks and the DAG, which a re-score does not touch, so it is not re-bought.
+for (let pass = 2; !scoringAccepted && !replayScoring && pass <= MAX_SCORING_PASSES; pass++) {
+  wsjfScores = await scoreWsjf((scoringReview && scoringReview.feedback) || '')
+  const sc = await reviewScores(pass)
+  scoringReview = sc && sc.scoringReview
+  scoringAccepted = !!(scoringReview && scoringReview.accepted)
   log(
-    `WSJF review: REJECTED pass ${pass}/${MAX_SCORING_PASSES} — ${
-      (scoringReview && scoringReview.feedback) || 'no feedback'
-    }`
+    scoringAccepted
+      ? `WSJF review: ACCEPTED on pass ${pass}/${MAX_SCORING_PASSES}`
+      : `WSJF review: REJECTED pass ${pass}/${MAX_SCORING_PASSES} — ${(scoringReview && scoringReview.feedback) || 'no feedback'}`
   )
-  if (pass < MAX_SCORING_PASSES) {
-    wsjfScores = await scoreWsjf((scoringReview && scoringReview.feedback) || '')
-  }
 }
 
 // A scoring disagreement is NOT a reason to discard the decomposition.
@@ -473,8 +534,8 @@ if (scoringDisputed) {
 }
 
 // ── Validate & emit ─────────────────────────────────────────────────────────
-// Format validation already ran inside the combined checker session above; here the
-// script only applies its verdict.
+// Format validation ran in its own checker session above; here the script only applies
+// its verdict.
 phase('Validate & emit')
 
 if (!beadsValidation || beadsValidation.valid !== true) {
