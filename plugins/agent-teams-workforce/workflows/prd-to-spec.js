@@ -464,7 +464,6 @@ function cpInit(repo, subject, inputHash) {
   // mid-object, unparseable, resuming nothing, after ~1.7 KB of one generation was
   // followed by a newline and the tail of another.
   //
-  // <!-- lint:commands-named-not-invoked -->
   // A workflow script has no filesystem, and the writing agent has no shell command it
   // can rely on being approved — five runs once stalled for a combined 37 hours waiting
   // on an unapproved `mkdir` — so `write temp, then rename` is not available: there is no
@@ -478,7 +477,6 @@ function cpInit(repo, subject, inputHash) {
   // `seq` then says which of the two survivors is newer, so the loader takes the newest
   // COMPLETE generation rather than trusting a filename. That is a commit protocol built
   // out of write ordering, which is all a renameless writer has.
-  // <!-- /lint:commands-named-not-invoked -->
   cp.envPath = `${cp.dir}/envelope.json`
   cp.envWalPath = `${cp.dir}/envelope.json.wal`
 }

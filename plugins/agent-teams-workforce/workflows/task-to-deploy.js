@@ -948,7 +948,6 @@ function cpInit(repo, subject, inputHash) {
   // `seq` then says which of the two survivors is newer, so the loader takes the newest
   // COMPLETE generation rather than trusting a filename. That is a commit protocol built
   // out of write ordering, which is all a renameless writer has.
-  // <!-- /lint:commands-named-not-invoked -->
   cp.walPath = `${cp.path}.wal`
 }
 const CP_IO_SCHEMA = {
@@ -1189,12 +1188,10 @@ ${file}`
  * Retire the checkpoint AND its write-ahead copy.
  *
  * BOTH files, or the retirement is a no-op that looks like a success. The write-ahead copy
- * <!-- lint:commands-named-not-invoked -->
  * is a complete, valid, resumable generation by construction — that is the whole point of
  * it — so retiring only the primary would leave the loader recovering the finished run
  * from the copy and replaying every completed phase, which is precisely the failure the
  * retirement exists to prevent.
- * <!-- /lint:commands-named-not-invoked -->
  */
 async function cpDelete() {
   if (!cp.active || !cp.touched) return

@@ -107,14 +107,12 @@ silently, for an approval that may not come for hours. `agent()` has no timeout 
 workflow runtime has no timer, so nothing upstream can cut you off. A blocked call of yours
 stalls the entire composite.
 
-<!-- lint:commands-named-not-invoked -->
 This is not hypothetical. Five separate runs stalled here for **12.8h, 8.2h, 8.1h, 7.2h and
 0.9h — about 37 hours** — every one of them waiting on the same `mkdir -p .claude/workflow-runs`.
 `mkdir` is allowlisted; the calls still blocked, because they were written as multi-line or
 multi-statement scripts (`\nmkdir …`, `mkdir …\necho …`) and a compound command does not match a
 `Bash(mkdir:*)` prefix rule. Those runs did roughly one second of real work each. Every one of
 them started off-hours, with nobody at the keyboard to answer the prompt.
-<!-- /lint:commands-named-not-invoked -->
 
 The five hangs are the ONLY sessions on record that ever sat in one multi-hour gap. Genuine
 long work looks nothing like it: the longest legitimate sessions run 35-78 minutes across
