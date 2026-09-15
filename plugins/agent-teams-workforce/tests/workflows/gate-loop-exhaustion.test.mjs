@@ -118,7 +118,18 @@ test('all four gateLoop copies return the same exhaustion shape', async () => {
       `${f} must route the exhaustion ruling to the EXISTING advantage-evaluator, not a new authority`,
     )
     assert.ok(
-      src.includes('recordGate(MAX_LOOPS, lastVerdict') || src.includes('MAX_LOOPS, lastVerdict'),
+      // task-to-deploy's Gate 5 takes a per-gate budget (`maxLoops: 1`, so one rollout per
+      // iteration), so its copy records the budget it actually ran under rather than the
+      // run-wide constant. Either spelling satisfies the property under test: the terminal
+      // row carries the REAL final verdict instead of null.
+      // Three spellings, one property. bug-fix and prd-to-spec call `recordGate(MAX_LOOPS,
+      // lastVerdict, …)`; infra-change's recordGate takes the gate and phase first, so its
+      // copy reads `recordGate(gate, phaseName, MAX_LOOPS, lastVerdict, …)`; and
+      // task-to-deploy's Gate 5 takes a PER-GATE budget (`maxLoops: 1`, one rollout per
+      // iteration), so its copy records the budget it actually ran under rather than the
+      // run-wide constant. What is under test is the same either way: the terminal ledger
+      // row carries the REAL final verdict instead of null.
+      src.includes('MAX_LOOPS, lastVerdict') || src.includes('recordGate(loopBudget, lastVerdict'),
       `${f} still records a null verdict at exhaustion — the ledger's terminal row then carries no criteria at all`,
     )
   }

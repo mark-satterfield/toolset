@@ -465,21 +465,69 @@ ${
 
 Then RUN the smoke tests (${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none authored'}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
 
-HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. If a deploy errors, stop and report exactly where and why. Report literal deploy output; never claim a deployment you did not observe succeed.`,
+EVIDENCE IS REQUIRED, NOT OPTIONAL. \`deployed\` and \`smokePassed\` are your own booleans about your own work, so the schema demands the observations behind them and the dispatch FAILS without them. Report, for this rollout:
+- \`commands\`: every deploy and smoke command you ran, each with the exit code the shell returned. A command you did not run has no row; a row with no exit code is not a result.
+- \`commitSha\`: the full SHA of the commit you deployed, read from the tree you deployed FROM (\`git -C "${c.repoPath || '.'}" rev-parse HEAD\`). This is what binds the deployment to a revision; without it nothing can say WHICH bytes are live.
+- \`stacks\`, \`account\`, \`region\`: the stack (or distribution/bucket) name you changed, and the AWS account id and region you changed it in. Say what you actually targeted, not what you were told to target.
+- \`smokeCases\`: one row per smoke case, with its name, whether it passed, and its literal output. A smoke suite you did not run is an empty list and \`smokePassed: false\` — never a pass by default.
+
+HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. If a deploy errors, stop and report exactly where and why, with the failing command and its exit code in \`commands\`. Report literal deploy output; never claim a deployment you did not observe succeed.`,
     {
       label: 'deploy:rollout-dev',
       phase: 'Deploy-readiness',
       agentType: multiRepo
         ? 'agent-teams-workforce:wave-deployment-sequencer'
         : 'agent-teams-workforce:cdk-stack-author',
+      // ── THE ROLLOUT REPORTS ITS OBSERVATIONS, NOT JUST ITS CONCLUSIONS ────────
+      //
+      // This schema used to require three fields, two of which were the agent's own
+      // booleans about its own work, and `evidence` — the only thing that could ground
+      // either of them — was OPTIONAL. So the strongest claim in the pipeline, "the code
+      // is live in AWS dev", rested on a self-report the schema did not ask to justify,
+      // and a rollout that reported `deployed: true` with nothing else was structurally
+      // indistinguishable from one that had deployed.
+      //
+      // The five additions are the observations a deploy necessarily produces if it
+      // happened at all: the commands and their exit codes, the commit that was deployed,
+      // the stack/account/region that received it, and the per-case smoke output. None is
+      // a judgment, so none can be argued; an agent that did not deploy cannot fill them
+      // in without fabricating a shell transcript, which is a materially harder lie than
+      // flipping a boolean. That does not make `deployed` a measurement — see the comment
+      // below, which still stands — it makes the claim falsifiable by a reader.
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['deployed', 'stacks', 'smokePassed'],
+        required: ['deployed', 'stacks', 'smokePassed', 'commands', 'commitSha', 'account', 'region', 'smokeCases'],
         properties: {
           deployed: { type: 'boolean' },
           stacks: { type: 'array', items: { type: 'string' } },
           smokePassed: { type: 'boolean' },
+          // Every command run, with the code the shell returned. A deploy nobody can
+          // point at a command for did not happen.
+          commands: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['command', 'exitCode'],
+              properties: { command: { type: 'string' }, exitCode: { type: 'integer' } },
+            },
+          },
+          // What was deployed, as a revision rather than as a description of one.
+          commitSha: { type: 'string' },
+          account: { type: 'string' },
+          region: { type: 'string' },
+          // Per-case smoke results. `smokePassed` is a summary of these; the outputs are
+          // what the composite quotes back into a Green repair when one fails.
+          smokeCases: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['name', 'passed', 'output'],
+              properties: { name: { type: 'string' }, passed: { type: 'boolean' }, output: { type: 'string' } },
+            },
+          },
           stoppedAtWave: { type: 'string' },
           evidence: { type: 'string' },
           findings: { type: 'array', items: { type: 'string' } },
