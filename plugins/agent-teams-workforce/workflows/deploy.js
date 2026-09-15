@@ -444,10 +444,168 @@ const localGatesOk = greenEvidenceOk && cdkSynthOk
 // Rollout targets dev, which is NOT mainline-gated — dev is how code reaches AWS for fast
 // feedback, and it deliberately does not wait on a branch being merged, reviewed, or even
 // proposed. It requires only the readiness verdict and the gates above.
+
+// ── DEV IS ONE SHARED ENVIRONMENT, AND TWO TASKS CAN REACH IT AT ONCE ────────
+//
+// Nothing in this pipeline stopped two Tasks rolling out to the same stack in the same
+// account and region at the same time. Each one runs its own composite, in its own
+// worktree, with its own bead — so neither can see the other, and the only thing that
+// serialized them was luck. When they collide the second deploy hits a stack that is
+// already UPDATE_IN_PROGRESS, fails on an error that has nothing to do with the change,
+// and that failure is then read as a defect in the code: a smoke failure against a
+// half-updated environment sends a correct change back into Green repair.
+//
+// So a rollout takes a LEASE first and releases it after the smoke run. The key is the
+// thing actually being contended — account, region, and the stack scope — because two
+// Tasks deploying different stacks in the same account contend for nothing and must not
+// wait on each other.
+//
+// THE STACK SCOPE IS THE REPO, not the stack names. The stack list is reported BY the
+// rollout, which is to say after the contention would already have happened, so it cannot
+// be the key. The repo that owns the stacks is known here and is the unit a deploy
+// actually takes, so it is what the lease is keyed on.
+const DEV_ACCOUNT = '616930583457'
+const DEV_REGION = 'us-east-1'
+// ── WHEN A LEASE MAY BE BROKEN, AND WHY IT MUST BE BREAKABLE ────────────────
+//
+// A run can die holding this lease — killed, quota-walled, or quit out from under — and a
+// lease that nothing can break is strictly worse than no lease at all: the first casualty
+// wedges that stack for every future deploy, permanently, and the only repair is a human
+// deleting a file they have never heard of. That is a worse failure than the collision
+// this exists to prevent, because the collision is transient and the wedge is not.
+//
+// So a lease older than the window below is a CORPSE and is broken. The window is chosen
+// to exceed the longest plausible rollout-plus-smoke by a wide margin: 45 minutes, the
+// same figure the checkpoint lease in prd-to-spec.js uses, for the same reason.
+//
+// The two errors are NOT symmetric, and the asymmetry is what sets the direction:
+//   * Breaking a LIVE lease costs one failed deploy. CloudFormation serializes updates to
+//     a stack itself and refuses the second one, so the blast radius is an error message
+//     and a retry — the very outcome that would have happened with no lease at all.
+//   * Refusing to break a DEAD lease costs every deploy of that stack, forever.
+// The first is recoverable by the pipeline; the second is not recoverable at all without
+// a person. Hence breakable, and hence generous rather than tight.
+const LEASE_STALE_MINUTES = 45
+// How long the SECOND Task waits before giving up. It waits rather than failing fast
+// because the holder is usually minutes from releasing, and a deploy that fails for
+// "someone else was deploying" would be re-entered as a code defect by the caller's
+// correction loop. It gives up rather than waiting forever because a phase that never
+// returns is indistinguishable from a hung one.
+const LEASE_WAIT_MINUTES = 20
+const leaseScope = suppliedRepoPath || '(unscoped)'
+const leaseKey = `${DEV_ACCOUNT}/${DEV_REGION}/${leaseScope}`
+
+const wantsRollout = !!(readiness && readiness.ready && rolloutAllowed && localGatesOk)
+let lease = null
+if (wantsRollout) {
+  lease = await agent(
+    `Acquire the shared DEV deployment lease before a rollout, and report what happened. This is a MUTEX over one AWS environment, not a deploy: do NOT deploy anything, do not run cdk, do not touch any AWS resource.
+
+The lease directory is \`$HOME/.claude/agent-teams-workforce/deploy-leases\`. Create it if it does not exist (\`mkdir -p\`).
+
+The lease for this rollout is the single directory:
+  $HOME/.claude/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
+
+ACQUIRE IT ATOMICALLY. Use \`mkdir\` on that exact path — NOT \`mkdir -p\`, and never a
+test-then-create, which races. \`mkdir\` on an existing directory fails, and that failure IS
+the lock: exactly one of two concurrent Tasks can win it. On success, write a file
+\`holder\` inside it containing the bead id (${(c.bead && c.bead.id) || 'unknown'}), the repo
+(${leaseScope}), the epoch seconds you read, and a token you mint (for example from the
+shell's own PID and the epoch seconds). Report that token as \`holderToken\`.
+
+IF THE DIRECTORY ALREADY EXISTS, another Task is deploying this scope. Then:
+  1. Read its \`holder\` file and work out the lease's age in minutes from the epoch
+     seconds recorded in it against the epoch seconds now.
+  2. If the lease is OLDER THAN ${LEASE_STALE_MINUTES} MINUTES it belongs to a run that
+     died holding it. Break it: remove the directory and acquire it yourself by the same
+     atomic \`mkdir\`. Report \`brokeStale: true\` and the age you measured in \`staleAgeMinutes\`.
+  3. Otherwise WAIT. Poll every 30 seconds, for up to ${LEASE_WAIT_MINUTES} MINUTES total,
+     retrying the atomic \`mkdir\` each time, until you either acquire it or the wait is
+     spent. Report the seconds you actually waited in \`waitedSeconds\`.
+  4. If the wait is spent and you still do not hold it, report \`acquired: false\` and put
+     the holder's bead id in \`blockedBy\`. Do not break a lease that is not stale, and do
+     not deploy without the lease.
+
+Report literally what happened — an \`acquired: true\` you did not observe would let two
+rollouts run against one stack, which is the exact failure this step exists to prevent.`,
+    {
+      label: 'deploy:lease-acquire',
+      phase: 'Deploy-readiness',
+      // The agent that serializes access to a shared environment. Its charter is
+      // environment state — provisioning, resetting, and confirming readiness of a shared
+      // environment — and it is explicitly an `execute`-category agent that "orchestrates
+      // infrastructure state, never agents or work". Holding the mutex that says whose
+      // turn it is to mutate dev is that same job. It rules on nothing and deploys nothing.
+      agentType: 'agent-teams-workforce:test-environment-orchestrator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['acquired'],
+        properties: {
+          acquired: { type: 'boolean' },
+          holderToken: { type: 'string' },
+          leasePath: { type: 'string' },
+          waitedSeconds: { type: 'integer' },
+          brokeStale: { type: 'boolean' },
+          staleAgeMinutes: { type: 'integer' },
+          blockedBy: { type: 'string' },
+          findings: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+}
+const leaseHeld = !!(lease && lease.acquired === true)
+// ── ONLY AN EXPLICIT REFUSAL BLOCKS A ROLLOUT ────────────────────────────────
+//
+// `leaseRefused` is NOT `!leaseHeld`, and the difference is the same asymmetry that makes
+// the lease breakable in the first place.
+//
+// A lease step that reported nothing usable — the dispatch failed, the schema came back
+// empty, the step was never run because a caller invoked this mini without one — has told
+// us nothing about contention. Treating that silence as "someone else is deploying" would
+// mean an unavailable lease MECHANISM stops every deploy in the fleet, which is a strictly
+// worse outcome than the collision the lease exists to prevent: the collision is transient
+// and CloudFormation itself refuses concurrent updates to a stack, while a wedged mechanism
+// is total and needs a person.
+//
+// So silence falls back to the behaviour that shipped before the lease existed — deploy,
+// unserialized — and says so out loud. Only an agent that actually looked and reported
+// `acquired: false` blocks the rollout, because only that is evidence of a real holder.
+const leaseRefused = !!(lease && lease.acquired === false)
+if (wantsRollout && !lease) {
+  log(
+    `No usable result from the deployment-lease step for ${leaseKey}, so the shared-dev mutex was NOT established. ` +
+      'Proceeding with the rollout unserialized — the same behaviour as before the lease existed. A lease step that ' +
+      'cannot report is not evidence that another Task is deploying, and treating it as such would stop every deploy.'
+  )
+}
+// THE NAMED REASON. A rollout that did not happen because another Task held the
+// environment must say so in those words. Without it the run reports only that it did not
+// deploy, and every consumer — the gate, the dashboard, a person reading the journal —
+// reads a contention wait as a failed deploy and looks for a defect that is not there.
+const leaseBlockedReason = wantsRollout && leaseRefused
+  ? `ROLLOUT NOT ATTEMPTED — another Task holds the shared dev deployment lease for ${leaseKey}` +
+    `${lease && lease.blockedBy ? ` (held by ${lease.blockedBy})` : ''}. This run waited ` +
+    `${(lease && lease.waitedSeconds) || 0}s, up to a bound of ${LEASE_WAIT_MINUTES} minutes, and the holder ` +
+    'did not release it. Nothing was deployed and nothing is wrong with the change: dev is one shared ' +
+    'environment and two rollouts against one stack corrupt each other. Re-running this phase once the ' +
+    'holder finishes is the whole remedy.'
+  : ''
+if (leaseBlockedReason) log(leaseBlockedReason)
+if (lease && lease.brokeStale === true) {
+  log(
+    `Shared dev deployment lease for ${leaseKey} was BROKEN as stale: it was ${lease.staleAgeMinutes || '?'} minutes ` +
+      `old against a ${LEASE_STALE_MINUTES}-minute window, so it belonged to a run that died holding it. A lease ` +
+      'nothing can break wedges the stack for every later deploy, so a corpse is cleared rather than waited on.'
+  )
+}
+if (leaseHeld) log(`Holding the shared dev deployment lease for ${leaseKey}${lease.waitedSeconds ? ` after waiting ${lease.waitedSeconds}s` : ''}`)
+
 let rollout = null
-if (readiness && readiness.ready && rolloutAllowed && localGatesOk) {
+if (wantsRollout && !leaseRefused) {
   rollout = await agent(
-    `Deploy this change to the DEV environment (AWS account 616930583457, us-east-1).
+    `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
 
 Repo: ${c.repoPath || '(unspecified)'}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}
@@ -537,6 +695,59 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
   )
 }
 
+// ── RELEASE, AFTER THE SMOKE RUN AND NOT BEFORE ──────────────────────────────
+//
+// The rollout dispatch above deploys AND runs the smoke tests, so releasing once it
+// returns releases after the smoke run — which is the point. Releasing at rollout-success
+// instead would hand the environment to the next Task while this one was still asserting
+// against it, and the two would read each other's deployments.
+//
+// This is deliberately NOT a `finally`. If the rollout dispatch throws, the phase dies and
+// the lease is left behind — and that case is already answered by the staleness window
+// above, which is the whole reason the lease is breakable. A crashed run costs the next
+// deploy of that scope a wait, bounded by ${LEASE_STALE_MINUTES} minutes, rather than
+// wedging it forever.
+let leaseReleased = null
+if (leaseHeld) {
+  leaseReleased = await agent(
+    `Release the shared DEV deployment lease. This is lock bookkeeping, not a deploy: do NOT deploy anything and do not touch any AWS resource.
+
+The lease directory is:
+  $HOME/.claude/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
+
+RELEASE IT ONLY IF IT IS STILL OURS. Read the \`holder\` file inside it and compare the token it records with the token this run holds: ${(lease && lease.holderToken) || '(none reported)'}.
+
+  * Tokens MATCH — remove the directory (\`rm -rf\` on that exact path) and report \`released: true\`.
+  * Tokens DIFFER, or the directory is already gone — report \`released: false\` with the reason
+    in \`findings\`, and remove NOTHING. A differing token means our lease was judged stale and
+    broken by another Task, which is now holding it and deploying: deleting that directory
+    would release SOMEONE ELSE'S lock and let a third Task deploy on top of them. An
+    already-absent directory is the same situation one step later.
+
+Never remove a lease whose token you did not match.`,
+    {
+      label: 'deploy:lease-release',
+      phase: 'Deploy-readiness',
+      agentType: 'agent-teams-workforce:test-environment-orchestrator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['released'],
+        properties: {
+          released: { type: 'boolean' },
+          findings: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+  log(
+    leaseReleased && leaseReleased.released === true
+      ? `Released the shared dev deployment lease for ${leaseKey}`
+      : `Did NOT release the shared dev deployment lease for ${leaseKey} — it is no longer ours to release ` +
+        '(it was broken as stale and another Task holds it now), so it was left alone.'
+  )
+}
+
 // THE TWO FACTS THIS MINI IS ANSWERABLE FOR, hoisted to the top level of the result so a
 // gate can check them MECHANICALLY rather than reading prose. `deployedToDev` is whether
 // the bytes reached AWS dev; `smokePassed` is whether the suite that runs only against a
@@ -620,10 +831,18 @@ const ledger = {
   mode: selectionMode,
   env: targetEnv,
   localGatesOk,
+  // The lease is ledgered because "why did this Task not deploy" is otherwise unanswerable
+  // after the fact: a contention wait and a blocked readiness verdict both land as
+  // deployedToDev:false, and only this row tells them apart.
+  leaseKey,
+  leaseHeld,
+  leaseWaitedSeconds: (lease && lease.waitedSeconds) || 0,
+  leaseBrokeStale: !!(lease && lease.brokeStale === true),
+  leaseReleased: !!(leaseReleased && leaseReleased.released === true),
   deployedToDev,
   smokePassed,
   rolledOut: deployedToDev,
   ok: !!(readiness && readiness.ready) && (!rolloutAllowed || (deployedToDev && smokePassed)),
 }
 
-return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, ledger }
+return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }
