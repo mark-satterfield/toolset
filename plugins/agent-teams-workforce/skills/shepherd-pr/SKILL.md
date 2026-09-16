@@ -1,7 +1,7 @@
 ---
 name: shepherd-pr
 version: 2.0.0
-description: Triage and resolve PR feedback from CodeRabbit and human reviewers, applying fixes with confidence gating and a defensible audit trail. One pass per invocation; iteration is owned by shepherd-pr.sh; merge is owned by GitHub auto-merge.
+description: Triage and resolve PR feedback from CodeRabbit and human reviewers, applying fixes with confidence gating and a defensible audit trail. One pass per invocation; iteration is owned by the shepherd runner that invokes it; merge is owned by GitHub auto-merge.
 category: github
 tags: [pr-review, coderabbit, bot-feedback, thread-resolution, ci-triage, merge-warden]
 author: Claude Code Flow
@@ -25,9 +25,17 @@ capabilities:
 
 ## Invocation Model
 
-This skill is invoked by `shepherd-pr.sh` as `/fix-pr <pr-number>`. The script owns the iteration loop. This skill owns one pass: stabilize the branch, gather context, triage every thread, execute dispositions, fix CI, and post an audit comment.
+This skill is invoked as `/fix-pr <pr-number>` by the **shepherd runner**, which the consuming project provides — in SkillSpoke that is `ops/shepherd-prs.sh`. This plugin ships no runner of its own.
 
-Neither this skill nor the script merges the PR. Merge is handled by GitHub auto-merge once all required checks pass and all review threads are resolved. The skill's job is to leave the PR in a state where auto-merge can fire. The script never decides what to do about a thread.
+Three components, three responsibilities, no overlap:
+
+| Component | Owns |
+|:----------|:-----|
+| The shepherd runner (project-provided) | Discovery, concurrency, the per-PR ownership lock, and the iteration loop |
+| This skill (`/fix-pr`) | Exactly one pass: stabilize the branch, gather context, triage every thread, execute dispositions, fix CI, post an audit comment |
+| GitHub auto-merge | The merge |
+
+Neither this skill nor the runner merges the PR. **No component in this chain runs `gh pr merge`, and none uses `--admin`.** Merge is handled by GitHub auto-merge once all required checks pass and all review threads are resolved. The skill's job is to leave the PR in a state where auto-merge can fire. The skill never loops, and the runner never decides what to do about a thread.
 
 ### Why the rebases are unconditional
 
@@ -595,7 +603,7 @@ FAILURES=$(gh pr checks $PR_NUMBER --json conclusion --jq '.[] | select(.conclus
    gh pr edit $PR_NUMBER --add-label "update-snapshots"
    ```
 
-This skill does **not** wait for CI to re-run. `shepherd-pr.sh` handles iteration timing between invocations.
+This skill does **not** wait for CI to re-run. The shepherd runner handles iteration timing between invocations.
 
 ---
 
@@ -686,7 +694,7 @@ Before exiting the skill, verify:
 
 ## 📖 Related
 
-- **`shepherd-pr.sh`**: deterministic iteration loop. Invokes `/fix-pr` repeatedly until the PR reaches a merge-ready state. Does not merge; GitHub auto-merge handles that.
+- **The shepherd runner** (project-provided; `ops/shepherd-prs.sh` in SkillSpoke): deterministic iteration loop. Invokes `/fix-pr` repeatedly until the PR reaches a merge-ready state. Does not merge; GitHub auto-merge handles that.
 - **GitHub CLI**: https://cli.github.com/manual/
 - **GraphQL Schema**: `gh api graphql --help`
 - **CodeRabbit**: review comments format and severity markers
