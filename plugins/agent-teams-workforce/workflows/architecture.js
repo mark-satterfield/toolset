@@ -1289,12 +1289,63 @@ ${JSON.stringify(sadUpdate, null, 2)}`,
   )
 }
 
+// ── A MAINTAINER THAT DIES MID-SWEEP DOES NOT TAKE THE RULING WITH IT ─────────
+//
+// The whole-SAD sweep is the longest session in this mini. In ssbd-yeid the maintainer
+// edited a dozen SAD files, reached ~240k tokens of context, and ended with no structured
+// result; agent() threw, and the uncaught throw discarded the ruling and every artifact
+// already paid for. The edits are ON DISK when that happens, so the recovery is one
+// fresh maintainer that reads the working-tree diff, finishes what is left, and reports.
+// If that also returns nothing, the step reports a rejected SAD update (ok:false) rather
+// than crashing — the caller still receives the decision.
+async function settle(label, run) {
+  try {
+    return (await run()) || null
+  } catch (err) {
+    log(`${label}: session ended without a structured result (${String((err && err.message) || err).slice(0, 160)})`)
+    return null
+  }
+}
+
+function resumeSad(reviewerFeedback) {
+  return agent(
+    `You are the sad-maintainer, RESUMING an interrupted pass. A previous sad-maintainer session consolidated the ruling below into the living arc42 SAD at ${sadPath} but ended before it returned its result. Its edits are already in the working tree.
+
+Do NOT start over and do NOT re-read the whole SAD. Run \`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath} to see what was changed, open only the changed files you need, finish any statement of a changed claim the previous pass left inconsistent (targeted grep, list files only — never print whole files), and return. Keep §2/§4/§8 mutually consistent; no changelog narrative; never label the adopted option with a bare proposal letter.
+
+Ruling: ${decision.ruling}
+Chosen approach: ${decision.chosenApproach}
+Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
+${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
+
+Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
+    {
+      label: 'sad:maintain-resume',
+      effort: 'medium',
+      phase: 'Update SAD',
+      agentType: 'agent-teams-workforce:sad-maintainer',
+      schema: SAD_UPDATE_SCHEMA,
+    }
+  )
+}
+
 let sadUpdate = null
 let conformanceVerdict = null
 let reviewerFeedback = ''
+let sadUpdateFailed = false
 for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
-  sadUpdate = await authorSad(reviewerFeedback)
-  conformanceVerdict = await reviewSad(sadUpdate)
+  sadUpdate = await settle('sad:maintain', () => authorSad(reviewerFeedback))
+  if (!sadUpdate) sadUpdate = await settle('sad:maintain-resume', () => resumeSad(reviewerFeedback))
+  if (!sadUpdate) {
+    log(`SAD update pass ${pass}: the maintainer returned no result, including the resume pass — SAD update rejected`)
+    sadUpdateFailed = true
+    conformanceVerdict = {
+      verdict: 'reject',
+      findings: ['The sad-maintainer ended without a structured result twice (initial and resume pass); the SAD working tree may hold partial edits that no reviewer has checked.'],
+    }
+    break
+  }
+  conformanceVerdict = await settle('sad:conformance', () => reviewSad(sadUpdate))
   if (!conformanceVerdict) {
     log(`SAD conformance pass ${pass}: reviewer returned no verdict`)
     break
@@ -1308,9 +1359,9 @@ for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
 }
 
 // Deadlock: maker-checker exhausted without a pass → the decider rules (never the maker).
-if (!conformanceVerdict || conformanceVerdict.verdict !== 'pass') {
+if (!sadUpdateFailed && (!conformanceVerdict || conformanceVerdict.verdict !== 'pass')) {
   log('SAD maker-checker deadlock — escalating to architecture-decider for a binding ruling')
-  const deadlockRuling = await agent(
+  const deadlockRuling = await settle('sad:deadlock-ruling', () => agent(
     `You are the architecture-decider acting as the deadlock authority. The sad-maintainer and sad-conformance-reviewer could not converge within ${MAX_SAD_LOOPS} passes. Rule on how the SAD must read so the source feed (§2/§4/§8) is valid. You ONLY rule — do not author or re-review.
 
 Ruling being consolidated: ${decision.ruling}
@@ -1333,7 +1384,7 @@ ${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none
         },
       },
     }
-  )
+  ))
   conformanceVerdict = {
     verdict: deadlockRuling && deadlockRuling.verdict === 'accept' ? 'pass' : 'reject',
     findings: deadlockRuling ? [deadlockRuling.directive] : (conformanceVerdict && conformanceVerdict.findings) || [],
