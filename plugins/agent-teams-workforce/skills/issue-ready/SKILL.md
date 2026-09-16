@@ -111,13 +111,27 @@ are kept in the selector so the hashed object keeps its shape; they contribute n
 
 Two consequences follow, and neither is a defect to be fixed here:
 
-- **Editing acceptance criteria does not change the hash.** `bd` exposes no acceptance-criteria
-  field on `bd show` OR on `bd list` — both return the same sixteen keys — so there is nothing
-  to widen the recipe to. A correction that only rewrites acceptance criteria leaves the
-  fingerprint identical, and a Task held on an INCOMPLETE verdict does not leave the hold on
-  that edit alone. Touch the title or the description as well, or clear the hold by removing
-  the `needs-correction` label. This is a limitation of the tracker, stated so nobody reads
-  the hold as a bug.
+- **Acceptance criteria are PROSE, so WHERE they live decides whether they are hashed.**
+  Criteria are not a key/value pair on a bead and are not meant to be: they live in the
+  issue's description, or in its parent Story or Epic. The requirement is that they exist
+  somewhere, not that they occupy a field — so "`bd` exposes no `acceptance` key" says
+  nothing about whether criteria are covered.
+
+  Criteria written in the issue's OWN description are inside `description`, which IS hashed
+  on both sides of the joint contract. Editing them changes the fingerprint and DOES release
+  a hold: a Task held on an INCOMPLETE verdict leaves the hold on that edit alone, with no
+  title touch needed.
+
+  Criteria that live ONLY on the parent Story or Epic are NOT covered, because the
+  fingerprint is computed over this issue's own record and nothing else. Editing a parent's
+  criteria does not make this issue stale. That is the real limitation, and it is about where
+  the prose sits rather than about the tracker lacking a field — to release such a hold, edit
+  this issue's own description or remove the `needs-correction` label.
+
+  Criteria mirrored into an `acceptance_criteria` METADATA key are not covered either, for
+  the separate reason that metadata is outside the fingerprint entirely (which is what lets
+  this skill store its own verdict without invalidating it). That key is a convenience for
+  the build lane, never the evidence that criteria exist.
 - **`labels` is nulled ON PURPOSE.** The pipeline itself writes a `needs-correction` label onto
   every held bead. If labels were hashed, the act of RECORDING a hold would change the
   fingerprint, the bead would read as stale on the very next pass, and the skill would re-buy
