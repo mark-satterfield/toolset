@@ -43,6 +43,7 @@ required part is missing.
 | `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. Add `--require` to exit 3 rather than report. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
 | `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--explain` prints the exact object hashed. |
+| `fingerprint-batch [id ...]` | The same answer for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
 | `ancestors <id>` | The parent chain, nearest first, cycle-safe. |
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
@@ -50,7 +51,29 @@ required part is missing.
 | `selftest` | Exercises the parent, prose, `--acceptance`-field and metadata paths against synthesised records. Changes nothing. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
-tracker — how the parent and prose paths are exercised when no live bead has them.
+tracker — how the parent and prose paths are exercised when no live bead has them. `--records -`
+reads that array from **stdin**, which is how a caller hands over a sweep it already fetched.
+
+### Fingerprinting a whole sweep
+
+A caller assessing every bead in a pass already holds the records from its own `bd list`. It
+should hand them over rather than have them fetched again:
+
+```bash
+bd list --json | python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" \
+  --records - fingerprint-batch
+```
+
+Stdout carries `fingerprints` — a plain `{id: fingerprint}` map — alongside the full per-bead
+`results` (`found`, `fingerprint`, `stored`, `fresh`), `missing`, and `trackerCalls`. Naming ids
+as arguments narrows it to those beads; naming none fingerprints every record supplied.
+
+**Feeding the caller's own records back in is the correctness argument, not just the cheap one.**
+`readiness.py` hashes `bd list` records; a re-fetch inside this script would hash `bd show`
+records instead. Those payloads differ in exactly the fields that caused defect 1, so re-fetching
+would reintroduce a second source of truth by the back door. Batch mode calls the same
+`content_hash` as `fingerprint`, through the same `fingerprint_of` entry point — there is no
+parallel implementation and no second recipe.
 
 Because this is a command, it works for an agent with `tools: Bash` and no `Read` — `bead-writer`
 is exactly that agent. **No agent should need to read a file or hand-roll `jq` to learn any of
@@ -165,6 +188,12 @@ What matters to a caller:
 defect 1. Until it calls this script, the two are a joint contract: **change it on both sides or
 on neither.** Parity is verified, not assumed — `fingerprint` agrees with `readiness.content_hash`
 byte for byte on live beads, labelled and unlabelled alike.
+
+`fingerprint-batch` is what lets that copy go. `readiness.assess` runs per bead over an index
+built from one `bd list` sweep, so per-bead `fingerprint` was never an option — it would have
+added a subprocess and a `bd show` round-trip per bead to a pass that makes one tracker call.
+Batch mode takes that sweep on stdin and answers for every bead at once, which removes the only
+reason the second copy had to exist.
 
 ## Resolving a parent
 

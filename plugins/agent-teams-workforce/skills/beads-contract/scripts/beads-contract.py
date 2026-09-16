@@ -15,6 +15,7 @@ about a bead: it reports what is recorded and where it was found.
 
 Usage:
   beads-contract.py fingerprint <id> [--explain]
+  beads-contract.py fingerprint-batch [id ...] [--explain]
   beads-contract.py criteria <id>
   beads-contract.py contract <id> [--require]
   beads-contract.py ancestors <id>
@@ -25,9 +26,23 @@ Usage:
 
 Common flags:
   -C <path>          Run `bd` from this repository (passed through as `bd -C`).
-  --records <file>   Read records from a JSON array in <file> instead of calling `bd`.
-                     For exercising the parent and prose paths against synthesised
-                     input; every read command honours it.
+  --records <file>   Read records from a JSON array in <file> instead of calling `bd`,
+                     or `-` to read that array from stdin. For exercising the parent
+                     and prose paths against synthesised input, and — with
+                     `fingerprint-batch` — for fingerprinting a whole sweep a caller
+                     has ALREADY fetched. Every read command honours it.
+
+WHY `fingerprint-batch` EXISTS. `ops/sdlc-automation/readiness.py` assesses ~252 beads
+per pass over an index it built from ONE `bd list` sweep. Asking `fingerprint <id>` per
+bead would add 252 process spawns and 252 `bd show` round-trips to a pass that currently
+makes one tracker call. So batch mode takes the records the caller ALREADY HOLDS on
+stdin and returns `{id: fingerprint}` — one subprocess, zero extra tracker calls.
+
+Feeding the caller's own records back in is not merely cheaper, it is more correct.
+`readiness` hashes `bd list` records; a re-fetch here would hash `bd show` records. The
+two payloads differ in exactly the fields that caused the defect this module exists to
+end, so re-fetching would reintroduce a second source of truth by the back door. The
+caller's record is the record its verdict is about, and that is the one hashed.
 """
 
 from __future__ import annotations
@@ -433,6 +448,27 @@ class BeadsError(RuntimeError):
     """Raised when `bd` could not be run, or returned something unreadable."""
 
 
+def _load_records(records_file: str) -> object:
+    """Read a JSON array of records from a file, or from stdin for "-".
+
+    Args:
+        records_file: The path, or "-" for stdin.
+
+    Returns:
+        The decoded payload.
+
+    Raises:
+        BeadsError: If the text is not readable JSON.
+    """
+    text = sys.stdin.read() if records_file == "-" else open(records_file, encoding="utf-8").read()  # noqa: SIM115
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        where = "stdin" if records_file == "-" else records_file
+        msg = f"records from {where} are not valid JSON ({exc.msg} at char {exc.pos})"
+        raise BeadsError(msg) from exc
+
+
 class Reader:
     """Resolves bead records, from `bd` or from a synthesised file."""
 
@@ -441,16 +477,34 @@ class Reader:
 
         Args:
             repo: Repository to run `bd` from, or "" for the current directory.
-            records_file: A JSON array of records to read instead of calling `bd`.
+            records_file: A JSON array of records to read instead of calling `bd`,
+                or "-" to read that array from stdin.
+
+        Raises:
+            BeadsError: If the supplied records are not readable JSON.
         """
         self.repo = repo
         self.cache: dict[str, dict] = {}
+        #: The ids supplied up front, in the order they arrived. Batch mode fingerprints
+        #: these when the caller named none, so a whole sweep needs no id list at all.
+        self.supplied: list[str] = []
         self.offline = bool(records_file)
         if records_file:
-            with open(records_file, encoding="utf-8") as handle:
-                loaded = json.load(handle)
-            for rec in loaded if isinstance(loaded, list) else [loaded]:
-                self.cache[str(rec.get("id") or "")] = rec
+            self._absorb(_load_records(records_file))
+
+    def _absorb(self, loaded: object) -> None:
+        """Index a decoded `bd --json` payload into the cache.
+
+        Args:
+            loaded: The decoded payload — a list of records, or a single record.
+        """
+        for rec in loaded if isinstance(loaded, list) else [loaded]:
+            if not isinstance(rec, dict):
+                continue
+            bead_id = str(rec.get("id") or "")
+            if bead_id not in self.cache:
+                self.supplied.append(bead_id)
+            self.cache[bead_id] = rec
 
     def _bd(self, args: list[str]) -> str:
         """Run one `bd` command and return its stdout.
@@ -528,10 +582,72 @@ class Reader:
             current = self.get(parent_id).get("parent")
         return chain
 
+    def sweep(self) -> list[str]:
+        """Fetch every bead in ONE `bd list` call and index the records.
+
+        The online half of batch mode. A caller with no records of its own still gets
+        one tracker round-trip rather than one per bead. `--all` is passed because a
+        caller asking about a specific id must not be told the bead does not exist
+        merely because it is closed.
+
+        Returns:
+            The ids the sweep returned, in the order `bd` listed them.
+
+        Raises:
+            BeadsError: If `bd` failed or its output could not be decoded.
+        """
+        text = self._bd(["list", "--json", "--all", "--limit", "0"])
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            msg = f"`bd list --json` did not return JSON: {exc}"
+            raise BeadsError(msg) from exc
+        before = set(self.cache)
+        self._absorb(payload)
+        return [bead_id for bead_id in self.supplied if bead_id not in before]
+
 
 # --------------------------------------------------------------------------------------
 # Commands.
 # --------------------------------------------------------------------------------------
+
+
+#: Why the hashed object looks the way it does. One sentence, printed by `--explain` on
+#: both the single and the batch command so the two can never drift into two answers.
+FINGERPRINT_NOTE = (
+    "Six of the ten keys are null on every bead because `bd show --json` does not return them. "
+    "`labels` is nulled deliberately: the pipeline labels every held bead `needs-correction`, so "
+    "hashing labels would make recording a hold invalidate the watermark it was recorded against."
+)
+
+
+def fingerprint_of(bead_id: str, rec: dict, explain: bool = False) -> dict:
+    """Report the fingerprint of ONE record.
+
+    THE SINGLE ENTRY POINT BOTH FINGERPRINT COMMANDS USE. `fingerprint` and
+    `fingerprint-batch` differ only in how they obtain records; neither computes
+    anything the other does not, because both land here and here alone.
+
+    Args:
+        bead_id: The bead the record belongs to.
+        rec: Its record, or {} when nothing carries that id.
+        explain: Also return the exact object hashed.
+
+    Returns:
+        The per-bead result: found, fingerprint, stored, fresh.
+    """
+    stored = str(metadata_of(rec).get(CONTENT_HASH_KEY) or "").strip()
+    current = content_hash(rec)
+    result = {
+        "id": bead_id,
+        "found": bool(rec),
+        "fingerprint": current,
+        "stored": stored,
+        "fresh": bool(stored) and bool(current) and stored == current,
+    }
+    if explain:
+        result["hashed"] = fingerprint_payload(rec)
+    return result
 
 
 def cmd_fingerprint(args: argparse.Namespace, reader: Reader) -> dict:
@@ -544,23 +660,62 @@ def cmd_fingerprint(args: argparse.Namespace, reader: Reader) -> dict:
     Returns:
         The result object.
     """
-    rec = reader.get(args.id)
-    stored = str(metadata_of(rec).get(CONTENT_HASH_KEY) or "").strip()
-    current = content_hash(rec)
+    result = fingerprint_of(args.id, reader.get(args.id), explain=args.explain)
+    if args.explain:
+        result["note"] = FINGERPRINT_NOTE
+    return result
+
+
+def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
+    """Fingerprint MANY beads in one invocation, with one tracker call or none.
+
+    Three ways to say which beads, in order of preference:
+
+    1. `--records -` with no ids — fingerprints every record on stdin. THE PATH
+       `readiness.py` TAKES: it already holds the sweep, so this costs no tracker
+       call at all, and hashes the very records the caller's verdict is about.
+    2. `--records -` with ids — fingerprints just those, out of the supplied records.
+    3. No records — ONE `bd list` sweep, then those ids (or all of them).
+
+    Args:
+        args: Parsed arguments.
+        reader: The record source.
+
+    Returns:
+        The result object: a map of id to per-bead result, plus what was not found.
+
+    Raises:
+        BeadsError: If the sweep failed.
+    """
+    if reader.offline:
+        source = "records"
+    else:
+        reader.sweep()
+        source = "sweep"
+    ids = list(args.ids) if args.ids else list(reader.supplied)
+
+    results: dict[str, dict] = {}
+    for bead_id in ids:
+        if bead_id in results:
+            continue
+        # A supplied record is used AS SUPPLIED and never re-fetched. `reader.get`
+        # returns the cached record for every id the sweep or stdin carried; only an
+        # id nobody supplied reaches the tracker, and in offline mode not even that.
+        results[bead_id] = fingerprint_of(bead_id, reader.get(bead_id))
+
+    missing = sorted(bead_id for bead_id, entry in results.items() if not entry["found"])
     result = {
-        "id": args.id,
-        "found": bool(rec),
-        "fingerprint": current,
-        "stored": stored,
-        "fresh": bool(stored) and bool(current) and stored == current,
+        "count": len(results),
+        "source": source,
+        "trackerCalls": 0 if source == "records" else 1,
+        "fingerprints": {bead_id: entry["fingerprint"] for bead_id, entry in results.items()},
+        "results": results,
+        "missing": missing,
     }
     if args.explain:
-        result["hashed"] = fingerprint_payload(rec)
-        result["note"] = (
-            "Six of the ten keys are null on every bead because `bd show --json` does not return them. "
-            "`labels` is nulled deliberately: the pipeline labels every held bead `needs-correction`, so "
-            "hashing labels would make recording a hold invalidate the watermark it was recorded against."
-        )
+        for bead_id, entry in results.items():
+            entry["hashed"] = fingerprint_payload(reader.get(bead_id))
+        result["note"] = FINGERPRINT_NOTE
     return result
 
 
@@ -913,6 +1068,96 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
         }
     )
 
+    # ----------------------------------------------------------------------------------
+    # Batch mode. The property under test is that batching changes NOTHING except the
+    # number of subprocesses: every batched answer must equal the single-bead answer.
+    # ----------------------------------------------------------------------------------
+    expected_hash = content_hash(base)
+    batch_records = [
+        dict(base, id="syn-batch-plain"),
+        # THE CASE THAT BROKE. A held bead carries `needs-correction` and a stored
+        # ruling; both sit outside the fingerprint, so it must hash identically to its
+        # unlabelled twin and still read as FRESH against the watermark it was given.
+        dict(
+            base,
+            id="syn-batch-labelled",
+            labels=["needs-correction"],
+            metadata={CONTENT_HASH_KEY: expected_hash, "review_status": "INCOMPLETE"},
+        ),
+        # Approved, then rewritten: the watermark no longer describes the bytes.
+        dict(
+            base,
+            id="syn-batch-stale",
+            description="rewritten after the ruling",
+            metadata={CONTENT_HASH_KEY: expected_hash},
+        ),
+    ]
+    batch_reader = Reader()
+    batch_reader.offline = True
+    batch_reader._absorb(batch_records)  # noqa: SLF001 - the selftest stands in for a caller's stdin
+    batch = cmd_fingerprint_batch(argparse.Namespace(ids=[], explain=False), batch_reader)
+
+    # Every batched answer equals the answer `fingerprint <id>` gives for that record.
+    per_bead = {rec["id"]: fingerprint_of(str(rec["id"]), rec) for rec in batch_records}
+    parity_ok = batch["results"] == per_bead and batch["count"] == 3 and batch["trackerCalls"] == 0
+    ok = ok and parity_ok
+    results.append(
+        {
+            "case": "batch equals per-bead fingerprint for every record, with no tracker call",
+            "pass": parity_ok,
+            "observed": {"count": batch["count"], "trackerCalls": batch["trackerCalls"], "source": batch["source"]},
+        }
+    )
+
+    labelled_entry = batch["results"]["syn-batch-labelled"]
+    labelled_ok = (
+        labelled_entry["fingerprint"] == batch["results"]["syn-batch-plain"]["fingerprint"] == expected_hash
+        and labelled_entry["fresh"] is True
+    )
+    ok = ok and labelled_ok
+    results.append(
+        {
+            "case": "batch: a labelled, held bead hashes as its unlabelled twin and stays fresh",
+            "pass": labelled_ok,
+            "observed": {
+                "plain": batch["results"]["syn-batch-plain"]["fingerprint"],
+                "labelled": labelled_entry["fingerprint"],
+                "fresh": labelled_entry["fresh"],
+            },
+        }
+    )
+
+    stale_entry = batch["results"]["syn-batch-stale"]
+    stale_ok = stale_entry["fresh"] is False and stale_entry["fingerprint"] != expected_hash
+    ok = ok and stale_ok
+    results.append(
+        {
+            "case": "batch: a bead rewritten since its ruling reads stale",
+            "pass": stale_ok,
+            "observed": {"fingerprint": stale_entry["fingerprint"], "stored": stale_entry["stored"], "fresh": stale_entry["fresh"]},
+        }
+    )
+
+    # An id nobody supplied is reported as not found rather than silently dropped — a
+    # caller must be able to tell "no fingerprint" from "absent from the map".
+    named = cmd_fingerprint_batch(
+        argparse.Namespace(ids=["syn-batch-plain", "syn-batch-absent"], explain=False), batch_reader
+    )
+    missing_ok = (
+        named["missing"] == ["syn-batch-absent"]
+        and named["results"]["syn-batch-absent"]["found"] is False
+        and named["fingerprints"]["syn-batch-plain"] == expected_hash
+        and named["count"] == 2
+    )
+    ok = ok and missing_ok
+    results.append(
+        {
+            "case": "batch: a named id nobody supplied comes back not-found, not dropped",
+            "pass": missing_ok,
+            "observed": {"missing": named["missing"], "count": named["count"]},
+        }
+    )
+
     if not ok:
         print(json.dumps({"pass": False, "cases": results}, indent=2, ensure_ascii=False))
         raise SystemExit(1)
@@ -932,13 +1177,25 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(prog="beads-contract.py", description=__doc__.split("\n")[0])
     parser.add_argument("-C", dest="repo", default="", help="run `bd` from this repository")
-    parser.add_argument("--records", default="", help="read records from this JSON array instead of calling `bd`")
+    parser.add_argument(
+        "--records",
+        default="",
+        help="read records from this JSON array instead of calling `bd`; `-` reads the array from stdin",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     fingerprint = sub.add_parser("fingerprint", help="the content fingerprint, and whether the stored one is fresh")
     fingerprint.add_argument("id")
     fingerprint.add_argument("--explain", action="store_true", help="also print the exact object hashed")
     fingerprint.set_defaults(run=cmd_fingerprint)
+
+    batch = sub.add_parser(
+        "fingerprint-batch",
+        help="fingerprint many beads in one invocation — one tracker call, or none with --records -",
+    )
+    batch.add_argument("ids", nargs="*", help="the beads to fingerprint; omit for every record supplied or swept")
+    batch.add_argument("--explain", action="store_true", help="also print the exact object hashed for each")
+    batch.set_defaults(run=cmd_fingerprint_batch)
 
     criteria = sub.add_parser("criteria", help="acceptance criteria, and where each was found")
     criteria.add_argument("id")
@@ -979,8 +1236,8 @@ def main(argv: list[str] | None = None) -> int:
         The process exit status.
     """
     args = build_parser().parse_args(argv)
-    reader = Reader(repo=args.repo, records_file=args.records)
     try:
+        reader = Reader(repo=args.repo, records_file=args.records)
         result = args.run(args, reader)
     except (ContractError, BeadsError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False))
