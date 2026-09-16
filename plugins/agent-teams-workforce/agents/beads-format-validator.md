@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Edit, Agent
 model: haiku
 permissionMode: acceptEdits
 maxTurns: 45
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract]
 effort: medium
 isolation: worktree
 color: yellow
@@ -45,6 +45,24 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** The expected Beads format cannot be determined from the provided contract; dependency references that cannot be checked because the DAG is missing or itself invalid; systemic defects suggesting an upstream pipeline failure rather than per-issue mistakes; repeated identical defects after the loop limit.
 - **Acceptance Criteria:** Every issue in the set is checked against every required field; every dependency reference and spec link is resolved or reported; every defect is specific, located, and reproducible; no defect is fixed by this agent.
 - **Anti-Goals:** Sampling instead of full coverage; silently fixing a typo because it is faster; expanding into content quality judgments; passing an issue with an unresolvable spec link because the rest looks fine.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- **Never report acceptance criteria as missing from a field.** They are PROSE, and the requirement
+  is that they EXIST somewhere: the metadata key, the `--acceptance` record field, the issue's own
+  description, or any ancestor, nearest first. Run `beads-contract.py criteria <id>` and quote its
+  `searched` list in the finding. A hold that does not say where it looked cannot be told apart
+  from a lookup that never happened — and reporting criteria missing when a parent Story states
+  them is a defect this validator has already shipped once.
+- `beads-contract.py contract <id>` gives the whole build contract plus what is genuinely
+  `missing`; `record <id>` reports the fields a bead ACTUALLY carries. `bd show --json` omits any
+  field a bead does not have, so a fixed field list is always wrong.
+- A BUG has no acceptance criteria and is never parented. Do not validate one against this shape.
 
 ## Operating Rules
 

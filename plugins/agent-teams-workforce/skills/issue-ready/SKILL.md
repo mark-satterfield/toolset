@@ -103,11 +103,16 @@ tracker's `updated_at` (which the skill's own writes would bump, falsely invalid
 cache). See Recipes for the exact hashing command.
 
 **What the fingerprint ACTUALLY covers: `title`, `description`, `issue_type`, `priority`.**
-That is four fields, and it is narrower than it looks. The recipe selects a ten-key object,
-but `bd show --json` returns only sixteen keys and SIX of the ten are not among them —
-`acceptance`, `design`, `type`, `dependencies`, `deps` do not exist on the record at all and
-hash as `null` on every bead, and `labels` is deliberately nulled (see below). The extra keys
-are kept in the selector so the hashed object keeps its shape; they contribute nothing.
+That is four fields, and it is narrower than it looks. The hash is taken over a ten-key object,
+but six of those keys — `acceptance`, `design`, `type`, `dependencies`, `deps`, and `labels` —
+carry no value: the first five are not returned by `bd show --json` at all, and `labels` is
+nulled deliberately (see below). They stay in the object because the digest is over its shape.
+
+**`bd show --json` has no fixed field list.** It OMITS any field the bead does not carry, so a
+record carries anywhere from 13 to 18 keys and the union across a whole tracker is larger still.
+Never assert a field is absent from the SCHEMA when it is merely absent from one bead; the
+`beads-contract` skill documents the census and `beads-contract.py record <id>` reports what a
+given bead actually has.
 
 Two consequences follow, and neither is a defect to be fixed here:
 
@@ -139,13 +144,17 @@ Two consequences follow, and neither is a defect to be fixed here:
 
 Never metadata, timestamps, status, or comments — so storing a verdict never invalidates it.
 
-**THE RECIPE IS A JOINT CONTRACT. Change it on both sides or on neither.** The SkillSpoke
-pipeline reproduces this fingerprint byte for byte in `ops/sdlc-automation/readiness.py`, in
-the function `content_hash` (with `CONTENT_HASH_FIELDS`, `CONTENT_HASH_PRESENT` and
-`CONTENT_HASH_LENGTH` beside it), and compares its result against the `ready_content_hash`
-this skill stored. A recipe that drifts on one side re-invokes this skill forever on every
-affected bead: the Python reads a watermark it cannot reproduce, calls the bead stale, and the
-skill rewrites the same watermark the Python will reject again on the next pass.
+**THE RECIPE HAS ONE IMPLEMENTATION: `content_hash` in the `agent-teams-workforce:beads-contract`
+skill.** This file no longer carries a copy, because carrying a copy is what broke it. The
+SkillSpoke pipeline still holds the second copy in `ops/sdlc-automation/readiness.py` — the
+function `content_hash`, with `CONTENT_HASH_FIELDS`, `CONTENT_HASH_PRESENT` and
+`CONTENT_HASH_LENGTH` beside it — and until that function calls the script instead, the two
+remain a joint contract: change it on both sides or on neither.
+
+A recipe that drifts on one side re-invokes this skill forever on every affected bead: the
+Python reads a watermark it cannot reproduce, calls the bead stale, and the skill rewrites the
+same watermark the Python will reject again on the next pass. That is not hypothetical — it is
+what the `labels` disagreement did, on precisely the held beads the rule exists for.
 
 - **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
   stored verdict; rerun nothing; post nothing.
@@ -319,24 +328,27 @@ Beads commands run read-only where possible (`--readonly`); writes use `bd updat
 **Content hash (Beads)** — capture it into `$H`; this is the only place the hash is
 computed, and both the freshness comparison and every write use `$H`:
 ```
-H=$(bd show <id> --json --readonly \
-  | jq -S 'if type=="array" then .[0] else (.issue // .) end
-           | {title,description,acceptance,design,type,issue_type,priority,labels,dependencies,deps}
-           | .labels = null' \
-  | shasum -a 256 | cut -c1-16)
+H=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" \
+      fingerprint <id> | jq -r .fingerprint)
 ```
 
-Copy it EXACTLY, `.labels = null` included. Of the ten keys, only `title`, `description`,
-`issue_type` and `priority` ever carry a value; the other six hash as `null` on every bead,
-and the object keeps all ten because the digest is taken over the ten-key shape. This is the
-half of the joint contract described under Staleness — `readiness.content_hash` in
-`ops/sdlc-automation/readiness.py` builds the identical object and takes the identical digest,
-verified equal on live beads (`ssbd-wjo5w` → `0176765d7f7488b5`, `ssbd-qxeu` →
-`f57fad77302c1ae0`). Dropping `.labels = null` breaks that equality on any bead that carries a
-label — which is every bead this pipeline has held, because holding one applies
-`needs-correction`.
+**THE RECIPE IS NOT WRITTEN DOWN HERE, AND THAT IS THE POINT.** It used to be — a ten-key
+`jq -S` selector with a `.labels = null` in the middle of it — and a copy of it also lived in
+`ops/sdlc-automation/readiness.py`. The two drifted on exactly the `labels` line, so they
+disagreed about precisely the beads this rule exists for: every bead the pipeline has held
+carries `needs-correction`. A recipe stated twice drifts in whichever copy is wrong.
 
-**Content hash (GitHub):**
+So `content_hash` in `beads-contract.py` is now the single implementation, the
+`agent-teams-workforce:beads-contract` skill documents what it covers and why, and
+`fingerprint <id> --explain` prints the exact object hashed when you need to see it. Do not
+reconstruct the pipeline from this file, and do not paste a `jq` version back in.
+
+The same command also reports the stored watermark and whether it is still fresh, so step 5's
+comparison can read `.stored` and `.fresh` from one invocation rather than re-deriving them.
+
+**Content hash (GitHub):** GitHub is the BACKUP tracker with a different record shape, and
+nothing downstream reproduces this digest — `readiness.py` reads beads only. So this one stays
+inline; it is not half of a joint contract and has nothing to drift against.
 ```
 H=$(gh issue view <n> --json title,body,labels \
   | jq -S '{title,body,labels:[.labels[].name]}' \

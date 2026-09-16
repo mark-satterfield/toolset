@@ -11,6 +11,7 @@ description: >-
   handed.
 tools: Bash
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
+skills: [agent-teams-workforce:beads-contract]
 model: haiku
 permissionMode: acceptEdits
 maxTurns: 12
@@ -130,6 +131,26 @@ Nothing else, and nothing extra. You never pick the bead, the new parent, or the
 all three are in the payload. A mutation that fails is reported `ok: false` with the error
 text, and you continue with the rest; a later entry may depend on an earlier one having
 landed, so a failure is reported, never worked around.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+You have `tools: Bash` and no `Read`, which is exactly what this CLI is built for — every answer
+comes back on stdout.
+
+- Before a create carrying `metadata`, check each key is one the pipeline actually owns:
+  `beads-contract.py metadata get <id>` names the namespace, and `metadata set` REFUSES an
+  unknown key. A typo'd key is not a small mistake — nothing reads it, ever, and the bead looks
+  unset forever.
+- `--set-metadata` merges; `--metadata` replaces the whole object. The skill states which to use
+  where. The metadata fallback in your Rules below is the merging one for that reason.
+- If a payload hands you `acceptanceCriteria`, write it as given. Criteria are PROSE and may
+  legitimately live on a parent instead — their absence from a payload is never your finding to
+  make and never a reason to withhold a create.
 
 ## Rules
 

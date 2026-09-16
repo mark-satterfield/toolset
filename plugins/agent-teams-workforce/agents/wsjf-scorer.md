@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-strategist, agent-teams-workforce:wsjf]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-strategist, agent-teams-workforce:wsjf, agent-teams-workforce:beads-contract]
 effort: medium
 isolation: worktree
 color: yellow
@@ -45,6 +45,19 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** A task whose value or criticality cannot be grounded in the spec; size estimates that appear inconsistent with task scope; two tasks whose evidence supports contradictory relative priorities; pressure to score without evidence.
 - **Acceptance Criteria:** Every task in the set carries a complete WSJF score; one scale is applied uniformly; every component score cites evidence; wsjf-scoring-reviewer finds the scores consistent and defensible.
 - **Anti-Goals:** Unevidenced gut-feel scores; scale drift partway through the set; copying scores between superficially similar tasks; treating the score as an implementation-order decision rather than an input to it.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- The score is recorded as bead METADATA under `wsjf`, with `wsjf_calculated_at` beside it — not as
+  a note. A score that lands only in the notes is a score no gate can see, and the bead is never
+  dispatchable. `beads-contract.py metadata set <id> wsjf=<score>` writes it with the merging flag
+  and reads it back to verify.
+- Metadata sits outside the content fingerprint, so recording a score never makes a bead look stale.
 
 ## Operating Rules
 

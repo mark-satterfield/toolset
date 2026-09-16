@@ -9,7 +9,7 @@ disallowedTools: AskUserQuestion, Agent
 model: fable
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract]
 effort: xhigh
 isolation: worktree
 color: yellow
@@ -44,6 +44,19 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** A dependency cycle that cannot be broken without re-decomposing tasks; a dependency on work absent from the task set (missing spec coverage); contradictions between spec ordering and architecture constraints.
 - **Acceptance Criteria:** Every task appears in the DAG; the graph is acyclic; every edge is typed and justified against spec or architecture; no fabricated or missing dependencies found by independent review.
 - **Anti-Goals:** Producing a linear chain when parallelism is real; hiding a cycle by silently dropping an edge; redefining task scope to simplify the graph; treating stylistic preferences as dependencies.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- The per-task dependency annotations you produce land on Beads issues. Use
+  `beads-contract.py record <id>` for what a bead actually carries and `ancestors <id>` for a parent
+  chain — `bd show --json` returns `parent` only when the bead has one, so its absence and an empty
+  parent are the same fact.
+- A parent link is hierarchy, not a dependency edge. Do not read one as the other.
 
 ## Operating Rules
 

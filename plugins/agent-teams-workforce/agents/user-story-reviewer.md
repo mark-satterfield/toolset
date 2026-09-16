@@ -9,7 +9,7 @@ disallowedTools: AskUserQuestion, Edit, Agent
 model: opus
 permissionMode: acceptEdits
 maxTurns: 45
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:beads-contract]
 effort: medium
 isolation: worktree
 color: yellow
@@ -44,6 +44,19 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** Stories that cannot be assessed because spec sections are missing or contradictory; a pattern of invented criteria indicating spec coverage gaps; repeated identical defects after the loop limit; task boundaries that make properly scoped stories impossible.
 - **Acceptance Criteria:** Every story in the set is assessed on all three dimensions; every finding is specific, located, and reproducible; no finding is fixed by this agent; the report cleanly separates constitutive failures from tradeable concerns.
 - **Anti-Goals:** Approving by skim; rewriting stories to be helpful; style nitpicks dressed up as defects; blocking the gate over phrasing preferences that do not affect completeness, testability, or scope.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- **Never fail a story for criteria that are "not in the right field."** Criteria are PROSE and the
+  requirement is that they EXIST: run `beads-contract.py criteria <id>`, which searches the metadata
+  key, the `--acceptance` record field, the description, then every ancestor nearest-first, and
+  reports where it found them. Quote its `searched` list in any finding of absence.
+- A story whose criteria are inherited from its parent Story or Epic is complete, not deficient.
 
 ## Operating Rules
 

@@ -12,7 +12,7 @@ disallowedTools: AskUserQuestion, Agent
 model: fable
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:beads-contract]
 effort: xhigh
 isolation: worktree
 color: yellow
@@ -47,6 +47,23 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** A spec requirement that cannot be decomposed into tasks of 300 LOC or less; spec and architecture contradicting each other; spec sections with no implementable content; ambiguity that would force a requirements decision.
 - **Acceptance Criteria:** Every spec requirement is covered by at least one task; no task exceeds 300 LOC; no task spans more than one chassis extension, endpoint, or event handler; every task carries a spec traceability reference and its build contract; the dependency graph is acyclic and the build order is a valid topological order of it; every task is scored exactly once with jobSize > 0 and correct arithmetic; the breakdown, the sequence, and the scores all pass independent review.
 - **Anti-Goals:** Bundling multiple endpoints or handlers into one task; inventing tasks for requirements not in the spec; silently dropping hard-to-decompose spec sections; padding or shrinking estimates to dodge the 300 LOC ceiling; presenting a guessed dependency order as a derived one, or suppressing a real cycle to produce a build order; fitting WSJF components to a sequence decided in advance; guessing a `surfaces` list or a `testStrategy` the spec does not state.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- The build contract you carry per task (`specPaths`, `specSections`, `requirementIds`,
+  `definitionOfDone`, `surfaces`, `testStrategy`) lands as bead metadata under the key names and
+  shapes the skill documents. Check them there rather than inventing spellings.
+- **`unknown` is not `[]`.** Where the spec does not settle `surfaces` or `testStrategy`, emit the
+  literal `unknown`, never an empty list: a null means nobody ruled and the phase falls back to its
+  own lead, while `[]` means the work crosses no boundary and SKIPS the phase outright.
+- Acceptance criteria are PROSE and may be stated once on the parent Story for all the work beneath
+  it. You are not required to restate them per task, and their absence from a task's own metadata is
+  not a gap.
 
 ## Operating Rules
 

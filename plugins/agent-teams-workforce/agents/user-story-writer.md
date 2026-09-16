@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Agent
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:beads-contract]
 effort: medium
 isolation: worktree
 color: yellow
@@ -45,6 +45,21 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Escalation Triggers:** A task whose spec sections contain no usable acceptance criteria; criteria that contradict each other across spec sections; a story that cannot be expressed without deciding an open spec question; a task boundary that no coherent story can cover.
 - **Acceptance Criteria:** Every task in the set has exactly one story; every acceptance criterion traces to a spec section; no criterion introduces behavior absent from the spec; stories stay within their task's scope; user-story-reviewer passes the set.
 - **Anti-Goals:** Boilerplate stories detached from the spec; acceptance criteria written from memory of similar systems; quietly filling spec gaps with plausible behavior; one story spanning multiple tasks.
+
+## The bead contract — ask the CLI, never guess
+
+You read or write Beads issues, so the `agent-teams-workforce:beads-contract` skill is loaded
+for you. It ships a working CLI — `python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py"` — and it is the ONE
+authority on how work is stored on a bead. Never hand-roll `jq` against `bd`, never assume a
+field exists because a document said so, and never restate one of its recipes.
+
+- **Acceptance criteria are PROSE, and where you put them decides who can see them.** They may sit in
+  the issue's own description, in the `--acceptance` record field, or in the `acceptance_criteria`
+  metadata key; criteria stated once on a parent Story cover every Task beneath it, and restating
+  them per task is not required.
+- Criteria in the Task's OWN description are covered by the staleness fingerprint, so editing them
+  releases a held bead. Criteria on a PARENT are not. If a hold has to be released by a criteria
+  edit, make it on the bead that is held.
 
 ## Operating Rules
 
