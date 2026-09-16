@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A read-only extractor pulls the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -15,6 +15,7 @@ export const meta = {
 //   trdPath?: string,        // where the TRD should be written/lives
 //   repoPath?: string,       // working repo for file reads/writes
 //   maxLoops?: number,       // bounded maker-checker passes (default 2)
+//   feedback?: string,       // gate feedback from a previous run of this phase; seeds the first author pass
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
 //                            // the Epic working directory. When present the author writes the TRD to
 //                            // <dir>/trd.md and records it; trdPath is then the FILING home the
@@ -168,7 +169,7 @@ let trd = null
 let trdValidation = null
 let traceabilityMatrix = null
 let decision = null
-let feedback = ''
+let feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
 // ── WHERE THE TRD LIVES IS THE FILING CLERK'S RULING ─────────────────────────
 // A TRD is a durable document, so it needs a real home before it is authored, not a
@@ -221,12 +222,14 @@ part of authoring it, not an optional extra, and \`trdPath\` in your result must
 path you actually wrote.
 `
 
-for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-  // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
+// ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
+// The author reads the shared `feedback`, so every pass carries whatever the checker,
+// the gate or the decider last asked for.
+function authorTrd(pass) {
   phase('Author TRD')
-  log(`Authoring TRD (attempt ${attempt}/${MAX_LOOPS}) at ${authorPath}`)
+  log(`Authoring TRD (${pass}) at ${authorPath}`)
 
-  trd = await agent(
+  return agent(
     `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
 
 ${writeBrief}
@@ -236,7 +239,7 @@ ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPR
 
 SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; cite by stable ID):
 ${extractText}
-${feedback ? `\nChecker feedback from the previous attempt — address every point:\n${feedback}` : ''}
+${feedback ? `\nFeedback on the previous version (checker, gate or decider) — address every point:\n${feedback}` : ''}
 
 Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
     {
@@ -271,18 +274,18 @@ Each technical requirement must have a stable ID, trace upward to a PRD requirem
       },
     }
   )
-  if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract }
+}
 
+// ── Phase 3: Verify & Traceability — ONE independent checker session, both checks ─
+// This used to be two parallel checker sessions, each paying a full session-start to
+// read the same TRD. Both are independent CHECKS on the maker's artifact — neither
+// ever judged the other — so one session carrying both preserves segregation of
+// duties (the checker authored nothing) at half the cost.
+function verifyTrd() {
   const trdText = JSON.stringify(trd, null, 2)
-
-  // ── Phase 3: Verify & Traceability — ONE independent checker session, both checks ─
-  // This used to be two parallel checker sessions, each paying a full session-start to
-  // read the same TRD. Both are independent CHECKS on the maker's artifact — neither
-  // ever judged the other — so one session carrying both preserves segregation of
-  // duties (the checker authored nothing) at half the cost.
   phase('Verify & Traceability')
 
-  const verification = await agent(
+  return agent(
     `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words.
 
 CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
@@ -357,7 +360,13 @@ ${extractText}`,
       },
     }
   )
+}
 
+for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
+  trd = await authorTrd(`attempt ${attempt}/${MAX_LOOPS}`)
+  if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract }
+
+  const verification = await verifyTrd()
   const validation = verification && verification.validation
   const traceability = verification && verification.traceability
 
@@ -385,7 +394,7 @@ ${extractText}`,
   if (attempt === MAX_LOOPS) {
     log('Maker-checker loop exhausted — escalating to trd-decider for a binding ruling')
     const ruling = await agent(
-      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is, returns to the author for a final targeted change, or is rejected, and state the binding rationale.
+      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything.
 
 TRD:
 ${JSON.stringify(trd, null, 2)}
@@ -415,6 +424,34 @@ Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 
     decision = ruling
       ? { verdict: ruling.verdict, ruledByDecider: true, rationale: ruling.rationale, requiredChanges: ruling.requiredChanges || [] }
       : { verdict: 'reject', ruledByDecider: true, rationale: 'trd-decider returned no ruling.' }
+  }
+}
+
+// ── A "revise" ruling is carried out, not reported ────────────────────────────
+// The decider is offered "return to the author for a final targeted change". Ending the
+// run on that ruling returned ok:false with the change never made, and the gate's re-run
+// of this mini did not hand the required changes to the author either, so the same
+// finding came back and the gate budget ran out on a TRD the decider had ruled fixable.
+// A revise gets exactly one targeted author pass and one independent re-check; a TRD the
+// checker still rejects after it ends the run with the ruling and the new findings.
+if (decision && decision.verdict === 'revise' && trd) {
+  const changes = decision.requiredChanges && decision.requiredChanges.length
+    ? decision.requiredChanges.map((c, i) => `${i + 1}. ${c}`).join('\n')
+    : '(none listed — apply the rationale)'
+  feedback = `BINDING RULING FROM THE TRD DECIDER — make these targeted changes and change nothing else:\n${changes}\n\nRationale: ${decision.rationale || 'n/a'}\n\nLatest checker feedback:\n${feedback}`
+  const revised = await authorTrd('final targeted revision per the decider ruling')
+  if (revised) {
+    trd = revised
+    const verification = await verifyTrd()
+    trdValidation = verification && verification.validation
+    traceabilityMatrix = verification && verification.traceability
+    const passed = !!(trdValidation && trdValidation.verdict === 'pass' && traceabilityMatrix && traceabilityMatrix.verdict === 'pass')
+    log(`TRD ${passed ? 'accepted' : 'still rejected'} after the decider's targeted revision`)
+    decision = passed
+      ? { ...decision, verdict: 'accept', revisedPerRuling: true, rationale: `${decision.rationale} Required changes applied; both independent checks passed on re-check.` }
+      : { ...decision, revisedPerRuling: true, recheckFeedback: [trdValidation && trdValidation.feedback, traceabilityMatrix && traceabilityMatrix.feedback].filter(Boolean).join('\n\n') }
+  } else {
+    decision = { ...decision, revisedPerRuling: false }
   }
 }
 
