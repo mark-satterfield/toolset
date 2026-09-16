@@ -50,7 +50,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | bedrock-integration-implementer | tdd-green | Green *(implementer roster)* | Bedrock model integration code |
 | behavioral-signals-implementer | tdd-green | Green *(implementer roster)* | Behavioral signal capture/feature pipeline code |
 | bounded-context-mapper | architecture | Proposals | Produces context map |
-| brd-traceability-auditor | prd-validation | fan-out analysts | Traces PRD requirements to BRD objectives |
+| brd-traceability-auditor | prd-validation | fan-out analysts | Optional informational mapping of PRD requirements to a supplied BRD's objectives |
 | cdk-infrastructure-designer | architecture | Proposals | CDK construct/Lambda packaging tradeoffs |
 | cdk-infrastructure-designer | infra-intent | maker | **Maker**: produces CDK-expressible provisioning intent |
 | cdk-infrastructure-drift-detector | deploy | Deploy-readiness | CDK synth + drift validation (read-only) |

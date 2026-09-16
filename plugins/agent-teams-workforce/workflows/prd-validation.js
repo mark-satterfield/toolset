@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. ONE independent validation analyst session inspects the raw PRD through six read-only lenses (ambiguity, completeness, conflict, constraints, domain boundaries, requirements clarification) — plus BRD traceability when args.brd is supplied — and the script consolidates the lens findings into one validated-PRD package deterministically. The lenses are all CHECKS on a document authored upstream, so folding them into one checker session preserves segregation of duties (no maker judges its own work) while paying one session-start instead of seven. Read-only: it judges and packages the PRD but authors no PRD content.',
+    'Leaf mini — PRD Validation. ONE independent validation analyst session inspects the raw PRD through six read-only lenses (ambiguity, completeness, conflict, constraints, domain boundaries, requirements clarification) — plus an INFORMATIONAL BRD traceability mapping when an optional args.brd is supplied, which produces no findings and never binds the PRD — and the script consolidates the lens findings into one validated-PRD package deterministically. The lenses are all CHECKS on a document authored upstream, so folding them into one checker session preserves segregation of duties (no maker judges its own work) while paying one session-start instead of seven. Read-only: it judges and packages the PRD but authors no PRD content.',
   phases: [
     { title: 'Validate', detail: 'one independent analyst session inspects the raw PRD through every lens' },
   ],
@@ -10,7 +10,10 @@ export const meta = {
 // args: {
 //   prd: { id?, title?, body, repoPath? } | string,  // the raw PRD under validation (required)
 //   context?: string,                                 // optional bounded-context / service-boundary notes
-//   brd?: string,                                     // optional BRD objectives — enables the traceability audit
+//   brd?: string,                                     // OPTIONAL BRD objectives. Supplying one enables an
+//                                                     // informational traceability mapping. It is never
+//                                                     // required, and it never binds the PRD: the PRD is the
+//                                                     // top of the requirements chain.
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
 //                                                     // the Epic working directory the analyst saves its own
 //                                                     // result into (`prd-validation.json`) — see persistBrief
@@ -221,7 +224,9 @@ Lens 3 — CONFLICT (return in \`conflicts\`): pairs (or sets) of requirements w
 Lens 4 — CONSTRAINTS (return in \`constraints\`): the explicit AND implied constraints the PRD imposes (regulatory, business, platform, policy), each with its source, kind, and explicit/implied.
 Lens 5 — DOMAIN BOUNDARIES (return in \`boundaryFindings\`): requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context.
 Lens 6 — CLARIFICATION REQUESTS (return in \`clarifications\`): the open questions the author must answer before this PRD can be specified — do not resolve them.
-${brd ? `Lens 7 — BRD TRACEABILITY (return in \`traceability\`): map each PRD requirement to the BRD objective(s) it serves; flag orphanRequirements (tracing to NO objective) and unimplementedObjectives (objectives no requirement serves, only where this single PRD could plausibly have served them). A requirement mapping to a stated objective or guiding principle is traced — the BRD states objectives, not features.
+${brd ? `Lens 7 — BRD TRACEABILITY (return in \`traceability\`) — INFORMATIONAL ONLY, NOT A JUDGMENT OF THE PRD: map each PRD requirement to the BRD objective(s) it serves. List in orphanRequirements those that map to no objective, and in unimplementedObjectives those objectives no requirement serves (only where this single PRD could plausibly have served them). Set \`traceable\` to say whether a mapping could be built at all — it is NOT a verdict on the PRD. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features.
+
+THIS LENS NEVER PRODUCES A DEFECT. The PRD is the top of the requirements chain and answers to no document above it, so a requirement that traces to no BRD objective is perfectly valid and must NOT be reported as a problem, a gap, an ambiguity, or a conflict through this or any other lens. You are recording a correspondence, not auditing the PRD against the BRD.
 
 BRD objectives:
 ${brd}
@@ -284,16 +289,19 @@ const traceability = brd
 
 // ── Deterministic consolidation ─────────────────────────────────────────────────
 // The flat findings list and the verdict are RULES over the typed lens outputs, so
-// they are computed here rather than asked of a second session. The folding rules
-// are unchanged: each BRD orphan folds in as 'major', each clarification as 'info'
-// (its open question is the issue), and neither of those alone fails the gate —
-// only a blocker-severity defect in the PRD's WHAT does.
+// they are computed here rather than asked of a second session. Each clarification
+// folds in as 'info' (its open question is the issue), which alone never fails the
+// gate — only a blocker-severity defect in the PRD's WHAT does.
+//
+// THE TRACEABILITY LENS FOLDS IN NOTHING. A BRD may exist and a caller may pass one,
+// but the PRD is the top of the requirements chain and answers to no document above
+// it. A requirement that maps to no BRD objective is therefore not a defect, and the
+// mapping is returned as information rather than scored as a finding.
 const findings = []
 for (const f of ambiguities) findings.push({ source: 'ambiguity', requirement: f.requirement, issue: f.issue, severity: f.severity })
 for (const f of completenessGaps) findings.push({ source: 'completeness', requirement: f.requirement, issue: f.issue, severity: f.severity })
 for (const f of conflicts) findings.push({ source: 'conflict', requirement: (f.requirements || []).join(' + '), issue: f.contradiction, severity: f.severity })
 for (const f of boundaryFindings) findings.push({ source: 'domain-boundary', requirement: f.requirement, issue: `crosses boundary: ${f.boundaryCrossed}${f.detail ? ` — ${f.detail}` : ''}`, severity: f.severity })
-for (const o of traceability.orphanRequirements || []) findings.push({ source: 'brd-traceability', requirement: o, issue: 'traces to no BRD objective', severity: 'major' })
 for (const c of clarifications) findings.push({ source: 'clarification', requirement: c.requirement, issue: c.question, severity: 'info' })
 const rank = { blocker: 0, major: 1, minor: 2, info: 3 }
 const sevRank = (s) => (rank[s] === undefined ? 4 : rank[s])

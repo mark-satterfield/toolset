@@ -50,8 +50,9 @@ this command is.
 
 ## 3. Hand off
 
-Invoke the `elaborate-prd-epic` skill with the resolved pair and the BRD and SAD
-paths when they exist. It owns the `prd-to-spec` dispatch and the
+Invoke the `elaborate-prd-epic` skill with the resolved pair, plus the SAD path
+when it is known. Pass a BRD path only in the uncommon case that a BRD exists —
+it is optional, and a PRD never has to reference one. It owns the `prd-to-spec` dispatch and the
 report. The run writes the hierarchy into beads itself — you verify and report
 what it wrote, you do not write it.
 

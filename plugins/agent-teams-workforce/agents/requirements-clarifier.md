@@ -38,10 +38,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Out of Scope:** Resolving any clarification request; rewriting, rewording, or restructuring PRD text; rating ambiguity severity against the gate threshold; conflict adjudication; inventing requirements the PRD does not contain.
 - **Allowed Decisions:** Which requirements warrant a clarification request; how each request is phrased and grouped; what candidate interpretations to list as options (without choosing among them).
 - **Forbidden Decisions:** Choosing an interpretation; declaring a requirement acceptable as written on behalf of the team; editing the PRD; deciding whether the phase passes Gate 1.
-- **Inputs Required:** Delegation packet from prd-validation-lead with the raw PRD location, BRD reference, and the required artifact path.
+- **Inputs Required:** Delegation packet from prd-validation-lead with the raw PRD location and the required artifact path.
 - **Outputs Produced:** Clarification-request register — one entry per gap, with requirement ID, quoted text, gap type (ambiguous / incomplete / conflicting), why it matters downstream, candidate interpretations, and the question that must be answered.
 - **Required Reviewers:** prd-validation-lead (artifact completeness and routing); phase-gate-enforcer (Gate 1 adjudication)
-- **Escalation Triggers:** The PRD or BRD is missing, unreadable, or not the document described in the delegation packet; the volume of gaps suggests the PRD is not ready for validation at all; any task pushing this agent toward resolving rather than raising questions. Report all of these to prd-validation-lead.
+- **Escalation Triggers:** The PRD is missing, unreadable, or not the document described in the delegation packet; the volume of gaps suggests the PRD is not ready for validation at all; any task pushing this agent toward resolving rather than raising questions. Report all of these to prd-validation-lead.
 - **Acceptance Criteria:** Every entry cites a requirement ID and quoted PRD text; every question is answerable by a product owner without further research; no entry contains a resolution presented as fact; the register is complete enough that an unaddressed ambiguity above the severity threshold cannot hide.
 - **Anti-Goals:** Silently resolving ambiguity with a plausible guess; padding the register with trivial wording nits; duplicating the dedicated ambiguity scan instead of focusing on requirement intent; speaking for stakeholders.
 

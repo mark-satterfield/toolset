@@ -277,7 +277,7 @@ When you match, return the stored ruling's verdict, rationale and precedent VERB
       `${found && found.reason ? ` (${found.reason})` : ''} — escalating to constitutional-agent`
   )
   const ruling = await agent(
-    `A constitutional gate hit a novel conflict between constitutive objectives that the enforcer could not resolve. Rule on it by consulting the system's founding objectives (the BRD). Your ruling is binding and becomes reusable precedent.
+    `A constitutional gate hit a novel conflict between constitutive objectives that the enforcer could not resolve. Rule on it by consulting the system's founding objectives. Your ruling is binding and becomes reusable precedent.
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
 Conflict: ${verdict.conflict || '(unspecified)'}

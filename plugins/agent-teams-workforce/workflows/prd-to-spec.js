@@ -20,8 +20,10 @@ export const meta = {
 //   request?: { id?, title?, description?, repoPath?, requestedBy? },  // raw request — triggers optional PRD creation
 //   prd?: { id?, title?, body?, content?, path?, repoPath?, acceptanceCriteria?[] }, // existing PRD; skips creation
 //   context?: string,             // bounded-context / service-boundary notes for PRD validation
-//   brd?: string,                 // BRD objectives text — WITHOUT it the traceability audit has nothing
-//                                 // to audit against and every requirement reads as an orphan
+//   brd?: string,                 // OPTIONAL BRD objectives text. Supplying one adds an informational
+//                                 // traceability mapping to PRD validation; omitting one costs nothing,
+//                                 // because the PRD is the top of the requirements chain and never has
+//                                 // to trace to, cite, or derive from a BRD
 //   decision?: { id?, title?, context?, drivers?[], repoPath? }, // the architecture question
 //   sad?: { path?, sectionLayout? },  // arc42 SAD location for TRD extraction
 //   sadPath?: string,             // arc42 SAD path for the architecture mini
@@ -1953,9 +1955,10 @@ validation = await gateLoop({
       prd,
       standingRulings,
       artifacts: artFor('prd-validation', PRD_INPUTS),
-      // The BRD must be threaded through explicitly. prd-validation reads args.brd and hands it
-      // to the traceability auditor; when it is absent the auditor has no objectives to map to
-      // and reports every requirement as an orphan, which reads as a PRD defect but is not one.
+      // A BRD is OPTIONAL. When the caller supplies one it is threaded through so prd-validation
+      // can return an informational requirement-to-objective mapping; when it is absent that lens
+      // simply does not run. Either way the PRD is judged on its own terms — it is the top of the
+      // requirements chain, so tracing to a BRD is never a condition of passing.
       brd: a.brd,
       context: feedback ? `${a.context || ''}\n\nGate feedback:\n${feedback}` : a.context,
     })

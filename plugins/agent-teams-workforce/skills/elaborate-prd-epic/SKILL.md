@@ -73,7 +73,7 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   epic:     <the Epic bead — always pass it, so it is adopted rather than re-minted>,
   repoPath: "/path/to/the/repo/you/are/standing/in",
   repos:    <OMIT — the run rules the span. Only when a human named it explicitly>,
-  brd:      <BRD objectives text, when there is one>,
+  brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
   sadPath:  <arc42 SAD location, when known>
 }})
 ```
@@ -85,8 +85,10 @@ No worktree. This phase authors documents and writes beads from the MAIN repo
 path; it writes no code, so there is no feature branch for it to land on — and
 `.beads` is never written from a worktree.
 
-Without `brd` the traceability audit has nothing to audit against and every
-requirement reads as an orphan. Supply it when one exists; say so when it does not.
+`brd` is entirely optional and most runs will not have one. Omitting it costs
+nothing: it only skips an informational requirement-to-objective mapping. The PRD
+is the top of the requirements chain — it never has to trace to, cite, or derive
+from a BRD, and a run without one is in no way diminished.
 
 ## 3. Check what the run wrote — do NOT write it yourself
 

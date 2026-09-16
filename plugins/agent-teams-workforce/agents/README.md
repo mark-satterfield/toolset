@@ -29,8 +29,8 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | prd-validation-lead | orchestrate | Routes the PRD to all analysts concurrently, aggregates findings, and reports to Gate 1 |
 | requirements-clarifier | plan | Identifies ambiguous, incomplete, or conflicting requirements |
 | ambiguity-detector | test | Scans the PRD for vague quantifiers, missing boundary conditions, and unstated assumptions |
-| requirements-conflict-detector | test | Identifies requirements that contradict each other or the BRD |
-| brd-traceability-auditor | test | Validates that every PRD requirement traces to a BRD objective |
+| requirements-conflict-detector | test | Identifies requirements that contradict each other |
+| brd-traceability-auditor | test | Optional, informational only: maps PRD requirements to a supplied BRD's objectives; no verdict on the PRD |
 | constraint-extractor | execute | Extracts technical constraints from the PRD |
 | domain-boundary-validator | test | Confirms the PRD stays within a single bounded context |
 | dependency-graph-extractor | execute | Produces the dependency manifest: services, APIs, events, data contracts |
