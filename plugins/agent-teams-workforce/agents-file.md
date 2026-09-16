@@ -1,5 +1,5 @@
 ---
-hash: fd900b1
+hash: 555d1bd
 ---
 
 ## Instructions for Agent Teams Workforce
