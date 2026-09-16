@@ -541,9 +541,15 @@ function gateHeadline(stage, r) {
 async function ruleExhaustion(ctx) {
   const unmet = ctx.unmetCriteria || []
   const dchecks = (ctx.verdict && ctx.verdict.deterministicChecks) || []
+  // THE BUDGET THE GATE ACTUALLY RAN, not the run-wide default. Gates take a per-gate
+  // `loopBudget`, and a gate pinned to a single attempt was still told the budget was 2 —
+  // which misdescribes the exact thing the evaluator is being asked to rule on: how much
+  // rework the finding has already survived. Falls back to MAX_LOOPS for a caller that
+  // names no budget, which is what every caller did before this value was threaded through.
+  const budget = Number.isFinite(ctx.budget) && ctx.budget > 0 ? ctx.budget : MAX_LOOPS
   try {
     return await agent(
-      `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${MAX_LOOPS} attempt(s) and the criteria below are still unmet.
+      `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${budget} attempt(s) and the criteria below are still unmet.
 
 This is NOT a request to re-judge the work, and it is NOT a request to halt. Rule on ONE question: does what remains INVALIDATE the artifact, or does it merely make it less than ideal?
 
@@ -552,7 +558,7 @@ This is NOT a request to re-judge the work, and it is NOT a request to halt. Rul
 
 A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh. You will not in fact be handed one — the caller now ENFORCES this rather than asking for it, and skips this dispatch entirely when a deterministic check failed. Every criterion below is a judgment criterion.
 
-Unmet criteria after ${MAX_LOOPS} attempt(s):
+Unmet criteria after ${budget} attempt(s):
 ${unmet.length ? unmet.map((c, i) => `${i + 1}. ${c.criterion}\n   evidence: ${c.evidence || '(none given)'}`).join('\n') : '(the gate named none)'}
 
 Deterministic checks this gate evaluated directly against the artifact:
@@ -872,7 +878,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       ...exhaustedUnmet.filter((cc) => deterministicLabels.has(cc.criterion)).map((cc) => cc.criterion),
     ]),
   ]
-  const ruling = measuredFailures.length ? null : await ruleExhaustion({ gate, phaseName, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
+  const ruling = measuredFailures.length ? null : await ruleExhaustion({ gate, phaseName, budget: loopBudget, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
   // TRUTHINESS IS NOT A RULING. A result object that came back without a `ruling` field
   // has not ruled anything, and reading it as one made a malformed reply indistinguishable
   // from a considered "constitutive" — which is the reporting half of the same fail-closed
