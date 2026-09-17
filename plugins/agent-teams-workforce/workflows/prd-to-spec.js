@@ -1220,6 +1220,17 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
 // the result on every exit path (see the `finally` below): the working directory, which phases
 // passed their gate or were reused IN THIS RUN, and where the TRD is filed once the run is Done.
 const artPhases = {}
+// ACCEPTANCE IS ANNOUNCED THE MOMENT IT HAPPENS, not only in the final result. The host
+// commits a per-phase acceptance file from durable evidence, and the final result is not
+// always there to read: a killed workflow's harness record carries this script's log
+// lines but no result. So every acceptance is also written as one machine-readable log
+// line, `ACCEPTED {json}` — deterministic script code, no agent, no tokens — which the
+// host's artifactio.py folds exactly like the result's `artifacts.phases`. Bound to bytes
+// host-side: a phase whose files are rewritten later is not accepted by this line.
+function acceptPhase(phaseId, status, extra) {
+  artPhases[phaseId] = status
+  log(`ACCEPTED ${JSON.stringify({ phase: phaseId, status, ...(extra || {}) })}`)
+}
 const artReport = { dir: null, epicId: null, filing: {} }
 let result
 try {
@@ -1885,7 +1896,7 @@ let validation
 const validationHit = resumeFresh('prd-validation')
 if (validationHit) {
   reuseFrom('prd-validation', validationHit, 'the PRD is not re-validated and Gate 1 is not re-spent')
-  artPhases['prd-validation'] = 'reused'
+  acceptPhase('prd-validation', 'reused')
   validation = {
     ok: true,
     resumed: true,
@@ -1965,7 +1976,7 @@ validation = await gateLoop({
   },
 })
 if (validation.ok) {
-  artPhases['prd-validation'] = 'passed'
+  acceptPhase('prd-validation', 'passed', { gate: 'G1' })
   await cpSave('validation', validation, validationRuling(validation))
 }
 }
@@ -2169,7 +2180,7 @@ if (archHit) {
   }
   if (hasRuling || (savedTriage && savedTriage.needed === false)) {
     reuseFrom('architecture', archHit, hasRuling ? 'downstream phases read the ruling from its file' : 'the saved triage found no architecture decision')
-    artPhases.architecture = 'reused'
+    acceptPhase('architecture', 'reused', { notNeeded: !hasRuling })
     archReuse = {
       archTriage: savedTriage,
       architecture: hasRuling
@@ -2473,7 +2484,7 @@ if (!archNeeded) {
   })
 }
 if (architecture.ok) {
-  artPhases.architecture = 'passed'
+  acceptPhase('architecture', 'passed', { gate: 'G2', notNeeded: !!(architecture && architecture.skipped) })
   await cpSave('architecture', { archTriage, architecture }, architectureRuling(archTriage, architecture))
 }
 }
@@ -2610,7 +2621,7 @@ if (callerRepos.length) {
     })
   }
   if (cpScope === undefined) {
-    artPhases['repo-scoping'] = scopeReplay ? 'reused' : 'passed'
+    acceptPhase('repo-scoping', scopeReplay ? 'reused' : 'passed')
     await cpSave('repo-scoping', scoping, scopeReplay ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
@@ -2732,7 +2743,7 @@ let trdAuthoring
 const trdHit = resumeFresh('trd')
 if (trdHit && trdHit.artifacts['trd.md']) {
   reuseFrom('trd', trdHit, 'spec authoring reads the TRD from its file')
-  artPhases.trd = 'reused'
+  acceptPhase('trd', 'reused')
   trdAuthoring = {
     ok: true,
     resumed: true,
@@ -2823,7 +2834,7 @@ trdAuthoring = await gateLoop({
     }),
 })
 if (trdAuthoring.ok) {
-  artPhases.trd = 'passed'
+  acceptPhase('trd', 'passed', { gate: 'G2b' })
   if (trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
   await cpSave('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
 }
@@ -3197,7 +3208,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     })
     if (replayedSpec && replayedSpec.ok && replayedSpec.story && hasText(replayedSpec.story.title)) {
       reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-      artPhases[specPhase] = 'reused'
+      acceptPhase(specPhase, 'reused')
       specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
       await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
     } else {
@@ -3206,7 +3217,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     }
   } else if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
     reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-    artPhases[specPhase] = 'reused'
+    acceptPhase(specPhase, 'reused')
     specAuthoring = {
       ok: true,
       resumed: true,
@@ -3281,7 +3292,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       }),
   })
   if (specAuthoring.ok) {
-    artPhases[specPhase] = 'passed'
+    acceptPhase(specPhase, 'passed', { gate: 'G3' })
     await cpSave(`spec:${repo}`, specAuthoring, specRuling(repo, specAuthoring))
   }
   }
@@ -4085,7 +4096,7 @@ async function decomposeStory(pair) {
           ? 'the saved decomposition was replayed through the emission step'
           : 'the mini read the saved decomposition from disk and replayed it through the emission step'
       )
-      artPhases[tasksPhase] = 'reused'
+      acceptPhase(tasksPhase, 'reused')
       decomposition = { ok: true, resumed: true, artifact: replayed }
       await cpSave(cpDecompKey, decomposition, reusedDecision(tasksPhase))
     } else {
@@ -4124,7 +4135,7 @@ async function decomposeStory(pair) {
     phaseFn: (feedback) => workflow('agent-teams-workforce:task-decomposition', decompArgs(pair, feedback)),
   })
   if (decomposition.ok) {
-    artPhases[tasksPhase] = 'passed'
+    acceptPhase(tasksPhase, 'passed', { gate: 'G4' })
     await cpSave(cpDecompKey, decomposition, decompRuling(pair, decomposition))
   }
   }
