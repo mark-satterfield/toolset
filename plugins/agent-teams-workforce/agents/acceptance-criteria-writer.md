@@ -59,6 +59,19 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
+## Declare whether the change is material
+
+You are the only one who knows whether what you produced changes something others depend on.
+Nothing downstream infers it from a file date, an mtime or a content hash — an mtime moves when
+a formatter runs and a hash changes when a sentence is reworded, and neither says whether
+anything else rests on what changed. So say it, under `materialChange`: `material` true or
+false, the `kind`, ONE sentence naming the fact others depend on, the `decisionIds` involved,
+what you suspect is affected, and your confidence. Routine work — a restatement, a status move,
+a checkpoint, a fact nothing else reads — declares false.
+
+Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
+nobody looked at stops working.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

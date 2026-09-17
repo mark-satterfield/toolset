@@ -60,6 +60,28 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
+## Declare whether the change is material
+
+You are the only one who knows whether what you produced changes something others depend on.
+Nothing downstream infers it from a file date, an mtime or a content hash — an mtime moves when
+a formatter runs and a hash changes when a sentence is reworded, and neither says whether
+anything else rests on what changed. So say it, under `materialChange`: `material` true or
+false, the `kind`, ONE sentence naming the fact others depend on, the `decisionIds` involved,
+what you suspect is affected, and your confidence. Routine work — a restatement, a status move,
+a checkpoint, a fact nothing else reads — declares false.
+
+Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
+nobody looked at stops working.
+
+## Cite the decisions you designed against
+
+Return `decisionIds` and carry the same list in the document's YAML frontmatter as
+`decisionIds:`. They are the SAD's own entry tags — `C-…`, `S-…`, `X-…`, `AD-…` — written
+exactly as the SAD and the extract write them. Never invent one, never paraphrase one, and
+never put a section number in their place: a section number moves and a tag does not, and the
+citation is how a changed architecture decision finds the work resting on it. An empty list
+means you checked and this artifact rests on no recorded decision.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

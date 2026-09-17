@@ -335,6 +335,18 @@ LANE_KEYS = (
     "elaboration_state",
     "elaboration_state_at",
     "elaboration_state_cause",
+    # The durable identity a re-elaborating run matches an existing Story or Task on.
+    # Written once, at the create, and never recomputed from a title — a title is the
+    # field most likely to be reworded, and a key derived from it at match time would
+    # make a reworded bead look like a bead that no longer exists.
+    "elab_key",
+    # The Task this one follows: set on a Task minted because the work it replaces was
+    # already built and therefore was not rewritten.
+    "elab_follows",
+    # The SAD entry ids the item was designed against, as a compact JSON list. This is
+    # how a changed architecture decision finds the work resting on it. The ids are the
+    # SAD's own per-entry tags, which survive a rewording; a statement-derived id does not.
+    "decision_ids",
 )
 
 #: Every metadata key this pipeline owns. A `metadata set` of anything else is refused —

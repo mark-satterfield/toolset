@@ -517,6 +517,7 @@ PRD-to-Spec pipeline, phase 2 — proposals and challenges fan in to a Decider; 
 | `architecture-pattern-challenger` | Worker | Adversary |
 | `architecture-tradeoff-skeptic` | Worker | Adversary |
 | `architecture-boundary-guardian` | Worker | Validator |
+| `architecture-impact-analyst` | Worker | Analyst |
 | `cost-impact-reviewer` | Worker | Adversary |
 | `operational-readiness-reviewer` | Worker | Validator |
 | `architecture-decider` | Worker | Decider |
@@ -766,6 +767,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `architecture-pattern-challenger` | Architecture Analysis | Execution Team | Worker | Adversary | test | Generates a structurally different alternative for each proposal to force non-obvious paths | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `architecture-tradeoff-skeptic` | Architecture Analysis | Execution Team | Worker | Adversary | test | Attacks trade-off ratings: hidden assumptions, optimistic estimates, unconsidered failure modes. | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
 | `architecture-boundary-guardian` | Architecture Analysis | Execution Team | Worker | Validator | test | Validates that no proposal introduces cross-context coupling. | subagent-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash, Write |
+| `architecture-impact-analyst` | Architecture Analysis | Execution Team | Worker | Analyst | test | Judges what a materially changed architecture decision reaches: finds every item citing the changed decision ids and rules each unaffected / not-yet-elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. | subagent-contract, beads-contract, validation-protocol, senior-architect | Read, Glob, Grep, Bash |
 | `cost-impact-reviewer` | Architecture Analysis | Execution Team | Worker | Adversary | test | Stress-tests cost estimates at 10x/100x/1000x scale | subagent-contract, validation-protocol, aws-cost-operations | Read, Glob, Grep, Bash, Write |
 | `operational-readiness-reviewer` | Architecture Analysis | Execution Team | Worker | Validator | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. | subagent-contract, validation-protocol, observability-designer | Read, Glob, Grep, Bash, Write |
 | `architecture-decider` | Architecture Analysis | Execution Team | Worker | Decider | approve | Receives all analyses, challenges, and cost data | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |

@@ -61,6 +61,39 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training.
 - Include an audit trail with each consolidation pass: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the consolidation, and risks; and preserve the upstream audit trail (rationale, rejected alternatives, accepted risks) where the arc42 source sections reference it.
 
+## Every §2/§4/§8 entry carries a tag, and a tag is never recycled
+
+Downstream documents and Task beads cite these entries by id, and `arc42-extract` derives that
+id from the entry's WORDING unless the entry carries its own identifier — that is the one
+escape hatch in its stable-ID derivation rule. So an untagged entry loses its identity the
+moment anybody rewords it, and every citation to it stops resolving without a single error
+anywhere. Minting and preserving the tags is your job, because nothing downstream can do it.
+
+- **Every entry in §2 Constraints, §4 Solution Strategy and §8 Crosscutting Concepts carries an
+  explicit tag**, written at the head of the entry in the form the SAD already uses: `C-…` for a
+  constraint, `S-…` for a solution-strategy entry, `X-…` for a crosscutting concept, `AD-…` for a
+  decision recorded in §9. Short, kebab-case, and descriptive of the FACT rather than of the
+  wording — `C-events-over-step-functions`, not `C-para-3`.
+- **An entry that already has a tag keeps it**, whatever you do to its wording. Rewording is not
+  a new fact; only a different fact is a different fact, and re-tagging on an edit is exactly
+  the failure this rule exists to prevent.
+- **A tag is never reused for a different fact.** When a ruling overturns an entry, leave that
+  entry's tag on the superseded statement, mark it superseded by the new tag, and mint a NEW tag
+  for the replacement. Two facts sharing one tag is worse than a tag nobody cites.
+- **Report every tag** you minted, preserved or superseded, with its section and disposition.
+
+## Declare whether the change is material
+
+You are the only one who knows whether what you changed is something others depend on. Nothing
+downstream infers it from a file date, an mtime or a hash — none of those says whether anything
+else rests on the fact you edited. So say it: `material` true or false, the `kind`, one sentence
+naming the fact others depend on, the `decisionIds` you minted, changed or retired, what you
+suspect is affected, and your confidence. Tidying prose is not material. Changing what a
+constraint permits is, and so is retiring one.
+
+Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
+nobody looked at stops working.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

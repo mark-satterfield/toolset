@@ -19,20 +19,22 @@ Extraction is strictly read-only: the SAD is never modified. The packet is the o
 crosses the boundary, and both consumers receive the **same** packet with the **same** IDs, so a
 constraint cited in the TRD and the same constraint cited in a spec resolve to one identifier.
 
-## Guarantee 1 — the four buckets always exist
+## Guarantee 1 — the three buckets always exist
 
 The packet always contains all three buckets: `constraints` (§2), `solutionStrategy` (§4),
 `crosscuttingConcepts` (§8). A consumer may iterate any bucket without a presence check. A section
 absent from the SAD is **not** dropped — its bucket carries `present: false`, an empty `entries`
 list, and a human-readable `missingReason`. This means "§4 was missing from the SAD" is a fact the
 TRD author can see and act on, never an ambiguous silence. Architecture decisions arrive inside the
-§2, §4 and §8 buckets, as current state.
+§2, §4 and §8 buckets, as current state: a §9 decision record is a SOURCE, carried on the entry as
+`sourceSection: 9` and prefixed `AD-`, and never a fourth bucket. That is the whole of the §9 story
+— there is no `architectureDecisions` bucket to iterate and none is ever added.
 
 ## Guarantee 2 — every entry has the four core fields
 
 Every entry, in every bucket, exposes `id`, `sourceSection`, `statement`, and `rationaleRef`
 (see `extraction-schema.md`). Consumers can write one generic renderer over `Entry` and apply it to
-all four buckets. `rationaleRef` may be `null`; `id`, `sourceSection`, and `statement` are never
+all three buckets. `rationaleRef` may be `null`; `id`, `sourceSection`, and `statement` are never
 empty.
 
 ## Guarantee 3 — IDs are stable and content-anchored
@@ -44,8 +46,15 @@ decision across re-extractions, and a diff between two extractions is meaningful
 fact, a vanished ID is a removed fact, a changed `statement` under a changed ID is a materially
 revised fact.
 
-Consumers MUST treat the ID as opaque beyond its one-character bucket prefix (`C-`, `S-`, `X-`,
-`AD-`). They cite it; they do not parse it.
+Consumers MUST treat the ID as opaque beyond its bucket prefix (`C-`, `S-`, `X-`, `AD-`). They
+cite it; they do not parse it.
+
+**The stability of a citation ACROSS AN EDIT rests on the SAD's own per-entry tag, not on this
+guarantee.** Re-extraction stability holds for an unchanged SAD; an entry that carries no tag is
+anchored to the salient nouns of its statement, so rewording it re-IDs it and every citation to it
+stops resolving silently. `sad-maintainer` therefore mints an explicit tag on every §2/§4/§8 entry
+it writes and preserves it through any rewording, and never recycles a tag onto a different fact.
+An entry arriving here without a tag is a defect in the SAD, not a property of this contract.
 
 ## Guarantee 4 — no invention
 

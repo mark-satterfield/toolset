@@ -7,11 +7,12 @@ export const meta = {
     { title: 'PRD Validation' },
     { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
     { title: 'Architecture', detail: 'runs only when a read-only triage over the PRD finds a genuine technical choice open — a difference from what is deployed and any UI/UX difference are both settled already, and convene no panel' },
+    { title: 'Architecture Impact', detail: 'runs only when a producer DECLARES that the ruling changed something others depend on and names the decision ids — an analyst judges every item citing them: not yet elaborated (nothing to do), elaborated but unbuilt (re-elaborate), already built (this Epic carries a knock-on Task; the built Task is never rewritten)' },
     { title: 'Repo Scoping', detail: 'rule the repo span from the architecture ruling and the PRD — an output of this run, never pre-staged' },
     { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
     { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
-    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — readiness makes a bead eligible for dispatch and WSJF sorts the eligible ones, so both exist before it is ever a candidate — and report what actually landed' },
+    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — readiness makes a bead eligible for dispatch and WSJF sorts the eligible ones, so both exist before it is ever a candidate — and report what actually landed. A re-run against an Epic that already has children MATCHES them on the durable `elab_key` written at creation and updates in place: an unstarted Task is updated, a started or built one is never rewritten (its change becomes a follow-up Task), and a Task the decomposition no longer contains is closed with a reason' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -2567,6 +2568,151 @@ if (!architecture.ok) return partial('architecture', architecture)
 // extract over the WHOLE SAD, which its own sad-source-extractor produces. Reusing the
 // update-scoped summary would silently narrow the TRD's inputs.
 
+// ── WHEN THE ARCHITECTURE MOVES, SOMETHING ALREADY BUILT MAY STOP WORKING ────────
+//
+// This is the phase that answers Mark's sentence: "I finished my task, but feature XYZ will
+// no longer work." A ruling that changes a decision other work was designed against does not
+// announce itself anywhere — the TRD, the specs and the Tasks that cite it were written and
+// filed months ago, and nothing reads them again.
+//
+// It runs ONLY on a declared material change. Not on a file date, not on a hash, not on "the
+// SAD was edited": the sad-maintainer and the architecture-decider SAY whether what they
+// changed is something others depend on, and they name the decision ids. An empty set means
+// they said no, and this phase costs nothing.
+//
+// What it does NOT do is rule. An analyst judges each citing item and the ruling is recorded,
+// including the items it judged UNAFFECTED and why — an item examined and cleared is evidence,
+// and leaving it out of the record makes the pass unauditable the next time the same decision
+// moves. The three outcomes are fixed by where the item sits in the pipeline:
+//
+//   not-yet-elaborated  — the Epic has no Specs or Tasks yet. Nothing to do: the sequencing
+//                         pass elaborates it later, against the architecture as it then is.
+//   elaborated-unbuilt  — Specs and Tasks exist and none is started. It goes back for
+//                         re-elaboration, which now updates in place rather than duplicating.
+//   already-built       — the code ships. The built Task is NOT reopened and NOT rewritten;
+//                         the CURRENT Epic carries a knock-on Task that fixes the affected
+//                         feature and cites both the decision and the built Task.
+const IMPACT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['rulings'],
+  properties: {
+    rulings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['beadId', 'beadType', 'verdict', 'rationale'],
+        properties: {
+          beadId: { type: 'string' },
+          beadType: { type: 'string' },
+          title: { type: 'string' },
+          decisionIds: { type: 'array', items: { type: 'string' } },
+          verdict: { type: 'string', enum: ['unaffected', 'not-yet-elaborated', 'elaborated-unbuilt', 'already-built'] },
+          rationale: { type: 'string' },
+          // Only for `already-built`: the work that repairs the affected feature. It is a
+          // PROPOSAL; this composite writes it as a Task of the current Epic.
+          knockOn: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['title', 'description', 'repoPath'],
+            properties: {
+              title: { type: 'string' },
+              description: { type: 'string' },
+              repoPath: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+    searched: { type: 'string' },
+    notes: { type: 'string' },
+  },
+}
+
+let architectureImpact = null
+const changedDecisionIds = [
+  ...new Set(
+    [
+      ...((architecture.artifact && Array.isArray(architecture.artifact.materialChangeIds) ? architecture.artifact.materialChangeIds : [])),
+      ...((architecture.artifact && Array.isArray(architecture.artifact.entryTags) ? architecture.artifact.entryTags : [])
+        .filter((x) => x && x.disposition !== 'preserved')
+        .map((x) => x && x.tag)),
+    ]
+      .map((x) => String(x == null ? '' : x).trim())
+      .filter(Boolean)
+  ),
+]
+const declaredMaterial = (architecture.artifact && Array.isArray(architecture.artifact.materialChanges) ? architecture.artifact.materialChanges : []).some(
+  (x) => x && x.material === true
+)
+if (!architecture.skipped && declaredMaterial && changedDecisionIds.length) {
+  enterPhase('Architecture Impact')
+  log(`Architecture declared a material change to ${changedDecisionIds.length} decision id(s) — judging what already cites them`)
+  const impact = await settleAgent(
+    `You are the architecture-impact-analyst. An architecture ruling has just changed decisions that other work was designed against. Find every work item that cites them and judge each one. You judge and report; you write no code, you author no document, and you change no bead.
+
+Decision ids this ruling created, changed or retired:
+${changedDecisionIds.map((x) => `- ${x}`).join('\n')}
+
+What changed, as its producers declared it:
+${JSON.stringify((architecture.artifact && architecture.artifact.materialChanges) || [], null, 2)}
+
+The ruling itself:
+${(architecture.artifact && architecture.artifact.decision && architecture.artifact.decision.ruling) || '(not captured)'}
+
+FIND THE CITING ITEMS. Work from the tracker at ${a.beadsRepoPath || repoPath || "(the repository the run was launched from)"}. Items record what they were designed against in \`decision_ids\` metadata; the \`agent-teams-workforce:beads-contract\` skill is the one authority on reading a bead, and its CLI is how you read one. Search the open Epics, Stories and Tasks. An item written before that field existed cites nothing, so also check the spec and TRD documents an item points at — a document citing one of these ids means the item resting on it cites it too. Say in \`searched\` exactly what you looked through, so a gap in the answer is visible rather than implied.
+
+JUDGE EACH ONE, and report the ones you judged UNAFFECTED as well, with the reason. An item examined and cleared is evidence; an item missing from your answer is indistinguishable from one you never looked at.
+- \`unaffected\` — it cites the decision but what changed does not reach it. Say why.
+- \`not-yet-elaborated\` — an Epic with no Specs or Tasks beneath it yet. Nothing to do; it will be elaborated against the architecture as it then stands.
+- \`elaborated-unbuilt\` — Specs and Tasks exist and NONE of them is started or closed. It goes back for re-elaboration.
+- \`already-built\` — at least one Task under it is closed, or in progress. The built work is NOT reopened and NOT rewritten: propose a \`knockOn\` Task that repairs the affected feature, naming in its description the built item it follows, the decision that changed, and what specifically will stop working. Give it the repository the repair lands in.
+
+Do not rule on whether the architecture decision was right. It was ruled by the architecture-decider and it stands.`,
+    {
+      label: 'impact:architecture',
+      phase: 'Architecture Impact',
+      effort: 'medium',
+      agentType: 'agent-teams-workforce:architecture-impact-analyst',
+      schema: IMPACT_SCHEMA,
+    }
+  )
+  const rulings = impact && Array.isArray(impact.rulings) ? impact.rulings : []
+  architectureImpact = {
+    ran: true,
+    decisionIds: changedDecisionIds,
+    searched: (impact && impact.searched) || null,
+    rulings,
+    // The analyst died, or returned nothing. That is recorded as a gap in the record — never
+    // as "nothing was affected", which is the one reading that would be actively harmful.
+    reason: impact ? null : 'the impact analyst returned no result; nothing was judged, and this is NOT a finding that nothing is affected',
+    reElaborate: rulings.filter((r) => r.verdict === 'elaborated-unbuilt').map((r) => r.beadId),
+    knockOn: rulings.filter((r) => r.verdict === 'already-built' && r.knockOn).map((r) => ({ follows: r.beadId, decisionIds: r.decisionIds || [], ...r.knockOn })),
+  }
+  const impactLine =
+    `Architecture impact: ${rulings.length} item(s) judged — ` +
+    `${architectureImpact.reElaborate.length} to re-elaborate, ${architectureImpact.knockOn.length} knock-on Task(s) for work already built, ` +
+    `${rulings.filter((r) => r.verdict === 'unaffected').length} unaffected.` +
+    (architectureImpact.reason ? ` ${architectureImpact.reason}` : '')
+  log(impactLine)
+  recRuled(impactLine, { status: architectureImpact.reason ? 'failed' : 'done' })
+} else {
+  architectureImpact = {
+    ran: false,
+    decisionIds: changedDecisionIds,
+    reason: architecture.skipped
+      ? 'the architecture phase was skipped, so no decision changed'
+      : declaredMaterial
+        ? 'a material change was declared but named no decision ids, so nothing could be looked up'
+        : 'no producer declared a material change',
+    rulings: [],
+    reElaborate: [],
+    knockOn: [],
+  }
+  recSkipped('Architecture Impact', architectureImpact.reason)
+}
+
 // ── Repo Scoping (no gate) ───────────────────────────────────────────────────────
 //
 // A PRD is a REQUIREMENT. It is not scoped to a repository and it may span several. A
@@ -3430,7 +3576,11 @@ for (const [repoIndex, repo] of repos.entries()) {
   for (const f of outOfRepo) {
     if (typeof f === 'string' && f.trim()) outOfSpanFindings.push({ repoPath: repo, finding: f.trim() })
   }
-  specPairs.push({ repoPath: repo, spec: specAuthoring.artifact, story })
+  // The Story carries the decisions its Spec was designed against. The spec set knows them
+  // and the Story is where they are recorded, because the Story is what an impact pass can
+  // reach from a changed decision id without reading a document off disk.
+  const specDecisionIds = (specAuthoring.artifact && Array.isArray(specAuthoring.artifact.decisionIds) ? specAuthoring.artifact.decisionIds : [])
+  specPairs.push({ repoPath: repo, spec: specAuthoring.artifact, story: { ...story, decisionIds: specDecisionIds } })
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -4125,6 +4275,10 @@ function decompArgs(pair, feedback) {
       repoPath: pair.repoPath,
     },
     specDocs: docs,
+    // The SAD entry ids the spec set was designed against. Every Task under this Story
+    // records them, so a changed architecture decision finds the Tasks resting on it
+    // without anybody reading a file date or diffing a document.
+    decisionIds: (pair.spec && Array.isArray(pair.spec.decisionIds) ? pair.spec.decisionIds : []),
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
     maxScoringPasses: 2,
     artifacts: artFor(`tasks:${slug}`, [...specDocs, artPath(`story-${slug}.json`)], { slug }),
@@ -4383,6 +4537,45 @@ if (!decompositions.length) {
 // Scope is exactly this run's hierarchy for this one work item: three explicit lists the
 // script built above. Never a sweep, never a batch, never "anything else that looks
 // unwritten".
+// ── THE KNOCK-ON WORK THE IMPACT PASS RULED FOR ─────────────────────────────────
+// Work that is ALREADY BUILT and is affected by this run's architecture change does not get
+// its Task reopened — the code shipped, and the record of what shipped stays true. The repair
+// is new work, and it belongs to the Epic that caused it, which is this one. Each knock-on
+// Task cites the built Task it follows and the decision that moved, so the connection between
+// "we changed the architecture" and "somebody has to fix XYZ" survives in the tracker rather
+// than in a run log nobody reads.
+if (architectureImpact && architectureImpact.knockOn.length && stories.length) {
+  let n = 0
+  for (const k of architectureImpact.knockOn) {
+    const host = stories.find((s) => s.repoPath && k.repoPath && String(s.repoPath) === String(k.repoPath)) || stories[0]
+    n += 1
+    tasks.push({
+      key: `IMPACT-${n}`,
+      type: 'task',
+      title: k.title,
+      description:
+        `${k.description}\n\nARCHITECTURE IMPACT. This Task exists because this Epic's architecture ruling changed ` +
+        `${(k.decisionIds || []).join(', ') || 'a decision'}, which ${k.follows} was built against. ${k.follows} is not reopened and not rewritten; ` +
+        'this is the work that brings the affected feature back into line with the ruling.',
+      parentStoryId: host.key,
+      repoPath: k.repoPath || host.repoPath || null,
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      specPaths: [],
+      specSections: [],
+      requirementIds: [],
+      decisionIds: k.decisionIds || [],
+      surfaces: null,
+      testStrategy: null,
+      dependsOn: [],
+      wsjf: null,
+      buildOrderIndex: null,
+      supersedes: k.follows,
+    })
+  }
+  log(`Architecture impact added ${n} knock-on Task(s) to this Epic for work that was already built.`)
+}
+
 enterPhase('Emit Beads')
 const beadSet = tasks
 const hierarchy = { epic, stories, tasks, storyDependencies }
@@ -4450,6 +4643,11 @@ const emission = {
   // separately from the emission verdict for the same reason `heal` is: a Task that landed
   // is durable whether or not the gate that ran a second later could reach the tracker.
   readiness: { ran: false, reason: null, attempted: 0, ready: 0, verdicts: [], failed: [] },
+  // What a RE-elaboration matched, updated, closed and carried forward as follow-up work.
+  // Reported beside the verdict for the same reason `heal` is: matching existing children is
+  // housekeeping on beads this run did not author, and it never turns a complete emission
+  // into a partial one. Filled in by the re-elaboration block in the write path below.
+  reelaboration: null,
   verdict: 'none',
   reason: null,
 }
@@ -4514,6 +4712,11 @@ const WRITE_SCHEMA = {
                 description: { type: ['string', 'null'] },
                 labels: { type: ['array', 'null'], items: { type: 'string' } },
                 parent: { type: ['string', 'null'] },
+                // The two metadata values re-elaboration matches on. `elabKey` is the durable
+                // identity written at creation; `repoPath` is what a Story written before the
+                // key existed can still be matched by. Null when the bead carries neither.
+                elabKey: { type: ['string', 'null'] },
+                repoPath: { type: ['string', 'null'] },
               },
             },
           },
@@ -4676,6 +4879,12 @@ function taskContractBlock(t) {
   ].join('\n')
 }
 
+// Every id that leaves this script lands in command text another agent runs verbatim, so
+// an id that is not shaped like one is REFUSED rather than cleaned. Declared here because
+// the re-elaboration survey below is the first thing that hands ids back out; the readiness
+// gate and the backfill heal further down hold it to the same rule.
+const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
+
 const skipAll = (level, keys, reason) => {
   for (const key of keys) emission.skipped.push({ level, key, reason })
 }
@@ -4725,6 +4934,253 @@ if (emitPathFault) {
   }
 }
 
+
+// ── RE-ELABORATION UPDATES IN PLACE; IT NEVER WRITES A SECOND SET ────────────────
+//
+// A re-run of this composite against an Epic that already has children used to ADOPT the
+// Epic and then write a fresh, complete second set of Stories and Tasks underneath it. The
+// adoption guards on the Story and Task waves test `s.id` / `t.id`, and those are only ever
+// set by the SAME run, after its own write — nothing on the write path ever looked up an
+// existing child. The only tracker read in the phase was the backfill survey, whose filter
+// finds stand-in parents and therefore never sees a real Story a previous run authored.
+//
+// It had not bitten yet only because runs were dying before they reached emission. It is
+// prevention, not cleanup.
+//
+// THE KEY. There was none: the decomposer's local keys (S1, T1) are regenerated per run and
+// were never persisted. So one is written now, at creation, as `elab_key` metadata — a Story
+// is keyed by the repository it covers (a Story is scoped to exactly one, and that is the
+// Story's identity under its Epic), a Task by its repository and the slug of its title. A
+// bead written before this existed carries no key at all, so the match falls back to the
+// title under the same parent, which is the identity that was in fact persisted.
+//
+// THE RULE, per matched Task:
+//   open          → updated in place. Nothing has been built against it.
+//   in_progress    → left exactly as it is. Somebody is working from that text right now.
+//   closed (built) → left exactly as it is, and if the new decomposition says something
+//                    different, that difference becomes a NEW Task citing the old one.
+//                    Rewriting a Task that already shipped is how the tracker comes to
+//                    disagree with the code, and it silently rewrites the record of what
+//                    was actually built.
+// A Task the new decomposition no longer contains is CLOSED with a reason naming this run —
+// but only if it is still open, because a started or finished Task is not "gone".
+const reelab = {
+  ran: false,
+  reason: null,
+  storiesMatched: 0,
+  storiesClosed: 0,
+  tasksMatched: 0,
+  tasksUpdated: 0,
+  tasksClosed: 0,
+  tasksKnockOn: 0,
+  tasksLeftAlone: 0,
+  failed: [],
+}
+
+/** The durable identity written on a bead at creation and matched on at re-elaboration. */
+const elabSlug = (text) =>
+  String(text == null ? '' : text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+const storyElabKey = (s) => `story:${repoSlug(asText(s.repoPath)) || 'repo'}`
+const taskElabKey = (t) => `task:${repoSlug(asText(t.repoPath)) || 'repo'}:${elabSlug(t.title)}`
+const normText = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
+
+// The existing children, keyed the two ways a match can be made. Empty on a minted Epic —
+// it did not exist a moment ago, so it cannot be carrying anything, and the survey would
+// cost a session to learn that.
+const existingStories = new Map() // elab key -> node
+const existingByParent = new Map() // parent id -> node[]
+// The raw survey reply, kept so the backfill heal below reuses it. Both want exactly the
+// same listing — this Epic's children to depth 2 — and paying for it twice in one run is
+// one session spent to learn a fact this run already holds.
+let epicChildrenNodes = null
+if (emitPathFault) reelab.reason = 'nothing was surveyed — the beads path was refused'
+else if (!epicId) reelab.reason = 'no Epic id — there was nothing to survey under'
+else if (!epicAdopted) reelab.reason = 'the Epic was minted by this run, so it has no children to update'
+else {
+  reelab.ran = true
+  let survey = null
+  try {
+    survey = await settleAgent(
+      `${writerPreamble}${JSON.stringify({
+        repoPath: emitTarget,
+        level: 'survey',
+        beads: [],
+        links: [],
+        surveys: [{ key: 'reelaboration', parentId: epicId, depth: 2 }],
+        mutations: [],
+      })}`,
+      { label: 'beads:survey-existing', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+    )
+  } catch (e) {
+    reelab.reason = `the re-elaboration survey dispatch failed: ${(e && e.message) || e}`
+  }
+  const surveyed = ((survey && Array.isArray(survey.surveys) ? survey.surveys : []).find((x) => x && x.key === 'reelaboration')) || null
+  const nodes = surveyed && surveyed.ok === true && Array.isArray(surveyed.nodes) ? surveyed.nodes : []
+  if (surveyed && surveyed.ok === true) epicChildrenNodes = nodes
+  if (!reelab.reason && (!surveyed || surveyed.ok !== true)) {
+    // A survey that could not be read leaves BOTH maps empty, and empty means "write
+    // everything" — the pre-existing behaviour. That is the wrong direction to fail in, so
+    // it is recorded loudly rather than passed over as "no children found".
+    reelab.reason = `the Epic's children could not be listed, so nothing could be matched and this run may duplicate them: ${(surveyed && surveyed.error) || 'the writer reported no survey'}`
+    reelab.failed.push({ what: 'survey', reason: reelab.reason })
+  }
+  for (const n of nodes) {
+    const id = n && typeof n.id === 'string' ? n.id.trim() : ''
+    if (!SAFE_BEAD_ID.test(id)) continue
+    const node = {
+      id,
+      type: String((n && n.type) || '').toLowerCase(),
+      status: String((n && n.status) || '').toLowerCase(),
+      title: normText(n && n.title),
+      description: normText(n && n.description),
+      parent: n && typeof n.parent === 'string' && n.parent.trim() ? n.parent.trim() : null,
+      elabKey: n && typeof n.elabKey === 'string' && n.elabKey.trim() ? n.elabKey.trim() : null,
+      repoPath: n && typeof n.repoPath === 'string' && n.repoPath.trim() ? n.repoPath.trim() : null,
+      labels: (Array.isArray(n && n.labels) ? n.labels : []).map((l) => String(l || '').toLowerCase()),
+    }
+    if (node.parent) {
+      if (!existingByParent.has(node.parent)) existingByParent.set(node.parent, [])
+      existingByParent.get(node.parent).push(node)
+    }
+    if (node.type === 'story' && node.parent === epicId) {
+      const key = node.elabKey || (node.repoPath ? `story:${repoSlug(node.repoPath)}` : null)
+      if (key && !existingStories.has(key)) existingStories.set(key, node)
+    }
+  }
+}
+
+// `close` and `update` are decided HERE, one bead at a time, and handed to the writer as
+// named mutations. The writer picks nothing — see its charter.
+const reelabMutations = []
+const openChildren = (parentId) => (existingByParent.get(parentId) || []).filter((c) => c.status !== 'closed')
+
+// STORIES. A Story is matched by the repository it covers. A matched Story is adopted, so
+// the wave below skips it; the only thing that changes on it is prose, and only while it is
+// open. An existing Story this run no longer covers is closed only when nothing under it is
+// still open — a Story holding started or finished work is not "gone", whatever the new
+// span says, and closing it would hide that work.
+const reelabStoryOf = new Map() // story local key -> matched node
+if (reelab.ran) {
+  const covered = new Set()
+  for (const s of stories) {
+    const key = storyElabKey(s)
+    const match = existingStories.get(key)
+    if (!match) continue
+    covered.add(match.id)
+    reelabStoryOf.set(s.key, match)
+    s.id = match.id
+    reelab.storiesMatched += 1
+    if (match.status === 'open' && (normText(s.title) !== match.title || normText(s.description) !== match.description)) {
+      reelabMutations.push({
+        key: `update:${match.id}`,
+        op: 'update',
+        id: match.id,
+        title: asText(s.title) || String(s.key),
+        description: asText(s.description),
+      })
+    }
+  }
+  for (const node of existingStories.values()) {
+    if (covered.has(node.id) || node.status === 'closed') continue
+    const open = openChildren(node.id)
+    if (open.length) {
+      reelab.failed.push({ what: node.id, reason: `left open: this Epic's span no longer covers it, but ${open.length} child(ren) under it are not closed` })
+      continue
+    }
+    reelabMutations.push({
+      key: `close:${node.id}`,
+      op: 'close',
+      id: node.id,
+      reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the repository this Story covered is no longer in the Epic's span, and nothing under it is still open.`,
+    })
+  }
+}
+
+// TASKS. Matched by the durable key, then by title under the same Story for a Task written
+// before the key existed. What happens next is decided by the Task's STATUS and by nothing
+// else — see the rule at the head of this block.
+const reelabKnockOn = []
+if (reelab.ran) {
+  const matchedIds = new Set()
+  for (const t of tasks) {
+    const story = reelabStoryOf.get(t.parentStoryId)
+    if (!story) continue
+    const siblings = existingByParent.get(story.id) || []
+    // Computed exactly as the create computes it, from the Task's OWN repoPath. Deriving it
+    // from anything else here would produce a key the create never wrote, and the match would
+    // miss every time while looking like it had been tried.
+    const key = taskElabKey(t)
+    const match =
+      siblings.find((c) => c.type === 'task' && c.elabKey === key) ||
+      siblings.find((c) => c.type === 'task' && !c.elabKey && c.title === normText(t.title)) ||
+      null
+    if (!match) continue
+    matchedIds.add(match.id)
+    reelab.tasksMatched += 1
+    const wanted = normText([asText(t.description), taskContractBlock(t)].filter(Boolean).join('\n\n'))
+    if (match.status === 'open') {
+      // Nothing has been built against it, so the current decomposition simply replaces it.
+      t.id = match.id
+      reelab.tasksUpdated += 1
+      if (normText(t.title) !== match.title || wanted !== match.description) {
+        reelabMutations.push({ key: `update:${match.id}`, op: 'update', id: match.id, title: asText(t.title) || String(t.key), description: wanted })
+      }
+      continue
+    }
+    // Started or built: its text is what somebody worked from, and it is not rewritten.
+    t.id = match.id
+    if (normText(t.title) === match.title && wanted === match.description) {
+      reelab.tasksLeftAlone += 1
+      continue
+    }
+    reelabKnockOn.push({ task: t, existing: match, parentId: story.id })
+    reelab.tasksKnockOn += 1
+  }
+  // A Task the new decomposition no longer contains, closed with a reason that names the run.
+  for (const s of reelabStoryOf.values()) {
+    for (const c of existingByParent.get(s.id) || []) {
+      if (c.type !== 'task' || c.status !== 'open' || matchedIds.has(c.id)) continue
+      reelab.tasksClosed += 1
+      reelabMutations.push({
+        key: `close:${c.id}`,
+        op: 'close',
+        id: c.id,
+        reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the current decomposition of this Story no longer contains this Task, and no work had started on it.`,
+      })
+    }
+  }
+}
+
+// The knock-on Tasks. A change to work that is already built does not edit the built Task —
+// it becomes a NEW Task that fixes the affected feature and cites the one it follows. This is
+// the concrete answer to "I finished my task, but feature XYZ will no longer work".
+for (const k of reelabKnockOn) {
+  const t = k.task
+  tasks.push({
+    ...t,
+    id: null,
+    key: `${t.key}-knockon`,
+    title: `${asText(t.title)} (follow-up to ${k.existing.id})`,
+    description:
+      `${asText(t.description)}\n\n` +
+      `FOLLOW-UP. ${k.existing.id} already covered this work and is ${k.existing.status === 'closed' ? 'built' : 'in progress'}, so it was not rewritten. ` +
+      'This Task carries what the current specification says differently, against the same Story and the same contract.',
+    supersedes: k.existing.id,
+  })
+}
+if (reelab.ran) {
+  log(
+    `Re-elaboration: ${reelab.storiesMatched} Story/Stories matched, ${reelab.tasksMatched} Task(s) matched ` +
+      `(${reelab.tasksUpdated} updated in place, ${reelab.tasksLeftAlone} already built and unchanged, ${reelab.tasksKnockOn} carried as follow-up Tasks), ` +
+      `${reelab.tasksClosed} Task(s) closed as no longer specified` +
+      `${reelab.failed.length ? `, ${reelab.failed.length} left alone` : ''}.`
+  )
+}
+
 // 2) THE STORIES, in build order, each under the Epic's REAL id.
 const storyIds = new Map()
 if (!emitPathFault) {
@@ -4762,7 +5218,13 @@ if (!emitPathFault) {
         // The spec documents are owned by the Story (decision 6): a Task created under it
         // finds them with `bd show` on the Story.
         metadata: (() => {
-          const m = s.repoPath ? { repoPath: String(s.repoPath) } : {}
+          // `elab_key` is what a LATER run matches this Story on. It is written at the
+          // create and never recomputed from the title, which is the field most likely to
+          // be reworded. `decision_ids` is what a changed architecture decision finds it by.
+          const m = { elab_key: storyElabKey(s) }
+          if (s.repoPath) m.repoPath = String(s.repoPath)
+          const sd = Array.isArray(s.decisionIds) ? s.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
+          if (sd.length) m.decision_ids = JSON.stringify([...new Set(sd)])
           if (s.repoPath) {
             const slug = repoSlug(s.repoPath)
             Object.assign(
@@ -4838,9 +5300,15 @@ if (!emitPathFault && epicId) {
       // The CONTRACT is metadata too, for the same reason: the build lane reads these keys
       // off the Task (decision 6 — the producer that creates the Task puts the paths on it).
       metadata: (() => {
-        const m = {}
+        const m = { elab_key: taskElabKey(t) }
         if (t.repoPath) m.repoPath = String(t.repoPath)
         if (t.wsjf != null) m.wsjf = String(t.wsjf)
+        // The decisions this Task builds on, and — for a follow-up minted because the Task it
+        // replaces was already built — the Task it follows. Both are fields rather than prose:
+        // the impact pass reads them, and a person reading the notes line would not.
+        const td = Array.isArray(t.decisionIds) ? t.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
+        if (td.length) m.decision_ids = JSON.stringify([...new Set(td)])
+        if (typeof t.supersedes === 'string' && SAFE_BEAD_ID.test(t.supersedes)) m.elab_follows = t.supersedes
         return Object.assign(m, taskContractMetadata(t))
       })(),
     }))
@@ -4850,6 +5318,30 @@ if (!emitPathFault && epicId) {
     if (id) taskIds.set(t.key, id)
   }
 }
+
+// The re-elaboration mutations, applied in one dispatch now that the creates are done. Each
+// one names a bead and a single thing to do to it; the writer picks nothing. A failure here
+// is recorded and nothing else — an update that did not land leaves the previous run's text
+// on an OPEN bead, which is stale but not wrong, and it never fails a run that emitted.
+if (reelabMutations.length) {
+  let applied = null
+  try {
+    applied = await settleAgent(
+      `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'reelaborate', beads: [], links: [], surveys: [], mutations: reelabMutations })}`,
+      { label: 'beads:reelaborate', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+    )
+  } catch (e) {
+    reelab.failed.push({ what: '(all)', reason: `the re-elaboration dispatch failed: ${(e && e.message) || e}` })
+  }
+  const ok = new Set()
+  for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
+    if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+  }
+  for (const m of reelabMutations) {
+    if (!ok.has(m.key)) reelab.failed.push({ what: m.id, reason: `the ${m.op} was not confirmed by the writer` })
+  }
+}
+emission.reelaboration = reelab
 
 // The hierarchy that goes back carries the REAL ids, so "what was returned" and "what was
 // written" are the same object rather than two accounts of it.
@@ -4909,12 +5401,6 @@ if (pendingLinks.length) {
     else emission.links.failed.push({ from: e.from, to: e.to, reason: linkFault || 'the writer did not confirm this edge' })
   }
 }
-
-// Every id that leaves this script lands in command text another agent runs verbatim, so
-// an id that is not shaped like one is REFUSED rather than cleaned. Declared here because
-// the readiness gate below is the first thing that hands ids back out; the backfill heal
-// further down holds it to the same rule.
-const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
 
 // ── THE READINESS GATE RUNS HERE, ON THE TASK THAT WAS JUST WRITTEN ───────────
 //
@@ -5009,26 +5495,32 @@ else if (!epicAdopted) emission.heal.reason = 'the Epic was minted by this run, 
 else if (!healableStories.length) emission.heal.reason = 'no Story of this run is durable, so there is nowhere to re-parent a stand-in\u2019s Tasks'
 else {
   emission.heal.ran = true
-  let survey = null
-  try {
-    survey = await settleAgent(
-      `${writerPreamble}${JSON.stringify({
-        repoPath: emitTarget,
-        level: 'survey',
-        beads: [],
-        links: [],
-        surveys: [{ key: 'epic-children', parentId: epicId, depth: 2 }],
-        mutations: [],
-      })}`,
-      { label: 'beads:survey', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
-    )
-  } catch (e) {
-    emission.heal.reason = `the survey dispatch failed: ${(e && e.message) || e}`
-  }
-  const surveyed = ((survey && Array.isArray(survey.surveys) ? survey.surveys : []).find((x) => x && x.key === 'epic-children')) || null
-  const nodes = surveyed && surveyed.ok === true && Array.isArray(surveyed.nodes) ? surveyed.nodes : []
-  if (!emission.heal.reason && (!surveyed || surveyed.ok !== true)) {
-    emission.heal.reason = `the Epic's children could not be listed: ${(surveyed && surveyed.error) || 'the writer reported no survey'}`
+  // The re-elaboration survey above listed exactly this — the Epic's children to depth 2 —
+  // so it is reused rather than re-dispatched. Only a run where that survey did not happen
+  // or could not be read pays for one here.
+  let nodes = epicChildrenNodes
+  if (!nodes) {
+    let survey = null
+    try {
+      survey = await settleAgent(
+        `${writerPreamble}${JSON.stringify({
+          repoPath: emitTarget,
+          level: 'survey',
+          beads: [],
+          links: [],
+          surveys: [{ key: 'epic-children', parentId: epicId, depth: 2 }],
+          mutations: [],
+        })}`,
+        { label: 'beads:survey', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
+      )
+    } catch (e) {
+      emission.heal.reason = `the survey dispatch failed: ${(e && e.message) || e}`
+    }
+    const surveyed = ((survey && Array.isArray(survey.surveys) ? survey.surveys : []).find((x) => x && x.key === 'epic-children')) || null
+    nodes = surveyed && surveyed.ok === true && Array.isArray(surveyed.nodes) ? surveyed.nodes : []
+    if (!emission.heal.reason && (!surveyed || surveyed.ok !== true)) {
+      emission.heal.reason = `the Epic's children could not be listed: ${(surveyed && surveyed.error) || 'the writer reported no survey'}`
+    }
   }
   // Every id that goes back out lands in command text another agent runs verbatim, so an
   // id that is not shaped like one is REFUSED rather than cleaned — the same argument the
@@ -5328,6 +5820,18 @@ const runJournal = {
     'emit-beads',
   ],
   carriedFlags,
+  // ── WHAT THIS RUN DECLARED THAT OTHERS DEPEND ON ──────────────────────────────
+  // Collected from the producing minis, which collect it from their producing agents.
+  // Nothing here is derived from a timestamp, an mtime or a hash: an agent said it, or it
+  // is not here. The work-sequencing pass drains the same declarations off disk, from the
+  // Epic's artifact directory; this copy is the run's own record of what it declared.
+  materialChanges: [
+    ...((architecture.artifact && Array.isArray(architecture.artifact.materialChanges) ? architecture.artifact.materialChanges : [])),
+    ...((trdAuthoring.artifact && Array.isArray(trdAuthoring.artifact.materialChanges) ? trdAuthoring.artifact.materialChanges : [])),
+    ...specPairs.flatMap((pr) => (pr.spec && Array.isArray(pr.spec.materialChanges) ? pr.spec.materialChanges : [])),
+    ...decompositions.flatMap((d) => (d.artifact && Array.isArray(d.artifact.materialChanges) ? d.artifact.materialChanges : [])),
+  ],
+  architectureImpact,
   specFailures,
   reconFailures,
   decompositionFailures,
@@ -5375,6 +5879,7 @@ if (emission.verdict === 'none') {
     ...(removalWeaklyPlaced.length ? { removalWeaklyPlaced } : {}),
     ...(removalMalformed.length ? { removalMalformed } : {}),
     ...(outOfSpanFindings.length ? { outOfSpanFindings } : {}),
+    ...(architectureImpact && architectureImpact.ran ? { architectureImpact } : {}),
   }
 }
 // ── What crosses back, and the one thing that CANNOT be trimmed ────────────────
@@ -5501,6 +6006,11 @@ return {
   // contradict the span rather than confirm it — see outOfSpanFindings above. In the
   // journal it would be read only by someone who already suspected the span was wrong.
   ...(outOfSpanFindings.length ? { outOfSpanFindings } : {}),
+  // The items this run's architecture change reaches. `reElaborate` is a list of Epics the
+  // caller re-runs; the knock-on work is already in the hierarchy above. It crosses the
+  // boundary because it names work OUTSIDE this Epic that is now wrong, which is the one
+  // result nobody would go looking for in a journal after a run that reported success.
+  ...(architectureImpact && architectureImpact.ran ? { architectureImpact } : {}),
 }
   })()
 } catch (err) {

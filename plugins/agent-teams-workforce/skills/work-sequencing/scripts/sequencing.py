@@ -12,6 +12,7 @@ pass that emits an edge file. Everything here is set algebra and arithmetic over
     score-tasks   inherit Task value from its Epic and recompute Task WSJF
     rollup-epics  roll Epic job size up from its Tasks and recompute Epic WSJF
     eligibility   which Epics may be ELABORATED now, and why the rest may not
+    material-changes  the declarations waiting for a pass, and the ledger that drains them
 
 Every command prints ONE JSON object on stdout and names the tracker source it read.
 Writes happen only with `--apply`; without it every command is a dry run reporting
@@ -27,6 +28,7 @@ from pathlib import Path
 import beadgraph
 from beadgraph import Bead, Graph, GraphError, split_ids
 from edgeset import SequencingError, apply_edges, read_edges, validate
+from materialchanges import QueueError, queue
 from scoring import rollup_epics, score_tasks
 
 #: Elaboration states an Epic may carry. A blocking Epic gates elaboration until `done`.
@@ -152,11 +154,24 @@ def build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--apply", action="store_true", help="write; omit for a dry run")
 
     sub.add_parser("eligibility", help="which Epics may be elaborated now, and why not")
+
+    # A DECLARED change, never an inferred one. See `materialchanges` for why the queue is
+    # a directory of files an agent wrote rather than anything derived from file state.
+    mc = sub.add_parser(
+        "material-changes", help="declarations waiting for a pass; --drain records them as acted on"
+    )
+    mc.add_argument(
+        "--drain", action="store_true", help="record the pending declarations as acted on"
+    )
     return parser
 
 
 def run(args: argparse.Namespace) -> dict:
     """Dispatch one subcommand and return the object to print."""
+    # The queue is read off disk and needs no tracker, so it answers before the graph is
+    # built — a pass asks "is there anything to do" far more often than it does anything.
+    if args.command == "material-changes":
+        return {"command": args.command} | queue(args.directory, drain=args.drain)
     graph = beadgraph.load(
         args.directory, with_description=getattr(args, "with_description", False)
     )
@@ -181,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         payload = run(args)
-    except (SequencingError, GraphError, json.JSONDecodeError, OSError) as exc:
+    except (SequencingError, GraphError, QueueError, json.JSONDecodeError, OSError) as exc:
         print(json.dumps({"error": str(exc), "command": args.command}, indent=2))
         return 2
     print(json.dumps(payload, indent=2))

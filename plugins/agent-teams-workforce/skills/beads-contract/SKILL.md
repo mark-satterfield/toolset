@@ -156,7 +156,18 @@ question skips a phase on a statement no one made. The exact literal, and only i
 
 Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
 `wsjf`, `wsjf_calculated_at`, `ready_content_hash`. Build lane: `build_state`. Elaboration lane:
-`elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`.
+`elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`,
+`elab_key`, `elab_follows`, `decision_ids`.
+
+**`elab_key` is the identity a re-elaboration matches on**, written once at the create and never
+recomputed. A Story is keyed by the repository it covers, a Task by its repository and the slug
+of its title. Without it a second run of the same Epic has nothing to match against and writes a
+complete second set of Stories and Tasks beside the first. `elab_follows` names the Task a
+follow-up Task replaces — set when the original was already built and therefore was not
+rewritten. **`decision_ids` is the SAD entry tags the item was designed against**, as a compact
+JSON list; it is how a changed architecture decision finds the work resting on it, and it holds
+the SAD's own per-entry tags because those survive a rewording while a statement-derived id
+does not.
 
 WSJF rubrics (`epic-wsjf`, `task-wsjf`): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`,

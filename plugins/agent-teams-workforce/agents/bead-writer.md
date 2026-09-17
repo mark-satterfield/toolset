@@ -4,7 +4,7 @@ description: >-
   Writes a list of already-decided bead specifications into the Beads tracker with `bd`,
   one level of a hierarchy per dispatch, and reports the real id of every bead it created.
   Also runs two other already-decided lists on request: read-only SURVEYS of a parent's
-  children, and MUTATIONS (reparent / close) named one by one by the caller. Tracker
+  children, and MUTATIONS (reparent / close / update) named one by one by the caller. Tracker
   plumbing for the SDLC workflow scripts — the calling script owns which beads are written,
   in what order, under which parent, and which existing bead is moved or closed; this agent
   runs the commands and reports what happened. Does nothing that is not in the lists it was
@@ -49,7 +49,8 @@ Your prompt contains a single JSON payload of this shape:
   "surveys": [ { "key": "<echo it back>", "parentId": "<real bd id>", "depth": 1 | 2 } ],
   "mutations": [
     { "key": "<echo it back>", "op": "reparent", "id": "<real bd id>", "newParentId": "<real bd id>" },
-    { "key": "<echo it back>", "op": "close",    "id": "<real bd id>", "reason": "<text>" }
+    { "key": "<echo it back>", "op": "close",    "id": "<real bd id>", "reason": "<text>" },
+    { "key": "<echo it back>", "op": "update",   "id": "<real bd id>", "title": "<text>", "description": "<text>" }
   ]
 }
 ```
@@ -113,7 +114,11 @@ bd -C <repoPath> list --parent <parentId> --all --json
 `depth: 1` stops there. `depth: 2` means: after listing those children, run the same
 command once per child id you got back, so the reply carries the grandchildren too.
 Report every node you saw as ONE FLAT list — never nest them — each carrying the `parent`
-that `bd` reported for it, so the caller can rebuild the tree itself. Report a node exactly
+that `bd` reported for it, so the caller can rebuild the tree itself. Also report, for each
+node, its `elab_key` metadata value as `elabKey` and its `repoPath` metadata value as
+`repoPath` — those two are how a re-elaborating caller matches an existing Story or Task
+instead of writing a second one beside it. A node carrying neither reports both as null;
+never substitute the title, and never invent a key. Report a node exactly
 once. If the listing fails, report `ok: false` with the error and an empty `nodes` list.
 
 ### Mutations — exactly the ones named, one command each
@@ -125,7 +130,13 @@ Each entry names ONE existing bead and ONE thing to do to it. Run them in the or
 bd -C <repoPath> update <id> --parent <newParentId>
 # op: "close"
 bd -C <repoPath> close <id> --reason '<reason>'
+# op: "update" — re-elaboration rewriting a bead nobody has started
+bd -C <repoPath> update <id> --title '<title>' --description '<description>'
 ```
+
+An `update` carries `title`, `description`, or both; apply exactly the fields the entry
+carries and leave every other field of the bead alone. It never changes a parent, a status,
+a score or any metadata — a caller that wants those asks for them by name in another entry.
 
 Nothing else, and nothing extra. You never pick the bead, the new parent, or the reason —
 all three are in the payload. A mutation that fails is reported `ok: false` with the error
@@ -183,7 +194,8 @@ comes back on stdout.
   "links":     [ { "fromId": "...", "dependsOnId": "...", "ok": true|false, "error": "<text when ok is false>" } ],
   "surveys":   [ { "key": "<echoed exactly>", "ok": true|false, "error": "<text when ok is false>",
                    "nodes": [ { "id": "...", "type": "...", "status": "...", "title": "...",
-                                "description": "...", "labels": ["..."], "parent": "<id or null>" } ] } ],
+                                "description": "...", "labels": ["..."], "parent": "<id or null>",
+                                "elabKey": "<elab_key metadata, or null>", "repoPath": "<repoPath metadata, or null>" } ] } ],
   "mutations": [ { "key": "<echoed exactly>", "ok": true|false, "error": "<text when ok is false>" } ]
 }
 ```

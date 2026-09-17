@@ -63,6 +63,7 @@ run that reports exactly what it would do.
 | `score-tasks [--apply]` | Inherits each Task's value from its Epic (walking Story → Epic), computes RR-OE from the graph, recomputes WSJF. No model call. |
 | `rollup-epics [--apply]` | Replaces each Epic's span estimate with the sum of its Tasks' job sizes and rescores it. |
 | `eligibility` | Which Epics may be elaborated now, and for each of the rest, why not. |
+| `material-changes [--drain]` | The declarations waiting for a pass, and the decision ids they name. `--drain` records them as acted on; it never deletes the artifact. |
 
 ### The edge file
 
@@ -117,6 +118,15 @@ correcting it is part of the job.
 - **When scored items are missing.** `eligibility` reporting anything in `unscored` means
   the provider cannot sort its own pool. That is a request for sequencing, not a fallback
   to an invented order.
+- **When a material change is queued.** `material-changes` returning anything pending means
+  an agent that produced a work product DECLARED that what it changed is something others
+  depend on, and named the decision ids. Re-sequence against them, then `--drain`.
+
+  Nothing here is triggered by a timestamp, a file mtime or a content hash, and nothing ever
+  will be: an mtime moves when a formatter runs and a hash changes when a sentence is
+  reworded, and neither says whether anything else depends on what changed. Only the agent
+  that did the work knows that, so only a declaration counts. A run whose producers declared
+  nothing has changed nothing, as far as this pass is concerned.
 - **When a decomposition lands.** `score-tasks` and `rollup-epics` are arithmetic; re-run
   them and the portfolio stays current for free.
 

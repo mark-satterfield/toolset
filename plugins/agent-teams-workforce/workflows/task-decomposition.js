@@ -92,6 +92,120 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── MATERIAL CHANGE IS DECLARED, NEVER INFERRED ──────────────────────────────────
+//
+// Nothing downstream is triggered by a timestamp, a file mtime or a content hash. An
+// mtime moves when a formatter runs and a hash changes when a sentence is reworded;
+// neither fact says whether anything ELSE depends on what changed. Only the agent that
+// did the work knows that, so the agents that produce WORK PRODUCTS declare it in their
+// structured result. Routine work — a status move, a journal line, a checkpoint —
+// declares material:false, or says nothing at all.
+//
+// The field is OPTIONAL in the schema on purpose. Every schema here is
+// additionalProperties:false, so it has to be ADDED for an agent to be allowed to return
+// it; but making it REQUIRED would turn a forgotten metadata field into a StructuredOutput
+// rejection, which settleAgent reads as a dead agent and the caller as a dispatch failure.
+// A missing declaration is recorded as `undeclared` instead — visible without being fatal.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const MATERIAL_CHANGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['material'],
+  properties: {
+    // true only when something OUTSIDE this artifact depends on what changed.
+    material: { type: 'boolean' },
+    kind: {
+      type: 'string',
+      enum: [
+        'architecture-decision',
+        'constraint',
+        'crosscutting-concept',
+        'interface-contract',
+        'data-model',
+        'event-contract',
+        'error-contract',
+        'technical-requirement',
+        'acceptance-criteria',
+        'task-breakdown',
+        'none',
+      ],
+    },
+    // ONE sentence naming what others depend on — the fact, not the edit.
+    summary: { type: 'string' },
+    // The durable SAD entry tags this change creates, changes or retires. These are what
+    // TRDs, Specs and Task beads cite, and what the impact pass looks citing items up by.
+    decisionIds: { type: 'array', items: { type: 'string' } },
+    suspectedImpact: { type: 'array', items: { type: 'string' } },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+  },
+}
+function withMaterialChange(schema) {
+  if (!schema || typeof schema !== 'object' || schema.type !== 'object') return schema
+  return { ...schema, properties: { ...(schema.properties || {}), materialChange: MATERIAL_CHANGE_SCHEMA } }
+}
+// Every declaration this script collected, in dispatch order. The caller carries it up and
+// the run journal records it, so a declaration is readable even when the queue file below
+// was never written.
+const materialChanges = []
+function recordMaterialChange(result, who) {
+  const w = who && typeof who === 'object' ? who : {}
+  const at = { producer: w.producer || null, phase: w.phase || null, artifact: w.artifact || null }
+  const m = result && typeof result === 'object' ? result.materialChange : null
+  if (!m || typeof m !== 'object') {
+    materialChanges.push({ ...at, material: null, undeclared: true, kind: null, summary: null, decisionIds: [], suspectedImpact: [], confidence: null })
+    return null
+  }
+  const list = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
+  const entry = {
+    ...at,
+    material: m.material === true,
+    undeclared: false,
+    kind: typeof m.kind === 'string' ? m.kind : null,
+    summary: typeof m.summary === 'string' ? m.summary : null,
+    decisionIds: list(m.decisionIds),
+    suspectedImpact: list(m.suspectedImpact),
+    confidence: typeof m.confidence === 'string' ? m.confidence : null,
+  }
+  materialChanges.push(entry)
+  return entry
+}
+// Everything the run declared that OTHERS depend on, deduplicated by decision id.
+const materialChangeIds = () => [...new Set(materialChanges.filter((x) => x.material).flatMap((x) => x.decisionIds))]
+// What every producing agent is told. The same words everywhere, so the field means the
+// same thing wherever it is read.
+const MATERIAL_CHANGE_BRIEF = `
+
+DECLARE WHETHER THIS CHANGED SOMETHING OTHERS DEPEND ON — return it under \`materialChange\`.
+You are the only one who knows. Nothing is inferred from a timestamp, a file date or a hash,
+because none of those says whether anything else depends on what you wrote.
+- \`material\`: true when something OUTSIDE this artifact — another document, a spec already
+  written, a Task already planned or already built — is now wrong, or would be built wrong,
+  because of what you changed. False when the change is routine: a restatement, a status
+  move, a checkpoint, or a fact nothing else reads.
+- \`kind\`: what sort of thing changed; \`none\` when material is false.
+- \`summary\`: ONE sentence naming what others depend on — the fact, not the edit.
+- \`decisionIds\`: the durable SAD entry tags this change creates, changes or retires, written
+  exactly as the SAD writes them. Empty when none apply.
+- \`suspectedImpact\`: what you suspect is affected, named as plainly as you can — a document, a
+  repository, a feature. A suspicion is useful; a guess dressed as a finding is not.
+- \`confidence\`: how sure you are that the declaration above is right.
+Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
+nobody looked at stops working.`
+// The queue the work-sequencing pass drains. One file per declaration, written the same way
+// every other artifact in this pipeline is written, because an agent that can Write a file
+// can always write this one — appending to a shared log cannot be relied on the same way.
+function materialChangeBrief(art, slot) {
+  if (!art || !slot) return MATERIAL_CHANGE_BRIEF
+  return `${MATERIAL_CHANGE_BRIEF}
+THEN QUEUE IT, but ONLY when \`material\` is true: write your \`materialChange\` object, plus
+\`producer\` (your agent type) and \`at\` (the current UTC timestamp, ISO-8601), as ONE JSON object
+to ${art.dir}/material-change-${slot}.json with the Write tool. That directory is the queue the
+work-sequencing pass drains; a declaration that reaches only your result is read by this run and
+by nothing after it. When \`material\` is false, write nothing there.`
+}
+
 // args: {
 //   spec:  { id?, title?, description?, source?, repoPath? },  // the Spec being decomposed;
 //                                                              // repoPath is the ONE repository the
@@ -361,6 +475,10 @@ const taskSchema = {
     specPaths: { type: 'array', items: { type: 'string' } },
     specSections: { type: 'array', items: { type: 'string' } },
     requirementIds: { type: 'array', items: { type: 'string' } },
+    // The SAD entry ids this task builds on, as the spec documents cite them. It is how a
+    // changed architecture decision finds the Tasks resting on it — the Task bead is the
+    // last place the architecture is visible before somebody starts writing code.
+    decisionIds: { type: 'array', items: { type: 'string' } },
     surfaces: { type: ['array', 'null'], items: { type: 'string', enum: SURFACES } },
   },
 }
@@ -555,6 +673,7 @@ Every task also carries its CONTRACT, taken from the spec documents listed below
 - \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each (never an absolute path, never a path you were not given). At least one.
 - \`specSections\`: the headings or anchors inside those documents that define this task (e.g. "spec-x.md#POST /sessions", "spec-x.data-model.md#Sessions table").
 - \`requirementIds\`: the PRD/TRD requirement ids the task satisfies, as the documents write them. Empty only if the documents carry no ids.
+- \`decisionIds\`: the SAD entry ids (\`C-…\`, \`S-…\`, \`X-…\`, \`AD-…\`) the spec documents cite for the part of the design this task builds. Copy them; never invent one, never paraphrase one, never substitute a section number. Empty only if the documents cite none.
 - \`definitionOfDone\`: the Definition of Done items that apply to this task, from the spec's DoD.
 - \`surfaces\`: the boundaries the task touches, from the enum only (${SURFACES.join(', ')}). An empty list means you checked and it touches none of them (internal-only work). null means the spec does not settle it — unknown, never guessed.
 And once for the whole set, \`testStrategy\`: the test strategy the spec states (pyramid, coverageThreshold, envMatrix, and the section it came from as \`source\`), or null when the spec states none. Do not invent one.
@@ -563,13 +682,13 @@ JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`)
 
 JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, and a one-line \`rationale\` for the size. Every key exactly once.
 
-${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
+${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}${materialChangeBrief(ART, `tasks-${artSlug}`)}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
     phase: 'Decompose',
     agentType: 'agent-teams-workforce:task-decomposer',
-    schema: {
+    schema: withMaterialChange({
       type: 'object',
       additionalProperties: false,
       required: ['tasks', 'testStrategy', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores'],
@@ -595,9 +714,10 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
         scores: { type: 'array', items: wsjfTaskSchema },
         notes: { type: 'string' },
       },
-    },
+    }),
   }
 )
+if (maker) recordMaterialChange(maker, { producer: 'task-decomposer', phase: 'Decompose', artifact: `tasks-${artSlug}.json` })
 // ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ─────────────────────
 //
 // A maker or checker that DIED did not decompose the spec badly — it never ran. Reported
@@ -882,6 +1002,8 @@ const orderIndex = {}
 // that cited nothing usable is linked to every supplied document rather than to none. A
 // saved maker output from before these fields existed replays the same way.
 const strList = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
+// The Spec's own decision citations, supplied by the caller from the spec set it authored.
+const specDecisionIds = strList(a.decisionIds)
 const refByPath = new Map(specDocs.filter((d) => d.ref).map((d) => [d.path, d.ref]))
 function taskSpecPaths(t) {
   const cited = strList(t.specPaths).map((p) => refByPath.get(p) || p).filter((p) => citableRefs.includes(p))
@@ -905,6 +1027,10 @@ const beadSet = tasks
     specPaths: taskSpecPaths(t),
     specSections: strList(t.specSections),
     requirementIds: strList(t.requirementIds),
+    // A task that cited no decision inherits the Spec's set rather than recording none: the
+    // Story was designed against those decisions and so was every task under it, and an empty
+    // list here would hide the task from the impact pass entirely.
+    decisionIds: strList(t.decisionIds).length ? strList(t.decisionIds) : specDecisionIds,
     surfaces: taskSurfaces(t), // null = unknown
     testStrategy,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
@@ -927,6 +1053,8 @@ return {
   testStrategy,
   specDocs: citableRefs,
   wsjfScores,
+  materialChanges,
+  decisionIds: [...new Set(beadSet.flatMap((b) => b.decisionIds))],
   scoringReview,
   scoringDisputed,
   scoringFindings: scoringDisputed

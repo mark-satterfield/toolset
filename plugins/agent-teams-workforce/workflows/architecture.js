@@ -95,6 +95,120 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── MATERIAL CHANGE IS DECLARED, NEVER INFERRED ──────────────────────────────────
+//
+// Nothing downstream is triggered by a timestamp, a file mtime or a content hash. An
+// mtime moves when a formatter runs and a hash changes when a sentence is reworded;
+// neither fact says whether anything ELSE depends on what changed. Only the agent that
+// did the work knows that, so the agents that produce WORK PRODUCTS declare it in their
+// structured result. Routine work — a status move, a journal line, a checkpoint —
+// declares material:false, or says nothing at all.
+//
+// The field is OPTIONAL in the schema on purpose. Every schema here is
+// additionalProperties:false, so it has to be ADDED for an agent to be allowed to return
+// it; but making it REQUIRED would turn a forgotten metadata field into a StructuredOutput
+// rejection, which settleAgent reads as a dead agent and the caller as a dispatch failure.
+// A missing declaration is recorded as `undeclared` instead — visible without being fatal.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const MATERIAL_CHANGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['material'],
+  properties: {
+    // true only when something OUTSIDE this artifact depends on what changed.
+    material: { type: 'boolean' },
+    kind: {
+      type: 'string',
+      enum: [
+        'architecture-decision',
+        'constraint',
+        'crosscutting-concept',
+        'interface-contract',
+        'data-model',
+        'event-contract',
+        'error-contract',
+        'technical-requirement',
+        'acceptance-criteria',
+        'task-breakdown',
+        'none',
+      ],
+    },
+    // ONE sentence naming what others depend on — the fact, not the edit.
+    summary: { type: 'string' },
+    // The durable SAD entry tags this change creates, changes or retires. These are what
+    // TRDs, Specs and Task beads cite, and what the impact pass looks citing items up by.
+    decisionIds: { type: 'array', items: { type: 'string' } },
+    suspectedImpact: { type: 'array', items: { type: 'string' } },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+  },
+}
+function withMaterialChange(schema) {
+  if (!schema || typeof schema !== 'object' || schema.type !== 'object') return schema
+  return { ...schema, properties: { ...(schema.properties || {}), materialChange: MATERIAL_CHANGE_SCHEMA } }
+}
+// Every declaration this script collected, in dispatch order. The caller carries it up and
+// the run journal records it, so a declaration is readable even when the queue file below
+// was never written.
+const materialChanges = []
+function recordMaterialChange(result, who) {
+  const w = who && typeof who === 'object' ? who : {}
+  const at = { producer: w.producer || null, phase: w.phase || null, artifact: w.artifact || null }
+  const m = result && typeof result === 'object' ? result.materialChange : null
+  if (!m || typeof m !== 'object') {
+    materialChanges.push({ ...at, material: null, undeclared: true, kind: null, summary: null, decisionIds: [], suspectedImpact: [], confidence: null })
+    return null
+  }
+  const list = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
+  const entry = {
+    ...at,
+    material: m.material === true,
+    undeclared: false,
+    kind: typeof m.kind === 'string' ? m.kind : null,
+    summary: typeof m.summary === 'string' ? m.summary : null,
+    decisionIds: list(m.decisionIds),
+    suspectedImpact: list(m.suspectedImpact),
+    confidence: typeof m.confidence === 'string' ? m.confidence : null,
+  }
+  materialChanges.push(entry)
+  return entry
+}
+// Everything the run declared that OTHERS depend on, deduplicated by decision id.
+const materialChangeIds = () => [...new Set(materialChanges.filter((x) => x.material).flatMap((x) => x.decisionIds))]
+// What every producing agent is told. The same words everywhere, so the field means the
+// same thing wherever it is read.
+const MATERIAL_CHANGE_BRIEF = `
+
+DECLARE WHETHER THIS CHANGED SOMETHING OTHERS DEPEND ON — return it under \`materialChange\`.
+You are the only one who knows. Nothing is inferred from a timestamp, a file date or a hash,
+because none of those says whether anything else depends on what you wrote.
+- \`material\`: true when something OUTSIDE this artifact — another document, a spec already
+  written, a Task already planned or already built — is now wrong, or would be built wrong,
+  because of what you changed. False when the change is routine: a restatement, a status
+  move, a checkpoint, or a fact nothing else reads.
+- \`kind\`: what sort of thing changed; \`none\` when material is false.
+- \`summary\`: ONE sentence naming what others depend on — the fact, not the edit.
+- \`decisionIds\`: the durable SAD entry tags this change creates, changes or retires, written
+  exactly as the SAD writes them. Empty when none apply.
+- \`suspectedImpact\`: what you suspect is affected, named as plainly as you can — a document, a
+  repository, a feature. A suspicion is useful; a guess dressed as a finding is not.
+- \`confidence\`: how sure you are that the declaration above is right.
+Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
+nobody looked at stops working.`
+// The queue the work-sequencing pass drains. One file per declaration, written the same way
+// every other artifact in this pipeline is written, because an agent that can Write a file
+// can always write this one — appending to a shared log cannot be relied on the same way.
+function materialChangeBrief(art, slot) {
+  if (!art || !slot) return MATERIAL_CHANGE_BRIEF
+  return `${MATERIAL_CHANGE_BRIEF}
+THEN QUEUE IT, but ONLY when \`material\` is true: write your \`materialChange\` object, plus
+\`producer\` (your agent type) and \`at\` (the current UTC timestamp, ISO-8601), as ONE JSON object
+to ${art.dir}/material-change-${slot}.json with the Write tool. That directory is the queue the
+work-sequencing pass drains; a declaration that reaches only your result is read by this run and
+by nothing after it. When \`material\` is false, write nothing there.`
+}
+
 // args: {
 //   decision: { id?, title, context, drivers?, repoPath? },  // the architecture question
 //   sadPath?: string,        // path to the arc42 SAD (defaults to the vault arch42 tree)
@@ -1111,17 +1225,18 @@ Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
 ${decisionHeader}
 
-${evidence}${persistBrief(ART, 'architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
+${evidence}${persistBrief(ART, 'architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}${materialChangeBrief(ART, 'architecture-decision')}`,
     {
       label: round === 1 ? 'decide:ruling' : `decide:ruling-r${round}`,
       effort: 'high',
       phase: 'Decide',
       agentType: 'agent-teams-workforce:architecture-decider',
-      schema: DECISION_SCHEMA,
+      schema: withMaterialChange(DECISION_SCHEMA),
     }
   )
 
   if (!decision) break
+  recordMaterialChange(decision, { producer: 'architecture-decider', phase: 'Decide', artifact: 'architecture-decision.md' })
   if (decision.admissible) break
 
   const blocking = decision.blockingRules || []
@@ -1313,6 +1428,15 @@ const designDrafts = draftsResult
   ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
   : []
 
+// ── THE TAGS ARE THE PRODUCT, NOT DECORATION ─────────────────────────────────────
+//
+// `arc42-extract` derives an entry's downstream ID from the salient nouns of its statement
+// UNLESS the SAD carries its own identifier for that entry, in which case the ID anchors to
+// the tag (`skills/arc42-extract/references/extraction-schema.md`, the stable-ID derivation
+// rule, branch 1). So without an explicit tag, rewording an entry RE-IDs it, and every TRD
+// requirement, spec and Task that cited the old ID silently stops resolving. That is why the
+// maintainer mints and preserves a tag on every §2/§4/§8 entry it writes, and why it reports
+// them: `entryTags` is how the run knows which durable ids this ruling put into circulation.
 const SAD_UPDATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1321,8 +1445,43 @@ const SAD_UPDATE_SCHEMA = {
     updatedSections: { type: 'array', items: { type: 'string' } },
     changedFiles: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
+    entryTags: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['tag', 'section', 'disposition'],
+        properties: {
+          tag: { type: 'string' },
+          section: { type: 'integer', enum: [2, 4, 8] },
+          // minted = a new entry; preserved = an entry this pass reworded and kept its tag;
+          // superseded = an entry this ruling overturns, whose tag is never reused.
+          disposition: { type: 'string', enum: ['minted', 'preserved', 'superseded'] },
+          statement: { type: 'string' },
+          supersededBy: { type: 'string' },
+        },
+      },
+    },
   },
 }
+
+// The tag discipline, stated once and given to both the first pass and the resume pass.
+const SAD_TAG_BRIEF = `
+TAG EVERY §2/§4/§8 ENTRY YOU WRITE, AND NEVER RECYCLE A TAG.
+Downstream documents and Task beads cite these entries by id, and the extractor derives that id
+from the entry's WORDING unless the entry carries its own tag — so an untagged entry loses its
+identity the moment anybody rewords it, and every citation to it rots without a single error.
+- Every entry in §2 Constraints, §4 Solution Strategy and §8 Crosscutting Concepts carries an
+  explicit tag, written at the head of the entry in the form this SAD already uses (\`C-…\` for a
+  constraint, \`S-…\` for a solution-strategy entry, \`X-…\` for a crosscutting concept, \`AD-…\` for
+  a decision recorded in §9). Short, kebab-case, descriptive of the FACT.
+- An entry that already has a tag KEEPS it, whatever you do to its wording. Rewording is not a
+  new fact; only a different fact is a different fact.
+- A tag is NEVER reused for a different fact. When this ruling overturns an entry, leave that
+  entry's tag attached to the superseded statement, mark it superseded by the new tag, and mint
+  a NEW tag for the replacement. Two facts sharing one tag is the failure this rule exists to
+  prevent, and it is worse than a tag nobody cites.
+- Report every tag you minted, preserved or superseded under \`entryTags\`.`
 
 const CONFORMANCE_SCHEMA = {
   type: 'object',
@@ -1348,6 +1507,8 @@ Never record an "unresolved" or "contradiction" marker for a claim this ruling s
 NEVER LABEL THE ADOPTED OPTION WITH A BARE PROPOSAL LETTER.
 Option letters are packet-local and do not survive outside the packet — the same letter routinely names an eliminated option elsewhere. Write the descriptive name. Where a provenance label is needed, write the full dual label, never a bare letter.
 
+${SAD_TAG_BRIEF}
+
 MARK WHAT THIS RULING SUPERSEDES IN PROVENANCE, NOT ONLY IN PROSE.
 If a \`derived_from\` entry asserts a state this ruling overturns, append a supersession marker naming this decision to that entry. A reader or extractor reading provenance alone must not come away with two rulings asserting opposite states.
 
@@ -1360,13 +1521,13 @@ Decision artifacts already authored (consolidate references into the SAD; do NOT
 ${JSON.stringify({ fitnessFunctions: authoredArtifacts.fitnessFunctions, diagrams: authoredArtifacts.diagrams, designDrafts }, null, 2)}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
-Deliver: which §2/§4/§8 sections you changed, the file paths edited, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
+Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}${materialChangeBrief(ART, 'sad-update')}`,
     {
       label: 'sad:maintain',
       effort: 'medium',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-maintainer',
-      schema: SAD_UPDATE_SCHEMA,
+      schema: withMaterialChange(SAD_UPDATE_SCHEMA),
     }
   )
 }
@@ -1408,19 +1569,21 @@ function resumeSad(reviewerFeedback) {
     `You are the sad-maintainer, RESUMING an interrupted pass. A previous sad-maintainer session consolidated the ruling below into the living arc42 SAD at ${sadPath} but ended before it returned its result. Its edits are already in the working tree.
 
 Do NOT start over and do NOT re-read the whole SAD. Run \`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath} to see what was changed, open only the changed files you need, finish any statement of a changed claim the previous pass left inconsistent (targeted grep, list files only — never print whole files), and return. Keep §2/§4/§8 mutually consistent; no changelog narrative; never label the adopted option with a bare proposal letter.
+${SAD_TAG_BRIEF}
+Check the entries the previous pass touched: an entry it rewrote WITHOUT a tag needs one before you return, and an entry whose tag it changed needs the original tag restored.
 
 Ruling: ${decision.ruling}
 Chosen approach: ${decision.chosenApproach}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
-Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
+Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}${materialChangeBrief(ART, 'sad-update')}`,
     {
       label: 'sad:maintain-resume',
       effort: 'medium',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-maintainer',
-      schema: SAD_UPDATE_SCHEMA,
+      schema: withMaterialChange(SAD_UPDATE_SCHEMA),
     }
   )
 }
@@ -1432,6 +1595,7 @@ let sadUpdateFailed = false
 for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
   sadUpdate = await authorSad(reviewerFeedback)
   if (!sadUpdate) sadUpdate = await resumeSad(reviewerFeedback)
+  if (sadUpdate) recordMaterialChange(sadUpdate, { producer: 'sad-maintainer', phase: 'Update SAD', artifact: 'sad-update.json' })
   if (!sadUpdate) {
     log(`SAD update pass ${pass}: the maintainer returned no result, including the resume pass — SAD update rejected`)
     sadUpdateFailed = true
@@ -1522,4 +1686,11 @@ return {
   designDrafts,
   sadUpdate,
   conformanceVerdict,
+  // What this run's producers declared about what OTHERS depend on, and the durable SAD
+  // entry tags the ruling put into circulation. The caller carries both up: the tags are
+  // what a TRD requirement, a spec and a Task bead cite, and the declarations are what the
+  // impact pass acts on. Neither is derived from a file date or a hash.
+  materialChanges,
+  materialChangeIds: materialChangeIds(),
+  entryTags: (sadUpdate && Array.isArray(sadUpdate.entryTags) ? sadUpdate.entryTags : []),
 }

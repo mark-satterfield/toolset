@@ -7,7 +7,7 @@ contract.
 
 ## Top-level structure
 
-The packet is an object with four buckets, one per extracted arc42 section. Every bucket is always
+The packet is an object with three buckets, one per extracted arc42 section (§2, §4, §8). Every bucket is always
 present, even when empty (an absent section is signaled inside the bucket, never by omitting it).
 
 ```json
@@ -91,23 +91,35 @@ A decision with supersession:
 IDs MUST be **deterministic** and **content-anchored**, not positional. The same SAD content yields
 the same ID on every re-run so downstream references survive section reordering and re-extraction.
 
-1. **Prefix by bucket** — `C-` constraints, `S-` solution strategy, `X-` crosscutting concepts.
+1. **Prefix by bucket** — `C-` constraints, `S-` solution strategy, `X-` crosscutting concepts,
+   `AD-` an entry whose SAD source is a §9 architecture-decision record surfaced into one of the
+   three buckets as current state. An `AD-` entry carries `sourceSection: 9`; §9 is a source, never
+   a fourth bucket (see `trd-feed-contract.md`, Guarantee 1).
 2. **Slug from the strongest available anchor**, in priority order:
-   - the SAD's own identifier for the item (e.g. a constraint tag `TC-3`) if one exists, slugified;
+   - **the SAD's own identifier for the entry, slugified — and this is the normal case, not the
+     exception.** `sad-maintainer` mints an explicit tag on every §2/§4/§8 entry it writes and
+     preserves it across every rewording, precisely so the ID anchors here;
    - else a short kebab-case slug derived from the salient nouns of the `statement` (lowercase, ASCII, hyphen-separated, ~2–4 tokens).
 3. **Disambiguate collisions** by appending a numeric suffix (`-2`, `-3`) in stable document order, only when two entries would otherwise produce the same slug.
 
 The ID is an opaque-but-readable handle. Downstream authors cite it; they do not parse it for
-meaning beyond the bucket prefix. Because IDs are content-anchored, editing a statement's wording
-may change its ID — that is intentional: a materially changed statement is a new fact, and the
-contract's supersession mechanism (not ID reuse) is how change is tracked.
+meaning beyond the bucket prefix.
+
+**Which branch of rule 2 an entry lands on decides whether its citations survive an edit**, and
+that is why the tag matters. A TAGGED entry keeps its ID through any rewording: the tag is the
+anchor, the words are not, and a TRD requirement, a spec or a Task bead citing it keeps resolving.
+An UNTAGGED entry is anchored to the salient nouns of its statement, so rewording those nouns
+re-IDs it and every citation to it stops resolving — with no error anywhere, which is the whole
+danger. Changing a tag is therefore reserved for a genuinely different fact: a materially changed
+statement is a new fact, it gets a new tag, and the contract's supersession mechanism (never ID
+reuse) is how that change is tracked.
 
 ## Validation invariants
 
 Before emitting, assert:
 
-- Every entry has non-empty `id`, integer `sourceSection` in `{2,4,8,9}`, non-empty `statement`, and a `rationaleRef` key (value may be `null`).
+- Every entry has non-empty `id`, integer `sourceSection` in `{2,4,8,9}`, non-empty `statement`, and a `rationaleRef` key (value may be `null`). `9` is legal and names a §9 decision record surfaced into one of the three buckets; it is not a bucket of its own.
 - `id` is unique across the **entire** packet, not just within a bucket.
-- Each entry's `sourceSection` equals its bucket's `sourceSection`.
+- Each entry's `sourceSection` equals its bucket's `sourceSection`, except an `AD-` entry drawn from §9, whose `sourceSection` is `9` while it sits in the bucket its content belongs to.
 - Every bucket is present; a `present: false` bucket has an empty `entries` list and a `missingReason`.
 - No entry's `statement` contains content that cannot be located in the SAD source recorded in `source.extractedFrom`.
