@@ -5826,7 +5826,7 @@ const runJournal = {
   // ── WHAT THIS RUN DECLARED THAT OTHERS DEPEND ON ──────────────────────────────
   // Collected from the producing minis, which collect it from their producing agents.
   // Nothing here is derived from a timestamp, an mtime or a hash: an agent said it, or it
-  // is not here. The work-sequencing pass drains the same declarations off disk, from the
+  // is not here. The dependencies-and-scoring pass drains the same declarations off disk, from the
   // Epic's artifact directory; this copy is the run's own record of what it declared.
   materialChanges: [
     ...((architecture.artifact && Array.isArray(architecture.artifact.materialChanges) ? architecture.artifact.materialChanges : [])),

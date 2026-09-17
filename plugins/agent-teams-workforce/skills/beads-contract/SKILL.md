@@ -174,7 +174,7 @@ WSJF rubrics (`epic-wsjf`, `task-wsjf`): the dimensions a score was built from â
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`,
 `wsjf_size_source`, `wsjf_size_task_days`, `wsjf_confidence`, `wsjf_value_from`. They are what
 lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
-either one re-judging anything. Sequencing (`work-sequencing`): `seq_owned_blockers`, a
+either one re-judging anything. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a
 comma-separated id list of the blocking edges that pass created on the bead, and
 `seq_owned_blockers_at`. The pass only ever withdraws an edge that list names, which is how a
 hand-made edge survives it.
