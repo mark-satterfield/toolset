@@ -133,10 +133,14 @@ test('NO ruling fails closed — silence is never permission', async () => {
 })
 
 test('the caller receives a headline and a journal path, never the phase artifacts', async () => {
-  const { result } = await runToExhaustion(COMPETITIVE)
+  const { result, logs } = await runToExhaustion(COMPETITIVE)
   // ssbd-rhfx: the success return carried the whole triage contract plus seven complete
   // phase artifacts, and single runs came back truncated. A campaign killed the session.
-  assert.equal(result.detailPath, '/repos/.claude/workflow-runs/run.jsonl', 'the detail must be reachable, by path')
+  // The detail is journaled by a RUN-JOURNAL log line the HOST persists (no model call), so
+  // the script itself reports no path and the host fills detailPath in.
+  assert.equal(result.detailPath, null, 'the script names no journal path; the host writes the journal and reports it')
+  const journal = logs.find((l) => l.startsWith('RUN-JOURNAL '))
+  assert.ok(journal && JSON.parse(journal.slice('RUN-JOURNAL '.length)).detail, 'the detail must be reachable, in the journal line')
   for (const gone of ['detail', 'results', 'contract']) {
     assert.equal(result[gone], undefined, `\`${gone}\` must not cross back to the caller — it is what filled the context window`)
   }

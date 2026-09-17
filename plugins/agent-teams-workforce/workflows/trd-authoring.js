@@ -104,9 +104,22 @@ const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-
 // packet. The extractor authors no TRD content — it only normalizes what the SAD
 // states. Invents nothing the SAD does not contain.
 phase('Extract SAD')
-log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 
-const sadExtract = await agent(
+// ── A PACKET THE CALLER ALREADY HOLDS IS REUSED, NOT RE-BOUGHT ─────────────────
+// The composite re-runs this mini when its gate sends the TRD back for rework. The SAD
+// cannot change between those passes (a gate that needs the architecture changed
+// ESCALATES and ends the run instead of looping), so the second pass used to pay the
+// extractor again for the packet the first pass already produced — on 2026-09-16 the
+// extractor was 2.26M of 38.0M weighted units across 17 runs. The caller passes the
+// first pass's packet back as `args.sadExtract`; only a packet with all three feeds is
+// believed, and anything else is extracted fresh.
+const isExtract = (x) =>
+  !!x && typeof x === 'object' && ['constraints', 'solutionStrategy', 'crosscuttingConcepts'].every((k) => Array.isArray(x[k]))
+const suppliedExtract = isExtract(a.sadExtract) ? a.sadExtract : null
+if (suppliedExtract) log('SAD extract supplied by the caller from an earlier pass of this run — reused; the extractor is not dispatched')
+else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
+
+const sadExtract = suppliedExtract || await agent(
   `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
 
 SAD location: ${sadRef}

@@ -136,33 +136,26 @@ const carriedFlags = []
 // hands its full artifact to the next one, and to its gate. Only the value that crosses
 // back out is trimmed.
 let runDetail = null
-async function persistRun(outcome) {
+// ── THE RUN JOURNAL IS WRITTEN BY THE HOST, NOT BY A MODEL ─────────────────────
+// This used to be an agent() call to `run-ledger-writer`: a whole model session to copy a
+// JSON payload the script already holds into a file. It ran on every exit path, so it
+// also ran AFTER the account wall went up (2026-09-16: `ledger:persist FAILED — You've hit
+// your session limit`), and across the 17 runs measured that day it cost 611,769 weighted
+// units for bytes the script had in hand. A workflow script has no filesystem, but the
+// harness keeps every log() line in its workflow record
+// (`<session>/workflows/wf_*.json`), and the Python host reads that record after every
+// dispatch. So the payload is logged ONCE as a machine-readable `RUN-JOURNAL {json}`
+// line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
+// (ops/sdlc-automation/runjournal.py), deterministically, with no model call. The path is
+// the host's to report, so this returns null and the host fills `detailPath` in.
+function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
   try {
-    const written = await agent(
-      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. JSON payload:\n${JSON.stringify({ composite: 'task-to-deploy', bead: null, subject: bead.id || null, outcome, carriedFlags, runLedger, detail: runDetail })}`,
-      {
-        label: 'ledger:persist',
-        phase: 'Run Ledger',
-        agentType: 'agent-teams-workforce:run-ledger-writer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['written'],
-          properties: {
-            written: { type: 'boolean' },
-            path: { type: 'string' },
-            lines: { type: 'number' },
-            runId: { type: 'string' },
-          },
-        },
-      }
-    )
-    return (written && written.path) || null
+    log(`RUN-JOURNAL ${JSON.stringify({ composite: 'task-to-deploy', bead: null, subject: bead.id || null, outcome, carriedFlags, runLedger, detail: runDetail })}`)
   } catch (e) {
-    log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
-    return null
+    log(`run journal could not be serialized (non-fatal): ${e && e.message ? e.message : e}`)
   }
+  return null
 }
 
 // The worktree the settle step lands. `contract.repoPath` is built inside the run's

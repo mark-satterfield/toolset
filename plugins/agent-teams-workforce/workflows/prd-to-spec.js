@@ -226,34 +226,10 @@ const partial = (stage, detail, extra) => {
   }
 }
 
-// Decision ledger for over-time mining (see run-ledger-writer). Each instrumented
-// mini returns a `ledger` on its artifact; collected here and persisted ONCE in a
-// finally so it runs on success, early-return, and throw alike.
-//
-// It gets its OWN phase, and that is load-bearing. This agent used to be tagged
-// `phase: 'Emit Beads'`, and because the finally runs on every exit path, a run
-// that died at Gate 1 still ticked the terminal phase green — the progress panel
-// reported a full Epic → Story → Task emission for a run that never reached
-// Architecture. Telemetry must never be able to paint a work phase complete, so
-// it reports under a phase that claims nothing about the work.
-//
-// THERE IS NO TIMEOUT ON THIS DISPATCH, AND THERE CANNOT BE ONE. agent() takes no
-// timeout or abort option, and the runner injects exactly seven globals — args,
-// agent, workflow, phase, log, parallel, budget — so there is no setTimeout to race
-// a dispatch against. Do not add one on the strength of a green test run: the test
-// harness compiles scripts through a code-generation intrinsic that is strictly MORE
-// permissive than the real runner, and that gap is exactly how 6.0.6 shipped a
-// workspace.js that could not load at all. The authority on what the runner accepts
-// is scripts/workflow-runner-constraints.mjs, not a passing suite.
-//
-// A GENERAL cap over every agent() would be worse than the problem even if it were
-// possible. Legitimate sessions here run to eight minutes and beyond — one ledger
-// write took 541 seconds because it was composing a large payload, and it completed
-// correctly. A cap tight enough to catch a stall would kill work that was going to
-// succeed, and for a reasoning agent that is a regression, not a fix. The way this
-// class of hang is closed is at the source: an agent must never issue an operation
-// that can BLOCK. See agents/run-ledger-writer.md for the five stalls that taught
-// this and the rule that came out of them.
+// Decision ledger for over-time mining. Each instrumented mini returns a `ledger` on
+// its artifact; collected here and journaled ONCE in a finally so it runs on success,
+// early-return, and throw alike — by a log line the host persists (see persistRun), so
+// journaling costs no model call and cannot hang or run into the account wall.
 const runLedger = []
 // Findings a gate could not get resolved inside its retry budget and that the
 // advantage-evaluator then ruled COMPETITIVE — carried forward rather than fatal. See
@@ -272,38 +248,26 @@ const carriedFlags = []
 // decide whether re-running is cheaper than reading. What changed is only that the caller
 // opens the artifacts deliberately instead of receiving them whether it wanted them or not.
 let runDetail = null
-// The run journal is written by `run-ledger-writer`, whose contract is JSONL telemetry, and
-// it writes nothing else for this composite: every phase artifact is saved by the session
-// that authored it (see ARTIFACTS below). The journal write is non-fatal.
-async function persistRun(outcome) {
+// ── THE RUN JOURNAL IS WRITTEN BY THE HOST, NOT BY A MODEL ─────────────────────
+// This used to be an agent() call to `run-ledger-writer`: a whole model session to copy a
+// JSON payload the script already holds into a file. It ran on every exit path, so it
+// also ran AFTER the account wall went up (2026-09-16: `ledger:persist FAILED — You've hit
+// your session limit`), and across the 17 runs measured that day it cost 611,769 weighted
+// units for bytes the script had in hand. A workflow script has no filesystem, but the
+// harness keeps every log() line in its workflow record
+// (`<session>/workflows/wf_*.json`), and the Python host reads that record after every
+// dispatch. So the payload is logged ONCE as a machine-readable `RUN-JOURNAL {json}`
+// line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
+// (ops/sdlc-automation/runjournal.py), deterministically, with no model call. The path is
+// the host's to report, so this returns null and the host fills `detailPath` in.
+function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
   try {
-    const written = await agent(
-      `Persist this SDLC workflow run's decision ledger AND its full phase detail — the detail is no longer returned to the caller, so this journal is the only place it exists. Touch no file but those two. JSON payload:\n${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`,
-      {
-        label: 'ledger:persist',
-        phase: 'Run Ledger',
-        effort: 'low',
-        agentType: 'agent-teams-workforce:run-ledger-writer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['written'],
-          properties: {
-            written: { type: 'boolean' },
-            path: { type: 'string' },
-            lines: { type: 'number' },
-            runId: { type: 'string' },
-            retired: { type: 'boolean' },
-          },
-        },
-      }
-    )
-    return (written && written.path) || null
+    log(`RUN-JOURNAL ${JSON.stringify({ composite: 'prd-to-spec', bead: null, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`)
   } catch (e) {
-    log(`ledger persist failed (non-fatal): ${e && e.message ? e.message : e}`)
-    return null
+    log(`run journal could not be serialized (non-fatal): ${e && e.message ? e.message : e}`)
   }
+  return null
 }
 
 
@@ -2740,6 +2704,8 @@ const TRD_INPUTS = [
   (a.sad && a.sad.path) || a.sadPath || null,
 ].filter(Boolean)
 let trdAuthoring
+// Held across the G2b rework loop so a second TRD pass reuses the first pass's SAD extract.
+let trdSadExtract = null
 const trdHit = resumeFresh('trd')
 if (trdHit && trdHit.artifacts['trd.md']) {
   reuseFrom('trd', trdHit, 'spec authoring reads the TRD from its file')
@@ -2780,6 +2746,9 @@ trdAuthoring = await gateLoop({
   structural: { requireOk: true, required: ['trd'] },
   phaseFn: (feedback) =>
     workflow('agent-teams-workforce:trd-authoring', {
+      // The first pass's SAD extract, reused on a rework pass: the SAD does not change
+      // inside this gate loop (an architecture change escalates and ends the run).
+      sadExtract: trdSadExtract || undefined,
       standingRulings,
       prd: {
         id: prd.id,
@@ -2831,6 +2800,9 @@ trdAuthoring = await gateLoop({
       repoPath,
       maxLoops: 1,
       feedback,
+    }).then((r) => {
+      if (r && r.sadExtract && !trdSadExtract) trdSadExtract = r.sadExtract
+      return r
     }),
 })
 if (trdAuthoring.ok) {

@@ -82,6 +82,9 @@ export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflo
   // composites at once. They are captured and returned now; a line a script emits is
   // output, and output that nothing ever reads is output nobody has checked.
   const logs = []
+  // Reachable from `calls` too, so helpers that take only the call list (journalPayload)
+  // can read the RUN-JOURNAL line the composites log instead of dispatching a writer.
+  Object.defineProperty(calls, 'logs', { value: logs, enumerable: false })
   const log = (line) => {
     logs.push(String(line == null ? '' : line))
   }
@@ -127,20 +130,19 @@ export function workflowCalls(calls, name) {
 /**
  * The payload a composite handed to the run journal.
  *
- * Composites no longer return their phase artifacts to the caller — a single run came back
- * with 22k characters truncated off the end, and a campaign of hundreds killed the
- * dispatching session. The detail goes to the run-ledger-writer instead and the caller
- * gets `detailPath`. Tests that used to assert against `result.detail` assert against this.
+ * Composites no longer return their phase artifacts to the caller, and they no longer
+ * dispatch a model to write the journal either: the payload is logged once as a
+ * `RUN-JOURNAL {json}` line, which the host reads from the harness's workflow record and
+ * writes to `.claude/workflow-runs/`. Tests that used to assert against `result.detail`
+ * assert against this.
  *
  * @returns {{ detail: any, runLedger: any[], carriedFlags: string[] }|null}
  */
 export function journalPayload(calls) {
-  const call = calls.find((c) => c.kind === 'agent' && c.label === 'ledger:persist')
-  if (!call) return null
-  const marker = 'JSON payload:\n'
-  const i = call.prompt.indexOf(marker)
-  if (i < 0) return null
-  return JSON.parse(call.prompt.slice(i + marker.length))
+  const marker = 'RUN-JOURNAL '
+  const line = (calls.logs || []).find((l) => l.startsWith(marker))
+  if (!line) return null
+  return JSON.parse(line.slice(marker.length))
 }
 
 /** Just the `detail` a composite journalled — what `result.detail` used to hold. */
