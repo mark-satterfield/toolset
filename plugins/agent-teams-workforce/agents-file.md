@@ -1,5 +1,5 @@
 ---
-hash: f6122de
+hash: cdf543e
 ---
 
 ## Instructions for Agent Teams Workforce
