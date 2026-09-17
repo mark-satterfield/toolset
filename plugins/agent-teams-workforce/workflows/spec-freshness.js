@@ -78,6 +78,9 @@ async function settleAgent(prompt, opts) {
       note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
     })
     log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    // A caller that owns its own failure reporting asks for the throw back, so the real
+    // reason reaches its catch instead of being flattened to "returned no result".
+    if (o.rethrow) throw err
     return null
   }
   if (out) return out
