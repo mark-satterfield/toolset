@@ -3,7 +3,7 @@
 
 WHY THIS IS CODE AND NOT PROSE. Two defects reached production because agents each
 guessed the storage layout. The content-hash recipe was written twice — once as `jq`
-prose in `skills/issue-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py` — and
+prose in `skills/task-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py` — and
 the two copies disagreed about `labels`, so they disagreed about exactly the beads the
 rule existed for. Separately, two work packages assumed acceptance criteria are a metadata
 key; they are PROSE, and may live on a parent. Prose read by a model is not deterministic.

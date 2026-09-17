@@ -4195,7 +4195,7 @@ async function decomposeStory(pair) {
     // Consumed by: the acyclic DAG is checked mechanically — task-decomposition.js rejects
     // a cyclic graph outright and prd-to-spec.js does the same for the Story graph — and it
     // is what `bd ready` walks to release work. The WSJF score is written into the emitted
-    // bead's notes and stored on the issue by skills/issue-ready, which reports it as
+    // bead's notes and stored on the issue by skills/task-ready, which reports it as
     // `wsjf`. Beads format is consumed by the bead-writer's `bd` calls, which fail without it.
     criteria: [
       { class: 'competitive', text: 'Tasks are atomic and each traces to a spec element' },
@@ -4925,7 +4925,7 @@ const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
 // unready bead in order to make it ready, and that inversion is what this step removes.
 //
 // The score is already on the bead — it was decided at decomposition and written as
-// metadata at the create above — so `issue-ready` finds it present and scores nothing. What
+// metadata at the create above — so `task-ready` finds it present and scores nothing. What
 // this step buys is the review verdict and the freshness watermark, established once, here,
 // while the run still knows what it just wrote.
 //

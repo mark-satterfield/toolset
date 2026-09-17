@@ -17,7 +17,7 @@ allowed-tools: [Bash]
 Two defects reached production because agents each guessed how beads stores things.
 
 1. **The content-hash recipe was written twice** — once as `jq` prose in
-   `skills/issue-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py`. The two copies
+   `skills/task-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py`. The two copies
    disagreed about `labels`, so they disagreed about exactly the beads the rule existed for.
 2. **Two work packages assumed acceptance criteria are a metadata key.** They are PROSE. They
    may live in the issue's own description, or in its parent Story or Epic. The requirement is
@@ -154,7 +154,7 @@ ruled, and the phase falls back to its own lead; `[]` means somebody checked and
 no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec never settled the
 question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
 
-Readiness gate, written by `issue-ready`: `review_status`, `review_missing`, `reviewed_at`,
+Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
 `wsjf`, `wsjf_calculated_at`, `ready_content_hash`. Build lane: `build_state`. Elaboration lane:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`.
 

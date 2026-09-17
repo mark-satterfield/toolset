@@ -1,9 +1,9 @@
 ---
-name: issue-ready
-description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review status and WSJF score when fresh, reruns the review when it is missing or stale, ALWAYS scores when no WSJF score is stored (the score and the review verdict are independent outputs — an INCOMPLETE review never skips scoring), records missing lineage or a missing repository as a note on the verdict rather than as a refusal, never clears a score it did not compute, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /issue-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
+name: task-ready
+description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review status and WSJF score when fresh, reruns the review when it is missing or stale, ALWAYS scores when no WSJF score is stored (the score and the review verdict are independent outputs — an INCOMPLETE review never skips scoring), records missing lineage or a missing repository as a note on the verdict rather than as a refusal, never clears a score it did not compute, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /task-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
 ---
 
-# Issue Ready — Readiness Gate
+# Task Ready — Readiness Gate
 
 Decide whether one issue is ready to implement, and persist that decision on the issue
 so the next run is cheap. The source of truth for an issue's state is **Beads** (primary)
@@ -78,7 +78,7 @@ On **GitHub** (no custom fields) the same keys are written into one machine-read
 marker comment instead:
 
 ```
-<!-- issue-ready:state
+<!-- task-ready:state
 review_status=COMPLETE
 review_missing=
 reviewed_at=2026-06-30T12:00:00Z
@@ -87,6 +87,11 @@ wsjf_calculated_at=2026-06-30T12:00:00Z
 ready_content_hash=ab12cd34ef56a7b8
 -->
 ```
+
+**Both spellings are read; only `task-ready:state` is written.** This skill used to be
+called `issue-ready`, and markers it wrote then — `<!-- issue-ready:state … -->` — sit in
+live GitHub issue bodies today. Accept either header when reading, take the most recent
+marker of either spelling, and always write the `task-ready:state` spelling.
 
 Read state from the most recent such marker; write a fresh marker each real run. Every
 marker carries `ready_content_hash=$H` — a marker written without it is the same defect as
@@ -122,8 +127,8 @@ Two consequences follow, and neither is a defect to be fixed here:
   somewhere, not that they occupy a field — so "`bd` exposes no `acceptance` key" says
   nothing about whether criteria are covered.
 
-  Criteria written in the issue's OWN description are inside `description`, which IS hashed
-  on both sides of the joint contract. Editing them changes the fingerprint and DOES release
+  Criteria written in the issue's OWN description are inside `description`, which IS hashed.
+  Editing them changes the fingerprint and DOES release
   a hold: a Task held on an INCOMPLETE verdict leaves the hold on that edit alone, with no
   title touch needed.
 
@@ -145,16 +150,16 @@ Two consequences follow, and neither is a defect to be fixed here:
 Never metadata, timestamps, status, or comments — so storing a verdict never invalidates it.
 
 **THE RECIPE HAS ONE IMPLEMENTATION: `content_hash` in the `agent-teams-workforce:beads-contract`
-skill.** This file no longer carries a copy, because carrying a copy is what broke it. The
-SkillSpoke pipeline still holds the second copy in `ops/sdlc-automation/readiness.py` — the
-function `content_hash`, with `CONTENT_HASH_FIELDS`, `CONTENT_HASH_PRESENT` and
-`CONTENT_HASH_LENGTH` beside it — and until that function calls the script instead, the two
-remain a joint contract: change it on both sides or on neither.
+skill.** This file carries no copy, and neither does anything else. `ops/sdlc-automation/readiness.py`
+used to hold a second copy and now shells out to `beads-contract.py` for every fingerprint it
+compares, so there is no joint contract left to keep in step: change the recipe in the one place
+that implements it.
 
-A recipe that drifts on one side re-invokes this skill forever on every affected bead: the
-Python reads a watermark it cannot reproduce, calls the bead stale, and the skill rewrites the
-same watermark the Python will reject again on the next pass. That is not hypothetical — it is
-what the `labels` disagreement did, on precisely the held beads the rule exists for.
+A recipe stated twice re-invokes this skill forever on every affected bead: the Python reads a
+watermark it cannot reproduce, calls the bead stale, and the skill rewrites the same watermark the
+Python will reject again on the next pass. That is not hypothetical — it is what the `labels`
+disagreement did, on precisely the held beads the rule exists for, and it is why there is now one
+implementation and no copies.
 
 - **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
   stored verdict; rerun nothing; post nothing.
@@ -237,7 +242,7 @@ different length, never hash a different field set.
      incomplete and dispatch this skill again, and it would reuse again: a permanent loop
      costing a full session every sweep and never able to end.
    - **Stale/missing:** go to step 6.
-6. **Run review** (the `issue-review` skill) against the issue. Post the review comment
+6. **Run review** (the `task-review` skill) against the issue. Post the review comment
    (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
    `review_missing`, `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The keys
    land together or the run has failed; a write that sets the status without the hash is the
@@ -254,10 +259,10 @@ different length, never hash a different field set.
    dependency, the absent scope — and write it. On a COMPLETE review write it empty.
 7. **Score whenever no score is stored.** The review verdict and the WSJF score are
    INDEPENDENT outputs of this gate. If `wsjf` is already stored and fresh, skip this step.
-   Otherwise run the `wsjf` skill against the issue, post the WSJF comment, and run the
-   **score write** in Recipes — `wsjf`, `wsjf_calculated_at` and `ready_content_hash=$H` in
-   one `bd update`. Re-setting the hash to the same value is idempotent. Post the
-   ready-declaration comment only when the review was COMPLETE.
+   Otherwise run the `agent-teams-workforce:task-wsjf` skill against the issue, post the
+   WSJF comment, and run the **score write** in Recipes — `wsjf`, `wsjf_calculated_at`
+   and `ready_content_hash=$H` in one `bd update`. Re-setting the hash to the same value
+   is idempotent. Post the ready-declaration comment only when the review was COMPLETE.
 
    `Pipeline result` is then `READY` if `review_status=COMPLETE` and a score exists,
    otherwise `INCOMPLETE`.
@@ -307,7 +312,7 @@ different length, never hash a different field set.
   ```
   ## Issue Review — [ISO 8601 timestamp]
 
-  [full issue-review output]
+  [full task-review output]
   ```
   ```
   ## WSJF Score — [ISO 8601 timestamp]
@@ -457,5 +462,6 @@ bd show <id> --json --readonly \
 
 **Post a comment:** Beads `bd comment add <id> --body "..."` · GitHub `gh issue comment <n> --body "..."`.
 
-**GitHub state read/write:** read the latest `<!-- issue-ready:state … -->` marker from
+**GitHub state read/write:** read the latest `<!-- task-ready:state … -->` marker — or the
+legacy `<!-- issue-ready:state … -->` spelling, whichever is more recent — from
 `gh issue view <n> --json comments`; issue open/closed from `gh issue view <n> --json state`.

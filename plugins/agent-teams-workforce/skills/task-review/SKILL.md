@@ -1,9 +1,9 @@
 ---
-name: issue-review
-description: Reviews any issue, ticket, story, spec, or bug for completeness before sizing or implementation, scaling what it demands to the size and kind of the work item. Returns COMPLETE or INCOMPLETE with specific findings. Triggers on /issue-review or when user says "review this issue", "is this ready", "check this ticket", "validate this story".
+name: task-review
+description: Reviews any issue, ticket, story, spec, or bug for completeness before sizing or implementation, scaling what it demands to the size and kind of the work item. Returns COMPLETE or INCOMPLETE with specific findings. Triggers on /task-review or when user says "review this issue", "is this ready", "check this ticket", "validate this story".
 ---
 
-# Issue Review
+# Task Review
 
 Evaluate any work item — GitHub issue, Beads ticket, Linear issue, user story, spec, or
 free-form description — for completeness. This is not a pass/fail gate. It is a
@@ -72,7 +72,7 @@ dimensions are blocking at every class. It calibrates how much Acceptance Criter
 (see that dimension), and it tells whoever picks the item up what they are walking into.
 
 Consumed by: this skill's own Acceptance Criteria calibration, and the human reading the
-review comment `issue-ready` posts to the tracker.
+review comment `task-ready` posts to the tracker.
 
 ## Step 3 — Completeness Assessment
 
@@ -163,7 +163,7 @@ Rules:
   State what would improve it.
 - No: Too vague to estimate. Sizing would be a guess. State what is needed.
 
-Consumed by: `skills/issue-ready` — a COMPLETE verdict is what releases the item to WSJF
+Consumed by: `skills/task-ready` — a COMPLETE verdict is what releases the item to WSJF
 scoring, and the score is stored on the issue as `wsjf`.
 
 ### Consistency rule — sizing and the verdict must agree

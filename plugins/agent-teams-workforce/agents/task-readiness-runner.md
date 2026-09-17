@@ -1,7 +1,7 @@
 ---
 name: task-readiness-runner
 description: >-
-  Runs the `issue-ready` readiness gate over a list of bead ids the calling script has
+  Runs the `task-ready` readiness gate over a list of bead ids the calling script has
   already decided, one id at a time, and reports the verdict the skill emitted for each.
   Gate plumbing for the SDLC workflow scripts: readiness makes a bead eligible for dispatch
   and WSJF sorts the eligible ones, so both are established the moment a Task becomes a bead
@@ -35,7 +35,7 @@ Your prompt contains a single JSON payload:
 For EACH id in `ids`, in the order given, invoke the readiness gate once:
 
 ```
-Skill(skill: "agent-teams-workforce:issue-ready", args: "<id>")
+Skill(skill: "agent-teams-workforce:task-ready", args: "<id>")
 ```
 
 The skill emits a fixed contract block. Read these lines out of it and report them verbatim:
@@ -60,7 +60,7 @@ field exists because a document said so, and never restate one of its recipes.
 You have `tools: Bash, Skill` and no `Read`, so the CLI is how you check anything for yourself.
 
 - `beads-contract.py fingerprint <id>` reports whether a bead's stored `ready_content_hash` still
-  matches its content. That is a READ — the `issue-ready` skill owns the verdict and the writes, and
+  matches its content. That is a READ — the `task-ready` skill owns the verdict and the writes, and
   you still form no verdict of your own.
 - If you need to know why the gate said what it said, `contract <id>` and `criteria <id>` report the
   facts with provenance. Reporting them is fine; judging them is not your role.
