@@ -86,10 +86,8 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | spec-authoring-lead | orchestrate | Routes maker output to checkers and checker findings back to makers until checkers pass, then routes to Gate 3 |
 | acceptance-criteria-writer | execute | Writes testable acceptance criteria per requirement (given/when/then), specific enough for test agents to derive tests from. |
 | definition-of-done-enforcer | execute | Writes the Definition of Done as independently verifiable statements, not checklists. |
-| api-specification-author | execute | Produces detailed API specifications from contract drafts: schemas, error codes, rate limits, examples. |
-| event-contract-author | execute | Writes event schemas within the event API envelope format: publishing conditions, consumers, retry and DLQ behavior. |
+| api-specification-author | execute | Produces the three interface contract artifacts from the contract drafts in one pass: the API specification (schemas, error codes, rate limits, examples), the event contracts (envelope format, publishing conditions, consumers, retry and DLQ behavior), and the error-handling specification (per failure mode, noting what the chassis handles). |
 | data-model-specification-author | execute | Writes DynamoDB table specifications: keys, GSI/LSI, access patterns, capacity estimates. |
-| error-handling-specification-author | execute | Specifies error handling per failure mode, noting which behavior is chassis-handled and which is custom. |
 | prd-alignment-verifier | test | Verifies traceability: PRD requirement to spec section to acceptance criteria |
 | acceptance-criteria-reviewer | test | Validates acceptance criteria are testable, complete, and unambiguous. |
 | openapi-contract-reviewer | test | Validates API specifications match the architecture decisions and established contract patterns. |

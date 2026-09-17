@@ -549,9 +549,7 @@ PRD-to-Spec pipeline, phase 3 — maker-checker loop produces the feature specif
 | `acceptance-criteria-writer` | Worker | Executor |
 | `definition-of-done-enforcer` | Worker | Executor |
 | `api-specification-author` | Worker | Executor |
-| `event-contract-author` | Worker | Executor |
 | `data-model-specification-author` | Worker | Executor |
-| `error-handling-specification-author` | Worker | Executor |
 | `prd-alignment-verifier` | Worker | Validator |
 | `acceptance-criteria-reviewer` | Worker | Validator |
 | `openapi-contract-reviewer` | Worker | Validator |
@@ -785,9 +783,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `acceptance-criteria-writer` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes testable acceptance criteria per requirement (given/when/then), specific enough for test agents to derive tests from. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `definition-of-done-enforcer` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes the Definition of Done as independently verifiable statements, not checklists. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `api-specification-author` | Spec Authoring | Execution Team | Worker | Executor | execute | Produces detailed API specifications from contract drafts: schemas, error codes, rate limits, examples. | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
-| `event-contract-author` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes event schemas within the event API envelope format: publishing conditions, consumers, retry and DLQ behavior. | subagent-contract, validation-protocol, aws-serverless-eda, sqs | Read, Write, Edit, Glob, Grep, Bash |
 | `data-model-specification-author` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes DynamoDB table specifications: keys, GSI/LSI, access patterns, capacity estimates. | subagent-contract, validation-protocol, dynamodb, database-schema-designer | Read, Write, Edit, Glob, Grep, Bash |
-| `error-handling-specification-author` | Spec Authoring | Execution Team | Worker | Executor | execute | Specifies error handling per failure mode, noting which behavior is chassis-handled and which is custom. | subagent-contract, validation-protocol, senior-backend | Read, Write, Edit, Glob, Grep, Bash |
 | `prd-alignment-verifier` | Spec Authoring | Execution Team | Worker | Validator | test | Verifies traceability: PRD requirement to spec section to acceptance criteria | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
 | `acceptance-criteria-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates acceptance criteria are testable, complete, and unambiguous. | subagent-contract, validation-protocol, senior-qa | Read, Glob, Grep, Bash, Write |
 | `openapi-contract-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates API specifications match the architecture decisions and established contract patterns. | subagent-contract, validation-protocol, api-design-reviewer | Read, Glob, Grep, Bash, Write |
