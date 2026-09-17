@@ -155,7 +155,8 @@ no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec n
 question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
 
 Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
-`wsjf`, `wsjf_calculated_at`, `ready_content_hash`. Build lane: `build_state`. Elaboration lane:
+`ready_content_hash`. Scoring, written by the sequencing capability and never by the readiness
+gate: `wsjf`, `wsjf_calculated_at`. Build lane: `build_state`. Elaboration lane:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`,
 `elab_key`, `elab_follows`, `decision_ids`.
 

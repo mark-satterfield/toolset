@@ -37,7 +37,8 @@ into an Epic, a Task, or a closure — `route-build` skips it and there is no
 triage composite to dispatch. Do not query for them here.
 
 **Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata by the
-`task-ready` skill — read it, do not recompute it:
+sequencing capability (`dependencies-and-scoring`, under the `task-wsjf` rubric) — read it, do
+not recompute it:
 
 ```bash
 bd show <id> --json --readonly \
@@ -45,14 +46,19 @@ bd show <id> --json --readonly \
            | "\(.wsjf // "")"'
 ```
 
-A candidate with no stored `wsjf` has not been through the readiness gate. Run
-`/agent-teams-workforce:task-ready <id>` on it. That gate reviews the issue, scores
-it, and persists `wsjf`, `wsjf_calculated_at`, `review_status`, and
-`ready_content_hash`. It is expensive only the first time — on later runs the content
-hash matches, it reuses the stored verdict and reruns nothing.
+A candidate with no stored `wsjf` has not been sequenced. It cannot be ranked, so it
+is left out of the ordering rather than given a fallback position — run
+`/agent-teams-workforce:dependencies-and-scoring` to score it. The readiness gate does not
+score and never has a number to backfill.
 
 Order the scored candidates by `wsjf` descending, breaking ties on `created_at`
 ascending so the oldest goes first.
+
+Then run `/agent-teams-workforce:task-ready <id>` on the candidates in that order.
+That gate judges whether the issue carries what someone needs in order to work it,
+and persists `review_status`, `review_missing`, `reviewed_at`, and
+`ready_content_hash`. It is expensive only the first time — on later runs the content
+hash matches, it reuses the stored verdict and reruns nothing.
 
 **Gate on `Ready`, not on membership in `bd ready`.** `task-ready` returns a hard
 boolean, and `Ready: TRUE` requires both a `READY` pipeline result and tracker-ready

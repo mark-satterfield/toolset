@@ -290,22 +290,23 @@ CONTRACT_SCHEMA = (
 #: back to the Task's own prose.
 SPEC_REFERENCE = ("specPath", "specPaths")
 
-#: Keys outside the build contract that the READINESS GATE owns on a bead.
+#: Keys outside the build contract that the READINESS GATE owns on a bead. The gate rules
+#: on CONTENT COMPLETENESS only — it does not score, so no `wsjf` key is its.
 GATE_KEYS = (
     "build_state",
     CONTENT_HASH_KEY,
     "review_status",
     "review_missing",
     "reviewed_at",
-    "wsjf",
-    "wsjf_calculated_at",
 )
 
 #: Keys the WSJF rubrics own, from `agent-teams-workforce:epic-wsjf` and `:task-wsjf`.
-#: `wsjf` and `wsjf_calculated_at` are the gate's and are not repeated here. The rest carry
-#: the dimensions a score was built from, which is what lets a Task INHERIT its Epic's value
-#: and an Epic roll its size up from its Tasks without either one re-judging anything.
+#: The score itself and its timestamp, plus the dimensions it was built from, which is what
+#: lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
+#: either one re-judging anything.
 WSJF_KEYS = (
+    "wsjf",
+    "wsjf_calculated_at",
     "wsjf_rubric",
     "wsjf_ubv",
     "wsjf_tc",

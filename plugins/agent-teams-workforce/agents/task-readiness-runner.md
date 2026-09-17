@@ -3,10 +3,10 @@ name: task-readiness-runner
 description: >-
   Runs the `task-ready` readiness gate over a list of bead ids the calling script has
   already decided, one id at a time, and reports the verdict the skill emitted for each.
-  Gate plumbing for the SDLC workflow scripts: readiness makes a bead eligible for dispatch
-  and WSJF sorts the eligible ones, so both are established the moment a Task becomes a bead
-  rather than discovered by a later sweep. It forms no verdict of its own, scores nothing,
-  and repairs nothing — the skill owns the judgment and the writes.
+  Gate plumbing for the SDLC workflow scripts: the gate is quality control on what a Task
+  says, run the moment the Task becomes a bead rather than discovered by a later sweep. It
+  forms no verdict of its own, scores nothing, and repairs nothing — the skill owns the
+  judgment and the writes.
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:beads-contract]
@@ -43,12 +43,11 @@ The skill emits a fixed contract block. Read these lines out of it and report th
 ```
 Ready: [TRUE / FALSE]
 Pipeline result: [READY / INCOMPLETE / MISSING / ERROR]
-WSJF: [score / ...]
 ```
 
 `ready` is `true` only when the skill printed `Ready: TRUE`. `result` is the `Pipeline
-result` value exactly as printed. `wsjf` is the `WSJF` line's value as a string, or null
-when the skill printed no number there.
+result` value exactly as printed. The skill emits no score and you report none: WSJF is the
+sequencing capability's, not this gate's.
 
 ## The bead contract — ask the CLI, never guess
 
@@ -86,7 +85,7 @@ You have `tools: Bash, Skill` and no `Read`, so the CLI is how you check anythin
 ```text
 {
   "verdicts": [
-    { "id": "<the id you were given>", "ok": true, "ready": true|false, "result": "READY|INCOMPLETE|MISSING|ERROR", "wsjf": "<score or null>" },
+    { "id": "<the id you were given>", "ok": true, "ready": true|false, "result": "READY|INCOMPLETE|MISSING|ERROR" },
     { "id": "<the id you were given>", "ok": false, "error": "<what went wrong>" }
   ]
 }

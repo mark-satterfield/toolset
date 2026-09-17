@@ -12,7 +12,7 @@ export const meta = {
     { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
     { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
     { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
-    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — readiness makes a bead eligible for dispatch and WSJF sorts the eligible ones, so both exist before it is ever a candidate — and report what actually landed. A re-run against an Epic that already has children MATCHES them on the durable `elab_key` written at creation and updates in place: an unstarted Task is updated, a started or built one is never rewritten (its change becomes a follow-up Task), and a Task the decomposition no longer contains is closed with a reason' },
+    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — quality control on what the decomposer just emitted, judging whether each Task carries what someone needs in order to work it — and report what actually landed. A re-run against an Epic that already has children MATCHES them on the durable `elab_key` written at creation and updates in place: an unstarted Task is updated, a started or built one is never rewritten (its change becomes a follow-up Task), and a Task the decomposition no longer contains is closed with a reason' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -4352,8 +4352,9 @@ async function decomposeStory(pair) {
     // Consumed by: the acyclic DAG is checked mechanically — task-decomposition.js rejects
     // a cyclic graph outright and prd-to-spec.js does the same for the Story graph — and it
     // is what `bd ready` walks to release work. The WSJF score is written into the emitted
-    // bead's notes and stored on the issue by skills/task-ready, which reports it as
-    // `wsjf`. Beads format is consumed by the bead-writer's `bd` calls, which fail without it.
+    // bead's notes and onto the bead as the `wsjf` metadata attribute at the create below;
+    // skills/task-ready neither computes nor reports it. Beads format is consumed by the
+    // bead-writer's `bd` calls, which fail without it.
     criteria: [
       { class: 'competitive', text: 'Tasks are atomic and each traces to a spec element' },
       { class: 'competitive', text: 'The dependency DAG is acyclic and sequencing is valid' },
@@ -4743,7 +4744,8 @@ const WRITE_SCHEMA = {
 }
 
 // One entry per Task the readiness gate was pointed at. `ready` and `result` are copied
-// out of the skill's own contract block — the runner reports the verdict, it never forms one.
+// out of the skill's own contract block — the runner reports the verdict, it never forms
+// one, and the gate emits no score for it to carry.
 const READINESS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -4760,7 +4762,6 @@ const READINESS_SCHEMA = {
           ok: { type: 'boolean' },
           ready: { type: ['boolean', 'null'] },
           result: { type: ['string', 'null'] },
-          wsjf: { type: ['string', 'null'] },
           error: { type: 'string' },
         },
       },
@@ -5293,13 +5294,13 @@ if (!emitPathFault && epicId) {
         .join('\n') || null,
       labels: null,
       // THE SCORE IS A FIELD, NOT PROSE. The notes line above is for a person; this is
-      // the one a program reads. `readiness.assess` pulls `wsjf` out of the bead's
-      // METADATA — `beadsio.metadata_of(...)` then `meta.get("wsjf")` — and never falls
-      // back to parsing the notes, so a Task carrying its score only in the notes line
-      // reads as unscored and is refused for a missing finite score. Every Task this
-      // composite has ever minted was in exactly that state. The score is decided here,
-      // at decomposition, so it is written here, at the create, and the readiness step
-      // below then has nothing left to compute.
+      // the one a program reads. `ordering.rank` pulls `wsjf` out of the bead's METADATA
+      // — `beadsio.wsjf_of` — and a Task carrying its score only in a prose notes line
+      // falls back to a legacy pattern match or reads as unscored, in which case the
+      // next-work provider cannot rank it and drops it from the sorted list. Every Task
+      // this composite has ever minted was in exactly that state. The score is decided
+      // here, at decomposition, so it is written here, at the create; nothing downstream
+      // computes it for us.
       // The CONTRACT is metadata too, for the same reason: the build lane reads these keys
       // off the Task (decision 6 — the producer that creates the Task puts the paths on it).
       metadata: (() => {
@@ -5407,16 +5408,15 @@ if (pendingLinks.length) {
 
 // ── THE READINESS GATE RUNS HERE, ON THE TASK THAT WAS JUST WRITTEN ───────────
 //
-// Readiness makes a bead ELIGIBLE for dispatch and WSJF SORTS the eligible ones. Both are
-// PRECONDITIONS of dispatch, so both must exist before the bead is ever a dispatch
-// candidate — which means the moment it exists at all. A Task must never enter the tracker
-// unready and wait for some later sweep to notice; there is no such thing as dispatching an
-// unready bead in order to make it ready, and that inversion is what this step removes.
+// The readiness gate is QUALITY CONTROL ON WHAT THE DECOMPOSER JUST EMITTED: does each Task
+// carry what someone needs in order to work it, and if not, what is missing. That question
+// is answered best here, while the run still knows what it wrote, rather than by a later
+// sweep that has to buy a session per Task to find out.
 //
-// The score is already on the bead — it was decided at decomposition and written as
-// metadata at the create above — so `task-ready` finds it present and scores nothing. What
-// this step buys is the review verdict and the freshness watermark, established once, here,
-// while the run still knows what it just wrote.
+// It judges content and nothing else. Eligibility — dependencies and blockers — belongs to
+// the next-work provider, and the WSJF score was decided at decomposition and written as
+// metadata at the create above; `task-ready` neither reads nor writes it. What this step
+// buys is the review verdict and the freshness watermark.
 //
 // It NEVER fails the run. A Task that landed is durable; a readiness gate that could not
 // reach the tracker is recorded and nothing more, exactly as the backfill heal below is.
@@ -5450,7 +5450,7 @@ else {
     if (!id || seenVerdict.has(id)) continue
     seenVerdict.add(id)
     if (v.ok === true) {
-      emission.readiness.verdicts.push({ id, ready: v.ready === true, result: v.result || null, wsjf: v.wsjf == null ? null : String(v.wsjf) })
+      emission.readiness.verdicts.push({ id, ready: v.ready === true, result: v.result || null })
       if (v.ready === true) emission.readiness.ready += 1
     } else {
       emission.readiness.failed.push({ id, reason: v.error || 'the runner reported no verdict for this Task' })

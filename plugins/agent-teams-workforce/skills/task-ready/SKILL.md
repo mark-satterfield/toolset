@@ -1,20 +1,34 @@
 ---
 name: task-ready
-description: Readiness gate for any issue — decides whether it is ready to implement and records the verdict on the issue itself. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review status and WSJF score when fresh, reruns the review when it is missing or stale, ALWAYS scores when no WSJF score is stored (the score and the review verdict are independent outputs — an INCOMPLETE review never skips scoring), records missing lineage or a missing repository as a note on the verdict rather than as a refusal, never clears a score it did not compute, stores wsjf, wsjf_calculated_at, review_status, reviewed_at as issue attributes, and emits one fixed contract. Triggers on /task-ready or "is this ready to implement", "run the pipeline", "prepare this issue".
+description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run at Task creation time inside the prd-to-spec workflow. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores review_status, review_missing, reviewed_at and ready_content_hash as issue attributes, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
 ---
 
-# Task Ready — Readiness Gate
+# Task Ready — Content Completeness Gate
 
-Decide whether one issue is ready to implement, and persist that decision on the issue
-so the next run is cheap. The source of truth for an issue's state is **Beads** (primary)
-or **GitHub** (backup). Throughout this skill, "the tracker" means whichever one resolved
-the issue. Anything that applies to Beads applies to GitHub too, **except** storing
-attributes on the issue — GitHub has no custom fields, so it uses the marker-comment
-fallback described below.
+Decide whether ONE issue carries what someone needs in order to work it, say what is
+missing when it does not, and persist that decision on the issue so the next run is cheap.
+The source of truth for an issue's state is **Beads** (primary) or **GitHub** (backup).
+Throughout this skill, "the tracker" means whichever one resolved the issue. Anything that
+applies to Beads applies to GitHub too, **except** storing attributes on the issue — GitHub
+has no custom fields, so it uses the marker-comment fallback described below.
 
-This skill does two things the old version did not: it returns a hard `Ready` boolean,
-and it **only does work when work is needed** — when the review or score is missing or
-stale. When the stored values are current, it reuses them and reruns nothing.
+## What this skill is for
+
+**Quality control on a Task's CONTENT, at the moment the Task is created.** Its home is
+inside the `prd-to-spec` workflow, where it runs over what the decomposer just emitted and
+answers one question: does this Task say enough for someone to work it, and if not, what is
+missing. That is its whole purpose, and running it there is what keeps an incomplete Task
+from reaching the board in the first place.
+
+**It is NOT an eligibility gate.** Eligibility means dependencies and blockers. This skill
+has never consulted either, and both belong entirely to `ops/sdlc-automation/nextwork.py`.
+
+**It does NOT score.** WSJF for a Task is computed outside this skill, by the sequencing
+capability, under the `task-wsjf` rubric — value and time criticality inherited from the
+parent Epic, risk-reduction computed from the dependency graph, size judged locally. This
+skill neither computes a score, nor reads one, nor backfills one, nor clears one. A Task
+with no score simply never appears in the sorted eligible list, so there is nothing here to
+fill in and nothing downstream waiting on this skill for a number.
 
 ## Output contract — emit this and nothing else
 
@@ -29,7 +43,6 @@ Ready: [TRUE / FALSE]
 Pipeline result: [READY / INCOMPLETE / MISSING / ERROR]
 Issue: [id or title]
 Review: [COMPLETE / INCOMPLETE — n dimensions need attention / n/a]
-WSJF: [score / "not scored" / n/a]
 Comments posted: [n]
 ```
 
@@ -38,17 +51,16 @@ Comments posted: [n]
   (status `open`, no active blockers, not deferred/hooked), for GitHub that is state
   `OPEN`. Status `open` alone is not enough; a blocked or closed issue is never `Ready`.
   In all other cases `Ready` is `FALSE`.
-- **`Pipeline result`** describes the review+score verdict only (it does not fold in
-  blocker or closed state):
-  - `READY` — review COMPLETE and a WSJF score exists.
-  - `INCOMPLETE` — the review found gaps. **A score still exists** — scoring does not
-    depend on the review verdict; see step 7.
+- **`Pipeline result`** describes the review verdict only (it does not fold in blocker or
+  closed state):
+  - `READY` — the review came back COMPLETE.
+  - `INCOMPLETE` — the review found gaps.
   - `MISSING` — no such issue in the tracker.
   - `ERROR` — a `bd`/`gh` call failed or the input could not be resolved.
 - A **closed** issue is never recomputed: it reports the verdict already stored on it
   (e.g. a stored `READY` stays `READY`) with `Ready: FALSE`. See Algorithm step 2.
-- For `MISSING` / `ERROR`, fill `Review` and `WSJF` with `n/a` and `Comments posted: 0`.
-  Never switch to a different response shape.
+- For `MISSING` / `ERROR`, fill `Review` with `n/a` and `Comments posted: 0`. Never switch
+  to a different response shape.
 
 ## Be quiet
 
@@ -67,12 +79,11 @@ these are first-class metadata (set with `--set-metadata`, read from `bd show --
 | `review_status` | `COMPLETE` or `INCOMPLETE` from the last review |
 | `review_missing` | on an INCOMPLETE review, what the issue is MISSING — one line, the skill's own words. Empty/omitted when the review was COMPLETE |
 | `reviewed_at` | ISO 8601 timestamp of the last review |
-| `wsjf` | numeric WSJF score — written whenever it is missing, whatever the review said, and never cleared |
-| `wsjf_calculated_at` | ISO 8601 timestamp of the last scoring |
 | `ready_content_hash` | fingerprint of the issue's content at the last run — the staleness watermark |
 
-Metadata is overwritten each real run (it is current state, not history). WSJF lives here
-now, **not** as a note — nothing else consumes the old `wsjf_score` note.
+**Those four keys are the whole of what this skill writes.** It writes no other metadata,
+and it never touches `wsjf` or `wsjf_calculated_at` — reading, writing, or clearing — because
+it does not own them. Metadata is overwritten each real run (it is current state, not history).
 
 On **GitHub** (no custom fields) the same keys are written into one machine-readable
 marker comment instead:
@@ -82,8 +93,6 @@ marker comment instead:
 review_status=COMPLETE
 review_missing=
 reviewed_at=2026-06-30T12:00:00Z
-wsjf=8.75
-wsjf_calculated_at=2026-06-30T12:00:00Z
 ready_content_hash=ab12cd34ef56a7b8
 -->
 ```
@@ -95,17 +104,16 @@ marker of either spelling, and always write the `task-ready:state` spelling.
 
 Read state from the most recent such marker; write a fresh marker each real run. Every
 marker carries `ready_content_hash=$H` — a marker written without it is the same defect as
-a Beads write that omits it, and step 8 verifies GitHub by re-reading the marker just as
-it verifies Beads by re-reading the metadata. On the score-only path, carry the stored
-`review_status` / `review_missing` / `reviewed_at` forward into the new marker unchanged
-rather than restamping them.
+a Beads write that omits it, and step 7 verifies GitHub by re-reading the marker just as
+it verifies Beads by re-reading the metadata.
 
 ## Staleness — the reason work is skipped
 
-The concept: **only run review and scoring when missing or stale; otherwise return the
-values already on the issue.** Freshness is decided by a content fingerprint, not by the
-tracker's `updated_at` (which the skill's own writes would bump, falsely invalidating the
-cache). See Recipes for the exact hashing command.
+The concept: **only run the review when it is missing or stale; otherwise return the
+verdict already on the issue.** Re-reviewing content nobody has touched costs a whole
+session and reaches the identical conclusion off the identical bytes. Freshness is decided
+by a content fingerprint, not by the tracker's `updated_at` (which the skill's own writes
+would bump, falsely invalidating the cache). See Recipes for the exact hashing command.
 
 **What the fingerprint ACTUALLY covers: `title`, `description`, `issue_type`, `priority`.**
 That is four fields, and it is narrower than it looks. The hash is taken over a ten-key object,
@@ -163,8 +171,8 @@ implementation and no copies.
 
 - **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
   stored verdict; rerun nothing; post nothing.
-- **Stale or missing** — no stored hash, or it differs → rerun the review, then score if no
-  score is stored, overwrite the stored attributes, post the comments.
+- **Stale or missing** — no stored hash, or it differs → rerun the review, overwrite the
+  stored attributes, post the comments.
 
 **One hash, computed once.** The value compared and the value stored are the same string
 from the same command, computed once at step 3 and held in `$H` for the rest of the
@@ -180,23 +188,23 @@ different length, never hash a different field set.
    MISSING`, emit contract, stop. If a `bd`/`gh` call errors → `Pipeline result: ERROR`,
    emit contract, stop.
 2. **Closed → return stored state, recompute nothing.** If the status is `closed`, do not
-   run review or scoring and do not check staleness — a closed issue is never recomputed.
-   Report the attributes already on the issue: `Review` = stored `review_status` (or `n/a`
-   if it was never reviewed); `WSJF` = stored `wsjf` (or `not scored`); `Pipeline result`
-   = `READY` when the stored review is `COMPLETE` and `wsjf` is present, otherwise
-   `INCOMPLETE`. `Ready: FALSE` (a closed issue is never ready). `Comments posted: 0`.
-   After the contract block, append one chat-only line — `Issue <id> was closed on
-   <closed_at>.` — using the issue's close date; never post it to the tracker. Emit, stop.
-3. **Read stored state** (`review_status`, `reviewed_at`, `wsjf`, `wsjf_calculated_at`,
+   run the review and do not check staleness — a closed issue is never recomputed. Report
+   the attributes already on the issue: `Review` = stored `review_status` (or `n/a` if it
+   was never reviewed); `Pipeline result` = `READY` when the stored review is `COMPLETE`,
+   otherwise `INCOMPLETE`. `Ready: FALSE` (a closed issue is never ready).
+   `Comments posted: 0`. After the contract block, append one chat-only line — `Issue <id>
+   was closed on <closed_at>.` — using the issue's close date; never post it to the
+   tracker. Emit, stop.
+3. **Read stored state** (`review_status`, `review_missing`, `reviewed_at`,
    `ready_content_hash`) and **compute the current content hash into `$H`** — always,
    before anything else runs, using the Content hash recipe verbatim.
 
-   Compute it even when there is no stored hash to compare against. `$H` is what steps 4, 6
-   and 7 **write**; the comparison is its second use, not its only one. Short-circuiting
+   Compute it even when there is no stored hash to compare against. `$H` is what steps 4
+   and 6 **write**; the comparison is its second use, not its only one. Short-circuiting
    on "no stored hash, so obviously stale — skip the hash and go review" is the single
    failure this whole attribute exists to prevent: the run then has nothing to store, the
-   next run again finds no hash, and every sweep pays for a full review and a full
-   scoring session forever. If you took that shortcut, you have broken the skill.
+   next run again finds no hash, and every sweep pays for a full review forever. If you
+   took that shortcut, you have broken the skill.
 4. **Read the lineage and the repo — as CONTEXT, never as a refusal.** Read the issue's own
    type, walk its parents, and read the `repoPath:` marker off each (Hierarchy recipe).
    Record what you found and carry it into the review as a note. Then continue to step 5 no
@@ -215,13 +223,13 @@ different length, never hash a different field set.
    verdict. Append them to whatever `Review` reports, e.g.
    `COMPLETE (note: no parent Story)` or
    `INCOMPLETE — 2 dimensions need attention (note: no repoPath on the task or its Story)`.
-   They never set `Pipeline result`, never skip the review, and never skip the scoring.
+   They never set `Pipeline result` and never skip the review.
 
    **Provenance is settled upstream, not re-adjudicated here.** A Task with no parent Epic
    or PRD behind it is not legitimate work — that is true, and it is enforced where such a
-   Task is CREATED. This gate's job is readiness: can this be worked now, and how does it
-   sort against everything else that can. Re-litigating where an issue came from, at gate
-   time, on a bead that already exists, blocks the queue and repairs nothing.
+   Task is CREATED. This gate's job is content completeness: does this Task say enough to
+   be worked. Re-litigating where an issue came from, at gate time, on a bead that already
+   exists, blocks the queue and repairs nothing.
 
    **Bugs do not come here.** A bug is a reporting mechanism that a person triages into an
    Epic, a Task, or a closure; it has no acceptance criteria. A caller that sends one is the
@@ -229,25 +237,19 @@ different length, never hash a different field set.
    `Review: INCOMPLETE — a bug is triaged by a person, not gated here` and write nothing.
 
 5. **Decide freshness.** Fresh = stored hash exists and equals `$H`.
-   - **Fresh AND `wsjf` present:** reuse stored values. `review_status=COMPLETE` →
-     `Pipeline result: READY`; `review_status=INCOMPLETE` → `Pipeline result: INCOMPLETE`,
-     and append the stored `review_missing` to the `Review` line so the reused verdict still
-     says what is missing. Rerun nothing. `Comments posted: 0`.
-   - **Fresh but NO `wsjf`** (whatever the stored `review_status` says): do not reuse —
-     **go to step 7** and score. The review is current, so rerunning it would buy nothing;
-     the score is the only thing missing. This state is reachable and it is not rare: step
-     6 writes `review_status` and the hash, step 7 writes `wsjf`, and a session that dies
-     between them — a spend or session limit, most often — leaves exactly this. Reusing it
-     would report a verdict with no score, the caller would find the attributes still
-     incomplete and dispatch this skill again, and it would reuse again: a permanent loop
-     costing a full session every sweep and never able to end.
+   - **Fresh:** reuse the stored verdict. `review_status=COMPLETE` → `Pipeline result:
+     READY`; `review_status=INCOMPLETE` → `Pipeline result: INCOMPLETE`, and append the
+     stored `review_missing` to the `Review` line so the reused verdict still says what is
+     missing. Rerun nothing. `Comments posted: 0`. Go to step 8.
    - **Stale/missing:** go to step 6.
 6. **Run review** (the `task-review` skill) against the issue. Post the review comment
    (Audit Trail). Then run the **review write** in Recipes as written — `review_status`,
    `review_missing`, `reviewed_at` and `ready_content_hash=$H` in ONE `bd update`. The keys
    land together or the run has failed; a write that sets the status without the hash is the
-   defect, not a partial success. Then **continue to step 7 either way** — a COMPLETE
-   review and an INCOMPLETE one both go there.
+   defect, not a partial success.
+
+   `Pipeline result` is then `READY` if `review_status=COMPLETE`, otherwise `INCOMPLETE`.
+   Post the ready-declaration comment only when the review was COMPLETE.
 
    **An INCOMPLETE verdict MUST carry what is missing, in `review_missing`.** This is not
    bookkeeping. The pipeline no longer re-buys an INCOMPLETE verdict: on the next pass it
@@ -257,35 +259,15 @@ different length, never hash a different field set.
    comment, and a person is told a Task is blocked without being told why. Summarize the
    review's findings in one line — the missing acceptance criteria, the unresolved
    dependency, the absent scope — and write it. On a COMPLETE review write it empty.
-7. **Score whenever no score is stored.** The review verdict and the WSJF score are
-   INDEPENDENT outputs of this gate. If `wsjf` is already stored and fresh, skip this step.
-   Otherwise run the `agent-teams-workforce:task-wsjf` skill against the issue, post the
-   WSJF comment, and run the **score write** in Recipes — `wsjf`, `wsjf_calculated_at`
-   and `ready_content_hash=$H` in one `bd update`. Re-setting the hash to the same value
-   is idempotent. Post the ready-declaration comment only when the review was COMPLETE.
-
-   `Pipeline result` is then `READY` if `review_status=COMPLETE` and a score exists,
-   otherwise `INCOMPLETE`.
-
-   **Why an INCOMPLETE review still scores.** This step used to be skipped whenever the
-   review came back INCOMPLETE, and that made the gate unable to clear anything, ever. It
-   wrote the one field that fails downstream (`review_status`) and never wrote the one that
-   would pass (`wsjf`); `readiness.assess` then rejected the bead for a missing finite
-   score, and the next run of this skill did exactly the same thing. Seven Tasks sat in that
-   state after the 2026-09-03 dispatch — `review_status: INCOMPLETE`, no `wsjf` — and no
-   number of re-runs could have moved them. A score is a sorting number, not a certificate:
-   computing it on an issue whose review found gaps costs one cheap session and leaves the
-   bead in a state some later pass can finish. Withholding it leaves the bead permanently
-   unfinishable.
-8. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
+7. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
    `ready_content_hash` is present and equals `$H`, alongside `review_status` /
-   `reviewed_at` — and `wsjf` / `wsjf_calculated_at` when step 7 ran. If the hash is
-   absent or different, the write did not land: redo it and read back again. Never emit
-   the contract on an unverified write. A run that reports `READY` with no stored hash
-   has thrown away everything it just paid for and guarantees the next run reruns it.
-9. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
+   `reviewed_at`. If the hash is absent or different, the write did not land: redo it and
+   read back again. Never emit the contract on an unverified write. A run that reports
+   `READY` with no stored hash has thrown away everything it just paid for and guarantees
+   the next run reruns it.
+8. **Compute `Ready`.** `Ready = (Pipeline result == READY) AND tracker-ready-state`.
    Tracker-ready-state: Beads → issue appears in `bd ready`; GitHub → issue state `OPEN`.
-10. **Emit the contract block.** Stop.
+9. **Emit the contract block.** Stop.
 
 ## Audit Trail
 
@@ -306,7 +288,7 @@ different length, never hash a different field set.
   Recorded as context, not as a refusal. A Story is a roll-up parent for reporting and
   tracking and never gates whether this can be worked; a recorded repository is a hint,
   and the repository this work lands in is ruled at dispatch from the work itself. The
-  review and the score below ran as normal.
+  review below ran as normal.
   ```
 
   ```
@@ -315,14 +297,9 @@ different length, never hash a different field set.
   [full task-review output]
   ```
   ```
-  ## WSJF Score — [ISO 8601 timestamp]
-
-  [full wsjf output]
-  ```
-  ```
   ## Ready for Implementation — [ISO 8601 timestamp]
 
-  Passed completeness review and scored. WSJF: [score] (CoD [CoD] / Size [size]).
+  Passed completeness review: this issue carries what someone needs in order to work it.
   ```
 
 ## Recipes
@@ -331,7 +308,7 @@ Beads commands run read-only where possible (`--readonly`); writes use `bd updat
 `jq` selectors tolerate both array and `{issue:…}`/flat shapes and missing keys.
 
 **Content hash (Beads)** — capture it into `$H`; this is the only place the hash is
-computed, and both the freshness comparison and every write use `$H`:
+computed, and both the freshness comparison and the write use `$H`:
 ```
 H=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" \
       fingerprint <id> | jq -r .fingerprint)
@@ -364,11 +341,11 @@ H=$(gh issue view <n> --json title,body,labels \
 ```
 bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})
-           | "review_status=\(.review_status//"")\nreviewed_at=\(.reviewed_at//"")\nwsjf=\(.wsjf//"")\nwsjf_calculated_at=\(.wsjf_calculated_at//"")\nready_content_hash=\(.ready_content_hash//"")"'
+           | "review_status=\(.review_status//"")\nreview_missing=\(.review_missing//"")\nreviewed_at=\(.reviewed_at//"")\nready_content_hash=\(.ready_content_hash//"")"'
 ```
 
 **Hierarchy (Beads)** — the issue's own type and its parent chain. Two reads: the issue,
-then its parent. A `task` needs `parent_type=story` AND `grandparent_type=epic`:
+then its parent:
 ```
 bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end
@@ -390,20 +367,11 @@ bd show <id> --json --readonly \
   | head -1
 ```
 Absent on the task, read the Story's. **Absent on both, the gate does NOT fail** — it records
-"no repoPath on the task or its Story" as a note on the verdict and carries on to the review
-and the scoring, exactly as step 4 says. A recorded repository is a hint; the repository a
-piece of work lands in is ruled at dispatch, from the work itself. There is no path in this
-skill on which a missing repo sets `Pipeline result`. `repo:` and `repository:` are accepted
-spellings of the same marker.
-
-**Never clear a stored score.** There is no gate write and no path here that empties `wsjf`.
-An earlier version of this skill ran `--set-metadata wsjf=` on the lineage refusal, on the
-reasoning that a stale score beside a contradicting verdict was worse than none. It was
-destroying the one field `readiness.assess` requires — the gate wrote the field that fails
-and erased the field that passes, so the bead could never be cleared by any number of runs.
-A score is a sorting number; it is not evidence of anything the review verdict speaks to,
-and the two never need to be reconciled by deleting one. If a score is wrong, rescoring
-overwrites it. `--unset-metadata wsjf` is not used by this skill at all.
+"no repoPath on the task or its Story" as a note on the verdict and carries on to the review,
+exactly as step 4 says. A recorded repository is a hint; the repository a piece of work lands
+in is ruled at dispatch, from the work itself. There is no path in this skill on which a
+missing repo sets `Pipeline result`. `repo:` and `repository:` are accepted spellings of the
+same marker.
 
 **Status / closed check (Beads):**
 ```
@@ -420,11 +388,9 @@ bd ready --json -n 0 --readonly \
   | jq -e --arg id "<id>" '[.[]?,(.issues[]?)] | any(.id==$id)' >/dev/null && echo ready || echo not-ready
 ```
 
-**Write attributes after a real run (Beads).** Two commands, neither optional in its
-step, both carrying `$H` from the content-hash recipe. Copy them as written — there is no
-variant of either that omits `ready_content_hash`.
-
-Review write (step 6 — the whole write when the review is INCOMPLETE):
+**Write attributes after a real run (Beads).** ONE command, carrying `$H` from the
+content-hash recipe. Copy it as written — there is no variant that omits
+`ready_content_hash`:
 ```
 bd update <id> \
   --set-metadata review_status=<COMPLETE|INCOMPLETE> \
@@ -440,19 +406,11 @@ skill, so no later run regenerates the reason. Keep it to one line and avoid new
 quotes, which do not survive the attribute round-trip. Metadata is outside the content hash,
 so writing it never invalidates the watermark.
 
-Score write (step 7):
-```
-bd update <id> \
-  --set-metadata wsjf=<score> \
-  --set-metadata wsjf_calculated_at=<ISO8601> \
-  --set-metadata ready_content_hash=$H
-```
+`--set-metadata` merges into existing metadata, so this write leaves every other key on the
+bead alone — including `wsjf`, which the sequencing capability owns and this skill must never
+touch. Do not reach for `--metadata`: it replaces the whole object and would drop them.
 
-`--set-metadata` merges into existing metadata, so the score write leaves `review_status`
-and `reviewed_at` alone — never bump `reviewed_at` for a review that did not rerun. Do
-not reach for `--metadata`: it replaces the whole object and would drop the other keys.
-
-**Verify the write (step 8, Beads):**
+**Verify the write (step 7, Beads):**
 ```
 bd show <id> --json --readonly \
   | jq -r 'if type=="array" then .[0] else (.issue // .) end | (.metadata // {})

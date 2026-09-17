@@ -163,8 +163,8 @@ Rules:
   State what would improve it.
 - No: Too vague to estimate. Sizing would be a guess. State what is needed.
 
-Consumed by: `skills/task-ready` — a COMPLETE verdict is what releases the item to WSJF
-scoring, and the score is stored on the issue as `wsjf`.
+Consumed by: `skills/task-ready` — a COMPLETE verdict is what makes the item workable, and
+it is stored on the issue as `review_status`.
 
 ### Consistency rule — sizing and the verdict must agree
 
