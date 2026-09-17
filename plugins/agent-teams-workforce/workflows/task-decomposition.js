@@ -1,10 +1,10 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, sequences the acyclic dependency DAG with a build order, and WSJF-scores (the sole prioritization metric — no P0-P4); TWO independent checker sessions then judge it, and they judge different things because their charters differ: the wsjf-scoring-reviewer rules on the scores, the beads-format-validator rules on the Beads format and the hierarchy rule and is forbidden from judging a score. They run concurrently, and only the scoring side loops — a scoring rejection re-runs the scorer and the scoring reviewer, never the format validation. The maker never judges its own work.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, sequences the acyclic dependency DAG with a build order, and sizes every task; the WSJF score itself (the sole prioritization metric — no P0-P4) is ARITHMETIC over that size under the task-wsjf rubric — value and time criticality are inherited from the parent Epic, risk reduction is computed from how many tasks each one unblocks in the DAG, and no agent assigns either. TWO independent checker sessions then judge the result, and they judge different things because their charters differ: the wsjf-scoring-reviewer rules on the sizes, the beads-format-validator rules on the Beads format and the hierarchy rule and is forbidden from judging a score. They run concurrently, and only the scoring side loops — a scoring rejection re-runs the scorer and the scoring reviewer, never the format validation. The maker never judges its own work.',
   phases: [
-    { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + acyclic DAG + WSJF scores' },
-    { title: 'Validate & emit', detail: 'two independent checkers, concurrent: WSJF score review + Beads-format validation -> emit bead set' },
+    { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + acyclic DAG + job sizes; WSJF computed from them' },
+    { title: 'Validate & emit', detail: 'two independent checkers, concurrent: job-size review + Beads-format validation -> emit bead set' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -99,6 +99,12 @@ async function settleAgent(prompt, opts) {
 //   story: { id?, title? },                                    // the Story the Spec pairs with —
 //                                                              // ALREADY EXISTS; every emitted task
 //                                                              // is parented to it
+//   epic?: { id?, userBusinessValue?, timeCriticality?, confidence? },
+//                                                              // the parent Epic's WSJF, as epic-wsjf
+//                                                              // wrote it (`wsjf_ubv`, `wsjf_tc`,
+//                                                              // `wsjf_confidence`). Every task INHERITS
+//                                                              // value and criticality from it; absent,
+//                                                              // they fall back to a flagged placeholder
 //   specDocs?: [{ path, ref }],                                // the Spec's DOCUMENTS: `path` is where the
 //                                                              // maker reads the file, `ref` is the
 //                                                              // $SKILLSPOKE_ROOT-relative path recorded on
@@ -237,6 +243,10 @@ Return one entry per file, echoing its slot exactly as given: found=true with th
 }
 const spec = a.spec || {}
 const story = a.story || {}
+// The parent Epic's own WSJF, which every Task in this set INHERITS its value and time
+// criticality from. See the task-wsjf block below for why a Task's own text cannot carry
+// them. Absent -> the placeholder path, also below.
+const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
@@ -378,26 +388,33 @@ const testStrategySchema = {
 phase('Decompose')
 log(`Decomposing, sequencing, and scoring ${specRef}`)
 
-// WSJF is the SOLE prioritization metric — no P0-P4 priorities.
+// ── TASK WSJF IS ARITHMETIC — the `agent-teams-workforce:task-wsjf` rubric ──────
+//
+// WSJF is the SOLE prioritization metric — no P0-P4 priorities. Three of its four
+// dimensions are not judged here, and that is the whole point of the rubric:
+//
+//   userBusinessValue / timeCriticality — INHERITED from the parent Epic, with its
+//     confidence. A Task's description is scoped to ONE agent's work in ONE repository,
+//     so a plumbing Task under a revenue-critical Epic reads as "minimal user impact" on
+//     its own words. That is the wrong question asked of the wrong document, and asking
+//     it also pinned every Task's confidence at the rubric's insufficient-information
+//     rung forever.
+//   riskReductionOpportunityEnablement — COMPUTED from how many Tasks this one unblocks,
+//     transitively, in the DAG the maker just emitted. The edges exist; counting them is
+//     evidence, arguing about them from prose is not.
+//   jobSize — the ONE judged input, on the developer-days scale, which is already right
+//     for a Task.
+//
+// So the agent supplies jobSize and a one-line rationale; everything else is computed
+// here. Scoring the same task set twice produces the same numbers, and a re-score buys
+// nothing but a better size.
 const wsjfTaskSchema = {
   type: 'object',
   additionalProperties: false,
-  required: [
-    'key',
-    'userBusinessValue',
-    'timeCriticality',
-    'riskReductionOpportunityEnablement',
-    'jobSize',
-    'wsjf',
-    'rationale',
-  ],
+  required: ['key', 'jobSize', 'rationale'],
   properties: {
     key: { type: 'string' },
-    userBusinessValue: { type: 'number' },
-    timeCriticality: { type: 'number' },
-    riskReductionOpportunityEnablement: { type: 'number' },
     jobSize: { type: 'number' },
-    wsjf: { type: 'number' },
     rationale: { type: 'string' },
   },
 }
@@ -409,6 +426,111 @@ const wsjfSchema = {
     scores: { type: 'array', items: wsjfTaskSchema },
     notes: { type: 'string' },
   },
+}
+
+const JOB_SIZE_RUNGS = [1, 2, 3, 5, 8, 13]
+const JOB_SIZE_BRIEF = `Score jobSize on the developer-days scale ONLY — it is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign:
+  1  Trivial — hours, a single isolated change
+  2  Small — less than a day
+  3  Medium-small — 1-2 days, one area of the codebase
+  5  Medium — 3-5 days, multiple components
+  8  Large — 1-2 weeks, cross-cutting within the repository
+  13 X-Large — 2-4 weeks, significant design plus implementation
+There is no rung above 13: a task that would score higher is a DECOMPOSITION FAULT — say so in your notes and score it 13.`
+
+const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+/** Snap a judged size onto the nearest rung of the developer-days scale. */
+function jobSizeRung(v) {
+  const n = finite(v)
+  if (n === null || n <= 0) return null
+  let best = JOB_SIZE_RUNGS[0]
+  for (const r of JOB_SIZE_RUNGS) if (Math.abs(r - n) < Math.abs(best - n)) best = r
+  return best
+}
+/** How many DISTINCT tasks are reachable forward from `key` — what it unblocks. */
+function unblocksCount(key, edges) {
+  const out = new Map()
+  for (const e of edges || []) {
+    if (!e || typeof e.from !== 'string' || typeof e.to !== 'string') continue
+    if (!out.has(e.from)) out.set(e.from, [])
+    out.get(e.from).push(e.to)
+  }
+  const seen = new Set()
+  const stack = (out.get(key) || []).slice()
+  while (stack.length) {
+    const n = stack.pop()
+    if (n === key || seen.has(n)) continue
+    seen.add(n)
+    for (const nxt of out.get(n) || []) stack.push(nxt)
+  }
+  return seen.size
+}
+/** The rubric's reachability bands. */
+function rroeFor(n) {
+  if (n <= 0) return 1
+  if (n === 1) return 3
+  if (n <= 3) return 5
+  if (n <= 6) return 8
+  if (n <= 9) return 13
+  return 20
+}
+// A placeholder is used ONLY when the caller supplied no Epic score. It is the same for
+// every Task in the set, so it cannot distort the ordering WITHIN this Story — the
+// ordering that this mini's output is used for — and it is flagged as `placeholder` so
+// the sequencing pass that inherits for real knows to replace it rather than trust it.
+const PLACEHOLDER_UBV = 5
+const PLACEHOLDER_TC = 3
+const epicUbv = finite(epic.userBusinessValue)
+const epicTc = finite(epic.timeCriticality)
+const epicConfidence = finite(epic.confidence)
+const inheritedUbv = epicUbv === null ? PLACEHOLDER_UBV : epicUbv
+const inheritedTc = epicTc === null ? PLACEHOLDER_TC : epicTc
+const valueSource = epicUbv === null || epicTc === null ? 'placeholder' : 'epic'
+const valueFrom = valueSource === 'epic' && typeof epic.id === 'string' ? epic.id : null
+/**
+ * Apply the task-wsjf rubric to whatever the agent judged: inherit value and criticality,
+ * compute RR-OE from the DAG, snap the size, and do the arithmetic. Every task in the set
+ * comes back scored, whether the agent mentioned it or not.
+ */
+function applyTaskWsjf(judged, taskSet, edges) {
+  const byKey = new Map()
+  for (const s of (judged && Array.isArray(judged.scores) ? judged.scores : [])) {
+    if (s && typeof s.key === 'string') byKey.set(s.key, s)
+  }
+  const unsized = []
+  const scores = taskSet.map((t) => {
+    const j = byKey.get(t.key)
+    const size = jobSizeRung(j && j.jobSize)
+    if (size === null) unsized.push(t.key)
+    const jobSize = size === null ? 5 : size // the middle rung: unsized, not free
+    const unblocks = unblocksCount(t.key, edges)
+    const rroe = rroeFor(unblocks)
+    const cod = inheritedUbv + inheritedTc + rroe
+    return {
+      key: t.key,
+      userBusinessValue: inheritedUbv,
+      timeCriticality: inheritedTc,
+      valueSource,
+      valueFrom,
+      riskReductionOpportunityEnablement: rroe,
+      unblocks,
+      jobSize,
+      costOfDelay: cod,
+      wsjf: Math.round((cod / jobSize) * 100) / 100,
+      confidence: epicConfidence,
+      rationale: (j && typeof j.rationale === 'string' && j.rationale) || (size === null ? 'no size was returned for this task — scored at the middle rung' : ''),
+    }
+  })
+  const notes = [
+    judged && typeof judged.notes === 'string' ? judged.notes : '',
+    valueSource === 'placeholder'
+      ? 'Value and time criticality are PLACEHOLDERS: no parent Epic score was supplied, so they are uniform across the set and must be replaced by inheritance from the Epic.'
+      : `Value and time criticality inherited from Epic ${valueFrom || '(id not supplied)'}.`,
+    unsized.length ? `No jobSize returned for: ${unsized.join(', ')} — scored at the middle rung.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  return { scores, notes, rubric: 'task-wsjf', valueSource }
 }
 
 // The outputs the caller NAMED rather than inlined are read back here, in one session,
@@ -439,7 +561,7 @@ And once for the whole set, \`testStrategy\`: the test strategy the spec states 
 
 JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`): map the dependencies between the tasks you just decomposed into a DIRECTED ACYCLIC graph and derive a valid topological build order. An edge "from -> to" means "from must be built before to". If the only honest reading implies a cycle, do not invent an order: set acyclic=false, list the cycle, and leave buildOrder empty.
 
-JOB 3 — WSJF SCORE (return in \`scores\`): assign a WSJF score to EVERY task. WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme. Score each component on the standard scale, then compute wsjf = (userBusinessValue + timeCriticality + riskReductionOpportunityEnablement) / jobSize, jobSize > 0. Score every key exactly once, with a one-line rationale per task.
+JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, and a one-line \`rationale\` for the size. Every key exactly once.
 
 ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
   {
@@ -506,12 +628,15 @@ if (dag.acyclic === false) {
   }
 }
 
-// Kept as a standalone dispatch for the RE-SCORING path only: when the checker
-// rejects the scores, only the scoring is redone — never the decomposition or the
-// DAG, which the checker validates structurally rather than argues with.
+// Kept as a standalone dispatch for the RE-SIZING path only: when the checker rejects
+// the sizes, only the sizing is redone — never the decomposition or the DAG, which the
+// checker validates structurally rather than argues with. Nothing else in the score can
+// be redone by an agent, because nothing else in it was judged by one.
 async function scoreWsjf(feedback) {
   return await settleAgent(
-    `Assign a WSJF (Weighted Shortest Job First) score to EVERY task below. WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme. Score each component on the standard scale, then compute wsjf = (userBusinessValue + timeCriticality + riskReductionOpportunityEnablement) / jobSize. jobSize must be > 0. Reference tasks by their "key" and score every key exactly once. Give a one-line rationale per task.
+    `Re-size the tasks below under the \`agent-teams-workforce:task-wsjf\` rubric, which is loaded for you. ${JOB_SIZE_BRIEF}
+
+WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme, and do NOT assign value, time criticality or risk reduction: those are inherited from the parent Epic and computed from the dependency graph below, and the composite score is arithmetic over the sizes you return. Reference tasks by their "key", size every key exactly once, and give a one-line rationale per task.
 
 Tasks:
 ${taskList}
@@ -528,7 +653,11 @@ ${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer fee
   )
 }
 
-let wsjfScores = replayRescore || { scores: maker.scores || [], notes: maker.notes }
+// The rubric is applied HERE, to whatever the agent judged — a fresh maker pass, a
+// replayed one, or a re-size. A replayed score set from before the rubric changed carries
+// full component scores; they are recomputed rather than trusted, so an Epic resumed from
+// an old artifact lands on the same numbers a fresh run would.
+let wsjfScores = applyTaskWsjf(replayRescore || { scores: maker.scores || [], notes: maker.notes }, tasks, dag.edges)
 let scoringReview = replayScoring
 let scoringAccepted = !!(scoringReview && scoringReview.accepted === true)
 let beadsValidation = replayReview ? replayReview.beadsValidation : null
@@ -568,7 +697,7 @@ async function reviewScores(pass) {
   return await settleAgent(
     `${CHECKER_PREAMBLE}
 
-Judge the WSJF SCORES ONLY (return under \`scoringReview\`): every task scored exactly once, jobSize > 0, the wsjf arithmetic is correct, the component values are internally consistent across tasks (similar work scored comparably), and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
+Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:task-wsjf\` rubric, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize on the developer-days scale (1, 2, 3, 5, 8, 13) and > 0; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
 
 ${taskEvidence}
 
@@ -683,7 +812,7 @@ if (firstWave.length) {
 // Re-scoring loop: the scorer and the scoring reviewer only. The structural verdict is
 // about the tasks and the DAG, which a re-score does not touch, so it is not re-bought.
 for (let pass = 2; !scoringAccepted && !replayScoring && pass <= MAX_SCORING_PASSES; pass++) {
-  wsjfScores = await scoreWsjf((scoringReview && scoringReview.feedback) || '')
+  wsjfScores = applyTaskWsjf(await scoreWsjf((scoringReview && scoringReview.feedback) || ''), tasks, dag.edges)
   const sc = await reviewScores(pass)
   scoringReview = sc && sc.scoringReview
   scoringAccepted = !!(scoringReview && scoringReview.accepted)
