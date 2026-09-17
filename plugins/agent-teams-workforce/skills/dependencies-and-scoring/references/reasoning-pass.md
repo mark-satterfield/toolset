@@ -35,7 +35,7 @@ requirements first. That is the whole test. Not "this feels earlier", not "this 
 important", not "this is in an earlier tier".
 
 **Do not add edges to force a total order.** WSJF orders everything an edge does not, and
-an edge costs the blocked Epic its eligibility until the blocker's Tasks are written.
+an edge costs the blocked Epic its eligibility until the blocker is elaborated.
 
 ### 4. Revisit
 

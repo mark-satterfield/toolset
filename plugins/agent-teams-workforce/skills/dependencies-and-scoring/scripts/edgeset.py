@@ -8,7 +8,9 @@ item — because a wrong edge set applied is expensive to unpick.
 
 The diff never removes an edge this system did not create. Ownership is recorded on the
 BLOCKED bead as `seq_owned_blockers`, so an edge Mark drew by hand survives every pass,
-and re-running a pass with an unchanged proposal writes nothing at all.
+and re-running a pass with an unchanged proposal writes nothing at all. It also never
+removes an edge outside the pass's scope: a narrow pass proposes edges for the Epics it
+reached, and silence about the rest is not a claim that the rest is gone.
 """
 
 from __future__ import annotations
@@ -153,8 +155,21 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
 # ------------------------------------------------------------------------------------
 
 
-def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
-    """Diff the proposed edge set against the tracker, respecting hand-made edges."""
+def plan_edges(graph: Graph, edges: list[Edge], scope: set[str] | None = None) -> dict:
+    """Diff the proposed edge set against the tracker, respecting hand-made edges.
+
+    Args:
+        graph: The tracker graph.
+        edges: The proposed edge set.
+        scope: The beads this pass may change, or None for the whole portfolio. A pass
+            whose scope is a few Epics proposes edges for those Epics only, so the
+            withdrawal path must not read that partial proposal as "every other edge is
+            gone". Confining it to the scope is what makes a narrow pass safe.
+
+    Returns:
+        The additions, the withdrawals, the hand-made edges left alone, and the ownership
+        metadata the applied diff would write.
+    """
     desired: dict[str, set[str]] = {}
     for edge in edges:
         desired.setdefault(edge.blocked, set()).add(edge.blocker)
@@ -168,6 +183,8 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
     touched = set(desired) | {
         bead.id for bead in graph.beads.values() if bead.metadata.get(beadgraph.OWNED_KEY)
     }
+    if scope is not None:
+        touched &= scope
     for blocked_id in sorted(touched):
         bead = graph.beads.get(blocked_id)
         if bead is None:
@@ -198,21 +215,37 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
     }
 
 
-def apply_edges(graph: Graph, edges: list[Edge], repo: Path | None, *, apply: bool) -> dict:
-    """Validate, diff and (with `--apply`) write an edge set. Idempotent by construction."""
+def apply_edges(
+    graph: Graph, edges: list[Edge], repo: Path | None, scope: set[str] | None = None
+) -> dict:
+    """Validate, diff and write an edge set. Idempotent by construction.
+
+    There is no dry run. A run costs the same whether or not it writes, so it writes; an
+    unchanged proposal adds nothing, withdraws nothing and writes no metadata, which is
+    what makes re-running it free rather than a rehearsal.
+
+    Args:
+        graph: The tracker graph.
+        edges: The proposed edge set.
+        repo: The repository to run `bd` from, or None for the working directory.
+        scope: The beads this pass may change, or None for the whole portfolio.
+
+    Returns:
+        The validation verdict, the counts, and the plan that was applied. A proposal that
+        fails validation is refused whole — nothing is written.
+    """
     report = validate(graph, edges)
     if not report["ok"]:
         return {"applied": False, "validation": report}
-    plan = plan_edges(graph, edges)
-    if apply:
-        for entry in plan["add"]:
-            beadgraph.bd_write(["dep", entry["blocker"], "--blocks", entry["blocked"]], repo)
-        for entry in plan["remove"]:
-            beadgraph.bd_write(["dep", "remove", entry["blocked"], entry["blocker"]], repo)
-        for bead_id, pairs in plan["metadata"].items():
-            write_metadata(bead_id, pairs, repo)
+    plan = plan_edges(graph, edges, scope)
+    for entry in plan["add"]:
+        beadgraph.bd_write(["dep", entry["blocker"], "--blocks", entry["blocked"]], repo)
+    for entry in plan["remove"]:
+        beadgraph.bd_write(["dep", "remove", entry["blocked"], entry["blocker"]], repo)
+    for bead_id, pairs in plan["metadata"].items():
+        write_metadata(bead_id, pairs, repo)
     return {
-        "applied": apply,
+        "applied": True,
         "validation": report,
         "added": len(plan["add"]),
         "removed": len(plan["remove"]),

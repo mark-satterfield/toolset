@@ -197,7 +197,7 @@ because none of those says whether anything else depends on what you wrote.
 - \`confidence\`: how sure you are that the declaration above is right.
 Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
 nobody looked at stops working.`
-// The queue the work-sequencing pass drains. One file per declaration, written the same way
+// The queue the dependencies-and-scoring pass drains. One file per declaration, written the same way
 // every other artifact in this pipeline is written, because an agent that can Write a file
 // can always write this one — appending to a shared log cannot be relied on the same way.
 function materialChangeBrief(art, slot) {
@@ -205,8 +205,8 @@ function materialChangeBrief(art, slot) {
   return `${MATERIAL_CHANGE_BRIEF}
 THEN QUEUE IT, but ONLY when \`material\` is true: write your \`materialChange\` object, plus
 \`producer\` (your agent type) and \`at\` (the current UTC timestamp, ISO-8601), as ONE JSON object
-to ${art.dir}/material-change-${slot}.json with the Write tool. That directory is the queue the
-work-sequencing pass drains; a declaration that reaches only your result is read by this run and
+to ${art.dir}/material-change-${slot}.json with the Write tool. That directory is the queue
+the dependencies-and-scoring pass drains; a declaration that reaches only your result is read by this run and
 by nothing after it. When \`material\` is false, write nothing there.`
 }
 
