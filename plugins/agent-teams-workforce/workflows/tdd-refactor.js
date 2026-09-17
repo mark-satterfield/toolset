@@ -4,6 +4,90 @@ export const meta = {
     'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. Otherwise a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving cleanup + optimizer selection + independent review' }],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: { contract, green, feedback? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -16,7 +100,7 @@ phase('Refactor')
 
 // 1) ADVISOR — complexity-analyzer reads the green-tested change and returns prioritized
 // refactor recommendations. READ-ONLY: it makes no edits; its output informs selection.
-const complexity = await agent(
+const complexity = await settleAgent(
   `Analyze the code changed by the fix for complexity, duplication, and refactor opportunities. You are READ-ONLY — make NO edits. Return a prioritized list of refactor recommendations the downstream refactorer and optimizers will act on. Work within: ${repo}
 
 Changed files from the fix: ${changedFromGreen}`,
@@ -87,7 +171,7 @@ const OPTIMIZER_ROSTER = [
   'code-style-and-linting-enforcer',
   'accessibility-validator',
 ]
-const selection = await agent(
+const selection = await settleAgent(
   `You are the code-quality-lead — a READ-ONLY router. Do NOT write code. Based on what the fix changed and the complexity analysis, select the FEWEST optimizer agent(s) whose specialty applies, drawn ONLY from: ${OPTIMIZER_ROSTER.join(', ')}.
 - lambda-performance-optimizer: Lambda hot paths, cold start, memory sizing.
 - dynamodb-cost-optimizer: DynamoDB capacity, access patterns, index cost.
@@ -125,7 +209,7 @@ const selectionMode = pickedOptimizers.length ? 'selected' : 'default'
 // 3) MAKER — the code-refactoring-specialist applies the behavior-preserving refactor first,
 // keeping every test green. This is the segregation invariant's writer half; it pairs with
 // the read-only correctness reviewer at the end.
-const refactor = await agent(
+const refactor = await settleAgent(
   `Refactor the code changed by the fix for clarity and to reduce complexity/duplication, WITHOUT changing behavior. Address the complexity analysis where it applies. Keep every test green — run the suite after your changes. Work within: ${repo}
 
 Changed files from the fix: ${changedFromGreen}
@@ -169,7 +253,7 @@ const OPTIMIZER_SCHEMA = {
 const optimizerRuns = []
 const changedFiles = [...(refactor.changedFiles || [])]
 for (const opt of pickedOptimizers) {
-  const run = await agent(
+  const run = await settleAgent(
     `Apply your optimization to the refactored code WITHOUT changing behavior, then run the test suite and confirm every test is still green. Work within: ${repo}
 
 You are '${opt}', running after the code-refactoring-specialist and any earlier optimizers — their changes are already applied. Make only the part matching your specialty.
@@ -191,7 +275,7 @@ Constraints: preserve behavior; do not modify tests to make them pass; honor Ski
 // 5) CHECKER — independent correctness review LAST. A different, READ-ONLY agent confirms the
 // test suite is still green and behavior is preserved across the refactor + all optimizers.
 // No producer judges its own work.
-const review = await agent(
+const review = await settleAgent(
   `Review the refactor and optimizer changes below for correctness regressions and behavioral drift. You are READ-ONLY. Verify the test suite is still green and that behavior is preserved across ALL changes. Work within: ${repo}
 
 Files changed (refactor + optimizers): ${changedFiles.join(', ') || 'n/a'}

@@ -4,6 +4,90 @@ export const meta = {
     'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Remaining JUDGMENT criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — passes with a flag rather than looping. On a pass that carries competitive flags, the advantage-evaluator applies the advantage principle — proceed-under-flag or revert — without ever halting the pipeline. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. Enforces segregation of duties: the judge never produced the work it judges.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: {
 //   gate: string,                 // gate id, e.g. "2a"
@@ -227,7 +311,7 @@ const calibrationBlock = a.calibration
   ? `\nCALIBRATION FOR THIS GATE — read before ruling. It states what this specific gate must block on and what it must not:\n${a.calibration}\n`
   : ''
 
-const verdict = await agent(
+const verdict = await settleAgent(
   `You are the phase-gate-enforcer — an INDEPENDENT gate authority. You did not produce this work; you only judge it. Do NOT modify the artifact.
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
@@ -335,7 +419,7 @@ if (ruled && ruled.verdict) {
 // observe, revert later) or revert per flag. It NEVER turns a pass into a failure;
 // constitutive failures never reach a pass and are out of its scope.
 if (ruled && ruled.verdict === 'pass' && Array.isArray(ruled.flags) && ruled.flags.length) {
-  const advantage = await agent(
+  const advantage = await settleAgent(
     `You are the advantage-evaluator. These competitive (non-constitutive) concerns surfaced at a PASSING gate. Apply the advantage principle: for each, decide whether to PROCEED under a flag (speculative execution — commit now, observe the outcome, revert later if it proves out badly) or REVERT now. You NEVER halt the pipeline for a non-invalidating finding; constitutive failures are out of your scope.
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}

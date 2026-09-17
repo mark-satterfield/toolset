@@ -16,6 +16,90 @@ export const meta = {
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: {
 //   bead: {                      // the work item this run builds — REQUIRED
@@ -347,7 +431,7 @@ async function settleRun() {
   // to the agent that is about to COMMIT AND PUSH.
   const settlePathBlock = dataFence('PATH', PATH_DATA_NOTICE, `Worktree: ${wt}`)
   try {
-    const reported = await agent(
+    const reported = await settleAgent(
       `Land every change in this worktree, or say exactly why it could not be landed.\n\n` +
         `${settlePathBlock}\n\n` +
         `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before skillspoke-pr — it has no -C flag and must run inside the tree.\n` +
@@ -571,7 +655,7 @@ async function ruleExhaustion(ctx) {
   // names no budget, which is what every caller did before this value was threaded through.
   const budget = Number.isFinite(ctx.budget) && ctx.budget > 0 ? ctx.budget : MAX_LOOPS
   try {
-    return await agent(
+    return await settleAgent(
       `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${budget} attempt(s) and the criteria below are still unmet.
 
 This is NOT a request to re-judge the work, and it is NOT a request to halt. Rule on ONE question: does what remains INVALIDATE the artifact, or does it merely make it less than ideal?
@@ -641,7 +725,7 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
 // builds it, routing to the agent whose charter is ruling which contract binds.
 async function ruleContradiction(contradiction, evidence) {
   try {
-    return await agent(
+    return await settleAgent(
       `You are the test-strategy-decider. Two tests in this suite assert OPPOSITE outcomes for the identical input, so no implementation can satisfy both and no amount of re-authoring resolves it — re-authoring only regenerates one side. Rule which contract binds.
 
 You are not writing tests and you are not fixing code. Decide ONE thing: given the shared precondition below, which expected outcome is the correct contract for this system, and therefore which test is wrong and must be corrected.
@@ -1166,7 +1250,7 @@ async function cpLoad() {
   if (!cp.active) return // cpInit already said so, loudly, with the reason
   let read = null
   try {
-    read = await agent(
+    read = await settleAgent(
       `Read the files listed below, if they exist. For EACH one return an entry with the same \`key\`, \`found\`, and its FULL text verbatim in \`content\` — no summarizing, no reformatting, no commentary. A file that does not exist or is empty is found=false with content "". Read no other file, and write nothing.
 
 ${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${cpDoneFile()}`].join('\n')}`,
@@ -1272,7 +1356,7 @@ async function cpSave(key, payload) {
 async function cpWriteOne(key, payload) {
   const file = JSON.stringify({ composite: 'task-to-deploy', subject: bead.id || null, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, phase: key, result: payload })
   try {
-    const written = await agent(cpWritePrompt(key, file), {
+    const written = await settleAgent(cpWritePrompt(key, file), {
       label: `checkpoint:save:${key}`,
       phase: currentPhase || 'Run Ledger',
       effort: 'low',
@@ -1361,7 +1445,7 @@ ${file}`
 async function cpDelete() {
   if (!cp.active || !cp.touched) return
   try {
-    await agent(
+    await settleAgent(
       `MARK a completed run. ONE WRITE — use the Write tool, replacing the whole file if it exists:
 
 ${cpDoneFile()}
@@ -1440,7 +1524,7 @@ async function resolveRepository() {
   let brief = null
   let briefError = null
   try {
-    brief = await agent(
+    brief = await settleAgent(
       'Assemble the statement of work for ONE tracker item so an architecture ruling can decide which ' +
         'repository it lands in. You are READ-ONLY: read, quote, and report; change nothing.\n\n' +
         dataFence('INPUT', DOC_PATH_NOTICE, `Work item id: ${bead.id}\nDocuments: ${docPaths.length ? docPaths.join('\n            ') : '(none supplied)'}`) +
@@ -2365,6 +2449,36 @@ return {
   deployIteration: deployIterations.length,
 }
   })()
+} catch (err) {
+  // ── A THROW FINALISES THE RUN. IT DOES NOT DISCARD IT ──────────────────────────
+  //
+  // This used to be `try`/`finally` with NO `catch`, and that one missing word is the
+  // most expensive line in this pipeline. Anything thrown inside the body — an agent
+  // that ended without a structured result, a TypeError reading a field off a null
+  // dispatch — propagated straight out: `result` stayed undefined, so the journal was
+  // written as `failed:unknown`, every `if (result)` guard below was false, the `return`
+  // was never reached, and the host got no handback at all. Every phase that had already
+  // passed its gate was paid for and then thrown away. Two recorded instances cost 1.13M
+  // and 1.88M tokens.
+  //
+  // So a throw is CAUGHT and finalised here: the run reports the phase it died in, names
+  // which agent died when one did, and the `finally` below still writes the journal,
+  // lands the tree and attaches `detailPath` — with a result to attach it to.
+  //
+  // The deployment scalars keep handback's defaults on purpose. A run that was killed
+  // mid-phase proves nothing about AWS, and the host clears deploy evidence for an
+  // interrupted run in any case.
+  const message = String((err && err.message) || err)
+  const deaths = dispatchDeaths()
+  const where = currentPhase || 'unknown'
+  const slug = String(where).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'
+  log(`RUN ABORTED in ${where}: ${message.slice(0, 300)}`)
+  result = handback(
+    false,
+    deaths.length ? DISPATCH_FAILED_STAGE : slug,
+    `${where}: the run threw and was finalised rather than discarded — ${message.slice(0, 300)}`,
+    { reason: message.slice(0, 400), dispatchFailed: deaths.length > 0, dispatchFailures: deaths }
+  )
 } finally {
   // The journal is written FIRST, because it is now the only place the run's detail exists
   // and the caller's `detailPath` is the path this returns. A journal that could not be

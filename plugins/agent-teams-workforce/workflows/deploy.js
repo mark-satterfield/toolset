@@ -4,6 +4,90 @@ export const meta = {
     'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. The readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) are DERIVED from the contract\'s declared surfaces and the changed paths rather than routed by a lead; smoke authoring and CDK synth/drift run concurrently; the rollout plan is ruled by the deployment-strategy-decider only when it has more than one legal answer (a multi-repo span or a non-dev target), and is otherwise stated by the script. The script assembles the readiness inventory from the fields it already holds and the phase-gate-enforcer — the only role permitted to rule — returns the go/no-go. On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
   phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke authoring + readiness review, then roll out to AWS dev and smoke-check the deployed endpoints' }],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: { contract, green, docCurrency?, feedback? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
@@ -153,7 +237,7 @@ log(
 // were sequential for no reason, on the longest stretch of the phase.
 const [smoke, cdk] = await parallel([
   () =>
-    agent(
+    settleAgent(
       `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy. Work within: ${repo}
 
 Change: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}
@@ -189,7 +273,7 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
 // carve-out and its incident history stay next to the prompt they are about: a `function`
 // declaration binds before the body runs, so the call site reads above its definition.
 function cdkValidate() {
-  return agent(
+  return settleAgent(
   `Validate the service's CDK: run synth and check for drift between the stacks and deployed infrastructure. READ-ONLY — do not deploy. Work within: ${repo}
 
 FIRST, determine whether this repo has a CDK surface at all. If there is no cdk.json, no CDK app entrypoint, and no CloudFormation stack owned by this repo, then CDK validation DOES NOT APPLY: return applicable=false with synthValid=false and driftDetected=false, and name in \`details\` how the repo actually deploys (for example an S3 sync plus CloudFront invalidation) and which repo owns its infrastructure, if any. Do NOT report applicable=false merely because synth is inconvenient, the environment is unclear, or you lack credentials — that is a genuine failure and must be reported as applicable=true with synthValid=false.
@@ -245,7 +329,7 @@ if (artifacts.includes('runbook')) artifactSpecs.push(['incident-response-runboo
 if (artifacts.includes('pipeline')) artifactSpecs.push(['github-actions-pipeline-implementer', 'deploy:pipeline', 'Ensure the GitHub Actions deploy pipeline (OIDC auth, build, test, deploy stages) is present and current for this change; author or update it as needed. Do NOT trigger a deploy.'])
 const readinessArtifacts = artifactSpecs.length
   ? (await parallel(artifactSpecs.map(([at, label, ask]) => () =>
-      agent(`${ask}\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\nWork within: ${repo}`, {
+      settleAgent(`${ask}\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\nWork within: ${repo}`, {
         label, phase: 'Deploy-readiness', agentType: `agent-teams-workforce:${at}`, schema: ARTIFACT_SCHEMA,
       })
     ))).filter(Boolean)
@@ -281,7 +365,7 @@ const multiRepo = a.multiRepo === true || c.multiRepo === true
 // the plan itself, that it was not decided by an agent.
 let strategy
 if (multiRepo || !rolloutAllowed) {
-  strategy = await agent(
+  strategy = await settleAgent(
     `You are the deployment-strategy-decider. Decide the rollout strategy for this change: wave order (cross-repo), rollout style (canary / rolling / blue-green), and the risk level — with rationale. You ONLY decide the plan; you do NOT execute the rollout (that is a separate human-gated action).
 
 Target environment: ${targetEnv}
@@ -351,7 +435,7 @@ const inventory = [
 ].join('\n')
 
 // Gate 5 verdict — the enforcer rules, and it is the only role permitted to.
-let readiness = await agent(
+let readiness = await settleAgent(
   `GATE 5 — DEPLOY READINESS. Rule on whether this change may roll out to the ${(a.env || c.env || 'dev').toLowerCase()} environment. Return ready=true (proceed) or ready=false (block), with reasons.
 
 CALIBRATION — read before ruling. The target is dev. Deploying to dev is how code reaches AWS at all; it is internal, pre-production alpha, and serves fewer than five users. It is NOT an outward-facing release, is NOT production, and is NOT human-gated. This is a LIGHT gate by design. The cost of a bad dev deploy is redeploying; the cost of blocking one is that nothing ever reaches AWS and no post-deployment evidence can ever be gathered. When genuinely uncertain, RULE READY — dev is where things are meant to be found out. That uncertainty default is scoped to PROCESS artifacts (absent FinOps, SLOs, runbook, pipeline authoring): it does not apply to unit/integration test evidence. Missing, unconfirmed, or unreported test results are a blocking gap, not uncertainty.
@@ -498,7 +582,7 @@ const leaseKey = `${DEV_ACCOUNT}/${DEV_REGION}/${leaseScope}`
 const wantsRollout = !!(readiness && readiness.ready && rolloutAllowed && localGatesOk)
 let lease = null
 if (wantsRollout) {
-  lease = await agent(
+  lease = await settleAgent(
     `Acquire the shared DEV deployment lease before a rollout, and report what happened. This is a MUTEX over one AWS environment, not a deploy: do NOT deploy anything, do not run cdk, do not touch any AWS resource.
 
 The lease directory is \`$HOME/.claude/agent-teams-workforce/deploy-leases\`. Create it if it does not exist (\`mkdir -p\`).
@@ -604,7 +688,7 @@ if (leaseHeld) log(`Holding the shared dev deployment lease for ${leaseKey}${lea
 
 let rollout = null
 if (wantsRollout && !leaseRefused) {
-  rollout = await agent(
+  rollout = await settleAgent(
     `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
 
 Repo: ${c.repoPath || '(unspecified)'}
@@ -709,7 +793,7 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
 // wedging it forever.
 let leaseReleased = null
 if (leaseHeld) {
-  leaseReleased = await agent(
+  leaseReleased = await settleAgent(
     `Release the shared DEV deployment lease. This is lock bookkeeping, not a deploy: do NOT deploy anything and do not touch any AWS resource.
 
 The lease directory is:

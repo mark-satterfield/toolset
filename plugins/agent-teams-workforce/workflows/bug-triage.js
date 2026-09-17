@@ -4,6 +4,90 @@ export const meta = {
     'Bug front-end. Turns a symptom (a bug bead) into an implementation-ready contract: reproduction, root cause, blast radius, and the expected-behavior acceptance criteria the shared tail builds against. Also SIZES the bug: a defect whose honest fix is a redesign is escalated as needing a PRD and Epic rather than being squeezed through the fix path, because a bug ticket is not a licence to rebuild a subsystem unreviewed. Read-only — produces no code changes.',
   phases: [{ title: 'Triage', detail: 'root-cause analysis + scope sizing + expected-behavior contract' }],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? } }
 //
@@ -48,7 +132,7 @@ THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate th
 phase('Triage')
 
 // 1) Diagnosis — read-only analyst. Separation of duties: this agent does not fix.
-const analysis = await agent(
+const analysis = await settleAgent(
   `${rulingsBlock}Diagnose this bug. You are READ-ONLY — do not change code. Work within the repository at: ${repo}
 
 Bug ${bead.id || ''}: ${bead.title || ''}
@@ -144,7 +228,7 @@ if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resol
 //
 // A DIFFERENT agent sizes it — the diagnostician has just invested in a root cause
 // and is the worst-placed judge of whether fixing it is too big.
-const sizing = await agent(
+const sizing = await settleAgent(
   `${rulingsBlock}Size this bug. It has been diagnosed; decide whether its honest remedy is a FIX or a REDESIGN. You are READ-ONLY and you are NOT proposing the remedy — only sizing it.
 
 Answer "needs-prd" when the honest fix would: change a public contract or event schema, alter the data model, cross a service boundary, require an architecture decision the SAD does not cover, or amount to rebuilding a component rather than correcting it.
@@ -221,7 +305,7 @@ const AC_MIN = Math.max(1, defectIds.length)
 const AC_MAX = Math.max(2, defectIds.length * 2)
 log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria bounded to ${AC_MIN}..${AC_MAX}`)
 
-const contract = await agent(
+const contract = await settleAgent(
   `${rulingsBlock}Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
 ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total — this is enforced by the schema, not requested.

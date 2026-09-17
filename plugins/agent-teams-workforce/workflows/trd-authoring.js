@@ -8,6 +8,90 @@ export const meta = {
     { title: 'Verify & Traceability', detail: 'independent validation + PRD<->TRD traceability; decider on deadlock' },
   ],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },  // the source PRD
@@ -119,7 +203,7 @@ const suppliedExtract = isExtract(a.sadExtract) ? a.sadExtract : null
 if (suppliedExtract) log('SAD extract supplied by the caller from an earlier pass of this run — reused; the extractor is not dispatched')
 else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 
-const sadExtract = suppliedExtract || await agent(
+const sadExtract = suppliedExtract || await settleAgent(
   `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
 
 SAD location: ${sadRef}
@@ -167,7 +251,18 @@ For every entry: assign a stable ID, capture the verbatim-grounded statement, an
     },
   }
 )
-if (!sadExtract) return { ok: false, stage: 'extract', reason: 'SAD extraction produced nothing' }
+// ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────────
+//
+// An extractor or author that DIED did not produce a TRD the checkers found wanting — it
+// never ran. Reported as an ordinary failure, the caller adjudicates it at its gate,
+// every deterministic check fails against the artifact that does not exist, the gate
+// loops, the re-dispatch meets the same wall, and the budget is spent. So a death in the
+// producing phases is reported AS a death: no gate dispatch, no retry spent.
+const died = (...phases) => {
+  const deaths = dispatchDeaths(...phases)
+  return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
+}
+if (!sadExtract) return { ok: false, stage: 'extract', reason: 'SAD extraction produced nothing', ...died('Extract SAD') }
 
 const extractText = JSON.stringify(sadExtract, null, 2)
 const prdText = prd.content
@@ -190,7 +285,7 @@ let feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feed
 // base: it searches the vault, applies the single-source-of-truth rule, and returns the
 // one correct location. Asked once per run, before the authoring loop.
 if (!trdPath) {
-  const home = await agent(
+  const home = await settleAgent(
     `Decide the ONE correct absolute file path for the Technical Requirements Document described below, using this project's documentation conventions and knowledge base. Do not author the TRD and do not create the file — return only where it belongs.
 
 If a TRD for this subject already exists, return ITS path so the document is updated in place rather than duplicated.
@@ -242,7 +337,7 @@ function authorTrd(pass) {
   phase('Author TRD')
   log(`Authoring TRD (${pass}) at ${authorPath}`)
 
-  return agent(
+  return settleAgent(
     `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
 
 ${writeBrief}
@@ -298,7 +393,7 @@ function verifyTrd() {
   const trdText = JSON.stringify(trd, null, 2)
   phase('Verify & Traceability')
 
-  return agent(
+  return settleAgent(
     `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words.
 
 CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
@@ -377,7 +472,7 @@ ${extractText}`,
 
 for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   trd = await authorTrd(`attempt ${attempt}/${MAX_LOOPS}`)
-  if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract }
+  if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract, ...died('Author TRD') }
 
   const verification = await verifyTrd()
   const validation = verification && verification.validation
@@ -406,7 +501,7 @@ for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   // The decider only rules — it never authored or analyzed the TRD itself.
   if (attempt === MAX_LOOPS) {
     log('Maker-checker loop exhausted — escalating to trd-decider for a binding ruling')
-    const ruling = await agent(
+    const ruling = await settleAgent(
       `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything.
 
 TRD:

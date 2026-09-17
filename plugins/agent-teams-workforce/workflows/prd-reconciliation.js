@@ -6,6 +6,90 @@ export const meta = {
     { title: 'Reconciliation checks', detail: 'one independent read-only checker session inventories the material and checks upstream dependencies' },
   ],
 }
+// ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
+//
+// `agent()` fails in two different ways and the scripts used to conflate them. It
+// RETURNS NULL when a subagent is skipped or dies on a terminal API error after the
+// runtime's own retries. It THROWS when a subagent finishes without calling
+// StructuredOutput — and an uncaught throw leaves this script, leaves whatever
+// composite called it, and kills the run: two recorded crashes cost 1.13M and 1.88M
+// tokens and discarded every artifact the run had already paid for.
+//
+// So every dispatch in this file goes through settleAgent(). A throw never escapes it,
+// and it records what the engine's error text loses — that text reads
+// `agent({schema}): subagent completed without calling StructuredOutput`, which names
+// neither the agent, nor the phase, nor the schema, and points at no transcript. The
+// caller receives null, which every call site already handles, and `dispatchFailures`
+// carries the identity of what died, for the `dispatchFailed` report this script owes
+// its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const dispatchFailures = []
+// The dispatch deaths belonging to the named phases (every death when none is named).
+// A phase whose PRODUCING agents died has no artifact to judge, so its caller must not
+// adjudicate it and must not spend a retry on it — that is the `dispatchFailed` contract.
+function dispatchDeaths(...phases) {
+  const named = phases.filter(Boolean)
+  if (!named.length) return dispatchFailures.slice()
+  const set = new Set(named)
+  return dispatchFailures.filter((f) => set.has(f.phase))
+}
+function settleSchemaName(o) {
+  if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
+  const s = o.schema
+  if (!s || typeof s !== 'object') return null
+  if (typeof s.title === 'string' && s.title) return s.title
+  const req = Array.isArray(s.required) && s.required.length ? s.required : Object.keys(s.properties || {})
+  return req.length ? `{${req.join(', ')}}` : null
+}
+function settleTranscript(err, label) {
+  const e = err && typeof err === 'object' ? err : {}
+  for (const k of ['transcriptPath', 'transcript', 'agentPath', 'logPath']) {
+    if (typeof e[k] === 'string' && e[k]) return e[k]
+  }
+  const id = typeof e.agentId === 'string' && e.agentId ? e.agentId : null
+  if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
+  return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
+}
+async function settleAgent(prompt, opts) {
+  const o = opts && typeof opts === 'object' ? opts : {}
+  const call = { ...o }
+  delete call.schemaName
+  const who = {
+    agentType: o.agentType || null,
+    label: o.label || null,
+    phase: o.phase || null,
+    schema: settleSchemaName(o),
+  }
+  const name = who.label || who.agentType || 'agent'
+  const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
+  let out = null
+  try {
+    out = await agent(prompt, call)
+  } catch (err) {
+    const message = String((err && err.message) || err)
+    dispatchFailures.push({
+      ...who,
+      outcome: 'threw',
+      message: message.slice(0, 300),
+      transcript: settleTranscript(err, name),
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+    })
+    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    return null
+  }
+  if (out) return out
+  dispatchFailures.push({
+    ...who,
+    outcome: 'skipped',
+    message: null,
+    transcript: settleTranscript(null, name),
+    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
+  })
+  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
+  return null
+}
 
 // args: {
 //   prd: {                      // the PRD being reconciled against reality (required)
@@ -144,37 +228,17 @@ END STANDING RULINGS
 // failure mode that actually happens. ssbd-nc8z died this way twice, at the same phase,
 // and both times the supervisor was handed a bare abort with no classification.
 //
-// So dispatch through here. A throw and a null are the same event — "no account came
-// back" — and both must reach the guards as null so the caller learns it was the
-// ENVIRONMENT that failed and not the PRD.
+// settleAgent() above is where that now happens, for every dispatch in this file: a
+// throw and a null arrive at the guards below as the same event — "no account came
+// back" — so the caller learns it was the ENVIRONMENT that failed and not the PRD.
 //
-// The single retry is the other half. A reconciliation cannot degrade: proceeding
-// without knowing what already exists is precisely the blind assumption this phase
-// exists to remove, so a dead dispatch has no fallback except to run again. One extra
-// attempt is the difference between a coin-flip and a phase that completes; more than
-// one turns a systematic failure into an expensive systematic failure.
-const MAX_DISPATCH_ATTEMPTS = 2
-const dispatchNotes = []
-
-async function dispatch(label, prompt, opts) {
-  let why = null
-  for (let attempt = 1; attempt <= MAX_DISPATCH_ATTEMPTS; attempt++) {
-    let out = null
-    try {
-      out = await agent(prompt, opts)
-    } catch (e) {
-      out = null
-      why = `threw: ${e && e.message ? e.message : String(e)}`
-    }
-    if (out) return out
-    if (!why) why = 'returned nothing — skipped, or died on a terminal API error'
-    dispatchNotes.push(`${label} attempt ${attempt}/${MAX_DISPATCH_ATTEMPTS} — ${why}`)
-    if (attempt < MAX_DISPATCH_ATTEMPTS) log(`${label}: dispatch died (${why}) — dispatching once more.`)
-    why = null
-  }
-  log(`${label}: dispatch failed on all ${MAX_DISPATCH_ATTEMPTS} attempt(s) — ${dispatchNotes[dispatchNotes.length - 1]}`)
-  return null
-}
+// THE SECOND ATTEMPT IS GONE. It re-ran the identical prompt with identical options and
+// nothing else changed, which is the one retry in this whole tree that carried no new
+// input. That is sound for a TRANSIENT death and useless for the deterministic one: a
+// session that exhausted its context runs the same prompt into the same wall, and this
+// code cannot tell the two apart — the thrown Error is the only evidence it gets, with
+// no token count, no stop reason and no partial output. So the dispatch is made once,
+// and a death is reported as a death for the caller to act on.
 
 // `extra` carries `dispatchFailed` when the failure is a dead agent rather than a
 // finding — see the reconciler check below. The caller reads that field to decide
@@ -256,8 +320,7 @@ ${repoBlock}`
 // applies a fixed rule to the typed findings.
 phase('Reconciliation checks')
 
-const combined = await dispatch(
-  'reconcile:reality-and-dependencies',
+const combined = await settleAgent(
   `${rulingsBlock}Take an INVENTORY of the material that already exists for this PRD, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase, the design mocks and the cloud account: read, search and query what the inventory needs, but change nothing anywhere and write no document. Two checks, one pass — return both.
 
 ═══ THE RULE THAT GOVERNS THIS ENTIRE TASK ═══
@@ -519,20 +582,21 @@ const dependencyChanges = (combined && combined.dependencyChanges) || null
 // ── A DEAD AGENT IS NOT A FINDING ───────────────────────────────────────────────
 //
 // A dispatch dies in two ways — skipped or dead on a terminal API error (null), or run
-// to completion without ever emitting its structured output (a throw). `dispatch()`
-// above normalizes both to null and has already spent its retry. Neither is the same
-// event as a reconciler that ran and returned a malformed inventory, and folding them
-// together is what turned two of the five real prd-to-spec runs into work failures at
-// stage 'prd-reconciliation': the supervisor charged the bead for an account limit.
-// Both still stop the run — reading "we could not establish what exists" as "nothing
-// exists" is the blind assumption this phase removes — but only one of them is
-// anybody's fault, and the caller needs to be able to tell which.
+// to completion without ever emitting its structured output (a throw). settleAgent()
+// above normalizes both to null and records which agent died. Neither is the same event
+// as a reconciler that ran and returned a malformed inventory, and folding them together
+// is what turned two of the five real prd-to-spec runs into work failures at stage
+// 'prd-reconciliation': the supervisor charged the bead for an account limit. Both still
+// stop the run — reading "we could not establish what exists" as "nothing exists" is the
+// blind assumption this phase removes — but only one of them is anybody's fault, and the
+// caller needs to be able to tell which.
 if (!reality) {
+  const deaths = dispatchDeaths()
   return fail(
-    'the reality reconciler never came back with an account of what already exists, on any attempt, so no ' +
-      `reconciliation was performed (${dispatchNotes.join('; ')}). This is a DISPATCH failure, not a verdict on ` +
-      'the PRD or on what already exists.',
-    { dispatchFailed: true, dispatchFailures: dispatchNotes.slice() }
+    'the reality reconciler never came back with an account of what already exists, so no ' +
+      `reconciliation was performed (${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}). ` +
+      'This is a DISPATCH failure, not a verdict on the PRD or on what already exists.',
+    { dispatchFailed: true, dispatchFailures: deaths }
   )
 }
 if (!Array.isArray(reality.requirements)) {
