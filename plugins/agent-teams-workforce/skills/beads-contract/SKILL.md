@@ -158,6 +158,17 @@ Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `rev
 `wsjf`, `wsjf_calculated_at`, `ready_content_hash`. Build lane: `build_state`. Elaboration lane:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`.
 
+WSJF rubrics (`epic-wsjf`, `task-wsjf`): the dimensions a score was built from —
+`wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`,
+`wsjf_size_source`, `wsjf_size_task_days`, `wsjf_confidence`, `wsjf_value_from`. They are what
+lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
+either one re-judging anything. Sequencing (`work-sequencing`): `seq_owned_blockers`, a
+comma-separated id list of the blocking edges that pass created on the bead, and
+`seq_owned_blockers_at`. The pass only ever withdraws an edge that list names, which is how a
+hand-made edge survives it.
+
+The script is the list: `metadata set` names every key it accepts when it refuses one.
+
 `metadata set` refuses any key outside that namespace. A typo'd key is not a small mistake — it
 is silently invisible to every reader, and the bead looks unset forever.
 

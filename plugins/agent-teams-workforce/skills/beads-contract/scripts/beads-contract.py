@@ -301,6 +301,32 @@ GATE_KEYS = (
     "wsjf_calculated_at",
 )
 
+#: Keys the WSJF rubrics own, from `agent-teams-workforce:epic-wsjf` and `:task-wsjf`.
+#: `wsjf` and `wsjf_calculated_at` are the gate's and are not repeated here. The rest carry
+#: the dimensions a score was built from, which is what lets a Task INHERIT its Epic's value
+#: and an Epic roll its size up from its Tasks without either one re-judging anything.
+WSJF_KEYS = (
+    "wsjf_rubric",
+    "wsjf_ubv",
+    "wsjf_tc",
+    "wsjf_rroe",
+    "wsjf_unblocks",
+    "wsjf_cod",
+    "wsjf_size",
+    "wsjf_size_source",
+    "wsjf_size_task_days",
+    "wsjf_confidence",
+    "wsjf_value_from",
+)
+
+#: Keys the SEQUENCING pass owns. `seq_owned_blockers` is a comma-separated id list of the
+#: blocking edges this system created on that bead, and it exists so a hand-made edge is
+#: never removed: the pass only ever withdraws an edge it recorded as its own.
+SEQUENCING_KEYS = (
+    "seq_owned_blockers",
+    "seq_owned_blockers_at",
+)
+
 #: Keys the ELABORATION lane owns. Listed so `metadata get` can say which keys on a bead
 #: belong to a known lane and which are strangers, and so a `metadata set` typo of one of
 #: them is refused rather than written into a key nothing reads.
@@ -314,7 +340,13 @@ LANE_KEYS = (
 #: Every metadata key this pipeline owns. A `metadata set` of anything else is refused —
 #: a typo'd key is silently invisible to every reader, which is the failure mode this
 #: whole module exists to end.
-KNOWN_KEYS = frozenset([source for source, _, _ in CONTRACT_SCHEMA] + list(GATE_KEYS) + list(LANE_KEYS))
+KNOWN_KEYS = frozenset(
+    [source for source, _, _ in CONTRACT_SCHEMA]
+    + list(GATE_KEYS)
+    + list(LANE_KEYS)
+    + list(WSJF_KEYS)
+    + list(SEQUENCING_KEYS)
+)
 
 
 class ContractError(ValueError):
@@ -874,6 +906,8 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
             "contract": {key: metadata[key] for key, _, _ in CONTRACT_SCHEMA if key in metadata},
             "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
             "lane": {key: metadata[key] for key in LANE_KEYS if key in metadata},
+            "wsjf": {key: metadata[key] for key in WSJF_KEYS if key in metadata},
+            "sequencing": {key: metadata[key] for key in SEQUENCING_KEYS if key in metadata},
             "unrecognized": sorted(key for key in metadata if key not in KNOWN_KEYS),
         }
 
