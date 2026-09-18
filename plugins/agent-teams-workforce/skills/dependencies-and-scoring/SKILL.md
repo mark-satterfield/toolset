@@ -3,10 +3,11 @@ name: dependencies-and-scoring
 description: >-
   Maintain the dependency edges and the WSJF scores over the Epics and Tasks in the beads
   tracker. ONE operation — recalculate — whose SCOPE varies: everything when nothing is
-  scored yet, and what a declared material change reached when something changed. The two
+  scored yet, what a declared material change reached when something changed, and every
+  Epic and Task with `--all`, which includes items that already carry a score. The two
   mechanisms it maintains are separate on purpose: edges decide ELIGIBILITY (what may be
   elaborated at all), WSJF decides PRIORITY among what is eligible. It writes; there is no
-  dry run and no mode. Triggers on /dependencies-and-scoring, "set the dependency edges",
+  dry run. Triggers on /dependencies-and-scoring, "set the dependency edges",
   "score the Epics", "refresh the WSJF scores", "nothing is scored".
 allowed-tools: [Bash, Read, Agent, Skill]
 ---
@@ -45,7 +46,9 @@ edge that passes the derivation test and none that does not.
 ## One operation, and its scope
 
 There is one thing this does — recalculate — and only its scope varies. The scope is read
-off the tracker and the material-change queue. **No flag sets it.**
+off the tracker and the material-change queue. `--all` widens it to include the items that
+already carry a score: carrying a score is a fact about an item's state, not a statement
+about whether it should be recalculated.
 
 | What is true | The scope |
 |---|---|
@@ -54,6 +57,7 @@ off the tracker and the material-change queue. **No flag sets it.**
 | Something arrived unscored | The Epic it belongs to, and its Tasks |
 | Every Epic edge changed in this pass | The whole portfolio — establish-versus-consume is judged relative to it, so a changed edge moves scores beyond the Epic it touched |
 | Nothing declared, nothing unscored | Nothing. Say so and stop |
+| `--all` was given | Everything: every open Epic and its Tasks, scored or not |
 
 A materially changed or new PRD, or an architecture decision, reaches particular Epics; the
 recalculation covers those Epics **and their Tasks**. Where the change genuinely shifts the
@@ -82,8 +86,9 @@ The steps below are the skill's internals. A person runs
 DS="${CLAUDE_PLUGIN_ROOT}/skills/dependencies-and-scoring/scripts/depscore.py"
 ```
 
-1. **`scope`** — read what this pass covers and why. Report it before doing anything. A
-   `none` scope ends the pass: say so rather than inventing work.
+1. **`query [--all]`** — read what this pass covers and why. Report it before doing
+   anything. A `none` scope ends the pass: say so rather than inventing work. Pass `--all`
+   when the run was started with it, and to every later step that takes it.
 2. **`snapshot --kinds epic --with-description`** — the whole Epic portfolio. Even a narrow
    scope reads it whole, because the judgment in step 3 is about how Epics relate.
 3. **The reasoning pass** — dispatch ONE `epic-sequencer` agent over that snapshot. Not a
@@ -105,8 +110,8 @@ DS="${CLAUDE_PLUGIN_ROOT}/skills/dependencies-and-scoring/scripts/depscore.py"
    scoring session calibration bands of your own — the rubric owns its bands. Write the
    result with the `beads-contract` CLI, and carry any `graphDefects` it reports into the
    report at step 8.
-7. **`score [--epics <scope>]`** — the arithmetic: every in-scope Epic and its Tasks, value
-   down and size up, in one loop.
+7. **`score [--epics <scope>] [--all]`** — the arithmetic: every in-scope Epic and its
+   Tasks, value down and size up, in one loop.
 8. **Report** — the scope and why, the edges added and withdrawn, the Epics and Tasks
    scored, and everything `incomplete` came back with. An `incomplete` entry naming a
    missing `wsjf_size` is a decomposition that did not size its Tasks; say which.

@@ -2,18 +2,20 @@
 """Dependencies and scoring — the deterministic half, over the tracker graph.
 
 ONE operation: recalculate the dependency edges and the WSJF scores. Its SCOPE is the only
-thing that varies, and the scope is read off the tracker and the material-change queue,
-never off a flag somebody set:
+thing that varies, and the scope is read off the tracker and the material-change queue:
 
 * nothing carries a score yet -> the scope is everything, every Epic and every Task;
 * something changed -> the scope is what that change reached, which is the Epics the
   declarations name plus anything that arrived unscored, and their Tasks with them.
 
+Carrying a score is a fact about an item, not a statement about whether it is wanted, so
+`--all` includes the items that already carry one: every open Epic and its Tasks.
+
 An Epic in scope is recalculated together with its Tasks, always, in one loop. Nothing is
 skipped because it already carries a score: a score is a function of a graph that moves,
 and an in-scope item is recomputed and overwritten every time.
 
-    scope         what this pass covers, and why each item is in it
+    query         what this pass covers, and why each item is in it
     snapshot      the tracker as a graph, which is what the reasoning pass reads
     validate      prove a proposed edge set is applicable before anything is written
     apply-edges   apply the DIFF through `bd dep`, never touching a hand-made edge
@@ -45,7 +47,7 @@ ELAB_KEY = "elaboration_state"
 
 
 # ------------------------------------------------------------------------------------
-# Scope — read off the tracker and the queue, never off a flag
+# Scope — read off the tracker and the queue
 # ------------------------------------------------------------------------------------
 
 
@@ -65,12 +67,16 @@ def _epic_for(graph: Graph, ident: str) -> Bead | None:
     return bead if bead.kind == "epic" else graph.epic_of(bead.id)
 
 
-def resolve_scope(graph: Graph, directory: Path | None) -> dict:
+def resolve_scope(
+    graph: Graph, directory: Path | None, *, include_scored: bool = False
+) -> dict:
     """Decide what this pass covers, and say why each Epic is in it.
 
     Args:
         graph: The tracker graph.
         directory: The repository holding the run artifacts, or None for the working dir.
+        include_scored: True to include the Epics and Tasks that already carry a score, so
+            every open Epic is in scope.
 
     Returns:
         The scope kind (`everything`, `changed` or `none`), the Epic ids it covers with a
@@ -82,7 +88,9 @@ def resolve_scope(graph: Graph, directory: Path | None) -> dict:
         return {
             "scope": "everything",
             "why": "no open Epic carries a score, so nothing has been calculated yet",
-            "epics": [{"id": e.id, "reason": "nothing is scored yet"} for e in open_epics],
+            "epics": [
+                {"id": e.id, "reason": "nothing is scored yet"} for e in open_epics
+            ],
             "decisionIds": sorted({i for d in pending for i in d["decisionIds"]}),
         }
 
@@ -96,10 +104,16 @@ def resolve_scope(graph: Graph, directory: Path | None) -> dict:
         for ident in declaration["suspectedImpact"]:
             epic = _epic_for(graph, ident)
             if epic is not None:
-                reached.setdefault(epic.id, set()).add(f"a declaration named {ident} as impacted")
+                reached.setdefault(epic.id, set()).add(
+                    f"a declaration named {ident} as impacted"
+                )
     for epic in open_epics:
         if not epic.metadata.get("wsjf"):
             reached.setdefault(epic.id, set()).add("the Epic carries no score")
+        elif include_scored:
+            reached.setdefault(epic.id, set()).add(
+                "--all includes Epics that carry a score"
+            )
     for task in graph.of_kind("task"):
         if task.closed or task.metadata.get("wsjf"):
             continue
@@ -107,7 +121,16 @@ def resolve_scope(graph: Graph, directory: Path | None) -> dict:
         if epic is not None and not epic.closed:
             reached.setdefault(epic.id, set()).add("a Task beneath it carries no score")
 
-    epics = [{"id": i, "reason": "; ".join(sorted(reached[i]))} for i in sorted(reached)]
+    epics = [
+        {"id": i, "reason": "; ".join(sorted(reached[i]))} for i in sorted(reached)
+    ]
+    if include_scored:
+        return {
+            "scope": "everything",
+            "why": "--all includes every open Epic, whether or not it carries a score",
+            "epics": epics,
+            "decisionIds": sorted({i for d in pending for i in d["decisionIds"]}),
+        }
     return {
         "scope": "changed" if epics else "none",
         "why": "the declarations and the unscored items name these Epics"
@@ -118,20 +141,28 @@ def resolve_scope(graph: Graph, directory: Path | None) -> dict:
     }
 
 
-def scope_ids(graph: Graph, directory: Path | None, chosen: str | None) -> list[str]:
+def scope_ids(
+    graph: Graph,
+    directory: Path | None,
+    chosen: str | None,
+    *,
+    include_scored: bool = False,
+) -> list[str]:
     """The Epic ids a command acts on: the ones named, or the resolved scope.
 
     Args:
         graph: The tracker graph.
         directory: The repository holding the run artifacts.
         chosen: A comma-separated Epic id list from the caller, or None.
+        include_scored: True to resolve the scope with scored items included.
 
     Returns:
         The Epic ids in scope, in id order.
     """
     if chosen:
         return sorted(set(split_ids(chosen)))
-    return [e["id"] for e in resolve_scope(graph, directory)["epics"]]
+    resolved = resolve_scope(graph, directory, include_scored=include_scored)
+    return [e["id"] for e in resolved["epics"]]
 
 
 # ------------------------------------------------------------------------------------
@@ -140,7 +171,11 @@ def scope_ids(graph: Graph, directory: Path | None, chosen: str | None) -> list[
 
 
 def snapshot(
-    graph: Graph, *, kinds: tuple[str, ...], include_closed: bool, epics: list[str] | None
+    graph: Graph,
+    *,
+    kinds: tuple[str, ...],
+    include_closed: bool,
+    epics: list[str] | None,
 ) -> dict:
     """Every bead of the wanted kinds with its lineage, blockers and scoring metadata.
 
@@ -184,7 +219,10 @@ def snapshot(
         for b in graph.of_kind(*kinds)
         if (include_closed or not b.closed) and (wanted is None or epic_id(b) in wanted)
     ]
-    return {"beads": beads, "counts": {k: sum(1 for b in beads if b["kind"] == k) for k in kinds}}
+    return {
+        "beads": beads,
+        "counts": {k: sum(1 for b in beads if b["kind"] == k) for k in kinds},
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -210,29 +248,48 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("scope", help="what this pass covers, and why", parents=[common])
+    all_help = "include items that already carry a score"
+    que = sub.add_parser(
+        "query", help="what this pass covers, and why", parents=[common]
+    )
+    que.add_argument("--all", action="store_true", help=all_help)
 
     snap = sub.add_parser(
-        "snapshot", help="the tracker as a graph, for the reasoning pass", parents=[common]
+        "snapshot",
+        help="the tracker as a graph, for the reasoning pass",
+        parents=[common],
     )
     snap.add_argument("--kinds", default="epic,story,task")
     snap.add_argument("--with-description", action="store_true")
     snap.add_argument("--include-closed", action="store_true")
-    snap.add_argument("--epics", default=None, help="restrict to these Epics; omit for the scope")
+    snap.add_argument(
+        "--epics", default=None, help="restrict to these Epics; omit for the scope"
+    )
 
     val = sub.add_parser("validate", help="check a proposed edge set", parents=[common])
-    val.add_argument("--edges", type=Path, required=True, help="edge file, or `-` for stdin")
+    val.add_argument(
+        "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
+    )
 
     app = sub.add_parser(
         "apply-edges", help="apply an edge diff through `bd dep`", parents=[common]
     )
-    app.add_argument("--edges", type=Path, required=True, help="edge file, or `-` for stdin")
-    app.add_argument("--epics", default=None, help="the scope; omit for the whole portfolio")
+    app.add_argument(
+        "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
+    )
+    app.add_argument(
+        "--epics", default=None, help="the scope; omit for the whole portfolio"
+    )
 
     sco = sub.add_parser(
         "score", help="recalculate the Epics in scope and their Tasks", parents=[common]
     )
-    sco.add_argument("--epics", default=None, help="the scope; omit for the resolved scope")
+    sco.add_argument(
+        "--epics", default=None, help="the scope; omit for the resolved scope"
+    )
+    sco.add_argument(
+        "--all", action="store_true", help=f"{all_help}, when --epics is omitted"
+    )
 
     # A DECLARED change, never an inferred one. See `materialchanges` for why the queue is
     # a directory of files an agent wrote rather than anything derived from file state.
@@ -242,7 +299,9 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     mc.add_argument(
-        "--drain", action="store_true", help="record the pending declarations as acted on"
+        "--drain",
+        action="store_true",
+        help="record the pending declarations as acted on",
     )
     return parser
 
@@ -264,8 +323,8 @@ def run(args: argparse.Namespace) -> dict:
         args.directory, with_description=getattr(args, "with_description", False)
     )
     head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
-    if args.command == "scope":
-        return head | resolve_scope(graph, args.directory)
+    if args.command == "query":
+        return head | resolve_scope(graph, args.directory, include_scored=args.all)
     if args.command == "snapshot":
         epics = split_ids(args.epics) if args.epics else None
         return head | snapshot(
@@ -279,7 +338,8 @@ def run(args: argparse.Namespace) -> dict:
     if args.command == "apply-edges":
         scope = set(split_ids(args.epics)) if args.epics else None
         return head | apply_edges(graph, read_edges(args.edges), args.directory, scope)
-    return head | score(graph, args.directory, scope_ids(graph, args.directory, args.epics))
+    epics = scope_ids(graph, args.directory, args.epics, include_scored=args.all)
+    return head | score(graph, args.directory, epics)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -295,7 +355,13 @@ def main(argv: list[str] | None = None) -> int:
     args.directory = getattr(args, "directory", None)
     try:
         payload = run(args)
-    except (SequencingError, GraphError, QueueError, json.JSONDecodeError, OSError) as exc:
+    except (
+        SequencingError,
+        GraphError,
+        QueueError,
+        json.JSONDecodeError,
+        OSError,
+    ) as exc:
         print(json.dumps({"error": str(exc), "command": args.command}, indent=2))
         return 2
     print(json.dumps(payload, indent=2))

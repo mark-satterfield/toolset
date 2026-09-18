@@ -1,6 +1,6 @@
 ---
 description: "Maintain the dependency edges and the WSJF scores over every Epic and Task"
-argument-hint: ""
+argument-hint: "[--all]"
 allowed-tools: [Bash, Read, Agent, Skill]
 ---
 
@@ -10,10 +10,11 @@ Recalculate the dependency edges between Epics and the WSJF scores on Epics and 
 the beads tracker. Load `agent-teams-workforce:dependencies-and-scoring` and follow it;
 this command is the entry point, not a second copy of the procedure.
 
-There is ONE operation and it takes no options. Its scope comes off the tracker and the
-material-change queue: everything when nothing is scored yet, and what a declared change
-reached when something changed. `$ARGUMENTS` is ignored — a scope a person typed is a
-guess, and the record already knows.
+There is ONE operation. Its scope comes off the tracker and the material-change queue:
+everything when nothing is scored yet, and what a declared change reached when something
+changed. `--all` includes the items that already carry a score, so every open Epic and its
+Tasks are recalculated. When `$ARGUMENTS` contains `--all`, pass it to the skill's `query`
+and `score` steps; anything else in `$ARGUMENTS` is ignored.
 
 It writes. There is no dry run.
 
