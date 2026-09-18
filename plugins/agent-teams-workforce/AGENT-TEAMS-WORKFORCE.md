@@ -171,9 +171,30 @@ A composite runs two ways. **On-demand**, a single call drives one unit of work:
 
 `deploy` stops at dev. It validates CDK synth, checks for drift, authors smoke tests, and runs a readiness review that returns a go/no-go; on a go it deploys to the AWS dev environment and smoke-tests the deployed endpoints, because dev is where things are found out and deploying there is not human-gated. The pipeline does not run `cdk deploy` to qa or production. Outward-facing rollout is a separate, human-gated action triggered by a person, not by a composite. Adversarial agents operate in designated test environments only; the attack lanes are instructed never to touch production, and the composite ends with `deployedToProd: false`.
 
+### Project configuration
+
+The plugin knows nothing about the project it is installed in. Everything project-specific reaches it through these environment variables, which the project exports (in its shell profile, or in the environment of whatever launches its sessions). A workflow script has no process access, so the commands and skills that dispatch a workflow read these variables and pass their values as the named arguments; hooks and skill scripts read them directly. A required variable that is unset stops the step that needs it, by name.
+
+| Variable | Meaning | Required | Reaches |
+|---|---|---|---|
+| `ATW_PR_COMMAND` | Absolute path of an executable that, run inside a worktree as `<cmd> --title T --body B`, pushes the current branch and opens its pull request (a PR that already exists for the branch is success) | Yes, for any composite that lands work | `prCommand` on `task-to-deploy`, `bug-fix`, `infra-change` |
+| `ATW_SAD_PATH` | The arc42 Software Architecture Document — a file or a directory of section files | Yes, for elaboration | `sadPath` on `prd-to-spec` and `architecture` |
+| `ATW_PRD_DIR` | The directory PRDs live under | Yes, for `/start-prd` and for elaborating an Epic | read by `commands/start-prd.md`, `commands/work-bead.md` |
+| `ATW_FLEET_DIR` | The directory that holds the project's repositories | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
+| `ATW_CONTROL_REPO` | The root repository that holds the tracker; its beads `issue_prefix` is the project's issue prefix | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
+| `ATW_PROJECT_ROOT` | The directory recorded artifact and spec paths are relative to | No — without it, no root-relative path is recorded on a bead | `projectRoot` on `prd-to-spec` and `task-to-deploy` |
+| `ATW_ARTIFACT_SCRIPT` | Absolute path of the phase-artifact recorder, run as `python3 <script> record <file> --epic <id> --phase <phase> --inputs <paths...>` and `python3 <script> plan <epic-id>` | No — without it, `prd-to-spec` saves no artifacts and `task-to-deploy` saves phase files unhashed | `artifactScript` on `prd-to-spec` and `task-to-deploy` |
+| `ATW_WORKTREE_ROOT` | The directory every agent-cut worktree is placed under | No — without it, a `.worktrees/` directory beside the repository | `worktreeRoot` on the build composites; read by the main-worktree hook |
+| `ATW_WAVE_PLANS` | `:`-separated absolute paths of the wave plans a multi-repo rollout follows | Yes, for a multi-repo rollout | `wavePlanPaths` on the build composites and `deploy` |
+| `ATW_PRD_EPIC_SYNC` | Command that brings a PRD's Epic into line with the document: `<cmd> --only <slug> --apply` | No — without it, the PRD writer reports the slug needing sync | read by the `prd-writer` agent and skill |
+| `ATW_PRD_EPIC_VERIFY` | Command that checks one PRD against its Epic: `<cmd> <slug> [--apply]` | No | read by the `prd-writer` skill |
+| `ATW_BEADS_PORT` | The shared Dolt server port | No — `3308` | read by `skills/polyrepo-beads/scripts/*.sh` |
+| `ATW_BEADS_REPO_GLOB` | The repositories a fleet audit covers | No — `<control repo basename>-*` | read by `audit-fleet.sh` |
+| `ATW_BEADS_SKIP` | Space-separated repositories a fleet audit skips | No | read by `audit-fleet.sh` |
+
 ### Status
 
-The shared tail and the `bug-fix` composite are built: `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy`, the `documentation` track, both gates, the `bug-triage` front-end, and the composite that stitches them. The PRD-to-Spec pipeline's front-ends and composites now exist as scripts too — `prd-validation`, `architecture`, `trd-authoring`, `spec-authoring`, `task-decomposition`, `infra-intent`, `prd-to-spec`, `task-to-deploy`, `infra-change` all reuse the same shared tail and gates and differ only in their front-ends. Only the `bug-fix` pilot has end-to-end behavior confirmed by a supervised run on one real bug bead, tracked in bead `ssbd-xucu`; the rest are validated structurally against the `Workflow` tool contract but not yet run end to end. Separately, `story` and `whisp` are not yet registered Beads issue types (see *From artifact to Beads issue* above) — until they are, `task-decomposition.js` and the routers still operate on the old `feature|bug|task|chore|epic` set, so the doctrine described here is ahead of what the scripts actually emit.
+The shared tail and the `bug-fix` composite are built: `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy`, the `documentation` track, both gates, the `bug-triage` front-end, and the composite that stitches them. The PRD-to-Spec pipeline's front-ends and composites now exist as scripts too — `prd-validation`, `architecture`, `trd-authoring`, `spec-authoring`, `task-decomposition`, `infra-intent`, `prd-to-spec`, `task-to-deploy`, `infra-change` all reuse the same shared tail and gates and differ only in their front-ends. Only the `bug-fix` pilot has end-to-end behavior confirmed by a supervised run on one real bug bead; the rest are validated structurally against the `Workflow` tool contract but not yet run end to end. Separately, `story` and `whisp` are not yet registered Beads issue types (see *From artifact to Beads issue* above) — until they are, `task-decomposition.js` and the routers still operate on the old `feature|bug|task|chore|epic` set, so the doctrine described here is ahead of what the scripts actually emit.
 
 ## The doctrine, principles, and rules
 

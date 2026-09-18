@@ -10,7 +10,7 @@
  * This hook does not deny, and it grants no exemption. It used to ask the
  * orchestrator whether it intended to edit the file this turn and to proceed if
  * so — an exemption whose predicate is the actor's own unobservable future
- * intent (REQ-ORCH-02, root cause B). Editing source from the orchestrator is
+ * intent (REQ-ORCH-02). Editing source from the orchestrator is
  * now denied outright by pre-tool-orchestrator-edit-guard.cjs, so the question
  * no longer has anything to gate: there is no read that is a legitimate step
  * toward an orchestrator edit.

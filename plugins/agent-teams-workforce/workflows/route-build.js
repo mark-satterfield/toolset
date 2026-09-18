@@ -96,7 +96,7 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   bead: {
-//     id:           string,          // e.g. "ssbd-123"
+//     id:           string,          // e.g. "<prefix>-123"
 //     type?:        string,          // task | bug | infra | ...
 //     labels?:      string[],
 //     title?:       string,

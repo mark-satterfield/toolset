@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://schema.skillspoke.com/agent-team-workforce/assignment.json",
+  "$id": "urn:agent-teams-workforce:schema:assignment",
   "title": "Worker Assignment",
   "description": "Written by the orchestrator for each worker. The worker reads this at startup and uses it as the sole source of truth for what 'done' means. Updated by the orchestrator during remediation cycles. Domain-agnostic — requirements and deliverables are supplied by the invoking agent.",
   "type": "object",

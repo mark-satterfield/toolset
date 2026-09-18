@@ -658,7 +658,7 @@ export function scanSource(source) {
 // It is here rather than in one consumer because that is this file's entire reason to
 // exist. On 2026-09-08 prd-to-spec.js added a checkpoint lease minted from the clock and
 // a random suffix. Neither the syntax checker nor the test harness modelled this refusal,
-// so 400-odd tests passed and the composite could not LOAD: it failed twice on ssbd-vvn8
+// so 400-odd tests passed and the composite could not LOAD: it failed twice
 // with zero agents run and no phase reached. Same shape as the 6.0.6 outage, different
 // rule — which is the argument for one list rather than two copies.
 //

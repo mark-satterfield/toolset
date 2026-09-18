@@ -74,9 +74,18 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   repoPath: "/path/to/the/repo/you/are/standing/in",
   repos:    <OMIT — the run rules the span. Only when a human named it explicitly>,
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
-  sadPath:  <arc42 SAD location, when known>
+  sadPath:        "$ATW_SAD_PATH",
+  projectRoot:    "$ATW_PROJECT_ROOT",
+  artifactScript: "$ATW_ARTIFACT_SCRIPT"
 }})
 ```
+
+The last three are the project's configuration, read from the `ATW_*` environment (see
+"Project configuration" in `AGENT-TEAMS-WORKFORCE.md`) and passed as expanded values; a
+workflow script cannot read the environment itself. `ATW_SAD_PATH` is required — the
+architecture phase refuses without a SAD — so if it is unset, report `ATW_SAD_PATH is
+unset` and stop. Omit either of the other two when its variable is unset, and name it in
+your report.
 
 Use `scriptPath`, never a bare `name` — name dispatch resolves against the
 session-start snapshot and the workflow dispatch guard refuses it.

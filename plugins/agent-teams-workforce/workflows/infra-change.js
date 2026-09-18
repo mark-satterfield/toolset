@@ -111,13 +111,23 @@ async function settleAgent(prompt, opts) {
 //                                                 //   comes from the Workspace step, not this value.
 //   runAdversarial?: boolean,                     // run the TRIMMED adversarial lane (default false)
 //   maxLoops?: number,                            // gate retry budget per phase (default 3)
-//   worktreeRoot? — absolute directory every cut worktree is placed under. The caller
-//   reads it from SKILLSPOKE_WORKTREE_ROOT and passes it through; a workflow script has
-//   no process or filesystem access, so the environment cannot be read inside one.
+//   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
 //   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
+//   prCommand — absolute path of the executable settle runs, inside the worktree, as
+//   `<prCommand> --title T --body B` to push the branch and open its pull request
+//   (ATW_PR_COMMAND). Absent, settle lands nothing and reports the run blocked.
+//   wavePlanPaths? — absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS).
+//   Every value above is read from the environment by the caller: a workflow script has
+//   no process or filesystem access.
 //   maxDeployIterations?: number,                 // bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+// The executable that pushes the current branch and opens its pull request (ATW_PR_COMMAND).
+// It is interpolated into command text, so only an absolute path of plain characters is taken.
+const PR_COMMAND =
+  typeof a.prCommand === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(a.prCommand) && !a.prCommand.split('/').includes('..') && !a.prCommand.includes('//')
+    ? a.prCommand
+    : null
 const bead = a.bead || {}
 const RUN_ADVERSARIAL = a.runAdversarial === true
 // Gate retry budget. One rework round, then proceed with the finding recorded.
@@ -192,7 +202,7 @@ let runDetail = null
 // (`<session>/workflows/wf_*.json`), and the Python host reads that record after every
 // dispatch. So the payload is logged ONCE as a machine-readable `RUN-JOURNAL {json}`
 // line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
-// (ops/sdlc-automation/runjournal.py), deterministically, with no model call. The path is
+// with its run-journal writer, deterministically, with no model call. The path is
 // the host's to report, so this returns null and the host fills `detailPath` in.
 function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
@@ -340,6 +350,14 @@ ${body}
 async function settleRun() {
   const wt = settleRepoPath
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
+  if (!PR_COMMAND) {
+    return {
+      status: 'blocked',
+      reason:
+        `settle has no PR command to land the work in ${wt} with: args.prCommand (the project's ATW_PR_COMMAND) ` +
+        'was not supplied as an absolute path to an executable. The work is left in the worktree.',
+    }
+  }
   // Before the path becomes command text in the prompt below. A path that could reshape
   // those commands is a blocked orphan: the work is named and left where a human can find
   // it, never committed by a shell somebody else wrote.
@@ -349,7 +367,7 @@ async function settleRun() {
       status: 'blocked',
       reason:
         `settle refused to act on the worktree path it was handed because ${wtFault}. The path is ` +
-        'interpolated into git and skillspoke-pr commands another agent runs exactly as written, so it ' +
+        'interpolated into git and PR commands another agent runs exactly as written, so it ' +
         'is refused rather than rewritten.',
     }
   }
@@ -380,7 +398,7 @@ async function settleRun() {
       status: 'blocked',
       reason:
         `settle refused to commit in ${wt}: its branch is "${settleBranch || '(none reported)'}" — a default ` +
-        'branch, a detached HEAD, or unreported. skillspoke-pr runs on the CURRENT branch, so this would ' +
+        'branch, a detached HEAD, or unreported. The PR command runs on the CURRENT branch, so this would ' +
         'commit and push the work onto the default branch rather than onto a reviewable branch.' +
         (settleRepoDefault && settleNormalized === settleRepoDefault
           ? ` This repository's default branch is "${settleDefaultBranch}", as origin/HEAD names it — not every repo defaults to main.`
@@ -396,11 +414,11 @@ async function settleRun() {
     const reported = await settleAgent(
       `Land every change in this worktree, or say exactly why it could not be landed.\n\n` +
         `${settlePathBlock}\n\n` +
-        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before skillspoke-pr — it has no -C flag and must run inside the tree.\n` +
+        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command, which runs inside the tree.\n` +
         `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
         `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to origin/main, run \`git -C "${wt}" branch --unset-upstream\`. Never push to main.\n` +
         `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from origin/main.\n` +
-        `4. If hasWork, \`cd "${wt}" && /Users/msat1971/.local/bin/skillspoke-pr --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch itself. NEVER open the PR any other way — CodeRabbit does not scan PRs opened under an agent token, so the raw \`gh\` PR-create path yields an unreviewed PR. NEVER \`gh pr merge\`. If a PR already exists for this head skillspoke-pr returns that PR's URL — success, not failure.\n` +
+        `4. If hasWork, \`cd "${wt}" && ${PR_COMMAND} --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch and opens the pull request. NEVER open the PR any other way, and NEVER merge it. A PR that already exists for this head is success, not failure — report its URL.\n` +
         `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
       {
         label: 'settle:land-work',
@@ -609,7 +627,7 @@ function gateHeadline(stage, r) {
 // framework is built on — constitutive findings are hard stops, competitive ones proceed
 // under a flag.
 //
-// ssbd-97as is the case that proves the cost. A P0 live outage reached the Red gate with
+// The case that proves the cost: a P0 live outage reached the Red gate with
 // redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
 // clean, and not one production file touched. The blocking objection was "AC5 partially
 // covered — two of three clauses unassessed". The budget ran out and nothing shipped.
@@ -1334,8 +1352,8 @@ const workspace = await workflow('agent-teams-workforce:workspace', {
   beadId: bead.id,
   branchPrefix: 'infra',
   purpose: bead.title || 'infra change',
-  // Configuration, read from SKILLSPOKE_WORKTREE_ROOT by whoever dispatched this run.
-  // Absent, workspace falls back to the legacy `.worktrees/` beside the repository.
+  // Configuration, read from ATW_WORKTREE_ROOT by whoever dispatched this run.
+  // Absent, workspace falls back to a `.worktrees/` beside the repository.
   worktreeRoot: a.worktreeRoot,
 })
 // RESIDUAL 5 — the writing phases get the same backstop settle already had.
@@ -1389,13 +1407,11 @@ log(`Infra change ${bead.id || '(no id)'} — ${bead.title || ''}`)
 // ── Gate 1: Infra Intent (provisioning contract is concrete + fresh + clean) ─────
 // G1 USED TO BE A STANDALONE GATE THAT COULD NOT LOOP. It called gate-enforce once and
 // returned on anything but 'pass' — so a verdict of 'loop', which means "retry this phase
-// with my feedback", ended the run instead. This is the same defect class as ssbd-wmtw
-// (escalation as a labelled exit rather than control flow), which was repaired for the
-// Red/Green pair but never here.
-// It is expensive precisely because infra-intent is expensive. On ssbd-w1r9 the gate
-// returned 'loop' with a detailed, reproducible feedback packet naming exactly what the
-// maker had to change — and the run died anyway, 486k subagent tokens spent, the feedback
-// salvageable only by hand. Route it through gateLoop so the maker re-authors against the
+// with my feedback", ended the run instead — escalation as a labelled exit rather than
+// control flow.
+// It is expensive precisely because infra-intent is expensive: a 'loop' verdict carries a
+// detailed, reproducible feedback packet naming exactly what the maker has to change, and
+// ending the run there discards it. Route it through gateLoop so the maker re-authors against the
 // gate's own findings, bounded by MAX_LOOPS.
 let g1Loop = cpGet('intent')
 if (g1Loop === undefined) {
@@ -1486,7 +1502,7 @@ red = await gateLoop({
     { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
     // Red proves an assertion fails NOW. It must also establish that a pass is
     // REACHABLE — an assertion pinned to a stack or path the change does not touch
-    // fails correctly and can never go green (ssbd-vtnl).
+    // fails correctly and can never go green.
     { field: 'greenReachable', equals: true, label: 'every authored assertion names the CDK file whose change makes it pass' },
   ],
   escalateTargets: ['infra-intent'],
@@ -1690,7 +1706,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     ],
     escalateTargets: ['integration', 'green'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract: tailContract, green: green.artifact, docCurrency,
+      contract: tailContract, green: green.artifact, docCurrency, wavePlanPaths: a.wavePlanPaths,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
     }),
   })

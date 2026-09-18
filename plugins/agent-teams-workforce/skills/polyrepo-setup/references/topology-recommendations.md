@@ -242,7 +242,7 @@ Recommend the meta repo hold:
 This keeps the meta repo small, focused, and useful — not a dumping
 ground.
 
-## Walkthrough — Mark's example
+## Walkthrough — a worked example
 
 > "1 command-and-control repository and ~63 repos. They share a
 > common parent folder, separate from other local repos."

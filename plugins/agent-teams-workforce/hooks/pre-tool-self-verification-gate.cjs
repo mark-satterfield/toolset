@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * PreToolUse hook — REQ-ORCH-03 (ssbd-ja5d, root cause C).
+ * PreToolUse hook — REQ-ORCH-03.
  *
  * "The producer may not be the verifier." The doctrine already says no agent
  * approves its own output; the orchestrator was the one actor exempt from it
@@ -102,7 +102,7 @@ function main() {
       '  - smoke-test-author / the deploy workflow for post-deployment checks',
       '  - integration-testing-lead for endpoint behavior',
       '',
-      'Rule source: REQ-ORCH-03 (ssbd-ja5d) — the producer may not be the verifier',
+      'Rule source: REQ-ORCH-03 — the producer may not be the verifier',
     ].filter(Boolean));
   }
 
@@ -123,7 +123,7 @@ function main() {
         '',
         'git access is unaffected for files this session did not produce.',
         '',
-        'Rule source: REQ-ORCH-03 (ssbd-ja5d) — the producer may not be the verifier',
+        'Rule source: REQ-ORCH-03 — the producer may not be the verifier',
       ]);
     }
   }

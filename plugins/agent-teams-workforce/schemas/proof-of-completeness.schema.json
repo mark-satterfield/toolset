@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://schema.skillspoke.com/agent-team-workforce/proof-of-completeness.json",
+  "$id": "urn:agent-teams-workforce:schema:proof-of-completeness",
   "title": "Proof of Completeness",
   "description": "Structured evidence that every requirement in the original assignment has been addressed. Domain-agnostic. The orchestrator independently verifies every claim against the assignment and actual artifacts. Confidence scores are for audit trail only — never trusted.",
   "type": "object",

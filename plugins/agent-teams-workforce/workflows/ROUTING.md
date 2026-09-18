@@ -152,11 +152,11 @@ So the driver is a caller of the Workflow tool, never a workflow script. Two exi
 | Driver | What it is | When it drives |
 |---|---|---|
 | **The orchestrating session** (`/loop`, or `/agent-teams-workforce:next-task` / `:work-bead` one bead at a time) | A Claude Code session running the loop below with the Workflow tool | Interactive and semi-attended work |
-| **`ops/sdlc-automation` in the SkillSpoke repo** | A Python supervisor that claims beads, dispatches headless sessions, and journals every run | Long unattended campaigns |
+| **An external supervisor the host project provides** | A process that claims beads, dispatches headless sessions, and journals every run | Long unattended campaigns |
 
 The consequence is worth stating plainly: **"unattended" is only as unattended as
-whatever is driving it.** A `/loop` sweep stops when its session stops. The Python
-supervisor is the one that survives a session ending, and it is not part of this plugin.
+whatever is driving it.** A `/loop` sweep stops when its session stops. An external
+supervisor survives a session ending, and it is not part of this plugin.
 
 ### Both run modes use the same composites
 

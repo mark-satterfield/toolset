@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * PreToolUse hook — REQ-ORCH-04 category 2 (ssbd-ja5d, root causes B + C).
+ * PreToolUse hook — REQ-ORCH-04 category 2.
  *
  * The rule is "the producer may not be the verifier", not "the orchestrator may
  * not run tests". Those are different, and conflating them cost more than it
@@ -146,7 +146,7 @@ function main() {
       'A delegated run costs nothing from this window: the agent reads the output',
       'in its own context and returns the outcome.',
       '',
-      'Rule source: REQ-ORCH-04 category 2 (ssbd-ja5d) — diagnostics are delegated',
+      'Rule source: REQ-ORCH-04 category 2 — diagnostics are delegated',
       '--- End ---',
     ].join('\n')}\n`,
   );

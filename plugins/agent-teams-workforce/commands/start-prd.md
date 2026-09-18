@@ -18,14 +18,12 @@ This is also the entry the bead router cannot provide: a PRD is a **file**, so
 
 ## 1. Locate the PRD
 
-The first argument is a path or a title. If it is a title, search the product docs:
+The first argument is a path or a title. If it is a title, search the PRD directory,
+`$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
 
 ```bash
-ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
+grep -ril -- "<title>" "$ATW_PRD_DIR"
 ```
-
-Prefer `obsidian-cli` (vault `skillspoke-docs`) when Obsidian is running; if it is
-not, do not wait — the vault is a plain git repo of markdown, so read it off disk.
 
 Read the PRD. Extract `title` and `body`. Stop and report if you cannot find it —
 do not invent a PRD from the title.
@@ -50,8 +48,7 @@ this command is.
 
 ## 3. Hand off
 
-Invoke the `elaborate-prd-epic` skill with the resolved pair, plus the SAD path
-when it is known. Pass a BRD path only in the uncommon case that a BRD exists —
+Invoke the `elaborate-prd-epic` skill with the resolved pair. Pass a BRD path only in the uncommon case that a BRD exists —
 it is optional, and a PRD never has to reference one. It owns the `prd-to-spec` dispatch and the
 report. The run writes the hierarchy into beads itself — you verify and report
 what it wrote, you do not write it.

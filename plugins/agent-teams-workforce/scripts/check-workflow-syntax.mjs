@@ -296,7 +296,7 @@ console.log(
 //
 // This pass exists because nothing modelled that. On 2026-09-08 prd-to-spec.js minted a
 // checkpoint lease from the clock and a random suffix; every test passed and the composite
-// could not LOAD, failing twice on ssbd-vvn8 with zero agents run. Same shape as the 6.0.6
+// could not LOAD, failing twice with zero agents run. Same shape as the 6.0.6
 // outage — a checker laxer than the runner — and the same remedy: one shared list, used by
 // this checker and by the unit-test harness both.
 const nondeterminism = []

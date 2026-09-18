@@ -100,7 +100,7 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   decision: { id?, title, context, drivers?, repoPath? },  // the architecture question
-//   sadPath?: string,        // path to the arc42 SAD (defaults to the vault arch42 tree)
+//   sadPath: string,         // path to the arc42 SAD (ATW_SAD_PATH) — required
 //   feedback?: string,       // optional upstream gate feedback to fold in
 //   maxLoops?: number,       // SAD maker-checker passes before decider deadlock (default 2)
 //   maxDecideLoops?: number, // re-proposal rounds after an inadmissible ruling (default 2)
@@ -268,11 +268,12 @@ const replaySummary = () => ({
   challenges: !!(challengeWave && challengeWave.reused === true),
 })
 const d = a.decision || {}
-const sadPath = a.sadPath || 'tech/architecture/arch42/ (skillspoke-docs vault)'
+const sadPath = typeof a.sadPath === 'string' ? a.sadPath.trim() : ''
 const repo = d.repoPath || '(repo path not provided — ask before editing files)'
 const MAX_SAD_LOOPS = a.maxLoops || 2
 const upstream = a.feedback ? `\nUpstream gate feedback to fold in:\n${a.feedback}` : ''
 if (!d.title) return { ok: false, stage: 'input', error: 'no decision.title supplied — refusing to run without a work item' }
+if (!sadPath) return { ok: false, stage: 'input', error: 'no sadPath supplied (the project\'s ATW_SAD_PATH) — refusing to rule on an architecture with no SAD to rule against' }
 
 const decisionHeader = `Architecture decision ${d.id || ''}: ${d.title || '(untitled)'}
 Context: ${d.context || 'n/a'}
@@ -806,7 +807,7 @@ const runChallengeWave = async () => {
   const wave = await settleAgent(
     `You are the adversarial challenge panel for an architecture decision. You did NOT author any of the proposals below; you only stress them. Apply ALL FIVE lenses in one pass, returning each lens's findings under its own key. Do NOT author replacement options anywhere — only challenge. Keep every objection/risk/concern under 40 words.
 
-1. \`challenges\` (pattern lens): patterns that conflict with SkillSpoke platform constraints or are known anti-patterns, each with the reason and the constraint it violates.
+1. \`challenges\` (pattern lens): patterns that conflict with the platform constraints the SAD states or are known anti-patterns, each with the reason and the constraint it violates.
 2. \`unstatedRisks\` (tradeoff-skeptic lens): tradeoffs the proposers understated, hidden coupling, operational cost not accounted for, failure modes glossed over.
 3. \`boundaryViolations\` (boundary lens): cross-context coupling — where a proposal makes this context own behavior another owns, reaches across a boundary it should respect, or violates service isolation.
 4. \`scaleBreakpoints\` (cost-at-scale lens): stress each option's cost at 10x, 100x, and 1000x the stated load — where each option's cost breaks first (cost cliff, throttle, or quota) and the bottleneck that causes it.
@@ -1440,10 +1441,10 @@ ${JSON.stringify(sadUpdate, null, 2)}`,
 
 // ── A MAINTAINER THAT DIES MID-SWEEP DOES NOT TAKE THE RULING WITH IT ─────────
 //
-// The whole-SAD sweep is the longest session in this mini. In ssbd-yeid the maintainer
-// edited a dozen SAD files, reached ~240k tokens of context, and ended with no structured
-// result; agent() threw, and the uncaught throw discarded the ruling and every artifact
-// already paid for. The edits are ON DISK when that happens, so the recovery is one
+// The whole-SAD sweep is the longest session in this mini. A maintainer can edit a dozen
+// SAD files, reach ~240k tokens of context, and end with no structured result; agent()
+// then throws, and an uncaught throw discards the ruling and every artifact already paid
+// for. The edits are ON DISK when that happens, so the recovery is one
 // fresh maintainer that reads the working-tree diff, finishes what is left, and reports.
 // If that also returns nothing, the step reports a rejected SAD update (ok:false) rather
 // than crashing — the caller still receives the decision.

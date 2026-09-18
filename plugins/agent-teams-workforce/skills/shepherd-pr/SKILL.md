@@ -25,7 +25,7 @@ capabilities:
 
 ## Invocation Model
 
-This skill is invoked as `/fix-pr <pr-number>` by the **shepherd runner**, which the consuming project provides — in SkillSpoke that is `ops/shepherd-prs.sh`. This plugin ships no runner of its own.
+This skill is invoked as `/fix-pr <pr-number>` by the **shepherd runner**, which the consuming project provides. This plugin ships no runner of its own.
 
 Three components, three responsibilities, no overlap:
 
@@ -694,7 +694,7 @@ Before exiting the skill, verify:
 
 ## 📖 Related
 
-- **The shepherd runner** (project-provided; `ops/shepherd-prs.sh` in SkillSpoke): deterministic iteration loop. Invokes `/fix-pr` repeatedly until the PR reaches a merge-ready state. Does not merge; GitHub auto-merge handles that.
+- **The shepherd runner** (project-provided): deterministic iteration loop. Invokes `/fix-pr` repeatedly until the PR reaches a merge-ready state. Does not merge; GitHub auto-merge handles that.
 - **GitHub CLI**: https://cli.github.com/manual/
 - **GraphQL Schema**: `gh api graphql --help`
 - **CodeRabbit**: review comments format and severity markers

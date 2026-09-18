@@ -4,24 +4,26 @@
 # Changes nothing. Prints a per-repo truth table and an anomaly list. Run before a release,
 # after a mass change, or whenever you suspect drift. See references/canonical-repo-state.md.
 #
-# Configuration. Each value resolves in order: project env var → generic env var → default.
-# The project env vars are set in the shell (available to Claude Code and to automation alike).
-#   fleet dir   SKILLSPOKE_APP_ROOT   → BEADS_FLEET_DIR   → $PWD
-#   port        SKILLSPOKE_BEADS_PORT → BEADS_SHARED_PORT → 3308
-#   prefix      SKILLSPOKE_BEADS_PREFIX → BEADS_PREFIX    → ssbd
-#   repo glob   BEADS_REPO_GLOB       → "<CC basename>-*" (derived from SKILLSPOKE_CC)
-#   skip list   BEADS_SKIP            → ""  (deprecated repos; source from the manifest)
+# Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
+#   ATW_FLEET_DIR        required  the directory that holds the repos
+#   ATW_CONTROL_REPO     required  the root repo; the issue prefix is read from its beads
+#                                  config, and it is excluded from the audit
+#   ATW_BEADS_PORT       optional  the shared Dolt server port (default 3308)
+#   ATW_BEADS_REPO_GLOB  optional  the repos to audit (default "<control repo basename>-*")
+#   ATW_BEADS_SKIP       optional  space-separated repos to skip (deprecated ones; source from the manifest)
 #
-# Repo→database name mapping: replace '-' with '_' (SkillSpoke-web -> SkillSpoke_web).
-# The root/C2 repo (SKILLSPOKE_CC, e.g. "SkillSpoke") is excluded by the glob.
+# Repo→database name mapping: replace '-' with '_' (my-repo -> my_repo).
 
 set -u -o pipefail
 
-BASE_DIR="${SKILLSPOKE_APP_ROOT:-${BEADS_FLEET_DIR:-$PWD}}"
-GLOB="${BEADS_REPO_GLOB:-$(basename "${SKILLSPOKE_CC:-SkillSpoke}")-*}"
-PORT="${SKILLSPOKE_BEADS_PORT:-${BEADS_SHARED_PORT:-3308}}"
-PREFIX="${SKILLSPOKE_BEADS_PREFIX:-${BEADS_PREFIX:-ssbd}}"
-SKIP="${BEADS_SKIP:-}"
+: "${ATW_FLEET_DIR:?ATW_FLEET_DIR is not set — the directory that holds the repos}"
+: "${ATW_CONTROL_REPO:?ATW_CONTROL_REPO is not set — the root repo that holds the tracker}"
+BASE_DIR="$ATW_FLEET_DIR"
+GLOB="${ATW_BEADS_REPO_GLOB:-$(basename "$ATW_CONTROL_REPO")-*}"
+PORT="${ATW_BEADS_PORT:-3308}"
+PREFIX="$(cd "$ATW_CONTROL_REPO" && bd config get issue_prefix)" || { echo "FATAL: could not read issue_prefix from the beads config in $ATW_CONTROL_REPO"; exit 1; }
+[ -n "$PREFIX" ] || { echo "FATAL: the beads config in $ATW_CONTROL_REPO sets no issue_prefix"; exit 1; }
+SKIP="${ATW_BEADS_SKIP:-}"
 
 command -v uv >/dev/null 2>&1 || { echo "FATAL: uv not on PATH (needed to reach the server)"; exit 1; }
 
@@ -56,7 +58,7 @@ anomalies, versions, checked = [], collections.Counter(), 0
 
 for repo in repos:
     if repo in skip:
-        print(f"{repo:<42}(skipped — in BEADS_SKIP)")
+        print(f"{repo:<42}(skipped — in ATW_BEADS_SKIP)")
         continue
     checked += 1
     db = db_of(repo)

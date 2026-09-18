@@ -27,7 +27,7 @@ const COMPOSITES = [
   { file: 'infra-change.js', writer: 'agent-teams-workforce:infra-intent' },
 ]
 
-const CALLER_REPO = '/repos/SkillSpoke-shared-chassis'
+const CALLER_REPO = '/repos/shared-chassis'
 const WORKTREE = '/repos/.worktrees/ssbd-mz1w-shared-chassis'
 
 /** Drive a composite with a scripted workspace result; everything else passes. */
@@ -275,7 +275,7 @@ test('workspace.js: NO independent report at all refuses — it is the primary c
 // comparing the two absolute common-dirs settles it exactly.
 
 test('workspace.js: a genuine worktree of the WRONG repository is refused', async () => {
-  const OTHER = '/repos/SkillSpoke-unrelated-service'
+  const OTHER = '/repos/unrelated-service'
   const { result } = await provision(
     // The path is the one this script BUILDS, so it passes the allowlist and the
     // built-here check; only git can tell that the tree sitting there is repo B's.

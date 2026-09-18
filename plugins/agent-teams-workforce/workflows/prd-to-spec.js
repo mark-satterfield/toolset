@@ -114,7 +114,7 @@ async function settleAgent(prompt, opts) {
 //                                 // to trace to, cite, or derive from a BRD
 //   decision?: { id?, title?, context?, drivers?[], repoPath? }, // the architecture question
 //   sad?: { path?, sectionLayout? },  // arc42 SAD location for TRD extraction
-//   sadPath?: string,             // arc42 SAD path for the architecture mini
+//   sadPath?: string,             // arc42 SAD path (ATW_SAD_PATH); the architecture mini refuses without it
 //   spec?: { id?, title?, summary?, service?, repoPath? }, // spec-authoring context
 //   accessPatterns?: string[],    // known data access patterns for the data-model spec
 //   repoPath?: string,            // where the run was launched from — a STARTING POINT for the
@@ -142,14 +142,15 @@ async function settleAgent(prompt, opts) {
 //   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
 //   dimensions?: string[],        // size the analyst panel to exactly these axes; overrides both triage steps
 //   forceFullPanel?: boolean,     // run every analyst axis and the challenge wave, skipping both triage steps
-//   resume?: {                    // the `artifactio.py plan <epic-id>` verdict, passed by the Python host.
-//     root?: string,              // $SKILLSPOKE_ROOT (absolute)
-//     dir?: string,               // the Epic working directory, $SKILLSPOKE_ROOT-relative
+//   resume?: {                    // the artifact recorder's `plan <epic-id>` verdict, passed by the host.
+//     root?: string,              // the project root (absolute)
+//     dir?: string,               // the Epic working directory, relative to the project root
 //     epicId?: string,
 //     phases: { [phaseId]: 'fresh' | 'stale: <why>' | { status, reason?, artifacts: [{ name, path, sha256?, data? }] } },
 //   },                            // A fresh phase is skipped and its artifact paths go downstream;
 //                                 // see ARTIFACTS for the phase ids and file names.
-//   skillspokeRoot?: string,      // $SKILLSPOKE_ROOT, when `resume` carries no root
+//   projectRoot?: string,         // the project root (ATW_PROJECT_ROOT), when `resume` carries no root
+//   artifactScript?: string,      // the artifact recorder (ATW_ARTIFACT_SCRIPT); absent, artifacts are off
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
@@ -346,7 +347,7 @@ let runDetail = null
 // (`<session>/workflows/wf_*.json`), and the Python host reads that record after every
 // dispatch. So the payload is logged ONCE as a machine-readable `RUN-JOURNAL {json}`
 // line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
-// (ops/sdlc-automation/runjournal.py), deterministically, with no model call. The path is
+// with its run-journal writer, deterministically, with no model call. The path is
 // the host's to report, so this returns null and the host fills `detailPath` in.
 function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
@@ -364,7 +365,7 @@ function persistRun(outcome) {
 
 // ── Legacy phase checkpoints: a MIGRATION READER ─────────────────────────────────
 // Resume state is the Epic's artifact files (see ARTIFACTS below): each maker saves the
-// document it authored, `artifactio.py` records its hashes, and the Python host passes the
+// document it authored, the artifact recorder records its hashes, and the host passes the
 // freshness plan in as `args.resume`. The per-subject directory under
 // .claude/workflow-runs/checkpoints/ predates that. It is READ when no `args.resume` is
 // supplied, so a subject checkpointed under the old layout can still resume, and it is never
@@ -427,18 +428,16 @@ const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v)
 // a lease older than this belongs to a run that is not writing any more — dead,
 // killed, or quit out from under. Generous on purpose: the cost of waiting out a
 // stale lease is one run that skips its checkpoint, and the cost of ignoring a
-// LIVE one is two runs overwriting each other's envelope, which is what happened
-// on 2026-09-08 when two prd-to-spec runs for myagent-identity-resolution ran
-// 21:16-21:27 against the same subject-keyed directory and the second reported
-// "the envelope files exist from a previous save with different content".
+// LIVE one is two runs overwriting each other's envelope in the same subject-keyed
+// directory.
 const CP_LEASE_STALE_MS = 45 * 60 * 1000
 // Identifies THIS run to the checkpoint, and the clock the lease is denominated in.
 //
 // NEITHER IS COMPUTABLE HERE, and that is the whole reason this block exists. The runner
 // REFUSES a script that reads the wall clock or draws a random number: it rejects the
 // whole file statically, before compiling it, because either would break resume. That
-// refusal is what killed this composite at load on ssbd-vvn8 — twice, with zero agents
-// run and no phase reached — because the lease was minted from exactly those two things.
+// refusal stops this composite at load, with zero agents run and no phase reached, if the
+// lease is minted from either of those two things.
 //
 // So both values are OBSERVED rather than computed. The run-inputs reader is a real
 // session with a shell, it already runs before the checkpoint is applied, and it now
@@ -516,10 +515,8 @@ function cpInit(repo, subject, inputHash) {
   // A checkpoint is only worth what it is worth when the run DIED, so the one write
   // that matters most is the one most likely to be interrupted. The primary file is
   // REPLACED WHOLE on every save, so an interrupted or malformed replacement destroys
-  // the good checkpoint it was overwriting and the resume it existed for. That is not
-  // hypothetical: `myagent-identity-resolution-prd-to-spec.json` sat on disk torn
-  // mid-object, unparseable, resuming nothing, after ~1.7 KB of one generation was
-  // followed by a newline and the tail of another.
+  // the good checkpoint it was overwriting and the resume it existed for: a file torn
+  // mid-object, one generation followed by the tail of another, resumes nothing.
   //
   // A workflow script has no filesystem, and the writing agent has no shell command it
   // can rely on being approved — five runs once stalled for a combined 37 hours waiting
@@ -790,7 +787,7 @@ async function cpSave(key, payload, decision) {
   if (entry) {
     if (!Array.isArray(entry.checkpointKeys)) entry.checkpointKeys = []
     if (!entry.checkpointKeys.includes(key)) entry.checkpointKeys.push(key)
-    // The number of checkpoint-writer dispatches this phase cost, which phaserec.py reads.
+    // The number of checkpoint-writer dispatches this phase cost, which the host's phase reader reads.
     // No such dispatch exists, so it is 0.
     if (typeof entry.checkpointWrites !== 'number') entry.checkpointWrites = 0
   }
@@ -819,7 +816,7 @@ let currentPhase = null
 //
 // TIMES ARE NOT STAMPED HERE. The runner refuses a script that reads the wall clock, so
 // every entry carries what the script knows — order, name, status, ruling, artifacts — and
-// the reader (ops/sdlc-automation/phaserec.py) stamps the clock from the workflow
+// the host's phase reader stamps the clock from the workflow
 // journal it is joining this against. An unknown value is null and named, never zeroed.
 //
 // THE PHASE LIST IS DUPLICATED HERE ON PURPOSE, and it must stay a literal. The runner
@@ -1013,7 +1010,7 @@ function gateHeadline(stage, r) {
 // framework is built on — constitutive findings are hard stops, competitive ones proceed
 // under a flag.
 //
-// ssbd-97as is the case that proves the cost. A P0 live outage reached the Red gate with
+// The case that proves the cost: a P0 live outage reached the Red gate with
 // redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
 // clean, and not one production file touched. The blocking objection was "AC5 partially
 // covered — two of three clauses unassessed". The budget ran out and nothing shipped.
@@ -1298,7 +1295,7 @@ const artPhases = {}
 // always there to read: a killed workflow's harness record carries this script's log
 // lines but no result. So every acceptance is also written as one machine-readable log
 // line, `ACCEPTED {json}` — deterministic script code, no agent, no tokens — which the
-// host's artifactio.py folds exactly like the result's `artifacts.phases`. Bound to bytes
+// host's artifact recorder folds exactly like the result's `artifacts.phases`. Bound to bytes
 // host-side: a phase whose files are rewritten later is not accepted by this line.
 function acceptPhase(phaseId, status, extra) {
   artPhases[phaseId] = status
@@ -1466,9 +1463,9 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 //
 // Every maker in this run saves the document it authored into the Epic working directory,
 // <repo>/.claude/workflow-runs/artifacts/<epic-id>/, then runs
-//   python3 <repo>/ops/sdlc-automation/artifactio.py record <file> --epic <id> --phase <phase> --inputs <paths...>
+//   python3 <artifactScript> record <file> --epic <id> --phase <phase> --inputs <paths...>
 // which hashes what is on disk into <file>.meta.json. Before the next run launches, the
-// Python host runs `artifactio.py plan <epic-id>` and passes the verdict in as `args.resume`:
+// host runs `<artifactScript> plan <epic-id>` and passes the verdict in as `args.resume`:
 //
 //   { root?, dir?, epicId?,
 //     phases: { '<phaseId>': { status: 'fresh' | 'stale', reason?, artifacts: [{ name, path, sha256?, data? }] } } }
@@ -1552,7 +1549,7 @@ const RULINGS_PATH = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/.claude/standing-rulings.
 // ── The artifact working directory, and the brief every maker gets ────────────────
 const SAFE_ABS_PATH = /^\/[A-Za-z0-9._/-]+$/
 const safeAbs = (p) => typeof p === 'string' && SAFE_ABS_PATH.test(p) && !p.split('/').includes('..') && !p.includes('//')
-const SS_ROOT = [RESUME && RESUME.root, a.skillspokeRoot]
+const SS_ROOT = [RESUME && RESUME.root, a.projectRoot]
   .map((r) => (typeof r === 'string' ? r.replace(/\/+$/, '') : r))
   .find(safeAbs) || null
 const ART_EPIC = String((RESUME && RESUME.epicId) || (a.epic && (a.epic.id || a.epic.beadId || a.epic.key)) || subjectId || '')
@@ -1564,16 +1561,16 @@ const ART_DIR = (() => {
   if (SS_ROOT && hostDir && /^[A-Za-z0-9._/-]+$/.test(hostDir) && !hostDir.split('/').includes('..')) return `${SS_ROOT}/${hostDir}`
   return ARTIFACT_ROOT && ART_EPIC ? `${ARTIFACT_ROOT}/.claude/workflow-runs/artifacts/${ART_EPIC}` : null
 })()
-const ART_SCRIPT = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/ops/sdlc-automation/artifactio.py` : null
+const ART_SCRIPT = typeof a.artifactScript === 'string' ? a.artifactScript : null
 const ART_ON = !!(ART_EPIC && safeAbs(ART_DIR) && safeAbs(ART_SCRIPT))
 const ART_REL = ART_ON && SS_ROOT && ART_DIR.startsWith(`${SS_ROOT}/`) ? ART_DIR.slice(SS_ROOT.length + 1) : null
 const artPath = (name) => (ART_ON ? `${ART_DIR}/${name}` : null)
 const PRD_INPUTS = prd && hasText(prd.path) ? [prd.path] : []
 const specFiles = (slug) => [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`]
 if (ART_ON) {
-  log(`Artifacts: ${ART_DIR}${ART_REL ? '' : ' — no $SKILLSPOKE_ROOT supplied, so no root-relative path is recorded on any bead'}${RESUME ? '' : ' — no args.resume, so every phase runs'}`)
+  log(`Artifacts: ${ART_DIR}${ART_REL ? '' : ' — no project root supplied (args.projectRoot, ATW_PROJECT_ROOT), so no root-relative path is recorded on any bead'}${RESUME ? '' : ' — no args.resume, so every phase runs'}`)
 } else {
-  log(`ARTIFACTS DISABLED — no usable working directory (repo=${JSON.stringify(ARTIFACT_ROOT)}, epic=${JSON.stringify(ART_EPIC)}). Nothing this run authors is saved for a later run to resume from.`)
+  log(`ARTIFACTS DISABLED — no usable working directory or recorder (repo=${JSON.stringify(ARTIFACT_ROOT)}, epic=${JSON.stringify(ART_EPIC)}, artifactScript=${JSON.stringify(ART_SCRIPT)}; ATW_ARTIFACT_SCRIPT). Nothing this run authors is saved for a later run to resume from.`)
   runLedger.push({ phase: 'artifacts', event: 'disabled', repo: ARTIFACT_ROOT, epic: ART_EPIC })
 }
 /** The descriptor a mini's sessions save into; undefined when artifacts are off. */
@@ -1638,7 +1635,7 @@ function reuseFrom(phaseId, hit, what) {
 const artData = (hit, name) => (hit && hit.artifacts[name] && hit.artifacts[name].data !== undefined ? hit.artifacts[name].data : undefined)
 const reusedDecision = (phaseId) => `Reused from fresh artifacts (${phaseId}); the phase did not re-run and its gate was not re-spent.`
 // Bead metadata for artifacts owned by a bead that Emit Beads writes (an Epic minted in this
-// run, and every Story). Paths are $SKILLSPOKE_ROOT-relative and are recorded only when the
+// run, and every Story). Paths are project-root-relative and are recorded only when the
 // root is known. The sha256 is recorded where this run knows it — an artifact reused from the
 // host's plan; for one authored in this run the hash is in the meta file the `_meta` key names.
 function artifactMetadata(entries) {
@@ -2718,8 +2715,8 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
 //
 // A PRD is a REQUIREMENT. It is not scoped to a repository and it may span several. A
 // Spec and its Story ARE scoped to exactly one. Deciding what sits between those two
-// facts is a real decision, and nothing in this composite used to make it — the span
-// arrived as caller input and defaulted to the one repo the run was launched from.
+// facts is a real decision, and this composite makes it: the span is ruled, never taken
+// from caller input or defaulted to the repo the run was launched from.
 //
 // It is ruled HERE, and the position is load-bearing in both directions:
 //
@@ -3625,14 +3622,12 @@ const mergedCounts = {
 }
 // The removal work from every repository that produced an inventory, ALREADY ATTRIBUTED.
 //
-// This is the class of defect the relocation retires. Reconciliation's `repos` used to be
-// free text an agent wrote while reading the codebase — `alpha`, or `SkillSpoke-alpha`, or
-// a path with a trailing slash — and it was fuzzy-matched against the Stories below. An
-// item that matched nothing reached no Story at all, silently, while the headline reported
-// it handled; an item naming a bare generic segment like `api` matched three unrelated
-// Stories at once and was reported handled in all of them. The repository is now the ruled,
-// verified path the reconciler was dispatched with, so `repos` is stamped from THIS side
-// rather than read from the agent's prose, and the match below is exact by construction.
+// Free text an agent writes while reading the codebase — `alpha`, or `<prefix>-alpha`, or a
+// path with a trailing slash — cannot be fuzzy-matched against the Stories below safely: an
+// item that matches nothing reaches no Story, and a bare generic segment like `api` matches
+// several unrelated Stories at once. The repository is the ruled, verified path the
+// reconciler was dispatched with, so `repos` is stamped from THIS side rather than read
+// from the agent's prose, and the match below is exact by construction.
 // The matcher stays loose — it still has the span ruling's own door to serve — but nothing
 // coming through this door needs it.
 const reconRemovalWork = []
@@ -3921,7 +3916,7 @@ enterPhase('Task Decomposition')
 // The two sides of this match did not used to come from the same place. A Story's
 // `repoPath` is an absolute path out of repo-scoping's VERIFIED inventory; a removal
 // item's `repos` was free text an agent wrote while reading the codebase. Comparing them
-// with `includes()` meant a reconciler that wrote `alpha`, or `SkillSpoke-alpha`, or a
+// with `includes()` meant a reconciler that wrote `alpha`, or `<prefix>-alpha`, or a
 // path with a trailing slash, matched NOTHING — and a removal item that matches nothing
 // used to reach no Story at all, silently, while the headline went on reporting it
 // handled: contradicting code left deployed, with the run saying it was dealt with.
@@ -3947,10 +3942,9 @@ enterPhase('Task Decomposition')
 // ledger row, `degraded`, and the headline in a single stroke. The price of a false match
 // is not one extra line in one brief; it is the loss of the whole alarm.
 //
-// That is live on this project's naming convention, not theoretical. A bare generic
-// segment matches every span repo whose basename ends in it: `infra` hits
-// `SkillSpoke-sessionCache-infra` and every other `*-infra`; `api` hits `SkillSpoke-user-api`,
-// `SkillSpoke-jobs-api` and `SkillSpoke-match-api` at once. A reconciler writing a bare
+// A bare generic segment matches every span repo whose basename ends in it: `infra` hits
+// `<prefix>-cache-infra` and every other `*-infra`; `api` hits `<prefix>-user-api`,
+// `<prefix>-jobs-api` and `<prefix>-match-api` at once. A reconciler writing a bare
 // `api` for a repository OUTSIDE the span would be placed into three unrelated Stories and
 // reported handled — the original defect, reached through over-matching instead of under-
 // matching.
@@ -3962,7 +3956,7 @@ enterPhase('Task Decomposition')
 //   exact    — the same path once trailing slashes and case are gone.
 //   basename — a bare repository name against the path that ends in it.
 //   suffix   — one basename is a trailing `-`-segment of the other (`alpha` vs
-//              `SkillSpoke-alpha`). Right often; also what a bare `api` does to three repos.
+//              `<prefix>-alpha`). Right often; also what a bare `api` does to three repos.
 //   broadcast— the item named no repository at all, so it went to every Story. Not a
 //              failure to place, but not knowledge of where it belongs either.
 const repoKey = (v) =>
@@ -4232,9 +4226,9 @@ if (decompBudgetStop) {
 }
 /**
  * The spec documents of one Story: `path` is where a session reads the file, `ref` is the
- * $SKILLSPOKE_ROOT-relative path a Task records (decision 6). The Epic working directory
- * holds them when artifacts are on; otherwise an absolute path a spec maker reported under
- * $SKILLSPOKE_ROOT is used. A document with no root-relative form has `ref: null` and can
+ * project-root-relative path a Task records. The Epic working directory holds them when
+ * artifacts are on; otherwise an absolute path a spec maker reported under the project
+ * root is used. A document with no root-relative form has `ref: null` and can
  * be read but never recorded.
  */
 function specDocsFor(pair) {
@@ -4858,8 +4852,8 @@ function taskContractMetadata(t) {
     emission.specReferenceMissing.push({
       key: t.key,
       reason:
-        'spec-reference-missing: no $SKILLSPOKE_ROOT-relative spec document is known for its Story ' +
-        `(${SS_ROOT ? 'the spec documents were not saved under $SKILLSPOKE_ROOT' : 'no $SKILLSPOKE_ROOT was supplied as args.skillspokeRoot or args.resume.root'})`,
+        'spec-reference-missing: no project-root-relative spec document is known for its Story ' +
+        `(${SS_ROOT ? `the spec documents were not saved under the project root ${SS_ROOT}` : 'no project root was supplied as args.projectRoot (ATW_PROJECT_ROOT) or args.resume.root'})`,
     })
   }
   return m
@@ -4870,7 +4864,7 @@ function taskContractBlock(t) {
   const s = c.testStrategy
   return [
     '## Spec contract',
-    'Paths are relative to $SKILLSPOKE_ROOT.',
+    `Paths are relative to the project root${SS_ROOT ? ` (${SS_ROOT})` : ''}.`,
     `Spec: ${c.specPaths[0] || 'MISSING — no spec reference could be recorded for this Task'}`,
     ...(c.specPaths.length > 1 ? [`Spec documents:\n${list(c.specPaths)}`] : []),
     `Spec sections:\n${list(c.specSections)}`,

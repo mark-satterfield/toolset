@@ -158,10 +158,9 @@ Two consequences follow, and neither is a defect to be fixed here:
 Never metadata, timestamps, status, or comments — so storing a verdict never invalidates it.
 
 **THE RECIPE HAS ONE IMPLEMENTATION: `content_hash` in the `agent-teams-workforce:beads-contract`
-skill.** This file carries no copy, and neither does anything else. `ops/sdlc-automation/readiness.py`
-used to hold a second copy and now shells out to `beads-contract.py` for every fingerprint it
-compares, so there is no joint contract left to keep in step: change the recipe in the one place
-that implements it.
+skill.** This file carries no copy, and neither does anything else: a host that compares
+fingerprints shells out to `beads-contract.py`. Change the recipe in the one place that
+implements it.
 
 A recipe stated twice re-invokes this skill forever on every affected bead: the Python reads a
 watermark it cannot reproduce, calls the bead stale, and the skill rewrites the same watermark the
@@ -314,13 +313,11 @@ H=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.
       fingerprint <id> | jq -r .fingerprint)
 ```
 
-**THE RECIPE IS NOT WRITTEN DOWN HERE, AND THAT IS THE POINT.** It used to be — a ten-key
-`jq -S` selector with a `.labels = null` in the middle of it — and a copy of it also lived in
-`ops/sdlc-automation/readiness.py`. The two drifted on exactly the `labels` line, so they
-disagreed about precisely the beads this rule exists for: every bead the pipeline has held
-carries `needs-correction`. A recipe stated twice drifts in whichever copy is wrong.
+**THE RECIPE IS NOT WRITTEN DOWN HERE, AND THAT IS THE POINT.** A recipe stated twice drifts
+in whichever copy is wrong, and a drift on the `labels` line disagrees about precisely the beads
+this rule exists for: every bead the pipeline has held carries `needs-correction`.
 
-So `content_hash` in `beads-contract.py` is now the single implementation, the
+So `content_hash` in `beads-contract.py` is the single implementation, the
 `agent-teams-workforce:beads-contract` skill documents what it covers and why, and
 `fingerprint <id> --explain` prints the exact object hashed when you need to see it. Do not
 reconstruct the pipeline from this file, and do not paste a `jq` version back in.

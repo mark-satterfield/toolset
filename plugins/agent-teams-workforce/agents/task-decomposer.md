@@ -77,19 +77,6 @@ field exists because a document said so, and never restate one of its recipes.
 - Include an audit trail in decomposition, sequencing, and scoring decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Be honest and transparent above all else — flag weak estimates, uncertain boundaries, and low-confidence scores instead of presenting them as settled.
 
-## Declare whether the change is material
-
-You are the only one who knows whether what you produced changes something others depend on.
-Nothing downstream infers it from a file date, an mtime or a content hash — an mtime moves when
-a formatter runs and a hash changes when a sentence is reworded, and neither says whether
-anything else rests on what changed. So say it, under `materialChange`: `material` true or
-false, the `kind`, ONE sentence naming the fact others depend on, the `decisionIds` involved,
-what you suspect is affected, and your confidence. Routine work — a restatement, a status move,
-a checkpoint, a fact nothing else reads — declares false.
-
-Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
-nobody looked at stops working.
-
 ## Cite the decisions each task builds on
 
 Every task carries `decisionIds`: the SAD entry tags (`C-…`, `S-…`, `X-…`, `AD-…`) the spec

@@ -135,7 +135,7 @@ Never force-push the root repo casually.
 ## 5. Database missing on the shared server
 
 **Signature** — `bd` operations fail to find the database, or a fleet audit shows the repo's
-`SkillSpoke_<name>` database absent from `SHOW DATABASES`.
+`<project>_<name>` database absent from `SHOW DATABASES`.
 
 **Why** — the repo was never given a database on the shared server (e.g. it stayed in embedded
 mode), or its database was dropped.
@@ -189,7 +189,7 @@ mode.
 bd dolt stop 2>&1 || true                     # stop any per-repo server (harmless if none)
 bd config set dolt.shared-server true
 bd dolt set port 3308 --update-config
-bd dolt set database <SkillSpoke_repo_name> --update-config
+bd dolt set database <project_repo_name> --update-config
 # remove orphaned local artifacts (all gitignored):
 rm -rf .beads/dolt .beads/embeddeddolt
 rm -f  .beads/dolt-server.lock .beads/dolt-server.pid .beads/dolt-server.port \
@@ -204,14 +204,14 @@ un-stuck (sections 1–3) first.
 ## 8. Wrong or directory-derived prefix
 
 **Signature** — an audit shows the database's `config.issue_prefix` is not the project prefix,
-or new issues would be minted as `<dirname>-N` instead of `<ssbd>-N`.
+or new issues would be minted as `<dirname>-N` instead of `<prefix>-N`.
 
 **Why** — the prefix was never set, so bd defaulted it to the directory name; or it was set
 wrong. It cannot be corrected with `bd config set` (bd rejects `issue_prefix`).
 
 **Fix**
 ```bash
-bd rename-prefix <ssbd>- --repair    # renames all issues + references to the correct prefix
+bd rename-prefix <prefix>- --repair    # renames all issues + references to the correct prefix
 ```
 (`--repair` also consolidates a database that ended up with *multiple* prefixes.) Prefix must
 end with a hyphen and be ≤ 8 chars.

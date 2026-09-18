@@ -15,22 +15,25 @@
 #   --force-diverged   force-push when histories diverge (DESTRUCTIVE to remote history)
 #   --allow-root       permit converging the root/C2 repo (normally refused)
 #
-# Config. Each value resolves: project env var → generic env var → default.
-#   fleet dir  SKILLSPOKE_APP_ROOT   → BEADS_FLEET_DIR   → $PWD
-#   port       SKILLSPOKE_BEADS_PORT → BEADS_SHARED_PORT → 3308
-#   prefix     SKILLSPOKE_BEADS_PREFIX → BEADS_PREFIX    → ssbd
-#   root repo  SKILLSPOKE_CC (basename)                  → "SkillSpoke"
+# Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
+#   ATW_FLEET_DIR     required  the directory that holds the repos
+#   ATW_CONTROL_REPO  required  the root repo; the issue prefix is read from its beads config,
+#                               and it is refused as a target without --allow-root
+#   ATW_BEADS_PORT    optional  the shared Dolt server port (default 3308)
 #
 # Repo→database: replace '-' with '_'. Requires: bd, uv, and the shared server running.
 
 set -u -o pipefail
 
+: "${ATW_FLEET_DIR:?ATW_FLEET_DIR is not set — the directory that holds the repos}"
+: "${ATW_CONTROL_REPO:?ATW_CONTROL_REPO is not set — the root repo that holds the tracker}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER="$SCRIPT_DIR/beads_server.py"
-BASE_DIR="${SKILLSPOKE_APP_ROOT:-${BEADS_FLEET_DIR:-$PWD}}"
-PORT="${SKILLSPOKE_BEADS_PORT:-${BEADS_SHARED_PORT:-3308}}"
-PREFIX="${SKILLSPOKE_BEADS_PREFIX:-${BEADS_PREFIX:-ssbd}}"
-ROOT_REPO="$(basename "${SKILLSPOKE_CC:-SkillSpoke}")"
+BASE_DIR="$ATW_FLEET_DIR"
+PORT="${ATW_BEADS_PORT:-3308}"
+PREFIX="$(cd "$ATW_CONTROL_REPO" && bd config get issue_prefix)" || { echo "FATAL: could not read issue_prefix from the beads config in $ATW_CONTROL_REPO" >&2; exit 1; }
+[ -n "$PREFIX" ] || { echo "FATAL: the beads config in $ATW_CONTROL_REPO sets no issue_prefix" >&2; exit 1; }
+ROOT_REPO="$(basename "$ATW_CONTROL_REPO")"
 export BD_ALLOW_REMOTE_MIGRATE=1
 export BEADS_SHARED_PORT="$PORT"   # so beads_server.py connects to the same server
 
@@ -60,7 +63,7 @@ say() { printf '  %s\n' "$*"; }
 LABEL=""; [ "$DRY" = 1 ] && LABEL="  [DRY-RUN]"
 echo "▶ converge ${REPO}  (db=${DB})${LABEL}"
 
-# Guard: never sweep the root/C2 repo (identified by SKILLSPOKE_CC).
+# Guard: never sweep the root/C2 repo (ATW_CONTROL_REPO).
 if [ "$REPO" = "$ROOT_REPO" ]; then
   if [ "$ALLOW_ROOT" = 1 ]; then say "root repo '${REPO}' — proceeding (--allow-root)"
   else say "✗ refusing to converge root/C2 repo '${REPO}' (holds real issues); pass --allow-root to override"; exit 1; fi

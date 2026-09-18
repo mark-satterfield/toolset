@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * SessionStart hook — REQ-ORCH-09 (ssbd-ja5d, root cause I).
+ * SessionStart hook — REQ-ORCH-09.
  *
  * A rule recorded as non-negotiable in AGENTS.md and a setting that contradicts
  * it can both be in force at once, and nothing notices. The session then starts

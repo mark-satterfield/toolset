@@ -3,25 +3,23 @@
 This is the contract. Every active child repo's beads must match it. An audit is a comparison
 against this document; a repair is the act of bringing a repo back to it.
 
-Values in **angle brackets** are project-specific. **Read them from the shell environment, do
-not hardcode them.** These `SKILLSPOKE_*` variables are exported in the shell, so they are
-available both inside Claude Code sessions and to automation/scripts run outside it. The scripts
-resolve each value as `SKILLSPOKE_* → BEADS_* → default`.
+Values in **angle brackets** are project-specific. **Read them from the environment, do not
+hardcode them.** They are the plugin's `ATW_*` variables, exported in the shell so they are
+available both inside Claude Code sessions and to automation run outside it.
 
-| Project value | Env var (source of truth) | SkillSpoke value |
-|---|---|---|
-| Fleet directory (parent of the repos) | `SKILLSPOKE_APP_ROOT` | `/Users/msat1971/projects/SkillSpoke/app` |
-| Root / C2 repo (holds real issues + hydration list) | `SKILLSPOKE_CC` | `…/app/SkillSpoke` (database `SkillSpoke`) |
-| Shared server port | `SKILLSPOKE_BEADS_PORT` (→ `3308`) | `3308` |
-| Issue prefix | `SKILLSPOKE_BEADS_PREFIX` | `ssbd` (IDs look like `ssbd-123`) |
-| Logs directory | `SKILLSPOKE_LOGS` | `/Users/msat1971/projects/SkillSpoke/logs` |
-| Shared server data dir | — (bd-managed) | `~/.beads/shared-server/dolt/` |
-| Repo → database name | — (rule) | `SkillSpoke-<x>` → `SkillSpoke_<x>` (hyphens → underscores, camelCase kept) |
-| Git remote sync | — (bd-managed) | `refs/dolt/data` on each repo's `origin` |
+| Project value | Source |
+|---|---|
+| Fleet directory (parent of the repos) | `ATW_FLEET_DIR` |
+| Root / C2 repo (holds real issues + hydration list) | `ATW_CONTROL_REPO` |
+| Shared server port | `ATW_BEADS_PORT` (default `3308`) |
+| Issue prefix | the root repo's `issue_prefix` (`bd config get issue_prefix` there) |
+| Shared server data dir | bd-managed: `~/.beads/shared-server/dolt/` |
+| Repo → database name | rule: `<project>-<x>` → `<project>_<x>` (hyphens → underscores, camelCase kept) |
+| Git remote sync | bd-managed: `refs/dolt/data` on each repo's `origin` |
 
-> The prefix is `ss` (SkillSpoke) + `bd` (the beads CLI) = **`ssbd`**. If
-> `SKILLSPOKE_BEADS_PREFIX` ever reads something else, treat it as suspect and confirm before
-> any `rename-prefix` — a wrong value here renames the whole fleet's issues.
+> The root repo's prefix is the fleet's prefix. If a child reports a different one, treat the
+> child as suspect and confirm before any `rename-prefix` — a wrong value renames that repo's
+> issues.
 
 ## The architecture (why the contract is shaped this way)
 
@@ -35,7 +33,7 @@ Beads stores issues in a **Dolt** database. There are two deployment models:
   points at that server; the data lives in the server's data directory, not in the repo.
 
 The live data on this machine is `~/.beads/shared-server/dolt/` — one subdirectory per database
-(`SkillSpoke`, `SkillSpoke_web`, …, plus `beads_global`). Anything named `embeddeddolt` is the
+(`<project>`, `<project>_web`, …, plus `beads_global`). Anything named `embeddeddolt` is the
 **old embedded store** and is not the shared server; do not confuse the two.
 
 **Config precedence** (highest wins), which is why a repo can *behave* correctly even when one
@@ -59,7 +57,7 @@ declared state, not just the effective one — drift you can't see today breaks 
 dolt:
     shared-server: true
     port: <3308>
-    database: <SkillSpoke_repo_name>
+    database: <project_repo_name>
 ```
 
 `bd dolt show` must report `Mode: shared server`, `Server: ~/.beads/shared-server`, and
@@ -74,7 +72,7 @@ requires the store to open — see the migration gate in `troubleshooting.md`).
   "backend": "dolt",
   "dolt_mode": "server",
   "dolt_server_port": <3308>,
-  "dolt_database": "<SkillSpoke_repo_name>",
+  "dolt_database": "<project_repo_name>",
   "project_id": "<must equal the database's own _project_id>"
 }
 ```
@@ -88,22 +86,22 @@ requires the store to open — see the migration gate in `troubleshooting.md`).
 
 ### 3. Database name: deterministic from the repo
 
-`SkillSpoke-<x>` → `SkillSpoke_<x>` with hyphens replaced by underscores and camelCase
-preserved (`SkillSpoke-careerPath-mcp-server` → `SkillSpoke_careerPath_mcp_server`). The
+`<project>-<x>` → `<project>_<x>` with hyphens replaced by underscores and camelCase
+preserved (`acme-careerPath-mcp-server` → `acme_careerPath_mcp_server`). The
 database with that name must exist on the shared server.
 
 ### 4. Issue prefix
 
-The prefix is `<ssbd>`, stored authoritatively in the database's `config` table
+The prefix is `<prefix>`, stored authoritatively in the database's `config` table
 (`issue_prefix`), **not** in `config.yaml` (the `issue-prefix:` line there is only read by
 `bd init`). It **cannot** be set with `bd config set` — bd will tell you to use `bd init`
 (forbidden), `bd bootstrap`, or `bd rename-prefix`. To correct a wrong prefix on an existing
-database: `bd rename-prefix <ssbd>- --repair`. Never let it fall back to the directory name.
+database: `bd rename-prefix <prefix>- --repair`. Never let it fall back to the directory name.
 
 ### 5. Schema version
 
-All repos must be on the schema version current for the installed `bd` (SkillSpoke: **v53**,
-bd 1.1.0). Mixed versions across the fleet is drift. Apply a pending migration with
+All repos must be on the schema version current for the installed `bd` (one version across
+the fleet). Mixed versions across the fleet is drift. Apply a pending migration with
 `BD_ALLOW_REMOTE_MIGRATE=1 bd migrate` (see the gate in `troubleshooting.md`), then push.
 
 ### 6. Clean working set
@@ -127,8 +125,8 @@ The **root** repo's `.beads/config.yaml` lists every active child under `repos.a
 repos:
     primary: "."
     additional:
-        - "../SkillSpoke-web/"
-        - "../SkillSpoke-auth-service/"
+        - "../acme-web/"
+        - "../acme-auth-service/"
         # ... one line per active child
 ```
 
@@ -150,7 +148,7 @@ orphans; verify `bd dolt test` still connects afterward (it will — the data is
 
 ## The root / command-and-control repo is special
 
-The root repo (`SkillSpoke`) holds the fleet's real issues and the hydration list. It is
+The root repo (`ATW_CONTROL_REPO`) holds the fleet's real issues and the hydration list. It is
 already on the shared server. **Never** reset its working set or force-push it during a bulk
 operation, and never add it to a sweep that treats databases as empty. Audit it; repair it
 only with explicit, case-by-case intent.

@@ -1,5 +1,5 @@
 {
-  "description": "Orchestrator role enforcement \u2014 ssbd-ja5d. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
+  "description": "Orchestrator role enforcement. Constitutive constraints are hooks that exit 2, not prose the orchestrator evaluates about itself.",
   "hooks": {
     "PreToolUse": [
       {

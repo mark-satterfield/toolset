@@ -50,8 +50,8 @@ in `references/canonical-repo-state.md`):
 |---|---|
 | Connection mode | **Shared server** — `dolt.shared-server: true`, all repos on one port |
 | `.beads/metadata.json` | `dolt_mode: server`, `dolt_server_port: <shared port>`, `dolt_database: <db name>`, `project_id` **equal to the database's own `_project_id`** |
-| Database name | Deterministic from the repo name (e.g. `SkillSpoke-web` → `SkillSpoke_web`) |
-| Issue prefix | The project prefix (e.g. `ssbd`) — never the directory name |
+| Database name | Deterministic from the repo name (e.g. `acme-web` → `acme_web`) |
+| Issue prefix | The project prefix (the root repo's `issue_prefix`) — never the directory name |
 | Schema version | Current for the installed `bd` (all repos on the **same** version) |
 | Working set | **Clean** (no uncommitted Dolt changes) |
 | Sync | Pushed to the git remote's `refs/dolt/data` |
@@ -60,21 +60,20 @@ in `references/canonical-repo-state.md`):
 
 ## Environment — read config, don't hardcode
 
-Project-specific values come from shell environment variables (exported so they work in Claude
-Code sessions and in automation alike). Resolve each as `SKILLSPOKE_* → BEADS_* → default`; the
-bundled scripts already do:
+Project-specific values come from the plugin's `ATW_*` environment variables (see "Project
+configuration" in `AGENT-TEAMS-WORKFORCE.md`), exported so they work in Claude Code sessions and
+in automation alike. The bundled scripts read them:
 
 | Value | Variable |
 |---|---|
-| Fleet directory (parent of the repos) | `SKILLSPOKE_APP_ROOT` |
-| Root / command-and-control repo | `SKILLSPOKE_CC` |
-| Shared server port | `SKILLSPOKE_BEADS_PORT` (default `3308`) |
-| Issue prefix | `SKILLSPOKE_BEADS_PREFIX` (`ssbd`) |
-| Logs directory | `SKILLSPOKE_LOGS` |
+| Fleet directory (parent of the repos) | `ATW_FLEET_DIR` (required) |
+| Root / command-and-control repo | `ATW_CONTROL_REPO` (required) |
+| Shared server port | `ATW_BEADS_PORT` (default `3308`) |
+| Issue prefix | read from the root repo: `bd config get issue_prefix` |
 
-Never bake these values into a command. If a variable is unset, fall back and say so — do not
-silently substitute a guessed path or prefix. See `references/canonical-repo-state.md` for the
-full table and values.
+Never bake these values into a command. If a required variable is unset, stop and name it — do
+not substitute a guessed path or prefix. See `references/canonical-repo-state.md` for the full
+table.
 
 ## How to work
 

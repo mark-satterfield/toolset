@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://schema.skillspoke.com/agent-team-workforce/peer-review.json",
+  "$id": "urn:agent-teams-workforce:schema:peer-review",
   "title": "Peer Review",
   "description": "Written by a worker when cross-reviewing another worker's output. The reviewing worker independently verifies artifacts, test results, and completeness claims against the original assignment. Domain-agnostic.",
   "type": "object",

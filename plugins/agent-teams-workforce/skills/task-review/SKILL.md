@@ -33,7 +33,7 @@ Never ask clarifying questions. Assess with what you have. Flag gaps explicitly.
 
 ## Input Handling
 
-- Beads issue ID (ssbd-xxxx) — run `bd show <id> --json`, use all fields
+- Beads issue ID (`<prefix>-xxxx`; `bd config get issue_prefix` names the prefix) — run `bd show <id> --json`, use all fields
 - GitHub issue number — run `gh issue view <n>`
 - File path — read and assess
 - Inline text — assess directly

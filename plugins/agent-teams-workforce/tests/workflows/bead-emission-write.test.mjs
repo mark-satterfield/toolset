@@ -94,7 +94,7 @@ function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
 function run({ repos = ['/repo-a'], args = {}, writerOpts, agentExtra } = {}) {
   const writer = beadWriter(writerOpts)
   return runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, skillspokeRoot: '/ss', ...args },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, projectRoot: '/ss', ...args },
     workflowImpl: makeWorkflowImpl({ repos }),
     agentImpl: (call, calls) => writer(call) || (agentExtra ? agentExtra(call, calls) : null),
   })

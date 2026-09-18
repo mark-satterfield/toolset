@@ -82,23 +82,10 @@ a Task that skips for a missing Story needs a Story, not a new label.
 
 Skip any thought of provisioning a tree here. **The composite establishes its own
 worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$SKILLSPOKE_WORKTREE_ROOT/<bead>-<repo>`
+existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>`
 on a feature branch, and verifies the result really is a linked worktree before any phase
 writes a line. Its return value is the sole source of `contract.repoPath`, and every
-writing phase inherits it.
-
-**Read `$SKILLSPOKE_WORKTREE_ROOT` and pass it as `worktreeRoot`.** A workflow script has
-no process or filesystem access, so it cannot read the environment itself — if you do not
-pass the value, the composite falls back to a `.worktrees/` directory beside the
-repository, which puts worktrees in the directory that holds the repositories. If the
-variable is unset, say so in your report rather than inventing a path.
-
-This used to live here, as shell in a markdown file that a model executed — and the
-two runs that stranded production work in a main working tree are the two that skipped
-it. A step the pipeline depends on cannot be a step the pipeline cannot see. It is now
-code, in `workflows/workspace.js`, dispatched before the first writing phase, and a run
-that cannot verify a worktree refuses to write rather than falling back to the tree it
-was pointed at.
+writing phase inherits it. A run that cannot verify a worktree refuses to write.
 
 **So pass the contract's repository as it stands.** `repoPath` is the repository the
 Task's contract names, not a worktree you built. A resumed run finds its earlier tree
@@ -124,15 +111,25 @@ not drop fields from it. If `missing` names `repoPath`, the Task's build contrac
 the repository is ruled during elaboration, so report the id and that reason and stop — never
 work out a repository yourself.
 
+The project's configuration reaches the composite as arguments, read from the `ATW_*`
+environment (see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script
+cannot read the environment itself. `ATW_PR_COMMAND` is required: if it is unset, report
+`ATW_PR_COMMAND is unset` and stop. Omit any other argument whose variable is unset, and
+name it in your report.
+
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
-         worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
+         prCommand: "$ATW_PR_COMMAND",
+         worktreeRoot: "$ATW_WORKTREE_ROOT",
+         projectRoot: "$ATW_PROJECT_ROOT",
+         artifactScript: "$ATW_ARTIFACT_SCRIPT",
+         wavePlanPaths: [<each ":"-separated entry of $ATW_WAVE_PLANS>]}})
 ```
 
-The composite's `workspace` phase turns the contract's repository into the worktree; do not
-pre-cut one. `worktreeRoot` is the expanded value of `$SKILLSPOKE_WORKTREE_ROOT`, not the
-literal variable name.
+Every value is the expanded value of its variable, not the literal variable name. The
+composite's `workspace` phase turns the contract's repository into the worktree; do not
+pre-cut one.
 
 Then go to step 6.
 
@@ -142,10 +139,11 @@ The bead is an Epic or a Story: the tracker face of a document. Nothing decompos
 it. Its **document** is what decomposes, and the beads beneath it are what that
 chain deposits.
 
-Resolve the other face — the PRD (for an Epic) or the Spec (for a Story):
+Resolve the other face — the PRD (for an Epic) or the Spec (for a Story). PRDs live under
+`$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
 
 ```bash
-ls ~/projects/SkillSpoke/skillspoke-docs/docs/product/
+ls -R "$ATW_PRD_DIR"
 ```
 
 - Found → read it and extract `title` and `body`.

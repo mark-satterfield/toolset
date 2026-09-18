@@ -222,7 +222,7 @@ Constraints: ${(intakeBrief.constraints || []).join('; ') || 'none'}`
 const [persona, okrs] = await parallel([
   () =>
     settleAgent(
-      `Author the target job-seeker persona this PRD serves. SkillSpoke serves the job seeker — the persona is a job seeker, never a recruiter. Ground the persona in the intake brief.
+      `Author the target persona this PRD serves. Take the persona's population from the intake brief, and ground the persona in it.
 
 Intake brief:
 ${briefBlock}

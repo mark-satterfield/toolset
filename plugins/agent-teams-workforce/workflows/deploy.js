@@ -92,7 +92,8 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// args: { contract, green, docCurrency?, feedback? }
+// args: { contract, green, docCurrency?, feedback?,
+//         wavePlanPaths?: string[] }  // absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS)
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -163,7 +164,7 @@ if (contractPathFault) {
 
 const repo = suppliedRepoPath || '(repo path not provided)'
 
-// MACHINE-CHECKABLE GREEN EVIDENCE (ssbd-1xcs D1). tdd-green.js produces
+// MACHINE-CHECKABLE GREEN EVIDENCE. tdd-green.js produces
 // { greenConfirmed, evidence } precisely so this stage does not depend on the
 // facilitator's prose inventory — the facilitator is forbidden from ruling and
 // is not required to run anything. Test evidence has THREE states, not two:
@@ -267,9 +268,8 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
 // ships by `aws s3 sync` + a CloudFront invalidation and owns no CloudFormation stack at all.
 // With only {synthValid, driftDetected} to report, such a repo could answer nothing but
 // synthValid:false — "no CDK app here" was indistinguishable from "synth is broken" — and the
-// readiness review then correctly refused to roll out. ssbd-mqkq died exactly there: the
-// remaining work was one s3 sync, SkillSpoke-web has no cdk.json and no stack, and the run
-// spent 293k tokens producing readiness artifacts for a deploy it then blocked.
+// readiness review then refused to roll out a change whose remaining work was one s3 sync
+// in a repo with no cdk.json and no stack.
 // `applicable:false` is a clean NOT-APPLICABLE, never a failure. Guard it: a repo that HAS a
 // CDK app must not escape a broken synth by claiming the stage does not apply.
 // Declared as a hoisted function so the concurrent wave above can dispatch it while the
@@ -345,6 +345,10 @@ const rolloutAllowed = targetEnv === 'dev'
 // Wave sequencing is for GREENFIELD, cross-repo fleet deploys. A change confined to one
 // repo/stack just deploys that stack — pass `multiRepo: true` to opt into wave ordering.
 const multiRepo = a.multiRepo === true || c.multiRepo === true
+// The wave plans a multi-repo rollout follows. Supplied by the caller; a multi-repo rollout
+// with none is refused rather than improvised.
+const wavePlanPaths = (Array.isArray(a.wavePlanPaths) ? a.wavePlanPaths : Array.isArray(c.wavePlanPaths) ? c.wavePlanPaths : [])
+  .filter((p) => typeof p === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(p) && !p.split('/').includes('..') && !p.includes('//'))
 
 // deployment-strategy-decider DECIDES the rollout PLAN (wave order, rollout style, risk)
 // for the rollout below. It DECIDES only; the rollout itself is executed further down by
@@ -356,9 +360,9 @@ const multiRepo = a.multiRepo === true || c.multiRepo === true
 //
 // The two questions it answers are wave ORDER and rollout STYLE. For a SINGLE-REPO
 // deploy to DEV both are already settled by the branch below: the rollout prompt tells
-// the deployer in terms not to use wave sequencing and not to read waves.yaml, and dev
-// serves fewer than five internal users, so there is no traffic to shift gradually and
-// no canary population to shift it to. Asking a decider a question with one legal answer
+// the deployer in terms not to use wave sequencing and not to read a wave plan, and dev
+// is an internal environment with no traffic to shift gradually and no canary population
+// to shift it to. Asking a decider a question with one legal answer
 // costs a session on the critical path and returns prose that is then interpolated into
 // two prompts as `style=..., risk=...`.
 //
@@ -412,10 +416,7 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
 // for a go/no-go — the one thing that agent's charter explicitly forbids ("facilitates only,
 // never decides readiness"). It correctly refused, and its refusal collapsed into the schema's
 // required boolean as ready:false. Rollout is gated on readiness.ready, so the gate could never
-// open: deploy.js could not deploy anything, for any repo, ever. Observed on ssbd-mqkq run
-// wf_773feccc-143 — readiness.ready=false with findings that begin "ROLE BOUNDARY: This agent's
-// charter explicitly forbids declaring the feature ready or not ready ... the verdict request is
-// declined and routed back as an escalation", deployedToDev=false, rollout=null.
+// open: deploy.js could not deploy anything, for any repo, ever.
 // The facilitator was right and the script was wrong. The verdict belongs to
 // phase-gate-enforcer, and it always did.
 //
@@ -471,7 +472,7 @@ Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy &&
   }
 )
 
-// MACHINE-CHECK BACKSTOP (ssbd-1xcs D1). The enforcer's prose verdict cannot
+// MACHINE-CHECK BACKSTOP. The enforcer's prose verdict cannot
 // overrule the machine-checkable Green artifact: without confirmed test evidence
 // the gate stays shut no matter what was ruled, because "not run / not reported"
 // must resolve as a blocking gap, never through the uncertainty default above.
@@ -680,6 +681,12 @@ const leaseBlockedReason = wantsRollout && leaseRefused
     'holder finishes is the whole remedy.'
   : ''
 if (leaseBlockedReason) log(leaseBlockedReason)
+const waveBlockedReason = wantsRollout && multiRepo && !wavePlanPaths.length
+  ? 'ROLLOUT NOT ATTEMPTED — this change spans multiple repos/stacks and no wave plan was supplied ' +
+    '(args.wavePlanPaths, from ATW_WAVE_PLANS). A multi-repo rollout follows the project\'s approved wave order, ' +
+    'so without one there is no order to deploy in.'
+  : ''
+if (waveBlockedReason) log(waveBlockedReason)
 if (lease && lease.brokeStale === true) {
   log(
     `Shared dev deployment lease for ${leaseKey} was BROKEN as stale: it was ${lease.staleAgeMinutes || '?'} minutes ` +
@@ -690,7 +697,7 @@ if (lease && lease.brokeStale === true) {
 if (leaseHeld) log(`Holding the shared dev deployment lease for ${leaseKey}${lease.waitedSeconds ? ` after waiting ${lease.waitedSeconds}s` : ''}`)
 
 let rollout = null
-if (wantsRollout && !leaseRefused) {
+if (wantsRollout && !leaseRefused && !waveBlockedReason) {
   rollout = await settleAgent(
     `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
 
@@ -698,8 +705,8 @@ Repo: ${c.repoPath || '(unspecified)'}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}
 ${
   multiRepo
-    ? `This change spans MULTIPLE repos/stacks — deploy in approved wave order per /Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke/deployment/waves.yaml and waves.shared.yaml, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
-    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read waves.yaml. Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
+    ? `This change spans MULTIPLE repos/stacks — deploy in the approved wave order the wave plan${wavePlanPaths.length > 1 ? 's' : ''} ${wavePlanPaths.join(' and ')} define${wavePlanPaths.length > 1 ? '' : 's'}, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
+    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read a wave plan. Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
         cdk && cdk.applicable === false
           ? `CDK validation already reported that this repo owns NO CDK app or stack, so \`cdk deploy\` does not exist here and will fail. ${
               cdkDetails ? `The validator reported how this repo actually deploys: ${cdkDetails}. ` : ''
@@ -932,4 +939,4 @@ const ledger = {
   ok: !!(readiness && readiness.ready) && (!rolloutAllowed || (deployedToDev && smokePassed)),
 }
 
-return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }
+return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, waveBlocked: waveBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }

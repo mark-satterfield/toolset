@@ -50,13 +50,13 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 A PRD document and its Epic bead are the same entity in two places, one Epic to one PRD. Neither contains the other; they hold the same content, and a change to either obliges a change to the other.
 
-The pair is recorded on BOTH sides, so it never has to be inferred: the PRD carries a `**Epic:** ssbd-xxxx` line under its title, and the Epic carries the label `prd:<slug>` — the PRD's filename without `.md`, never a local filesystem path. Write both when you form the pair. The old "Container for PRD" sentence is wrong twice: it points one way only, and prose gets deleted by rewrites, which is how 29 links were lost.
+The pair is recorded on BOTH sides, so it never has to be inferred: the PRD carries a `**Epic:** <prefix>-xxxx` line under its title, and the Epic carries the label `prd:<slug>` — the PRD's filename without `.md`, never a local filesystem path. Write both when you form the pair. A pointer written as prose points one way only and a rewrite deletes it.
 
 **When the two pointers disagree, report the conflict and write nothing.** Matching an Epic to a PRD by title resemblance mis-paired three Epics and overwrote them with another PRD's content. Recorded evidence pairs them, never similarity.
 
 The file shape carries the content mapping: the PRD's first and only `# ` heading is the Epic title, everything after it (minus the `**Epic:**` pointer) is the Epic description. No YAML frontmatter, no second `# ` heading.
 
-A PRD you write or revise is not delivered until its Epic matches. Run `ops/prd-epic-sync.py --only <slug> --apply` (SkillSpoke command repo) and state in your handoff that you did. If that script is unreachable from your working tree, report the exact slug needing sync rather than leaving the halves divergent. The `agent-teams-workforce:prd-writer` skill holds the full contract.
+A PRD you write or revise is not delivered until its Epic matches. Run `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — the project's sync command — and state in your handoff that you did. If `ATW_PRD_EPIC_SYNC` is unset, report that and the exact slug needing sync rather than leaving the halves divergent. The `agent-teams-workforce:prd-writer` skill holds the full contract.
 
 ## Repair a Self-Contradictory Acceptance Criterion Yourself
 

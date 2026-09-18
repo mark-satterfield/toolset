@@ -134,12 +134,11 @@ function main() {
 
   const repoRoot = git(dir, ['rev-parse', '--show-toplevel']) || dir;
   const repoName = path.basename(repoRoot);
-  // Where trees go is configuration. This hook is a Node process, so unlike the workflow
-  // scripts it can read the variable directly rather than being handed the value. The
-  // fallback is the legacy layout — a `.worktrees/` beside the repository — which is what
-  // the workflow itself falls back to, so the advice here and the path a run actually cuts
-  // never disagree.
-  const configuredRoot = String(process.env.SKILLSPOKE_WORKTREE_ROOT || '').trim();
+  // Where trees go is configuration (ATW_WORKTREE_ROOT). This hook is a Node process, so
+  // unlike the workflow scripts it can read the variable directly rather than being handed
+  // the value. The fallback — a `.worktrees/` beside the repository — is what the workflow
+  // itself falls back to, so the advice here and the path a run actually cuts never disagree.
+  const configuredRoot = String(process.env.ATW_WORKTREE_ROOT || '').trim();
   const worktreeDir = configuredRoot
     ? configuredRoot.replace(/\/+$/, '')
     : path.join(path.dirname(repoRoot), '.worktrees');

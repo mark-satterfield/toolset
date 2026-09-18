@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch at `<worktreeRoot>/<bead>-<repo>`, where the root is supplied by the caller from SKILLSPOKE_WORKTREE_ROOT and falls back to a `.worktrees/` directory beside the repository when none is configured — and then a SECOND, independently dispatched read-only verifier, told nothing about what the provisioner claimed, reports the raw git facts for that path. The SCRIPT rules on the two accounts and refuses anything it cannot reconcile: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must be neither a default branch nor a detached HEAD, the independent account must agree about the branch, git-dir must differ from git-common-dir, and the tree must share a git-common-dir with the repository the CALLER named. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
+    'Leaf mini — establishes the WORKTREE every writing phase then works in. It is the structural mirror of the settle step: settle LANDS the tree on every exit path, workspace ESTABLISHES it before the first write. A git-worktree-provisioner fetches, fast-forwards, reuses an existing tree for the same bead or cuts a new one on a feature branch at `<worktreeRoot>/<bead>-<repo>`, where the root is supplied by the caller from ATW_WORKTREE_ROOT and falls back to a `.worktrees/` directory beside the repository when none is configured — and then a SECOND, independently dispatched read-only verifier, told nothing about what the provisioner claimed, reports the raw git facts for that path. The SCRIPT rules on the two accounts and refuses anything it cannot reconcile: the provisioner must affirm isLinkedWorktree=true (absent refuses — it is not the safe answer), the branch must be neither a default branch nor a detached HEAD, the independent account must agree about the branch, git-dir must differ from git-common-dir, and the tree must share a git-common-dir with the repository the CALLER named. Its return value is the sole source of the contract repoPath — the caller-supplied path is an input to this step, never the tree the phases write in.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -98,11 +98,9 @@ async function settleAgent(prompt, opts) {
 //   branchPrefix?: string, // 'fix' (bug), 'feat' (task), 'infra' (infra change). Default 'work'.
 //   purpose?: string,      // one line, for the log and the branch description
 //   worktreeRoot?: string, // absolute directory every cut tree is placed under. The caller reads
-//                          // it from SKILLSPOKE_WORKTREE_ROOT; a workflow script has no
-//                          // filesystem or process access, so the environment cannot be read
-//                          // here. Absent, the legacy layout applies: a `.worktrees/` directory
-//                          // beside the repository, which is what put 47 trees in the directory
-//                          // that is supposed to hold nothing but repositories.
+//                          // it from ATW_WORKTREE_ROOT; a workflow script has no filesystem or
+//                          // process access, so the environment cannot be read here. Absent,
+//                          // a `.worktrees/` directory beside the repository is used.
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const repoPath = String(a.repoPath || '').trim()
@@ -262,30 +260,23 @@ const joinPath = (dir, name) => (dir === '/' ? `/${name}` : `${dir}/${name}`)
 
 const repoBase = baseOf(repoPath)
 const repoParent = dirOf(repoPath)
-const shortName = repoBase.replace(/^SkillSpoke-/, '') || repoBase
 const siblingWorktrees = joinPath(repoParent, '.worktrees')
 const nestedWorktrees = joinPath(repoPath, '.worktrees')
 
 // WHERE THE TREE GOES IS CONFIGURATION, NOT A CONSTANT.
 //
-// The layout was hardcoded as `.worktrees` beside the repository, and "beside the
-// repository" is the parent directory — the one directory in this fleet that is supposed
-// to contain repositories and nothing else. Every run added a tree to it, so the working
-// directory filled with 47 of them plus whatever else landed there.
+// "Beside the repository" is the parent directory — the directory that holds the
+// repositories themselves — so a project names where its trees go. The caller reads
+// ATW_WORKTREE_ROOT from the environment and passes the value in: a workflow script has
+// no process or filesystem access, which is why this arrives as an argument.
 //
-// So the root is now supplied by the caller, which reads SKILLSPOKE_WORKTREE_ROOT from the
-// environment and passes the value in. It cannot be read here: a workflow script has no
-// process or filesystem access at all, which is why this arrives as an argument rather
-// than as an env lookup a few lines down.
-//
-// The legacy sibling layout remains the fallback and stays in the ACCEPTABLE set either
-// way. That is not politeness toward old configuration — it is what lets a run RESUME into
-// a tree cut before the root was configured. Drop it and every in-flight tree becomes
-// unreachable, and the reuse guarantee this whole step exists to provide turns into a
-// second tree cut beside the first.
+// The sibling layout is the fallback and stays in the ACCEPTABLE set either way. That is
+// what lets a run RESUME into a tree cut before a root was configured; without it the
+// reuse guarantee this whole step exists to provide turns into a second tree cut beside
+// the first.
 const configuredRoot = worktreeRootArg ? worktreeRootArg.replace(/\/+$/, '') : ''
 const worktreeHome = configuredRoot || siblingWorktrees
-const plannedWorktreePath = joinPath(worktreeHome, `${beadId}-${shortName}`)
+const plannedWorktreePath = joinPath(worktreeHome, `${beadId}-${repoBase}`)
 
 const ACCEPTABLE_WORKTREE_PATHS = [
   ...new Set([
@@ -293,10 +284,10 @@ const ACCEPTABLE_WORKTREE_PATHS = [
     plannedWorktreePath,
     joinPath(worktreeHome, `${beadId}-${repoBase}`),
     joinPath(worktreeHome, beadId),
-    joinPath(siblingWorktrees, `${beadId}-${shortName}`),
+    joinPath(siblingWorktrees, `${beadId}-${repoBase}`),
     joinPath(siblingWorktrees, `${beadId}-${repoBase}`),
     joinPath(siblingWorktrees, beadId),
-    joinPath(nestedWorktrees, `${beadId}-${shortName}`),
+    joinPath(nestedWorktrees, `${beadId}-${repoBase}`),
     joinPath(nestedWorktrees, beadId),
   ]),
 ]
@@ -411,7 +402,7 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         branch: { type: 'string' },
         reused: { type: 'boolean' },
         isLinkedWorktree: { type: 'boolean' },
-        // ssbd-6mg5 — BOUNDED BY THE SCHEMA, not merely asked for in prose.
+        // BOUNDED BY THE SCHEMA, not merely asked for in prose.
         //
         // The structured-output channel truncates a payload at a fixed size, and a
         // truncated payload is not a short answer — it is invalid JSON, cut mid-string.
@@ -510,7 +501,7 @@ if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
 // half left alone reproduced it within the week. Both incidents are the same sentence:
 // THE SCRIPT POINTED ITS ONE INDEPENDENT CONTROL AT THE TREE AN AGENT NAMED.
 //
-// ssbd-4qzi. The provisioner cut the right tree at the right path, ran step 6 against
+// First: the provisioner cut the right tree at the right path, ran step 6 against
 // it, said so in its own evidence — and filled `repoPath` with the CALLER'S REPOSITORY.
 // That value is a legal member of the acceptable set, because the set must admit the
 // caller's path for the reuse-in-place case, so every pure guard passed and the verifier
@@ -520,8 +511,8 @@ if (DEFAULT_BRANCHES.has(normalized) || normalized === 'head') {
 // The fix pinned the CUT path — `reused === false` now takes the path this script built
 // — and left the REUSE path adopting whatever the provisioner reported.
 //
-// ssbd-2dqw, immediately. Same provisioner, same misfill, plus `reused: true`. Its own
-// evidence reads "Established a new linked worktree; nothing existed for ssbd-2dqw
+// Then, immediately: same provisioner, same misfill, plus `reused: true`. Its own
+// evidence reads "Established a new linked worktree; nothing existed for this bead
 // before this run" and shows step 6 passing on the tree it cut — while the FIELDS said
 // the caller's repository, reused. The script honoured `reused`, verified the caller's
 // main working tree, and refused a tree that was fine. Twice, identically.
@@ -676,7 +667,7 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
         callerCommonDir: { type: 'string' },
         callerBranch: { type: 'string' },
         callerDefaultBranch: { type: 'string' },
-        // ssbd-6mg5, the same bound for the same reason. This report carries eight
+        // The same bound for the same reason. This report carries eight
         // absolute paths before `evidence` contributes a byte, so it is the MORE exposed
         // of the two dispatches, not the less: it survived the failing run only because
         // the provisioner died first and it was never dispatched. Its observations are

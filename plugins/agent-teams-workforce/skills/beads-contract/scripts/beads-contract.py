@@ -3,7 +3,7 @@
 
 WHY THIS IS CODE AND NOT PROSE. Two defects reached production because agents each
 guessed the storage layout. The content-hash recipe was written twice — once as `jq`
-prose in `skills/task-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py` — and
+prose in `skills/task-ready/SKILL.md`, once in a host readiness gate — and
 the two copies disagreed about `labels`, so they disagreed about exactly the beads the
 rule existed for. Separately, two work packages assumed acceptance criteria are a metadata
 key; they are PROSE, and may live on a parent. Prose read by a model is not deterministic.
@@ -32,14 +32,14 @@ Common flags:
                      `fingerprint-batch` — for fingerprinting a whole sweep a caller
                      has ALREADY fetched. Every read command honours it.
 
-WHY `fingerprint-batch` EXISTS. `ops/sdlc-automation/readiness.py` assesses ~252 beads
-per pass over an index it built from ONE `bd list` sweep. Asking `fingerprint <id>` per
-bead would add 252 process spawns and 252 `bd show` round-trips to a pass that currently
-makes one tracker call. So batch mode takes the records the caller ALREADY HOLDS on
+WHY `fingerprint-batch` EXISTS. A host readiness gate assesses hundreds of beads per pass
+over an index it built from ONE `bd list` sweep. Asking `fingerprint <id>` per bead would
+add a process spawn and a `bd show` round-trip per bead to a pass that makes one tracker
+call. So batch mode takes the records the caller ALREADY HOLDS on
 stdin and returns `{id: fingerprint}` — one subprocess, zero extra tracker calls.
 
 Feeding the caller's own records back in is not merely cheaper, it is more correct.
-`readiness` hashes `bd list` records; a re-fetch here would hash `bd show` records. The
+The caller hashes `bd list` records; a re-fetch here would hash `bd show` records. The
 two payloads differ in exactly the fields that caused the defect this module exists to
 end, so re-fetching would reintroduce a second source of truth by the back door. The
 caller's record is the record its verdict is about, and that is the one hashed.
@@ -320,12 +320,15 @@ WSJF_KEYS = (
     "wsjf_tc",
     "wsjf_rroe",
     "wsjf_unblocks",
+    "wsjf_reaches",
     "wsjf_cod",
     "wsjf_size",
     "wsjf_size_source",
     "wsjf_size_task_days",
+    "wsjf_size_child_total",
     "wsjf_confidence",
     "wsjf_value_from",
+    "wsjf_content_hash",
 )
 
 #: Keys the SEQUENCING pass owns. `seq_owned_blockers` is a comma-separated id list of the
@@ -334,6 +337,7 @@ WSJF_KEYS = (
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
     "seq_owned_blockers_at",
+    "seq_content_hash",
 )
 
 #: Keys the ELABORATION lane owns. Listed so `metadata get` can say which keys on a bead
@@ -721,7 +725,7 @@ def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
     Three ways to say which beads, in order of preference:
 
     1. `--records -` with no ids — fingerprints every record on stdin. THE PATH
-       `readiness.py` TAKES: it already holds the sweep, so this costs no tracker
+       a readiness gate TAKES: it already holds the sweep, so this costs no tracker
        call at all, and hashes the very records the caller's verdict is about.
     2. `--records -` with ids — fingerprints just those, out of the supplied records.
     3. No records — ONE `bd list` sweep, then those ids (or all of them).

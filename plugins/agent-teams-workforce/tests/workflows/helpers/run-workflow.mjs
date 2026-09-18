@@ -23,6 +23,16 @@ export function readWorkflowSource(absPath) {
 }
 
 /**
+ * The project configuration a caller reads from the ATW_* environment and passes to every
+ * workflow it dispatches. Supplied to each script under test unless the test's own args
+ * name the key, so a test exercises the workflow as a configured project runs it.
+ */
+export const PROJECT_CONFIG = Object.freeze({
+  prCommand: '/opt/project/bin/open-pr',
+  sadPath: '/opt/project/docs/architecture/sad',
+})
+
+/**
  * Execute a workflow script with fake `agent` / `workflow` dispatchers.
  *
  * @param {string} absPath   absolute path to the workflow script
@@ -33,7 +43,9 @@ export function readWorkflowSource(absPath) {
  * @param {object} [opts.budget]     the seventh injected global; undefined unless a test supplies one
  * @returns {Promise<{result: any, calls: Array}>}
  */
-export async function runWorkflowScript(absPath, { args = {}, agentImpl, workflowImpl, budget } = {}) {
+export async function runWorkflowScript(absPath, { args: callerArgs = {}, agentImpl, workflowImpl, budget } = {}) {
+  const args =
+    callerArgs && typeof callerArgs === 'object' && !Array.isArray(callerArgs) ? { ...PROJECT_CONFIG, ...callerArgs } : callerArgs
   const raw = readFileSync(absPath, 'utf8')
   // The runner accepts ONE top-level export — `meta` — and rejects the script on a
   // second one before any phase runs. Stripping every `export const` made this

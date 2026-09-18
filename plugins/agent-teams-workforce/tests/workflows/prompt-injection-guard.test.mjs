@@ -35,7 +35,7 @@ import { runWorkflowScript } from './helpers/run-workflow.mjs'
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const WORKSPACE = path.join(WF, 'workspace.js')
 
-const CALLER_REPO = '/repos/SkillSpoke-shared-chassis'
+const CALLER_REPO = '/repos/shared-chassis'
 const BEAD = 'ssbd-e1ai'
 // What workspace.js builds for that caller and that bead. Nothing proposes it.
 const BUILT_WORKTREE = `/repos/.worktrees/${BEAD}-shared-chassis`

@@ -225,11 +225,10 @@ END STANDING RULINGS
 // back NULL when a subagent is skipped or dies on a terminal API error, and the
 // `!reality` guard below was built for exactly that. But a subagent that RUNS and then
 // finishes WITHOUT emitting its structured output THROWS, and the throw leaves the mini,
-// leaves the composite, and aborts the whole run — the same crash bug-fix.js records at
-// 1.13M tokens on ssbd-mqkq. Nothing catches it here, so every line below, including the
+// leaves the composite, and aborts the whole run. Uncaught, every line below, including the
 // entire `dispatchFailed` contract this mini owes its caller, is unreachable for the
-// failure mode that actually happens. ssbd-nc8z died this way twice, at the same phase,
-// and both times the supervisor was handed a bare abort with no classification.
+// failure mode that actually happens, and the caller is handed a bare abort with no
+// classification.
 //
 // settleAgent() above is where that now happens, for every dispatch in this file: a
 // throw and a null arrive at the guards below as the same event — "no account came

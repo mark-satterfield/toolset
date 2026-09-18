@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://schema.skillspoke.com/agent-team-workforce/consensus-round.json",
+  "$id": "urn:agent-teams-workforce:schema:consensus-round",
   "title": "Consensus Round",
   "description": "Written by the orchestrator after each cross-review round. Records the state of peer consensus — which workers passed, which have outstanding issues, and whether consensus was reached. Domain-agnostic.",
   "type": "object",

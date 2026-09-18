@@ -41,11 +41,6 @@ const PLUGIN_ROOT = path.resolve(__dirname, '..', '..');
 /** Absolute root of the gitignore-guardian plugin (regression pins, AC-ORCH-10c). */
 const GITIGNORE_GUARDIAN_ROOT = path.resolve(PLUGIN_ROOT, '..', 'gitignore-guardian');
 
-/** SkillSpoke repo root for the cross-repo policy contract (AC-ORCH-09*). */
-const SKILLSPOKE_REPO =
-  process.env.SKILLSPOKE_REPO ||
-  '/Users/msat1971/projects/SkillSpoke/apps/personal-agent/SkillSpoke';
-
 /**
  * Loads and parses a plugin hooks.json.
  * @param {string} [pluginRoot]
@@ -263,7 +258,6 @@ function loadAuthorizationMatrix() {
 module.exports = {
   PLUGIN_ROOT,
   GITIGNORE_GUARDIAN_ROOT,
-  SKILLSPOKE_REPO,
   loadHooksConfig,
   entriesForEvent,
   guardsMatchingTool,

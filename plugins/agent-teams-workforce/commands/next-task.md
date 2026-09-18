@@ -120,21 +120,10 @@ and does not belong to this command.
 
 Do not provision a tree here. **The composite establishes its own worktree.** Its first
 phase is `workspace` (`workflows/workspace.js`): it fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$SKILLSPOKE_WORKTREE_ROOT/<bead>-<repo>`
+existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>`
 on a feature branch, verifies the result really is a linked worktree, and returns the path
-that becomes `contract.repoPath` for every writing phase.
-
-**Read `$SKILLSPOKE_WORKTREE_ROOT` and pass it as `worktreeRoot`.** A workflow script has
-no process or filesystem access, so it cannot read the environment itself — if you do not
-pass the value, the composite falls back to a `.worktrees/` directory beside the
-repository, which puts worktrees in the directory that holds the repositories. If the
-variable is unset, say so in your report rather than inventing a path.
-
-This used to be shell in this file, executed by a model — and the runs that stranded
-production work in a main working tree are the runs that skipped it. An unattended
-command cannot depend on a step nothing enforces, so the step moved into the pipeline.
-A run that cannot verify a worktree now refuses to write rather than falling back to
-whatever tree it was pointed at.
+that becomes `contract.repoPath` for every writing phase. A run that cannot verify a
+worktree refuses to write.
 
 Pass the contract's repository as it stands. The `workspace` phase recognises an existing
 linked worktree on a feature branch for this bead and reuses it, so a later run still finds
@@ -156,15 +145,25 @@ not drop fields from it. If `missing` names `repoPath`, the Task's build contrac
 the repository is ruled during elaboration, so release the claim, report the id and that reason, and stop — never
 work out a repository yourself.
 
+The project's configuration reaches the composite as arguments, read from the `ATW_*`
+environment (see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script
+cannot read the environment itself. `ATW_PR_COMMAND` is required: if it is unset, release
+the claim, report `ATW_PR_COMMAND is unset`, and stop. Omit any other argument whose
+variable is unset, and name it in your report.
+
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
-         worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
+         prCommand: "$ATW_PR_COMMAND",
+         worktreeRoot: "$ATW_WORKTREE_ROOT",
+         projectRoot: "$ATW_PROJECT_ROOT",
+         artifactScript: "$ATW_ARTIFACT_SCRIPT",
+         wavePlanPaths: [<each ":"-separated entry of $ATW_WAVE_PLANS>]}})
 ```
 
-The composite's `workspace` phase turns the contract's repository into the worktree; do not
-pre-cut one. `worktreeRoot` is the expanded value of `$SKILLSPOKE_WORKTREE_ROOT`, not the
-literal variable name.
+Every value is the expanded value of its variable, not the literal variable name. The
+composite's `workspace` phase turns the contract's repository into the worktree; do not
+pre-cut one.
 
 `<composite>` is whatever the router named — `task-to-deploy` or `infra-change`.
 Do not substitute your own. (`bug-fix` is reachable only on demand, after a

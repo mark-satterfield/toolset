@@ -1,6 +1,6 @@
 {
-  "artifact": "Authorization matrix for bug ssbd-ja5d \u2014 orchestrator role enforcement",
-  "note": "role x resource x action x expected outcome. Every cell is sourced from an acceptance criterion of ssbd-ja5d; no cell is assumed. Cells not listed here are UNDEFINED and must be escalated to test-design-lead, never treated as implicitly allowed or denied (default-deny mindset). expected 'deny' means a registered PreToolUse guard terminates with exit code 2 and the tool call does not execute; 'allow' means guard exit code 0.",
+  "artifact": "Authorization matrix for orchestrator role enforcement (REQ-ORCH-*)",
+  "note": "role x resource x action x expected outcome. Every cell is sourced from an acceptance criterion of the REQ-ORCH requirements; no cell is assumed. Cells not listed here are UNDEFINED and must be escalated to test-design-lead, never treated as implicitly allowed or denied (default-deny mindset). expected 'deny' means a registered PreToolUse guard terminates with exit code 2 and the tool call does not execute; 'allow' means guard exit code 0.",
   "roles": {
     "orchestrator": "top-level session; PreToolUse hook input JSON contains no agent_id field",
     "subagent": "dispatched agent; hook input JSON contains a non-empty agent_id"

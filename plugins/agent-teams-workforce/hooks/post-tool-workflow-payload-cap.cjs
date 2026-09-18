@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * PostToolUse hook — REQ-ORCH-08 (ssbd-ja5d, root cause H).
+ * PostToolUse hook — REQ-ORCH-08.
  *
  * A workflow's full completion payload is the workflow's internal record, not
  * the orchestrator's. Letting it flow back verbatim fills the one context
@@ -119,7 +119,7 @@ function main() {
       'The full detail stays readable in the run transcript and journal.jsonl,',
       'and any agent that needs it can read it in its own context.',
       '',
-      'Rule source: REQ-ORCH-08 (ssbd-ja5d) — completion payload cap',
+      'Rule source: REQ-ORCH-08 — completion payload cap',
       '--- End ---',
     ].join('\n')}\n`,
   );

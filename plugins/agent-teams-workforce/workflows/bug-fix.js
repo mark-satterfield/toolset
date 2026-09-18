@@ -119,10 +119,14 @@ const DEPLOYED_RED_CRITERION =
 
 // args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
-//   worktreeRoot? — absolute directory every cut worktree is placed under. The caller
-//   reads it from SKILLSPOKE_WORKTREE_ROOT and passes it through; a workflow script has
-//   no process or filesystem access, so the environment cannot be read inside one.
+//   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
 //   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
+//   prCommand — absolute path of the executable settle runs, inside the worktree, as
+//   `<prCommand> --title T --body B` to push the branch and open its pull request
+//   (ATW_PR_COMMAND). Absent, settle lands nothing and reports the run blocked.
+//   wavePlanPaths? — absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS).
+//   Every value above is read from the environment by the caller: a workflow script has
+//   no process or filesystem access.
 //   bead.repoPath names the REPOSITORY when the caller knows it. It is NOT required: a Bug
 //   is filed against a symptom, and the repository the defect lives in is a FINDING of the
 //   triage — so with no repoPath the run triages FIRST, takes the repository the diagnosis
@@ -131,6 +135,12 @@ const DEPLOYED_RED_CRITERION =
 //   the diagnosing agent as hints, never as answers. The tree the phases write in is
 //   established by the Workspace step below and is NOT this value.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+// The executable that pushes the current branch and opens its pull request (ATW_PR_COMMAND).
+// It is interpolated into command text, so only an absolute path of plain characters is taken.
+const PR_COMMAND =
+  typeof a.prCommand === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(a.prCommand) && !a.prCommand.split('/').includes('..') && !a.prCommand.includes('//')
+    ? a.prCommand
+    : null
 const bead = a.bead || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
@@ -202,7 +212,7 @@ let runDetail = null
 // (`<session>/workflows/wf_*.json`), and the Python host reads that record after every
 // dispatch. So the payload is logged ONCE as a machine-readable `RUN-JOURNAL {json}`
 // line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
-// (ops/sdlc-automation/runjournal.py), deterministically, with no model call. The path is
+// with its run-journal writer, deterministically, with no model call. The path is
 // the host's to report, so this returns null and the host fills `detailPath` in.
 function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
@@ -350,6 +360,14 @@ ${body}
 async function settleRun() {
   const wt = settleRepoPath
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
+  if (!PR_COMMAND) {
+    return {
+      status: 'blocked',
+      reason:
+        `settle has no PR command to land the work in ${wt} with: args.prCommand (the project's ATW_PR_COMMAND) ` +
+        'was not supplied as an absolute path to an executable. The work is left in the worktree.',
+    }
+  }
   // Before the path becomes command text in the prompt below. A path that could reshape
   // those commands is a blocked orphan: the work is named and left where a human can find
   // it, never committed by a shell somebody else wrote.
@@ -359,7 +377,7 @@ async function settleRun() {
       status: 'blocked',
       reason:
         `settle refused to act on the worktree path it was handed because ${wtFault}. The path is ` +
-        'interpolated into git and skillspoke-pr commands another agent runs exactly as written, so it ' +
+        'interpolated into git and PR commands another agent runs exactly as written, so it ' +
         'is refused rather than rewritten.',
     }
   }
@@ -390,7 +408,7 @@ async function settleRun() {
       status: 'blocked',
       reason:
         `settle refused to commit in ${wt}: its branch is "${settleBranch || '(none reported)'}" — a default ` +
-        'branch, a detached HEAD, or unreported. skillspoke-pr runs on the CURRENT branch, so this would ' +
+        'branch, a detached HEAD, or unreported. The PR command runs on the CURRENT branch, so this would ' +
         'commit and push the work onto the default branch rather than onto a reviewable branch.' +
         (settleRepoDefault && settleNormalized === settleRepoDefault
           ? ` This repository's default branch is "${settleDefaultBranch}", as origin/HEAD names it — not every repo defaults to main.`
@@ -406,11 +424,11 @@ async function settleRun() {
     const reported = await settleAgent(
       `Land every change in this worktree, or say exactly why it could not be landed.\n\n` +
         `${settlePathBlock}\n\n` +
-        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before skillspoke-pr — it has no -C flag and must run inside the tree.\n` +
+        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command, which runs inside the tree.\n` +
         `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
         `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to origin/main, run \`git -C "${wt}" branch --unset-upstream\`. Never push to main.\n` +
         `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from origin/main.\n` +
-        `4. If hasWork, \`cd "${wt}" && /Users/msat1971/.local/bin/skillspoke-pr --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch itself. NEVER open the PR any other way — CodeRabbit does not scan PRs opened under an agent token, so the raw \`gh\` PR-create path yields an unreviewed PR. NEVER \`gh pr merge\`. If a PR already exists for this head skillspoke-pr returns that PR's URL — success, not failure.\n` +
+        `4. If hasWork, \`cd "${wt}" && ${PR_COMMAND} --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch and opens the pull request. NEVER open the PR any other way, and NEVER merge it. A PR that already exists for this head is success, not failure — report its URL.\n` +
         `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
       {
         label: 'settle:land-work',
@@ -603,7 +621,7 @@ function gateHeadline(stage, r) {
 // framework is built on — constitutive findings are hard stops, competitive ones proceed
 // under a flag.
 //
-// ssbd-97as is the case that proves the cost. A P0 live outage reached the Red gate with
+// The case that proves the cost: a P0 live outage reached the Red gate with
 // redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
 // clean, and not one production file touched. The blocking objection was "AC5 partially
 // covered — two of three clauses unassessed". The budget ran out and nothing shipped.
@@ -701,10 +719,8 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
 // test must change. Its ruling then drives the Red re-author, so the losing test is
 // corrected rather than re-derived.
 //
-// ssbd-97as needed a human for both of its instances: GET /api/settings with USER_POOL_ID
-// absent had one test requiring 500 and another, passing, requiring 200 — identical env
-// per conftest.py; and an unresolvable account id had one test requiring fail-closed and
-// another requiring 200 with breach_check='skipped'.
+// Example: with a required configuration value absent, one test requires a 500 and
+// another, passing, requires a 200 under an identical environment.
 async function ruleContradiction(contradiction, evidence) {
   try {
     return await settleAgent(
@@ -1240,8 +1256,8 @@ const workspace = await workflow('agent-teams-workforce:workspace', {
   beadId: bead.id,
   branchPrefix: 'fix',
   purpose: bead.title || 'bug fix',
-  // Configuration, read from SKILLSPOKE_WORKTREE_ROOT by whoever dispatched this run.
-  // Absent, workspace falls back to the legacy `.worktrees/` beside the repository.
+  // Configuration, read from ATW_WORKTREE_ROOT by whoever dispatched this run.
+  // Absent, workspace falls back to a `.worktrees/` beside the repository.
   worktreeRoot: a.worktreeRoot,
 })
 // RESIDUAL 5 — the writing phases get the same backstop settle already had.
@@ -1413,12 +1429,10 @@ const red = cpGreen !== undefined
     // DEPLOYED-ARTIFACT CARVE-OUT. A defect can be real and live while the source tree is
     // already correct, because the fix was committed but never deployed. The artifact under
     // test is then the DEPLOYED bytes, not the working tree, and NO source-level red of any
-    // kind — at HEAD or differential — is obtainable. ssbd-mqkq hit exactly this: commit
-    // 924fd5c93 removed the third-party script, apps/web/app/layout.tsx and out/ both grep
-    // clean, yet https://dev.myagent.skillspoke.ai served the script on every page load,
-    // proven by a failing Playwright run AND an independent cache-busted curl. The gate
-    // computed redConfirmed:false purely because the SOURCE was clean, and failed a run
-    // whose evidence was airtight — 676k tokens to reject a correct finding.
+    // kind — at HEAD or differential — is obtainable: the source greps clean while the
+    // deployed site still serves the removed script, proven by a failing browser run and
+    // an independent cache-busted fetch. Judging red from the source alone rejects that
+    // correct finding.
     // Red against the deployed environment is the STRONGEST form of red available, not a
     // weaker one: it observes the defect in the artifact users actually receive.
     { class: 'constitutive', text: DEPLOYED_RED_CRITERION },
@@ -1431,8 +1445,8 @@ const red = cpGreen !== undefined
     // bug is "ConfigurationError is never raised" and ConfigurationError does not exist
     // yet, the only failure obtainable at HEAD is that symbol's absence — which reads as
     // an import error. The gate then rejects a correct test, the writer cannot possibly
-    // comply, and the loop exhausts. That cost 827k tokens on ssbd-cg27 alone, and this
-    // is the same family of false rejection the differential-red carve-out above fixed.
+    // comply, and the loop exhausts. This is the same family of false rejection the
+    // differential-red carve-out above fixes.
     // The distinction that actually matters is WHOSE absence: the code under test
     // (legitimate red) versus the test's own scaffolding (a broken test).
     { class: 'constitutive', text: 'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.' },
@@ -1444,14 +1458,14 @@ const red = cpGreen !== undefined
     { field: 'evidence', nonEmpty: true, label: 'executed failing output was captured as evidence' },
     // Red proves a test fails NOW. It must also establish that a pass is REACHABLE:
     // a test pinned to a pre-fix import path fails correctly and can never go green,
-    // and is otherwise indistinguishable from a correct Red (ssbd-vtnl).
+    // and is otherwise indistinguishable from a correct Red.
     { field: 'greenReachable', equals: true, label: 'every authored test names the production file whose change makes it pass' },
     // NEGATIVE CONTROL over the captured output. Deliberately NARROW: a missing fixture
     // is always a harness fault and never a product failure. ModuleNotFoundError,
     // ImportError and "collected 0 items" are deliberately NOT in this pattern — for a
     // missing-capability defect the only failure obtainable at HEAD IS the absence of
     // the symbol the fix introduces, and pytest reports exactly that shape. Banning it
-    // would re-break the carve-out that cost 827k tokens on ssbd-cg27 to learn.
+    // would re-break the missing-capability carve-out.
     { field: 'evidence', notMatches: 'fixture .{0,80} not found', label: 'the captured failure is a product failure, not a missing fixture' },
   ],
   escalateTargets: ['triage'],
@@ -1470,10 +1484,9 @@ const red = cpGreen !== undefined
 //
 // This bites hardest on a DEFECTIVE TEST, where the deadlock is total by design: the
 // implementer is forbidden to modify a test, and the gate is right to fail a test that
-// does not pass. Neither role may fix it, so nobody can. ssbd-ew3t hit exactly this —
-// a test searched for a literal that its own variable name contained, so it could never
-// pass no matter how correct the production change was. 683k tokens, correct deletions,
-// zero regressions, run failed.
+// does not pass. Neither role may fix it, so nobody can — for example, a test that
+// searches for a literal its own variable name contains can never pass, however correct
+// the production change is.
 //
 // Escalating to Red re-runs the TEST-AUTHORING phase with the gate's evidence, which is
 // the only phase permitted to repair a test. Bounded so a Red/Green disagreement cannot
@@ -1688,8 +1701,7 @@ if (refactor.artifact && refactor.artifact.ledger) runLedger.push(refactor.artif
 // Refactor is BEHAVIOR-PRESERVING CLEANUP on already-green code. It must never be able
 // to destroy a completed Red+Green. It previously could, twice over: a gate failure
 // returned out of the whole composite, and a subagent that finished without emitting
-// StructuredOutput THREW and killed the run outright — that crash cost 1.13M tokens on
-// ssbd-mqkq, a one-line deletion, after Green had already succeeded.
+// StructuredOutput THREW and killed the run outright, after Green had already succeeded.
 // Degrade instead: keep the green code, record the finding, and carry on to Integration.
 if (!refactor.ok) {
   log(`Refactor did not pass (${refactor.reason || 'gate failure'}) — keeping the green implementation and continuing. Cleanup is not a correctness gate.`)
@@ -1709,8 +1721,7 @@ integration = await gateLoop({
   criteria: [
     { class: 'constitutive', text: 'Integration/contract/E2E suites pass' },
     { class: 'competitive', text: 'Contracts valid across boundaries' },
-    // "Coverage met" was unsatisfiable for two legitimate change classes, and rejected
-    // correct work at 1.88M tokens on ssbd-ew3t alone.
+    // "Coverage met" is unsatisfiable for two legitimate change classes:
     //   1. A DELETION. Its correct test asserts ABSENCE — repo-wide greps, path checks,
     //      SHA freezes. It never imports the deleted code, because the code is gone.
     //      Coverage is necessarily 0% and "no data was collected" is the RIGHT result.
@@ -1824,7 +1835,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     ],
     escalateTargets: ['integration', 'green'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract, green: green.artifact, docCurrency,
+      contract, green: green.artifact, docCurrency, wavePlanPaths: a.wavePlanPaths,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
     }),
   })

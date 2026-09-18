@@ -44,7 +44,7 @@ Report it. Four cases, and they lead to different places:
   one open PR exists for the branch. Resume freely.
 - **Clean but UNLANDED** — anything else: no upstream, commits ahead of upstream,
   or no open PR for the branch. The work exists and nothing downstream can see it.
-  Route it to the composite's settle step (commit, push, `skillspoke-pr`) before
+  Route it to the composite's settle step (commit, push, the configured PR command) before
   anything else. Do **not** resume on top of it and do **not** report the run as
   done.
 - **Uncommitted TEST files** — Red got partway. Do **not** delete them. The Red

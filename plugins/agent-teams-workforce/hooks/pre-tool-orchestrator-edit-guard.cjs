@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * PreToolUse hook — REQ-ORCH-01 (ssbd-ja5d, root cause A).
+ * PreToolUse hook — REQ-ORCH-01.
  *
  * The orchestrator does not edit code. Implementation is delegated to roster
  * implementers, which run as subagents. This guard makes that mechanical
@@ -146,7 +146,7 @@ function main() {
       '',
       'The orchestrator retains prose: plans, briefs, reports, and .md documents.',
       '',
-      'Rule source: REQ-ORCH-01 (ssbd-ja5d) — orchestrator role enforcement',
+      'Rule source: REQ-ORCH-01 — orchestrator role enforcement',
     ]);
   }
 

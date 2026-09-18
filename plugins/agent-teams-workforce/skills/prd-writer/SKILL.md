@@ -45,13 +45,12 @@ Three consequences bind every PRD author and reviewer:
 
    | Direction | Where it lives | What it holds |
    |---|---|---|
-   | PRD → Epic | a `**Epic:** ssbd-xxxx` line under the title | the Epic's bead id |
+   | PRD → Epic | a `**Epic:** <prefix>-xxxx` line under the title | the Epic's bead id |
    | Epic → PRD | the label `prd:<slug>` | the PRD's filename without `.md` |
 
    Write both when you form the pair. Never a local filesystem path — the filename or the title, so
-   the pointer survives the vault moving. The old "Container for PRD `<file>`" sentence is wrong
-   twice over: it points one way only, and it is prose, so a rewrite deletes it silently — which is
-   how 29 PRD-to-Epic links were lost. A label and an `**Epic:**` line both survive a rewrite.
+   the pointer survives the vault moving. A pointer written as prose points one way only and a
+   rewrite deletes it silently; a label and an `**Epic:**` line both survive a rewrite.
 
    **When the two pointers disagree, that is a conflict to report, never a tie to break.** Guessing
    which side is right — matching Epics to PRDs by title resemblance — mis-paired three Epics and
@@ -67,16 +66,17 @@ Three consequences bind every PRD author and reviewer:
    description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
    the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
 3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
-   Epic into sync, and say in your handoff that you did:
+   Epic into sync, and say in your handoff that you did. The project supplies the commands (see
+   "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`):
 
    ```bash
-   ops/prd-epic-sync.py --only <slug> --apply    # document -> Epic (creates the Epic if absent)
-   ops/prd-epic-verify.py <slug>                 # check one PRD against its Epic
-   ops/prd-epic-verify.py <slug> --apply         # Epic -> document, when the Epic was edited first
+   "$ATW_PRD_EPIC_SYNC" --only <slug> --apply     # document -> Epic (creates the Epic if absent)
+   "$ATW_PRD_EPIC_VERIFY" <slug>                  # check one PRD against its Epic
+   "$ATW_PRD_EPIC_VERIFY" <slug> --apply          # Epic -> document, when the Epic was edited first
    ```
 
-   Both scripts live in the SkillSpoke command repo under `ops/`. If you cannot reach them from your
-   working tree, report the exact slug that needs syncing rather than leaving the halves divergent.
+   If a variable is unset, report its name and the exact slug that needs syncing rather than
+   leaving the halves divergent.
 
 ## The Mechanism: `scripts/check_prd.py`
 
@@ -139,7 +139,7 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    constraint to look finished; never smooth an upstream contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
 11. **Run `scripts/check_prd.py` on your draft and resolve every error** before handoff.
-12. **Sync the Epic half** — `ops/prd-epic-sync.py --only <slug> --apply` — and say so in the handoff.
+12. **Sync the Epic half** — `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — and say so in the handoff.
 
 ## Validate Mode — Workflow
 

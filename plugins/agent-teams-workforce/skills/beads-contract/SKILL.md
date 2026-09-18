@@ -17,7 +17,7 @@ allowed-tools: [Bash]
 Two defects reached production because agents each guessed how beads stores things.
 
 1. **The content-hash recipe was written twice** — once as `jq` prose in
-   `skills/task-ready/SKILL.md`, once in `ops/sdlc-automation/readiness.py`. The two copies
+   `skills/task-ready/SKILL.md`, once in a host readiness gate. The two copies
    disagreed about `labels`, so they disagreed about exactly the beads the rule existed for.
 2. **Two work packages assumed acceptance criteria are a metadata key.** They are PROSE. They
    may live in the issue's own description, or in its parent Story or Epic. The requirement is
@@ -69,7 +69,7 @@ Stdout carries `fingerprints` — a plain `{id: fingerprint}` map — alongside 
 as arguments narrows it to those beads; naming none fingerprints every record supplied.
 
 **Feeding the caller's own records back in is the correctness argument, not just the cheap one.**
-`readiness.py` hashes `bd list` records; a re-fetch inside this script would hash `bd show`
+A caller holding `bd list` records hashes those; a re-fetch inside this script would hash `bd show`
 records instead. Those payloads differ in exactly the fields that caused defect 1, so re-fetching
 would reintroduce a second source of truth by the back door. Batch mode calls the same
 `content_hash` as `fingerprint`, through the same `fingerprint_of` entry point — there is no
@@ -82,10 +82,10 @@ this.**
 ## What `bd show --json` returns
 
 **There is no fixed field list, and any number you have been told is wrong.** `bd` OMITS a
-field the bead does not carry. Verified read-only across all 252 beads in the SkillSpoke
-tracker: a single record carries **13 to 18 keys**, and the union across all of them is 23.
+field the bead does not carry. Observed across a tracker of 252 beads: a single record carries **13 to 18 keys**, and the
+union across all of them is 23.
 
-Always present (all 252): `id`, `title`, `status`, `priority`, `issue_type`, `revision`,
+Always present (on all 252): `id`, `title`, `status`, `priority`, `issue_type`, `revision`,
 `created_at`, `updated_at`, `comment_count`, `dependency_count`, `dependent_count`.
 
 Present only when set — the count is how many of the 252 carried it: `description` (250),
@@ -135,8 +135,7 @@ than appearing to invent criteria.
 object are compact JSON. Metadata sits OUTSIDE the content fingerprint, which is what lets the
 gate store its own verdict without invalidating it.
 
-Build contract, written by the decomposition phase onto each Task, read back by
-`ops/sdlc-automation/buildinput.py`:
+Build contract, written by the decomposition phase onto each Task and read back by `contract`:
 
 | Key | Shape | Standing |
 | --- | --- | --- |
@@ -174,13 +173,16 @@ decision finds the work resting on it. It holds the SAD's own per-entry tags bec
 survive a rewording while a statement-derived id does not.
 
 WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
-`wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`,
-`wsjf_size_source`, `wsjf_size_task_days`, `wsjf_confidence`, `wsjf_value_from`. They are what
-lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
-either one re-judging anything. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a
-comma-separated id list of the blocking edges that pass created on the bead, and
-`seq_owned_blockers_at`. The pass only ever withdraws an edge that list names, which is how a
-hand-made edge survives it.
+`wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`
+(Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size`,
+`wsjf_size_source`, `wsjf_size_task_days`, `wsjf_size_child_total` (the summed child sizes, on a
+roll-up), `wsjf_confidence`, `wsjf_value_from`. They are what lets a Task INHERIT its Epic's
+value and an Epic roll its size up from its Tasks without either one re-judging anything.
+`wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
+from. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a comma-separated id list
+of the blocking edges that pass created on the bead, and `seq_owned_blockers_at`. The pass only
+ever withdraws an edge that list names, which is how a hand-made edge survives it.
+`seq_content_hash` is the content fingerprint the sequencer last read the Epic at.
 
 The script is the list: `metadata set` names every key it accepts when it refuses one.
 
@@ -210,16 +212,11 @@ What matters to a caller:
   PARENT are NOT — the fingerprint is over this bead's own record. Editing a parent's criteria
   does not make this Task stale; that is a real limitation, and it is about where the prose sits.
 
-`ops/sdlc-automation/readiness.py` in the SkillSpoke repo holds the second copy that caused
-defect 1. Until it calls this script, the two are a joint contract: **change it on both sides or
-on neither.** Parity is verified, not assumed — `fingerprint` agrees with `readiness.content_hash`
-byte for byte on live beads, labelled and unlabelled alike.
-
-`fingerprint-batch` is what lets that copy go. `readiness.assess` runs per bead over an index
-built from one `bd list` sweep, so per-bead `fingerprint` was never an option — it would have
-added a subprocess and a `bd show` round-trip per bead to a pass that makes one tracker call.
-Batch mode takes that sweep on stdin and answers for every bead at once, which removes the only
-reason the second copy had to exist.
+A host that fingerprints beads calls this script rather than carrying its own recipe.
+`fingerprint-batch` is what makes that practical for a gate that runs per bead over an index
+built from one `bd list` sweep: per-bead `fingerprint` would add a subprocess and a `bd show`
+round-trip per bead to a pass that makes one tracker call. Batch mode takes that sweep on stdin
+and answers for every bead at once.
 
 ## Resolving a parent
 

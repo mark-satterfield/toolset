@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * PreToolUse hook — REQ-ORCH-04 / root cause F (ssbd-ja5d).
+ * PreToolUse hook — REQ-ORCH-04.
  *
  * Dispatching a workflow by bare `name` resolves it against the session-start
  * snapshot of the workflow registry. That snapshot goes stale the moment a
@@ -99,7 +99,7 @@ function main() {
     '',
     'Or pass resumeFromRunId to continue a run whose revision is already pinned.',
     '',
-    'Rule source: REQ-ORCH-04 / root cause F (ssbd-ja5d) — stale snapshot dispatch',
+    'Rule source: REQ-ORCH-04 — stale snapshot dispatch',
   ]);
 }
 
