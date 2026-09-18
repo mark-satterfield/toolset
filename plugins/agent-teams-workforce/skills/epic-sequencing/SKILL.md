@@ -1,8 +1,8 @@
 ---
 name: epic-sequencing
 description: >-
-  The edge test for Epic-to-Epic dependency edges, and the outside-in procedure for
-  applying it to a whole Epic portfolio. An edge exists exactly where one Epic's
+  The edge test for Epic-to-Epic dependency edges, and how to apply it in either scope:
+  one Epic against the portfolio, or the whole portfolio outside-in. An edge exists exactly where one Epic's
   architecture must be designed from another Epic's requirements first. Edges decide
   ELIGIBILITY (what may be elaborated at all); WSJF decides PRIORITY among what is
   eligible, and computes RR-OE from these edges. Use when proposing, reviewing or
@@ -11,9 +11,21 @@ description: >-
 
 # Epic sequencing
 
-The output is an edge file over the whole Epic portfolio and a written account of the
-tiering that produced it. One session holds the whole portfolio: the judgment is about how
-domains relate to each other, which an agent holding one domain cannot make.
+The output is an edge file and a written account of the reasoning that produced it. One
+session holds the whole portfolio: the judgment is about how domains relate to each other,
+which an agent holding one domain cannot make. It holds the portfolio through each Epic's
+stored summary — what the Epic needs and establishes architecturally, its value and urgency,
+and what already exists for it — and reads a PRD in full where a summary cannot settle an
+edge.
+
+## Two scopes
+
+- **One Epic** — a new or changed Epic, assessed against the portfolio. Read its full PRD
+  and apply the test below in both directions. The edge file holds every edge to or from
+  that Epic and no other; every other Epic's edges stand, and validation refuses an edge
+  that does not touch the Epic.
+- **The whole portfolio** — for re-seeding. Work outside-in, as the rest of this document
+  describes, and emit the whole graph.
 
 ## What an edge decides
 
@@ -31,14 +43,14 @@ domains relate to each other, which an agent holding one domain cannot make.
 The edge set is therefore the only place either decision is corrected. Draw every edge
 that passes the test below, and none that does not.
 
-## Outside-in, and revisited
+## Outside-in, and revisited — the whole portfolio
 
 Work from the broadest grouping inward, and go back up whenever the detail contradicts the
 level above it. Repeat until a pass changes nothing.
 
 ### 1. Tiers
 
-Derive the domains from the Epics in the snapshot — their titles, their scope and the
+Derive the domains from the Epics in the portfolio — their titles, their scope and the
 documents they name. The set of Epics is the only description of the domains there is,
 and it changes between runs, so the grouping is derived fresh each time.
 
@@ -88,7 +100,7 @@ nothing of that kind does not exist.
 
 ## The edge file
 
-One entry per edge, over the whole portfolio:
+One entry per edge in the scope:
 
 ```json
 {"edges": [
@@ -102,16 +114,17 @@ One entry per edge, over the whole portfolio:
 the person reading the proposal. A `low` edge is one to argue about; it is not a reason to
 leave it out.
 
-Alongside the file, write the tiering and the subdomain ordering in prose — the edges are
-the residue of that reasoning, and the reasoning is what the next run revises.
+Alongside the file, write the reasoning in prose — for the whole portfolio, the tiering and
+the subdomain ordering; for one Epic, the test applied to each edge. The edges are the
+residue of that reasoning, and the reasoning is what the next assessment revises.
 
-The file is the whole graph: an edge the sequencing pass created earlier and this file
-omits is withdrawn. An edge drawn by hand is never withdrawn. Both ends of every edge are
-Epics; validation refuses any other edge.
+The file is the whole graph of its scope: an edge an earlier assessment created within the
+scope and this file omits is withdrawn. An edge drawn by hand is never withdrawn. Both ends
+of every edge are Epics; validation refuses any other edge.
 
 ## Checks before handing it over
 
-- Every id appears in the snapshot. A bead that does not exist usually means the wrong
+- Every id appears in the portfolio. A bead that does not exist usually means the wrong
   portfolio was read.
 - No cycle. A cycle is a wrong edge, not a tie to break — find which of the two Epics
   actually establishes the pattern.

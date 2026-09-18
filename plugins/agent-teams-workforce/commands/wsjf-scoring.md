@@ -1,0 +1,68 @@
+---
+description: "Score every open Epic and Task with WSJF from the dependency edges already in beads"
+argument-hint: "[--all] [--rejudge]"
+allowed-tools: [Bash, Workflow]
+---
+
+# WSJF scoring
+
+Score every open Epic and Task in the beads tracker of the repository you are standing in,
+by dispatching the `wsjf-scoring` workflow. The workflow does all of it; this command
+resolves its arguments, dispatches it, and reports.
+
+Scoring reads the dependency edges from beads and never sets one. A model judges only
+values that are missing or whose source content changed; then the arithmetic runs over the
+whole portfolio and only changed values are written.
+
+- `--all` includes items that already have a value.
+- `--rejudge` judges the existing values of the included items again.
+
+Together they re-judge the whole portfolio. It writes.
+
+## Dispatch
+
+```bash
+REPO="$(git rev-parse --show-toplevel)"
+RUN="$(date -u +%Y%m%dT%H%M%SZ)"
+echo "REPO=$REPO"
+echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
+echo "RUN=$RUN"
+echo "SAD=${ATW_SAD_PATH}"
+echo "PROJECT=${ATW_PROJECT_ROOT}"
+```
+
+Use the printed values below. Leave `sadPath` or `projectRoot` out when its value printed
+empty.
+
+```
+Workflow({scriptPath: "<ROOT>/workflows/wsjf-scoring.js", args: {
+  repoPath:    "<REPO>",
+  pluginRoot:  "<ROOT>",
+  workDir:     "<REPO>/.claude/workflow-runs/wsjf-scoring/<RUN>",
+  sadPath:     "<SAD>",
+  projectRoot: "<PROJECT>",
+  all:         <true when $ARGUMENTS contains --all, otherwise false>,
+  rejudge:     <true when $ARGUMENTS contains --rejudge, otherwise false>
+}})
+```
+
+Anything else in `$ARGUMENTS` is ignored.
+
+## Report back
+
+From the workflow's result:
+
+- `summaries` — how many Epic summaries were due and written.
+- `plan` — how many Epics and Tasks were judged, the state counts (`missing`, `changed`,
+  `unfingerprinted`, `current`), and how many stored values were adopted.
+- `score` — Epics and Tasks scored and written, and the counts of unscored, incomplete and
+  outside-range items. Name them from `<workDir>/score.json`: a Task with no inherited value
+  sits under an unscored Epic or under no Epic; an `incomplete` Epic has Tasks with no size.
+- `failures` and `dispatchFailures`, verbatim, when present.
+
+## Never
+
+- Assess or change a dependency edge. That is `/agent-teams-workforce:dependency-assessment`.
+- Start a pipeline run, a supervisor, a keeper or the dashboard from here.
+- Decide what is eligible to work on. Edges and scores are inputs to that decision, and
+  whatever consumes them makes it.

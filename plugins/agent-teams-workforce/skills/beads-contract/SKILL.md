@@ -156,8 +156,8 @@ no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec n
 question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
 
 Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
-`ready_content_hash`. Scoring, written by the sequencing capability and never by the readiness
-gate: `wsjf`, `wsjf_calculated_at`. Build lane: `build_state`. Elaboration lane:
+`ready_content_hash`. Scoring, written by the `wsjf-scoring` workflow and never by the
+readiness gate: `wsjf`, `wsjf_calculated_at`. Build lane: `build_state`. Elaboration lane:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`,
 `elab_key`, `elab_follows`.
 
@@ -185,11 +185,20 @@ the sum of its Tasks), `wsjf_size_low` and `wsjf_size_high` (its plausible range
 `wsjf_size_outside_range` (`true` when that sum falls outside the estimate's range — a flag for
 examination, not an error).
 `wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
-from. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a comma-separated id list
-of the Epic edges that pass created on the bead, each a `tracks` edge onto the Epic named, and
-`seq_owned_blockers_at`. The pass only ever withdraws or converts an edge that list names,
-which is how a hand-made edge survives it.
-`seq_content_hash` is the content fingerprint the sequencer last read the Epic at.
+from. Dependency assessment (the `dependency-assessment` workflow): `seq_owned_blockers`, a
+comma-separated id list of the Epic edges the assessment created on the bead, each a `tracks`
+edge onto the Epic named, and `seq_owned_blockers_at`. The assessment only ever withdraws or
+converts an edge that list names, which is how a hand-made edge survives it.
+`seq_content_hash` is the content fingerprint the assessment last read the Epic at.
+
+Epic summary, written on every open Epic by the `epic-summaries` workflow and read by every
+session that holds the whole portfolio in place of the PRDs:
+
+| Key | Value |
+| --- | --- |
+| `epic_summary` | a few hundred words: what the Epic needs and establishes architecturally, the value and urgency it carries, and what already exists for it. It describes the requirement and designs no solution |
+| `epic_summary_hash` | the content fingerprint of the Epic the summary was written from; the summary is regenerated when the Epic's fingerprint no longer matches it, and at no other time |
+| `epic_summary_at` | ISO 8601 timestamp of the write |
 
 The script is the list: `metadata set` names every key it accepts when it refuses one.
 

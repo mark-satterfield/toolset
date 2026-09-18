@@ -37,7 +37,8 @@ Input for `score` and `reach`:
         "sizeConfidence": 70,                // optional, integer percent, of the estimate
         "childSizes": [3, 5, 2],             // optional, Epic only: the size becomes
                                              // their sum; jobSize stays the estimate
-        "confidence": 88                     // optional, integer percent
+        "confidence": 88                     // optional, integer percent: the value
+                                             // confidence, judged or inherited
       }
     ]
   }
@@ -404,26 +405,20 @@ def _resolve_rroe(
     }
 
 
-def _confidence(item: dict[str, Any], size: dict[str, Any]) -> int | None:
-    """The overall confidence: the lowest of those supplied.
+def _confidence(item: dict[str, Any]) -> int | None:
+    """The value confidence: the confidence judged with UBV and TC, or inherited with them.
 
-    A size summed from children was counted, not judged, so the estimate's confidence
-    does not lower it.
+    It is never combined with the size confidence, which stays with the estimate as
+    `sizeConfidence`: a Task inherits its Epic's value confidence, and an Epic's size
+    confidence says nothing about its value.
 
     Args:
         item: The item being scored.
-        size: The settled size, from `_resolve_size`.
 
     Returns:
         The integer percent, or None when none was supplied.
     """
-    size_confidence = (
-        None if size["sizeSource"] == "child-rollup" else size.get("sizeConfidence")
-    )
-    values = [
-        v for v in (_as_int(item.get("confidence")), size_confidence) if v is not None
-    ]
-    return min(values) if values else None
+    return _as_int(item.get("confidence"))
 
 
 #: Size fields of a scored record -> the metadata keys they are stored under.
@@ -567,7 +562,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
             **size,
             "costOfDelay": cod,
             "wsjf": round(cod / size["jobSize"], 2),
-            "confidence": _confidence(item, size),
+            "confidence": _confidence(item),
         }
         record["metadata"] = _metadata(record, params)
         scores.append(record)
@@ -869,11 +864,41 @@ def selftest() -> dict[str, Any]:
     cases.append(
         _case(
             "a Task above 13 is a decomposition fault",
-            {"rung": 13, "aboveScale": True, "confidence": 50},
+            {"rung": 13, "aboveScale": True},
             {
                 "rung": over["sizeFaults"][0]["rung"],
                 "aboveScale": over["sizeFaults"][0]["aboveScale"],
-                "confidence": over["scores"][0]["confidence"],
+            },
+        )
+    )
+
+    separate = score(
+        {
+            "items": [
+                {
+                    "id": "V",
+                    "userBusinessValue": 8,
+                    "timeCriticality": 2,
+                    "riskReductionOpportunityEnablement": 3,
+                    "jobSize": 8,
+                    "sizeLow": 5,
+                    "sizeHigh": 21,
+                    "sizeConfidence": 40,
+                    "confidence": 85,
+                }
+            ]
+        },
+        "epic",
+    )["scores"][0]
+    cases.append(
+        _case(
+            "value confidence and size confidence stay separate",
+            {"wsjf_confidence": "85", "wsjf_size_confidence": "40"},
+            {
+                "wsjf_confidence": separate["metadata"].get("wsjf_confidence"),
+                "wsjf_size_confidence": separate["metadata"].get(
+                    "wsjf_size_confidence"
+                ),
             },
         )
     )

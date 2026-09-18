@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""Dependencies and scoring — the deterministic half, over the tracker graph.
+"""The Epic portfolio — the deterministic half, over the tracker graph.
 
-The `dependencies-and-scoring` workflow runs these in order. Every judged step between
-them is an agent; everything here is code.
+Three workflows run these: `epic-summaries`, `dependency-assessment` and `wsjf-scoring`.
+Every judged step between them is an agent; everything here is code.
 
-    query         what this run must judge and whether the sequencer runs, with the
-                  fingerprints that decide it
-    judge-input   the whole portfolio at one level, as one judging session reads it
-    snapshot      the tracker as a graph, which is what the sequencer reads
-    validate      prove a proposed edge set is applicable before anything is written
-    apply-edges   apply the Epic edge DIFF through `bd dep` as `tracks` edges, never
-                  touching a hand-made edge, converting any owned edge stored as another
-                  type, and record which Epic content the sequencer read. `--owned`
-                  proposes the owned edge set back, which only adds and converts
-    record        write judged values with the fingerprint they were judged from
-    score         recompute every Epic's and Task's WSJF and write what changed
+    summary-plan      the open Epics whose summary is missing or older than their PRD
+    record-summaries  write summaries with the fingerprint they were written from
+    portfolio         every open Epic with its summary and edges, as one document
+    assess-plan       every open Epic's fingerprint, and those not assessed as they stand
+    snapshot          the tracker as a graph
+    validate          prove a proposed edge set is applicable before anything is written;
+                      `--epic` refuses any edge that does not touch that Epic
+    apply-edges       apply the Epic edge DIFF through `bd dep` as `tracks` edges, never
+                      touching a hand-made edge, converting any owned edge stored as
+                      another type, and record which Epic content the sequencer read.
+                      `--epic` confines every write to edges touching that Epic.
+                      `--owned` proposes the owned edge set back, which only adds and
+                      converts
+    score-plan        what this scoring run judges, with the fingerprints that decide it
+    judge-input       the whole portfolio at one level, as one judging session reads it
+    record            write judged values with the fingerprint they were judged from
+    score             recompute every Epic's and Task's WSJF and write what changed
 
 Every command prints ONE JSON object on stdout and names the tracker source it read. With
 `--out FILE` the full object is written to FILE and stdout carries only its `summary`.
 
-`apply-edges`, `record` and `score` take `--dry-run`: the command reads the tracker and
+`record-summaries`, `apply-edges`, `record` and `score` take `--dry-run`: the command reads the tracker and
 computes exactly as it otherwise would, writes nothing, and returns every write it would
 have made, in order, under `planned`.
 """
@@ -32,8 +38,21 @@ from pathlib import Path
 
 import beadgraph
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
-from edgeset import SequencingError, apply_edges, owned_edges, read_edges, validate
+from edgeset import (
+    SEEN_KEY,
+    SequencingError,
+    apply_edges,
+    owned_edges,
+    read_edges,
+    validate,
+)
 from scoring import ScoringError, judge_input, plan, record, score
+from summaries import (
+    SummaryError,
+    portfolio,
+    record_summaries,
+    summary_plan,
+)
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
 #: sequencer reads it.
@@ -92,6 +111,40 @@ def snapshot(
     return {"beads": beads, "counts": counts, "summary": counts}
 
 
+def assess_plan(graph: Graph, *, epic: str | None) -> dict:
+    """Every open Epic's fingerprint, and the Epics not assessed as they now stand.
+
+    An Epic has been assessed as it stands when the `seq_content_hash` recorded on it
+    matches its fingerprint. The fingerprints are what `apply-edges --plan` records.
+
+    Args:
+        graph: The tracker graph, read with descriptions.
+        epic: The one Epic to be assessed, or None for the whole portfolio.
+
+    Returns:
+        The fingerprints, the unassessed Epics, the scope, and a summary.
+
+    Raises:
+        SequencingError: `epic` is not an open Epic.
+    """
+    epics = [b for b in graph.of_kind("epic") if not b.closed]
+    if epic is not None and epic not in {b.id for b in epics}:
+        msg = f"{epic} is not an open Epic"
+        raise SequencingError(msg)
+    prints = beadgraph.fingerprints(graph.records)
+    unassessed = [e.id for e in epics if e.metadata.get(SEEN_KEY) != prints.get(e.id)]
+    return {
+        "scope": epic or "portfolio",
+        "unassessed": unassessed,
+        "fingerprints": {e.id: prints[e.id] for e in epics if e.id in prints},
+        "summary": {
+            "scope": epic or "portfolio",
+            "openEpics": len(epics),
+            "unassessed": len(unassessed),
+        },
+    }
+
+
 def _read_json(path: Path) -> dict:
     """Read a JSON object from a file.
 
@@ -111,20 +164,20 @@ def _read_json(path: Path) -> dict:
     return payload
 
 
-def _judgments(path: Path | None) -> list[dict]:
-    """The per-item scores from a judging session's output file.
+def _entries(path: Path | None, key: str) -> list[dict]:
+    """The per-item records from a judging or summarizing session's output file.
 
     Args:
-        path: The rubric-shaped output (`{"scores": [...]}`), or None when nothing was
-            judged at that level.
+        path: The output (`{key: [...]}`), or None when there is none.
+        key: The list's key: `scores` or `summaries`.
 
     Returns:
-        The score records.
+        The records.
     """
     if path is None:
         return []
-    scores = _read_json(path).get("scores") or []
-    return [s for s in scores if isinstance(s, dict)]
+    entries = _read_json(path).get(key) or []
+    return [e for e in entries if isinstance(e, dict)]
 
 
 def _dry_run_flag(parser: argparse.ArgumentParser) -> None:
@@ -168,24 +221,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    que = sub.add_parser(
-        "query", help="what this run judges, and whether it sequences", parents=[common]
+    spl = sub.add_parser(
+        "summary-plan",
+        help="the open Epics whose summary is due",
+        parents=[common],
     )
-    que.add_argument(
-        "--all",
-        action="store_true",
-        help="judge every judged input and re-derive the edges, whatever the fingerprints say",
+    spl.add_argument("--epics", default=None, help="restrict to these Epics")
+    spl.add_argument(
+        "--prd-dir", type=Path, default=None, help="write each due Epic's PRD here"
     )
 
-    jin = sub.add_parser(
-        "judge-input", help="the portfolio one judging session reads", parents=[common]
+    rsu = sub.add_parser(
+        "record-summaries",
+        help="write summaries with their fingerprints",
+        parents=[common],
     )
-    jin.add_argument("--plan", type=Path, required=True, help="the `query` output")
-    jin.add_argument("--level", choices=("epic", "task"), required=True)
+    rsu.add_argument(
+        "--plan", type=Path, required=True, help="the `summary-plan` output"
+    )
+    rsu.add_argument(
+        "--summaries",
+        type=Path,
+        action="append",
+        required=True,
+        help="a summarizing session's output; repeatable",
+    )
+    _dry_run_flag(rsu)
 
-    snap = sub.add_parser(
-        "snapshot", help="the tracker as a graph, for the sequencer", parents=[common]
+    por = sub.add_parser(
+        "portfolio",
+        help="every open Epic with its summary, as one document",
+        parents=[common],
     )
+    por.add_argument(
+        "--markdown", type=Path, required=True, help="the document to write"
+    )
+    por.add_argument(
+        "--prd-dir", type=Path, default=None, help="write every open Epic's PRD here"
+    )
+
+    asp = sub.add_parser(
+        "assess-plan",
+        help="fingerprints, and the Epics not assessed as they stand",
+        parents=[common],
+    )
+    asp.add_argument("--epic", default=None, help="the one Epic to be assessed")
+
+    snap = sub.add_parser("snapshot", help="the tracker as a graph", parents=[common])
     snap.add_argument("--kinds", default="epic,story,task")
     snap.add_argument("--with-description", action="store_true")
     snap.add_argument("--include-closed", action="store_true")
@@ -195,6 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
     val.add_argument(
         "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
     )
+    val.add_argument("--epic", default=None, help="the one Epic every edge must touch")
 
     app = sub.add_parser(
         "apply-edges",
@@ -212,14 +295,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--plan",
         type=Path,
         default=None,
-        help="the `query` output; its fingerprints record what the sequencer read",
+        help="the `assess-plan` output; its fingerprints record what the sequencer read",
+    )
+    app.add_argument(
+        "--epic",
+        default=None,
+        help="the one Epic the proposal covers; only edges touching it are written",
     )
     _dry_run_flag(app)
+
+    que = sub.add_parser(
+        "score-plan", help="what this scoring run judges", parents=[common]
+    )
+    que.add_argument(
+        "--all",
+        action="store_true",
+        help="include items that already have a value",
+    )
+    que.add_argument(
+        "--rejudge",
+        action="store_true",
+        help="judge again the existing values of the items included",
+    )
+
+    jin = sub.add_parser(
+        "judge-input", help="the portfolio one judging session reads", parents=[common]
+    )
+    jin.add_argument("--plan", type=Path, required=True, help="the `score-plan` output")
+    jin.add_argument("--level", choices=("epic", "task"), required=True)
+    jin.add_argument(
+        "--prd-dir", type=Path, default=None, help="write each open Epic's PRD here"
+    )
 
     rec = sub.add_parser(
         "record", help="write judged values with their fingerprints", parents=[common]
     )
-    rec.add_argument("--plan", type=Path, required=True, help="the `query` output")
+    rec.add_argument("--plan", type=Path, required=True, help="the `score-plan` output")
     rec.add_argument("--epics", type=Path, default=None, help="the Epic judgments")
     rec.add_argument("--tasks", type=Path, default=None, help="the Task size judgments")
     _dry_run_flag(rec)
@@ -242,17 +353,34 @@ def run(args: argparse.Namespace) -> dict:
     Returns:
         The payload to print as JSON.
     """
-    descriptions = args.command in ("query", "judge-input") or getattr(
-        args, "with_description", False
-    )
+    descriptions = args.command in (
+        "summary-plan",
+        "portfolio",
+        "assess-plan",
+        "score-plan",
+        "judge-input",
+    ) or getattr(args, "with_description", False)
     graph = beadgraph.load(args.directory, with_description=descriptions)
     head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
-    if args.command == "query":
-        return head | plan(graph, everything=args.all)
-    if args.command == "judge-input":
-        return head | judge_input(graph, _read_json(args.plan), args.level)
-    if args.command == "snapshot":
+    command = args.command
+    if command == "summary-plan":
+        epics = split_ids(args.epics) if args.epics else None
+        return head | summary_plan(graph, epics=epics, prd_dir=args.prd_dir)
+    if command == "record-summaries":
+        entries = [e for path in args.summaries for e in _entries(path, "summaries")]
+        return head | record_summaries(graph, _read_json(args.plan), entries, writer)
+    if command == "portfolio":
+        return head | portfolio(graph, prd_dir=args.prd_dir, markdown=args.markdown)
+    if command == "assess-plan":
+        return head | assess_plan(graph, epic=args.epic)
+    if command == "score-plan":
+        return head | plan(graph, include_all=args.all, rejudge=args.rejudge)
+    if command == "judge-input":
+        return head | judge_input(
+            graph, _read_json(args.plan), args.level, prd_dir=args.prd_dir
+        )
+    if command == "snapshot":
         epics = split_ids(args.epics) if args.epics else None
         return head | snapshot(
             graph,
@@ -260,22 +388,23 @@ def run(args: argparse.Namespace) -> dict:
             include_closed=args.include_closed,
             epics=epics,
         )
-    if args.command == "validate":
-        report = validate(graph, read_edges(args.edges))
+    if command == "validate":
+        report = validate(graph, read_edges(args.edges), args.epic)
         return (
             head
             | report
             | {"summary": {"ok": report["ok"], "edges": report["edgeCount"]}}
         )
-    if args.command == "apply-edges":
+    if command == "apply-edges":
         seen = _read_json(args.plan)["fingerprints"] if args.plan else {}
         proposal = owned_edges(graph) if args.owned else read_edges(args.edges)
-        result = apply_edges(graph, proposal, writer, seen)
+        result = apply_edges(graph, proposal, writer, seen, args.epic)
         summary = {
             key: result.get(key)
             for key in (
                 "applied",
                 "dryRun",
+                "scope",
                 "added",
                 "converted",
                 "removed",
@@ -287,8 +416,11 @@ def run(args: argparse.Namespace) -> dict:
         if not result["validation"]["ok"]:
             summary["validation"] = result["validation"]
         return head | result | {"summary": summary}
-    if args.command == "record":
-        judgments = {"epic": _judgments(args.epics), "task": _judgments(args.tasks)}
+    if command == "record":
+        judgments = {
+            "epic": _entries(args.epics, "scores"),
+            "task": _entries(args.tasks, "scores"),
+        }
         return head | record(graph, _read_json(args.plan), judgments, writer)
     return head | score(graph, writer)
 
@@ -310,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         SequencingError,
         ScoringError,
+        SummaryError,
         GraphError,
         json.JSONDecodeError,
         OSError,

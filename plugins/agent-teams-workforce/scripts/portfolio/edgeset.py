@@ -19,10 +19,17 @@ second type onto an existing one, so the removal has to come first. The edge sta
 as owned throughout, so a conversion interrupted between its two writes leaves an owned
 edge that is absent, and the next pass over the same proposal adds it.
 
-The proposal covers the whole portfolio, so an owned edge it does not contain is withdrawn.
-Once it is applied, every open Epic records the content fingerprint the sequencer read it
-at as `seq_content_hash`; an Epic whose fingerprint no longer matches is one the sequencer
-has not seen as it now stands.
+A proposal has one of two scopes.
+
+* The WHOLE PORTFOLIO: the proposal is every edge, so an owned edge it does not contain is
+  withdrawn, and every open Epic records the content fingerprint the sequencer read it at.
+* ONE EPIC: the proposal is every edge to or from that Epic and nothing else. An edge that
+  does not touch the Epic is refused, only edges touching it are added, converted or
+  withdrawn, and only that Epic records its fingerprint. Acyclicity is checked over the
+  proposal together with every Epic edge that does not touch the Epic.
+
+The fingerprint is recorded as `seq_content_hash`; an Epic whose fingerprint no longer
+matches is one the sequencer has not assessed as it now stands.
 """
 
 from __future__ import annotations
@@ -151,8 +158,41 @@ def find_cycle(edges: list[Edge]) -> list[str]:
     return []
 
 
-def validate(graph: Graph, edges: list[Edge]) -> dict:
-    """Report every defect in a proposed edge set: not Epic to Epic, cycles, dangling, self, closed."""
+def _standing_epic_edges(graph: Graph, epic: str) -> list[Edge]:
+    """Every Epic-to-Epic edge the tracker holds that does not touch one Epic.
+
+    Args:
+        graph: The tracker graph.
+        epic: The Epic whose own edges are left out.
+
+    Returns:
+        The edges, whatever type each is stored as.
+    """
+    return [
+        Edge(blocker=upstream, blocked=bead.id)
+        for bead in graph.of_kind("epic")
+        for upstream in sorted(set(bead.tracked) | set(bead.blockers))
+        if epic not in (upstream, bead.id)
+        and upstream in graph.beads
+        and graph.beads[upstream].kind == "epic"
+    ]
+
+
+def validate(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict:
+    """Report every defect in a proposed edge set.
+
+    The defects are: an edge that is not Epic to Epic, a cycle, a dangling id, a
+    self-edge, an edge onto a closed bead, and — when the proposal is scoped to one Epic —
+    an edge that does not touch that Epic, or a scope that is not an open Epic.
+
+    Args:
+        graph: The tracker graph.
+        edges: The proposed edge set.
+        epic: The one Epic the proposal is scoped to, or None for the whole portfolio.
+
+    Returns:
+        The verdict and every defect found.
+    """
     dangling = sorted(
         {e.blocker for e in edges if e.blocker not in graph.beads}
         | {e.blocked for e in edges if e.blocked not in graph.beads}
@@ -182,7 +222,22 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
             if e.blocker in graph.beads and graph.beads[e.blocker].closed
         }
     )
-    cycle = find_cycle(edges)
+    outside: list[str] = []
+    bad_scope = ""
+    if epic is None:
+        cycle = find_cycle(edges)
+    else:
+        scope = graph.beads.get(epic)
+        if scope is None or scope.kind != "epic" or scope.closed:
+            bad_scope = f"{epic} is not an open Epic"
+        outside = sorted(
+            {
+                f"{e.blocker}->{e.blocked}"
+                for e in edges
+                if epic not in (e.blocker, e.blocked)
+            }
+        )
+        cycle = find_cycle(edges + _standing_epic_edges(graph, epic))
     duplicates = sorted(
         {
             f"{e.blocker}->{e.blocked}"
@@ -193,10 +248,21 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
             > 1
         }
     )
-    ok = not (dangling or self_edges or onto_closed or cycle or not_epic)
+    ok = not (
+        dangling
+        or self_edges
+        or onto_closed
+        or cycle
+        or not_epic
+        or outside
+        or bad_scope
+    )
     return {
         "ok": ok,
         "edgeCount": len(edges),
+        "scope": epic or "portfolio",
+        "badScope": bad_scope or None,
+        "outsideScope": outside,
         "notEpicToEpic": not_epic,
         "cycle": cycle,
         "dangling": dangling,
@@ -212,12 +278,16 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
 # ------------------------------------------------------------------------------------
 
 
-def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
+def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict:
     """Diff the proposed edge set against the tracker, respecting hand-made edges.
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set, over the whole portfolio.
+        edges: The proposed edge set: over the whole portfolio, or every edge to or
+            from `epic`.
+        epic: The one Epic the proposal is scoped to, or None for the whole portfolio.
+            Scoped, an edge that does not touch it is neither added, converted,
+            withdrawn nor re-recorded.
 
     Returns:
         The additions, the conversions of owned edges stored as the wrong type, the
@@ -235,6 +305,9 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
     protected: list[str] = []
     metadata: dict[str, dict[str, str]] = {}
 
+    def in_scope(blocker: str, blocked: str) -> bool:
+        return epic is None or epic in (blocker, blocked)
+
     touched = set(desired) | {
         bead.id
         for bead in graph.beads.values()
@@ -245,11 +318,12 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
         if bead is None:
             continue
         want = desired.get(blocked_id, set())
-        owned = set(bead.owned_blockers)
-        current = set(bead.tracked)
+        all_owned = set(bead.owned_blockers)
+        owned = {b for b in all_owned if in_scope(b, blocked_id)}
+        current = {b for b in bead.tracked if in_scope(b, blocked_id)}
         # Beads holds one edge per pair, so a pair is present as `tracks` or as another
         # type, never both.
-        mistyped = set(bead.blockers) - current
+        mistyped = {b for b in bead.blockers if in_scope(b, blocked_id)} - current
         present = current | mistyped
         for blocker in sorted(want - present):
             add.append({"blocker": blocker, "blocked": blocked_id})
@@ -268,8 +342,8 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
             for b in sorted((present - owned - want) | hand_mistyped)
         ]
         keep += len(want & current)
-        new_owned = join_ids(want - hand_mistyped)
-        if new_owned != join_ids(owned):
+        new_owned = join_ids((all_owned - owned) | (want - hand_mistyped))
+        if new_owned != join_ids(all_owned):
             metadata[blocked_id] = {
                 beadgraph.OWNED_KEY: new_owned,
                 beadgraph.OWNED_AT_KEY: now_iso(),
@@ -314,7 +388,11 @@ def _owned_after_adds(graph: Graph, plan: dict) -> dict[str, dict[str, str]]:
 
 
 def apply_edges(
-    graph: Graph, edges: list[Edge], writer: Writer, seen: dict[str, str]
+    graph: Graph,
+    edges: list[Edge],
+    writer: Writer,
+    seen: dict[str, str],
+    epic: str | None = None,
 ) -> dict:
     """Validate, diff and write an edge set. Idempotent by construction.
 
@@ -326,20 +404,23 @@ def apply_edges(
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set, over the whole portfolio.
+        edges: The proposed edge set: over the whole portfolio, or every edge to or
+            from `epic`.
         writer: The tracker writer; a dry-run writer records the writes instead.
         seen: Epic id -> the content fingerprint the sequencer read that Epic at. Empty
             when the proposal did not come from the sequencer, which records nothing.
+        epic: The one Epic the proposal is scoped to, or None for the whole portfolio.
+            Scoped, only that Epic records its fingerprint.
 
     Returns:
         The validation verdict, the counts, the plan, the Epics whose `seq_content_hash`
         is recorded, and — in a dry run — every write in order. A proposal that fails
         validation is refused whole — nothing is written.
     """
-    report = validate(graph, edges)
+    report = validate(graph, edges, epic)
     if not report["ok"]:
         return {"applied": False, "dryRun": writer.dry_run, "validation": report}
-    plan = plan_edges(graph, edges)
+    plan = plan_edges(graph, edges, epic)
     ahead = _owned_after_adds(graph, plan)
     for bead_id, pairs in ahead.items():
         writer.metadata(bead_id, pairs)
@@ -361,6 +442,8 @@ def apply_edges(
     recorded = []
     for bead in graph.of_kind("epic"):
         current = seen.get(bead.id)
+        if epic is not None and bead.id != epic:
+            continue
         if bead.closed or not current or bead.metadata.get(SEEN_KEY) == current:
             continue
         writer.metadata(bead.id, {SEEN_KEY: current})
@@ -368,6 +451,7 @@ def apply_edges(
     return {
         "applied": not writer.dry_run,
         "dryRun": writer.dry_run,
+        "scope": epic or "portfolio",
         "planned": writer.planned,
         "sequencedRecorded": len(recorded),
         "validation": report,

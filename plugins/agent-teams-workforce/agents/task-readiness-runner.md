@@ -47,7 +47,7 @@ Pipeline result: [READY / INCOMPLETE / MISSING / ERROR]
 
 `ready` is `true` only when the skill printed `Ready: TRUE`. `result` is the `Pipeline
 result` value exactly as printed. The skill emits no score and you report none: WSJF is the
-sequencing capability's, not this gate's.
+`wsjf-scoring` workflow's, not this gate's.
 
 ## The bead contract — ask the CLI, never guess
 

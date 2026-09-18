@@ -8,11 +8,12 @@ A score has two kinds of input.
   its Job Size estimate, all judged from its PRD, which is the Epic's own description; and
   a Task's Job Size estimate, judged from the Task's own content. Every size estimate
   carries a plausible range and a confidence. Each judged value is stored with the
-  content fingerprint of the bead it was judged from, under `wsjf_content_hash`. A judged
-  input is judged again only when that fingerprint no longer matches the bead, when it was
-  never judged, or when the caller asks for everything. A judged value that carries no
-  fingerprint was judged by whoever wrote it from the content the bead holds, and is
-  adopted: the current fingerprint is recorded beside it.
+  content fingerprint of the bead it was judged from, under `wsjf_content_hash`. A value
+  that is missing, or whose fingerprint no longer matches the bead, is always judged. A
+  value that is present — current, or carrying no fingerprint — is included only when the
+  caller includes items that already have a value; an included value is judged again when
+  the caller asks for re-judging, and otherwise kept, a value with no fingerprint gaining
+  the fingerprint of the content it now describes.
 * COMPUTED inputs are arithmetic and are recomputed over the WHOLE portfolio on every run:
   Epic RR-OE from transitive reachability over the Epic edges, Epic Job Size as the plain
   sum of its Tasks' sizes once Tasks exist — flagged when it falls outside the range of the
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from beadgraph import fingerprints
+from summaries import write_prds
 
 if TYPE_CHECKING:
     from beadgraph import Bead, Graph, Writer
@@ -172,90 +174,113 @@ def _tasks_of(graph: Graph, epic: Bead) -> list[Bead]:
 # ------------------------------------------------------------------------------------
 
 
-def _judge_reason(
-    bead: Bead, required: tuple[str, ...], current: str, everything: bool
-) -> str:
-    """Why a bead's judged inputs must be judged in this run, or "" when they need not be.
+def _judged_state(bead: Bead, required: tuple[str, ...], current: str) -> str:
+    """The state of a bead's judged inputs.
 
     Args:
         bead: The bead.
         required: The judged metadata keys it must carry.
         current: Its content fingerprint now.
-        everything: True when the caller asked for every judged input to be judged again.
 
     Returns:
-        The reason, or "" when the stored judgment still stands.
+        `missing` when a judged value is absent, `changed` when the fingerprint recorded
+        with the values no longer matches the bead, `unfingerprinted` when values are
+        present with no fingerprint beside them, and `current` otherwise.
     """
-    if everything:
-        return "--all re-judges every judged input"
     if any(bead.metadata.get(k) in (None, "") for k in required):
-        return "not judged yet"
+        return "missing"
     stored = bead.metadata.get(JUDGED_HASH_KEY)
-    if stored and stored != current:
-        return "its content changed since it was judged"
-    return ""
+    if not stored:
+        return "unfingerprinted"
+    if stored != current:
+        return "changed"
+    return "current"
 
 
-def plan(graph: Graph, *, everything: bool) -> dict:
-    """Decide which judged inputs this run must judge, and whether the sequencer must run.
+#: Why an item in each state is judged.
+JUDGE_REASONS = {
+    "missing": "not judged yet",
+    "changed": "its content changed since it was judged",
+    "unfingerprinted": "--rejudge re-judges existing values",
+    "current": "--rejudge re-judges existing values",
+}
+
+
+def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
+    """What this run does with an item's judged inputs.
+
+    Missing and changed values are always judged. Values that are present and not known
+    to be stale — unfingerprinted or current — are left alone unless `include_all`
+    includes them; an included one is judged again under `rejudge`, and otherwise kept,
+    an unfingerprinted one gaining the fingerprint of the content it now describes.
+
+    Args:
+        state: The item's state, from `_judged_state`.
+        include_all: Whether items that already have a value are included.
+        rejudge: Whether included existing values are judged again.
+
+    Returns:
+        `judge`, `adopt` or `keep`.
+    """
+    if state in ("missing", "changed"):
+        return "judge"
+    if not include_all:
+        return "keep"
+    if rejudge:
+        return "judge"
+    return "adopt" if state == "unfingerprinted" else "keep"
+
+
+def plan(graph: Graph, *, include_all: bool, rejudge: bool) -> dict:
+    """Decide which judged inputs this run judges, and which stored ones it adopts.
 
     Args:
         graph: The tracker graph, read with descriptions.
-        everything: True to judge every judged input regardless of fingerprints.
+        include_all: Include items that already have a value.
+        rejudge: Judge again the existing values of the items included.
 
     Returns:
         The Epics and Tasks to judge with a reason each, the judged values to adopt,
-        whether the sequencer runs and why, every open Epic's and Task's fingerprint, and
-        a summary of counts.
+        every open Epic's and Task's fingerprint, and a summary of counts.
     """
     prints = fingerprints(graph.records)
     epics = _open(graph, "epic")
+    tasks = _open(graph, "task")
     adopt: list[str] = []
-    judge_epics = []
-    for epic in epics:
-        required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
-        if not _tasks_of(graph, epic):
-            required += SIZE_JUDGED_KEYS
-        reason = _judge_reason(epic, required, prints.get(epic.id, ""), everything)
-        if not reason and not epic.metadata.get(JUDGED_HASH_KEY):
-            adopt.append(epic.id)
-        if reason:
-            judge_epics.append({"id": epic.id, "reason": reason})
-    judge_tasks = []
-    for task in _open(graph, "task"):
-        reason = _judge_reason(
-            task, SIZE_JUDGED_KEYS, prints.get(task.id, ""), everything
-        )
-        if not reason and not task.metadata.get(JUDGED_HASH_KEY):
-            adopt.append(task.id)
-        if reason:
-            epic = graph.epic_of(task.id)
-            judge_tasks.append(
-                {"id": task.id, "epic": epic.id if epic else None, "reason": reason}
-            )
-
-    sequence_why: list[str] = []
-    if everything:
-        sequence_why.append("--all re-derives the edges")
-    unseen = [
-        e.id for e in epics if e.metadata.get("seq_content_hash") != prints.get(e.id)
-    ]
-    if unseen and not everything:
-        sequence_why.append(
-            f"{len(unseen)} open Epic(s) are new or changed since the sequencer last read them"
-        )
-    ids = {e.id for e in epics} | {t.id for t in _open(graph, "task")}
+    states: dict[str, int] = {}
+    judge: dict[str, list[dict]] = {"epics": [], "tasks": []}
+    for level, beads in (("epics", epics), ("tasks", tasks)):
+        for bead in beads:
+            if level == "epics":
+                required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
+                if not _tasks_of(graph, bead):
+                    required += SIZE_JUDGED_KEYS
+            else:
+                required = SIZE_JUDGED_KEYS
+            state = _judged_state(bead, required, prints.get(bead.id, ""))
+            states[state] = states.get(state, 0) + 1
+            action = _disposition(state, include_all=include_all, rejudge=rejudge)
+            if action == "adopt":
+                adopt.append(bead.id)
+            elif action == "judge":
+                entry = {"id": bead.id, "reason": JUDGE_REASONS[state]}
+                if level == "tasks":
+                    epic = graph.epic_of(bead.id)
+                    entry["epic"] = epic.id if epic else None
+                judge[level].append(entry)
+    ids = {e.id for e in epics} | {t.id for t in tasks}
     return {
-        "sequence": {"run": bool(sequence_why), "why": sequence_why, "epics": unseen},
-        "judge": {"epics": judge_epics, "tasks": judge_tasks},
+        "judge": judge,
         "adopt": adopt,
         "fingerprints": {i: prints[i] for i in sorted(ids) if i in prints},
         "summary": {
-            "sequence": bool(sequence_why),
-            "sequenceWhy": sequence_why,
+            "includeAll": include_all,
+            "rejudge": rejudge,
             "openEpics": len(epics),
-            "epicsToJudge": len(judge_epics),
-            "tasksToJudge": len(judge_tasks),
+            "openTasks": len(tasks),
+            "states": states,
+            "epicsToJudge": len(judge["epics"]),
+            "tasksToJudge": len(judge["tasks"]),
             "toAdopt": len(adopt),
         },
     }
@@ -312,7 +337,9 @@ def reference_jobs(graph: Graph) -> list[dict]:
     return jobs
 
 
-def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
+def judge_input(
+    graph: Graph, the_plan: dict, level: str, prd_dir: Path | None = None
+) -> dict:
     """The material one judging session reads: the whole portfolio at one level.
 
     Every open item is included, whether or not it is judged in this run, because the
@@ -324,26 +351,33 @@ def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
     No computed value is included: RR-OE, reachability and WSJF are arithmetic over the
     graph and are not the session's to see or set.
 
+    A Task carries its own description. An Epic carries no PRD text: the session reads the
+    portfolio through the Epic summaries, and with `prd_dir` every Epic's PRD is written
+    to a file the item names, for the session to read in full where it judges.
+
     Args:
         graph: The tracker graph, read with descriptions.
         the_plan: The run's plan, from `plan`.
         level: `epic` or `task`.
+        prd_dir: Where to write each open Epic's PRD, or None.
 
     Returns:
         The items, each flagged `judge` with its reason when it is to be judged, and the
         reference jobs.
     """
     wanted = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
+    beads = _open(graph, level)
+    paths = write_prds(beads, prd_dir) if level == "epic" and prd_dir else {}
     items = []
-    for bead in _open(graph, level):
+    for bead in beads:
         entry: dict[str, Any] = {
             "id": bead.id,
             "title": bead.title,
-            "description": bead.description,
             "judge": bead.id in wanted,
             "reason": wanted.get(bead.id),
         }
         if level == "epic":
+            entry["prdPath"] = paths.get(bead.id)
             has_tasks = bool(_tasks_of(graph, bead))
             entry["hasTasks"] = has_tasks
             entry["current"] = (
@@ -357,6 +391,7 @@ def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
                 }
             )
         else:
+            entry["description"] = bead.description
             epic = graph.epic_of(bead.id)
             entry["epic"] = {"id": epic.id, "title": epic.title} if epic else None
             entry["current"] = None if entry["judge"] else _size_of(bead)

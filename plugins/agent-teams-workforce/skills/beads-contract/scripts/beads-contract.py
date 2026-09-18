@@ -117,7 +117,10 @@ def fingerprint_payload(rec: dict) -> dict:
     Returns:
         The ten-key payload, nulls included.
     """
-    return {key: (rec.get(key) if key in CONTENT_HASH_PRESENT else None) for key in CONTENT_HASH_FIELDS}
+    return {
+        key: (rec.get(key) if key in CONTENT_HASH_PRESENT else None)
+        for key in CONTENT_HASH_FIELDS
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -126,7 +129,9 @@ def fingerprint_payload(rec: dict) -> dict:
 
 #: A heading that opens a criteria section — a markdown heading (`## Acceptance Criteria`)
 #: or a bare labelled line (`Acceptance criteria:`).
-_CRITERIA_HEADING = re.compile(r"^\s{0,3}(?:#{1,6}\s*)?acceptance[ _-]*criteria\s*:?\s*$", re.IGNORECASE)
+_CRITERIA_HEADING = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?acceptance[ _-]*criteria\s*:?\s*$", re.IGNORECASE
+)
 
 #: Any markdown heading, which ENDS a criteria section.
 _ANY_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+\S")
@@ -211,19 +216,33 @@ def _criteria_on(bead_id: str, bead: dict, searched: list[str]) -> dict | None:
         if isinstance(parsed, list):
             values = [text for text in (str(item).strip() for item in parsed) if text]
             if values:
-                return {"values": values, "sourceId": bead_id, "sourceField": SOURCE_METADATA}
+                return {
+                    "values": values,
+                    "sourceId": bead_id,
+                    "sourceField": SOURCE_METADATA,
+                }
 
     searched.append(f"{bead_id} {SOURCE_ACCEPTANCE}")
     stated = str(bead.get(ACCEPTANCE_FIELD) or "").strip()
     if stated:
-        values = criteria_in_text(stated) or [line.strip() for line in stated.splitlines() if line.strip()]
+        values = criteria_in_text(stated) or [
+            line.strip() for line in stated.splitlines() if line.strip()
+        ]
         if values:
-            return {"values": values, "sourceId": bead_id, "sourceField": SOURCE_ACCEPTANCE}
+            return {
+                "values": values,
+                "sourceId": bead_id,
+                "sourceField": SOURCE_ACCEPTANCE,
+            }
 
     searched.append(f"{bead_id} {SOURCE_DESCRIPTION}")
     values = criteria_in_text(bead.get("description") or "")
     if values:
-        return {"values": values, "sourceId": bead_id, "sourceField": SOURCE_DESCRIPTION}
+        return {
+            "values": values,
+            "sourceId": bead_id,
+            "sourceField": SOURCE_DESCRIPTION,
+        }
     return None
 
 
@@ -250,8 +269,16 @@ def resolve_criteria(bead_id: str, reader: "Reader") -> dict:
             if found is not None:
                 break
     if found is None:
-        return {"values": [], "sourceId": "", "sourceField": "", "inherited": False, "searched": searched}
-    found["inherited"] = found["sourceId"] != bead_id or found["sourceField"] != SOURCE_METADATA
+        return {
+            "values": [],
+            "sourceId": "",
+            "sourceField": "",
+            "inherited": False,
+            "searched": searched,
+        }
+    found["inherited"] = (
+        found["sourceId"] != bead_id or found["sourceField"] != SOURCE_METADATA
+    )
     found["searched"] = searched
     return found
 
@@ -343,6 +370,17 @@ SEQUENCING_KEYS = (
     "seq_content_hash",
 )
 
+#: Keys the EPIC SUMMARY owns, on an Epic. `epic_summary` is a few hundred words on what the
+#: Epic needs and establishes architecturally, its value and urgency, and what already
+#: exists for it; sessions that hold the whole portfolio read it in place of the PRD.
+#: `epic_summary_hash` is the content fingerprint of the Epic it was written from, so a
+#: summary is regenerated exactly when the Epic changes, and `epic_summary_at` is when.
+SUMMARY_KEYS = (
+    "epic_summary",
+    "epic_summary_hash",
+    "epic_summary_at",
+)
+
 #: Keys the ELABORATION lane owns. Listed so `metadata get` can say which keys on a bead
 #: belong to a known lane and which are strangers, and so a `metadata set` typo of one of
 #: them is refused rather than written into a key nothing reads.
@@ -370,6 +408,7 @@ KNOWN_KEYS = frozenset(
     + list(LANE_KEYS)
     + list(WSJF_KEYS)
     + list(SEQUENCING_KEYS)
+    + list(SUMMARY_KEYS)
 )
 
 
@@ -516,7 +555,11 @@ def _load_records(records_file: str) -> object:
     Raises:
         BeadsError: If the text is not readable JSON.
     """
-    text = sys.stdin.read() if records_file == "-" else open(records_file, encoding="utf-8").read()  # noqa: SIM115
+    text = (
+        sys.stdin.read()
+        if records_file == "-"
+        else open(records_file, encoding="utf-8").read()
+    )  # noqa: SIM115
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
@@ -611,7 +654,11 @@ class Reader:
         if isinstance(payload, list):
             rec = payload[0] if payload else {}
         elif isinstance(payload, dict):
-            rec = payload.get("issue") if isinstance(payload.get("issue"), dict) else payload
+            rec = (
+                payload.get("issue")
+                if isinstance(payload.get("issue"), dict)
+                else payload
+            )
         else:
             rec = {}
         self.cache[bead_id] = rec or {}
@@ -759,12 +806,16 @@ def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
         # id nobody supplied reaches the tracker, and in offline mode not even that.
         results[bead_id] = fingerprint_of(bead_id, reader.get(bead_id))
 
-    missing = sorted(bead_id for bead_id, entry in results.items() if not entry["found"])
+    missing = sorted(
+        bead_id for bead_id, entry in results.items() if not entry["found"]
+    )
     result = {
         "count": len(results),
         "source": source,
         "trackerCalls": 0 if source == "records" else 1,
-        "fingerprints": {bead_id: entry["fingerprint"] for bead_id, entry in results.items()},
+        "fingerprints": {
+            bead_id: entry["fingerprint"] for bead_id, entry in results.items()
+        },
         "results": results,
         "missing": missing,
     }
@@ -823,7 +874,9 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
     metadata = metadata_of(rec)
     missing: list[str] = []
     if not contract.get(REPO_REFERENCE):
-        missing.append("repoPath (the repository is ruled during elaboration and recorded on the Task)")
+        missing.append(
+            "repoPath (the repository is ruled during elaboration and recorded on the Task)"
+        )
     if not any(contract.get(name) for name in SPEC_REFERENCE):
         missing.append("spec_path or spec_paths")
     if not criteria["values"]:
@@ -843,7 +896,9 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
             **contract,
         },
         "acceptanceCriteriaSource": (
-            {"beadId": criteria["sourceId"], "field": criteria["sourceField"]} if criteria["inherited"] else None
+            {"beadId": criteria["sourceId"], "field": criteria["sourceField"]}
+            if criteria["inherited"]
+            else None
         ),
         "criteriaSearched": criteria["searched"],
         "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
@@ -872,7 +927,11 @@ def cmd_ancestors(args: argparse.Namespace, reader: Reader) -> dict:
         "id": args.id,
         "type": str(rec.get("issue_type") or ""),
         "ancestors": [
-            {"id": anc, "type": str(reader.get(anc).get("issue_type") or ""), "title": str(reader.get(anc).get("title") or "")}
+            {
+                "id": anc,
+                "type": str(reader.get(anc).get("issue_type") or ""),
+                "title": str(reader.get(anc).get("title") or ""),
+            }
             for anc in chain
         ],
         "note": (
@@ -907,6 +966,28 @@ def cmd_record(args: argparse.Namespace, reader: Reader) -> dict:
     }
 
 
+def _same_value(stored: object, wanted: str) -> bool:
+    """Whether a value read back from the tracker is the value that was written.
+
+    `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
+    parse to the same number are the same value.
+
+    Args:
+        stored: The value read back.
+        wanted: The value written.
+
+    Returns:
+        True when the read-back holds the written value.
+    """
+    text = "" if stored is None else str(stored)
+    if text == wanted:
+        return True
+    try:
+        return float(text) == float(wanted)
+    except ValueError:
+        return False
+
+
 def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
     """Read or write the pipeline's metadata keys on one bead.
 
@@ -927,7 +1008,9 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
         if args.pairs:
             return {
                 "id": args.id,
-                "metadata": {key: metadata[key] for key in args.pairs if key in metadata},
+                "metadata": {
+                    key: metadata[key] for key in args.pairs if key in metadata
+                },
                 "absent": [key for key in args.pairs if key not in metadata],
             }
         # A BARE GET REPORTS EVERYTHING THE BEAD CARRIES, not just the keys this module
@@ -937,11 +1020,16 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
         return {
             "id": args.id,
             "metadata": dict(metadata),
-            "contract": {key: metadata[key] for key, _, _ in CONTRACT_SCHEMA if key in metadata},
+            "contract": {
+                key: metadata[key] for key, _, _ in CONTRACT_SCHEMA if key in metadata
+            },
             "gate": {key: metadata[key] for key in GATE_KEYS if key in metadata},
             "lane": {key: metadata[key] for key in LANE_KEYS if key in metadata},
             "wsjf": {key: metadata[key] for key in WSJF_KEYS if key in metadata},
-            "sequencing": {key: metadata[key] for key in SEQUENCING_KEYS if key in metadata},
+            "sequencing": {
+                key: metadata[key] for key in SEQUENCING_KEYS if key in metadata
+            },
+            "summary": {key: metadata[key] for key in SUMMARY_KEYS if key in metadata},
             "unrecognized": sorted(key for key in metadata if key not in KNOWN_KEYS),
         }
 
@@ -975,7 +1063,7 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
         "id": args.id,
         "wrote": dict(updates),
         "verified": {key: written.get(key) for key, _ in updates},
-        "ok": all(str(written.get(key) or "") == value for key, value in updates),
+        "ok": all(_same_value(written.get(key), value) for key, value in updates),
     }
 
 
@@ -1069,11 +1157,46 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
         reader.cache[rec["id"]] = rec
 
     cases = [
-        ("criteria inherited from the parent Story", "syn-task-parent-criteria", 2, "syn-story", SOURCE_DESCRIPTION, True),
-        ("criteria in the Task's own description prose", "syn-task-own-prose", 1, "syn-task-own-prose", SOURCE_DESCRIPTION, True),
-        ("bare Given/When/Then with no heading", "syn-task-gwt-bare", 1, "syn-task-gwt-bare", SOURCE_DESCRIPTION, True),
-        ("the --acceptance record field", "syn-task-acceptance-field", 2, "syn-task-acceptance-field", SOURCE_ACCEPTANCE, True),
-        ("the metadata key", "syn-task-metadata", 1, "syn-task-metadata", SOURCE_METADATA, False),
+        (
+            "criteria inherited from the parent Story",
+            "syn-task-parent-criteria",
+            2,
+            "syn-story",
+            SOURCE_DESCRIPTION,
+            True,
+        ),
+        (
+            "criteria in the Task's own description prose",
+            "syn-task-own-prose",
+            1,
+            "syn-task-own-prose",
+            SOURCE_DESCRIPTION,
+            True,
+        ),
+        (
+            "bare Given/When/Then with no heading",
+            "syn-task-gwt-bare",
+            1,
+            "syn-task-gwt-bare",
+            SOURCE_DESCRIPTION,
+            True,
+        ),
+        (
+            "the --acceptance record field",
+            "syn-task-acceptance-field",
+            2,
+            "syn-task-acceptance-field",
+            SOURCE_ACCEPTANCE,
+            True,
+        ),
+        (
+            "the metadata key",
+            "syn-task-metadata",
+            1,
+            "syn-task-metadata",
+            SOURCE_METADATA,
+            False,
+        ),
         ("criteria nowhere", "syn-task-none", 0, "", "", False),
     ]
     results = []
@@ -1091,7 +1214,12 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
             {
                 "case": name,
                 "pass": passed,
-                "expected": {"count": count, "sourceId": source_id, "sourceField": source_field, "inherited": inherited},
+                "expected": {
+                    "count": count,
+                    "sourceId": source_id,
+                    "sourceField": source_field,
+                    "inherited": inherited,
+                },
                 "observed": {
                     "count": len(found["values"]),
                     "sourceId": found["sourceId"],
@@ -1106,7 +1234,9 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     chain = reader.ancestors("syn-task-parent-criteria")
     chain_ok = chain == ["syn-story", "syn-epic"]
     ok = ok and chain_ok
-    results.append({"case": "ancestor chain, nearest first", "pass": chain_ok, "observed": chain})
+    results.append(
+        {"case": "ancestor chain, nearest first", "pass": chain_ok, "observed": chain}
+    )
 
     contract = read_contract(reader.get("syn-task-metadata"))
     contract_ok = (
@@ -1122,21 +1252,38 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
         {
             "case": "contract carries repository and decision ids; unknown surfaces becomes null and is not []",
             "pass": contract_ok,
-            "observed": {key: contract.get(key) for key in ("repoPath", "specPaths", "decisionIds", "surfaces", "testStrategy")},
+            "observed": {
+                key: contract.get(key)
+                for key in (
+                    "repoPath",
+                    "specPaths",
+                    "decisionIds",
+                    "surfaces",
+                    "testStrategy",
+                )
+            },
         }
     )
 
     # The fingerprint is stable, ignores labels and metadata, and moves with the description.
     base = {"title": "t", "description": "d", "issue_type": "task", "priority": 2}
-    labelled = dict(base, labels=["needs-correction"], metadata={"review_status": "INCOMPLETE"})
+    labelled = dict(
+        base, labels=["needs-correction"], metadata={"review_status": "INCOMPLETE"}
+    )
     changed = dict(base, description="d2")
-    hash_ok = content_hash(base) == content_hash(labelled) and content_hash(base) != content_hash(changed)
+    hash_ok = content_hash(base) == content_hash(labelled) and content_hash(
+        base
+    ) != content_hash(changed)
     ok = ok and hash_ok
     results.append(
         {
             "case": "fingerprint ignores labels and metadata, moves with the description",
             "pass": hash_ok,
-            "observed": {"base": content_hash(base), "labelled": content_hash(labelled), "changed": content_hash(changed)},
+            "observed": {
+                "base": content_hash(base),
+                "labelled": content_hash(labelled),
+                "changed": content_hash(changed),
+            },
         }
     )
 
@@ -1167,23 +1314,35 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     batch_reader = Reader()
     batch_reader.offline = True
     batch_reader._absorb(batch_records)  # noqa: SLF001 - the selftest stands in for a caller's stdin
-    batch = cmd_fingerprint_batch(argparse.Namespace(ids=[], explain=False), batch_reader)
+    batch = cmd_fingerprint_batch(
+        argparse.Namespace(ids=[], explain=False), batch_reader
+    )
 
     # Every batched answer equals the answer `fingerprint <id>` gives for that record.
     per_bead = {rec["id"]: fingerprint_of(str(rec["id"]), rec) for rec in batch_records}
-    parity_ok = batch["results"] == per_bead and batch["count"] == 3 and batch["trackerCalls"] == 0
+    parity_ok = (
+        batch["results"] == per_bead
+        and batch["count"] == 3
+        and batch["trackerCalls"] == 0
+    )
     ok = ok and parity_ok
     results.append(
         {
             "case": "batch equals per-bead fingerprint for every record, with no tracker call",
             "pass": parity_ok,
-            "observed": {"count": batch["count"], "trackerCalls": batch["trackerCalls"], "source": batch["source"]},
+            "observed": {
+                "count": batch["count"],
+                "trackerCalls": batch["trackerCalls"],
+                "source": batch["source"],
+            },
         }
     )
 
     labelled_entry = batch["results"]["syn-batch-labelled"]
     labelled_ok = (
-        labelled_entry["fingerprint"] == batch["results"]["syn-batch-plain"]["fingerprint"] == expected_hash
+        labelled_entry["fingerprint"]
+        == batch["results"]["syn-batch-plain"]["fingerprint"]
+        == expected_hash
         and labelled_entry["fresh"] is True
     )
     ok = ok and labelled_ok
@@ -1200,20 +1359,27 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     )
 
     stale_entry = batch["results"]["syn-batch-stale"]
-    stale_ok = stale_entry["fresh"] is False and stale_entry["fingerprint"] != expected_hash
+    stale_ok = (
+        stale_entry["fresh"] is False and stale_entry["fingerprint"] != expected_hash
+    )
     ok = ok and stale_ok
     results.append(
         {
             "case": "batch: a bead rewritten since its ruling reads stale",
             "pass": stale_ok,
-            "observed": {"fingerprint": stale_entry["fingerprint"], "stored": stale_entry["stored"], "fresh": stale_entry["fresh"]},
+            "observed": {
+                "fingerprint": stale_entry["fingerprint"],
+                "stored": stale_entry["stored"],
+                "fresh": stale_entry["fresh"],
+            },
         }
     )
 
     # An id nobody supplied is reported as not found rather than silently dropped — a
     # caller must be able to tell "no fingerprint" from "absent from the map".
     named = cmd_fingerprint_batch(
-        argparse.Namespace(ids=["syn-batch-plain", "syn-batch-absent"], explain=False), batch_reader
+        argparse.Namespace(ids=["syn-batch-plain", "syn-batch-absent"], explain=False),
+        batch_reader,
     )
     missing_ok = (
         named["missing"] == ["syn-batch-absent"]
@@ -1231,7 +1397,9 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     )
 
     if not ok:
-        print(json.dumps({"pass": False, "cases": results}, indent=2, ensure_ascii=False))
+        print(
+            json.dumps({"pass": False, "cases": results}, indent=2, ensure_ascii=False)
+        )
         raise SystemExit(1)
     return {"pass": True, "cases": results}
 
@@ -1247,8 +1415,12 @@ def build_parser() -> argparse.ArgumentParser:
     Returns:
         The configured parser.
     """
-    parser = argparse.ArgumentParser(prog="beads-contract.py", description=__doc__.split("\n")[0])
-    parser.add_argument("-C", dest="repo", default="", help="run `bd` from this repository")
+    parser = argparse.ArgumentParser(
+        prog="beads-contract.py", description=__doc__.split("\n")[0]
+    )
+    parser.add_argument(
+        "-C", dest="repo", default="", help="run `bd` from this repository"
+    )
     parser.add_argument(
         "--records",
         default="",
@@ -1256,43 +1428,71 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    fingerprint = sub.add_parser("fingerprint", help="the content fingerprint, and whether the stored one is fresh")
+    fingerprint = sub.add_parser(
+        "fingerprint",
+        help="the content fingerprint, and whether the stored one is fresh",
+    )
     fingerprint.add_argument("id")
-    fingerprint.add_argument("--explain", action="store_true", help="also print the exact object hashed")
+    fingerprint.add_argument(
+        "--explain", action="store_true", help="also print the exact object hashed"
+    )
     fingerprint.set_defaults(run=cmd_fingerprint)
 
     batch = sub.add_parser(
         "fingerprint-batch",
         help="fingerprint many beads in one invocation — one tracker call, or none with --records -",
     )
-    batch.add_argument("ids", nargs="*", help="the beads to fingerprint; omit for every record supplied or swept")
-    batch.add_argument("--explain", action="store_true", help="also print the exact object hashed for each")
+    batch.add_argument(
+        "ids",
+        nargs="*",
+        help="the beads to fingerprint; omit for every record supplied or swept",
+    )
+    batch.add_argument(
+        "--explain",
+        action="store_true",
+        help="also print the exact object hashed for each",
+    )
     batch.set_defaults(run=cmd_fingerprint_batch)
 
-    criteria = sub.add_parser("criteria", help="acceptance criteria, and where each was found")
+    criteria = sub.add_parser(
+        "criteria", help="acceptance criteria, and where each was found"
+    )
     criteria.add_argument("id")
     criteria.set_defaults(run=cmd_criteria)
 
-    contract = sub.add_parser("contract", help="the full build contract, with provenance")
+    contract = sub.add_parser(
+        "contract", help="the full build contract, with provenance"
+    )
     contract.add_argument("id")
-    contract.add_argument("--require", action="store_true", help="exit 3 when a required part is missing")
+    contract.add_argument(
+        "--require", action="store_true", help="exit 3 when a required part is missing"
+    )
     contract.set_defaults(run=cmd_contract)
 
     ancestors = sub.add_parser("ancestors", help="the parent chain, nearest first")
     ancestors.add_argument("id")
     ancestors.set_defaults(run=cmd_ancestors)
 
-    record = sub.add_parser("record", help="the normalized record and the fields it carries")
+    record = sub.add_parser(
+        "record", help="the normalized record and the fields it carries"
+    )
     record.add_argument("id")
     record.set_defaults(run=cmd_record)
 
-    metadata = sub.add_parser("metadata", help="read or write the pipeline's metadata keys")
+    metadata = sub.add_parser(
+        "metadata", help="read or write the pipeline's metadata keys"
+    )
     metadata.add_argument("op", choices=["get", "set"])
     metadata.add_argument("id")
-    metadata.add_argument("pairs", nargs="*", help="keys to read, or key=value pairs to write")
+    metadata.add_argument(
+        "pairs", nargs="*", help="keys to read, or key=value pairs to write"
+    )
     metadata.set_defaults(run=cmd_metadata)
 
-    selftest = sub.add_parser("selftest", help="exercise the parent, prose and field paths on synthesised records")
+    selftest = sub.add_parser(
+        "selftest",
+        help="exercise the parent, prose and field paths on synthesised records",
+    )
     selftest.set_defaults(run=cmd_selftest)
 
     return parser
@@ -1312,7 +1512,9 @@ def main(argv: list[str] | None = None) -> int:
         reader = Reader(repo=args.repo, records_file=args.records)
         result = args.run(args, reader)
     except (ContractError, BeadsError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False))
+        print(
+            json.dumps({"ok": False, "error": str(exc)}, indent=2, ensure_ascii=False)
+        )
         return 2
     print(json.dumps(result, indent=2, ensure_ascii=False))
     return 0

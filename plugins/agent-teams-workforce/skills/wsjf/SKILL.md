@@ -92,9 +92,11 @@ These two are judged against descriptive rungs, and descriptive rungs drift: one
 "significant" is another's "high". An agent holding a subset cannot see where it has put
 the line, so its 3 and another agent's 2 mean nothing to each other, and the ranking that
 results is an artifact of how the work was divided. **Judge the portfolio whole, in one
-session, or not at all.** Where it is too large to hold each requirements document in full,
-read a digest of every item — title, the feature description, the scope — and open the full
-document only for the ones whose UBV or Job Size the digest cannot support.
+session, or not at all.** The session holds the portfolio through each Epic's stored
+summary (`epic_summary`, see `agent-teams-workforce:beads-contract`) and reads in full the
+requirements documents of the Epics it judges. Where those are too many to read in full,
+it judges from the summaries and opens the full document for each one whose UBV, TC or Job
+Size its summary cannot support.
 
 Nothing here is scored from calibration guidance a caller supplies. The rungs above, the
 requirements document and the dependency graph are the whole input.
@@ -264,11 +266,16 @@ A percentage per judged dimension:
   <=65%   : insufficient information — flag it with the reason
 ```
 
-Overall confidence is the weighted average biased toward the lowest dimension, and cannot
-exceed 70% when any dimension is below 65%. A computed RR-OE and a rolled-up Job Size were
-counted, not judged, so neither lowers it. The script lowers the overall confidence to the
-size confidence when that is lower and the size is judged; pass both as `confidence` and
-`sizeConfidence`. At Task level, `confidence` is the inherited one.
+Two confidences are kept, and never combined:
+
+- **Value confidence** (`confidence`) covers UBV and TC. It is the weighted average of the
+  two biased toward the lower, and cannot exceed 70% when either is below 65%. A computed
+  RR-OE was counted, not judged, and does not affect it. At Task level it is the Epic's,
+  inherited with the value.
+- **Size confidence** (`sizeConfidence`) covers the size estimate alone, and stays with it.
+  A Task's size confidence is its own.
+
+Pass both; the script records each under its own key and lowers neither.
 
 ## Output — the numbers are the deliverable
 
@@ -341,7 +348,7 @@ prose is a score no gate can see. The script emits the exact values under `metad
 | `wsjf_size_low` / `wsjf_size_high` | the estimate's plausible range |
 | `wsjf_size_confidence` | confidence in the estimate, integer percent |
 | `wsjf_size_outside_range` | `true` or `false`, on a roll-up whose estimate carries a range |
-| `wsjf_confidence` | overall confidence, integer percent |
+| `wsjf_confidence` | value confidence (UBV and TC), integer percent; inherited at Task level |
 | `wsjf_content_hash` | the content fingerprint (`agent-teams-workforce:beads-contract`) of the bead the judged values were judged from — the Epic's PRD or the Task's own content |
 
 `wsjf_ubv`, `wsjf_tc` and `wsjf_confidence` are what a child inherits, and `wsjf_size` is

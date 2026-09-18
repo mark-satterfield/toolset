@@ -404,7 +404,7 @@ quotes, which do not survive the attribute round-trip. Metadata is outside the c
 so writing it never invalidates the watermark.
 
 `--set-metadata` merges into existing metadata, so this write leaves every other key on the
-bead alone — including `wsjf`, which the sequencing capability owns and this skill must never
+bead alone — including `wsjf`, which the `wsjf-scoring` workflow owns and this skill must never
 touch. Do not reach for `--metadata`: it replaces the whole object and would drop them.
 
 **Verify the write (step 7, Beads):**

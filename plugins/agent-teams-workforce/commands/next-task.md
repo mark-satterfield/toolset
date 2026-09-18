@@ -37,8 +37,8 @@ into an Epic, a Task, or a closure — `route-build` skips it and there is no
 triage composite to dispatch. Do not query for them here.
 
 **Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata by the
-sequencing capability (`dependencies-and-scoring`, under the `wsjf` rubric at Task level) — read it, do
-not recompute it:
+`wsjf-scoring` workflow, under the `wsjf` rubric at Task level — read it, do not recompute
+it:
 
 ```bash
 bd show <id> --json --readonly \
@@ -46,9 +46,9 @@ bd show <id> --json --readonly \
            | "\(.wsjf // "")"'
 ```
 
-A candidate with no stored `wsjf` has not been sequenced. It cannot be ranked, so it
+A candidate with no stored `wsjf` has not been scored. It cannot be ranked, so it
 is left out of the ordering rather than given a fallback position — run
-`/agent-teams-workforce:dependencies-and-scoring` to score it. The readiness gate does not
+`/agent-teams-workforce:wsjf-scoring` to score it. The readiness gate does not
 score and never has a number to backfill.
 
 Order the scored candidates by `wsjf` descending, breaking ties on `created_at`
