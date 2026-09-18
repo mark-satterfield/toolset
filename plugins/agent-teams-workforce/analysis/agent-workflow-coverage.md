@@ -1,6 +1,6 @@
 # Agent → Workflow Coverage (agent-teams-workforce)
 
-Source: `plugins/agent-teams-workforce/workflows/*.js` (26 workflow scripts) and `agents/*.md` (173 SDLC agents, excluding `README.md` and `agents-file.md`).
+Source: `plugins/agent-teams-workforce/workflows/*.js` (26 workflow scripts) and `agents/*.md` (172 SDLC agents, excluding `README.md` and `agents-file.md`).
 
 ## How invocation was determined
 
@@ -11,7 +11,7 @@ Workflows are JavaScript scripts that spawn agents through `agent(prompt, { agen
 
 Composite workflows (`bug-fix`, `task-to-deploy`, `prd-to-spec`, `infra-change`) do not spawn specialists directly (except `run-ledger-writer`); they call the leaf/shared minis via `workflow(...)`. Agents are therefore attributed to the mini that dispatches them; the composite that drives that mini is noted where relevant.
 
-Two substring false positives and comment-only mentions were excluded: `trd-author` matched inside `'trd-authoring'` in `prd-to-spec` (not a dispatch); `chassis-extension-implementer` in `task-to-deploy` is a doc comment; `spec-decider` in `prd-to-spec` is a log-message string; `wave-deployment-sequencer` in `deploy` appears only in a comment stating it is deliberately **not** invoked.
+Two substring false positives and comment-only mentions were excluded: `trd-author` matched inside `'trd-authoring'` in `prd-to-spec` (not a dispatch); `chassis-extension-implementer` in `task-to-deploy` is a doc comment; `spec-decider` in `prd-to-spec` is a log-message string.
 
 ---
 
@@ -197,14 +197,14 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 
 ### Headline counts
 
-- **173** agents defined in `agents/` (excluding `README.md`, `agents-file.md`).
+- **172** agents defined in `agents/` (excluding `README.md`, `agents-file.md`).
 - **157** are referenced by at least one workflow (static dispatch or dynamic-selection roster).
-- **16** are orphans (no workflow references them).
+- **15** are orphans (no workflow references them).
 - Of the 157 referenced: **142 appear in exactly one workflow (≈90%)**; only **15 appear in two or more**.
 
 **The user's suspicion is confirmed: the overwhelming majority of agents (90% of those used, 142/157) appear in exactly one workflow.** Reuse is the rare exception.
 
-### (i) ORPHANS — defined but referenced by no workflow (16)
+### (i) ORPHANS — defined but referenced by no workflow (15)
 
 | Orphan agent | Why it's likely orphaned |
 | --- | --- |
@@ -214,7 +214,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | `sdlc-pipeline-orchestrator` | Phase sequencing now done by the composite `.js` scripts |
 | `adversarial-review-loop-supervisor` | Loop control now in `adversarial.js` / gate scripts |
 | `cross-repo-integration-test-coordinator` | Cross-repo sequencing not wired into `integration.js` |
-| `wave-deployment-sequencer` | Explicitly **not** invoked by `deploy.js` (prod rollout is human-gated) |
 | `context-curator` | Governance agent; no workflow node instantiates it |
 | `polyrepo-cartographer` | Standalone specialist, invoked ad hoc, not by a workflow |
 | `user-story-writer` | Not wired into `task-decomposition.js` (see reuse gap b) |

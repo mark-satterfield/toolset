@@ -242,14 +242,13 @@ shown the answer is not a checker.
 | deployment-lead | orchestrate | Routes the deployment sequence, validates preconditions at each step, and reports to Gate 5. |
 | cdk-stack-author | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. |
 | github-actions-pipeline-implementer | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. |
-| wave-deployment-sequencer | execute | Executes wave-based deployments in the approved cross-repo order with precondition checks per wave. |
 | cdk-infrastructure-drift-detector | test | Detects drift between deployed infrastructure and the CDK stacks. |
 | slo-error-budget-designer | plan | Designs SLOs and error budgets for the deployed feature. |
 | smoke-test-author | test | Writes post-deployment smoke tests. |
 | production-readiness-review-facilitator | orchestrate | Coordinates the production readiness review: collects required artifacts, routes them to reviewers, and assembles the readiness packet |
 | finops-analyst | plan | Analyzes the cost posture of the feature before deployment: unit economics, scaling cost curves, budget impact |
 | incident-response-runbook-designer | execute | Produces operational runbooks for the deployed feature: incident response, rollback steps, disaster recovery. |
-| deployment-strategy-decider | approve | Receives deployment analyses — wave order options, rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead |
+| deployment-strategy-decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead |
 
 ## Documentation
 

@@ -88,7 +88,7 @@ it is a fix. See [A Bug is never routed](workflows/ROUTING.md#a-bug-is-never-rou
 
 ### Spec to Deployment
 
-After a Spec Freshness check (Gate 1), the build runs as a TDD red-green-refactor cycle staffed by three teams: Test Design writes failing tests from the spec's acceptance criteria (Gate 2a — Red confirmed), Implementation writes the minimum code to pass them (Gate 2b — Green confirmed), and Code Quality optimizes without breaking them (Gate 2c — still green). Integration Testing validates the event chain end to end (Gate 3), with a root cause analyst deciding whether failures escalate to code, test, environment, or architecture. Adversarial Validation then attacks the project's own code (injection, auth bypass, escalation, race conditions, CVEs, data exposure) with an adjudicator refereeing severity at the constitutional Gate 4: security findings are constitutive, and implementers cannot downgrade them. Deployment closes with CDK authoring, pipelines, wave sequencing, and readiness review at Gate 5.
+After a Spec Freshness check (Gate 1), the build runs as a TDD red-green-refactor cycle staffed by three teams: Test Design writes failing tests from the spec's acceptance criteria (Gate 2a — Red confirmed), Implementation writes the minimum code to pass them (Gate 2b — Green confirmed), and Code Quality optimizes without breaking them (Gate 2c — still green). Integration Testing validates the event chain end to end (Gate 3), with a root cause analyst deciding whether failures escalate to code, test, environment, or architecture. Adversarial Validation then attacks the project's own code (injection, auth bypass, escalation, race conditions, CVEs, data exposure) with an adjudicator refereeing severity at the constitutional Gate 4: security findings are constitutive, and implementers cannot downgrade them. Deployment closes with CDK authoring, pipelines, a single-repository rollout to dev, and readiness review at Gate 5.
 
 ```mermaid
 graph LR
@@ -185,7 +185,6 @@ The plugin knows nothing about the project it is installed in. Everything projec
 | `ATW_PROJECT_ROOT` | The directory recorded artifact and spec paths are relative to | No — without it, no root-relative path is recorded on a bead | `projectRoot` on `prd-to-spec` and `task-to-deploy` |
 | `ATW_ARTIFACT_SCRIPT` | Absolute path of the phase-artifact recorder, run as `python3 <script> record <file> --epic <id> --phase <phase> --inputs <paths...>` and `python3 <script> plan <epic-id>` | No — without it, `prd-to-spec` saves no artifacts and `task-to-deploy` saves phase files unhashed | `artifactScript` on `prd-to-spec` and `task-to-deploy` |
 | `ATW_WORKTREE_ROOT` | The directory every agent-cut worktree is placed under | No — without it, a `.worktrees/` directory beside the repository | `worktreeRoot` on the build composites; read by the main-worktree hook |
-| `ATW_WAVE_PLANS` | `:`-separated absolute paths of the wave plans a multi-repo rollout follows | Yes, for a multi-repo rollout | `wavePlanPaths` on the build composites and `deploy` |
 | `ATW_PRD_EPIC_SYNC` | Command that brings a PRD's Epic into line with the document: `<cmd> --only <slug> --apply` | No — without it, the PRD writer reports the slug needing sync | read by the `prd-writer` agent and skill |
 | `ATW_PRD_EPIC_VERIFY` | Command that checks one PRD against its Epic: `<cmd> <slug> [--apply]` | No | read by the `prd-writer` skill |
 | `ATW_BEADS_PORT` | The shared Dolt server port | No — `3308` | read by `skills/polyrepo-beads/scripts/*.sh` |
@@ -715,7 +714,7 @@ Spec-to-Deploy pipeline, phase 6 — authorized adversarial attack on the projec
 
 ### Deployment — Execution Team
 
-Spec-to-Deploy pipeline, phase 7 — CDK, pipeline, waves, readiness; feeds Gate 5. 11 agents.
+Spec-to-Deploy pipeline, phase 7 — CDK, pipeline, rollout, readiness; feeds Gate 5. 11 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -723,7 +722,6 @@ Spec-to-Deploy pipeline, phase 7 — CDK, pipeline, waves, readiness; feeds Gate
 | `cdk-stack-author` | Worker | Executor |
 | `github-actions-pipeline-implementer` | Worker | Executor |
 | `worktree-independent-verifier` | Worker | Validator |
-| `wave-deployment-sequencer` | Worker | Executor |
 | `cdk-infrastructure-drift-detector` | Worker | Validator |
 | `slo-error-budget-designer` | Worker | Advisor |
 | `smoke-test-author` | Worker | Executor (test author) |
@@ -901,14 +899,13 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `cdk-stack-author` | Deployment | Execution Team | Worker | Executor | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Write, Edit, Glob, Grep, Bash |
 | `github-actions-pipeline-implementer` | Deployment | Execution Team | Worker | Executor | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. | subagent-contract, validation-protocol, senior-devops | Read, Write, Edit, Glob, Grep, Bash |
 | `worktree-independent-verifier` | Workspace | Execution Team | Worker | Validator | test | Independently reports the raw git facts about a provisioned path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — so workspace.js can rule on two separately-obtained accounts rather than trusting one. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash |
-| `wave-deployment-sequencer` | Deployment | Execution Team | Worker | Executor | execute | Executes wave-based deployments in the approved cross-repo order with precondition checks per wave. | subagent-contract, validation-protocol, senior-devops, polyrepo-steward | Read, Write, Edit, Glob, Grep, Bash |
 | `cdk-infrastructure-drift-detector` | Deployment | Execution Team | Worker | Validator | test | Detects drift between deployed infrastructure and the CDK stacks. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Glob, Grep, Bash, Write |
 | `slo-error-budget-designer` | Deployment | Execution Team | Worker | Advisor | plan | Designs SLOs and error budgets for the deployed feature. | subagent-contract, observability-designer, cloudwatch | Read, Glob, Grep, Write |
 | `smoke-test-author` | Deployment | Execution Team | Worker | Executor (test author) | test | Writes post-deployment smoke tests. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `production-readiness-review-facilitator` | Deployment | Execution Team | Worker | Orchestrator | orchestrate | Coordinates the production readiness review: collects required artifacts, routes them to reviewers, and assembles the readiness packet | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, SendMessage |
 | `finops-analyst` | Deployment | Execution Team | Worker | Advisor | plan | Analyzes the cost posture of the feature before deployment: unit economics, scaling cost curves, budget impact | subagent-contract, aws-cost-operations | Read, Glob, Grep, Write |
 | `incident-response-runbook-designer` | Deployment | Execution Team | Worker | Executor | execute | Produces operational runbooks for the deployed feature: incident response, rollback steps, disaster recovery. | subagent-contract, validation-protocol, senior-devops, observability-designer | Read, Write, Edit, Glob, Grep, Bash |
-| `deployment-strategy-decider` | Deployment | Execution Team | Worker | Decider | approve | Receives deployment analyses — wave order options, rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead | subagent-contract, validation-protocol, senior-devops, cove-prompt-design | Read, Glob, Grep, Write |
+| `deployment-strategy-decider` | Deployment | Execution Team | Worker | Decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead | subagent-contract, validation-protocol, senior-devops, cove-prompt-design | Read, Glob, Grep, Write |
 | `documentation-lead` | Documentation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes documentation work triggered by shipped changes, tracks which artifacts lack current documentation, and reports documentation currency to the production readiness review | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-steward | Read, Glob, Grep, Agent, SendMessage |
 | `api-documentation-writer` | Documentation | Execution Team | Worker | Executor | execute | Generates human-readable API documentation from OpenAPI and GraphQL specs: endpoint guides, examples, SDK snippets. | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `readme-writer` | Documentation | Execution Team | Worker | Executor | execute | Writes and maintains README files for repositories and directories: setup instructions, usage, onboarding flows. | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |

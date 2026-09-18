@@ -130,7 +130,6 @@ async function settleAgent(prompt, opts) {
 //   prCommand — absolute path of the executable settle runs, inside the worktree, as
 //   `<prCommand> --title T --body B` to push the branch and open its pull request
 //   (ATW_PR_COMMAND). Absent, settle lands nothing and reports the run blocked.
-//   wavePlanPaths? — absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS).
 //   Every value above is read from the environment by the caller: a workflow script has
 //   no process or filesystem access.
 //   projectRoot? — absolute project root (ATW_PROJECT_ROOT), so a recorded artifact path is
@@ -1960,7 +1959,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
       'failed: the Green implementation would have to be redone, which this gate cannot re-enter',
     ],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract, green: green.artifact, docCurrency, wavePlanPaths: a.wavePlanPaths,
+      contract, green: green.artifact, docCurrency,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
     }),
   })

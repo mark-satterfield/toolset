@@ -110,21 +110,17 @@ test('D5-AC2: applicable=false with empty/omitted details is marked UNSUBSTANTIA
 })
 
 // ─── D5-AC3 (AC25) — details reaches the rollout prompt ───────────────────────
-test('D5-AC3: single-repo rollout prompt carries the cdk details verbatim so the deployer is told the real deploy mechanism', async () => {
+test('D5-AC3: the rollout prompt carries the cdk details verbatim so the deployer is told the real deploy mechanism', async () => {
   const DETAILS =
     'Deploys via `npm run build` + `aws s3 sync` to skillspoke-web-dev; CloudFront invalidation required; infrastructure owned by SkillSpoke-web-infra'
   const { calls } = await runWorkflowScript(DEPLOY_JS, {
-    args: { contract: CONTRACT, green: VALID_GREEN }, // multiRepo not set -> false
+    args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders({
       'deploy:cdk-validate': { applicable: false, synthValid: false, driftDetected: false, details: DETAILS },
     }),
   })
   const prompt = singlePrompt(calls, 'deploy:rollout-dev')
 
-  assert.ok(
-    !prompt.includes('MULTIPLE repos/stacks'),
-    'fixture must exercise the single-repo branch'
-  )
   assert.ok(
     prompt.includes(DETAILS),
     'the deploy:rollout-dev prompt must contain the cdk details string verbatim instead of asking the agent to rediscover the deploy path'
@@ -208,7 +204,7 @@ test('no deployment-lead, no strategy decider on a single-repo dev deploy, and n
   assert.equal(agentCalls(calls, 'deploy:plan').length, 0, 'artifact selection is derived from surfaces and changed paths')
   assert.equal(
     agentCalls(calls, 'deploy:strategy').length, 0,
-    'a single-repo deploy to dev has one legal rollout plan, so there is nothing for a decider to decide',
+    'a deploy to dev has one legal rollout plan, so there is nothing for a decider to decide',
   )
   assert.equal(
     agentCalls(calls, 'deploy:readiness-packet').length, 0,
@@ -220,14 +216,6 @@ test('no deployment-lead, no strategy decider on a single-repo dev deploy, and n
   assert.match(gate, /Unit\/integration tests: GREEN/, 'green evidence must still reach the enforcer')
   assert.match(gate, /Documentation currency/, 'doc currency must still reach the enforcer')
   assert.equal(result.deployedToDev, true, 'and the deploy still happens')
-})
-
-test('a multi-repo deploy DOES dispatch the strategy decider — wave order is a real question there', async () => {
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
-    args: { contract: CONTRACT, green: VALID_GREEN, multiRepo: true },
-    agentImpl: deployResponders(),
-  })
-  assert.equal(agentCalls(calls, 'deploy:strategy').length, 1)
 })
 
 // ─── D5-AC5 (AC27) — no cdk result at all (regression guard) ─────────────────

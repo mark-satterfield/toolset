@@ -124,7 +124,6 @@ const DEPLOYED_RED_CRITERION =
 //   prCommand — absolute path of the executable settle runs, inside the worktree, as
 //   `<prCommand> --title T --body B` to push the branch and open its pull request
 //   (ATW_PR_COMMAND). Absent, settle lands nothing and reports the run blocked.
-//   wavePlanPaths? — absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS).
 //   Every value above is read from the environment by the caller: a workflow script has
 //   no process or filesystem access.
 //   bead.repoPath names the REPOSITORY when the caller knows it. It is NOT required: a Bug
@@ -1741,7 +1740,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     ],
     escalateTargets: ['integration', 'green'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract, green: green.artifact, docCurrency, wavePlanPaths: a.wavePlanPaths,
+      contract, green: green.artifact, docCurrency,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
     }),
   })

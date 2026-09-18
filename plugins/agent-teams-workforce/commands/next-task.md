@@ -157,8 +157,7 @@ Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
          prCommand: "$ATW_PR_COMMAND",
          worktreeRoot: "$ATW_WORKTREE_ROOT",
          projectRoot: "$ATW_PROJECT_ROOT",
-         artifactScript: "$ATW_ARTIFACT_SCRIPT",
-         wavePlanPaths: [<each ":"-separated entry of $ATW_WAVE_PLANS>]}})
+         artifactScript: "$ATW_ARTIFACT_SCRIPT"}})
 ```
 
 Every value is the expanded value of its variable, not the literal variable name. The

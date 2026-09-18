@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. The readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) are DERIVED from the contract\'s declared surfaces and the changed paths rather than routed by a lead; smoke authoring and CDK synth/drift run concurrently; the rollout plan is ruled by the deployment-strategy-decider only when it has more than one legal answer (a multi-repo span or a non-dev target), and is otherwise stated by the script. The script assembles the readiness inventory from the fields it already holds and the phase-gate-enforcer — the only role permitted to rule — returns the go/no-go. On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
+    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. The readiness artifacts the change needs (FinOps, SLOs, runbook, pipeline) are DERIVED from the contract\'s declared surfaces and the changed paths rather than routed by a lead; smoke authoring and CDK synth/drift run concurrently; the build lane deploys exactly one repository per Task; the rollout plan is ruled by the deployment-strategy-decider only for a target other than dev, and is otherwise stated by the script. The script assembles the readiness inventory from the fields it already holds and the phase-gate-enforcer — the only role permitted to rule — returns the go/no-go. On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
   phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke authoring + readiness review, then roll out to AWS dev and smoke-check the deployed endpoints' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -92,8 +92,7 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// args: { contract, green, docCurrency?, feedback?,
-//         wavePlanPaths?: string[] }  // absolute wave-plan files a multi-repo rollout follows (ATW_WAVE_PLANS)
+// args: { contract, green, docCurrency?, feedback? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -272,7 +271,7 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
 // in a repo with no cdk.json and no stack.
 // `applicable:false` is a clean NOT-APPLICABLE, never a failure. Guard it: a repo that HAS a
 // CDK app must not escape a broken synth by claiming the stage does not apply.
-// Declared as a hoisted function so the concurrent wave above can dispatch it while the
+// Declared as a hoisted function so the concurrent dispatch above can dispatch it while the
 // carve-out and its incident history stay next to the prompt they are about: a `function`
 // declaration binds before the body runs, so the call site reads above its definition.
 function cdkValidate() {
@@ -338,45 +337,36 @@ const readinessArtifacts = artifactSpecs.length
     ))).filter(Boolean)
   : []
 
-// Rollout target and span. Hoisted above the strategy decision because they are what
-// decides whether that decision has more than one legal answer.
+// Rollout target. Hoisted above the strategy decision because it is what decides whether
+// that decision has more than one legal answer. Every repository deploys independently, and
+// this mini deploys exactly the one repository the contract names.
 const targetEnv = (a.env || c.env || 'dev').toLowerCase()
 const rolloutAllowed = targetEnv === 'dev'
-// Wave sequencing is for GREENFIELD, cross-repo fleet deploys. A change confined to one
-// repo/stack just deploys that stack — pass `multiRepo: true` to opt into wave ordering.
-const multiRepo = a.multiRepo === true || c.multiRepo === true
-// The wave plans a multi-repo rollout follows. Supplied by the caller; a multi-repo rollout
-// with none is refused rather than improvised.
-const wavePlanPaths = (Array.isArray(a.wavePlanPaths) ? a.wavePlanPaths : Array.isArray(c.wavePlanPaths) ? c.wavePlanPaths : [])
-  .filter((p) => typeof p === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(p) && !p.split('/').includes('..') && !p.includes('//'))
 
-// deployment-strategy-decider DECIDES the rollout PLAN (wave order, rollout style, risk)
-// for the rollout below. It DECIDES only; the rollout itself is executed further down by
-// cdk-stack-author (single repo) or wave-deployment-sequencer (multi-repo). Deciding the
-// plan and executing it are separate agents on purpose — the decider never deploys.
-// Only the outward-facing qa/prod rollout is human-gated, and it never happens from here.
+// deployment-strategy-decider DECIDES the rollout PLAN (rollout style, risk) for the
+// rollout below. It DECIDES only; the rollout itself is executed further down by
+// cdk-stack-author. Deciding the plan and executing it are separate agents on purpose —
+// the decider never deploys. Only the outward-facing qa/prod rollout is human-gated, and it
+// never happens from here.
 //
 // ── IT IS ONLY ASKED WHEN THERE IS SOMETHING TO DECIDE ───────────────────────
 //
-// The two questions it answers are wave ORDER and rollout STYLE. For a SINGLE-REPO
-// deploy to DEV both are already settled by the branch below: the rollout prompt tells
-// the deployer in terms not to use wave sequencing and not to read a wave plan, and dev
-// is an internal environment with no traffic to shift gradually and no canary population
-// to shift it to. Asking a decider a question with one legal answer
-// costs a session on the critical path and returns prose that is then interpolated into
-// two prompts as `style=..., risk=...`.
+// The question it answers is rollout STYLE. For a deploy to DEV that is already settled:
+// dev is an internal environment with no traffic to shift gradually and no canary
+// population to shift it to. Asking a decider a question with one legal answer costs a
+// session on the critical path and returns prose that is then interpolated into two
+// prompts as `style=..., risk=...`.
 //
-// So it runs when the answer is genuinely open — a multi-repo span, which is what wave
-// order exists for, or a non-dev target, which is outward-facing and where canary versus
+// So it runs only for a non-dev target, which is outward-facing and where canary versus
 // rolling is a real choice. Otherwise the script states the one legal plan and says, in
 // the plan itself, that it was not decided by an agent.
 let strategy
-if (multiRepo || !rolloutAllowed) {
+if (!rolloutAllowed) {
   strategy = await settleAgent(
-    `You are the deployment-strategy-decider. Decide the rollout strategy for this change: wave order (cross-repo), rollout style (canary / rolling / blue-green), and the risk level — with rationale. You ONLY decide the plan; you do NOT execute the rollout (that is a separate human-gated action).
+    `You are the deployment-strategy-decider. Decide the rollout strategy for this change: rollout style (canary / rolling / blue-green) and the risk level — with rationale. You ONLY decide the plan; you do NOT execute the rollout (that is a separate human-gated action).
 
 Target environment: ${targetEnv}
-Span: ${multiRepo ? 'MULTIPLE repos/stacks — wave order is a real decision here' : 'a single repo/stack'}
+Repo: ${c.repoPath || '(unspecified)'}
 Change: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}
 Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
     {
@@ -388,7 +378,6 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
         additionalProperties: false,
         required: ['rolloutStyle', 'riskLevel'],
         properties: {
-          waveOrder: { type: 'array', items: { type: 'string' } },
           rolloutStyle: { type: 'string' },
           riskLevel: { type: 'string' },
           rationale: { type: 'string' },
@@ -398,16 +387,14 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}`,
   )
 } else {
   strategy = {
-    waveOrder: [],
-    rolloutStyle: 'single-stack, no wave ordering and no canary',
+    rolloutStyle: 'single-stack, no canary',
     riskLevel: 'low (internal dev environment)',
     rationale:
-      'Set by the workflow, not decided by an agent: this change is confined to one repo/stack and targets dev, ' +
-      'so there is no wave order to rule and no traffic population to canary across. The rollout step below is ' +
-      'told the same thing directly.',
+      'Set by the workflow, not decided by an agent: this change deploys one repo/stack to dev, ' +
+      'so there is no traffic population to canary across.',
     decidedBy: 'workflow',
   }
-  log(`Rollout strategy: single-repo deploy to ${targetEnv} — one legal plan, so no strategy session was dispatched`)
+  log(`Rollout strategy: deploy to ${targetEnv} — one legal plan, so no strategy session was dispatched`)
 }
 
 // ── THE READINESS INVENTORY IS ASSEMBLED BY THE SCRIPT, NOT BY A FACILITATOR ──
@@ -447,7 +434,7 @@ CALIBRATION — read before ruling. The target is dev. Deploying to dev is how c
 DEPLOYMENT IS NOT THE FINAL STATE, AND IT IS NOT A REWARD FOR PASSING EVERY TEST. It is the step that makes the remaining evidence obtainable. Some tests — every post-deployment smoke test — can only run against a deployed environment, so requiring them to pass BEFORE deploying is circular and permanently deadlocks the pipeline. Never do it.
 
 BLOCK on: failing unit or integration tests, unit or integration tests NOT RUN or NOT REPORTED (an absent, unconfirmed, or evidence-free Green artifact is a third state distinct from pass and fail, and it blocks), a broken CDK synth where CDK applies, a security finding, or an unresolved drift this change would worsen.
-DO NOT BLOCK on: smoke tests that have not run or are currently failing against the OLD deployed bytes — that is the defect being fixed and is the normal, expected pre-deploy state. Also do not block on absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, a missing wave-execution log, or an artifact marked NOT APPLICABLE; those are process artifacts and their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
+DO NOT BLOCK on: smoke tests that have not run or are currently failing against the OLD deployed bytes — that is the defect being fixed and is the normal, expected pre-deploy state. Also do not block on absent FinOps analysis, absent SLO or error-budget design, absent runbook, absent pipeline authoring, or an artifact marked NOT APPLICABLE; those are process artifacts and their absence is a follow-up item, not a defect. A deploy-only remediation legitimately changes no files, so an empty changed-files list is not a defect either.
 
 What you require of smoke tests HERE is only that a sound suite EXISTS to run afterwards. Their passing run is collected AFTER rollout, where a failing smoke DOES mean the rollout failed.
 
@@ -490,10 +477,9 @@ if (!greenEvidenceOk) {
 // ── Rollout ───────────────────────────────────────────────────────────────────
 // Deploying to dev is how code gets into AWS at all — it is the point of the pipeline,
 // not an outward-facing action, and it is NOT human-gated. `dev` is the default target.
-// Only qa/prod rollout is human-gated; the sequencer is invoked for those only when a
-// caller explicitly asks, and prod never rolls out from here.
-// `targetEnv`, `rolloutAllowed` and `multiRepo` are established above the strategy step,
-// because they are what decides whether that step has a question worth dispatching.
+// Only qa/prod rollout is human-gated, and prod never rolls out from here.
+// `targetEnv` and `rolloutAllowed` are established above the strategy step, because they
+// are what decides whether that step has a question worth dispatching.
 
 // ── DEPLOYING IS NOT LANDING, AND NEITHER ONE IS A PRECONDITION OF THE OTHER ──
 //
@@ -681,12 +667,6 @@ const leaseBlockedReason = wantsRollout && leaseRefused
     'holder finishes is the whole remedy.'
   : ''
 if (leaseBlockedReason) log(leaseBlockedReason)
-const waveBlockedReason = wantsRollout && multiRepo && !wavePlanPaths.length
-  ? 'ROLLOUT NOT ATTEMPTED — this change spans multiple repos/stacks and no wave plan was supplied ' +
-    '(args.wavePlanPaths, from ATW_WAVE_PLANS). A multi-repo rollout follows the project\'s approved wave order, ' +
-    'so without one there is no order to deploy in.'
-  : ''
-if (waveBlockedReason) log(waveBlockedReason)
 if (lease && lease.brokeStale === true) {
   log(
     `Shared dev deployment lease for ${leaseKey} was BROKEN as stale: it was ${lease.staleAgeMinutes || '?'} minutes ` +
@@ -697,23 +677,19 @@ if (lease && lease.brokeStale === true) {
 if (leaseHeld) log(`Holding the shared dev deployment lease for ${leaseKey}${lease.waitedSeconds ? ` after waiting ${lease.waitedSeconds}s` : ''}`)
 
 let rollout = null
-if (wantsRollout && !leaseRefused && !waveBlockedReason) {
+if (wantsRollout && !leaseRefused) {
   rollout = await settleAgent(
     `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
 
 Repo: ${c.repoPath || '(unspecified)'}
 Rollout strategy: style=${strategy && strategy.rolloutStyle}, risk=${strategy && strategy.riskLevel}
-${
-  multiRepo
-    ? `This change spans MULTIPLE repos/stacks — deploy in the approved wave order the wave plan${wavePlanPaths.length > 1 ? 's' : ''} ${wavePlanPaths.join(' and ')} define${wavePlanPaths.length > 1 ? '' : 's'}, checking each wave's preconditions first. On failure STOP at that wave and do not continue.`
-    : `This change is confined to a SINGLE repo/stack — do NOT use wave sequencing and do NOT read a wave plan. Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
+Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
         cdk && cdk.applicable === false
           ? `CDK validation already reported that this repo owns NO CDK app or stack, so \`cdk deploy\` does not exist here and will fail. ${
               cdkDetails ? `The validator reported how this repo actually deploys: ${cdkDetails}. ` : ''
             }Find the real deploy path — check the Taskfile, package.json scripts, and any deploy script — and run that. For a static site this is typically a build followed by \`aws s3 sync\` and a CloudFront invalidation; you MUST wait for the invalidation to report Completed before smoke-testing, or you will read stale cached bytes and wrongly report success.`
           : 'this repo has a CDK app, so run `cdk deploy` for the affected stack(s) against dev.'
-      } Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.`
-}
+} Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.
 
 Then RUN the smoke tests (${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none authored'}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
 
@@ -727,9 +703,7 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
     {
       label: 'deploy:rollout-dev',
       phase: 'Deploy-readiness',
-      agentType: multiRepo
-        ? 'agent-teams-workforce:wave-deployment-sequencer'
-        : 'agent-teams-workforce:cdk-stack-author',
+      agentType: 'agent-teams-workforce:cdk-stack-author',
       // ── THE ROLLOUT REPORTS ITS OBSERVATIONS, NOT JUST ITS CONCLUSIONS ────────
       //
       // This schema used to require three fields, two of which were the agent's own
@@ -780,7 +754,6 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
               properties: { name: { type: 'string' }, passed: { type: 'boolean' }, output: { type: 'string' } },
             },
           },
-          stoppedAtWave: { type: 'string' },
           evidence: { type: 'string' },
           findings: { type: 'array', items: { type: 'string' } },
         },
@@ -921,7 +894,7 @@ const ledger = {
   // No deployment-lead and no production-readiness-review-facilitator: the artifact
   // selection is derived by the script and the readiness inventory is assembled by it.
   // The strategy decider appears only when it was actually dispatched.
-  chosen: ['smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), ...(strategy && strategy.decidedBy === 'workflow' ? [] : ['deployment-strategy-decider']), ...(rollout ? [multiRepo ? 'wave-deployment-sequencer' : 'cdk-stack-author'] : [])],
+  chosen: ['smoke-test-author', 'cdk-infrastructure-drift-detector', ...artifactSpecs.map((s) => s[0]), ...(strategy && strategy.decidedBy === 'workflow' ? [] : ['deployment-strategy-decider']), ...(rollout ? ['cdk-stack-author'] : [])],
   mode: selectionMode,
   env: targetEnv,
   localGatesOk,
@@ -939,4 +912,4 @@ const ledger = {
   ok: !!(readiness && readiness.ready) && (!rolloutAllowed || (deployedToDev && smokePassed)),
 }
 
-return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, waveBlocked: waveBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }
+return { artifactsSelected: artifacts, smoke, cdk, readinessArtifacts, strategy, readinessInventory: inventory, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }
