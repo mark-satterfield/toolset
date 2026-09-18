@@ -1,19 +1,10 @@
-// ssbd-mfza — a repository is NEVER a dispatch precondition.
+// Where a composite's repository comes from.
 //
-// task-to-deploy, infra-change and bug-fix refused a run with no `bead.repoPath` at the
-// input stage, with zero agents dispatched. That made the repository something the CALLER
-// had to know in advance, and the only place a caller could get it was a value cached on
-// the bead — a hand-maintained fact nothing kept current. 129 live work items sat behind
-// that gate. The repository is an architecture output and the pipeline already owns the
-// step that rules it; these tests pin that the composites now ASK rather than refuse:
-//
-//   task-to-deploy / infra-change — a read-only agent assembles the statement of work,
-//     the repo-scoping mini rules the span for this ONE item, the script picks the single
-//     repository, validates the path, and hands it to Workspace. Hints seed the ruling.
+//   task-to-deploy / infra-change — the repository is part of the Task's build contract,
+//     ruled during elaboration. A Task with none is refused at input and nothing is
+//     dispatched; a supplied repoPath goes straight to Workspace.
 //   bug-fix — triage runs FIRST, without a tree, and the repository is a FINDING of the
 //     diagnosis beside the blast radius; the worktree is cut from what triage located.
-//
-// A caller that supplies repoPath pays nothing: no resolver is dispatched.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -37,18 +28,16 @@ const okWorkspace = (repoPath) => ({
   caller: repoPath,
 })
 
-/** Drive a spec-side composite; `scoping` scripts the repo-scoping mini's return. */
-function runSpecSide(file, { bead, scoping, brief } = {}) {
+/** Drive a spec-side composite. */
+function runSpecSide(file, { bead } = {}) {
   return runWorkflowScript(path.join(WF, file), {
     args: { bead: bead || { id: 'ssbd-mfza', title: 'route the thing', description: 'd' } },
     agentImpl: (call) => {
-      if (call.label === 'repo-resolution:brief') return brief === undefined ? { resolved: true, body: 'BRIEF FROM TRACKER', sources: ['ssbd-mfza'] } : brief
       if (call.label === 'settle:land-work') return { treeClean: true, hasWork: false, branch: 'b', prUrl: '' }
       if (call.label === 'ledger:persist') return { written: true, path: '/p.jsonl' }
       return null
     },
     workflowImpl: (call) => {
-      if (call.name === 'agent-teams-workforce:repo-scoping') return scoping
       if (call.name === 'agent-teams-workforce:workspace') return okWorkspace(call.payload.repoPath)
       if (call.name === 'agent-teams-workforce:spec-freshness') return { fresh: true }
       if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
@@ -62,94 +51,30 @@ function runSpecSide(file, { bead, scoping, brief } = {}) {
 }
 
 const workflows = (calls) => calls.filter((c) => c.kind === 'workflow').map((c) => c.name)
-const RULED_SPAN = { ok: true, repos: [RULED], placements: [{ repoPath: RULED, repoName: 'web', workUnitIds: ['W1'], rationale: 'r' }], newRepos: [], requiredHumanActions: [], spanVerified: true }
 
 for (const file of ['task-to-deploy.js', 'infra-change.js']) {
-  test(`${file}: with no repoPath the repository is RULED — brief, then repo-scoping, then Workspace from the ruled path`, async () => {
-    const { calls } = await runSpecSide(file, { scoping: RULED_SPAN })
-    const names = workflows(calls)
-    const brief = calls.find((c) => c.kind === 'agent' && c.label === 'repo-resolution:brief')
-    assert.ok(brief, 'a read-only agent assembles the statement of work — a script cannot read files')
-    assert.equal(names[0], 'agent-teams-workforce:repo-scoping', 'the ruling is the first workflow dispatched')
-    const scoping = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:repo-scoping')
-    assert.equal(scoping.payload.prd.id, 'ssbd-mfza', 'the item itself is what is scoped')
-    assert.match(scoping.payload.prd.body, /route the thing/, "the item's own statement of work is always in the brief")
-    assert.match(scoping.payload.prd.body, /BRIEF FROM TRACKER/, 'and so is what the agent read')
-    assert.deepEqual(scoping.payload.architecture, { skipped: true }, 'no architecture ruling is invented for one item')
-    const ws = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:workspace')
-    assert.equal(ws.payload.repoPath, RULED, 'the worktree is cut from the RULED repository')
-    assert.ok(names.indexOf('agent-teams-workforce:repo-scoping') < names.indexOf('agent-teams-workforce:workspace'))
-  })
-
-  test(`${file}: a supplied repoPath is the answer — no resolver is dispatched`, async () => {
-    const { calls } = await runSpecSide(file, { bead: { id: 'ssbd-mfza', title: 't', description: 'd', repoPath: RULED }, scoping: RULED_SPAN })
-    assert.ok(!workflows(calls).includes('agent-teams-workforce:repo-scoping'), 'a known repository is not re-ruled')
-    assert.ok(!calls.some((c) => c.kind === 'agent' && c.label === 'repo-resolution:brief'), 'and no brief is assembled')
-    assert.equal(workflows(calls)[0], 'agent-teams-workforce:workspace', 'the usual order stands')
-  })
-
-  test(`${file}: repoHints reach the ruling as seedRepos — a hint, never an answer`, async () => {
-    const { calls } = await runSpecSide(file, { bead: { id: 'ssbd-mfza', title: 't', description: 'd', repoHints: ['SkillSpoke-web', ' '] }, scoping: RULED_SPAN })
-    const scoping = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:repo-scoping')
-    assert.deepEqual(scoping.payload.seedRepos, ['SkillSpoke-web'], 'blank hints are dropped, real ones are forwarded')
-    const ws = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:workspace')
-    assert.equal(ws.payload.repoPath, RULED, 'the RULING decides, not the hint')
-  })
-
-  test(`${file}: a span of several repositories takes the one hosting the most work and FLAGS the rest`, async () => {
-    const { calls, logs } = await runSpecSide(file, {
-      scoping: {
-        ...RULED_SPAN,
-        repos: [OTHER, RULED],
-        placements: [
-          { repoPath: OTHER, repoName: 'chassis', workUnitIds: ['W2'], rationale: 'r' },
-          { repoPath: RULED, repoName: 'web', workUnitIds: ['W1', 'W3'], rationale: 'r' },
-        ],
-      },
-    })
-    const ws = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:workspace')
-    assert.equal(ws.payload.repoPath, RULED, 'the repository with the most work units wins')
-    assert.ok(logs.some((l) => /spanned 2 repositories/.test(l)), 'the ambiguity is said out loud, not swallowed')
-  })
-
-  test(`${file}: a ruling that names only a repository the project does not have is a REQUIRED HUMAN ACTION, not a guess`, async () => {
-    const { result, calls } = await runSpecSide(file, {
-      scoping: {
-        ok: true,
-        repos: [],
-        placements: [],
-        newRepos: [{ name: 'SkillSpoke-new-thing', purpose: 'p' }],
-        requiredHumanActions: ['create repository SkillSpoke-new-thing'],
-        spanVerified: true,
-      },
-    })
+  test(`${file}: with no repoPath the build contract is incomplete — refused at input, nothing dispatched`, async () => {
+    const { result, calls } = await runSpecSide(file, {})
     assert.equal(result.ok, false)
-    assert.equal(result.stage, 'repo-resolution')
-    assert.deepEqual(result.requiredHumanActions, ['create repository SkillSpoke-new-thing'], 'the action reaches the caller by name')
-    assert.equal(result.newRepos.length, 1)
-    assert.match(result.headline, /SkillSpoke-new-thing/)
-    assert.ok(!workflows(calls).includes('agent-teams-workforce:workspace'), 'nothing is built into a repository that does not exist')
+    assert.equal(result.stage, 'input')
+    assert.match(result.headline, /carries no repoPath, so its build contract is incomplete/)
+    assert.match(result.headline, /elaboration/, 'the refusal points back to where the repository is ruled')
+    assert.deepEqual(result.incompleteContract, ['repoPath'])
+    assert.deepEqual(workflows(calls), [], 'no repository is ruled in the build lane')
     assert.equal(result.deployedToDev, false)
     assert.equal(result.smokePassed, false)
   })
 
-  test(`${file}: a ruled path outside the allowlist is refused, not used`, async () => {
-    const { result, calls } = await runSpecSide(file, { scoping: { ...RULED_SPAN, repos: ['/repos/x; rm -rf /'], placements: [] } })
-    assert.equal(result.stage, 'repo-resolution')
-    assert.ok(!workflows(calls).includes('agent-teams-workforce:workspace'))
+  test(`${file}: a supplied repoPath goes straight to Workspace`, async () => {
+    const { calls } = await runSpecSide(file, { bead: { id: 'ssbd-mfza', title: 't', description: 'd', repoPath: RULED } })
+    assert.ok(!workflows(calls).includes('agent-teams-workforce:repo-scoping'), 'a known repository is not re-ruled')
+    assert.equal(workflows(calls)[0], 'agent-teams-workforce:workspace', 'the usual order stands')
   })
 
-  test(`${file}: a brief agent that fails does not stop the ruling — the item's own text is scoped`, async () => {
-    const { calls } = await runSpecSide(file, { brief: { resolved: false, body: '', sources: [], blocked: 'tracker down' }, scoping: RULED_SPAN })
-    const scoping = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:repo-scoping')
-    assert.ok(scoping, 'the ruling still runs')
-    assert.match(scoping.payload.prd.body, /route the thing/)
-  })
-
-  test(`${file}: the composite no longer refuses an absent repoPath at input`, () => {
+  test(`${file}: the build lane holds no repository ruling`, () => {
     const src = readWorkflowSource(path.join(WF, file))
-    assert.doesNotMatch(src, /no bead\.repoPath supplied — refusing/, 'the input-stage refusal is gone')
-    assert.match(src, /enterPhase\('Repo Resolution'\)/, 'and the resolution phase exists')
+    assert.doesNotMatch(src, /agent-teams-workforce:repo-scoping/, 'repo-scoping belongs to elaboration')
+    assert.doesNotMatch(src, /enterPhase\('Repo Resolution'\)/)
   })
 }
 

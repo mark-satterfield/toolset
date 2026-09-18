@@ -86,9 +86,7 @@ bd show <id> --json || bd show <id>
 
 Pull out `id`, `title`, `description`, `issue_type`, `labels`, and the parent
 chain — you need `parentType` and `ancestorTypes` or a Task cannot be judged
-workable. Work out `repoPath`, the repository the work lives in. If you cannot
-determine it, release the claim and stop; a composite with no repo path cannot
-build.
+workable.
 
 ## 3. Route it
 
@@ -138,21 +136,35 @@ command cannot depend on a step nothing enforces, so the step moved into the pip
 A run that cannot verify a worktree now refuses to write rather than falling back to
 whatever tree it was pointed at.
 
-Pass the plain repository. A resumed run that already has a worktree may pass it: the
-`workspace` phase recognises a linked worktree on a feature branch and reuses it, so a
-later run still finds the earlier attempt's tests.
+Pass the contract's repository as it stands. The `workspace` phase recognises an existing
+linked worktree on a feature branch for this bead and reuses it, so a later run still finds
+the earlier attempt's tests.
 
 ## 5. Dispatch the composite
 
+Read the Task's build contract with the `beads-contract` CLI — it is the one authority on
+what a Task carries:
+
+```bash
+python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
+```
+
+Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
+repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
+the requirement ids and the SAD decision ids. Pass it as-is; do not rebuild it by hand and do
+not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
+the repository is ruled during elaboration, so release the claim, report the id and that reason, and stop — never
+work out a repository yourself.
+
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: {id, title, description, repoPath: "$REPO"},
+  args: {bead: <the contract's bead>,
          worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
 ```
 
-`$REPO` is the repository from step 2. The composite's `workspace` phase turns it into
-the worktree; do not pre-cut one. `worktreeRoot` is the expanded value of
-`$SKILLSPOKE_WORKTREE_ROOT`, not the literal variable name.
+The composite's `workspace` phase turns the contract's repository into the worktree; do not
+pre-cut one. `worktreeRoot` is the expanded value of `$SKILLSPOKE_WORKTREE_ROOT`, not the
+literal variable name.
 
 `<composite>` is whatever the router named — `task-to-deploy` or `infra-change`.
 Do not substitute your own. (`bug-fix` is reachable only on demand, after a

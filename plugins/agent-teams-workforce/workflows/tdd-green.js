@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-green',
   description:
-    'Shared-tail mini — TDD Green. A read-only implementation-lead selects the implementer(s) matching the affected subsystem (unless the caller pre-specifies one); the selected implementers write the minimum production code in sequence to make the failing test pass, run the suite, and confirm Green without regressing other tests.',
+    'Shared-tail mini — TDD Green. A read-only implementation-lead selects the implementer(s) matching the affected subsystem (unless the caller pre-specifies one); the selected implementers write the minimum production code in sequence to make the failing test pass, run the suite, and confirm Green without regressing other tests. Every implementer receives the contract as pointers to the documents that hold it — the work item and its description, the spec documents and sections, the requirement ids, the SAD decision ids the work was designed against, the Definition of Done and the acceptance criteria — so it builds the design the spec rules rather than inferring one from the failing test.',
   phases: [{ title: 'Green', detail: 'minimum code to pass; confirm Green' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -192,10 +192,53 @@ if (contractPathFault) {
 
 const repo = suppliedRepoPath || '(repo path not provided)'
 
-// The task context every implementer receives.
-const taskBlock = `${c.bead ? `Bug ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}
-Root cause: ${c.rootCause || 'n/a'}
+// ── THE CONTRACT EVERY IMPLEMENTER RECEIVES ──────────────────────────────────────
+//
+// The failing test says what must pass; the contract says what must be BUILT. The design —
+// the spec documents, the sections defining this work, the Definition of Done, and the SAD
+// decisions the work was designed against — is ruled upstream and travels on the contract.
+// It is rendered here as pointers to the documents that hold it, the same way tdd-red hands
+// it to the test writers, so the implementer reads the design rather than inferring it from
+// the shape of a test.
+//
+// Acceptance criteria arrive in two shapes: `{ given, when, then }` objects from bug triage,
+// and prose strings from a Task's spec. Each renders as itself.
+const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+const strList = (v) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : [])
+const isBugContract = !!(c.reproduction || c.rootCause)
+const beadDescription = c.bead ? str(c.bead.description) : ''
+const ac = Array.isArray(c.acceptanceCriteria) ? c.acceptanceCriteria : []
+const acLine = (x, i) => {
+  if (typeof x === 'string') return `${i + 1}. ${x.trim()}`
+  if (x && typeof x === 'object' && (x.given || x.when || x.then)) {
+    return `${i + 1}. GIVEN ${x.given || 'n/a'} WHEN ${x.when || 'n/a'} THEN ${x.then || 'n/a'}`
+  }
+  return `${i + 1}. ${JSON.stringify(x)}`
+}
+const decisionIds = [...new Set([...strList(c.decisionIds), ...strList(c.spec && c.spec.decisionIds)])]
+const specBlock = (() => {
+  const s = c.spec && typeof c.spec === 'object' ? c.spec : null
+  const docs = s ? [...new Set([str(s.specPath), ...strList(s.specPaths)].filter(Boolean))] : []
+  const lines = [
+    docs.length
+      ? `Spec documents — THE CONTRACT. Read the sections named below in these files before writing code; this prompt is a pointer to them, not a substitute for them:\n${docs.map((d) => `  - ${d}`).join('\n')}`
+      : '',
+    s && strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
+    s && strList(s.requirementIds).length ? `Requirements satisfied: ${strList(s.requirementIds).join(', ')}` : '',
+    decisionIds.length
+      ? `Architecture decisions this work is designed against (SAD entry ids, cited by the spec documents): ${decisionIds.join(', ')}. The design they rule binds this change; where the spec cites one, build to it.`
+      : '',
+    s && strList(s.definitionOfDone).length ? `Definition of Done:\n${strList(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
+  ].filter(Boolean)
+  return lines.length ? `\n\n${lines.join('\n')}` : ''
+})()
+
+const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}${
+  beadDescription ? `\n\n${beadDescription}` : ''
+}${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}
+
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
+${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).join('\n')}\n` : ''}
 Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}
 Red evidence: ${red.evidence || 'n/a'}`
 
@@ -217,7 +260,7 @@ if (a.implementer) {
   selectionMode = 'selected'
 } else {
   const selection = await settleAgent(
-    `You are the implementation-lead — a READ-ONLY router. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from the SkillSpoke implementer roster: ${IMPLEMENTER_ROSTER.join(', ')}. Any name outside this list is discarded. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones. Enforce the hard architectural constraints (event API only, service isolation, chassis extension) in your rationale.
+    `You are the implementation-lead — a READ-ONLY router. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from the implementer roster: ${IMPLEMENTER_ROSTER.join(', ')}. Any name outside this list is discarded. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones.
 
 Work within the repository at: ${repo}
 
@@ -307,7 +350,7 @@ ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.f
 
 IF TWO TESTS CONTRADICT EACH OTHER, REPORT IT — do not pick a side and do not keep trying. There is one blocker you cannot fix and must not attempt to: the failing test requires one outcome for an input, and another test that ALREADY PASSES requires the opposite outcome for that identical input. No implementation satisfies both, so every further attempt re-proves the same impossibility. You may not modify a test, and neither may the gate, so the only correct move is to say so: fill in \`contradiction\` with both test identifiers, the precondition they share, what each one expects, and the executed output showing they cannot both hold. Which contract is right is not yours to decide — it is ruled by an agent with that authority, and your report is what reaches it. Report a contradiction ONLY for genuinely opposite expectations over the same input; a test that is merely wrong on its own terms is a defective test, which you report in your evidence as usual.
 
-Constraints: minimum change to pass; do not modify the test to make it pass; honor SkillSpoke code-quality rules (timeouts, backoff, idempotency, explicit error handling). Deliver the changed files, whether Green is confirmed, and the captured passing output.`,
+Constraints: minimum change to pass; build to the contract above; do not modify the test to make it pass. Deliver the changed files, whether Green is confirmed, and the captured passing output.`,
     {
       label: `green:${impl}`,
       phase: 'Green',

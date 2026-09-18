@@ -142,11 +142,9 @@ test('every code-writing composite dispatches the workspace phase', () => {
   for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
     const src = read(f);
     assert.match(src, /workflow\('agent-teams-workforce:workspace'/, `${f} must establish its own worktree`);
-    // A missing repository is no longer refused at input — it is RULED at run time — but
-    // the run must still refuse to WRITE until one is known: the resolution stage is the
-    // only path that can end a run with no repository, and it ends it before any tree.
-    assert.match(src, /no bead\.repoPath was supplied and/, `${f} must name the repository as missing when nothing can rule one`);
-    assert.doesNotMatch(src, /no bead\.repoPath supplied — refusing/, `${f} must not refuse at input for a fact it can rule itself`);
+    // A run with no repository ends before any tree: a Task's contract must name one, and a
+    // bug's triage must locate one.
+    assert.match(src, /no bead\.repoPath was supplied and|carries no repoPath, so its build contract is incomplete/, `${f} must name the repository as missing`);
   }
 });
 

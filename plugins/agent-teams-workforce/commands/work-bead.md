@@ -16,8 +16,6 @@ bd show $ARGUMENTS --json || bd show $ARGUMENTS
 ```
 
 Pull out `id`, `title`, `description`, `type`, `labels`, and the parent chain.
-Work out `repoPath` — the repository the bead's work lives in. If you cannot
-determine it, say so and stop; a composite with no repo path cannot build.
 
 ## 2. Resolve the installed plugin root
 
@@ -102,25 +100,39 @@ code, in `workflows/workspace.js`, dispatched before the first writing phase, an
 that cannot verify a worktree refuses to write rather than falling back to the tree it
 was pointed at.
 
-**So pass the plain repository.** `repoPath` is `$REPO`, not a worktree you built. If
-you hand it a worktree anyway — a resumed run, say — `workspace` recognises a linked
-worktree on a feature branch and reuses it, which is the same reuse guarantee this
-section used to describe.
+**So pass the contract's repository as it stands.** `repoPath` is the repository the
+Task's contract names, not a worktree you built. A resumed run finds its earlier tree
+anyway: `workspace` recognises a linked worktree on a feature branch for this bead and
+reuses it.
 
 For an `elaborate` there is no worktree at all: that path authors documents and returns
 bead specifications, so there is no feature branch for it to land on.
 
 ## 4. Dispatch — `work` only
 
+Read the Task's build contract with the `beads-contract` CLI — it is the one authority on
+what a Task carries:
+
+```bash
+python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" contract <id>
+```
+
+Its `bead` field is the composite's `bead` argument, complete: id, title, description, the
+repository, the spec documents and sections, the acceptance criteria, the Definition of Done,
+the requirement ids and the SAD decision ids. Pass it as-is; do not rebuild it by hand and do
+not drop fields from it. If `missing` names `repoPath`, the Task's build contract is incomplete:
+the repository is ruled during elaboration, so report the id and that reason and stop — never
+work out a repository yourself.
+
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
-  args: {bead: {id, title, description, repoPath: "$REPO"},
+  args: {bead: <the contract's bead>,
          worktreeRoot: "$SKILLSPOKE_WORKTREE_ROOT"}})
 ```
 
-`$REPO` is the repository from step 1. The composite's `workspace` phase turns it into
-the worktree; do not pre-cut one. `worktreeRoot` is the expanded value of
-`$SKILLSPOKE_WORKTREE_ROOT`, not the literal variable name.
+The composite's `workspace` phase turns the contract's repository into the worktree; do not
+pre-cut one. `worktreeRoot` is the expanded value of `$SKILLSPOKE_WORKTREE_ROOT`, not the
+literal variable name.
 
 Then go to step 6.
 

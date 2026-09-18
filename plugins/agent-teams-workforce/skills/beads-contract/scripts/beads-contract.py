@@ -273,14 +273,18 @@ KIND_OBJECT_OR_UNKNOWN = "object-or-unknown"
 
 #: The build contract a Task carries: metadata key -> (argument name, shape). `bd` metadata
 #: is flat key=value text, so every value is a string; lists and the strategy object are
-#: compact JSON.
+#: compact JSON. `repoPath` is the repository the elaboration ruling placed the Task in;
+#: `decision_ids` is the SAD entry tags the Task was designed against, which is how the
+#: architecture ruled upstream reaches the phases that write code.
 CONTRACT_SCHEMA = (
+    ("repoPath", "repoPath", KIND_TEXT),
     ("spec_path", "specPath", KIND_TEXT),
     ("spec_paths", "specPaths", KIND_LIST),
     ("spec_sections", "specSections", KIND_LIST),
     ("acceptance_criteria", "acceptanceCriteria", KIND_LIST),
     ("definition_of_done", "definitionOfDone", KIND_LIST),
     ("requirement_ids", "requirementIds", KIND_LIST),
+    ("decision_ids", "decisionIds", KIND_LIST),
     ("surfaces", "surfaces", KIND_LIST_OR_UNKNOWN),
     ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
 )
@@ -289,6 +293,10 @@ CONTRACT_SCHEMA = (
 #: against a contract it reads from disk, and with no path every downstream phase falls
 #: back to the Task's own prose.
 SPEC_REFERENCE = ("specPath", "specPaths")
+
+#: The repository reference, which IS required: the build lane builds in the repository
+#: the contract names and rules none of its own.
+REPO_REFERENCE = "repoPath"
 
 #: Keys outside the build contract that the READINESS GATE owns on a bead. The gate rules
 #: on CONTENT COMPLETENESS only — it does not score, so no `wsjf` key is its.
@@ -344,10 +352,6 @@ LANE_KEYS = (
     # The Task this one follows: set on a Task minted because the work it replaces was
     # already built and therefore was not rewritten.
     "elab_follows",
-    # The SAD entry ids the item was designed against, as a compact JSON list. This is
-    # how a changed architecture decision finds the work resting on it. The ids are the
-    # SAD's own per-entry tags, which survive a rewording; a statement-derived id does not.
-    "decision_ids",
 )
 
 #: Every metadata key this pipeline owns. A `metadata set` of anything else is refused —
@@ -811,6 +815,8 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
         contract["acceptanceCriteria"] = criteria["values"]
     metadata = metadata_of(rec)
     missing: list[str] = []
+    if not contract.get(REPO_REFERENCE):
+        missing.append("repoPath (the repository is ruled during elaboration and recorded on the Task)")
     if not any(contract.get(name) for name in SPEC_REFERENCE):
         missing.append("spec_path or spec_paths")
     if not criteria["values"]:
@@ -821,6 +827,14 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
         "type": str(rec.get("issue_type") or ""),
         "parent": str(rec.get("parent") or ""),
         "contract": contract,
+        # The composite's `bead` argument: the Task's identity and prose plus its contract,
+        # passed as-is to a build composite.
+        "bead": {
+            "id": args.id,
+            "title": str(rec.get("title") or ""),
+            "description": str(rec.get("description") or ""),
+            **contract,
+        },
         "acceptanceCriteriaSource": (
             {"beadId": criteria["sourceId"], "field": criteria["sourceField"]} if criteria["inherited"] else None
         ),
@@ -1017,6 +1031,8 @@ _SELFTEST_RECORDS = [
         "metadata": {
             "acceptance_criteria": '["Criterion from metadata"]',
             "spec_paths": '["docs/spec/thing.md"]',
+            "repoPath": "/repos/thing",
+            "decision_ids": '["AD-1", "X-2"]',
             "surfaces": "unknown",
             "test_strategy": '{"pyramid": "unit-heavy"}',
         },
@@ -1088,6 +1104,8 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     contract = read_contract(reader.get("syn-task-metadata"))
     contract_ok = (
         contract.get("specPaths") == ["docs/spec/thing.md"]
+        and contract.get("repoPath") == "/repos/thing"
+        and contract.get("decisionIds") == ["AD-1", "X-2"]
         and "surfaces" in contract
         and contract["surfaces"] is None
         and contract.get("testStrategy") == {"pyramid": "unit-heavy"}
@@ -1095,9 +1113,9 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     ok = ok and contract_ok
     results.append(
         {
-            "case": "unknown surfaces becomes null and is not []",
+            "case": "contract carries repository and decision ids; unknown surfaces becomes null and is not []",
             "pass": contract_ok,
-            "observed": {key: contract.get(key) for key in ("specPaths", "surfaces", "testStrategy")},
+            "observed": {key: contract.get(key) for key in ("repoPath", "specPaths", "decisionIds", "surfaces", "testStrategy")},
         }
     )
 

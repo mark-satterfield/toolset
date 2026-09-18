@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. Otherwise a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
+    'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. Otherwise a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. The refactorer, the optimizers and the reviewer each receive pointers to the contract the change was built to — the spec documents and sections and the SAD decision ids — so a refactor stays inside the design. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving cleanup + optimizer selection + independent review' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -98,6 +98,30 @@ const c = a.contract || {}
 const green = a.green || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
 const changedFromGreen = (green.changedFiles || []).join(', ') || 'n/a'
+
+// ── THE CONTRACT THE CHANGE WAS BUILT TO ──────────────────────────────────────────
+// A refactor preserves behavior AND stays inside the design the change was built to. That
+// design travels on the contract — the spec documents, the sections defining the work, and
+// the SAD decisions it was designed against — and is rendered here as pointers to those
+// documents, so every agent that edits or reviews code reads the design rather than
+// inferring it from the code in front of it.
+const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+const strList = (v) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : [])
+const contractBlock = (() => {
+  const s = c.spec && typeof c.spec === 'object' ? c.spec : null
+  const docs = s ? [...new Set([str(s.specPath), ...strList(s.specPaths)].filter(Boolean))] : []
+  const decisionIds = [...new Set([...strList(c.decisionIds), ...strList(s && s.decisionIds)])]
+  const lines = [
+    docs.length
+      ? `Spec documents — THE CONTRACT this change was built to. A refactor stays inside it; this prompt is a pointer to them, not a substitute for them:\n${docs.map((d) => `  - ${d}`).join('\n')}`
+      : '',
+    s && strList(s.specSections).length ? `Spec sections defining this work: ${strList(s.specSections).join(', ')}` : '',
+    decisionIds.length
+      ? `Architecture decisions this work is designed against (SAD entry ids, cited by the spec documents): ${decisionIds.join(', ')}. A refactor never moves the code outside the design they rule.`
+      : '',
+  ].filter(Boolean)
+  return lines.length ? `\n\n${lines.join('\n')}` : ''
+})()
 
 phase('Refactor')
 
@@ -216,7 +240,7 @@ const refactor = await settleAgent(
   `Refactor the code changed by the fix for clarity and to reduce complexity/duplication, WITHOUT changing behavior. Address the complexity analysis where it applies. Keep every test green — run the suite after your changes. Work within: ${repo}
 
 Changed files from the fix: ${changedFromGreen}
-Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}
+Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}${contractBlock}
 ${a.feedback ? `\nReviewer feedback to address:\n${a.feedback}` : ''}
 
 Deliver the files you touched, whether tests are still green, and the captured test output.`,
@@ -261,9 +285,9 @@ for (const opt of pickedOptimizers) {
 
 You are '${opt}', running after the code-refactoring-specialist and any earlier optimizers — their changes are already applied. Make only the part matching your specialty.
 Files changed so far: ${changedFiles.join(', ') || 'n/a'}
-Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}
+Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}${contractBlock}
 
-Constraints: preserve behavior; do not modify tests to make them pass; honor SkillSpoke code-quality rules. Deliver the files you touched, whether tests are still green, and the captured test output.`,
+Constraints: preserve behavior; stay inside the contract above; do not modify tests to make them pass. Deliver the files you touched, whether tests are still green, and the captured test output.`,
     {
       label: `refactor:${opt}`,
       phase: 'Refactor',
@@ -283,7 +307,7 @@ const review = await settleAgent(
 
 Files changed (refactor + optimizers): ${changedFiles.join(', ') || 'n/a'}
 Refactorer's evidence: ${refactor.evidence || 'n/a'}
-Optimizers run: ${pickedOptimizers.join(', ') || 'none'}`,
+Optimizers run: ${pickedOptimizers.join(', ') || 'none'}${contractBlock}`,
   {
     label: 'refactor:review',
     phase: 'Refactor',

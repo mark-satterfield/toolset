@@ -162,11 +162,11 @@ const MAX_LOOPS = a.maxLoops || 2
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
-// A missing `bead.repoPath` is NOT refused here. It used to be — the same way a missing
-// bead.id is — and that made a repository a dispatch PRECONDITION for a Bug, which is filed
-// against a symptom and frequently names no repository at all (136 of 144 open Bugs on the
-// live tracker). The repository is a finding of the diagnosis: see the triage-first path
-// in the run body, which runs only when the caller supplied none.
+// A Bug is filed against a symptom and often names no repository. Triage is this
+// composite's contract producer, and the repository the defect lives in is one of its
+// findings, located beside the blast radius: with no `bead.repoPath` the run triages first
+// (see the triage-first path in the run body) and builds in the repository triage located.
+// No architecture is ruled here — triage diagnoses where existing code is at fault.
 const REPO_RESOLUTION_STAGE = 'repo-resolution'
 
 // Decision ledger for over-time mining. Each instrumented mini returns a `ledger`

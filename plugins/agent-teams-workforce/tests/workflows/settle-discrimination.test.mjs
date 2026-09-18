@@ -83,11 +83,10 @@ for (const file of COMPOSITES) {
     assert.equal(result.prUrl, 'https://github.com/o/r/pull/42', 'the URL is trimmed before it is reported')
   })
 
-  test(`${file}: a run with no repo path resolves one first — and when nothing can be ruled it stops BEFORE any tree exists`, async () => {
+  test(`${file}: a run with no repo path stops BEFORE any tree exists`, async () => {
     // The reproduced false orphan: an identical successful run flipped ok:true -> false
-    // on repoPath alone, with orphaned:{worktree:null}. A missing repoPath is no longer
-    // refused at input — it is ruled at run time — but a ruling that yields nothing stops
-    // the run before a worktree exists, so "orphaned" stays unreachable on this path.
+    // on repoPath alone, with orphaned:{worktree:null}. A Task with no repoPath is refused
+    // at input, before a worktree exists, so "orphaned" stays unreachable on this path.
     const { result, calls } = await run(file, () => ({ treeClean: true, hasWork: false, branch: '', prUrl: '' }), {
       bead: { id: 'ssbd-4q3x', title: 's', description: 'd' },
     })
@@ -99,7 +98,7 @@ for (const file of COMPOSITES) {
       assert.equal(result.orphaned, undefined)
       return
     }
-    assert.equal(result.stage, 'repo-resolution')
+    assert.equal(result.stage, 'input')
     assert.equal(result.ok, false)
     assert.equal(result.orphaned, undefined, 'a run that never cut a tree cannot have orphaned anything')
   })

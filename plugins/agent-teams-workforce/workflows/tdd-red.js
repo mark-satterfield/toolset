@@ -245,6 +245,7 @@ const specBlock = (() => {
   const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
   const list = (v) => (Array.isArray(v) ? v.filter((x) => str(x)).map((x) => x.trim()) : [])
   const docs = [...new Set([str(s.specPath), ...list(s.specPaths)].filter(Boolean))]
+  const decisionIds = [...new Set([...list(c.decisionIds), ...list(s.decisionIds)])]
   const lines = [
     str(s.id) || str(s.title) ? `Spec ${str(s.id)}${str(s.title) ? `: ${str(s.title)}` : ''}` : '',
     docs.length
@@ -252,6 +253,7 @@ const specBlock = (() => {
       : '',
     list(s.specSections).length ? `Spec sections defining this work: ${list(s.specSections).join(', ')}` : '',
     list(s.requirementIds).length ? `Requirements satisfied: ${list(s.requirementIds).join(', ')}` : '',
+    decisionIds.length ? `Architecture decisions this work is designed against (SAD entry ids, cited by the spec documents): ${decisionIds.join(', ')}` : '',
     list(s.definitionOfDone).length ? `Definition of Done:\n${list(s.definitionOfDone).map((d) => `  - ${d}`).join('\n')}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''

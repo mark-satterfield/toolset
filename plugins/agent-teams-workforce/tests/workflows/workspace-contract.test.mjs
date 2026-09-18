@@ -96,20 +96,17 @@ for (const { file, writer } of COMPOSITES) {
     assert.ok(!names.includes(writer), 'falling back to the caller\'s tree is exactly the failure — nothing may write')
   })
 
-  test(`${file}: a run with no repository RESOLVES one before anything can write — it is never run blind`, async () => {
-    // A repository is no longer a dispatch precondition: absent, it is ruled at run time
-    // by a read-only step that precedes the worktree. The fixture's resolver yields nothing
-    // usable (repo-scoping returns no `repos`; bug-triage locates a path outside the
-    // allowlist), so the run must stop at the resolution stage with NO writing phase reached.
+  test(`${file}: a run with no repository never runs blind`, async () => {
+    // A Task's contract names its repository; with none the run stops at input with NO
+    // writing phase reached. A bug's triage locates the repository before the worktree.
     const { result, calls } = await run(file, {
       workspace: OK_WORKSPACE,
       args: { bead: { id: 'ssbd-mz1w', title: 'w', description: 'd' } },
     })
     const names = calls.filter((c) => c.kind === 'workflow').map((c) => c.name)
-    const resolver = file === 'bug-fix.js' ? 'agent-teams-workforce:bug-triage' : 'agent-teams-workforce:repo-scoping'
-    assert.equal(names[0], resolver, 'the FIRST workflow dispatched is the one that rules the repository')
-    assert.ok(names.indexOf(resolver) < names.indexOf('agent-teams-workforce:workspace') || !names.includes('agent-teams-workforce:workspace'), 'no tree exists before the repository is known')
+    const resolver = 'agent-teams-workforce:bug-triage'
     if (file === 'bug-fix.js') {
+      assert.equal(names[0], resolver, 'the FIRST workflow dispatched is the triage that locates the repository')
       // The fixture's triage locates '/SOMEWHERE/ELSE', which passes the allowlist, so the
       // run continues into the worktree — established from the LOCATED repository.
       const ws = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:workspace')
@@ -118,8 +115,9 @@ for (const { file, writer } of COMPOSITES) {
       assert.ok(names.indexOf(resolver) < names.indexOf('agent-teams-workforce:workspace'), 'triage precedes the worktree on this path')
     } else {
       assert.equal(result.ok, false)
-      assert.equal(result.stage, 'repo-resolution', 'the run names the stage it stopped at')
+      assert.equal(result.stage, 'input', 'the run names the stage it stopped at')
       assert.match(String(result.headline), /repoPath/, 'the refusal must name what is missing')
+      assert.deepEqual(names, [], 'nothing is dispatched for an incomplete build contract')
       assert.ok(!names.includes(writer), 'no writing phase may run while the repository is unknown')
       assert.ok(!names.includes('agent-teams-workforce:workspace'), 'no tree is cut for a run with no repository')
     }

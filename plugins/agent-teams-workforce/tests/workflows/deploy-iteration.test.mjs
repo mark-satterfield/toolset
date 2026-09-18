@@ -275,11 +275,11 @@ test('the input refusals answer ALL THREE scalars, before handback even exists',
   for (const [name, composite] of [['task-to-deploy', 'task-to-deploy.js'], ['bug-fix', 'bug-fix.js'], ['infra-change', 'infra-change.js']]) {
     const run = (bead) => runWorkflowScript(path.join(WF, composite), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
 
-    // A missing repoPath is no longer an input refusal: it is ruled at run time, and with
-    // the fixture's resolver yielding nothing the run stops at `repo-resolution` — which
-    // goes through handback and therefore answers the scalars by construction. It is kept
-    // in this loop so that path is measured too, not assumed.
-    for (const [label, bead, stage] of [['no id', { repoPath: '/repos/chassis' }, 'input'], ['no repoPath', { id: 'ssbd-x' }, 'repo-resolution']]) {
+    // A missing repoPath stops a Task at `input` and a bug at `repo-resolution` (its triage
+    // located nothing); both go through handback and answer the scalars by construction.
+    // It is kept in this loop so that path is measured too, not assumed.
+    const noRepoStage = composite === 'bug-fix.js' ? 'repo-resolution' : 'input'
+    for (const [label, bead, stage] of [['no id', { repoPath: '/repos/chassis' }, 'input'], ['no repoPath', { id: 'ssbd-x' }, noRepoStage]]) {
       const { result } = await run(bead)
       assert.equal(result.stage, stage, `${name} / ${label}`)
       for (const field of ['deployedToDev', 'smokePassed', 'deployIteration']) {
