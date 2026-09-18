@@ -29,6 +29,8 @@ const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
 const routeBuild = path.join(WORKFLOWS, 'route-build.js')
 const routeElaboration = path.join(WORKFLOWS, 'route-elaboration.js')
 const taskDecomposition = path.join(WORKFLOWS, 'task-decomposition.js')
+// The scored parent Epic and the plugin root every task-decomposition run is handed.
+const SCORED = { epic: { id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3 }, pluginRoot: '/opt/plugins/agent-teams-workforce' }
 
 /**
  * Runs the BUILD router deterministically (no classifier agent). Development
@@ -206,6 +208,7 @@ test('task-decomposition emits tasks parented to the Story it was given', async 
   const decomposed = [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }]
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
+      ...SCORED,
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { id: 'ssbd-story-1', title: 'the story' },
     },
@@ -230,6 +233,7 @@ test('a Story identified only by `key` still parents its tasks', async () => {
   // and every one of them would then report under no Story at all.
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
+      ...SCORED,
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { key: 'S2', title: 'keyed but not yet written to bd' },
     },
@@ -258,6 +262,7 @@ test('a Story identified only by `key` still parents its tasks', async () => {
 test('every emitted task carries the repository, copied from the Spec it decomposed', async () => {
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
+      ...SCORED,
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repos/service-a' },
       story: { key: 'S1', title: 'the story' },
     },
@@ -285,6 +290,7 @@ test('every emitted task carries the repository, copied from the Spec it decompo
 test('the repository may also arrive as args.repoPath', async () => {
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
+      ...SCORED,
       spec: { id: 'SPEC-1', title: 'spec' },
       story: { key: 'S1' },
       repoPath: '/repos/service-b',
@@ -312,6 +318,7 @@ test('an unresolved WSJF review emits the tasks anyway, with the dispute recorde
   // used to return ok:false and discard the tasks, the DAG, and the whole run.
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
+      ...SCORED,
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { key: 'S1', title: 'the story' },
       maxScoringPasses: 2,
@@ -333,7 +340,7 @@ test('an unresolved WSJF review emits the tasks anyway, with the dispute recorde
 
 test('an accepted review reports no dispute', async () => {
   const { result } = await runWorkflowScript(taskDecomposition, {
-    args: { spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' }, story: { key: 'S1' } },
+    args: { ...SCORED, spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' }, story: { key: 'S1' } },
     agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
   })
   assert.equal(result.scoringDisputed, false)

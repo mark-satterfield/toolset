@@ -20,10 +20,10 @@ Pull out `id`, `title`, `description`, `type`, `labels`, and the parent chain.
 ## 2. Resolve the installed plugin root
 
 ```bash
-ls -d ~/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/*/ | sort -V | tail -1
+echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 ```
 
-Call that `$ROOT`. Every dispatch below uses `scriptPath`, never a bare `name` —
+Call the printed path `$ROOT`. Every dispatch below uses `scriptPath`, never a bare `name` —
 name dispatch resolves against the session-start snapshot and is refused by the
 workflow dispatch guard.
 
@@ -150,8 +150,11 @@ ls -R "$ATW_PRD_DIR"
   PRD template. Minting completes the pair; it is not what authorizes the build —
   your invoking this command is.
 
-Then invoke the `elaborate-prd-epic` skill with the resolved pair. It owns the
-`prd-to-spec` dispatch and the report. The run writes the returned hierarchy into
+Then invoke the `elaborate-prd-epic` skill with the resolved pair, passing the Epic with
+its `id`. It owns the `prd-to-spec` dispatch and the report. Check nothing about the
+Epic's readiness here: `prd-to-spec` checks, at its start, that the Epic is open and
+scored, that every Epic it depends on is elaborated, and that it is `ready` or
+`in_progress` with no other owner, and refuses with a named reason otherwise. The run writes the returned hierarchy into
 beads itself; the skill verifies what landed rather than writing it by hand. `/agent-teams-workforce:start-prd` hands off to the same skill from
 the other door — do not re-implement any of it here.
 

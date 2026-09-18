@@ -156,10 +156,14 @@ no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec n
 question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
 
 Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
-`ready_content_hash`. Scoring, written by the `wsjf-scoring` workflow and never by the
-readiness gate: `wsjf`, `wsjf_calculated_at`. Build lane: `build_state`. Elaboration lane:
-`elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`, `artifact_spec_path`,
-`elab_key`, `elab_follows`.
+`ready_content_hash`. Scoring, written by `prd-to-spec` when it writes a Task and scores its
+Epic, and by the `wsjf-scoring` workflow, never by the readiness gate: `wsjf`,
+`wsjf_calculated_at` and the dimensions below. Build lane: `build_state`. Elaboration:
+`elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
+`elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
+`elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its
+start, under the run's owner token in `elaboration_state_owner`, and `done` when its Tasks are
+written; a person sets `ready`.
 
 **`elab_key` is the identity a re-elaboration matches on**, written once at the create and never
 recomputed. A Story is keyed by the repository it covers, a Task by its repository and the slug

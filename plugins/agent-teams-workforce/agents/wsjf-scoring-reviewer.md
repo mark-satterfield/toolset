@@ -1,8 +1,8 @@
 ---
 name: wsjf-scoring-reviewer
 description: >-
-  Validates WSJF scores are internally consistent, evidence-backed, and
-  defensible; reports findings, never fixes. Use for Task Decomposition
+  Validates the job sizes behind task WSJF scores are internally consistent,
+  evidence-backed, and defensible; reports findings, never fixes. Use for Task Decomposition
   work requiring scoring validation, consistency
   auditing, and prioritization challenge.
 tools: Read, Glob, Grep, Bash, Write

@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, workflowCalls, agentCalls } from './helpers/run-workflow.mjs'
-import { beadWriter } from './helpers/bead-writer.mjs'
+import { withBeadWriter, TEST_EPIC } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
@@ -348,7 +348,7 @@ async function composite(reconResult, { onCalls, args } = {}) {
   const seen = []
   let storyN = 0
   const { result, calls, logs } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { ...PRD }, repoPath: '/repo/auth', ...(args || {}) },
+    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, ...(args || {}) },
     workflowImpl: (call) => {
       seen.push(call)
       const name = String(call.name || '')
@@ -389,7 +389,7 @@ async function composite(reconResult, { onCalls, args } = {}) {
       }
       return null
     },
-    agentImpl: beadWriter(),
+    agentImpl: withBeadWriter(),
   })
   if (onCalls) onCalls(calls)
   return { result, seen, calls, logs }
@@ -563,7 +563,11 @@ test('the composite declares NO PRD Reconciliation phase, and Spec Authoring own
     !/\{ title: 'PRD Reconciliation'/.test(phases),
     'a front-end reconciliation phase is what made deployed state a requirements input',
   )
-  assert.match(phases, /phases: \[\s*\{ title: 'PRD Creation'/, 'the run now opens on the PRD itself')
+  assert.match(
+    phases,
+    /phases: \[\s*\{ title: 'Epic Lifecycle'[^\n]*\n\s*\{ title: 'PRD Creation'/,
+    'the run opens on the Epic lifecycle check, then the PRD itself',
+  )
   assert.match(phases, /\{ title: 'Spec Authoring', detail: '[^']*current-state reconciliation runs HERE/)
 })
 

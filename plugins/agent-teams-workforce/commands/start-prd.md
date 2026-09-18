@@ -34,10 +34,10 @@ do not invent a PRD from the title.
 bd list --type epic | grep -i "<prd title>"
 ```
 
-- Found → adopt it. Pass it through; it is not re-minted.
+- Found → adopt it. Pass it through with its `id`; it is not re-minted.
 - Not found → **mint it** from the PRD. The Epic is a container: title and
-  description from the PRD, no acceptance criteria, no WSJF score, no repo scope
-  (one Epic may span repos).
+  description from the PRD, no acceptance criteria, no repo scope (one Epic may span
+  repos).
 
 ```bash
 bd create --type epic --title "<prd title>" --description "<prd summary>"
@@ -45,6 +45,22 @@ bd create --type epic --title "<prd title>" --description "<prd summary>"
 
 Minting completes the pair. It is not what authorizes the build — your invoking
 this command is.
+
+A minted Epic is elaborated only once it is placed in the portfolio: its dependencies
+on other Epics assessed, and its value, urgency and size scored. So for a minted Epic,
+before the hand-off:
+
+1. Run `/agent-teams-workforce:dependency-assessment <epic-id>`. It assesses this one
+   Epic's dependencies and then runs WSJF scoring, which scores it.
+2. Mark the PRD finished — your invoking this command says it is:
+
+```bash
+bd update <epic-id> --set-metadata elaboration_state=ready
+```
+
+Every other condition — the Epic is scored, the Epics it depends on are elaborated, it
+is not owned by another run — is checked by `prd-to-spec` at its start, which refuses
+with a named reason. Report a refusal as it comes back.
 
 ## 3. Hand off
 

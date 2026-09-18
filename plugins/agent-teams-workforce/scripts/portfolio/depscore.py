@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The Epic portfolio — the deterministic half, over the tracker graph.
 
-Three workflows run these: `epic-summaries`, `dependency-assessment` and `wsjf-scoring`.
-Every judged step between them is an agent; everything here is code.
+The `epic-summaries`, `dependency-assessment`, `wsjf-scoring` and `prd-to-spec` workflows
+run these. Every judged step between them is an agent; everything here is code.
 
     summary-plan      the open Epics whose summary is missing or older than their PRD
     record-summaries  write summaries with the fingerprint they were written from
@@ -21,11 +21,19 @@ Every judged step between them is an agent; everything here is code.
     judge-input       the whole portfolio at one level, as one judging session reads it
     record            write judged values with the fingerprint they were judged from
     score             recompute every Epic's and Task's WSJF and write what changed
+    elaboration-start whether one Epic may be elaborated now: open, scored, every Epic it
+                      depends on elaborated, and ready or in progress with no other
+                      owner. When it may, mark it `in_progress` under an owner token
+    elaboration-finish after an Epic's Tasks are written: fingerprint the Task sizes the run
+                      judged, score the Epic and its Tasks, and with `--done` mark it `done`
+    elaboration-release clear a run's owner token from an Epic it started and did not
+                      finish; the Epic stays `in_progress`
 
 Every command prints ONE JSON object on stdout and names the tracker source it read. With
 `--out FILE` the full object is written to FILE and stdout carries only its `summary`.
 
-`record-summaries`, `apply-edges`, `record` and `score` take `--dry-run`: the command reads the tracker and
+`record-summaries`, `apply-edges`, `record`, `score` and the three `elaboration-` commands
+take `--dry-run`: the command reads the tracker and
 computes exactly as it otherwise would, writes nothing, and returns every write it would
 have made, in order, under `planned`.
 """
@@ -46,6 +54,7 @@ from edgeset import (
     read_edges,
     validate,
 )
+from elaboration import LifecycleError, finish, release, start
 from scoring import ScoringError, judge_input, plan, record, score
 from summaries import (
     SummaryError,
@@ -341,6 +350,48 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     _dry_run_flag(sco)
+
+    est = sub.add_parser(
+        "elaboration-start",
+        help="whether one Epic may be elaborated now; when it may, mark it in progress",
+        parents=[common],
+    )
+    est.add_argument("--epic", required=True, help="the Epic to elaborate")
+    est.add_argument(
+        "--owner", default=None, help="the run's owner token; absent, a fresh one"
+    )
+    est.add_argument(
+        "--reclaim",
+        action="store_true",
+        help="the run owning an in-progress Epic is established as not live",
+    )
+    _dry_run_flag(est)
+
+    efi = sub.add_parser(
+        "elaboration-finish",
+        help="fingerprint judged Task sizes, score the Epic and its Tasks, mark it done",
+        parents=[common],
+    )
+    efi.add_argument("--epic", required=True, help="the Epic whose Tasks were written")
+    efi.add_argument(
+        "--judged",
+        default="",
+        help="the Tasks whose size this run judged from their current content",
+    )
+    efi.add_argument("--owner", default=None, help="the owner token the start returned")
+    efi.add_argument("--done", action="store_true", help="mark the Epic `done`")
+    _dry_run_flag(efi)
+
+    erl = sub.add_parser(
+        "elaboration-release",
+        help="clear a run's owner token from an Epic it did not finish",
+        parents=[common],
+    )
+    erl.add_argument("--epic", required=True, help="the Epic the run started")
+    erl.add_argument(
+        "--owner", required=True, help="the owner token the start returned"
+    )
+    _dry_run_flag(erl)
     return parser
 
 
@@ -359,6 +410,7 @@ def run(args: argparse.Namespace) -> dict:
         "assess-plan",
         "score-plan",
         "judge-input",
+        "elaboration-finish",
     ) or getattr(args, "with_description", False)
     graph = beadgraph.load(args.directory, with_description=descriptions)
     head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
@@ -422,6 +474,21 @@ def run(args: argparse.Namespace) -> dict:
             "task": _entries(args.tasks, "scores"),
         }
         return head | record(graph, _read_json(args.plan), judgments, writer)
+    if command == "elaboration-start":
+        return head | start(
+            graph, writer, args.epic, owner=args.owner, reclaim=args.reclaim
+        )
+    if command == "elaboration-finish":
+        return head | finish(
+            graph,
+            writer,
+            args.epic,
+            judged=split_ids(args.judged),
+            owner=args.owner,
+            done=args.done,
+        )
+    if command == "elaboration-release":
+        return head | release(graph, writer, args.epic, owner=args.owner)
     return head | score(graph, writer)
 
 
@@ -442,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
     except (
         SequencingError,
         ScoringError,
+        LifecycleError,
         SummaryError,
         GraphError,
         json.JSONDecodeError,

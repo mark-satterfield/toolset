@@ -50,7 +50,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 This lead is the face of the following team; each member and what it does:
 
-- **task-decomposer** — Breaks the approved spec into atomic tasks — one chassis extension, endpoint, or event handler each — sized under 300 LOC and traced to spec sections.
+- **task-decomposer** — Breaks the approved spec into atomic tasks — one chassis extension, endpoint, or event handler each — traced to spec sections, sequenced, and sized on the WSJF rubric's Fibonacci scale.
 - **task-dependency-mapper** — Maps inter-task dependencies and produces the DAG that sequences implementation.
 - **wsjf-scorer** — Scores decomposed tasks with WSJF — (value + time criticality + risk reduction) / size — for economic sequencing.
 - **user-story-writer** — Writes a user story per decomposed task, with acceptance criteria from the approved spec and traceability to its spec sections.

@@ -688,19 +688,24 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
     return items
 
 
-def _apply(graph: Graph, result: dict, writer: Writer) -> list[dict]:
-    """Write every scored item whose values changed.
+def _apply(
+    graph: Graph, result: dict, writer: Writer, scope: set[str] | None
+) -> list[dict]:
+    """Write every scored item in scope whose values changed.
 
     Args:
         graph: The tracker graph.
         result: The rubric's `score` output.
         writer: The tracker writer; a dry-run writer records the writes instead.
+        scope: The ids that may be written, or None for every scored item.
 
     Returns:
-        One record per scored item, marked with whether it is written.
+        One record per scored item in scope, marked with whether it is written.
     """
     rows = []
     for scored in result["scores"]:
+        if scope is not None and scored["id"] not in scope:
+            continue
         bead = graph.beads[scored["id"]]
         computed = {
             key: value
@@ -723,15 +728,18 @@ def _apply(graph: Graph, result: dict, writer: Writer) -> list[dict]:
     return rows
 
 
-def score(graph: Graph, writer: Writer) -> dict:
+def score(graph: Graph, writer: Writer, scope: set[str] | None = None) -> dict:
     """Recompute every open Epic's and every open Task's WSJF, and write what changed.
 
     The edge lists handed to the rubric are the whole graph at each level, so a level
-    with no edges scores every item as reaching nothing.
+    with no edges scores every item as reaching nothing. The computation always covers the
+    whole tracker, because RR-OE is reachability over the whole graph; `scope` limits only
+    what is written and reported.
 
     Args:
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
+        scope: The ids that may be written, or None for every open Epic and Task.
 
     Returns:
         The Epic and Task scores, everything that could not be scored and why, size
@@ -745,11 +753,16 @@ def score(graph: Graph, writer: Writer) -> dict:
     task_result = rubric.score(
         {"edges": _edges(tasks), "items": _task_items(graph, tasks)}, "task"
     )
-    epic_rows = _apply(graph, epic_result, writer)
-    task_rows = _apply(graph, task_result, writer)
-    unscored = [{"level": "epic", **u} for u in epic_result["unscored"]] + [
-        {"level": "task", **u} for u in task_result["unscored"]
-    ]
+    epic_rows = _apply(graph, epic_result, writer, scope)
+    task_rows = _apply(graph, task_result, writer, scope)
+
+    def wanted(entry: dict) -> bool:
+        return scope is None or entry["id"] in scope
+
+    unscored = [
+        {"level": "epic", **u} for u in epic_result["unscored"] if wanted(u)
+    ] + [{"level": "task", **u} for u in task_result["unscored"] if wanted(u)]
+    incomplete = [i for i in incomplete if wanted(i)]
     return {
         "epics": epic_rows,
         "tasks": task_rows,

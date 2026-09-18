@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { beadWriter, isWriterCall } from './helpers/bead-writer.mjs'
+import { beadWriter, isWriterCall, lifecycleRunner, TEST_EPIC } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -114,7 +114,7 @@ test('architecture: triage, analysts, advisors, and the decider get the rulings 
 
 test('task-decomposition: the maker gets the rulings', async () => {
   const { calls } = await runWorkflowScript(path.join(WF, 'task-decomposition.js'), {
-    args: { spec: { id: 'S1', title: 't', repoPath: '/r' }, story: { key: 'S1' }, standingRulings: RULINGS },
+    args: { spec: { id: 'S1', title: 't', repoPath: '/r' }, story: { key: 'S1' }, standingRulings: RULINGS, epic: { id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3 }, pluginRoot: '/opt/plugins/agent-teams-workforce' },
     agentImpl: (call) => {
       if (call.label === 'decompose:sequence-and-score') {
         return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r', edges: [], buildOrder: ['T1'], acyclic: true, scores: [{ key: 'T1', userBusinessValue: 1, timeCriticality: 1, riskReductionOpportunityEnablement: 1, jobSize: 1, wsjf: 3, rationale: 'r' }] }
@@ -183,10 +183,13 @@ function compositeWorkflows() {
 
 async function runComposite({ found, content = RULINGS }) {
   const writer = beadWriter()
+  const lifecycle = lifecycleRunner()
   return runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
-    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha' },
+    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha', epic: TEST_EPIC },
     workflowImpl: compositeWorkflows(),
     agentImpl: (call) => {
+      const ran = lifecycle(call)
+      if (ran) return ran
       // prd-to-spec reads the checkpoint and the rulings in ONE dispatch — two small
       // files in the same tree, and a fresh agent session costs its session start, not
       // its work. bug-fix still reads the rulings on its own label.

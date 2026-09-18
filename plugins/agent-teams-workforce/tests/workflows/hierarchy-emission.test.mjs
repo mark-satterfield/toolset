@@ -1,8 +1,7 @@
 // prd-to-spec must emit the whole tree, not a flat task list.
 //
-// The composite is the only place the hierarchy is assembled: it pairs the Epic
-// with the PRD (backfilling one when an older PRD predates the concept), fans
-// spec authoring out per repo so each Story is scoped to exactly one, and
+// The composite is the only place the hierarchy is assembled: it adopts the caller's
+// Epic, fans spec authoring out per repo so each Story is scoped to exactly one, and
 // decomposes each Story into its own tasks. A flat bead set loses every parent
 // link, and route-build then refuses to work any of it.
 
@@ -11,9 +10,15 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
-import { beadWriter, withBeadWriter } from './helpers/bead-writer.mjs'
+import { TEST_EPIC, withBeadWriter } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+/** The writer and lifecycle stubs, with the cross-Story mapper returning `edges`. */
+function withLifecycleEdges(edges) {
+  const answer = withBeadWriter()
+  return (call, calls) => (call.label === 'sequence:cross-story-tasks' ? { edges, acyclic: true } : answer(call, calls))
+}
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
 // Reconciliation is unconditional and runs before every gate, so every prd-to-spec fixture
@@ -102,11 +107,11 @@ function makeWorkflowImpl({ repos, withEpic }) {
   }
 }
 
-async function run({ args, repos, withEpic = true }) {
+async function run({ args, repos, withEpic = true, agentImpl }) {
   return runWorkflowScript(prdToSpec, {
-    args,
+    args: { epic: TEST_EPIC, ...args },
     workflowImpl: makeWorkflowImpl({ repos, withEpic }),
-    agentImpl: beadWriter(),
+    agentImpl: withBeadWriter(agentImpl),
   })
 }
 
@@ -184,23 +189,45 @@ test('every emitted Task records the repository of the Story it hangs under', as
   }
 })
 
-test('an existing PRD with no Epic gets one BACKFILLED — it is not skipped', async () => {
-  const { result } = await run({
+test('a PRD with no Epic is refused at the start — an Epic is created and scored first', async () => {
+  const { result, calls } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-OLD', title: 'Legacy PRD', body: 'b' }, repoPath: '/repo-a' },
-    repos: ['/repo-a'],
-    withEpic: false,
+    workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: false }),
+    agentImpl: withBeadWriter(),
   })
 
-  assert.equal(result.ok, true, `composite failed at ${result.stage}`)
-  assert.ok(
-    result.hierarchy && result.hierarchy.epic && result.hierarchy.epic.key,
-    'a PRD written before the hierarchy existed must still get an Epic — most PRDs here predate the concept',
-  )
-  assert.equal(result.hierarchy.epic.type, 'epic')
+  assert.equal(result.ok, false)
+  assert.equal(result.stage, 'epic-lifecycle')
+  assert.match(result.headline, /refused: no-epic/)
+  assert.equal(calls.filter((c) => c.kind === 'workflow').length, 0, 'nothing is elaborated for a PRD with no Epic')
 })
 
-test('a caller-supplied Epic is used rather than backfilled over', async () => {
-  const supplied = { key: 'E-EXISTING', type: 'epic', title: 'Already there', description: 'd', prdRef: 'PRD-1' }
+test('an Epic the lifecycle check refuses is not elaborated, and the refusal is named', async () => {
+  const { result, calls } = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: TEST_EPIC },
+    workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: false }),
+    agentImpl: withBeadWriter(null, {}),
+  })
+  assert.equal(result.ok, true, 'the stub allows this Epic, which is the control for the refusal below')
+
+  const refused = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: TEST_EPIC },
+    workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: false }),
+    agentImpl: (call) =>
+      call.label === 'epic:start'
+        ? { pluginRoot: '/opt/plugins/agent-teams-workforce', exitCode: 0, output: { ok: false, refusal: { code: 'upstream-not-elaborated', reason: 'bd-E0 is in_progress' } } }
+        : null,
+  })
+  assert.equal(refused.result.ok, false)
+  assert.equal(refused.result.stage, 'epic-lifecycle')
+  assert.match(refused.result.headline, /refused: upstream-not-elaborated — bd-E0 is in_progress/)
+  assert.equal(refused.result.refusal.code, 'upstream-not-elaborated')
+  assert.equal(refused.calls.filter((c) => c.kind === 'workflow').length, 0, 'a refused Epic is not elaborated')
+  assert.ok(calls.some((c) => c.label === 'epic:finish'), 'an elaborated Epic is finished: scored, and marked done')
+})
+
+test('a caller-supplied Epic is adopted, never re-minted', async () => {
+  const supplied = { id: 'bd-EX', key: 'E-EXISTING', type: 'epic', title: 'Already there', description: 'd', prdRef: 'PRD-1' }
   const { result } = await run({
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: supplied },
     repos: ['/repo-a'],
@@ -213,6 +240,7 @@ test('a caller-supplied Epic is used rather than backfilled over', async () => {
     'E-EXISTING',
     'when the Epic already exists the composite must adopt it, not mint a duplicate',
   )
+  assert.equal(result.hierarchy.epic.id, 'bd-EX')
 })
 
 test('the flat beadSet is retained for existing callers and holds only tasks', async () => {
@@ -231,7 +259,7 @@ test('each repo gets a DISTINCT Story key — sibling Stories must not collide',
   const repos = ['/repo-a', '/repo-b', '/repo-c']
   const seen = []
   const { result } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
     // Echo back whatever key the composite asked for, exactly as spec-authoring does.
     // spec-authoring defaults to 'S1', so a composite that fails to pass a distinct
     // storyKey per repo collapses every repo onto one phantom Story.
@@ -260,8 +288,7 @@ test('each repo gets a DISTINCT Story key — sibling Stories must not collide',
       }
       return null
     },
-    agentImpl: withBeadWriter((call) =>
-      call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null),
+    agentImpl: withBeadWriter(),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
@@ -295,7 +322,7 @@ test('task keys are unique ACROSS Stories, not just within one', async () => {
   // Story's first task is "T1" and the flat bead set collides.
   const repos = ['/repo-a', '/repo-b', '/repo-c']
   const { result } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
     workflowImpl: (call) => {
       const name = String(call.name || '')
       if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
@@ -324,7 +351,7 @@ test('task keys are unique ACROSS Stories, not just within one', async () => {
       }
       return null
     },
-    agentImpl: withBeadWriter((call) => (call.label === 'sequence:story-dag' ? { edges: [], buildOrder: ['S1', 'S2', 'S3'], acyclic: true } : null)),
+    agentImpl: withBeadWriter(),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
@@ -350,7 +377,7 @@ test('a caller-supplied Epic is normalized to carry type "epic"', async () => {
     args: {
       prd: { id: 'PRD-1', title: 'PRD One', body: 'b' },
       repoPath: '/repo-a',
-      epic: { key: 'EX-9', title: 'given without a type' },
+      epic: { id: 'bd-EX9', key: 'EX-9', title: 'given without a type' },
     },
     repos: ['/repo-a'],
     withEpic: false,
@@ -364,61 +391,61 @@ test('a caller-supplied Epic is normalized to carry type "epic"', async () => {
   )
 })
 
-// ── Dependencies live at the Story level, and only there ──────────────────────
+// ── Build dependencies are Task-to-Task edges, across Stories too ─────────────
 
-test('Stories carry the dependency graph; the Epic carries none', async () => {
+test('a Task depends on a Task in another Story through a Task edge; no Story and no Epic carries one', async () => {
   const repos = ['/repo-a', '/repo-b', '/repo-c']
-  const { result } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
-    workflowImpl: makeWorkflowImpl({ repos, withEpic: true }),
-    // The Story-dependency mapper and the bead writer are the agent() calls this composite makes.
-    agentImpl: withBeadWriter((call) =>
-      call.label === 'sequence:story-dag'
-        ? { edges: [{ from: 'S1', to: 'S2' }], buildOrder: ['S1', 'S2', 'S3'], acyclic: true }
-        : null),
+  const { result, calls } = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
+    workflowImpl: makeWorkflowImpl({ repos, withEpic: false }),
+    agentImpl: withBeadWriter(null, {}),
   })
-
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
-  const { epic, stories, storyDependencies } = result.hierarchy
+  assert.equal(calls.filter((c) => c.label === 'sequence:cross-story-tasks').length, 1, 'the cross-Story edges are derived once, over every Story')
 
-  assert.ok(storyDependencies, 'the hierarchy must carry a Story-level dependency graph')
-  assert.deepEqual(storyDependencies.edges, [{ from: 'S1', to: 'S2' }])
-
-  const s2 = stories.find((s) => s.key === 'S2')
-  assert.deepEqual(s2.dependsOn, ['S1'], 'the edge must be folded onto the Story itself')
-  const s3 = stories.find((s) => s.key === 'S3')
-  assert.deepEqual(s3.dependsOn, [], 'a Story with no incoming edge depends on nothing')
-
-  // An Epic orders whole PRDs against each other, which is a roadmap judgement and
-  // not a build constraint this pipeline may make.
-  assert.equal(epic.dependsOn, undefined, 'an Epic must not carry a dependency graph')
-  assert.equal(epic.buildOrderIndex, undefined, 'an Epic must not be placed in a build order')
-})
-
-test('a single Story needs no dependency mapper run', async () => {
-  const { calls } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a' },
-    workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: true }),
-    agentImpl: beadWriter(),
+  const edge = { from: 'S1-S1-T1', to: 'S2-S2-T2', kind: 'contract', reason: 'consumes the API S1-T1 provides' }
+  const linked = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
+    workflowImpl: makeWorkflowImpl({ repos, withEpic: false }),
+    agentImpl: withLifecycleEdges([edge]),
   })
-  const mapperRuns = calls.filter((c) => c.kind === 'agent' && c.label === 'sequence:story-dag')
-  assert.equal(mapperRuns.length, 0, 'one Story has nothing to depend on — do not spend an agent on it')
+  assert.equal(linked.result.ok, true, `composite failed at ${linked.result.stage}`)
+  const { epic, stories, tasks } = linked.result.hierarchy
+  assert.equal(linked.result.hierarchy.storyDependencies, undefined, 'there is no Story-level dependency graph')
+  const t2 = tasks.find((t) => t.key === 'S2-S2-T2')
+  assert.deepEqual(t2.dependsOn, ['S1-S1-T1'], 'the cross-Story edge is folded onto the dependent Task')
+  for (const st of stories) assert.equal(st.dependsOn, undefined, 'a Story only groups Tasks')
+  assert.equal(epic.dependsOn, undefined, 'an Epic carries no build dependency')
+  const links = linked.calls
+    .filter((c) => c.label === 'beads:link')
+    .flatMap((c) => JSON.parse(c.prompt.slice(c.prompt.indexOf('JSON payload:\n') + 'JSON payload:\n'.length)).links)
+  assert.deepEqual(links, [{ fromId: 'bd-S2-S2-T2', dependsOnId: 'bd-S1-S1-T1' }], 'the cross-Story edge is written as a Task edge')
 })
 
-test('a cyclic Story graph fails the run rather than inventing an order', async () => {
+test('a single Story needs no cross-Story mapper run', async () => {
+  const { calls } = await runWorkflowScript(prdToSpec, {
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: TEST_EPIC },
+    workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'], withEpic: true }),
+    agentImpl: withBeadWriter(),
+  })
+  const mapperRuns = calls.filter((c) => c.kind === 'agent' && c.label === 'sequence:cross-story-tasks')
+  assert.equal(mapperRuns.length, 0, 'one Story has no Task in another Story to depend on — do not spend an agent on it')
+})
+
+test('a cyclic Task graph across Stories fails the run rather than inventing an order', async () => {
   const repos = ['/repo-a', '/repo-b']
   const { result } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
     workflowImpl: makeWorkflowImpl({ repos, withEpic: true }),
-    agentImpl: withBeadWriter((call) =>
-      call.label === 'sequence:story-dag'
-        ? { edges: [{ from: 'S1', to: 'S2' }, { from: 'S2', to: 'S1' }], buildOrder: [], acyclic: false, cycle: ['S1', 'S2', 'S1'] }
-        : null),
+    agentImpl: withLifecycleEdges([
+      { from: 'S1-S1-T1', to: 'S2-S2-T1', kind: 'data', reason: 'r' },
+      { from: 'S2-S2-T1', to: 'S1-S1-T1', kind: 'data', reason: 'r' },
+    ]),
   })
 
   assert.equal(result.ok, false)
-  assert.equal(result.stage, 'story-dependencies')
-  assert.deepEqual(result.cycle, ['S1', 'S2', 'S1'])
+  assert.equal(result.stage, 'task-dependencies')
+  assert.match(result.headline, /cycle/)
 })
 
 test('the TRD is authored once per PRD, not once per repo', async () => {

@@ -182,7 +182,8 @@ def validate(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict:
     """Report every defect in a proposed edge set.
 
     The defects are: an edge that is not Epic to Epic, a cycle, a dangling id, a
-    self-edge, an edge onto a closed bead, and — when the proposal is scoped to one Epic —
+    self-edge, an edge onto a closed bead, an edge out of a closed bead, and — when the
+    proposal is scoped to one Epic —
     an edge that does not touch that Epic, or a scope that is not an open Epic.
 
     Args:
@@ -252,6 +253,7 @@ def validate(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict:
         dangling
         or self_edges
         or onto_closed
+        or from_closed
         or cycle
         or not_epic
         or outside

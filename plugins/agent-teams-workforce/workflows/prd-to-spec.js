@@ -1,18 +1,19 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives a request (or an existing PRD) all the way to an emitted, WSJF-scored Epic → Story → Task hierarchy in Beads form. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations, created together (the missing face is minted for a pre-existing PRD), the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Epic, then Stories under its real id, then each Story\'s Tasks, then the dependency edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives an existing, scored Epic and its PRD (or a request its PRD is authored from) all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and marks it done. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
+    { title: 'Epic Lifecycle', detail: 'refuse, with a named reason, unless the Epic is open, scored, every Epic it depends on has finished elaboration, and it is ready or in_progress with no other owner; then mark it in_progress' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
     { title: 'PRD Validation' },
-    { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
+    { title: 'Epic', detail: "adopt the caller's Epic, the bead face of the PRD" },
     { title: 'Architecture', detail: 'runs only when a read-only triage over the PRD finds a genuine technical choice open — a difference from what is deployed and any UI/UX difference are both settled already, and convene no panel' },
     { title: 'Architecture Impact', detail: 'runs only when the ruling created, changed or retired SAD entries, as the entry tags the sad-maintainer reports show — an analyst judges every item citing them: not yet elaborated (nothing to do), elaborated but unbuilt (re-elaborate), already built (this Epic carries a knock-on Task; the built Task is never rewritten)' },
     { title: 'Repo Scoping', detail: 'rule the repo span from the architecture ruling and the PRD — an output of this run, never pre-staged' },
     { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
     { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
-    { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story' },
-    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — quality control on what the decomposer just emitted, judging whether each Task carries what someone needs in order to work it — and report what actually landed. A re-run against an Epic that already has children MATCHES them on the durable `elab_key` written at creation and updates in place: an unstarted Task is updated, a started or built one is never rewritten (its change becomes a follow-up Task), and a Task the decomposition no longer contains is closed with a reason' },
+    { title: 'Task Decomposition', detail: 'once per Story — tasks only, parented to that Story and sized; then the Task dependencies that cross Stories, derived over the whole Task set' },
+    { title: 'Emit Beads', detail: 'WRITE the Epic → Story → Task hierarchy into beads, parent before child, carrying each Task’s WSJF score as bd METADATA rather than only as a note, run the readiness gate on every Task the moment it lands — quality control on what the decomposer just emitted, judging whether each Task carries what someone needs in order to work it — and report what actually landed; then run the WSJF arithmetic for this Epic — its size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and mark it done when every part of it landed. A re-run against an Epic that already has children MATCHES them on the durable `elab_key` written at creation and updates in place: an unstarted Task gets its text, every WSJF component, its contract and its edges refreshed, a started or built one is never rewritten (its change becomes a follow-up Task), and a Task the decomposition no longer contains is closed with a reason' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
   ],
 }
@@ -123,7 +124,14 @@ async function settleAgent(prompt, opts) {
 //                                 // repo-scoping mini during the run. Supply it only to pin a span
 //                                 // deliberately — a re-run, or a test — and it wins for that run
 //                                 // only. It is an argument, never a stored artifact.
-//   epic?: { key, type:'epic', title?, description?, prdRef? }, // the PRD's existing Epic — ADOPTED, and it wins over any Epic prd-creation mints
+//   epic: { id, key?, title?, description?, prdRef? }, // the PRD's existing Epic bead, REQUIRED. It is
+//                                 // adopted, never re-minted, and the run refuses at its start unless
+//                                 // the Epic is open, scored, every Epic it depends on has finished
+//                                 // elaboration, and it is `ready` or `in_progress` with no other owner
+//   owner?: string,               // the caller's owner token for the Epic's `in_progress` state;
+//                                 // absent, the lifecycle check issues one
+//   reclaim?: boolean,            // the caller established that the run owning an `in_progress`
+//                                 // Epic under another token is not live
 //   beadsRepoPath?: string,       // where the beads database lives, if it is not repoPath.
 //                                 // The Emit Beads phase runs bd from here; it is the MAIN
 //                                 // repo path, never a worktree.
@@ -151,9 +159,8 @@ async function settleAgent(prompt, opts) {
 //                                 // see ARTIFACTS for the phase ids and file names.
 //   projectRoot?: string,         // the project root (ATW_PROJECT_ROOT), when `resume` carries no root
 //   artifactScript?: string,      // the artifact recorder (ATW_ARTIFACT_SCRIPT); absent, artifacts are off
-//   pluginRoot?: string,          // absolute path of this plugin's root, handed to task-decomposition,
-//                                 // which runs the WSJF rubric's script under it; absent, Tasks are unscored
 // }
+// This plugin's root is resolved by the run itself (see THE EPIC LIFECYCLE), never supplied.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
@@ -1304,9 +1311,156 @@ function acceptPhase(phaseId, status, extra) {
   log(`ACCEPTED ${JSON.stringify({ phase: phaseId, status, ...(extra || {}) })}`)
 }
 const artReport = { dir: null, epicId: null, filing: {} }
+// Every id that leaves this script lands in command text another agent runs verbatim, so
+// an id that is not shaped like one is REFUSED rather than cleaned. The Epic this run
+// elaborates, the re-elaboration survey, the readiness gate and the backfill heal all hold
+// ids to this rule.
+const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
+// The repository the beads database lives in. This composite authors documents and
+// establishes no worktree, so the run's launch point IS the main repo path — the only
+// place `.beads` may be written from. Same allowlist and same argument as every other
+// interpolated path in this workforce: the value lands in command text another agent runs
+// verbatim AND in the prompt that agent reads, so it is REFUSED rather than sanitized.
+const SAFE_PATH_SHAPE = /^\/[A-Za-z0-9._/-]+$/
+const SAFE_PATH_CHAR = /[A-Za-z0-9._/-]/
+const emitTarget = a.beadsRepoPath || repoPath
+const emitPathFault = (() => {
+  const v = String(emitTarget == null ? '' : emitTarget)
+  if (!v.trim()) return 'no repository path was supplied, and beads cannot be written without one'
+  if (!v.startsWith('/')) return `${JSON.stringify(v)} is not an absolute path`
+  if (!SAFE_PATH_SHAPE.test(v)) {
+    const offending = Array.from(v).find((ch) => !SAFE_PATH_CHAR.test(ch))
+    return `${JSON.stringify(v)} contains ${JSON.stringify(offending)}, which a repository path may not contain`
+  }
+  if (v.includes('//') || (v.length > 1 && v.endsWith('/'))) return `${JSON.stringify(v)} has an empty or trailing path segment`
+  if (v.split('/').includes('..')) return `${JSON.stringify(v)} contains a ".." segment`
+  return null
+})()
+
+// ── THE EPIC LIFECYCLE ─────────────────────────────────────────────────────────
+// This composite owns the Epic's elaboration lifecycle, and every door into it — the
+// headless lane, `/work-bead`, `/start-prd` — passes the same checks here. Both ends are
+// `depscore.py` commands run in one runner session each, because a workflow has no shell:
+//
+//   start   `elaboration-start` refuses, with a named reason, an Epic that is not open,
+//           carries no score, depends on an Epic whose elaboration is not `done`, or is not
+//           `ready` or `in_progress` with no other owner. Otherwise it marks the Epic
+//           `in_progress` under this run's owner token.
+//   finish  `elaboration-finish` runs after the Tasks are written: it fingerprints the Task
+//           sizes this run judged, runs the WSJF arithmetic for this Epic and its Tasks —
+//           the Epic's size becomes the sum of its Tasks' sizes, the Epic is rescored, its
+//           Tasks are rescored — and marks the Epic `done` when every part of it landed.
+//   release `elaboration-release` clears this run's owner token on any other exit, so the
+//           Epic stays `in_progress` and the next run takes it up without a reclaim.
+//
+// The plugin root the commands run under is resolved by the start session itself, from a
+// skill of this plugin, so no caller supplies it.
+const lifecycle = { started: false, owner: null, pluginRoot: null, epic: null, start: null, finish: null, release: null }
+const LIFECYCLE_RUN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: {
+    pluginRoot: { type: ['string', 'null'] },
+    exitCode: { type: 'integer' },
+    output: { type: 'object' },
+  },
+}
+const SAFE_ROOT = /^\/[A-Za-z0-9._/-]+$/
+const safeRoot = (v) => (typeof v === 'string' && SAFE_ROOT.test(v) && !v.split('/').includes('..') ? v.replace(/\/+$/, '') : null)
+const SAFE_TOKEN = /^[A-Za-z0-9._:-]+$/
+const shellq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+/** Run one `depscore.py` lifecycle command in a runner session and return what it printed. */
+async function runLifecycle(label, commandArgs, phaseName) {
+  const root = lifecycle.pluginRoot
+  const out = await settleAgent(
+    `Run exactly this one shell command, once, and change nothing else:
+
+python3 ${shellq(`${root}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${commandArgs}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+    { label, phase: phaseName, effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
+  )
+  if (!out) return { error: `the ${label} runner returned no result` }
+  if (out.exitCode !== 0 || !out.output || out.output.error) {
+    return { error: (out.output && out.output.error) || `depscore.py exited ${out.exitCode}`, output: out.output || null }
+  }
+  return out.output
+}
 let result
 try {
   result = await (async () => {
+enterPhase('Epic Lifecycle')
+const epicBeadId = a.epic && typeof a.epic === 'object' ? String(a.epic.id || a.epic.beadId || '').trim() : ''
+if (!SAFE_BEAD_ID.test(epicBeadId)) {
+  return handback(
+    false,
+    'epic-lifecycle',
+    'refused: no-epic — prd-to-spec elaborates an existing Epic, and args.epic.id names none. Create the Epic, assess its dependencies and score it first'
+  )
+}
+if (emitPathFault) {
+  return handback(false, 'epic-lifecycle', `refused: no-tracker — ${emitPathFault}`)
+}
+const ownerArg = typeof a.owner === 'string' && SAFE_TOKEN.test(a.owner) ? a.owner : null
+const startArgs = `elaboration-start --epic ${epicBeadId}${ownerArg ? ` --owner ${ownerArg}` : ''}${a.reclaim === true ? ' --reclaim' : ''}`
+const started = await settleAgent(
+  `Two steps, in order, and change nothing else.
+
+1. Find this plugin's root. Load the skill \`agent-teams-workforce:beads-contract\` with the Skill tool: the command it shows names its CLI by absolute path, \`<root>/skills/beads-contract/scripts/beads-contract.py\`. The root is that path with \`/skills/beads-contract/scripts/beads-contract.py\` removed. Confirm it with \`test -f <root>/scripts/portfolio/depscore.py\`, and return it as \`pluginRoot\` — or null, with exitCode 127 and {"error": "<what you found>"} as \`output\`, when the file is not there.
+
+2. Run exactly this one shell command, once, with <root> replaced by that root:
+
+python3 '<root>/scripts/portfolio/depscore.py' -C ${shellq(emitTarget)} ${startArgs}
+
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+  { label: 'epic:start', phase: 'Epic Lifecycle', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
+)
+lifecycle.start = started ? started.output || null : null
+lifecycle.pluginRoot = started ? safeRoot(started.pluginRoot) : null
+if (!started) {
+  const deaths = dispatchDeaths('Epic Lifecycle')
+  return {
+    ...handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} returned no result, so the run did not start`),
+    ...(deaths.length ? { stage: DISPATCH_FAILED_STAGE, dispatchFailed: true, dispatchFailures: deaths } : {}),
+  }
+}
+if (!lifecycle.pluginRoot) {
+  return handback(
+    false,
+    'epic-lifecycle',
+    `this plugin's root could not be resolved, so the lifecycle and scoring scripts cannot run: ${(started.output && started.output.error) || 'no root was returned'}`
+  )
+}
+const startOut = started.output || {}
+if (started.exitCode !== 0 || startOut.error) {
+  return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error || `depscore.py exited ${started.exitCode}`}`)
+}
+if (startOut.ok !== true) {
+  const refusal = startOut.refusal || {}
+  return {
+    ...handback(false, 'epic-lifecycle', `refused: ${refusal.code || 'unknown'} — ${refusal.reason || 'the Epic may not be elaborated now'}`),
+    refusal,
+  }
+}
+const startEpic = startOut.epic || {}
+if (typeof startOut.owner !== 'string' || !SAFE_TOKEN.test(startOut.owner) || typeof startEpic.userBusinessValue !== 'number' || typeof startEpic.timeCriticality !== 'number') {
+  return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} returned no owner token or no Epic score`)
+}
+lifecycle.started = true
+lifecycle.owner = startOut.owner
+lifecycle.epic = {
+  id: epicBeadId,
+  userBusinessValue: startEpic.userBusinessValue,
+  timeCriticality: startEpic.timeCriticality,
+  ...(typeof startEpic.confidence === 'number' ? { confidence: startEpic.confidence } : {}),
+}
+recRuled(
+  `Epic ${epicBeadId} may be elaborated: open, scored (UBV ${startEpic.userBusinessValue}, TC ${startEpic.timeCriticality}), every Epic it depends on elaborated, and ${startOut.previousState}. Marked in_progress under owner ${startOut.owner}.`,
+  { status: 'done' }
+)
+log(`Epic ${epicBeadId}: elaboration started (was ${startOut.previousState}); plugin root ${lifecycle.pluginRoot}`)
+
 enterPhase('PRD Creation')
 let creation = null
 let prd = a.prd || null
@@ -2059,61 +2213,23 @@ if (!validation.ok) return partial('prd-validation', validation)
 const validatedPrd = (validation.artifact && validation.artifact.validatedPrd) || prd
 produced.validatedPrd = validatedPrd
 
-// ── Epic (adopt / mint) ─────────────────────────────────────────────────────────
-// A PRD and its Epic are ONE work item in two representations — the document and
-// the bead — so past this point both faces must exist. Either the caller already
-// holds the Epic, or prd-creation minted the pair together, or only the PRD exists
-// and its bead face is MINTED here from the validated PRD. Minting completes the
-// representation; it derives nothing the PRD does not already state.
-//
-// A CALLER-SUPPLIED EPIC WINS, and that ordering is load-bearing. This used to test
-// prd-creation's Epic first, so a caller that passed an existing Epic *and* a raw
-// request got the freshly minted one and its own was silently discarded — two Epic
-// beads for one PRD, which is precisely the pairing rule breaking at the point it
-// most needs to hold. The Epic-without-a-PRD entry hits exactly that combination:
-// it passes the existing Epic and supplies the bead's content as the request so the
-// PRD document gets authored.
+// ── Epic (adopt) ─────────────────────────────────────────────────────────────────
+// A PRD and its Epic are ONE work item in two representations — the document and the
+// bead. The Epic is the caller's, established and scored before the run: the lifecycle
+// phase refused the run unless it is. It is adopted as it stands; an Epic prd-creation
+// returns alongside a PRD it authored is not written, because this Epic already exists.
 enterPhase('Epic')
-let epic
-let epicPath
-if (a.epic) {
-  // A caller-supplied Epic is adopted rather than re-minted, but it still has to
-  // leave here as a well-formed epic bead spec — a caller that passed only a key
-  // and a title would otherwise put an untyped object into the hierarchy.
-  epic = {
-    key: a.epic.key || a.epic.id || 'E1',
-    ...a.epic,
-    type: 'epic',
-  }
-  epicPath = 'epic-supplied'
-  if (creation && creation.epic) {
-    log('Epic supplied by the caller AND minted by prd-creation — adopting the caller\'s and discarding the mint; one PRD has exactly one Epic')
-  }
-} else if (creation && creation.epic) {
-  epic = creation.epic
-  epicPath = 'epic-created'
-} else {
-  epic = {
-    key: 'E1',
-    type: 'epic',
-    title: validatedPrd.title || prd.title || prd.id || 'Untitled Epic',
-    description:
-      (validation.artifact && validation.artifact.summary) ||
-      validatedPrd.body ||
-      prd.body ||
-      '',
-    prdRef: prd.path || prd.id || prd.title || null,
-  }
-  epicPath = 'epic-minted'
+const epic = {
+  key: a.epic.key || epicBeadId,
+  ...a.epic,
+  id: epicBeadId,
+  type: 'epic',
 }
+const epicPath = 'epic-supplied'
 produced.epic = epic
 produced.epicPath = epicPath
-recRuled(`Epic ${epic.key || '(no key)'} established via ${epicPath}.`, { status: 'done' })
-log(
-  `Epic ${epic.key || '(no key)'} via ${epicPath}${
-    epicPath === 'epic-minted' ? ` — bead face minted for existing PRD ${epic.prdRef || '(unreferenced)'}` : ''
-  }`
-)
+recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
+log(`Epic ${epicBeadId} adopted`)
 
 // ── Architecture (Gate 2 — constitutional) ──────────────────────────────────────
 // Consumes the validated PRD; produces the ruled decision + arc42 SAD source feed.
@@ -2167,9 +2283,6 @@ const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk'
 let archNeeded = true
 let archTriage = null
 let architecture = null
-// The Epic bead that owns the architecture and TRD artifacts, when it already exists. A
-// minted Epic has no id until Emit Beads writes it, and its artifact paths are recorded there.
-const epicBeadId = epic && (epic.id || epic.beadId) ? String(epic.id || epic.beadId) : null
 const ARCH_INPUTS = [...PRD_INPUTS, artPath('prd-validation.json')].filter(Boolean)
 // ── A RESTART INSIDE THE ARCHITECTURE PHASE ──────────────────────────────────────
 //
@@ -3811,88 +3924,6 @@ if (!specPairs.length) {
   })
 }
 
-// ── Story dependencies ───────────────────────────────────────────────────────────
-// Dependencies live at the STORY level, and only there.
-//
-// An Epic gets NO dependency graph. It is a container for one PRD's worth of work,
-// so an edge between Epics would order whole PRDs against each other — a roadmap
-// judgement, not a build constraint, and not one this pipeline has the standing to
-// make. A Story is the right grain: it is one repo's deployable slice, so "this
-// repo's slice must land before that one" is concrete and checkable. Tasks keep a
-// narrower ordering inside their own Story, built by task-decomposition.
-//
-// A single Story has nothing to depend on, so the mapper only runs from two up.
-const depStories = specPairs.map((p) => p.story).filter(Boolean)
-let storyDependencies = { edges: [], buildOrder: depStories.map((s) => s.key), acyclic: true }
-if (depStories.length > 1) {
-  const mapped = await settleAgent(
-    `Map the dependencies BETWEEN the Stories below, then derive a valid topological build order. Each Story is one repo's deployable slice of the same Epic. Reference Stories by their "key". An edge "from -> to" means "from must land before to".
-
-Add an edge ONLY where one Story genuinely cannot land until another has — an API it consumes that does not exist yet, an event contract its producer must publish first, a shared table or IAM grant the other side provisions. Sharing a domain, a vocabulary, or the same Epic is NOT a dependency. When in doubt leave the edge out: a false edge serializes work that could have run in parallel, and this graph is the only thing deciding what runs concurrently.
-
-The graph MUST be acyclic. If the only honest reading of these Stories implies a cycle, set acyclic=false, name the cycle, and leave buildOrder empty rather than inventing an order.
-
-Do NOT add, remove, or rescope Stories. Do NOT write code.
-
-Epic: ${epic.key} — ${epic.title}
-Stories:
-${depStories.map((s) => `- ${s.key} [${s.repoPath}]: ${s.title}${s.description ? ` — ${s.description}` : ''}`).join('\n')}`,
-    {
-      label: 'sequence:story-dag',
-      effort: 'low',
-      phase: 'Spec Authoring',
-      agentType: 'agent-teams-workforce:task-dependency-mapper',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['edges', 'buildOrder', 'acyclic'],
-        properties: {
-          edges: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['from', 'to'],
-              properties: { from: { type: 'string' }, to: { type: 'string' } },
-            },
-          },
-          buildOrder: { type: 'array', items: { type: 'string' } },
-          acyclic: { type: 'boolean' },
-          cycle: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    }
-  )
-  if (mapped && mapped.acyclic === false) {
-    // The cycle itself stays: it is a short list of Story keys and it is the whole finding.
-    return {
-      ...handback(
-        false,
-        'story-dependencies',
-        `the Story dependency graph is not acyclic — cycle: ${((mapped && mapped.cycle) || []).join(' -> ') || '(not reported)'}`,
-        { cycle: (mapped && mapped.cycle) || [], prd: validatedPrd, epic, stories: depStories }
-      ),
-      cycle: (mapped && mapped.cycle) || [],
-    }
-  }
-  if (mapped) storyDependencies = { ...mapped, cycle: mapped.cycle || [] }
-}
-
-// Fold the edges onto the Stories themselves so a caller emitting with bd has the
-// dependency in hand without re-deriving it from a side channel.
-const storyOrderIndex = {}
-;(storyDependencies.buildOrder || []).forEach((k, i) => {
-  storyOrderIndex[k] = i
-})
-for (const s of depStories) {
-  s.dependsOn = (storyDependencies.edges || []).filter((e) => e.to === s.key).map((e) => e.from)
-  s.buildOrderIndex = s.key in storyOrderIndex ? storyOrderIndex[s.key] : null
-}
-log(
-  `Story dependencies: ${storyDependencies.edges.length} edge(s) across ${depStories.length} story/stories. ` +
-    `The Epic carries none by design.`
-)
-
 // ── Task Decomposition (Gate 4 — once per Story) ─────────────────────────────────
 // Consumes each repo's specs; produces a sized, sequenced (DAG), WSJF-scored task
 // set parented to that repo's Story. Decomposition yields TASKS ONLY — the Epic
@@ -4277,8 +4308,11 @@ function decompArgs(pair, feedback) {
     // without anybody reading a file date or diffing a document.
     decisionIds: (pair.spec && Array.isArray(pair.spec.decisionIds) ? pair.spec.decisionIds : []),
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
+    // The Epic's judged value and criticality, which every Task inherits, as the lifecycle
+    // check read them off the Epic bead.
+    epic: lifecycle.epic,
     maxScoringPasses: 2,
-    ...(typeof a.pluginRoot === 'string' ? { pluginRoot: a.pluginRoot } : {}),
+    pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor(`tasks:${slug}`, [...specDocs, artPath(`story-${slug}.json`)], { slug }),
   }
 }
@@ -4346,8 +4380,8 @@ async function decomposeStory(pair) {
     // which is cheaper than re-running the phase.
     // Consumed by: the acyclic DAG is checked mechanically — task-decomposition.js rejects
     // a cyclic graph outright and prd-to-spec.js does the same for the Story graph — and it
-    // is what `bd ready` walks to release work. The WSJF score is written into the emitted
-    // bead's notes and onto the bead as the `wsjf` metadata attribute at the create below;
+    // is what `bd ready` walks to release work. Every WSJF component is written onto the
+    // emitted bead as metadata at the create below, and the Epic's finish rescores it;
     // skills/task-ready neither computes nor reports it. Beads format is consumed by the
     // bead-writer's `bd` calls, which fail without it.
     criteria: [
@@ -4511,6 +4545,169 @@ if (!decompositions.length) {
   })
 }
 
+// ── Cross-Story Task dependencies ────────────────────────────────────────────────
+// Build dependencies are Task-to-Task edges and nothing else: a Story only groups Tasks,
+// and an Epic's dependencies order elaboration, not the build. Each Story's decomposition
+// drew the edges inside it; the edges BETWEEN Stories — a Task in one repository that
+// cannot be built before a Task in another — are derived here, once every Story is
+// decomposed, by task-dependency-mapper over the whole Task set. They are written as
+// `blocks` edges like every other Task edge, so a Task becomes eligible exactly when the
+// Tasks it depends on are built, and the WSJF arithmetic after the write counts them in
+// each Task's RR-OE.
+//
+// The script checks every edge it is handed: both ends must be Tasks of this run in
+// different Stories. An edge failing that is reported and not applied. A cycle over the
+// whole Task graph stops the run, because no build order exists for it.
+const storyOfTask = new Map(tasks.map((t) => [t.key, t.parentStoryId]))
+const taskStories = new Set(tasks.map((t) => t.parentStoryId))
+const crossStory = { ran: false, reason: null, edges: [], rejected: [] }
+/** One cycle over `{from, to}` edges as a key path, or null when there is none. */
+function taskCycle(edgeList) {
+  const next = new Map()
+  for (const e of edgeList) {
+    if (!next.has(e.from)) next.set(e.from, [])
+    next.get(e.from).push(e.to)
+  }
+  const state = new Map()
+  const path = []
+  const visit = (k) => {
+    state.set(k, 1)
+    path.push(k)
+    for (const n of next.get(k) || []) {
+      if (state.get(n) === 1) return [...path.slice(path.indexOf(n)), n]
+      if (!state.has(n)) {
+        const found = visit(n)
+        if (found) return found
+      }
+    }
+    path.pop()
+    state.set(k, 2)
+    return null
+  }
+  for (const k of next.keys()) {
+    if (!state.has(k)) {
+      const found = visit(k)
+      if (found) return found
+    }
+  }
+  return null
+}
+if (taskStories.size < 2) {
+  crossStory.reason = 'the Tasks sit in one Story, so no dependency crosses Stories'
+} else {
+  crossStory.ran = true
+  const trimmed = (v, n) => {
+    const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim()
+    return t.length > n ? `${t.slice(0, n)}…` : t
+  }
+  const byStory = new Map()
+  for (const t of tasks) {
+    if (!byStory.has(t.parentStoryId)) byStory.set(t.parentStoryId, [])
+    byStory.get(t.parentStoryId).push(t)
+  }
+  const storyRepo = new Map(stories.flatMap((st) => [[st.key, st.repoPath], [st.id, st.repoPath]]))
+  const listing = Array.from(byStory, ([storyKey, list]) =>
+    `Story ${storyKey} [${storyRepo.get(storyKey) || 'repository not recorded'}]\n` +
+    list
+      .map(
+        (t) =>
+          `- ${t.key}: ${trimmed(t.title, 160)}\n    ${trimmed(t.description, 600)}\n` +
+          `    spec sections: ${(t.specSections || []).join('; ') || '(none)'} | requirements: ${(t.requirementIds || []).join(', ') || '(none)'} | surfaces: ${Array.isArray(t.surfaces) ? t.surfaces.join(', ') || '(none)' : 'unknown'}` +
+          `${(t.dependsOn || []).length ? `\n    already depends on (same Story): ${t.dependsOn.join(', ')}` : ''}`
+      )
+      .join('\n')
+  ).join('\n\n')
+  const mapped = await settleAgent(
+    `Derive the build dependencies BETWEEN the Stories of one Epic, as edges between their Tasks. Each Story is one repository's slice of Epic ${epic.id} — ${epic.title || ''}; every Task below is already decomposed, and the edges inside each Story are already drawn and listed. Return ONLY edges whose two ends are Tasks in DIFFERENT Stories. Reference Tasks by their key exactly as given. An edge "from -> to" means "from must be built before to".
+
+Add an edge ONLY where a Task genuinely cannot be built until a Task in another Story is built: an API it consumes that the other Task provides, an event contract whose producer must publish first, a table, bucket or IAM grant the other repository provisions. Sharing a domain, a vocabulary or this Epic is NOT a dependency. When in doubt leave the edge out: a false edge serializes work that could run in parallel. Type each edge as data, contract, infrastructure or event-flow and justify it in one line from the two Tasks' contracts.
+
+The whole Task graph — the edges already drawn plus yours — MUST be acyclic. If the only honest reading implies a cycle, set acyclic=false, name the cycle as Task keys, and return no edges.
+
+Do NOT add, remove, split or rescope Tasks. Do NOT write code.
+
+${listing}`,
+    {
+      label: 'sequence:cross-story-tasks',
+      effort: 'medium',
+      phase: 'Task Decomposition',
+      agentType: 'agent-teams-workforce:task-dependency-mapper',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['edges', 'acyclic'],
+        properties: {
+          edges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['from', 'to', 'kind', 'reason'],
+              properties: {
+                from: { type: 'string' },
+                to: { type: 'string' },
+                kind: { type: 'string', enum: ['data', 'contract', 'infrastructure', 'event-flow'] },
+                reason: { type: 'string' },
+              },
+            },
+          },
+          acyclic: { type: 'boolean' },
+          cycle: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    }
+  )
+  if (!mapped) {
+    return partial('task-dependencies', {
+      reason: 'the cross-Story Task dependencies could not be derived — the mapper returned nothing, and Tasks written without them could be built out of order',
+      dispatchFailed: dispatchDeaths('Task Decomposition').length > 0,
+      dispatchFailures: dispatchDeaths('Task Decomposition'),
+    })
+  }
+  if (mapped.acyclic === false) {
+    return partial('task-dependencies', {
+      reason: `the Task dependency graph across Stories is not acyclic — cycle: ${(mapped.cycle || []).join(' -> ') || '(not reported)'}`,
+    })
+  }
+  const seenEdge = new Set()
+  for (const e of Array.isArray(mapped.edges) ? mapped.edges : []) {
+    const from = e && typeof e.from === 'string' ? e.from : ''
+    const to = e && typeof e.to === 'string' ? e.to : ''
+    const why = !storyOfTask.has(from) || !storyOfTask.has(to)
+      ? 'an end is not a Task of this run'
+      : storyOfTask.get(from) === storyOfTask.get(to)
+        ? 'both ends are in the same Story'
+        : seenEdge.has(`${from}->${to}`)
+          ? 'a duplicate'
+          : null
+    if (why) {
+      crossStory.rejected.push({ from, to, reason: why })
+      continue
+    }
+    seenEdge.add(`${from}->${to}`)
+    crossStory.edges.push({ from, to, kind: e.kind, reason: e.reason })
+  }
+  const allEdges = [
+    ...tasks.flatMap((t) => (t.dependsOn || []).map((d) => ({ from: d, to: t.key }))),
+    ...crossStory.edges,
+  ]
+  const cycle = taskCycle(allEdges)
+  if (cycle) {
+    return partial('task-dependencies', {
+      reason: `the cross-Story edges close a cycle over the Task graph — ${cycle.join(' -> ')}`,
+    })
+  }
+  for (const e of crossStory.edges) {
+    const t = tasks.find((x) => x.key === e.to)
+    t.dependsOn = [...(t.dependsOn || []), e.from]
+  }
+  log(
+    `Cross-Story Task dependencies: ${crossStory.edges.length} edge(s) across ${taskStories.size} Stories` +
+      `${crossStory.rejected.length ? `; ${crossStory.rejected.length} proposed edge(s) not applied — ${crossStory.rejected.map((r) => `${r.from}->${r.to} (${r.reason})`).join(', ')}` : ''}.`
+  )
+}
+produced.crossStoryDependencies = crossStory
+
 // ── Emit Beads ───────────────────────────────────────────────────────────────────
 // The hierarchy is WRITTEN HERE, by this run, and what comes back is what actually
 // landed.
@@ -4568,6 +4765,7 @@ if (architectureImpact && architectureImpact.knockOn.length && stories.length) {
       testStrategy: null,
       dependsOn: [],
       wsjf: null,
+      wsjfMetadata: null,
       buildOrderIndex: null,
       supersedes: k.follows,
     })
@@ -4575,38 +4773,89 @@ if (architectureImpact && architectureImpact.knockOn.length && stories.length) {
   log(`Architecture impact added ${n} knock-on Task(s) to this Epic for work that was already built.`)
 }
 
+// ── Sizing the knock-on Tasks ────────────────────────────────────────────────────
+// A knock-on Task is scored like every other Task: its size is judged here, under the
+// same rubric, and the WSJF arithmetic after the write inherits its value from this Epic
+// and counts its RR-OE. Only the size is judged; everything else is computed.
+const knockOnTasks = tasks.filter((t) => typeof t.key === 'string' && t.key.startsWith('IMPACT-'))
+const knockOnSizing = { ran: false, sized: 0, unsized: [] }
+if (knockOnTasks.length) {
+  knockOnSizing.ran = true
+  const sized = await settleAgent(
+    `Size each task below under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric at Task level (${lifecycle.pluginRoot}/skills/wsjf/SKILL.md): the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it on the Fibonacci scale (1, 2, 3, 5, 8, 13); compare with the elaborated Epics in the tracker and, while there are none, judge knowledge and uncertainty from the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. A task that would size above 13 should have been split: say so in your notes and size it at 13. Do NOT assign value, time criticality or risk reduction: they are inherited from the Epic and computed from the dependency graph. Size every key exactly once with a one-line rationale naming what it was compared with.
+
+Tasks:
+${knockOnTasks.map((t) => `- ${t.key} [${t.repoPath || 'repository not recorded'}]: ${t.title} — ${t.description}`).join('\n')}`,
+    {
+      label: 'wsjf:size-knock-on',
+      effort: 'low',
+      phase: 'Task Decomposition',
+      agentType: 'agent-teams-workforce:wsjf-scorer',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['scores'],
+        properties: {
+          scores: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['key', 'jobSize', 'sizeLow', 'sizeHigh', 'sizeConfidence', 'rationale'],
+              properties: {
+                key: { type: 'string' },
+                jobSize: { type: 'number' },
+                sizeLow: { type: 'number' },
+                sizeHigh: { type: 'number' },
+                sizeConfidence: { type: 'integer' },
+                rationale: { type: 'string' },
+              },
+            },
+          },
+          notes: { type: 'string' },
+        },
+      },
+    }
+  )
+  const byKey = new Map((sized && Array.isArray(sized.scores) ? sized.scores : []).map((x) => [x && x.key, x]))
+  const posInt = (v) => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null)
+  for (const t of knockOnTasks) {
+    const j = byKey.get(t.key)
+    const size = posInt(j && j.jobSize)
+    const low = posInt(j && j.sizeLow)
+    const high = posInt(j && j.sizeHigh)
+    const conf = posInt(j && j.sizeConfidence)
+    if (size === null || low === null || high === null || conf === null || conf > 100 || !(low <= size && size <= high)) {
+      knockOnSizing.unsized.push(t.key)
+      continue
+    }
+    t.wsjfMetadata = {
+      wsjf_size_estimate: String(size),
+      wsjf_size_low: String(low),
+      wsjf_size_high: String(high),
+      wsjf_size_confidence: String(conf),
+    }
+    knockOnSizing.sized += 1
+  }
+  log(
+    `Knock-on sizing: ${knockOnSizing.sized}/${knockOnTasks.length} sized` +
+      `${knockOnSizing.unsized.length ? `; NOT sized, and so written unscored: ${knockOnSizing.unsized.join(', ')}` : ''}.`
+  )
+}
+produced.knockOnSizing = knockOnSizing
+
 enterPhase('Emit Beads')
 const beadSet = tasks
-const hierarchy = { epic, stories, tasks, storyDependencies }
+const hierarchy = { epic, stories, tasks }
+const taskEdgeCount = tasks.reduce((n, t) => n + (t.dependsOn || []).length, 0)
 recRuled(
-  `Hierarchy ready to write into beads: 1 Epic, ${stories.length} Story/Stories, ${tasks.length} Task(s), ${storyDependencies.edges.length} Story dependency edge(s).`,
+  `Hierarchy ready to write into beads: 1 Epic, ${stories.length} Story/Stories, ${tasks.length} Task(s), ${taskEdgeCount} Task dependency edge(s), ${crossStory.edges.length} of them across Stories.`,
   { status: 'running' }
 )
 log(
-  `Hierarchy ready to write: 1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and WSJF-scored, ` +
-    `${storyDependencies.edges.length} story dependency edge(s), no epic-level graph.`
+  `Hierarchy ready to write: 1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and sized, ` +
+    `${taskEdgeCount} Task dependency edge(s), ${crossStory.edges.length} of them across Stories.`
 )
-
-// The repository the beads database lives in. This composite authors documents and
-// establishes no worktree, so the run's launch point IS the main repo path — the only
-// place `.beads` may be written from. Same allowlist and same argument as every other
-// interpolated path in this workforce: the value lands in command text another agent runs
-// verbatim AND in the prompt that agent reads, so it is REFUSED rather than sanitized.
-const SAFE_PATH_SHAPE = /^\/[A-Za-z0-9._/-]+$/
-const SAFE_PATH_CHAR = /[A-Za-z0-9._/-]/
-const emitTarget = a.beadsRepoPath || repoPath
-const emitPathFault = (() => {
-  const v = String(emitTarget == null ? '' : emitTarget)
-  if (!v.trim()) return 'no repository path was supplied, and beads cannot be written without one'
-  if (!v.startsWith('/')) return `${JSON.stringify(v)} is not an absolute path`
-  if (!SAFE_PATH_SHAPE.test(v)) {
-    const offending = Array.from(v).find((ch) => !SAFE_PATH_CHAR.test(ch))
-    return `${JSON.stringify(v)} contains ${JSON.stringify(offending)}, which a repository path may not contain`
-  }
-  if (v.includes('//') || (v.length > 1 && v.endsWith('/'))) return `${JSON.stringify(v)} has an empty or trailing path segment`
-  if (v.split('/').includes('..')) return `${JSON.stringify(v)} contains a ".." segment`
-  return null
-})()
 
 // ── What emission reports, and why it is counted this way ─────────────────────
 // A caller has to be able to tell three outcomes apart without opening anything:
@@ -4716,6 +4965,9 @@ const WRITE_SCHEMA = {
                 // key existed can still be matched by. Null when the bead carries neither.
                 elabKey: { type: ['string', 'null'] },
                 repoPath: { type: ['string', 'null'] },
+                // The ids this bead depends on through `blocks` edges. Re-elaboration
+                // compares them with the edges the current decomposition draws.
+                blockedBy: { type: ['array', 'null'], items: { type: 'string' } },
               },
             },
           },
@@ -4878,59 +5130,43 @@ function taskContractBlock(t) {
   ].join('\n')
 }
 
-// Every id that leaves this script lands in command text another agent runs verbatim, so
-// an id that is not shaped like one is REFUSED rather than cleaned. Declared here because
-// the re-elaboration survey below is the first thing that hands ids back out; the readiness
-// gate and the backfill heal further down hold it to the same rule.
-const SAFE_BEAD_ID = /^[A-Za-z][A-Za-z0-9_]*-[A-Za-z0-9]+(?:\.[0-9]+)*$/
 
 const skipAll = (level, keys, reason) => {
   for (const key of keys) emission.skipped.push({ level, key, reason })
 }
 const asText = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
 
-// 1) THE EPIC. Adopted when it is already a bead, written when it is only a spec, and
-//    nothing below it is attempted if neither holds.
+// Every metadata key a Task is written with, at its create and when re-elaboration refreshes
+// it: its durable identity and repository, every WSJF component its decomposition computed
+// under the keys `wsjf.py` names, the decisions it builds on, the Task it follows, and its
+// build contract. A Task that could not be scored carries no score key at all.
+const WSJF_SIZE_KEYS = ['wsjf_size_estimate', 'wsjf_size_low', 'wsjf_size_high', 'wsjf_size_confidence']
+const judgedSize = (t) => !!(t.wsjfMetadata && WSJF_SIZE_KEYS.every((k) => hasText(String(t.wsjfMetadata[k] == null ? '' : t.wsjfMetadata[k]))))
+function taskMetadata(t) {
+  const m = { elab_key: taskElabKey(t) }
+  if (t.repoPath) m.repoPath = String(t.repoPath)
+  if (t.wsjfMetadata && typeof t.wsjfMetadata === 'object') {
+    for (const [k, v] of Object.entries(t.wsjfMetadata)) if (/^wsjf(_[a-z_]+)?$/.test(k) && v != null) m[k] = String(v)
+  }
+  // The decisions this Task builds on, and — for a follow-up minted because the Task it
+  // replaces was already built — the Task it follows. Both are fields rather than prose:
+  // the impact pass reads them, and a person reading the notes line would not.
+  const td = Array.isArray(t.decisionIds) ? t.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
+  if (td.length) m.decision_ids = JSON.stringify([...new Set(td)])
+  if (typeof t.supersedes === 'string' && SAFE_BEAD_ID.test(t.supersedes)) m.elab_follows = t.supersedes
+  return Object.assign(m, taskContractMetadata(t))
+}
+
+// 1) THE EPIC is the caller's existing bead, adopted as it stands.
 let epicId = null
-// Was this Epic already a bead before the run started? A freshly minted Epic cannot have
-// children, so the backfill heal below is skipped outright for one — that is what keeps
-// the repair free on the runs where there is nothing to repair.
-let epicAdopted = false
 if (emitPathFault) {
   emission.reason = `nothing was written — ${emitPathFault}`
   skipAll('epic', [epic.key], emission.reason)
   skipAll('story', stories.map((s) => s.key), emission.reason)
   skipAll('task', tasks.map((t) => t.key), emission.reason)
 } else {
-  const epicExistingId = epic.id || epic.beadId || null
-  if (epicExistingId) {
-    epicId = String(epicExistingId)
-    epicAdopted = true
-    emission.adopted += 1
-  } else {
-    const got = await writeWave('epic', [
-      {
-        key: epic.key,
-        type: 'epic',
-        title: asText(epic.title) || String(epic.key),
-        description: asText(epic.description),
-        parentId: null,
-        acceptanceCriteria: null,
-        notes: epic.prdRef ? `prdRef: ${epic.prdRef}` : null,
-        labels: null,
-        // This Epic did not exist while its architecture and TRD were authored, so their
-        // makers could not record them on it. The paths are recorded at its create instead.
-        metadata: (() => {
-          const m = artifactMetadata([
-            ...(architecture && !architecture.skipped ? [['architecture_decision', 'architecture-decision.md']] : []),
-            ['trd', 'trd.md'],
-          ])
-          return Object.keys(m).length ? m : null
-        })(),
-      },
-    ])
-    epicId = got.get(epic.key) || null
-  }
+  epicId = epicBeadId
+  emission.adopted += 1
 }
 
 
@@ -4973,6 +5209,7 @@ const reelab = {
   tasksClosed: 0,
   tasksKnockOn: 0,
   tasksLeftAlone: 0,
+  edgesRemoved: 0,
   failed: [],
 }
 
@@ -4998,7 +5235,6 @@ const existingByParent = new Map() // parent id -> node[]
 let epicChildrenNodes = null
 if (emitPathFault) reelab.reason = 'nothing was surveyed — the beads path was refused'
 else if (!epicId) reelab.reason = 'no Epic id — there was nothing to survey under'
-else if (!epicAdopted) reelab.reason = 'the Epic was minted by this run, so it has no children to update'
 else {
   reelab.ran = true
   let survey = null
@@ -5040,6 +5276,7 @@ else {
       elabKey: n && typeof n.elabKey === 'string' && n.elabKey.trim() ? n.elabKey.trim() : null,
       repoPath: n && typeof n.repoPath === 'string' && n.repoPath.trim() ? n.repoPath.trim() : null,
       labels: (Array.isArray(n && n.labels) ? n.labels : []).map((l) => String(l || '').toLowerCase()),
+      blockedBy: (Array.isArray(n && n.blockedBy) ? n.blockedBy : []).map((x) => String(x || '').trim()).filter((x) => SAFE_BEAD_ID.test(x)),
     }
     if (node.parent) {
       if (!existingByParent.has(node.parent)) existingByParent.set(node.parent, [])
@@ -5103,6 +5340,8 @@ if (reelab.ran) {
 // before the key existed. What happens next is decided by the Task's STATUS and by nothing
 // else — see the rule at the head of this block.
 const reelabKnockOn = []
+// The matched Tasks still open: refreshed in place, edges included.
+const reelabOpenTasks = []
 if (reelab.ran) {
   const matchedIds = new Set()
   for (const t of tasks) {
@@ -5122,12 +5361,20 @@ if (reelab.ran) {
     reelab.tasksMatched += 1
     const wanted = normText([asText(t.description), taskContractBlock(t)].filter(Boolean).join('\n\n'))
     if (match.status === 'open') {
-      // Nothing has been built against it, so the current decomposition simply replaces it.
+      // Nothing has been built against it, so the current decomposition simply replaces it:
+      // its text, every WSJF component, its contract and — once every id is known, below —
+      // its edges.
       t.id = match.id
       reelab.tasksUpdated += 1
-      if (normText(t.title) !== match.title || wanted !== match.description) {
-        reelabMutations.push({ key: `update:${match.id}`, op: 'update', id: match.id, title: asText(t.title) || String(t.key), description: wanted })
-      }
+      reelabOpenTasks.push({ task: t, match })
+      reelabMutations.push({
+        key: `update:${match.id}`,
+        op: 'update',
+        id: match.id,
+        title: asText(t.title) || String(t.key),
+        description: wanted,
+        metadata: taskMetadata(t),
+      })
       continue
     }
     // Started or built: its text is what somebody worked from, and it is not rewritten.
@@ -5180,7 +5427,7 @@ if (reelab.ran) {
   )
 }
 
-// 2) THE STORIES, in build order, each under the Epic's REAL id.
+// 2) THE STORIES, each under the Epic's REAL id.
 const storyIds = new Map()
 if (!emitPathFault) {
   if (!epicId) {
@@ -5195,11 +5442,6 @@ if (!emitPathFault) {
       }
       pendingStories.push(s)
     }
-    pendingStories.sort((x, y) => {
-      const xi = x.buildOrderIndex == null ? Infinity : x.buildOrderIndex
-      const yi = y.buildOrderIndex == null ? Infinity : y.buildOrderIndex
-      return xi - yi
-    })
     const got = await writeWave(
       'story',
       pendingStories.map((s) => ({
@@ -5288,28 +5530,9 @@ if (!emitPathFault && epicId) {
         .filter(Boolean)
         .join('\n') || null,
       labels: null,
-      // THE SCORE IS A FIELD, NOT PROSE. The notes line above is for a person; this is
-      // the one a program reads. `ordering.rank` pulls `wsjf` out of the bead's METADATA
-      // — `beadsio.wsjf_of` — and a Task carrying its score only in a prose notes line
-      // falls back to a legacy pattern match or reads as unscored, in which case the
-      // next-work provider cannot rank it and drops it from the sorted list. Every Task
-      // this composite has ever minted was in exactly that state. The score is decided
-      // here, at decomposition, so it is written here, at the create; nothing downstream
-      // computes it for us.
-      // The CONTRACT is metadata too, for the same reason: the build lane reads these keys
-      // off the Task (decision 6 — the producer that creates the Task puts the paths on it).
-      metadata: (() => {
-        const m = { elab_key: taskElabKey(t) }
-        if (t.repoPath) m.repoPath = String(t.repoPath)
-        if (t.wsjf != null) m.wsjf = String(t.wsjf)
-        // The decisions this Task builds on, and — for a follow-up minted because the Task it
-        // replaces was already built — the Task it follows. Both are fields rather than prose:
-        // the impact pass reads them, and a person reading the notes line would not.
-        const td = Array.isArray(t.decisionIds) ? t.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
-        if (td.length) m.decision_ids = JSON.stringify([...new Set(td)])
-        if (typeof t.supersedes === 'string' && SAFE_BEAD_ID.test(t.supersedes)) m.elab_follows = t.supersedes
-        return Object.assign(m, taskContractMetadata(t))
-      })(),
+      // Metadata, not prose: the score, its components and the contract are fields a program
+      // reads — the build lane orders Tasks by the `wsjf` key and reads the contract keys.
+      metadata: taskMetadata(t),
     }))
   )
   for (const { task: t } of pendingTasks) {
@@ -5322,6 +5545,28 @@ if (!emitPathFault && epicId) {
 // one names a bead and a single thing to do to it; the writer picks nothing. A failure here
 // is recorded and nothing else — an update that did not land leaves the previous run's text
 // on an OPEN bead, which is stale but not wrong, and it never fails a run that emitted.
+//
+// The edges of a refreshed Task are refreshed with it. Every `blocks` edge it carries onto a
+// Task of this Epic that the current decomposition no longer draws is removed; an edge onto
+// anything outside this Epic was not drawn here and is left alone.
+const surveyedEdges = new Set()
+const epicTaskIds = new Set(taskIds.values())
+for (const list of existingByParent.values()) {
+  for (const c of list) {
+    if (c.type !== 'task') continue
+    epicTaskIds.add(c.id)
+    for (const b of c.blockedBy) surveyedEdges.add(`${c.id}->${b}`)
+  }
+}
+for (const { task: t, match } of reelabOpenTasks) {
+  const wantedIds = new Set((t.dependsOn || []).map((d) => taskIds.get(d)).filter(Boolean))
+  for (const b of match.blockedBy) {
+    if (!epicTaskIds.has(b) || wantedIds.has(b)) continue
+    reelabMutations.push({ key: `unlink:${match.id}->${b}`, op: 'unlink', id: match.id, dependsOnId: b })
+    reelab.edgesRemoved += 1
+  }
+}
+const refreshedTaskIds = new Set()
 if (reelabMutations.length) {
   let applied = null
   try {
@@ -5338,6 +5583,7 @@ if (reelabMutations.length) {
   }
   for (const m of reelabMutations) {
     if (!ok.has(m.key)) reelab.failed.push({ what: m.id, reason: `the ${m.op} was not confirmed by the writer` })
+    else if (m.op === 'update' && m.metadata) refreshedTaskIds.add(m.id)
   }
 }
 emission.reelaboration = reelab
@@ -5358,23 +5604,22 @@ for (const t of tasks) {
   }
 }
 
-// 4) THE DEPENDENCY EDGES, resolved to ids by the SCRIPT. The graph is part of the
-//    product: without it `bd ready` hands out work in an order this run computed and
-//    then threw away. An edge with an unwritten end is recorded, never guessed at.
+// 4) THE TASK DEPENDENCY EDGES, within and across Stories, resolved to ids by the SCRIPT
+//    and written as `blocks` edges. They are the only dependency edges this run writes:
+//    `bd ready` releases a Task when the Tasks it depends on close. An edge with an
+//    unwritten end is recorded, never guessed at; an edge the tracker already holds is
+//    counted as linked and not written again.
 const pendingLinks = []
-const addEdges = (nodes, idsByKey) => {
-  for (const n of nodes) {
-    for (const dep of n.dependsOn || []) {
-      emission.links.attempted += 1
-      const fromId = idsByKey.get(n.key) || null
-      const dependsOnId = idsByKey.get(dep) || null
-      if (fromId && dependsOnId) pendingLinks.push({ fromId, dependsOnId, from: n.key, to: dep })
-      else emission.links.failed.push({ from: n.key, to: dep, reason: 'one end of the edge was not written' })
-    }
+for (const n of tasks) {
+  for (const dep of n.dependsOn || []) {
+    emission.links.attempted += 1
+    const fromId = taskIds.get(n.key) || null
+    const dependsOnId = taskIds.get(dep) || null
+    if (!fromId || !dependsOnId) emission.links.failed.push({ from: n.key, to: dep, reason: 'one end of the edge was not written' })
+    else if (surveyedEdges.has(`${fromId}->${dependsOnId}`)) emission.links.linked += 1
+    else pendingLinks.push({ fromId, dependsOnId, from: n.key, to: dep })
   }
 }
-addEdges(stories, storyIds)
-addEdges(tasks, taskIds)
 if (pendingLinks.length) {
   let linkReply = null
   let linkFault = null
@@ -5485,11 +5730,9 @@ else {
 //     composite's product and it never fails the run that carried it.
 const healableStories = stories
   .filter((x) => storyIds.has(x.key))
-  .map((x) => ({ key: x.key, id: storyIds.get(x.key), repoPath: asText(x.repoPath), order: x.buildOrderIndex == null ? Infinity : x.buildOrderIndex }))
-  .sort((x, y) => x.order - y.order)
+  .map((x) => ({ key: x.key, id: storyIds.get(x.key), repoPath: asText(x.repoPath) }))
 if (emitPathFault) emission.heal.reason = 'nothing was surveyed — the beads path was refused'
 else if (!epicId) emission.heal.reason = 'no Epic id — there was nothing to survey under'
-else if (!epicAdopted) emission.heal.reason = 'the Epic was minted by this run, so it cannot be carrying a backfilled Story'
 else if (!healableStories.length) emission.heal.reason = 'no Story of this run is durable, so there is nowhere to re-parent a stand-in\u2019s Tasks'
 else {
   emission.heal.ran = true
@@ -5554,7 +5797,7 @@ else {
   //
   // One real Story is the whole answer. Several means the work spans repositories, and the
   // TASK's own text is the only evidence available for which one it belongs to. When it
-  // names none, the earliest Story in the build order takes it — under the right EPIC and
+  // names none, the first Story of this run takes it — under the right EPIC and
   // under a Story with a Spec behind it, which is the point, and the basis is recorded so
   // a wrong placement is visible rather than silent.
   const destinationFor = (node) => {
@@ -5566,7 +5809,7 @@ else {
       return (repo && t.includes(repo)) || (base.length > 2 && t.includes(base))
     })
     if (matched) return { story: matched, basis: `its text names ${matched.repoPath}` }
-    return { story: healableStories[0], basis: 'first in the build order — its text named no repository' }
+    return { story: healableStories[0], basis: 'the first Story of this run — its text named no repository' }
   }
   const mutations = []
   const plan = []
@@ -5644,14 +5887,17 @@ else {
 //              re-run everything. It is `degraded`, and `emissionOk` is FALSE, and the
 //              nodes that did not land are named — that is what lets a caller finish
 //              the write instead of discovering the hole a week later.
-//   none     — nothing is durable. That is ok:FALSE at this stage. The composite's
+//   none     — no Story and no Task is durable. That is ok:FALSE at this stage. The composite's
 //              product is a persisted hierarchy, and a run that persisted nothing has
 //              not produced one; returning ok:true here is exactly how a decomposition
 //              that was thrown away got recorded as a completion. The hierarchy still
 //              comes back, so nothing is lost and the write can be retried.
+// The Epic existed before the run, so it is not what the run produced: the verdict is
+// `none` when no Story and no Task beneath it is durable.
 const durable = emission.created + emission.adopted
+const durableBeneath = storyIds.size + taskIds.size
 const unwritten = emission.failed.length + emission.skipped.length
-if (!durable) emission.verdict = 'none'
+if (!durableBeneath) emission.verdict = 'none'
 else if (unwritten || emission.links.failed.length || emission.specReferenceMissing.length) emission.verdict = 'partial'
 else emission.verdict = 'complete'
 if (!emission.reason) {
@@ -5680,6 +5926,49 @@ if (emission.specReferenceMissing.length) {
 //                  there and is not counted as emitted, though it does count as durable.
 const emissionOk = emission.verdict === 'complete'
 const beadsEmitted = emission.created
+
+// ── FINISH: THE SCORING ARITHMETIC FOR THIS EPIC, AND ITS LIFECYCLE ─────────────
+// Deterministic, one `depscore.py elaboration-finish` call, no judgment. The Tasks whose
+// size this run judged — created now, or refreshed in place — get the fingerprint of the
+// content they now carry, so the scoring pass reads their sizes as current. Then this Epic
+// and every Task beneath it are scored over the whole tracker: the Epic's size becomes the
+// sum of its Tasks' sizes with its estimate kept, the Epic is rescored, and its Tasks are
+// rescored with RR-OE counted over every Task edge, across Stories.
+//
+// The Epic is marked `done` only when every part of it landed: every bead and edge durable,
+// every repository specified and every Story decomposed. Otherwise it stays `in_progress`
+// and the next run completes it.
+const createdTaskKeys = new Set(emission.written.filter((w) => w.level === 'task').map((w) => String(w.key)))
+const judgedTaskIds = []
+for (const t of tasks) {
+  const id = taskIds.get(t.key)
+  if (!id || !SAFE_BEAD_ID.test(String(id)) || !judgedSize(t)) continue
+  if (createdTaskKeys.has(String(t.key)) || refreshedTaskIds.has(id)) judgedTaskIds.push(String(id))
+}
+const epicDone =
+  taskIds.size > 0 &&
+  emission.verdict === 'complete' &&
+  specFailures.length === 0 &&
+  decompositionFailures.length === 0
+// Nothing beneath the Epic is durable when the verdict is `none`, so there is nothing to score.
+const finishOut = emission.verdict === 'none' ? null : await runLifecycle(
+  'epic:finish',
+  `elaboration-finish --epic ${epicBeadId} --owner ${lifecycle.owner}${judgedTaskIds.length ? ` --judged ${judgedTaskIds.join(',')}` : ''}${epicDone ? ' --done' : ''}`,
+  'Emit Beads'
+)
+lifecycle.finish = finishOut
+const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
+const epicMarkedDone = finishOk && !!finishOut.lifecycle
+const scoringLine = !finishOut
+  ? ''
+  : finishOk
+  ? `SCORED: Epic ${epicBeadId} and ${(finishOut.summary && finishOut.summary.tasksScored) || 0} Task(s) rescored` +
+    `${finishOut.summary && finishOut.summary.unscored ? `, ${finishOut.summary.unscored} left unscored` : ''}. ` +
+    (epicMarkedDone
+      ? `Epic ${epicBeadId} is elaboration_state=done. `
+      : `Epic ${epicBeadId} stays in_progress — ${taskIds.size ? 'part of it did not land' : 'no Task is durable'}, and the next run completes it. `)
+  : `SCORING DID NOT RUN for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'} — its Tasks carry the scores their decomposition computed, and it stays in_progress. `
+if (scoringLine) log(scoringLine)
 log(
   `Emission ${emission.verdict.toUpperCase()} from ${emission.target || '(no target)'}: ` +
     `${emission.created} created, ${emission.adopted} adopted, ${emission.failed.length} failed, ` +
@@ -5791,6 +6080,7 @@ const healLine = emission.heal.closed || emission.heal.reparented || emission.he
 // of what the PRD requires — deleting material that contradicts it — was not specified
 // anywhere. A run that reports ok without saying so is the defect, not the shortfall.
 const degraded =
+  (!!finishOut && !finishOk) ||
   specFailures.length > 0 ||
   decompositionFailures.length > 0 ||
   removalNotEmitted.length > 0 ||
@@ -5944,6 +6234,7 @@ return {
         ? `THE RULED SPAN MAY BE TOO NARROW: spec authoring found ${outOfSpanFindings.length} piece(s) of implied work OUTSIDE it (${outOfSpanFindings.map((f) => f.finding).join(' | ')}). No Story covers them. Widen the span and re-run, or confirm the work belongs to another PRD. `
         : '') +
       emissionLine +
+      scoringLine +
       healLine +
       (specFailures.length || decompositionFailures.length
         ? ` DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} story/stories produced no tasks — details in the run journal.`
@@ -5972,6 +6263,10 @@ return {
   // already built are gone, and nothing may reintroduce that under another name.
   tasksEmitted: writtenTaskKeys.length,
   emission,
+  // The Epic lifecycle this run owns: the start check, the scoring arithmetic and the
+  // lifecycle write at the finish.
+  lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
+  crossStoryDependencies: crossStory,
   hierarchy,
   beadSet,
   // The ruled span and anything it needs a human for cross the boundary with the
@@ -6029,7 +6324,18 @@ return {
     dispatchFailures: deaths,
   })
 } finally {
-  // The journal is written FIRST, because it is now the only place the run's detail exists
+  // A run that started the Epic and did not mark it `done` releases its owner token, so
+  // the Epic stays `in_progress` and the next run takes it up.
+  const finishedDone = !!(lifecycle.finish && !lifecycle.finish.error && lifecycle.finish.lifecycle)
+  if (lifecycle.started && !finishedDone) {
+    lifecycle.release = await runLifecycle(
+      'epic:release',
+      `elaboration-release --epic ${String(a.epic.id || a.epic.beadId)} --owner ${lifecycle.owner}`,
+      currentPhase || 'Epic Lifecycle'
+    )
+    if (result) result.lifecycle = { ...(result.lifecycle || {}), owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, release: lifecycle.release, done: false }
+  }
+  // The journal is written next, because it is the only place the run's detail exists
   // and the caller's `detailPath` is the path this returns. A journal that could not be
   // written yields detailPath:null — an honest "the detail is gone", never a path to a file
   // nobody wrote.

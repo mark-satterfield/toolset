@@ -9,8 +9,8 @@
 // none of it, or half of it, and report success either way.
 //
 // These tests pin the properties that close it, and they are properties of the SCRIPT,
-// not of any prompt: the levels go out in order, each child carries the REAL id of its
-// parent, a child of an unwritten parent is never attempted, and what comes back is what
+// not of any prompt: the Epic is the caller's existing bead, the levels beneath it go out
+// in order, each child carries the REAL id of its parent, a child of an unwritten parent is never attempted, and what comes back is what
 // actually landed — including the two fields the campaign supervisor keys off.
 
 import test from 'node:test'
@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, readWorkflowSource } from './helpers/run-workflow.mjs'
-import { beadWriter, writerPayload, isWriterCall } from './helpers/bead-writer.mjs'
+import { beadWriter, writerPayload, isWriterCall, lifecycleRunner, withLifecycle, TEST_EPIC } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
@@ -93,10 +93,11 @@ function makeWorkflowImpl({ repos, epicKey = 'E1' }) {
 
 function run({ repos = ['/repo-a'], args = {}, writerOpts, agentExtra } = {}) {
   const writer = beadWriter(writerOpts)
+  const lifecycle = lifecycleRunner()
   return runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, projectRoot: '/ss', ...args },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, projectRoot: '/ss', epic: TEST_EPIC, ...args },
     workflowImpl: makeWorkflowImpl({ repos }),
-    agentImpl: (call, calls) => writer(call) || (agentExtra ? agentExtra(call, calls) : null),
+    agentImpl: (call, calls) => lifecycle(call) || writer(call) || (agentExtra ? agentExtra(call, calls) : null),
   })
 }
 
@@ -110,17 +111,18 @@ test('the composite WRITES the hierarchy itself — the caller is not asked to r
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
 
   const labels = waves(calls).map((w) => w.label)
-  assert.ok(labels.includes('beads:write-epic'), 'the Epic must be written by the run')
+  assert.ok(!labels.includes('beads:write-epic'), 'the Epic is the caller\'s existing bead and is never written')
   assert.ok(labels.includes('beads:write-story'), 'the Stories must be written by the run')
   assert.ok(labels.includes('beads:write-task'), 'the Tasks must be written by the run')
 
   assert.equal(result.emission.verdict, 'complete')
   assert.equal(result.emissionOk, true)
   assert.equal(result.beadsEmitted, result.emission.created)
+  assert.equal(result.emission.adopted, 1, 'the Epic is adopted')
   assert.equal(
     result.beadsEmitted,
-    1 + result.hierarchy.stories.length + result.hierarchy.tasks.length,
-    'every node of the hierarchy is created when nothing fails',
+    result.hierarchy.stories.length + result.hierarchy.tasks.length,
+    'every Story and Task is created when nothing fails',
   )
 })
 
@@ -129,13 +131,12 @@ test('the levels go out PARENT BEFORE CHILD, and each child carries its parent\'
   assert.equal(result.ok, true, `composite failed at ${result.stage}`)
 
   const w = waves(calls)
-  const iEpic = w.findIndex((x) => x.label === 'beads:write-epic')
   const iStory = w.findIndex((x) => x.label === 'beads:write-story')
   const iTask = w.findIndex((x) => x.label === 'beads:write-task')
-  assert.ok(iEpic >= 0 && iStory > iEpic && iTask > iStory, `waves out of order: ${w.map((x) => x.label).join(' -> ')}`)
+  assert.ok(iStory >= 0 && iTask > iStory, `waves out of order: ${w.map((x) => x.label).join(' -> ')}`)
 
   const epicId = result.hierarchy.epic.id
-  assert.ok(epicId, 'the returned Epic must carry the id it was written under')
+  assert.equal(epicId, TEST_EPIC.id, 'the returned Epic carries the id of the bead it is')
   for (const b of w[iStory].payload.beads) {
     assert.equal(b.parentId, epicId, `Story ${b.key} must be written under the Epic's real id, not a local key`)
   }
@@ -154,7 +155,6 @@ test('only this run\'s hierarchy is written — no sweep, no extra bead, no dupl
   const { result, calls } = await run({ repos: ['/repo-a', '/repo-b'] })
   const requested = waves(calls).flatMap((w) => (w.payload.beads || []).map((b) => b.key))
   const expected = [
-    result.hierarchy.epic.key,
     ...result.hierarchy.stories.map((s) => s.key),
     ...result.hierarchy.tasks.map((t) => t.key),
   ]
@@ -179,7 +179,7 @@ test('the dependency edges are resolved to REAL ids by the script and linked', a
 
 test('a caller-supplied Epic that already has an id is adopted, not re-created', async () => {
   const { result, calls } = await run({
-    args: { epic: { key: 'E-EXISTING', id: 'bd-epic-1', type: 'epic', title: 'Already there', description: 'd' } },
+    args: { epic: { key: 'E-EXISTING', id: 'bd-epic1', type: 'epic', title: 'Already there', description: 'd' } },
   })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.equal(
@@ -187,11 +187,11 @@ test('a caller-supplied Epic that already has an id is adopted, not re-created',
     0,
     'an Epic that already exists must not be written a second time — that is the duplicate-Epic defect',
   )
-  assert.equal(result.hierarchy.epic.id, 'bd-epic-1')
+  assert.equal(result.hierarchy.epic.id, 'bd-epic1')
   assert.equal(result.emission.adopted, 1)
   assert.equal(result.emissionOk, true, 'adopted counts as durable — nothing is missing from the tracker')
   const storyWave = waves(calls).find((w) => w.label === 'beads:write-story')
-  for (const b of storyWave.payload.beads) assert.equal(b.parentId, 'bd-epic-1')
+  for (const b of storyWave.payload.beads) assert.equal(b.parentId, 'bd-epic1')
 })
 
 // ── Partial failure is REPORTED, not smoothed over ───────────────────────────
@@ -222,7 +222,7 @@ test('a Story that fails to write takes its Tasks out of the run — they are sk
 test('beadsEmitted counts what LANDED, not what was decomposed', async () => {
   const repos = ['/repo-a', '/repo-b']
   const { result } = await run({ repos, writerOpts: { failKeys: ['S2'] } })
-  const total = 1 + result.hierarchy.stories.length + result.hierarchy.tasks.length
+  const total = result.hierarchy.stories.length + result.hierarchy.tasks.length
   assert.equal(result.beadsEmitted, result.emission.created)
   assert.ok(result.beadsEmitted < total, 'a run that dropped a Story and two Tasks may not report the full count')
   assert.equal(result.beadsEmitted, total - 3)
@@ -238,8 +238,8 @@ test('an unconfirmed dependency edge degrades the run rather than passing silent
 
 // ── Nothing durable is a FAILED run, and the work still comes back ────────────
 
-test('an Epic that cannot be written stops the write and fails the run', async () => {
-  const { result, calls } = await run({ repos: ['/repo-a', '/repo-b'], writerOpts: { failKeys: ['E1'] } })
+test('a run where no Story lands has written nothing and fails', async () => {
+  const { result, calls } = await run({ repos: ['/repo-a', '/repo-b'], writerOpts: { failKeys: ['S1', 'S2'] } })
 
   assert.equal(result.ok, false, 'a run that persisted nothing has not produced its product')
   assert.equal(result.stage, 'emit-beads')
@@ -248,8 +248,9 @@ test('an Epic that cannot be written stops the write and fails the run', async (
   assert.equal(result.emission.verdict, 'none')
 
   const labels = waves(calls).map((w) => w.label)
-  assert.ok(!labels.includes('beads:write-story'), 'no Story may be written under an Epic that does not exist')
-  assert.ok(!labels.includes('beads:write-task'), 'and no Task under a Story that was never attempted')
+  assert.ok(!labels.includes('beads:write-task'), 'no Task is written under a Story that does not exist')
+  assert.equal(calls.filter((c) => c.label === 'epic:finish').length, 0, 'nothing durable, nothing to score')
+  assert.equal(calls.filter((c) => c.label === 'epic:release').length, 1, 'the Epic is released, still in_progress')
 
   // The work is not lost — that is what makes this recoverable rather than a re-run.
   assert.ok(result.hierarchy && result.hierarchy.epic, 'the hierarchy must still come back')
@@ -263,9 +264,9 @@ test('a writer that answers with nothing is treated as a failed write, never as 
   // Silence is the failure mode a prompt-driven emission could not distinguish from a
   // completed one. Here it is closed by construction: no id, no bead.
   const { result } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a' },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: TEST_EPIC },
     workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'] }),
-    agentImpl: () => null,
+    agentImpl: withLifecycle(() => null),
   })
   assert.equal(result.ok, false)
   assert.equal(result.stage, 'emit-beads')
@@ -292,16 +293,18 @@ test('the write runs from the main repo path, and a path it cannot trust is refu
       prd: { id: 'PRD-1', title: 'PRD One', body: 'b' },
       repoPath: '/repo-a; rm -rf /',
       repos: ['/repo-a'],
+      epic: TEST_EPIC,
     },
     workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'] }),
-    agentImpl: beadWriter(),
+    agentImpl: withLifecycle(beadWriter()),
   })
   assert.equal(hostile.result.ok, false)
-  assert.equal(hostile.result.stage, 'emit-beads')
+  assert.equal(hostile.result.stage, 'epic-lifecycle')
+  assert.match(hostile.result.headline, /refused: no-tracker/)
   assert.equal(
-    hostile.calls.filter(isWriterCall).length,
+    hostile.calls.filter((c) => c.kind === 'agent').length,
     0,
-    'a path that fails the allowlist must never reach the writer, not even to be reported on',
+    'a path that fails the allowlist must never reach a runner or the writer, not even to be reported on',
   )
 })
 

@@ -65,16 +65,80 @@ export function beadWriter({ failKeys = [], failLinks = false, idFor = (k) => `b
 }
 
 /**
- * Compose the writer stub in front of a test's own agentImpl.
+ * The Epic every prd-to-spec fixture elaborates: an existing, scored Epic bead. prd-to-spec
+ * refuses at its start without one.
+ */
+export const TEST_EPIC = Object.freeze({ id: 'bd-E1', key: 'E1', title: 'Test Epic' })
+
+/** The Epic's judged values, as the lifecycle check reads them off the Epic bead. */
+export const TEST_EPIC_VALUE = Object.freeze({ id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3, confidence: 80 })
+
+/**
+ * An agentImpl fragment that answers prd-to-spec's Epic lifecycle runners — the start check,
+ * the finish (scoring and the `done` write) and the release — as `depscore.py` would for an
+ * Epic that may be elaborated, and the cross-Story dependency mapper with no edges.
+ *
+ * @param {object} [opts]
+ * @param {object} [opts.refusal] the start check's refusal, `{code, reason}`
+ * @param {object[]} [opts.crossStoryEdges] the cross-Story Task edges the mapper returns
+ * @returns {(call: object) => object|null} the reply, or null when it is not a lifecycle call
+ */
+export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
+  return (call) => {
+    if (call.kind !== 'agent') return null
+    if (call.label === 'epic:start') {
+      return {
+        pluginRoot: '/opt/plugins/agent-teams-workforce',
+        exitCode: 0,
+        output: refusal
+          ? { ok: false, refusal, epic: { id: TEST_EPIC.id, title: TEST_EPIC.title } }
+          : { ok: true, refusal: null, epic: { ...TEST_EPIC_VALUE, title: TEST_EPIC.title }, owner: 'test-owner', previousState: 'ready' },
+      }
+    }
+    if (call.label === 'epic:finish') {
+      const done = /\s--done\b/.test(String(call.prompt || ''))
+      return {
+        exitCode: 0,
+        output: {
+          ok: true,
+          epic: TEST_EPIC.id,
+          lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
+          summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
+        },
+      }
+    }
+    if (call.label === 'epic:release') return { exitCode: 0, output: { ok: true, epic: TEST_EPIC.id, released: true } }
+    if (call.label === 'sequence:cross-story-tasks') return { edges: crossStoryEdges, acyclic: true }
+    return null
+  }
+}
+
+/**
+ * Compose the lifecycle stub in front of a test's own agentImpl.
+ *
+ * @param {(call: object, calls: object[]) => any} [inner] the test's own agent answers
+ * @param {object} [opts] passed to `lifecycleRunner`
+ */
+export function withLifecycle(inner, opts) {
+  const runner = lifecycleRunner(opts)
+  return (call, calls) => {
+    const answered = runner(call)
+    if (answered) return answered
+    return inner ? inner(call, calls) : null
+  }
+}
+
+/**
+ * Compose the writer stub and the lifecycle stub in front of a test's own agentImpl.
  *
  * @param {(call: object, calls: object[]) => any} [inner] the test's own agent answers
  * @param {object} [opts] passed to `beadWriter`
  */
 export function withBeadWriter(inner, opts) {
   const writer = beadWriter(opts)
-  return (call, calls) => {
+  return withLifecycle((call, calls) => {
     const written = writer(call)
     if (written) return written
     return inner ? inner(call, calls) : null
-  }
+  })
 }

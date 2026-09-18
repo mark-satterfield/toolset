@@ -13,7 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { beadWriter } from './helpers/bead-writer.mjs'
+import { beadWriter, lifecycleRunner, TEST_EPIC } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -77,11 +77,14 @@ const PRD = { id: 'P1', title: 'P', body: 'R1. thing' }
 
 async function runP2S({ onDisk = null, workflowOpts = {}, args = {} } = {}) {
   const writer = beadWriter()
+  const lifecycle = lifecycleRunner()
   const saves = []
   const result = await runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
-    args: { prd: PRD, repoPath: '/repos/alpha', ...args },
+    args: { prd: PRD, repoPath: '/repos/alpha', epic: TEST_EPIC, ...args },
     workflowImpl: compositeWorkflows(workflowOpts),
     agentImpl: (call) => {
+      const ran = lifecycle(call)
+      if (ran) return ran
       const l = String(call.label)
       // prd-to-spec reads the checkpoint, its write-ahead copy and the standing rulings in
       // ONE session — a fresh agent session costs its session start, not its work. The

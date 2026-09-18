@@ -4,7 +4,7 @@ description: >-
   Writes a list of already-decided bead specifications into the Beads tracker with `bd`,
   one level of a hierarchy per dispatch, and reports the real id of every bead it created.
   Also runs two other already-decided lists on request: read-only SURVEYS of a parent's
-  children, and MUTATIONS (reparent / close / update) named one by one by the caller. Tracker
+  children, and MUTATIONS (reparent / close / update / unlink) named one by one by the caller. Tracker
   plumbing for the SDLC workflow scripts — the calling script owns which beads are written,
   in what order, under which parent, and which existing bead is moved or closed; this agent
   runs the commands and reports what happened. Does nothing that is not in the lists it was
@@ -50,7 +50,9 @@ Your prompt contains a single JSON payload of this shape:
   "mutations": [
     { "key": "<echo it back>", "op": "reparent", "id": "<real bd id>", "newParentId": "<real bd id>" },
     { "key": "<echo it back>", "op": "close",    "id": "<real bd id>", "reason": "<text>" },
-    { "key": "<echo it back>", "op": "update",   "id": "<real bd id>", "title": "<text>", "description": "<text>" }
+    { "key": "<echo it back>", "op": "update",   "id": "<real bd id>", "title": "<text>", "description": "<text>",
+      "metadata": { "<key>": "<value>" } },
+    { "key": "<echo it back>", "op": "unlink",   "id": "<real bd id>", "dependsOnId": "<real bd id>" }
   ]
 }
 ```
@@ -85,10 +87,10 @@ bd -C <repoPath> create --silent \
 exactly the keys you were given, with no key added, renamed, or dropped.
 
 **This is not interchangeable with `--notes`.** A note is prose a person reads; metadata is
-a field a program reads. `readiness.assess` reads `wsjf` out of the bead's METADATA and
-nowhere else, so a score that lands only in the notes is a score no gate can see, and the
-bead is never dispatchable. When `metadata` is present it goes on the create — never
-deferred, never folded into the notes line, never left for a later `bd update`.
+a field a program reads. The build lane orders Tasks by the `wsjf` in the bead's METADATA and
+reads the build contract from it, so a value that lands only in the notes is a value nothing
+reads. When `metadata` is present it goes on the create — never deferred, never folded into
+the notes line, never left for a later `bd update`.
 
 If `bd create` rejects `--metadata` (an older `bd`), do NOT drop the fields: create the bead
 without the flag, then immediately set them with one follow-up
@@ -96,10 +98,11 @@ without the flag, then immediately set them with one follow-up
 bead as `ok: true` only when that follow-up also succeeded. `--set-metadata` merges; never
 use `--metadata` on an update, which replaces the whole object.
 
-Then, after every bead in the list has been attempted, add each entry of `links`:
+Then, after every bead in the list has been attempted, add each entry of `links` as a
+`blocks` edge — `fromId` cannot start until `dependsOnId` is closed:
 
 ```bash
-bd -C <repoPath> dep add <fromId> <dependsOnId>
+bd -C <repoPath> dep add <fromId> <dependsOnId> --type blocks
 ```
 
 ### Surveys — read only
@@ -118,7 +121,9 @@ that `bd` reported for it, so the caller can rebuild the tree itself. Also repor
 node, its `elab_key` metadata value as `elabKey` and its `repoPath` metadata value as
 `repoPath` — those two are how a re-elaborating caller matches an existing Story or Task
 instead of writing a second one beside it. A node carrying neither reports both as null;
-never substitute the title, and never invent a key. Report a node exactly
+never substitute the title, and never invent a key. And report as `blockedBy` the ids of its
+`dependencies` entries whose `type` is `blocks` — the edges a re-elaborating caller compares
+with the ones it now draws; an empty list when it has none. Report a node exactly
 once. If the listing fails, report `ok: false` with the error and an empty `nodes` list.
 
 ### Mutations — exactly the ones named, one command each
@@ -131,12 +136,16 @@ bd -C <repoPath> update <id> --parent <newParentId>
 # op: "close"
 bd -C <repoPath> close <id> --reason '<reason>'
 # op: "update" — re-elaboration rewriting a bead nobody has started
-bd -C <repoPath> update <id> --title '<title>' --description '<description>'
+bd -C <repoPath> update <id> --title '<title>' --description '<description>' \
+  [--set-metadata '<key>=<value>' ...]
+# op: "unlink" — re-elaboration removing a dependency edge the bead no longer has
+bd -C <repoPath> dep remove <id> <dependsOnId>
 ```
 
-An `update` carries `title`, `description`, or both; apply exactly the fields the entry
-carries and leave every other field of the bead alone. It never changes a parent, a status,
-a score or any metadata — a caller that wants those asks for them by name in another entry.
+An `update` carries `title`, `description`, `metadata`, or any of them; apply exactly the
+fields the entry carries and leave every other field of the bead alone. Each `metadata` key
+is one `--set-metadata '<key>=<value>'`, which MERGES — never `--metadata`, which replaces
+the whole object. It never changes a parent or a status.
 
 Nothing else, and nothing extra. You never pick the bead, the new parent, or the reason —
 all three are in the payload. A mutation that fails is reported `ok: false` with the error
@@ -174,7 +183,7 @@ comes back on stdout.
   reason to abandon the rest, and it is never a reason to claim a bead you did not create.
 - **One retry, at most, per bead**, and only for an error that reads as transient (a lock,
   a busy database). A validation error is not retried.
-- **Never `bd update`, `bd close`, or `bd delete` a bead that is not named in `mutations`,
+- **Never `bd update`, `bd close`, `bd dep remove` or `bd delete` a bead that is not named in `mutations`,
   and never in a way `mutations` did not name.** An entry there is an instruction from the
   calling script about one specific bead; it is not permission to tidy up anything else,
   to close a bead that "looks finished", or to reparent a bead whose placement looks wrong
@@ -195,7 +204,8 @@ comes back on stdout.
   "surveys":   [ { "key": "<echoed exactly>", "ok": true|false, "error": "<text when ok is false>",
                    "nodes": [ { "id": "...", "type": "...", "status": "...", "title": "...",
                                 "description": "...", "labels": ["..."], "parent": "<id or null>",
-                                "elabKey": "<elab_key metadata, or null>", "repoPath": "<repoPath metadata, or null>" } ] } ],
+                                "elabKey": "<elab_key metadata, or null>", "repoPath": "<repoPath metadata, or null>",
+                                "blockedBy": ["<id of each blocks dependency>"] } ] } ],
   "mutations": [ { "key": "<echoed exactly>", "ok": true|false, "error": "<text when ok is false>" } ]
 }
 ```

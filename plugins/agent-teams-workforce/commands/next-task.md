@@ -36,9 +36,9 @@ bd ready --type task --json -n 0 --readonly > /tmp/ready-tasks.json
 into an Epic, a Task, or a closure — `route-build` skips it and there is no
 triage composite to dispatch. Do not query for them here.
 
-**Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata by the
-`wsjf-scoring` workflow, under the `wsjf` rubric at Task level — read it, do not recompute
-it:
+**Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata under the
+`wsjf` rubric at Task level — written when `prd-to-spec` elaborates the Task's Epic, and
+rewritten by the `wsjf-scoring` workflow — read it, do not recompute it:
 
 ```bash
 bd show <id> --json --readonly \

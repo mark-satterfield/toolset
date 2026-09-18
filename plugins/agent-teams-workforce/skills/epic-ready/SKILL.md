@@ -38,14 +38,19 @@ So this skill demands exactly two things, and adds nothing to them.
    - **`ready`** → authoring is finished. Ready.
    - **`in_progress`** → a run started and did not finish. **Ready** — an Epic stays a
      candidate across failed runs, and nothing here consults how many there have been.
-     Live ownership is a separate question, settled by the caller against the session
-     registry, not by this gate.
+     Live ownership is a separate question: `prd-to-spec` settles it at its start from the
+     `elaboration_state_owner` token.
    - **`done`** → the Tasks were written and they are the workable items now. Not ready.
      Only a person puts a `done` Epic back.
 
 Nothing else is consulted. Not child counts, not whether Stories or Tasks already exist,
-not the Epic's age, not its history, not a WSJF score — an Epic's score is written by the
-sequencing pass, not by this gate.
+not the Epic's age, not its history.
+
+This gate answers a person's question. What decides whether an Epic IS elaborated is
+`prd-to-spec`'s own start check, `depscore.py elaboration-start`, which every door into
+elaboration passes through: it requires the state rule above and also that the Epic is
+scored, that every Epic it depends on has `elaboration_state=done`, and that no other run
+owns it.
 
 ## Output contract — emit this and nothing else
 
@@ -70,8 +75,9 @@ Reason: [one line — why, whichever way it went]
 ## This gate writes nothing
 
 No metadata, no comments, no labels. It reads and it rules. `elaboration_state` is written
-by the elaboration lane from the run's outcome, and writing it from a readiness check would
-let a gate claim progress no run made.
+by `prd-to-spec` — `in_progress` at its start, `done` when its Tasks are written — and by a
+person setting `ready`; writing it from a readiness check would let a gate claim progress no
+run made.
 
 ## Recipes
 

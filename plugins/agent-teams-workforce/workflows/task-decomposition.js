@@ -102,21 +102,21 @@ async function settleAgent(prompt, opts) {
 //   story: { id?, title? },                                    // the Story the Spec pairs with —
 //                                                              // ALREADY EXISTS; every emitted task
 //                                                              // is parented to it
-//   epic?: { id?, userBusinessValue?, timeCriticality?, confidence? },
-//                                                              // the parent Epic's WSJF, scored at Epic level
-//                                                              // wrote it (`wsjf_ubv`, `wsjf_tc`,
-//                                                              // `wsjf_confidence`). Every task INHERITS
-//                                                              // value and criticality from it; absent,
-//                                                              // they fall back to a flagged placeholder
+//   epic:  { id, userBusinessValue, timeCriticality, confidence? },
+//                                                              // the parent Epic's judged WSJF values, read
+//                                                              // from its `wsjf_ubv`, `wsjf_tc` and
+//                                                              // `wsjf_confidence`. Every task INHERITS
+//                                                              // value and criticality from it, so a run
+//                                                              // without both is refused
 //   specDocs?: [{ path, ref }],                                // the Spec's DOCUMENTS: `path` is where the
 //                                                              // maker reads the file, `ref` is the
 //                                                              // project-root-relative path recorded on
 //                                                              // each emitted Task. The contract is in these
 //                                                              // files; spec.description is navigation only
 //   repoPath?: string,                                         // fallback source of the same repository
-//   pluginRoot?: string,                                       // absolute path of this plugin's root; the
+//   pluginRoot: string,                                        // absolute path of this plugin's root; the
 //                                                              // WSJF arithmetic runs the rubric's wsjf.py
-//                                                              // under it, and without it no task is scored
+//                                                              // under it, so a run without it is refused
 //   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 //   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //                                                              // Epic working directory: the maker, the
@@ -251,7 +251,7 @@ const spec = a.spec || {}
 const story = a.story || {}
 // The parent Epic's own WSJF, which every Task in this set INHERITS its value and time
 // criticality from. See the Task WSJF block below for why a Task's own text cannot carry
-// them. Absent -> the placeholder path, also below.
+// them.
 const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
 
@@ -451,19 +451,27 @@ const WSJF_SKILL_DIR =
 const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it; never score them separately or add them up. The scale is Fibonacci (1, 2, 3, 5, 8, 13); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would size above 13 should have been split: that is a DECOMPOSITION FAULT — say so in your notes and size it at 13.`
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
-// A placeholder is used ONLY when the caller supplied no Epic score. It is the same for
-// every Task in the set, so it cannot distort the ordering WITHIN this Story — the
-// ordering that this mini's output is used for — and it is flagged as `placeholder` so
-// the sequencing pass that inherits for real knows to replace it rather than trust it.
-const PLACEHOLDER_UBV = 5
-const PLACEHOLDER_TC = 3
-const epicUbv = finite(epic.userBusinessValue)
-const epicTc = finite(epic.timeCriticality)
+// The Epic's judged value and criticality, inherited by every Task. A Task set is scored
+// from them or not produced at all: a score built on anything else would be written to the
+// Task and ranked as though it were real.
+const inheritedUbv = finite(epic.userBusinessValue)
+const inheritedTc = finite(epic.timeCriticality)
 const epicConfidence = finite(epic.confidence)
-const inheritedUbv = epicUbv === null ? PLACEHOLDER_UBV : epicUbv
-const inheritedTc = epicTc === null ? PLACEHOLDER_TC : epicTc
-const valueSource = epicUbv === null || epicTc === null ? 'placeholder' : 'epic'
-const valueFrom = valueSource === 'epic' && typeof epic.id === 'string' ? epic.id : null
+const valueFrom = typeof epic.id === 'string' && epic.id.trim() ? epic.id.trim() : null
+if (inheritedUbv === null || inheritedTc === null || !valueFrom) {
+  return {
+    ok: false,
+    stage: 'input',
+    error: 'no scored parent Epic supplied (epic.id, epic.userBusinessValue and epic.timeCriticality) — every task inherits its value and time criticality from the Epic, so the task set cannot be scored without them',
+  }
+}
+if (!WSJF_SKILL_DIR) {
+  return {
+    ok: false,
+    stage: 'input',
+    error: 'no usable pluginRoot supplied — the WSJF arithmetic runs the rubric script under it, so the task set cannot be scored without it',
+  }
+}
 // The arithmetic belongs to the rubric's `wsjf.py`: the size scale, the reachability
 // bands and the Cost-of-Delay and WSJF formulas all live there. A workflow has no shell,
 // so one runner session executes the script once over the whole task set and hands back
@@ -479,7 +487,6 @@ const WSJF_RUN_SCHEMA = {
   },
 }
 async function runWsjf(input) {
-  if (!WSJF_SCRIPT) return { error: 'no usable pluginRoot was supplied, so the WSJF rubric script cannot be located' }
   const out = await settleAgent(
     `Run exactly this one shell command, once, from any directory, and change nothing else:
 
@@ -520,7 +527,7 @@ async function applyTaskWsjf(judged, taskSet, edges) {
       id: t.key,
       userBusinessValue: inheritedUbv,
       timeCriticality: inheritedTc,
-      ...(valueFrom ? { valueFrom } : {}),
+      valueFrom,
       ...(size === null || size <= 0 ? {} : { jobSize: size }),
       ...(low === null ? {} : { sizeLow: low }),
       ...(high === null ? {} : { sizeHigh: high }),
@@ -547,7 +554,6 @@ async function applyTaskWsjf(judged, taskSet, edges) {
         key: t.key,
         userBusinessValue: inheritedUbv,
         timeCriticality: inheritedTc,
-        valueSource,
         valueFrom,
         riskReductionOpportunityEnablement: null,
         unblocks: null,
@@ -558,6 +564,7 @@ async function applyTaskWsjf(judged, taskSet, edges) {
         sizeConfidence: finite(j && j.sizeConfidence),
         costOfDelay: null,
         wsjf: null,
+        metadata: null,
         confidence: epicConfidence,
         rationale: judgedRationale || result.error || unscoredWhy.get(t.key) || 'not scored',
       }
@@ -566,7 +573,6 @@ async function applyTaskWsjf(judged, taskSet, edges) {
       key: t.key,
       userBusinessValue: s.userBusinessValue,
       timeCriticality: s.timeCriticality,
-      valueSource,
       valueFrom,
       riskReductionOpportunityEnablement: s.riskReductionOpportunityEnablement,
       unblocks: s.reaches,
@@ -577,15 +583,16 @@ async function applyTaskWsjf(judged, taskSet, edges) {
       sizeConfidence: s.sizeConfidence === undefined ? null : s.sizeConfidence,
       costOfDelay: s.costOfDelay,
       wsjf: s.wsjf,
+      // Every component `wsjf.py` computed, under the metadata keys it names: what the Task
+      // carries so its Epic rolls its size up and a rescore recomputes it without re-judging.
+      metadata: s.metadata && typeof s.metadata === 'object' ? s.metadata : null,
       confidence: s.confidence === undefined ? epicConfidence : s.confidence,
       rationale: judgedRationale,
     }
   })
   const notes = [
     judged && typeof judged.notes === 'string' ? judged.notes : '',
-    valueSource === 'placeholder'
-      ? 'Value and time criticality are PLACEHOLDERS: no parent Epic score was supplied, so they are uniform across the set and must be replaced by inheritance from the Epic.'
-      : `Value and time criticality inherited from Epic ${valueFrom || '(id not supplied)'}.`,
+    `Value and time criticality inherited from Epic ${valueFrom}.`,
     unsized.length ? `No usable jobSize returned for: ${unsized.join(', ')} — left unscored.` : '',
     sizeFaults.length
       ? `Sizes placed on the scale by wsjf.py: ${sizeFaults.map((f) => `${f.id} ${f.supplied} -> ${f.rung}${f.aboveScale ? ' (above the ceiling: a decomposition fault)' : ''}`).join(', ')}.`
@@ -594,7 +601,7 @@ async function applyTaskWsjf(judged, taskSet, edges) {
   ]
     .filter(Boolean)
     .join(' ')
-  return { scores, notes, rubric: 'task-wsjf', valueSource, sizeFaults, ...(result.error ? { error: result.error } : {}) }
+  return { scores, notes, rubric: 'task-wsjf', valueFrom, sizeFaults, ...(result.error ? { error: result.error } : {}) }
 }
 
 // The outputs the caller NAMED rather than inlined are read back here, in one session,
@@ -980,6 +987,9 @@ const beadSet = tasks
     testStrategy,
     dependsOn: (dag.edges || []).filter((e) => e.to === t.key).map((e) => e.from),
     wsjf: wsjfByKey[t.key] ? wsjfByKey[t.key].wsjf : null,
+    // Every WSJF component, as the bead metadata the Task is written with. null when the
+    // task could not be scored, and then nothing about a score is written.
+    wsjfMetadata: wsjfByKey[t.key] && wsjfByKey[t.key].metadata ? wsjfByKey[t.key].metadata : null,
     buildOrderIndex: t.key in orderIndex ? orderIndex[t.key] : null,
   }))
   .sort((x, y) => {

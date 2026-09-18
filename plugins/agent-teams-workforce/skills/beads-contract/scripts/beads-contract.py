@@ -389,6 +389,9 @@ LANE_KEYS = (
     "elaboration_state",
     "elaboration_state_at",
     "elaboration_state_cause",
+    # The owner token of the run elaborating an `in_progress` Epic, recorded by
+    # `prd-to-spec` at its start and cleared when the Epic is `done`.
+    "elaboration_state_owner",
     # The durable identity a re-elaborating run matches an existing Story or Task on.
     # Written once, at the create, and never recomputed from a title — a title is the
     # field most likely to be reworded, and a key derived from it at match time would

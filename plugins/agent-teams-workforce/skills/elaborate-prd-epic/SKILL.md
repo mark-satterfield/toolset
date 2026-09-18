@@ -29,11 +29,29 @@ an Epic with no Stories.
 You must arrive with:
 
 - `prd` — `{id, title, body}`. If only the Epic existed, its PRD was minted first.
-- `epic` — the Epic bead, adopted not re-minted. If only the PRD existed, its Epic
-  was minted first.
+- `epic` — the Epic bead, with its `id`. It is adopted, never re-minted.
 
 If either is missing, stop. Mint the missing half and return here — minting
 completes the representation, it does not authorize the build.
+
+## The Epic lifecycle belongs to `prd-to-spec`
+
+Do not check the Epic's readiness here. `prd-to-spec` owns the Epic's elaboration
+lifecycle, and its first phase checks the Epic for every door into elaboration. It
+refuses, with `stage: epic-lifecycle` and a `refusal` naming the code, when:
+
+| Code | Meaning | What unblocks it |
+| --- | --- | --- |
+| `no-epic` | `epic.id` names no bead | Create the Epic, then assess and score it |
+| `not-an-open-epic` | the id is not an open Epic | Pass the right Epic |
+| `epic-unscored` | no `wsjf_ubv`, `wsjf_tc` or `wsjf` | Run the `dependency-assessment` and `wsjf-scoring` workflows for it |
+| `upstream-not-elaborated` | an Epic it depends on is not `elaboration_state=done` | Elaborate that Epic first |
+| `epic-authoring` | no `elaboration_state` | Set `elaboration_state=ready` when the PRD is finished |
+| `epic-done` | already `done` | A person sets it back to `ready` to elaborate again |
+| `epic-owned` | `in_progress` under another run's owner token | Pass `reclaim: true` only once that run is known not to be live |
+
+Report a refusal verbatim and stop. Otherwise the run marks the Epic `in_progress`, and
+when its Tasks are written it scores the Epic and its Tasks and marks the Epic `done`.
 
 ## 1. Do NOT determine the repo span
 
@@ -64,25 +82,24 @@ Two results come back that you must not bury:
 ## 2. Dispatch
 
 ```bash
-ls -d ~/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/*/ | sort -V | tail -1
+echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 ```
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   prd:      {id, title, body, repoPath},
-  epic:     <the Epic bead — always pass it, so it is adopted rather than re-minted>,
+  epic:     {id, title, description},   <the Epic bead; REQUIRED>
   repoPath: "/path/to/the/repo/you/are/standing/in",
   repos:    <OMIT — the run rules the span. Only when a human named it explicitly>,
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
   sadPath:        "$ATW_SAD_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
-  artifactScript: "$ATW_ARTIFACT_SCRIPT",
-  pluginRoot:     "$ROOT"
+  artifactScript: "$ATW_ARTIFACT_SCRIPT"
 }})
 ```
 
-`pluginRoot` is the directory the `ls` above printed; task decomposition runs the WSJF
-rubric's script under it.
+`$ROOT` is the printed plugin root. The run resolves the root it runs its own scripts
+under itself; pass none.
 
 `sadPath`, `projectRoot` and `artifactScript` are the project's configuration, read from the `ATW_*` environment (see
 "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`) and passed as expanded values; a
@@ -106,15 +123,22 @@ from a BRD, and a run without one is in no way diminished.
 ## 3. Check what the run wrote — do NOT write it yourself
 
 **The composite writes the hierarchy into beads itself.** Its Emit Beads phase
-creates the Epic, then the Stories under the Epic's real id, then each Story's
-Tasks under their own Story's real id, then the dependency edges — parent before
-child, ordered by the script, with a child of an unwritten parent never attempted.
-Writing any of it again creates duplicates.
+creates the Stories under the Epic's real id, then each Story's Tasks under their own
+Story's real id, each carrying every WSJF component, then the Task dependency edges as
+`blocks` edges — within each Story and across Stories — parent before child, with a
+child of an unwritten parent never attempted. Writing any of it again creates
+duplicates. It then scores the Epic and its Tasks and, when every part landed, marks
+the Epic `done`.
 
 What comes back:
 
-- `hierarchy: {epic, stories, tasks, storyDependencies}` — the same tree, with each
-  node now carrying the real `id` it was written under.
+- `hierarchy: {epic, stories, tasks}` — the same tree, with each node now carrying the
+  real `id` it was written under. A Task's `dependsOn` lists the Tasks it depends on.
+- `crossStoryDependencies` — `{ran, reason, edges[], rejected[]}`: the Task edges that
+  cross Stories, each typed and justified, and any proposed edge not applied.
+- `lifecycle` — `{owner, start, finish, done}`: the start check, the scoring result for
+  the Epic and its Tasks, and whether the Epic is now `done`. When `done` is false the
+  Epic stays `in_progress` and the next run completes it.
 - `emissionOk` — true only when every bead and every edge landed.
 - `beadsEmitted` — how many beads this run actually created.
 - `emission` — `{verdict, target, created, adopted, failed[], skipped[], links, heal}`.
@@ -149,14 +173,14 @@ account of what you think landed.
 
 ## 4. Report
 
-- Epic: adopted, or minted from the PRD
+- Epic: its id, and whether `lifecycle.done` marked it `done`
 - PRD: located, or minted from the Epic
 - Repo span: the repositories `repoSpan` names, and whether the run ruled them or a
   human pinned them
 - Repositories still to create: every `newRepos` entry, with why no existing repo fits.
   Say plainly that their work is specified nowhere until they exist
 - Stories: how many, and which repo each covers
-- Tasks: how many, and the story-dependency edge count
+- Tasks: how many, and how many dependency edges cross Stories
 - Emission: `emission.verdict`, `beadsEmitted`, and — when the verdict is not
   `complete` — every node in `emission.failed` and `emission.skipped` and what
   still has to be written
