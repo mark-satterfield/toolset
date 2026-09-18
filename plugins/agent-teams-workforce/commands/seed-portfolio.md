@@ -1,6 +1,6 @@
 ---
 description: "Seed the Epic portfolio once: summaries, optionally dependencies, then a full WSJF re-judge"
-argument-hint: "[--assess]"
+argument-hint: "[--assess | --propose]"
 allowed-tools: [Bash, Workflow]
 ---
 
@@ -18,6 +18,11 @@ It runs three workflows in order, and stops at the first that returns `ok: false
    stand.
 3. `wsjf-scoring` with `all` and `rejudge` — every Epic's value, urgency and size, and every
    Task's size, judged again, then the arithmetic.
+
+With `--propose` it runs step 1, then `dependency-assessment` in mode `portfolio` with
+`apply: false`, and stops there: it reports the proposed edge diff against the edges in the
+tracker, writes no edge and runs no scoring. `--assess` and `--propose` are exclusive; report
+the usage and stop when both are given.
 
 ## Dispatch
 
@@ -53,6 +58,18 @@ Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
 
 `score: false` because the next step scores the whole portfolio.
 
+With `--propose` in `$ARGUMENTS`, instead of the call above:
+
+```
+Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
+  repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/proposal",
+  sadPath: "<SAD>", projectRoot: "<PROJECT>",
+  mode: "portfolio", apply: false
+}})
+```
+
+Then stop: `wsjf-scoring` does not run.
+
 ```
 Workflow({scriptPath: "<ROOT>/workflows/wsjf-scoring.js", args: {
   repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/scoring",
@@ -63,7 +80,12 @@ Workflow({scriptPath: "<ROOT>/workflows/wsjf-scoring.js", args: {
 
 ## Report back
 
-Per step: `ok`, and the step's own report — summaries written and missing; edges added,
+With `--propose`: the summaries step's report, then the proposed diff — every edge to add,
+convert and withdraw as `blocker -> blocked` with its reason from `edgesFile`, the
+`unchanged` count, the `protectedHandMadeEdges`, and the paths of `diffFile`, `edgesFile`
+and `tiering`.
+
+Otherwise, per step: `ok`, and the step's own report — summaries written and missing; edges added,
 converted and withdrawn; Epics and Tasks judged, scored and written, with the unscored,
 incomplete and outside-range counts. When a step stopped the seeding, which one and its
 `error`, `failures` and `dispatchFailures`, verbatim.

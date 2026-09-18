@@ -1,13 +1,13 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the Epic dependency edges, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is a judgment about design order made before the architecture exists: it exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. Mode `epic` assesses ONE new or changed Epic against the portfolio's summaries and its own full PRD, and may add or withdraw only edges to or from that Epic — validation refuses any other edge, and the write is confined to that Epic's edges in code. Mode `portfolio` assesses the whole portfolio from the summaries. The epic-sequencer proposes; code validates and applies the diff, never touching a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE.",
+    "Assesses the Epic dependency edges, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is a judgment about design order made before the architecture exists: it exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. Mode `epic` assesses ONE new or changed Epic against the portfolio's summaries and its own full PRD, and may add or withdraw only edges to or from that Epic — validation refuses any other edge, and the write is confined to that Epic's edges in code. Mode `portfolio` assesses the whole portfolio from the summaries. The epic-sequencer proposes; code validates and applies the diff, never touching a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE. With `apply: false` it proposes only: it reads the stored summaries without bringing them current, computes the edge diff as a dry run, returns it, writes nothing to the tracker and triggers no scoring.",
   whenToUse: "A new or changed Epic needs its dependencies assessed (mode epic), or the whole portfolio is being re-seeded (mode portfolio).",
   phases: [
-    { title: "Summaries", detail: "bring the Epic summaries current" },
+    { title: "Summaries", detail: "bring the Epic summaries current (skipped when proposing)" },
     { title: "Plan", detail: "fingerprints and the rendered portfolio" },
     { title: "Assess", detail: "the epic-sequencer proposes the edge set for the scope" },
-    { title: "Apply", detail: "validate and apply the edge diff for the scope" },
+    { title: "Apply", detail: "validate and apply the edge diff for the scope, or compute it as a dry run" },
     { title: "Score", detail: "wsjf-scoring over the new edges" },
   ],
 }
@@ -149,10 +149,15 @@ function enter(title) {
 //   sadPath?:     string,              // the arc42 SAD (ATW_SAD_PATH): the decisions it settles need no edge
 //   projectRoot?: string,              // the project root (ATW_PROJECT_ROOT), passed to the scoring it triggers
 //   score?:       boolean,             // false: do not trigger scoring when the edges are applied
+//   apply?:       boolean,             // false: propose only — no summary, edge or score is written;
+//                                      // `edges` carries the diff (added, converted, removed,
+//                                      // unchanged, planned) computed as a dry run. Default true.
 // }
 //
-// Returns: { ok, workDir, mode, epic, summaries, plan, assessment, edges, scoring,
+// Returns: { ok, apply, workDir, mode, epic, summaries, plan, assessment, edges, scoring,
 //            failures, dispatchFailed, dispatchFailures }
+// With `apply: false`, `summaries` and `scoring` are null and `ok` means the diff was
+// proposed.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
@@ -174,6 +179,7 @@ const DS = `${a.pluginRoot.replace(/\/+$/, '')}/scripts/portfolio/depscore.py`
 const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const scope = target ? ` --epic ${shq(target)}` : ''
+const applies = a.apply !== false
 const project = { repoPath: repo, pluginRoot: a.pluginRoot, sadPath: a.sadPath, projectRoot: a.projectRoot }
 const fail = (error, extra) => ({
   ok: false,
@@ -190,9 +196,13 @@ const fail = (error, extra) => ({
 // ── Summaries ────────────────────────────────────────────────────────────────────
 //
 // The assessment reads the portfolio through the Epic summaries, so they are brought
-// current first. An Epic left without one is read from its PRD instead.
-enter('Summaries')
-const summaries = await workflow('agent-teams-workforce:epic-summaries', { ...project, workDir: file('summaries') })
+// current first. An Epic left without one is read from its PRD instead. A proposal
+// writes nothing, so it reads the summaries as stored.
+let summaries = null
+if (applies) {
+  enter('Summaries')
+  summaries = await workflow('agent-teams-workforce:epic-summaries', { ...project, workDir: file('summaries') })
+}
 
 // ── Plan ─────────────────────────────────────────────────────────────────────────
 enter('Plan')
@@ -254,7 +264,34 @@ const assessed = await settleAgent(assessPrompt, {
 // ── Apply ────────────────────────────────────────────────────────────────────────
 enter('Apply')
 let edges
-if (assessed && assessed.valid) {
+if (assessed && assessed.valid && !applies) {
+  // The dry run prints its full result, which is also kept in the run directory: the
+  // diff is the deliverable, so it comes back whole rather than as counts.
+  const diffFile = file('apply-edges-dry-run.json')
+  const proposed = await runStep(
+    'apply-edges --dry-run',
+    `set -o pipefail; ${cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)}${scope} --dry-run`)} | tee ${shq(diffFile)}`
+  )
+  const diff = (proposed && proposed.plan) || {}
+  edges = proposed
+    ? {
+        applied: false,
+        proposed: proposed.validation ? proposed.validation.ok === true : false,
+        scope: proposed.scope || target || 'portfolio',
+        added: diff.add || [],
+        converted: diff.convert || [],
+        removed: diff.remove || [],
+        unchanged: diff.unchanged ?? null,
+        protectedHandMadeEdges: diff.protectedHandMadeEdges || [],
+        planned: proposed.planned || [],
+        validation: proposed.validation || null,
+        diffFile,
+        edgesFile,
+        tiering: tieringFile,
+        unsure: assessed.unsure || [],
+      }
+    : { applied: false, proposed: false, reason: 'the dry run did not complete; nothing was written' }
+} else if (assessed && assessed.valid) {
   const applied = await runStep(
     'apply-edges',
     cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)}${scope} --out ${shq(file('apply-edges.json'))}`)
@@ -266,6 +303,7 @@ if (assessed && assessed.valid) {
     reason: assessed ? 'the proposed edge set did not validate; the tracker keeps its current edges' : 'the epic-sequencer returned no result; the tracker keeps its current edges',
   }
 }
+if (edges.proposed) log(`Proposed edges (${target || 'portfolio'}): ${edges.added.length} to add, ${edges.converted.length} to convert, ${edges.removed.length} to withdraw, ${edges.unchanged} unchanged — nothing written; detail in ${edges.diffFile}`)
 if (edges.applied) log(`Edges (${target || 'portfolio'}): ${edges.added} added, ${edges.converted} converted, ${edges.removed} withdrawn, ${edges.unchanged} unchanged`)
 
 // ── Score ────────────────────────────────────────────────────────────────────────
@@ -273,14 +311,15 @@ if (edges.applied) log(`Edges (${target || 'portfolio'}): ${edges.added} added, 
 // Edges decide RR-OE, so an applied assessment is followed by scoring. Scoring never
 // assesses.
 let scoring = null
-const scores = edges.applied === true && a.score !== false
+const scores = applies && edges.applied === true && a.score !== false
 if (scores) {
   enter('Score')
   scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
 }
 
 return {
-  ok: edges.applied === true && failures.length === 0 && (!scores || (!!scoring && scoring.ok === true)),
+  ok: (applies ? edges.applied === true : edges.proposed === true) && failures.length === 0 && (!scores || (!!scoring && scoring.ok === true)),
+  apply: applies,
   workDir: work,
   mode,
   epic: target,

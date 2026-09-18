@@ -1,6 +1,6 @@
 ---
 description: "Assess the Epic dependency edges for one Epic or the whole portfolio, then score"
-argument-hint: "<epic-id> | --portfolio"
+argument-hint: "<epic-id> | --portfolio [--propose]"
 allowed-tools: [Bash, Workflow]
 ---
 
@@ -16,7 +16,11 @@ nothing else, then triggers `wsjf-scoring`, because edges decide RR-OE.
   and its own full PRD. Only edges to or from that Epic are added or withdrawn.
 - `--portfolio` assesses the whole portfolio.
 
-Exactly one of the two is required; report the usage and stop otherwise. It writes.
+Exactly one of the two is required; report the usage and stop otherwise. It writes, unless
+`--propose` is given.
+
+- `--propose` passes `apply: false`: the workflow reads the summaries as stored, computes the
+  edge diff as a dry run, returns it, and writes nothing — no summary, no edge, no score.
 
 ## Dispatch
 
@@ -41,7 +45,8 @@ Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
   sadPath:     "<SAD>",
   projectRoot: "<PROJECT>",
   mode:        <"portfolio" for --portfolio, otherwise "epic">,
-  epic:        "<epic-id>"   (mode "epic" only)
+  epic:        "<epic-id>"   (mode "epic" only),
+  apply:       false         (with --propose only)
 }})
 ```
 
@@ -52,10 +57,15 @@ From the workflow's result:
 - `edges` — added, converted, withdrawn and unchanged; the reasoning file (`tiering`); the
   edges the sequencer was unsure of. When `edges.applied` is false, its `reason`, or the
   validation defects.
+- With `--propose`: `edges.proposed`, then every edge in `edges.added`, `edges.converted`
+  and `edges.removed` as `blocker -> blocked`, the `unchanged` count, the
+  `protectedHandMadeEdges`, and the files holding the full diff (`diffFile`), the proposed
+  edge set with its reasons (`edgesFile`) and the reasoning (`tiering`).
 - `scoring` — the `wsjf-scoring` result it triggered, reported as that command reports it.
 - `failures` and `dispatchFailures`, verbatim, when present.
 
 ## Never
 
 - Score anything; the triggered `wsjf-scoring` does.
+- Write to the tracker with `--propose`.
 - Start a pipeline run, a supervisor, a keeper or the dashboard from here.
