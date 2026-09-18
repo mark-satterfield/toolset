@@ -97,120 +97,6 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── MATERIAL CHANGE IS DECLARED, NEVER INFERRED ──────────────────────────────────
-//
-// Nothing downstream is triggered by a timestamp, a file mtime or a content hash. An
-// mtime moves when a formatter runs and a hash changes when a sentence is reworded;
-// neither fact says whether anything ELSE depends on what changed. Only the agent that
-// did the work knows that, so the agents that produce WORK PRODUCTS declare it in their
-// structured result. Routine work — a status move, a journal line, a checkpoint —
-// declares material:false, or says nothing at all.
-//
-// The field is OPTIONAL in the schema on purpose. Every schema here is
-// additionalProperties:false, so it has to be ADDED for an agent to be allowed to return
-// it; but making it REQUIRED would turn a forgotten metadata field into a StructuredOutput
-// rejection, which settleAgent reads as a dead agent and the caller as a dispatch failure.
-// A missing declaration is recorded as `undeclared` instead — visible without being fatal.
-//
-// This block is identical in every workflow script on purpose. Workflow scripts have no
-// import mechanism, so a shared helper is shared by being the same text everywhere.
-const MATERIAL_CHANGE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['material'],
-  properties: {
-    // true only when something OUTSIDE this artifact depends on what changed.
-    material: { type: 'boolean' },
-    kind: {
-      type: 'string',
-      enum: [
-        'architecture-decision',
-        'constraint',
-        'crosscutting-concept',
-        'interface-contract',
-        'data-model',
-        'event-contract',
-        'error-contract',
-        'technical-requirement',
-        'acceptance-criteria',
-        'task-breakdown',
-        'none',
-      ],
-    },
-    // ONE sentence naming what others depend on — the fact, not the edit.
-    summary: { type: 'string' },
-    // The durable SAD entry tags this change creates, changes or retires. These are what
-    // TRDs, Specs and Task beads cite, and what the impact pass looks citing items up by.
-    decisionIds: { type: 'array', items: { type: 'string' } },
-    suspectedImpact: { type: 'array', items: { type: 'string' } },
-    confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-  },
-}
-function withMaterialChange(schema) {
-  if (!schema || typeof schema !== 'object' || schema.type !== 'object') return schema
-  return { ...schema, properties: { ...(schema.properties || {}), materialChange: MATERIAL_CHANGE_SCHEMA } }
-}
-// Every declaration this script collected, in dispatch order. The caller carries it up and
-// the run journal records it, so a declaration is readable even when the queue file below
-// was never written.
-const materialChanges = []
-function recordMaterialChange(result, who) {
-  const w = who && typeof who === 'object' ? who : {}
-  const at = { producer: w.producer || null, phase: w.phase || null, artifact: w.artifact || null }
-  const m = result && typeof result === 'object' ? result.materialChange : null
-  if (!m || typeof m !== 'object') {
-    materialChanges.push({ ...at, material: null, undeclared: true, kind: null, summary: null, decisionIds: [], suspectedImpact: [], confidence: null })
-    return null
-  }
-  const list = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
-  const entry = {
-    ...at,
-    material: m.material === true,
-    undeclared: false,
-    kind: typeof m.kind === 'string' ? m.kind : null,
-    summary: typeof m.summary === 'string' ? m.summary : null,
-    decisionIds: list(m.decisionIds),
-    suspectedImpact: list(m.suspectedImpact),
-    confidence: typeof m.confidence === 'string' ? m.confidence : null,
-  }
-  materialChanges.push(entry)
-  return entry
-}
-// Everything the run declared that OTHERS depend on, deduplicated by decision id.
-const materialChangeIds = () => [...new Set(materialChanges.filter((x) => x.material).flatMap((x) => x.decisionIds))]
-// What every producing agent is told. The same words everywhere, so the field means the
-// same thing wherever it is read.
-const MATERIAL_CHANGE_BRIEF = `
-
-DECLARE WHETHER THIS CHANGED SOMETHING OTHERS DEPEND ON — return it under \`materialChange\`.
-You are the only one who knows. Nothing is inferred from a timestamp, a file date or a hash,
-because none of those says whether anything else depends on what you wrote.
-- \`material\`: true when something OUTSIDE this artifact — another document, a spec already
-  written, a Task already planned or already built — is now wrong, or would be built wrong,
-  because of what you changed. False when the change is routine: a restatement, a status
-  move, a checkpoint, or a fact nothing else reads.
-- \`kind\`: what sort of thing changed; \`none\` when material is false.
-- \`summary\`: ONE sentence naming what others depend on — the fact, not the edit.
-- \`decisionIds\`: the durable SAD entry tags this change creates, changes or retires, written
-  exactly as the SAD writes them. Empty when none apply.
-- \`suspectedImpact\`: what you suspect is affected, named as plainly as you can — a document, a
-  repository, a feature. A suspicion is useful; a guess dressed as a finding is not.
-- \`confidence\`: how sure you are that the declaration above is right.
-Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
-nobody looked at stops working.`
-// The queue the dependencies-and-scoring pass drains. One file per declaration, written the same way
-// every other artifact in this pipeline is written, because an agent that can Write a file
-// can always write this one — appending to a shared log cannot be relied on the same way.
-function materialChangeBrief(art, slot) {
-  if (!art || !slot) return MATERIAL_CHANGE_BRIEF
-  return `${MATERIAL_CHANGE_BRIEF}
-THEN QUEUE IT, but ONLY when \`material\` is true: write your \`materialChange\` object, plus
-\`producer\` (your agent type) and \`at\` (the current UTC timestamp, ISO-8601), as ONE JSON object
-to ${art.dir}/material-change-${slot}.json with the Write tool. That directory is the queue
-the dependencies-and-scoring pass drains; a declaration that reaches only your result is read by this run and
-by nothing after it. When \`material\` is false, write nothing there.`
-}
-
 // args: {
 //   spec: {                       // the spec context being authored against
 //     id?: string,                // spec/feature identifier
@@ -598,9 +484,9 @@ async function main(a) {
   const ctx = ctxBlock(s, trd, constraints)
   const ART = artifactsFrom(a && a.artifacts)
   const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(ART.slug) ? ART.slug : 'repo'
-  const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content') + materialChangeBrief(ART, `contracts-${artSlug}`)
-  const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document') + materialChangeBrief(ART, `data-model-${artSlug}`)
-  const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each') + materialChangeBrief(ART, `criteria-${artSlug}`)
+  const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
+  const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document')
+  const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each')
   const storyBrief = persistBrief(ART, `story-${artSlug}.json`, 'your complete structured result (title, description, outOfRepoFindings — exactly as you return them) as ONE JSON object')
 
   // A rerun whose spec artifacts are fresh needs this mini's OUTPUT, not its work. Checked
@@ -619,7 +505,7 @@ async function main(a) {
   // session, and the criteria (AC + DoD) in one small session.
   phase('Author specs')
 
-  const CONTRACTS_SCHEMA = withMaterialChange({
+  const CONTRACTS_SCHEMA = {
     type: 'object',
     additionalProperties: false,
     required: ['apiSpec', 'eventContracts', 'errorSpec'],
@@ -628,8 +514,8 @@ async function main(a) {
       eventContracts: SPEC_SCHEMA,
       errorSpec: SPEC_SCHEMA,
     },
-  })
-  const CRITERIA_SCHEMA = withMaterialChange({
+  }
+  const CRITERIA_SCHEMA = {
     type: 'object',
     additionalProperties: false,
     required: ['acceptanceCriteria', 'definitionOfDone'],
@@ -638,7 +524,7 @@ async function main(a) {
       definitionOfDone: DOD_SCHEMA.properties.definitionOfDone,
       notes: { type: 'string' },
     },
-  })
+  }
 
   // parallel() takes an ARRAY of thunks — that is the runner's contract and what
   // every other workflow in this directory passes. An object map is iterated as
@@ -669,7 +555,7 @@ ${ctx}${contractsBrief}`,
           phase: 'Author specs',
           effort: 'medium',
           agentType: 'agent-teams-workforce:data-model-specification-author',
-          schema: withMaterialChange(SPEC_SCHEMA),
+          schema: SPEC_SCHEMA,
         }
       ),
     () =>
@@ -689,9 +575,6 @@ ${ctx}${criteriaBrief}`,
         }
       ),
   ])
-  if (contractsDraft) recordMaterialChange(contractsDraft, { producer: 'api-specification-author', phase: 'Author specs', artifact: `spec-${artSlug}.md` })
-  if (dataModelSpecDraft) recordMaterialChange(dataModelSpecDraft, { producer: 'data-model-specification-author', phase: 'Author specs', artifact: `spec-${artSlug}.data-model.md` })
-  if (criteriaDraft) recordMaterialChange(criteriaDraft, { producer: 'acceptance-criteria-writer', phase: 'Author specs', artifact: `spec-${artSlug}.criteria.md` })
   const authored = {
     apiSpec: contractsDraft && contractsDraft.apiSpec,
     dataModelSpec: dataModelSpecDraft,
@@ -795,7 +678,7 @@ ${ctx}`,
     if (rejected.includes('dataModelSpec')) {
       drafts.dataModelSpec = await settleAgent(
         `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}${dataModelBrief}`,
-        { label: 'author:data-model', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: withMaterialChange(SPEC_SCHEMA) }
+        { label: 'author:data-model', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
     }
     if (rejected.includes('acceptance')) {
@@ -896,7 +779,7 @@ For each, rule:
     if (sentBack.includes('dataModelSpec')) {
       const redone = await settleAgent(
         `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\n${ctx}${dataModelBrief}`,
-        { label: 'author:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: withMaterialChange(SPEC_SCHEMA) }
+        { label: 'author:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
       if (redone) finalArtifacts.dataModelSpec = redone
     }
@@ -1015,16 +898,15 @@ For each, rule:
     definitionOfDone: authored.dod,
     reviewFindings,
     decision,
-    // The SAD entry ids this spec set was designed against, merged across its artifacts, and
-    // what each author declared about what others depend on. The caller records the ids on
-    // the Story and on every Task beneath it, which is how a changed decision finds them again.
+    // The SAD entry ids this spec set was designed against, merged across its artifacts. The
+    // caller records the ids on the Story and on every Task beneath it, which is how a changed
+    // decision finds them again.
     decisionIds: [...new Set(
       [finalArtifacts.apiSpec, finalArtifacts.dataModelSpec, finalArtifacts.eventContracts, authored.errorSpec]
         .flatMap((x) => (x && Array.isArray(x.decisionIds) ? x.decisionIds : []))
         .map((x) => String(x == null ? '' : x).trim())
         .filter(Boolean)
     )],
-    materialChanges,
     outOfRepoFindings: storyDraft.outOfRepoFindings || [],
     note:
       'errorSpec, definitionOfDone, and the story bead have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',

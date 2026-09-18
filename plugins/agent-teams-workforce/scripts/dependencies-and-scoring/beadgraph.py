@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the tracker once and normalize it into a graph the sequencing pass can reason over.
+"""Read the tracker once and normalize it into a graph that sequencing and scoring reason over.
 
 The tracker is `bd`. The `.beads/issues.jsonl` export is a PASSIVE artifact written by
 `bd` and can lag it, so it is a fallback only, and whichever source answered is reported
@@ -22,7 +22,13 @@ from pathlib import Path
 #: The `beads-contract` CLI — the one writer of this pipeline's bead metadata. Going
 #: through it is what keeps ONE statement of which keys exist and how they merge; a
 #: hand-rolled `bd update --metadata` here would be a second, silently divergent one.
-CONTRACT = Path(__file__).resolve().parents[2] / "beads-contract" / "scripts" / "beads-contract.py"
+CONTRACT = (
+    Path(__file__).resolve().parents[2]
+    / "skills"
+    / "beads-contract"
+    / "scripts"
+    / "beads-contract.py"
+)
 
 #: The only dependency type this system sets, reads, or removes.
 BLOCKS = "blocks"
@@ -70,6 +76,7 @@ class Graph:
 
     beads: dict[str, Bead]
     source: str
+    records: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def of_kind(self, *kinds: str) -> list[Bead]:
@@ -167,6 +174,36 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         raise GraphError(msg)
 
 
+def fingerprints(records: list[dict]) -> dict[str, str]:
+    """The content fingerprint of every record, from the beads-contract CLI in one call.
+
+    The records are handed over rather than re-fetched, so the fingerprint is taken over
+    exactly the sweep the caller reasons about.
+
+    Args:
+        records: Tracker records as `bd list --json` returned them, descriptions included.
+
+    Returns:
+        Bead id -> content fingerprint.
+
+    Raises:
+        GraphError: The CLI refused or answered with something unusable.
+    """
+    command = [sys.executable, str(CONTRACT), "--records", "-", "fingerprint-batch"]
+    done = subprocess.run(
+        command, input=json.dumps(records), capture_output=True, text=True, check=False
+    )
+    if done.returncode != 0:
+        msg = f"fingerprint-batch failed: {done.stdout.strip()} {done.stderr.strip()}"
+        raise GraphError(msg)
+    payload = json.loads(done.stdout or "{}")
+    table = payload.get("fingerprints")
+    if not isinstance(table, dict):
+        msg = "fingerprint-batch returned no `fingerprints` map"
+        raise GraphError(msg)
+    return {str(k): str(v) for k, v in table.items()}
+
+
 def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]:
     """Every issue, closed ones included, from one `bd list` call."""
     args = ["list", "--all", "--json", "-n", "0", "--readonly"]
@@ -229,4 +266,4 @@ def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
     for record in records:
         bead = _bead_of(record)
         beads[bead.id] = bead
-    return Graph(beads=beads, source=source, warnings=warnings)
+    return Graph(beads=beads, source=source, records=records, warnings=warnings)

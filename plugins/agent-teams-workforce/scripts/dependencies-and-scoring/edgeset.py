@@ -8,9 +8,12 @@ item — because a wrong edge set applied is expensive to unpick.
 
 The diff never removes an edge this system did not create. Ownership is recorded on the
 BLOCKED bead as `seq_owned_blockers`, so an edge drawn by hand survives every pass,
-and re-running a pass with an unchanged proposal writes nothing at all. It also never
-removes an edge outside the pass's scope: a narrow pass proposes edges for the Epics it
-reached, and silence about the rest is not a claim that the rest is gone.
+and re-running a pass with an unchanged proposal writes nothing at all.
+
+The proposal covers the whole portfolio, so an owned edge it does not contain is withdrawn.
+Once it is applied, every open Epic records the content fingerprint the sequencer read it
+at as `seq_content_hash`; an Epic whose fingerprint no longer matches is one the sequencer
+has not seen as it now stands.
 """
 
 from __future__ import annotations
@@ -27,6 +30,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from beadgraph import Graph
+
+
+#: Metadata key on an Epic: the content fingerprint the sequencer last read it at.
+SEEN_KEY = "seq_content_hash"
 
 
 class SequencingError(RuntimeError):
@@ -50,7 +57,9 @@ class Edge:
 
 def read_edges(path: Path) -> list[Edge]:
     """Parse an edge file: `{"edges": [{"from", "to", "reason", "confidence"}]}`."""
-    raw = json.loads(sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8"))
+    raw = json.loads(
+        sys.stdin.read() if str(path) == "-" else path.read_text(encoding="utf-8")
+    )
     entries = raw.get("edges", []) if isinstance(raw, dict) else raw
     if not isinstance(entries, list):
         msg = "the edge file must be a list, or an object carrying an `edges` list"
@@ -134,7 +143,10 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
         {
             f"{e.blocker}->{e.blocked}"
             for e in edges
-            if sum(1 for o in edges if o.blocker == e.blocker and o.blocked == e.blocked) > 1
+            if sum(
+                1 for o in edges if o.blocker == e.blocker and o.blocked == e.blocked
+            )
+            > 1
         }
     )
     ok = not (dangling or self_edges or onto_closed or cycle)
@@ -155,16 +167,12 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
 # ------------------------------------------------------------------------------------
 
 
-def plan_edges(graph: Graph, edges: list[Edge], scope: set[str] | None = None) -> dict:
+def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
     """Diff the proposed edge set against the tracker, respecting hand-made edges.
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set.
-        scope: The beads this pass may change, or None for the whole portfolio. A pass
-            whose scope is a few Epics proposes edges for those Epics only, so the
-            withdrawal path must not read that partial proposal as "every other edge is
-            gone". Confining it to the scope is what makes a narrow pass safe.
+        edges: The proposed edge set, over the whole portfolio.
 
     Returns:
         The additions, the withdrawals, the hand-made edges left alone, and the ownership
@@ -181,10 +189,10 @@ def plan_edges(graph: Graph, edges: list[Edge], scope: set[str] | None = None) -
     metadata: dict[str, dict[str, str]] = {}
 
     touched = set(desired) | {
-        bead.id for bead in graph.beads.values() if bead.metadata.get(beadgraph.OWNED_KEY)
+        bead.id
+        for bead in graph.beads.values()
+        if bead.metadata.get(beadgraph.OWNED_KEY)
     }
-    if scope is not None:
-        touched &= scope
     for blocked_id in sorted(touched):
         bead = graph.beads.get(blocked_id)
         if bead is None:
@@ -216,7 +224,7 @@ def plan_edges(graph: Graph, edges: list[Edge], scope: set[str] | None = None) -
 
 
 def apply_edges(
-    graph: Graph, edges: list[Edge], repo: Path | None, scope: set[str] | None = None
+    graph: Graph, edges: list[Edge], repo: Path | None, seen: dict[str, str]
 ) -> dict:
     """Validate, diff and write an edge set. Idempotent by construction.
 
@@ -226,26 +234,37 @@ def apply_edges(
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set.
+        edges: The proposed edge set, over the whole portfolio.
         repo: The repository to run `bd` from, or None for the working directory.
-        scope: The beads this pass may change, or None for the whole portfolio.
+        seen: Epic id -> the content fingerprint the sequencer read that Epic at.
 
     Returns:
-        The validation verdict, the counts, and the plan that was applied. A proposal that
-        fails validation is refused whole — nothing is written.
+        The validation verdict, the counts, the plan that was applied, and the Epics whose
+        `seq_content_hash` was recorded. A proposal that fails validation is refused whole
+        — nothing is written.
     """
     report = validate(graph, edges)
     if not report["ok"]:
         return {"applied": False, "validation": report}
-    plan = plan_edges(graph, edges, scope)
+    plan = plan_edges(graph, edges)
     for entry in plan["add"]:
-        beadgraph.bd_write(["dep", entry["blocker"], "--blocks", entry["blocked"]], repo)
+        beadgraph.bd_write(
+            ["dep", entry["blocker"], "--blocks", entry["blocked"]], repo
+        )
     for entry in plan["remove"]:
         beadgraph.bd_write(["dep", "remove", entry["blocked"], entry["blocker"]], repo)
     for bead_id, pairs in plan["metadata"].items():
         write_metadata(bead_id, pairs, repo)
+    recorded = []
+    for bead in graph.of_kind("epic"):
+        current = seen.get(bead.id)
+        if bead.closed or not current or bead.metadata.get(SEEN_KEY) == current:
+            continue
+        write_metadata(bead.id, {SEEN_KEY: current}, repo)
+        recorded.append(bead.id)
     return {
         "applied": True,
+        "sequencedRecorded": len(recorded),
         "validation": report,
         "added": len(plan["add"]),
         "removed": len(plan["remove"]),

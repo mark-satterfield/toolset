@@ -82,18 +82,6 @@ anywhere. Minting and preserving the tags is your job, because nothing downstrea
   for the replacement. Two facts sharing one tag is worse than a tag nobody cites.
 - **Report every tag** you minted, preserved or superseded, with its section and disposition.
 
-## Declare whether the change is material
-
-You are the only one who knows whether what you changed is something others depend on. Nothing
-downstream infers it from a file date, an mtime or a hash — none of those says whether anything
-else rests on the fact you edited. So say it: `material` true or false, the `kind`, one sentence
-naming the fact others depend on, the `decisionIds` you minted, changed or retired, what you
-suspect is affected, and your confidence. Tidying prose is not material. Changing what a
-constraint permits is, and so is retiring one.
-
-Over-declaring costs one analysis pass. Under-declaring means a Task finishes and a feature
-nobody looked at stops working.
-
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

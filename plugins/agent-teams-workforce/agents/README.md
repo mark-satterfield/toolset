@@ -58,7 +58,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | cost-impact-reviewer | test | Stress-tests cost estimates at 10x/100x/1000x scale |
 | operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
 | architecture-decider | approve | Receives all analyses, challenges, and cost data |
-| architecture-impact-analyst | test | Judges what a materially changed architecture decision reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
+| architecture-impact-analyst | test | Judges what an architecture decision a ruling created, changed or retired reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
 | architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
 | c4-diagram-author | execute | Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2 Container, Level 3 Component) for the SAD. |

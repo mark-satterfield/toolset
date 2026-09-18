@@ -303,6 +303,7 @@ prose is a score no gate can see. The script emits the exact values under `metad
 | `wsjf_size_source` | `supplied` or `child-rollup` |
 | `wsjf_size_child_total` | the summed child sizes, on a roll-up only |
 | `wsjf_confidence` | overall confidence, integer percent |
+| `wsjf_content_hash` | the content fingerprint (`agent-teams-workforce:beads-contract`) of the bead the judged values were judged from — the Epic's PRD or the Task's own content |
 
 `wsjf_ubv`, `wsjf_tc` and `wsjf_confidence` are what a child inherits, and `wsjf_size` is
 what a parent's roll-up sums, so all four are required on every scored item. Values carry

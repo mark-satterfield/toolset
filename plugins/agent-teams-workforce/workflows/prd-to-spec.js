@@ -7,7 +7,7 @@ export const meta = {
     { title: 'PRD Validation' },
     { title: 'Epic', detail: "ensure both faces of the item exist — Epic supplied by the caller, minted with the PRD, or minted here for an existing PRD" },
     { title: 'Architecture', detail: 'runs only when a read-only triage over the PRD finds a genuine technical choice open — a difference from what is deployed and any UI/UX difference are both settled already, and convene no panel' },
-    { title: 'Architecture Impact', detail: 'runs only when a producer DECLARES that the ruling changed something others depend on and names the decision ids — an analyst judges every item citing them: not yet elaborated (nothing to do), elaborated but unbuilt (re-elaborate), already built (this Epic carries a knock-on Task; the built Task is never rewritten)' },
+    { title: 'Architecture Impact', detail: 'runs only when the ruling created, changed or retired SAD entries, as the entry tags the sad-maintainer reports show — an analyst judges every item citing them: not yet elaborated (nothing to do), elaborated but unbuilt (re-elaborate), already built (this Epic carries a knock-on Task; the built Task is never rewritten)' },
     { title: 'Repo Scoping', detail: 'rule the repo span from the architecture ruling and the PRD — an output of this run, never pre-staged' },
     { title: 'TRD Authoring', detail: 'once per PRD — from the PRD and the SAD only, never from what is deployed' },
     { title: 'Spec Authoring', detail: 'once per repo in the RULED span — the current-state reconciliation runs HERE, at the only scope where "how do we turn Y into X" has a concrete answer, and a Spec and its Story are created together, one Story per repo' },
@@ -2578,10 +2578,11 @@ if (!architecture.ok) return partial('architecture', architecture)
 // announce itself anywhere — the TRD, the specs and the Tasks that cite it were written and
 // filed months ago, and nothing reads them again.
 //
-// It runs ONLY on a declared material change. Not on a file date, not on a hash, not on "the
-// SAD was edited": the sad-maintainer and the architecture-decider SAY whether what they
-// changed is something others depend on, and they name the decision ids. An empty set means
-// they said no, and this phase costs nothing.
+// It runs ONLY when the ruling created, changed or retired SAD entries. Not on a file date,
+// not on a hash, not on "the SAD was edited": the sad-maintainer reports every entry tag the
+// ruling touched with its disposition, and every tag it did not merely preserve — one it
+// minted or one it superseded — is a decision id other work may cite. An empty set means the
+// ruling left every entry as it stood, and this phase costs nothing.
 //
 // What it does NOT do is rule. An analyst judges each citing item and the ruling is recorded,
 // including the items it judged UNAFFECTED and why — an item examined and cleared is evidence,
@@ -2634,32 +2635,31 @@ const IMPACT_SCHEMA = {
 }
 
 let architectureImpact = null
+const changedEntries = (architecture.artifact && Array.isArray(architecture.artifact.entryTags) ? architecture.artifact.entryTags : [])
+  .filter((x) => x && x.disposition !== 'preserved')
 const changedDecisionIds = [
   ...new Set(
-    [
-      ...((architecture.artifact && Array.isArray(architecture.artifact.materialChangeIds) ? architecture.artifact.materialChangeIds : [])),
-      ...((architecture.artifact && Array.isArray(architecture.artifact.entryTags) ? architecture.artifact.entryTags : [])
-        .filter((x) => x && x.disposition !== 'preserved')
-        .map((x) => x && x.tag)),
-    ]
+    changedEntries
+      .map((x) => x.tag)
       .map((x) => String(x == null ? '' : x).trim())
       .filter(Boolean)
   ),
 ]
-const declaredMaterial = (architecture.artifact && Array.isArray(architecture.artifact.materialChanges) ? architecture.artifact.materialChanges : []).some(
-  (x) => x && x.material === true
-)
-if (!architecture.skipped && declaredMaterial && changedDecisionIds.length) {
+const sadUpdateSummary = (architecture.artifact && architecture.artifact.sadUpdate && architecture.artifact.sadUpdate.summary) || null
+if (!architecture.skipped && changedDecisionIds.length) {
   enterPhase('Architecture Impact')
-  log(`Architecture declared a material change to ${changedDecisionIds.length} decision id(s) — judging what already cites them`)
+  log(`Architecture ruling created, changed or retired ${changedDecisionIds.length} SAD entry id(s) — judging what already cites them`)
   const impact = await settleAgent(
     `You are the architecture-impact-analyst. An architecture ruling has just changed decisions that other work was designed against. Find every work item that cites them and judge each one. You judge and report; you write no code, you author no document, and you change no bead.
 
 Decision ids this ruling created, changed or retired:
 ${changedDecisionIds.map((x) => `- ${x}`).join('\n')}
 
-What changed, as its producers declared it:
-${JSON.stringify((architecture.artifact && architecture.artifact.materialChanges) || [], null, 2)}
+The SAD entries behind those ids, as the sad-maintainer reported them (\`minted\` is a new entry; \`superseded\` is one this ruling overturns):
+${JSON.stringify(changedEntries, null, 2)}
+
+The SAD update, in the sad-maintainer's words:
+${sadUpdateSummary || '(not captured)'}
 
 The ruling itself:
 ${(architecture.artifact && architecture.artifact.decision && architecture.artifact.decision.ruling) || '(not captured)'}
@@ -2706,9 +2706,7 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
     decisionIds: changedDecisionIds,
     reason: architecture.skipped
       ? 'the architecture phase was skipped, so no decision changed'
-      : declaredMaterial
-        ? 'a material change was declared but named no decision ids, so nothing could be looked up'
-        : 'no producer declared a material change',
+      : 'the ruling created, changed or retired no SAD entry, so nothing cites a changed decision',
     rulings: [],
     reElaborate: [],
     knockOn: [],
@@ -5823,17 +5821,6 @@ const runJournal = {
     'emit-beads',
   ],
   carriedFlags,
-  // ── WHAT THIS RUN DECLARED THAT OTHERS DEPEND ON ──────────────────────────────
-  // Collected from the producing minis, which collect it from their producing agents.
-  // Nothing here is derived from a timestamp, an mtime or a hash: an agent said it, or it
-  // is not here. The dependencies-and-scoring pass drains the same declarations off disk, from the
-  // Epic's artifact directory; this copy is the run's own record of what it declared.
-  materialChanges: [
-    ...((architecture.artifact && Array.isArray(architecture.artifact.materialChanges) ? architecture.artifact.materialChanges : [])),
-    ...((trdAuthoring.artifact && Array.isArray(trdAuthoring.artifact.materialChanges) ? trdAuthoring.artifact.materialChanges : [])),
-    ...specPairs.flatMap((pr) => (pr.spec && Array.isArray(pr.spec.materialChanges) ? pr.spec.materialChanges : [])),
-    ...decompositions.flatMap((d) => (d.artifact && Array.isArray(d.artifact.materialChanges) ? d.artifact.materialChanges : [])),
-  ],
   architectureImpact,
   specFailures,
   reconFailures,
