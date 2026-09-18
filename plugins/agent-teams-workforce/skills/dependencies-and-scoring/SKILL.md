@@ -21,25 +21,33 @@ Nothing here invents a rubric. Scores come from `agent-teams-workforce:epic-wsjf
 `agent-teams-workforce:task-wsjf`; metadata keys come from
 `agent-teams-workforce:beads-contract`, which is also the only writer.
 
-## Why the two are separate
+## What each mechanism decides
 
-Two mechanisms put foundations first, and merging them is the defect this design exists to
-avoid.
+Two decisions put foundations first, and they answer different questions from one input.
 
 - **The dependency graph decides ELIGIBILITY** — what may be elaborated or built at all. An
   Epic whose architecture must be designed from another Epic's requirements is blocked
   until that one is elaborated.
-- **WSJF decides PRIORITY** among what is already eligible. The Epic rubric's
-  establish-versus-consume dimension is what makes the Epic that establishes a canonical
-  pattern (sign-up and sign-in) outrank one that merely consumes it (password reset).
+- **WSJF decides PRIORITY** among what is already eligible. It is what makes the Epic that
+  establishes a canonical pattern (sign-up and sign-in) outrank one that merely consumes it
+  (password reset).
+
+The graph is the input to both. `agent-teams-workforce:epic-wsjf` computes RR-OE from
+transitive reachability in it, and `agent-teams-workforce:task-wsjf` does the same over the
+Task graph, so the edges decide eligibility directly and set priority through RR-OE. They
+are not independent signals, and agreement between an edge and a score is not evidence
+that either is right.
 
 Eligibility is not computed here. It lives in `ops/sdlc-automation/nextwork.py`, which is
 the one implementation of it; a second copy would drift from the first. This skill supplies
 the inputs — the edges and the scores — and the provider decides from them.
 
-An edge added "for tidiness" or to express importance is a bug: it removes the blocked Epic
-from the eligible pool until the blocker is elaborated, possibly for months. That is what
-WSJF is for.
+**The edge set is therefore the only place either decision can be corrected.** An edge
+added "for tidiness" or to express importance is a bug twice over: it removes the blocked
+Epic from the eligible pool until the blocker is elaborated, possibly for months, and it
+inflates the blocker's RR-OE. A true edge left undrawn is the same bug inverted — it
+releases an Epic that is not ready and computes its blocker as though nothing were designed
+from it. Draw every edge that passes the derivation test and none that does not.
 
 ## One operation, and its scope
 
@@ -98,9 +106,13 @@ DS="${CLAUDE_PLUGIN_ROOT}/skills/dependencies-and-scoring/scripts/depscore.py"
    `bd dep`. Pass the scope so withdrawal is confined to it; omit it only for a
    portfolio-wide pass. If anything was added or removed, the scope widens to the
    portfolio for the rest of the pass.
-6. **`agent-teams-workforce:epic-wsjf` on every in-scope Epic** — the judged part, and the
-   part that costs money. Run it on every Epic in scope, including ones that already carry
-   a score, and write the result with the `beads-contract` CLI.
+6. **`agent-teams-workforce:epic-wsjf` over the portfolio** — the judged part, and the part
+   that costs money. It runs AFTER the edges are applied, because it computes RR-OE from
+   the graph they form. One session scores every in-scope Epic, including ones that already
+   carry a score; never split the Epic set across sessions and never hand the scoring
+   session calibration bands of your own — the rubric owns its bands. Write the result with
+   the `beads-contract` CLI, and carry any `graphDefects` it reports into the report at
+   step 8.
 7. **`score [--epics <scope>]`** — the arithmetic: every in-scope Epic and its Tasks, value
    down and size up, in one loop.
 8. **Report** — the scope and why, the edges added and withdrawn, the Epics and Tasks
@@ -142,6 +154,13 @@ the proposal; the scripts carry them through and do not judge them.
 
 - Adding an Epic edge to express "this is more important". That is WSJF's job, and an edge
   costs the blocked Epic its eligibility until the blocker is elaborated.
+- Withholding an edge that passes the derivation test because the fan-out looks excessive.
+  It releases an Epic that is not ready and computes its blocker's RR-OE as though nothing
+  were designed from it.
+- Handing the scoring session calibration bands, expected distributions, or a reachability
+  table of your own. The rubric computes what it needs; supplied bands replace it.
+- Treating an edge and a score that agree as corroboration. RR-OE is computed from the
+  edges, so they cannot disagree about direction.
 - Deciding eligibility here, or reimplementing it. `nextwork.py` owns it.
 - Judging a Task's value from the Task's own text. It is inherited, always.
 - Removing an edge the pass does not own, or one outside its scope.

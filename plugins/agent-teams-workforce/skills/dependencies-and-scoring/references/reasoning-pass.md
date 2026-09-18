@@ -28,14 +28,30 @@ from PRD file names and **its errors are to be corrected rather than trusted** �
 
 Same question, one level down. Which subdomain establishes something the others consume?
 
-### 3. Epic-to-Epic edges — the narrow part
+### 3. Epic-to-Epic edges
 
-Set an edge ONLY where one Epic's architecture must be designed from another Epic's
-requirements first. That is the whole test. Not "this feels earlier", not "this is more
-important", not "this is in an earlier tier".
+Set an edge where one Epic's architecture must be designed from another Epic's
+requirements first, and nowhere else. That is the whole test. Not "this feels earlier",
+not "this is more important", not "this is in an earlier tier".
 
-**Do not add edges to force a total order.** WSJF orders everything an edge does not, and
-an edge costs the blocked Epic its eligibility until the blocker is elaborated.
+**Draw every edge that passes the test, however many that is.** An Epic that rules a
+cross-cutting concern — the service chassis, the event envelope, the canonical record of a
+domain — is genuinely upstream of every Epic whose architecture is derived from it, and
+each of those edges is true. Do not withhold a true edge because the fan-out looks
+excessive or because the result approaches a total order: how many Epics one Epic
+establishes the architecture for is a fact about the design, not an aesthetic defect in
+the graph.
+
+Withholding a true edge now corrupts the priority ranking as well as the eligibility pool.
+`agent-teams-workforce:epic-wsjf` computes RR-OE from transitive reachability in this
+graph, so an undrawn edge silently lowers the blocker's score — a foundation with no
+out-edges computes the bottom rung and reads as though nothing is designed from it. The
+score cannot be corrected downstream; the edge is the only place it can be fixed.
+
+The discipline runs the other way instead: never draw an edge that fails the test. A false
+edge costs the blocked Epic its eligibility until the blocker is elaborated, and inflates
+the blocker's RR-OE. Judge each candidate edge on the test alone, and let the count come
+out wherever it comes out.
 
 ### 4. Revisit
 

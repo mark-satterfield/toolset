@@ -125,17 +125,17 @@ No build step and no npm scripts — plugins are plain Markdown/YAML. They are d
 
 Every plugin version bump in this repo runs `/version` (the `version-plugins` skill). It bumps `.claude-plugin/marketplace.json` and each bumped plugin's `plugins/<name>/.claude-plugin/plugin.json` together and commits them in one commit — the marketplace resolves plugins by version, and a version that moves in only one of those two files ships nothing. Pass `--push` to land it.
 
-<!-- BEGIN AGENT TEAMS WORKFORCE: v:5.2.1 hash:bd363e8 -->
+<!-- BEGIN AGENT TEAMS WORKFORCE: v:6.24.0 hash:5d6bd54 -->
 
 ## Instructions for Agent Teams Workforce
 
 This project uses an agentic framework names "Agent Teams Workforce" to...
 
 These instructions will be loaded into the contect window at session start.
-@/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-INSTRUCTIONS.md`
+@/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-INSTRUCTIONS.md`
 
 | Question about this:                                         | Find it here:                                                |
 | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-TEAMS-WORKFORCE.md](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/AGENT-TEAMS-WORKFORCE.md) |
-| Useful commands                                              | [/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/commands](/Users/msat1971/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/5.2.1/commands) |
+| SDLC pipelines, workflow scripts, agent taxonomy, teams, full roster. | [/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-TEAMS-WORKFORCE.md](/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/AGENT-TEAMS-WORKFORCE.md) |
+| Useful commands                                              | [/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/commands](/Users/msat1971/.codex/plugins/cache/mark-satterfield/agent-teams-workforce/6.24.0/commands) |
 <!-- END AGENT TEAMS WORKFORCE -->
