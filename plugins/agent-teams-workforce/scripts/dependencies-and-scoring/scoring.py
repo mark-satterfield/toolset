@@ -5,16 +5,18 @@ A score has two kinds of input.
 
 * JUDGED inputs come from a model applying the `agent-teams-workforce:wsjf` rubric: an
   Epic's User-Business Value, Time Criticality, confidence and — while it has no Tasks —
-  its span Job Size, all judged from its PRD, which is the Epic's own description; and a
-  Task's Job Size, judged from the Task's own content. Each judged value is stored with the
+  its Job Size estimate, all judged from its PRD, which is the Epic's own description; and
+  a Task's Job Size estimate, judged from the Task's own content. Every size estimate
+  carries a plausible range and a confidence. Each judged value is stored with the
   content fingerprint of the bead it was judged from, under `wsjf_content_hash`. A judged
   input is judged again only when that fingerprint no longer matches the bead, when it was
   never judged, or when the caller asks for everything. A judged value that carries no
   fingerprint was judged by whoever wrote it from the content the bead holds, and is
   adopted: the current fingerprint is recorded beside it.
 * COMPUTED inputs are arithmetic and are recomputed over the WHOLE portfolio on every run:
-  Epic RR-OE from transitive reachability over the Epic edges, Epic Job Size from the sum
-  of its Tasks' sizes once Tasks exist, Task RR-OE from reachability over the Task edges,
+  Epic RR-OE from transitive reachability over the Epic edges, Epic Job Size as the plain
+  sum of its Tasks' sizes once Tasks exist — flagged when it falls outside the range of the
+  Epic's own estimate — Task RR-OE from reachability over the Task edges,
   a Task's inherited UBV, TC and confidence, and every WSJF. Recomputing all of it is what
   carries a change through upstream and downstream dependencies without anyone tracing it.
 
@@ -44,6 +46,15 @@ JUDGED_HASH_KEY = "wsjf_content_hash"
 
 #: Metadata that changes on every write and so never, by itself, justifies one.
 VOLATILE_KEYS = frozenset({"wsjf_calculated_at"})
+
+#: The judged size keys. `record` writes them; `score` reads them and never writes them.
+ESTIMATE_KEY = "wsjf_size_estimate"
+SIZE_JUDGED_KEYS = (
+    ESTIMATE_KEY,
+    "wsjf_size_low",
+    "wsjf_size_high",
+    "wsjf_size_confidence",
+)
 
 
 class ScoringError(RuntimeError):
@@ -204,7 +215,7 @@ def plan(graph: Graph, *, everything: bool) -> dict:
     for epic in epics:
         required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
         if not _tasks_of(graph, epic):
-            required += ("wsjf_size",)
+            required += SIZE_JUDGED_KEYS
         reason = _judge_reason(epic, required, prints.get(epic.id, ""), everything)
         if not reason and not epic.metadata.get(JUDGED_HASH_KEY):
             adopt.append(epic.id)
@@ -213,7 +224,7 @@ def plan(graph: Graph, *, everything: bool) -> dict:
     judge_tasks = []
     for task in _open(graph, "task"):
         reason = _judge_reason(
-            task, ("wsjf_size",), prints.get(task.id, ""), everything
+            task, SIZE_JUDGED_KEYS, prints.get(task.id, ""), everything
         )
         if not reason and not task.metadata.get(JUDGED_HASH_KEY):
             adopt.append(task.id)
@@ -250,15 +261,68 @@ def plan(graph: Graph, *, everything: bool) -> dict:
     }
 
 
+def _size_of(bead: Bead) -> dict[str, int | None]:
+    """A bead's judged size estimate with its range and confidence.
+
+    Args:
+        bead: The bead.
+
+    Returns:
+        `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, None where absent.
+    """
+    return {
+        "jobSize": _int(bead.metadata.get(ESTIMATE_KEY)),
+        "sizeLow": _int(bead.metadata.get("wsjf_size_low")),
+        "sizeHigh": _int(bead.metadata.get("wsjf_size_high")),
+        "sizeConfidence": _int(bead.metadata.get("wsjf_size_confidence")),
+    }
+
+
+def reference_jobs(graph: Graph) -> list[dict]:
+    """The elaborated Epics: each one's original estimate beside its refined size.
+
+    An Epic is a reference job once it has Tasks and every one of them is sized. Its
+    refined size is the sum of those sizes, so each reference job shows how an estimate
+    made before the work was known compared with the work as decomposed.
+
+    Args:
+        graph: The tracker graph.
+
+    Returns:
+        One record per reference job, in id order.
+    """
+    jobs = []
+    for epic in graph.of_kind("epic"):
+        tasks = _tasks_of(graph, epic)
+        sizes = [_int(t.metadata.get("wsjf_size")) for t in tasks]
+        if not tasks or any(size is None for size in sizes):
+            continue
+        estimate = _size_of(epic)
+        jobs.append(
+            {
+                "id": epic.id,
+                "title": epic.title,
+                "estimate": estimate["jobSize"],
+                "low": estimate["sizeLow"],
+                "high": estimate["sizeHigh"],
+                "refinedSize": sum(s for s in sizes if s is not None),
+                "tasks": len(tasks),
+            }
+        )
+    return jobs
+
+
 def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
     """The material one judging session reads: the whole portfolio at one level.
 
     Every open item is included, whether or not it is judged in this run, because the
-    rubric judges against descriptive rungs and a session can only place an item on them
-    by comparing it with the rest. Items not being judged carry their current judged
-    values as that comparison set; items being judged carry none, so the session judges
-    them from their content. No computed value is included: RR-OE, reachability and
-    WSJF are arithmetic over the graph and are not the session's to see or set.
+    rubric judges against descriptive rungs and reference jobs, and a session can only
+    place an item by comparing it with the rest. Items not being judged carry their
+    current judged values as that comparison set; items being judged carry none, so the
+    session judges them from their content. The reference jobs — elaborated Epics with
+    their original estimate and refined size — are the size comparison at both levels.
+    No computed value is included: RR-OE, reachability and WSJF are arithmetic over the
+    graph and are not the session's to see or set.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -266,7 +330,8 @@ def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
         level: `epic` or `task`.
 
     Returns:
-        The items, each flagged `judge` with its reason when it is to be judged.
+        The items, each flagged `judge` with its reason when it is to be judged, and the
+        reference jobs.
     """
     wanted = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
     items = []
@@ -287,25 +352,25 @@ def judge_input(graph: Graph, the_plan: dict, level: str) -> dict:
                 else {
                     "userBusinessValue": _int(bead.metadata.get("wsjf_ubv")),
                     "timeCriticality": _int(bead.metadata.get("wsjf_tc")),
-                    "jobSize": None
-                    if has_tasks
-                    else _int(bead.metadata.get("wsjf_size")),
                     "confidence": _int(bead.metadata.get("wsjf_confidence")),
+                    **({} if has_tasks else _size_of(bead)),
                 }
             )
         else:
             epic = graph.epic_of(bead.id)
             entry["epic"] = {"id": epic.id, "title": epic.title} if epic else None
-            entry["current"] = (
-                None
-                if entry["judge"]
-                else {"jobSize": _int(bead.metadata.get("wsjf_size"))}
-            )
+            entry["current"] = None if entry["judge"] else _size_of(bead)
         items.append(entry)
+    jobs = reference_jobs(graph)
     return {
         "level": level,
         "items": items,
-        "summary": {"items": len(items), "toJudge": len(wanted)},
+        "referenceJobs": jobs,
+        "summary": {
+            "items": len(items),
+            "toJudge": len(wanted),
+            "referenceJobs": len(jobs),
+        },
     }
 
 
@@ -335,6 +400,55 @@ def _positive(record: dict, key: str, bead_id: str) -> int:
     return value
 
 
+def _percent(record: dict, key: str, bead_id: str) -> int:
+    """Read one judged confidence as an integer percent from 1 to 100.
+
+    Args:
+        record: The judgment for one item.
+        key: The field.
+        bead_id: The item, for the error message.
+
+    Returns:
+        The value.
+
+    Raises:
+        ScoringError: The value is missing or outside 1-100.
+    """
+    value = _positive(record, key, bead_id)
+    if value > 100:
+        msg = f"{bead_id}: `{key}` is a percent, got {record.get(key)!r}"
+        raise ScoringError(msg)
+    return value
+
+
+def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
+    """The judged size estimate, its plausible range and its confidence, validated.
+
+    Args:
+        one: The judgment for one item.
+        bead_id: The item, for the error message.
+
+    Returns:
+        The size keys and their values.
+
+    Raises:
+        ScoringError: A value is missing, not a positive integer, or the range does not
+            contain the estimate.
+    """
+    size = _positive(one, "jobSize", bead_id)
+    low = _positive(one, "sizeLow", bead_id)
+    high = _positive(one, "sizeHigh", bead_id)
+    if not low <= size <= high:
+        msg = f"{bead_id}: the range {low}-{high} does not contain the estimate {size}"
+        raise ScoringError(msg)
+    return {
+        ESTIMATE_KEY: str(size),
+        "wsjf_size_low": str(low),
+        "wsjf_size_high": str(high),
+        "wsjf_size_confidence": str(_percent(one, "sizeConfidence", bead_id)),
+    }
+
+
 def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, str]:
     """The metadata one judgment writes, with every judged value validated.
 
@@ -354,11 +468,11 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, 
     if level == "epic":
         pairs["wsjf_ubv"] = str(_positive(one, "userBusinessValue", bead.id))
         pairs["wsjf_tc"] = str(_positive(one, "timeCriticality", bead.id))
-        pairs["wsjf_confidence"] = str(_positive(one, "confidence", bead.id))
+        pairs["wsjf_confidence"] = str(_percent(one, "confidence", bead.id))
         if not _tasks_of(graph, bead):
-            pairs["wsjf_size"] = str(_positive(one, "jobSize", bead.id))
+            pairs |= _size_pairs(one, bead.id)
     else:
-        pairs["wsjf_size"] = str(_positive(one, "jobSize", bead.id))
+        pairs |= _size_pairs(one, bead.id)
     return pairs
 
 
@@ -451,6 +565,25 @@ def _edges(beads: list[Bead]) -> list[dict[str, str]]:
     ]
 
 
+def _scoring_size(bead: Bead, *, has_tasks: bool) -> dict[str, int]:
+    """The judged size inputs a bead hands the rubric.
+
+    The estimate is `wsjf_size_estimate`. A bead with no stored estimate and no Tasks is
+    sized by the `wsjf_size` it carries.
+
+    Args:
+        bead: The bead.
+        has_tasks: Whether it has Tasks, whose sizes then make its size.
+
+    Returns:
+        `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, each only when present.
+    """
+    size = _size_of(bead)
+    if size["jobSize"] is None and not has_tasks:
+        size["jobSize"] = _int(bead.metadata.get("wsjf_size"))
+    return {key: value for key, value in size.items() if value is not None}
+
+
 def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]]:
     """The rubric input for every open Epic, and what is missing from it.
 
@@ -464,18 +597,18 @@ def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]
     items: list[dict] = []
     incomplete: list[dict] = []
     for epic in epics:
+        tasks = _tasks_of(graph, epic)
         item: dict[str, Any] = {
             "id": epic.id,
             "userBusinessValue": _int(epic.metadata.get("wsjf_ubv")),
             "timeCriticality": _int(epic.metadata.get("wsjf_tc")),
             "confidence": _int(epic.metadata.get("wsjf_confidence")),
+            **_scoring_size(epic, has_tasks=bool(tasks)),
         }
-        tasks = _tasks_of(graph, epic)
         sizes = [_int(t.metadata.get("wsjf_size")) for t in tasks]
         if tasks and all(s is not None for s in sizes):
             item["childSizes"] = sizes
         else:
-            item["jobSize"] = _int(epic.metadata.get("wsjf_size"))
             unsized = [t.id for t, s in zip(tasks, sizes, strict=True) if s is None]
             if unsized:
                 incomplete.append(
@@ -511,7 +644,7 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
                 "timeCriticality": _int(meta.get("wsjf_tc")),
                 "confidence": _int(meta.get("wsjf_confidence")),
                 "valueFrom": epic.id if epic else None,
-                "jobSize": _int(task.metadata.get("wsjf_size")),
+                **_scoring_size(task, has_tasks=False),
             }
         )
     return items
@@ -531,6 +664,11 @@ def _apply(graph: Graph, result: dict, writer: Writer) -> list[dict]:
     rows = []
     for scored in result["scores"]:
         bead = graph.beads[scored["id"]]
+        computed = {
+            key: value
+            for key, value in scored["metadata"].items()
+            if key not in SIZE_JUDGED_KEYS
+        }
         rows.append(
             {
                 "id": bead.id,
@@ -540,7 +678,8 @@ def _apply(graph: Graph, result: dict, writer: Writer) -> list[dict]:
                 "reaches": scored["reaches"],
                 "jobSize": scored["jobSize"],
                 "sizeSource": scored["sizeSource"],
-                "written": _write(bead, scored["metadata"], writer),
+                "sizeOutsideRange": scored.get("sizeOutsideRange"),
+                "written": _write(bead, computed, writer),
             }
         )
     return rows
@@ -558,7 +697,8 @@ def score(graph: Graph, writer: Writer) -> dict:
 
     Returns:
         The Epic and Task scores, everything that could not be scored and why, size
-        faults, any cycle, a summary, and — in a dry run — every write in order.
+        faults, the Epics whose refined size falls outside their estimate's range, any
+        cycle, a summary, and — in a dry run — every write in order.
     """
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
@@ -578,6 +718,7 @@ def score(graph: Graph, writer: Writer) -> dict:
         "unscored": unscored,
         "incomplete": incomplete,
         "sizeFaults": epic_result["sizeFaults"] + task_result["sizeFaults"],
+        "outsideRange": epic_result["outsideRange"],
         "cycles": {"epic": epic_result["cycle"], "task": task_result["cycle"]},
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -589,6 +730,7 @@ def score(graph: Graph, writer: Writer) -> dict:
             "tasksWritten": sum(r["written"] for r in task_rows),
             "unscored": len(unscored),
             "incomplete": len(incomplete),
+            "outsideRange": len(epic_result["outsideRange"]),
             "epicCycle": epic_result["cycle"],
             "taskCycle": task_result["cycle"],
         },

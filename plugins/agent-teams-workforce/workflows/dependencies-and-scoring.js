@@ -1,7 +1,7 @@
 export const meta = {
   name: 'dependencies-and-scoring',
   description:
-    'Maintains the Epic dependency edges and the WSJF score of every open Epic and Task in the beads tracker. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. The arithmetic — Epic RR-OE from transitive reachability over the Epic edges, Epic Job Size from the roll-up of its Tasks, Task RR-OE from the Task graph, the value a Task inherits from its Epic, and every WSJF — is recomputed for the WHOLE portfolio on every run, so a change anywhere reaches every score that depends on it, and only values that changed are written. Epics and their Tasks are scored in one computation, so an Epic is never scored without its Tasks. A model is used only for JUDGED inputs, and only where the content they are judged from changed since they were judged, or they were never judged: ONE session judges Epic value, time criticality and span against the whole portfolio, ONE session judges Task sizes, and the epic-sequencer re-derives the edges over the whole portfolio when any open Epic is new or changed since it last read it. `all` re-judges every judged input and re-derives the edges whatever the fingerprints say.',
+    'Maintains the Epic dependency edges and the WSJF score of every open Epic and Task in the beads tracker. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. The arithmetic — Epic RR-OE from transitive reachability over the Epic edges, Epic Job Size as the plain sum of the sizes of its Tasks (flagged when outside the range of its original estimate), Task RR-OE from the Task graph, the value a Task inherits from its Epic, and every WSJF — is recomputed for the WHOLE portfolio on every run, so a change anywhere reaches every score that depends on it, and only values that changed are written. Epics and their Tasks are scored in one computation, so an Epic is never scored without its Tasks. A model is used only for JUDGED inputs, and only where the content they are judged from changed since they were judged, or they were never judged: ONE session judges Epic value, time criticality and — for an Epic without Tasks — size against the whole portfolio, ONE session judges Task sizes, every size on one Fibonacci scale with a plausible range and a confidence, and the epic-sequencer re-derives the edges over the whole portfolio when any open Epic is new or changed since it last read it. `all` re-judges every judged input and re-derives the edges whatever the fingerprints say.',
   whenToUse: 'Seeding or refreshing the Epic dependency edges and the WSJF scores; run after Epics or Tasks are added or changed.',
   phases: [
     { title: 'Plan', detail: 'fingerprints decide what is judged and whether the sequencer runs' },
@@ -222,6 +222,8 @@ const taskJudgments = file('task-judgments.json')
 
 const JUDGE_RULES = `THE INPUT. Every open item at this level is in the file, whether or not you judge it. Items with \`judge: true\` are yours to judge. Items with \`judge: false\` carry their \`current\` judged values: they are the comparison set that tells you where the rungs sit, and you do not change them. Judge each item from its own content against the rubric's rungs.
 
+JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty together to place the item; never score them separately or add them up. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the file's \`referenceJobs\` — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists in the repository: the architecture document, the existing code, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. Uncertainty widens the range and lowers the confidence; it does not raise the estimate.
+
 THE RUBRIC OWNS ITS BANDS. The rungs in \`agent-teams-workforce:wsjf\` are the whole scale. RR-OE, reachability and WSJF are arithmetic computed after you return; they are not in your input and are not yours to state, estimate or reason about.`
 
 const [sequenced, epicJudged, taskJudged] = await parallel([
@@ -249,9 +251,9 @@ Read ${judgeFiles.epic}. Each item is an open Epic; its \`description\` is its r
 
 ${JUDGE_RULES}
 
-FOR EACH ITEM WITH \`judge: true\`, judge \`userBusinessValue\`, \`timeCriticality\` and an overall \`confidence\` (integer percent), and — only when \`hasTasks\` is false — the span \`jobSize\`. An Epic with Tasks takes its size from them.
+FOR EACH ITEM WITH \`judge: true\`, judge \`userBusinessValue\`, \`timeCriticality\` and an overall \`confidence\` (integer percent), and — only when \`hasTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. An Epic with Tasks takes its size from them. An Epic is sized before its design exists: missing design is normal here and does not enlarge the size — let it show in the range and the confidence.
 
-Write ${epicJudgments} as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id", "userBusinessValue", "timeCriticality", "jobSize" (only when hasTasks is false), "confidence", "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
+Write ${epicJudgments} as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
 
 Return the path you wrote, how many items you judged, and the ids you could not judge.`,
       { label: 'judge:epic', phase: 'Judge', effort: 'high', schema: JUDGE_SCHEMA }
@@ -260,15 +262,15 @@ Return the path you wrote, how many items you judged, and the ids you could not 
   async () => {
     if (!judgeFiles.task) return null
     return settleAgent(
-      `You are the ONE session judging Task sizes under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size in developer-days and nothing else; value and time criticality are inherited from each Task's Epic by arithmetic.
+      `You are the ONE session judging Task sizes under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size and nothing else; value and time criticality are inherited from each Task's Epic by arithmetic.
 
 Read ${judgeFiles.task}. Each item is an open Task with its own \`description\` and the Epic it sits under.
 
 ${JUDGE_RULES}
 
-FOR EACH ITEM WITH \`judge: true\`, judge \`jobSize\` on the Task scale. A Task that exceeds the scale's ceiling is a decomposition fault: size it at the ceiling and say so in its rationale.
+FOR EACH ITEM WITH \`judge: true\`, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task sized above 13 should have been split: that is a decomposition fault — size it at 13 and say so in its rationale.
 
-Write ${taskJudgments} as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
+Write ${taskJudgments} as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
 
 Return the path you wrote, how many items you judged, and the ids you could not judge.`,
       { label: 'judge:task', phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
@@ -308,7 +310,7 @@ const score = scored ? scored.summary || {} : null
 if (score) {
   log(
     `Scored ${score.epicsScored} Epic(s) (${score.epicsWritten} written) and ${score.tasksScored} Task(s) (${score.tasksWritten} written); ` +
-      `${score.unscored} unscored, ${score.incomplete} incomplete — detail in ${file('score.json')}`
+      `${score.unscored} unscored, ${score.incomplete} incomplete, ${score.outsideRange || 0} refined size(s) outside their estimate's range — detail in ${file('score.json')}`
   )
 }
 

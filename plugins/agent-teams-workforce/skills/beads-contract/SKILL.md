@@ -174,10 +174,16 @@ survive a rewording while a statement-derived id does not.
 
 WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`
-(Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size`,
-`wsjf_size_source`, `wsjf_size_task_days`, `wsjf_size_child_total` (the summed child sizes, on a
-roll-up), `wsjf_confidence`, `wsjf_value_from`. They are what lets a Task INHERIT its Epic's
-value and an Epic roll its size up from its Tasks without either one re-judging anything.
+(Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size` (the size the
+score divides by: the judged estimate on the Fibonacci scale, or on an Epic with Tasks the plain
+sum of its Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
+`wsjf_value_from`. They are what lets a Task INHERIT its Epic's value and an Epic roll its size
+up from its Tasks without either one re-judging anything. The judged size is stored apart from
+the size in use: `wsjf_size_estimate` (the judged estimate, kept after an Epic's size becomes
+the sum of its Tasks), `wsjf_size_low` and `wsjf_size_high` (its plausible range),
+`wsjf_size_confidence` (integer percent), and, on an Epic sized from its Tasks,
+`wsjf_size_outside_range` (`true` when that sum falls outside the estimate's range — a flag for
+examination, not an error).
 `wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
 from. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a comma-separated id list
 of the blocking edges that pass created on the bead, and `seq_owned_blockers_at`. The pass only

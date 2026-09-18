@@ -6,6 +6,9 @@ description: >-
   Criticality plus Risk Reduction / Opportunity Enablement, divided by Job Size. RR-OE is
   COMPUTED from transitive reachability over a dependency graph rather than argued from
   prose, and `scripts/wsjf.py` owns every band, the size scale and the child-size roll-up.
+  Job Size means the same thing at both levels: the relative amount of work to deliver the
+  outcome, judged against the agent pipeline, on one Fibonacci scale, with a plausible
+  range and a confidence.
   The skill accepts whatever the caller already knows — a job size, the edges, an inherited
   value — and computes only what is missing. Use when scoring or re-scoring an Epic or a
   Task, or ordering a portfolio.
@@ -26,17 +29,20 @@ portfolio must not move the score of an item whose own inputs did not change.
 | What it is | a container for a requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
 | UBV, TC | **judged** from the requirements document | **inherited** from the parent Epic, with its confidence |
 | RR-OE graph edges | the order in which architecture must be ESTABLISHED — one Epic's design is drawn from another Epic's requirements first | BUILD order — one Task must be built before another |
-| Job Size | **judged** as SPAN, replaced by the roll-up of child sizes once children exist | **judged** in developer-days |
+| Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale, 13 at most |
 
-The bands, the size scale and the roll-up mapping differ by level and live in
-`scripts/wsjf.py`. Read them with `wsjf.py scales --level epic|task`; they are not restated
-here, and a number quoted from anywhere else is not the rubric.
+The RR-OE bands differ by level and live in `scripts/wsjf.py`, with the size scale and the
+Task ceiling. Read them with `wsjf.py scales --level epic|task`; they are not restated here,
+and a number quoted from anywhere else is not the rubric.
 
 ## Accept what is known; compute what is missing
 
 The script takes one JSON document and fills in the gaps:
 
-- a supplied `jobSize` is used as given; supplied `childSizes` replace it by roll-up;
+- a supplied `jobSize` is the judged estimate, placed on the Fibonacci scale; supplied
+  `childSizes` (Epic only) make the size their plain sum, and the estimate is kept beside it;
+- a supplied `sizeLow`, `sizeHigh` and `sizeConfidence` are the estimate's plausible range
+  and confidence;
 - supplied `edges` are walked to get the reachability count; a supplied `reaches` count is
   banded without walking anything; a supplied `riskReductionOpportunityEnablement` is used
   as given and no graph is needed at all;
@@ -140,57 +146,81 @@ is the test that discriminates.
 
 ## 3. Job Size
 
-### At Epic level — SPAN, not developer-days
+### One scale, one meaning, both levels
 
-How much of the system the requirement moves. Four denominators, judged together:
-**repositories** in the ruled span; **child work items** the document implies; **surfaces**
-touched; and **new versus extends** — a new service, datastore or external integration, or
-a change within material that already exists.
+Job Size is the **relative amount of work to deliver the stated outcome**, judged against
+one reference capability: the agent pipeline with its normal tools, knowledge and practices.
+It is not calendar time, not human effort, and not a count of repositories. An Epic and a
+Task are sized on the same scale with the same meaning; an Epic is simply more of it.
+
+Four factors guide the comparison, at both levels. They are weighed together to place the
+item against its reference jobs, and they are never scored separately or added up:
+
+- **Volume** — how much has to be produced: components, interfaces, data, tests, material
+  to remove.
+- **Complexity** — how intricate the work is: interacting parts, states, edge cases,
+  concurrency, integration points.
+- **Knowledge** — how much of what the work needs is already established: architecture,
+  patterns, code and artifacts that exist versus what must be decided or built from scratch.
+- **Uncertainty** — how much is unknown about the work itself and could change its amount.
+
+The scale is Fibonacci and continues upward as far as the work needs:
 
 ```
-  1   : One repo, one child item, one existing surface, extends what is there
-  2   : One repo, two or three child items, extends existing patterns
-  3   : One repo, several child items, or one new surface on an existing service
-  5   : Two repos, or one new surface plus the consumers it forces to change
-  8   : Three or four repos, or a new capability established across a surface
-  13  : Four-plus repos, or a new service or repository plus its consumers
-  20  : A new subsystem — new repositories, a new datastore, new externally
-        facing surfaces
-  40  : Platform-scale — several new services, a new external integration, and
-        migration of material that already ships
+1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, ...
 ```
 
-Removal counts: an item that contradicts shipped material carries the cost of removing it,
-and the repositories holding that material are in the span. Where the repository span has
-not been ruled, say so in the confidence for this dimension and score from the document's
-own reach — do not guess a repository count.
+A judged size between two rungs is placed on the rung above it.
+
+### Reference jobs
+
+Every size is placed by comparison with reference jobs, and its rationale names the
+comparison.
+
+- **Reference jobs are the elaborated Epics**: each Epic whose Tasks all carry a size, with
+  its original estimate beside its refined size, the sum of its Tasks. They are read from
+  the tracker (`wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high` on the Epic, and
+  `wsjf_size` on each of its Tasks); the set grows as Epics are elaborated.
+- **Until any exist**, judge knowledge and uncertainty from what already exists: the
+  architecture document, the existing code, and the other artifacts that show what is
+  already decided or built and what must be decided or built from scratch. Compare items
+  with one another across the portfolio.
+
+### Range and confidence
+
+Every judged size carries a **plausible range** — the lowest and highest size the work
+could reasonably turn out to be, with the estimate inside it — and a **confidence**, an
+integer percent in the estimate. Uncertainty widens the range and lowers the confidence; it
+does not raise the estimate.
+
+### At Epic level
+
+An Epic is sized before its design exists. **Missing design is normal at this level and does
+not enlarge the size**: judge the work the requirement implies, and let what is unknown show
+in the range and the confidence. Removal counts: an Epic that contradicts shipped material
+carries the cost of removing it.
 
 There is no "score as-is, it should be decomposed" rung. An Epic IS the thing that gets
 decomposed.
 
-### At Task level — developer-days
+### At Task level
 
-Relative effort, not calendar time:
-
-```
-  1   : Trivial — hours, a single isolated change
-  2   : Small — less than a day
-  3   : Medium-small — 1-2 days, one area of the codebase
-  5   : Medium — 3-5 days, multiple components
-  8   : Large — 1-2 weeks, cross-cutting within the repository
-  13  : X-Large — 2-4 weeks, significant design plus implementation
-```
-
-A Task that would score above the scale's ceiling is a **decomposition fault**, not a large
-Task. The script clamps it to the ceiling and returns it under `sizeFaults`; report it
-against the decomposition.
+A Task is one agent's work in one repository, and its size is at most **13**. A Task that
+would size above 13 should have been split: it is a **decomposition fault**, not a large
+Task. The script places it at 13 and returns it under `sizeFaults`; report it against the
+decomposition.
 
 ### The roll-up — top-down value, bottom-up cost
 
-An Epic's span size is an estimate made before the work is known. The moment its Tasks
-exist, the estimate is replaced: pass every Task's `wsjf_size` as `childSizes` and the
-script sums them, maps the sum onto the span scale so every Epic keeps one denominator, and
-recomputes the score. Closed Tasks count — the cost is the whole job, not what is left.
+An Epic's estimate is made before the work is known. Once its Tasks exist and every one of
+them carries a size, pass those sizes as `childSizes` with the Epic's estimate and its range:
+the Epic's size becomes the **plain sum** of its distinct Tasks' sizes, which need not be a
+Fibonacci number, and the score is recomputed from it. Closed Tasks count — the cost is the
+whole job, not what is left. The original estimate stays in `wsjf_size_estimate`.
+
+A refined size outside the estimate's plausible range is flagged under `outsideRange` and as
+`wsjf_size_outside_range`. It is a prompt to examine the Epic — new work, changed scope, or
+inconsistent estimation — and never an error.
 
 Value stays top-down: UBV and TC are never re-derived from the children, and RR-OE stays a
 function of the Epic graph, never of the Task graph. Re-run the roll-up whenever the child
@@ -205,21 +235,24 @@ scripts/wsjf.py score --level epic <<'JSON'
 {
   "edges": [{"from": "E1", "to": "E2"}],
   "items": [
-    {"id": "E1", "userBusinessValue": 13, "timeCriticality": 3, "jobSize": 8,
-     "confidence": 88},
-    {"id": "E2", "userBusinessValue": 5, "timeCriticality": 2, "childSizes": [3, 5, 2],
-     "confidence": 90}
+    {"id": "E1", "userBusinessValue": 13, "timeCriticality": 3, "jobSize": 34,
+     "sizeLow": 21, "sizeHigh": 55, "sizeConfidence": 70, "confidence": 88},
+    {"id": "E2", "userBusinessValue": 5, "timeCriticality": 2, "jobSize": 21,
+     "sizeLow": 13, "sizeHigh": 34, "childSizes": [3, 5, 2, 8], "confidence": 90}
   ]
 }
 JSON
 ```
 
 Each scored item comes back with its dimensions, `reaches`, `costOfDelay`, `jobSize`,
-`sizeSource`, `wsjf`, and a `metadata` object carrying the exact keys and values to record.
-Everything the script could not score comes back in `unscored` with a reason.
+`sizeSource`, its estimate's fields, `wsjf`, and a `metadata` object carrying the exact keys
+and values to record. Everything the script could not score comes back in `unscored` with a
+reason; a Task above 13 comes back in `sizeFaults`; an Epic whose summed size falls outside
+its estimate's range comes back in `outsideRange`.
 
 `scripts/wsjf.py reach` returns the counts and bands alone, for a caller maintaining a
-graph. `scripts/wsjf.py selftest` exercises the bands, the roll-up and the graph walk.
+graph. `scripts/wsjf.py selftest` exercises the bands, the scale, the roll-up and the graph
+walk, and exits non-zero when any case fails.
 
 ## Confidence
 
@@ -232,10 +265,10 @@ A percentage per judged dimension:
 ```
 
 Overall confidence is the weighted average biased toward the lowest dimension, and cannot
-exceed 70% when any dimension is below 65%. A computed RR-OE and a rolled-up Job Size are
-98-100% by construction — they were counted, not judged. At Task level, overall confidence
-is the inherited confidence, lowered to the Job Size confidence when that is lower; pass
-both to the script as `confidence` and `sizeConfidence`.
+exceed 70% when any dimension is below 65%. A computed RR-OE and a rolled-up Job Size were
+counted, not judged, so neither lowers it. The script lowers the overall confidence to the
+size confidence when that is lower and the size is judged; pass both as `confidence` and
+`sizeConfidence`. At Task level, `confidence` is the inherited one.
 
 ## Output — the numbers are the deliverable
 
@@ -255,13 +288,16 @@ is.
       "valueFrom": null,
       "costOfDelay": 29,
       "jobSize": 8,
+      "sizeLow": 5,
+      "sizeHigh": 13,
+      "sizeConfidence": 75,
       "sizeSource": "supplied",
       "wsjf": 3.63,
-      "confidence": 88,
+      "confidence": 75,
       "rationale": {
         "userBusinessValue": "<1-3 sentences>",
         "timeCriticality": "<1-3 sentences>",
-        "jobSize": "<1-3 sentences, naming the denominators>"
+        "jobSize": "<1-3 sentences: the reference jobs it was compared with, and the factors that placed it>"
       },
       "assumptions": ["<one entry per assumption that could move a score>"]
     }
@@ -299,14 +335,19 @@ prose is a score no gate can see. The script emits the exact values under `metad
 | `wsjf_rroe` | computed RR-OE |
 | `wsjf_reaches` / `wsjf_unblocks` | the reachability count RR-OE was banded from, under the level's key |
 | `wsjf_cod` | Cost of Delay |
-| `wsjf_size` | Job Size rung |
+| `wsjf_size` | the size the score divides by: the estimate's rung, or the sum of the Tasks' sizes |
 | `wsjf_size_source` | `supplied` or `child-rollup` |
-| `wsjf_size_child_total` | the summed child sizes, on a roll-up only |
+| `wsjf_size_estimate` | the judged size estimate; on an Epic with Tasks it stands beside the summed size |
+| `wsjf_size_low` / `wsjf_size_high` | the estimate's plausible range |
+| `wsjf_size_confidence` | confidence in the estimate, integer percent |
+| `wsjf_size_outside_range` | `true` or `false`, on a roll-up whose estimate carries a range |
 | `wsjf_confidence` | overall confidence, integer percent |
 | `wsjf_content_hash` | the content fingerprint (`agent-teams-workforce:beads-contract`) of the bead the judged values were judged from — the Epic's PRD or the Task's own content |
 
 `wsjf_ubv`, `wsjf_tc` and `wsjf_confidence` are what a child inherits, and `wsjf_size` is
-what a parent's roll-up sums, so all four are required on every scored item. Values carry
+what a parent's roll-up sums, so all four are required on every scored item. Every judged
+size also carries `wsjf_size_estimate`, `wsjf_size_low`, `wsjf_size_high` and
+`wsjf_size_confidence`. Values carry
 no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-case words.
 
 ## Scoring errors to avoid
@@ -318,9 +359,15 @@ no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-cas
 - Splitting a portfolio across sessions, or judging one item in isolation against no
   portfolio at all.
 - Accepting calibration bands from a caller in place of the ones in this rubric.
-- Sizing an Epic in developer-days, or leaving a span estimate in place after its children
-  exist.
-- Scoring a Task above the size ceiling instead of reporting the decomposition fault.
+- Sizing in calendar time, human effort or repository counts instead of relative work
+  against the agent pipeline.
+- Adding the four size factors up instead of weighing them to compare with reference jobs.
+- Enlarging an Epic's size because its design does not exist yet.
+- A size with no plausible range or no confidence.
+- Leaving an estimate in place as the size after the Epic's Tasks exist, or snapping the
+  summed size onto a rung.
+- Treating a refined size outside the estimate's range as an error rather than a flag.
+- Scoring a Task above 13 instead of reporting the decomposition fault.
 - Normalizing CoD before dividing.
 - Re-deriving UBV or TC from the children. Value is top-down; only cost rolls up.
 - Recording the score only in prose.

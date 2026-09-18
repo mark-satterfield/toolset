@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """wsjf.py — the WSJF arithmetic, over whatever the caller already knows.
 
-This module owns the computed tables: the RR-OE reachability bands, the Fibonacci job-size
-scale and its ceiling, and the child-size roll-up mapping. Two levels parameterise them,
-`epic` and `task`.
+This module owns the computed tables and rules: the RR-OE reachability bands, the
+Fibonacci job-size scale with the Task ceiling, and the Epic roll-up, which is the plain
+sum of its Tasks' sizes. Two levels parameterise them, `epic` and `task`.
 
 It takes inputs and returns results. It reads no tracker, no repository and no file other
 than the one named on the command line, and it writes nothing anywhere — the `metadata`
@@ -31,10 +31,13 @@ Input for `score` and `reach`:
         "valueFrom": "E1",                   // optional: where the two above came from
         "riskReductionOpportunityEnablement": 8,  // optional: skips the graph entirely
         "reaches": 12,                       // optional: skips the reachability walk
-        "jobSize": 8,                        // judged
-        "childSizes": [3, 5, 2],             // optional: replaces jobSize by roll-up
-        "confidence": 88,                    // optional, integer percent
-        "sizeConfidence": 70                 // optional, integer percent
+        "jobSize": 8,                        // the judged size estimate
+        "sizeLow": 5,                        // optional: the estimate's plausible range
+        "sizeHigh": 13,
+        "sizeConfidence": 70,                // optional, integer percent, of the estimate
+        "childSizes": [3, 5, 2],             // optional, Epic only: the size becomes
+                                             // their sum; jobSize stays the estimate
+        "confidence": 88                     // optional, integer percent
       }
     ]
   }
@@ -50,6 +53,7 @@ Output for `score`:
     "scores": [ { ...dimensions, "wsjf": 3.63, "metadata": {...} } ],
     "unscored": [ { "id": "C", "reason": "..." } ],
     "sizeFaults": [ { "id": "D", "supplied": 21, "rung": 13 } ],
+    "outsideRange": [ { "id": "E", "size": 47, "low": 21, "high": 34 } ],
     "cycle": null
   }
 """
@@ -64,28 +68,30 @@ from datetime import datetime, timezone
 from typing import Any
 
 #: Per-level parameters. Everything that differs between an Epic and a Task lives here.
+#: Both levels size on the one Fibonacci scale; a Task above `sizeCeiling` should have
+#: been split, and an Epic has no ceiling.
 LEVELS: dict[str, dict[str, Any]] = {
     "epic": {
         "rubric": "epic-wsjf",
         # Reachability ceiling -> RR-OE rung, ascending; anything above takes rroeTop.
         "rroeBands": ((0, 1), (1, 3), (3, 5), (9, 8), (19, 13)),
         "rroeTop": 20,
-        "sizeScale": (1, 2, 3, 5, 8, 13, 20, 40),
-        # Child-size sum ceiling -> job-size rung; anything above takes rollupTop.
-        "rollupBands": ((2, 1), (5, 2), (10, 3), (20, 5), (40, 8), (80, 13), (160, 20)),
-        "rollupTop": 40,
+        "sizeCeiling": None,
+        "rollup": True,
         "reachKey": "wsjf_reaches",
     },
     "task": {
         "rubric": "task-wsjf",
         "rroeBands": ((0, 1), (1, 3), (3, 5), (6, 8), (9, 13)),
         "rroeTop": 20,
-        "sizeScale": (1, 2, 3, 5, 8, 13),
-        "rollupBands": None,
-        "rollupTop": None,
+        "sizeCeiling": 13,
+        "rollup": False,
         "reachKey": "wsjf_unblocks",
     },
 }
+
+#: The rungs `scales` lists. The scale itself continues upward without end.
+LISTED_RUNGS = 11
 
 
 class WsjfError(Exception):
@@ -118,15 +124,30 @@ def band(count: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
     return top
 
 
-def snap_size(value: float, scale: tuple[int, ...]) -> tuple[int, bool]:
-    """Put a judged size on the level's scale.
+def fibonacci(count: int) -> list[int]:
+    """The first rungs of the size scale.
+
+    Args:
+        count: How many rungs.
+
+    Returns:
+        1, 2, 3, 5, 8, ... — `count` of them.
+    """
+    rungs = [1, 2]
+    while len(rungs) < count:
+        rungs.append(rungs[-1] + rungs[-2])
+    return rungs[:count]
+
+
+def snap_size(value: float, ceiling: int | None) -> tuple[int, bool]:
+    """Put a judged size on the Fibonacci scale: the smallest rung at or above it.
 
     Args:
         value: The size the caller judged.
-        scale: The level's ascending rungs.
+        ceiling: The level's largest allowed rung, or None when the scale is unbounded.
 
     Returns:
-        The rung, and whether the value sat above the scale's ceiling.
+        The rung, and whether the value sat above the ceiling.
 
     Raises:
         WsjfError: The value is not a positive number.
@@ -134,10 +155,14 @@ def snap_size(value: float, scale: tuple[int, ...]) -> tuple[int, bool]:
     if value <= 0:
         msg = f"jobSize must be greater than 0, got {value}"
         raise WsjfError(msg)
-    for rung in scale:
-        if value <= rung:
-            return rung, False
-    return scale[-1], True
+    if ceiling is not None and value > ceiling:
+        return ceiling, True
+    low, high = 1, 2
+    if value <= low:
+        return low, False
+    while high < value:
+        low, high = high, low + high
+    return high, False
 
 
 def build_successors(edges: list[dict[str, str]], ids: set[str]) -> dict[str, set[str]]:
@@ -273,34 +298,64 @@ def _resolve_level(payload: dict[str, Any], override: str | None) -> dict[str, A
     return {"level": name, **LEVELS[name]}
 
 
+def _estimate(item: dict[str, Any]) -> dict[str, Any]:
+    """The judged size estimate an item carries, with its range and confidence.
+
+    Args:
+        item: The item being scored.
+
+    Returns:
+        `sizeEstimate`, `sizeLow`, `sizeHigh` and `sizeConfidence`, each only when given.
+    """
+    fields = {
+        "sizeEstimate": _as_number(item.get("jobSize")),
+        "sizeLow": _as_number(item.get("sizeLow")),
+        "sizeHigh": _as_number(item.get("sizeHigh")),
+        "sizeConfidence": _as_int(item.get("sizeConfidence")),
+    }
+    return {key: value for key, value in fields.items() if value is not None}
+
+
 def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
-    """Settle one item's job size, by roll-up when children exist and by judgment otherwise.
+    """Settle one item's job size: the sum of its children, or its judged estimate.
+
+    An Epic with children is sized as the plain sum of their sizes, which need not be a
+    Fibonacci number. Its judged estimate is kept beside it, and a sum outside the
+    estimate's plausible range is flagged. Without children, the estimate is placed on
+    the Fibonacci scale.
 
     Args:
         item: The item being scored.
         params: The level's parameter block.
 
     Returns:
-        A record carrying `jobSize` and `sizeSource`, or `reason` when the size is missing.
+        A record carrying `jobSize`, `sizeSource` and the estimate's fields, or `reason`
+        when the size is missing.
 
     Raises:
-        WsjfError: A supplied size is not a positive number.
+        WsjfError: A supplied size is not a positive number, or children were supplied at
+            a level that does not roll up.
     """
+    estimate = _estimate(item)
     children = [
         c for c in (_as_int(c) for c in item.get("childSizes") or []) if c is not None
     ]
     if children:
-        if params["rollupBands"] is None:
-            msg = f"level {params['level']} defines no child-size roll-up"
+        if not params["rollup"]:
+            msg = f"level {params['level']} does not roll child sizes up"
             raise WsjfError(msg)
         total = sum(children)
-        rung = band(total, params["rollupBands"], params["rollupTop"])
-        return {"jobSize": rung, "sizeSource": "child-rollup", "sizeChildTotal": total}
-    supplied = _as_number(item.get("jobSize"))
+        record = {"jobSize": total, "sizeSource": "child-rollup", **estimate}
+        if "sizeLow" in estimate and "sizeHigh" in estimate:
+            record["sizeOutsideRange"] = not (
+                estimate["sizeLow"] <= total <= estimate["sizeHigh"]
+            )
+        return record
+    supplied = estimate.get("sizeEstimate")
     if supplied is None:
         return {"reason": "no jobSize supplied and no childSizes to roll up"}
-    rung, over = snap_size(supplied, params["sizeScale"])
-    record = {"jobSize": rung, "sizeSource": "supplied"}
+    rung, over = snap_size(supplied, params["sizeCeiling"])
+    record = {"jobSize": rung, "sizeSource": "supplied", **estimate}
     if over or rung != supplied:
         record["sizeFault"] = {"supplied": supplied, "rung": rung, "aboveScale": over}
     return record
@@ -349,21 +404,52 @@ def _resolve_rroe(
     }
 
 
-def _confidence(item: dict[str, Any]) -> int | None:
+def _confidence(item: dict[str, Any], size: dict[str, Any]) -> int | None:
     """The overall confidence: the lowest of those supplied.
+
+    A size summed from children was counted, not judged, so the estimate's confidence
+    does not lower it.
 
     Args:
         item: The item being scored.
+        size: The settled size, from `_resolve_size`.
 
     Returns:
         The integer percent, or None when none was supplied.
     """
+    size_confidence = (
+        None if size["sizeSource"] == "child-rollup" else size.get("sizeConfidence")
+    )
     values = [
-        v
-        for v in (_as_int(item.get("confidence")), _as_int(item.get("sizeConfidence")))
-        if v is not None
+        v for v in (_as_int(item.get("confidence")), size_confidence) if v is not None
     ]
     return min(values) if values else None
+
+
+#: Size fields of a scored record -> the metadata keys they are stored under.
+SIZE_KEYS = {
+    "sizeEstimate": "wsjf_size_estimate",
+    "sizeLow": "wsjf_size_low",
+    "sizeHigh": "wsjf_size_high",
+    "sizeConfidence": "wsjf_size_confidence",
+    "sizeOutsideRange": "wsjf_size_outside_range",
+}
+
+
+def _render(value: Any) -> str:
+    """Render one metadata value: booleans as `true`/`false`, numbers without a `.0`.
+
+    Args:
+        value: The value.
+
+    Returns:
+        Its stored form.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
 
 def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
@@ -389,8 +475,9 @@ def _metadata(record: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
     }
     if record.get("reaches") is not None:
         pairs[params["reachKey"]] = str(record["reaches"])
-    if record.get("sizeChildTotal") is not None:
-        pairs["wsjf_size_child_total"] = str(record["sizeChildTotal"])
+    for field, key in SIZE_KEYS.items():
+        if record.get(field) is not None:
+            pairs[key] = _render(record[field])
     if record.get("valueFrom"):
         pairs["wsjf_value_from"] = str(record["valueFrom"])
     if record.get("confidence") is not None:
@@ -432,12 +519,14 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
                 {"id": i, "reason": "the edge graph has a cycle"} for i in sorted(ids)
             ],
             "sizeFaults": [],
+            "outsideRange": [],
             "cycle": cycle,
         }
 
     scores: list[dict[str, Any]] = []
     unscored: list[dict[str, Any]] = []
     faults: list[dict[str, Any]] = []
+    outside: list[dict[str, Any]] = []
     for item in items:
         item_id = str(item["id"])
         ubv = _as_int(item.get("userBusinessValue"))
@@ -458,6 +547,16 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
         fault = size.pop("sizeFault", None)
         if fault:
             faults.append({"id": item_id, **fault})
+        if size.get("sizeOutsideRange"):
+            outside.append(
+                {
+                    "id": item_id,
+                    "size": size["jobSize"],
+                    "estimate": size.get("sizeEstimate"),
+                    "low": size["sizeLow"],
+                    "high": size["sizeHigh"],
+                }
+            )
         cod = ubv + tc + rroe["riskReductionOpportunityEnablement"]
         record: dict[str, Any] = {
             "id": item_id,
@@ -468,7 +567,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
             **size,
             "costOfDelay": cod,
             "wsjf": round(cod / size["jobSize"], 2),
-            "confidence": _confidence(item),
+            "confidence": _confidence(item, size),
         }
         record["metadata"] = _metadata(record, params)
         scores.append(record)
@@ -478,6 +577,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
         "scores": scores,
         "unscored": unscored,
         "sizeFaults": faults,
+        "outsideRange": outside,
         "cycle": None,
     }
 
@@ -524,13 +624,14 @@ def scales(level: str) -> dict[str, Any]:
         level: The level name.
 
     Returns:
-        The RR-OE bands, the job-size scale, and the child-size roll-up mapping.
+        The RR-OE bands, the job-size scale and its ceiling, and the roll-up rule.
 
     Raises:
         WsjfError: The level is not one this module defines.
     """
     params = _resolve_level({}, level)
-    rollup = params["rollupBands"]
+    ceiling = params["sizeCeiling"]
+    rungs = fibonacci(LISTED_RUNGS)
     return {
         "level": params["level"],
         "rubric": params["rubric"],
@@ -538,24 +639,39 @@ def scales(level: str) -> dict[str, Any]:
             "bands": [{"upTo": c, "rroe": r} for c, r in params["rroeBands"]],
             "above": params["rroeTop"],
         },
-        "jobSize": {"scale": list(params["sizeScale"]), "max": params["sizeScale"][-1]},
+        "jobSize": {
+            "scale": "fibonacci",
+            "rungs": [r for r in rungs if ceiling is None or r <= ceiling],
+            "continuesUpward": ceiling is None,
+            "max": ceiling,
+        },
         "childSizeRollup": (
-            None
-            if rollup is None
-            else {
-                "bands": [{"upTo": c, "jobSize": r} for c, r in rollup],
-                "above": params["rollupTop"],
-            }
+            "the plain sum of the children's sizes" if params["rollup"] else None
         ),
         "reachMetadataKey": params["reachKey"],
     }
 
 
-def selftest() -> dict[str, Any]:
-    """Exercise the bands, the roll-up, the graph walk and the missing-input paths.
+def _case(name: str, expected: Any, got: Any) -> dict[str, Any]:
+    """One selftest case, judged by equality.
+
+    Args:
+        name: What the case exercises.
+        expected: The value the rubric must produce.
+        got: The value it produced.
 
     Returns:
-        Each case with its expectation and what it produced.
+        The case with its verdict.
+    """
+    return {"case": name, "pass": expected == got, "expected": expected, "got": got}
+
+
+def selftest() -> dict[str, Any]:
+    """Exercise the bands, the scale, the roll-up, the graph walk and the missing inputs.
+
+    Returns:
+        Each case with its expectation, what it produced, and whether they match; `ok`
+        is true only when every case passes.
     """
     cases: list[dict[str, Any]] = []
 
@@ -573,42 +689,109 @@ def selftest() -> dict[str, Any]:
         ],
     }
     got = score(graph, "task")
-    reaches = {s["id"]: s["reaches"] for s in got["scores"]}
     cases.append(
-        {
-            "case": "transitive reach",
-            "expected": {"A": 3, "B": 2, "C": 0, "D": 0},
-            "got": reaches,
-        }
+        _case(
+            "transitive reach",
+            {"A": 3, "B": 2, "C": 0, "D": 0},
+            {s["id"]: s["reaches"] for s in got["scores"]},
+        )
     )
 
-    rollup = score(
+    edgeless = score(
+        {
+            "edges": [],
+            "items": [
+                {"id": "X", "userBusinessValue": 5, "timeCriticality": 2, "jobSize": 3}
+            ],
+        },
+        "task",
+    )
+    cases.append(
+        _case(
+            "an empty edge list counts 0",
+            {"reaches": 0, "rroe": 1},
+            {
+                "reaches": edgeless["scores"][0]["reaches"],
+                "rroe": edgeless["scores"][0]["riskReductionOpportunityEnablement"],
+            },
+        )
+    )
+
+    rollup_item = {
+        "id": "E",
+        "userBusinessValue": 13,
+        "timeCriticality": 3,
+        "riskReductionOpportunityEnablement": 13,
+        "jobSize": 34,
+        "sizeLow": 21,
+        "sizeHigh": 55,
+        "sizeConfidence": 60,
+        "confidence": 80,
+        "childSizes": [21, 21, 5],
+    }
+    rollup = score({"items": [rollup_item]}, "epic")["scores"][0]
+    cases.append(
+        _case(
+            "roll-up is the plain sum, estimate kept, inside its range",
+            {
+                "jobSize": 47,
+                "sizeSource": "child-rollup",
+                "wsjf_size_estimate": "34",
+                "wsjf_size_outside_range": "false",
+                "confidence": 80,
+            },
+            {
+                "jobSize": rollup["jobSize"],
+                "sizeSource": rollup["sizeSource"],
+                "wsjf_size_estimate": rollup["metadata"].get("wsjf_size_estimate"),
+                "wsjf_size_outside_range": rollup["metadata"].get(
+                    "wsjf_size_outside_range"
+                ),
+                "confidence": rollup["confidence"],
+            },
+        )
+    )
+
+    outside = score({"items": [{**rollup_item, "childSizes": [34, 34, 8]}]}, "epic")
+    cases.append(
+        _case(
+            "roll-up outside the estimate's range is flagged, not refused",
+            {
+                "size": 76,
+                "flagged": [
+                    {"id": "E", "size": 76, "estimate": 34, "low": 21, "high": 55}
+                ],
+            },
+            {
+                "size": outside["scores"][0]["jobSize"],
+                "flagged": outside["outsideRange"],
+            },
+        )
+    )
+
+    big = score(
         {
             "items": [
                 {
-                    "id": "E",
-                    "userBusinessValue": 13,
-                    "timeCriticality": 3,
-                    "riskReductionOpportunityEnablement": 13,
-                    "childSizes": [20, 20, 5],
+                    "id": "P",
+                    "userBusinessValue": 8,
+                    "timeCriticality": 2,
+                    "riskReductionOpportunityEnablement": 5,
+                    "jobSize": 200,
                 }
             ]
         },
         "epic",
     )
     cases.append(
-        {
-            "case": "child-size roll-up wins over span",
-            "expected": {
-                "sizeChildTotal": 45,
-                "jobSize": 13,
-                "sizeSource": "child-rollup",
+        _case(
+            "an Epic estimate snaps up the unbounded Fibonacci scale",
+            {"jobSize": 233, "aboveScale": False},
+            {
+                "jobSize": big["scores"][0]["jobSize"],
+                "aboveScale": big["sizeFaults"][0]["aboveScale"],
             },
-            "got": {
-                k: rollup["scores"][0][k]
-                for k in ("sizeChildTotal", "jobSize", "sizeSource")
-            },
-        }
+        )
     )
 
     no_graph = score(
@@ -620,11 +803,16 @@ def selftest() -> dict[str, Any]:
         "task",
     )
     cases.append(
-        {
-            "case": "no graph and no RR-OE",
-            "expected": "unscored, naming the missing input",
-            "got": no_graph["unscored"],
-        }
+        _case(
+            "no graph and no RR-OE",
+            [
+                {
+                    "id": "X",
+                    "reason": "RR-OE needs a dependency graph: supply edges, reaches, or RR-OE",
+                }
+            ],
+            no_graph["unscored"],
+        )
     )
 
     supplied = score(
@@ -642,11 +830,7 @@ def selftest() -> dict[str, Any]:
         "task",
     )
     cases.append(
-        {
-            "case": "supplied RR-OE needs no graph",
-            "expected": 5.0,
-            "got": supplied["scores"][0]["wsjf"],
-        }
+        _case("supplied RR-OE needs no graph", 5.0, supplied["scores"][0]["wsjf"])
     )
 
     cyclic = score(
@@ -660,11 +844,11 @@ def selftest() -> dict[str, Any]:
         "task",
     )
     cases.append(
-        {
-            "case": "cycle",
-            "expected": "ok false, cycle reported",
-            "got": {"ok": cyclic["ok"], "cycle": cyclic["cycle"]},
-        }
+        _case(
+            "cycle",
+            {"ok": False, "cycle": ["A", "B", "A"]},
+            {"ok": cyclic["ok"], "cycle": cyclic["cycle"]},
+        )
     )
 
     over = score(
@@ -676,20 +860,25 @@ def selftest() -> dict[str, Any]:
                     "timeCriticality": 2,
                     "riskReductionOpportunityEnablement": 1,
                     "jobSize": 21,
+                    "sizeConfidence": 50,
                 }
             ]
         },
         "task",
     )
     cases.append(
-        {
-            "case": "size above the scale",
-            "expected": {"rung": 13, "aboveScale": True},
-            "got": {k: over["sizeFaults"][0][k] for k in ("rung", "aboveScale")},
-        }
+        _case(
+            "a Task above 13 is a decomposition fault",
+            {"rung": 13, "aboveScale": True, "confidence": 50},
+            {
+                "rung": over["sizeFaults"][0]["rung"],
+                "aboveScale": over["sizeFaults"][0]["aboveScale"],
+                "confidence": over["scores"][0]["confidence"],
+            },
+        )
     )
 
-    return {"ok": True, "cases": cases}
+    return {"ok": all(c["pass"] for c in cases), "cases": cases}
 
 
 def _read_payload(path: str | None) -> dict[str, Any]:
@@ -744,7 +933,7 @@ def build_parser() -> argparse.ArgumentParser:
     tables.add_argument("--level", choices=sorted(LEVELS), required=True)
 
     sub.add_parser(
-        "selftest", help="exercise the bands, the roll-up and the graph walk"
+        "selftest", help="exercise the bands, the scale, the roll-up and the graph walk"
     )
     return parser
 
@@ -774,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0
+    return 0 if args.command != "selftest" or result["ok"] else 1
 
 
 if __name__ == "__main__":

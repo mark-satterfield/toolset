@@ -412,19 +412,24 @@ log(`Decomposing, sequencing, and scoring ${specRef}`)
 //   riskReductionOpportunityEnablement — COMPUTED from how many Tasks this one unblocks,
 //     transitively, in the DAG the maker just emitted. The edges exist; counting them is
 //     evidence, arguing about them from prose is not.
-//   jobSize — the ONE judged input, on the developer-days scale, which is already right
-//     for a Task.
+//   jobSize — the ONE judged input: relative work against the agent pipeline, on the
+//     rubric's Fibonacci scale, 13 at most for a Task, with its plausible range
+//     (sizeLow, sizeHigh) and its confidence (sizeConfidence).
 //
-// So the agent supplies jobSize and a one-line rationale; everything else is computed
+// So the agent supplies the size, its range and confidence, and a one-line rationale;
+// everything else is computed
 // by the rubric's `wsjf.py`. Scoring the same task set twice produces the same numbers, and a re-score buys
 // nothing but a better size.
 const wsjfTaskSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['key', 'jobSize', 'rationale'],
+  required: ['key', 'jobSize', 'sizeLow', 'sizeHigh', 'sizeConfidence', 'rationale'],
   properties: {
     key: { type: 'string' },
     jobSize: { type: 'number' },
+    sizeLow: { type: 'number' },
+    sizeHigh: { type: 'number' },
+    sizeConfidence: { type: 'integer' },
     rationale: { type: 'string' },
   },
 }
@@ -443,7 +448,7 @@ const WSJF_SKILL_DIR =
   typeof a.pluginRoot === 'string' && SAFE_ART_PATH.test(a.pluginRoot) && !a.pluginRoot.split('/').includes('..')
     ? `${a.pluginRoot.replace(/\/+$/, '')}/skills/wsjf`
     : null
-const JOB_SIZE_BRIEF = `Score jobSize in developer-days ONLY, on the Task-level Job Size scale of the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` — read it under "Job Size" -> "At Task level" in ${WSJF_SKILL_DIR}/SKILL.md` : ''}. It is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would score above the scale's ceiling is a DECOMPOSITION FAULT — say so in your notes and score it at the ceiling.`
+const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it; never score them separately or add them up. The scale is Fibonacci (1, 2, 3, 5, 8, 13); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would size above 13 should have been split: that is a DECOMPOSITION FAULT — say so in your notes and size it at 13.`
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 // A placeholder is used ONLY when the caller supplied no Epic score. It is the same for
@@ -508,12 +513,18 @@ async function applyTaskWsjf(judged, taskSet, edges) {
     const j = byKey.get(t.key)
     const size = finite(j && j.jobSize)
     if (size === null || size <= 0) unsized.push(t.key)
+    const low = finite(j && j.sizeLow)
+    const high = finite(j && j.sizeHigh)
+    const sizeConfidence = finite(j && j.sizeConfidence)
     return {
       id: t.key,
       userBusinessValue: inheritedUbv,
       timeCriticality: inheritedTc,
       ...(valueFrom ? { valueFrom } : {}),
       ...(size === null || size <= 0 ? {} : { jobSize: size }),
+      ...(low === null ? {} : { sizeLow: low }),
+      ...(high === null ? {} : { sizeHigh: high }),
+      ...(sizeConfidence === null ? {} : { sizeConfidence }),
       ...(epicConfidence === null ? {} : { confidence: epicConfidence }),
       // An edgeless DAG is still a DAG: every task in it unblocks nothing.
       ...(edgeList.length ? {} : { reaches: 0 }),
@@ -541,6 +552,10 @@ async function applyTaskWsjf(judged, taskSet, edges) {
         riskReductionOpportunityEnablement: null,
         unblocks: null,
         jobSize: null,
+        sizeEstimate: finite(j && j.jobSize),
+        sizeLow: finite(j && j.sizeLow),
+        sizeHigh: finite(j && j.sizeHigh),
+        sizeConfidence: finite(j && j.sizeConfidence),
         costOfDelay: null,
         wsjf: null,
         confidence: epicConfidence,
@@ -556,6 +571,10 @@ async function applyTaskWsjf(judged, taskSet, edges) {
       riskReductionOpportunityEnablement: s.riskReductionOpportunityEnablement,
       unblocks: s.reaches,
       jobSize: s.jobSize,
+      sizeEstimate: s.sizeEstimate === undefined ? null : s.sizeEstimate,
+      sizeLow: s.sizeLow === undefined ? null : s.sizeLow,
+      sizeHigh: s.sizeHigh === undefined ? null : s.sizeHigh,
+      sizeConfidence: s.sizeConfidence === undefined ? null : s.sizeConfidence,
       costOfDelay: s.costOfDelay,
       wsjf: s.wsjf,
       confidence: s.confidence === undefined ? epicConfidence : s.confidence,
@@ -607,7 +626,7 @@ And once for the whole set, \`testStrategy\`: the test strategy the spec states 
 
 JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`): map the dependencies between the tasks you just decomposed into a DIRECTED ACYCLIC graph and derive a valid topological build order. An edge "from -> to" means "from must be built before to". If the only honest reading implies a cycle, do not invent an order: set acyclic=false, list the cycle, and leave buildOrder empty.
 
-JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, and a one-line \`rationale\` for the size. Every key exactly once.
+JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, \`sizeLow\`, \`sizeHigh\`, \`sizeConfidence\`, and a one-line \`rationale\` naming what the size was compared with. Every key exactly once.
 
 ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
   {
@@ -682,7 +701,7 @@ async function scoreWsjf(feedback) {
   return await settleAgent(
     `Re-size the tasks below under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. ${JOB_SIZE_BRIEF}
 
-WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme, and do NOT assign value, time criticality or risk reduction: those are inherited from the parent Epic and computed from the dependency graph below, and the composite score is arithmetic over the sizes you return. Reference tasks by their "key", size every key exactly once, and give a one-line rationale per task.
+WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme, and do NOT assign value, time criticality or risk reduction: those are inherited from the parent Epic and computed from the dependency graph below, and the composite score is arithmetic over the sizes you return. Reference tasks by their "key", size every key exactly once with its range and confidence, and give a one-line rationale per task.
 
 Tasks:
 ${taskList}
@@ -743,7 +762,7 @@ async function reviewScores(pass) {
   return await settleAgent(
     `${CHECKER_PREAMBLE}
 
-Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize on the rubric's Task-level developer-days scale and > 0; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
+Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize a Fibonacci rung from 1 to 13, meaning relative work against the agent pipeline rather than calendar time or human effort; sizeLow <= jobSize <= sizeHigh and sizeConfidence an integer percent, with a wider range and lower confidence where the task carries more uncertainty; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
 
 ${taskEvidence}
 
