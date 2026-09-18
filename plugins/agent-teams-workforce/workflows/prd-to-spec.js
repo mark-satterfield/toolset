@@ -1842,7 +1842,7 @@ if (RESUME) {
 
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
-// Unattended multi-day runs mean Mark's standing rulings must live in the pipeline's
+// Unattended multi-day runs mean the project's standing rulings must live in the pipeline's
 // heads, not in a human watcher's: a reconciliation checker once found that a "live
 // service" serves nobody yet kept migration requirements his dev-data-is-disposable
 // ruling invalidates, and only a watching human caught it. So the run resolves the
@@ -2573,7 +2573,7 @@ if (!architecture.ok) return partial('architecture', architecture)
 
 // ── WHEN THE ARCHITECTURE MOVES, SOMETHING ALREADY BUILT MAY STOP WORKING ────────
 //
-// This is the phase that answers Mark's sentence: "I finished my task, but feature XYZ will
+// This is the phase that answers the question: "I finished my task, but feature XYZ will
 // no longer work." A ruling that changes a decision other work was designed against does not
 // announce itself anywhere — the TRD, the specs and the Tasks that cite it were written and
 // filed months ago, and nothing reads them again.

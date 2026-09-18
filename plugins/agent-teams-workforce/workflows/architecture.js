@@ -1016,7 +1016,7 @@ READING BUDGET (binding): everything you are judging is in this prompt. The prop
 }
 
 // ── The challenge wave is CONDITIONAL, and the trigger is JUDICIOUS ─────────────
-// Mark's ruling: "Challenge shouldn't run 100% of the time" — and, on clarification,
+// The ruling: "Challenge shouldn't run 100% of the time" — and, on clarification,
 // "we need to be judicious": this is not a bias against challenging. The wave runs
 // on any contest TRIGGER (an analyst reports a live conflict, or triage classified
 // SAD-reversal risk or constitutive stakes), and skipping requires AFFIRMATIVE

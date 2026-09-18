@@ -17,9 +17,9 @@ This maintains two things over the tracker and nothing else: the **dependency ed
 between Epics, and the **WSJF scores** on Epics and Tasks. It does not decide what to work
 on and it does not start anything.
 
-Nothing here invents a rubric. Scores come from `agent-teams-workforce:epic-wsjf` and
-`agent-teams-workforce:task-wsjf`; metadata keys come from
-`agent-teams-workforce:beads-contract`, which is also the only writer.
+Nothing here invents a rubric. Scores come from `agent-teams-workforce:wsjf`, at Epic level
+and at Task level; metadata keys come from `agent-teams-workforce:beads-contract`, which is
+also the only writer.
 
 ## What each mechanism decides
 
@@ -32,22 +32,15 @@ Two decisions put foundations first, and they answer different questions from on
   establishes a canonical pattern (sign-up and sign-in) outrank one that merely consumes it
   (password reset).
 
-The graph is the input to both. `agent-teams-workforce:epic-wsjf` computes RR-OE from
-transitive reachability in it, and `agent-teams-workforce:task-wsjf` does the same over the
-Task graph, so the edges decide eligibility directly and set priority through RR-OE. They
-are not independent signals, and agreement between an edge and a score is not evidence
-that either is right.
+The graph is the input to both. `agent-teams-workforce:wsjf` computes RR-OE from transitive
+reachability in it at Epic level, and does the same over the Task graph at Task level, so
+the edges decide eligibility directly and set priority through RR-OE.
 
-Eligibility is not computed here. It lives in `ops/sdlc-automation/nextwork.py`, which is
-the one implementation of it; a second copy would drift from the first. This skill supplies
-the inputs — the edges and the scores — and the provider decides from them.
+Eligibility is not computed here. This skill supplies the inputs — the edges and the scores
+— and whatever consumes them decides from those.
 
-**The edge set is therefore the only place either decision can be corrected.** An edge
-added "for tidiness" or to express importance is a bug twice over: it removes the blocked
-Epic from the eligible pool until the blocker is elaborated, possibly for months, and it
-inflates the blocker's RR-OE. A true edge left undrawn is the same bug inverted — it
-releases an Epic that is not ready and computes its blocker as though nothing were designed
-from it. Draw every edge that passes the derivation test and none that does not.
+**The edge set is therefore the only place either decision can be corrected.** Draw every
+edge that passes the derivation test and none that does not.
 
 ## One operation, and its scope
 
@@ -96,23 +89,22 @@ DS="${CLAUDE_PLUGIN_ROOT}/skills/dependencies-and-scoring/scripts/depscore.py"
 3. **The reasoning pass** — dispatch ONE `epic-sequencer` agent over that snapshot. Not a
    team: splitting domains across agents costs more and answers worse, because the
    judgment is precisely about how domains relate and no agent holding one domain can make
-   it. Its procedure is `references/reasoning-pass.md`; its starting grouping is
-   `references/domain-table.md`, which is Mark's own and **known to be imperfect** —
-   correcting it is part of the job. When the scope is narrow it proposes edges for the
-   in-scope Epics only.
+   it. Its procedure is `references/reasoning-pass.md`. It reads the snapshot and returns
+   the edge set and the tiering that produced it. When the scope is narrow it proposes
+   edges for the in-scope Epics only.
 4. **`validate --edges <file>`** — fix the proposal until `ok` is true. A cycle is a wrong
    edge, not a tie to break.
 5. **`apply-edges --edges <file> [--epics <scope>]`** — applies the diff through
    `bd dep`. Pass the scope so withdrawal is confined to it; omit it only for a
    portfolio-wide pass. If anything was added or removed, the scope widens to the
    portfolio for the rest of the pass.
-6. **`agent-teams-workforce:epic-wsjf` over the portfolio** — the judged part, and the part
-   that costs money. It runs AFTER the edges are applied, because it computes RR-OE from
-   the graph they form. One session scores every in-scope Epic, including ones that already
-   carry a score; never split the Epic set across sessions and never hand the scoring
-   session calibration bands of your own — the rubric owns its bands. Write the result with
-   the `beads-contract` CLI, and carry any `graphDefects` it reports into the report at
-   step 8.
+6. **`agent-teams-workforce:wsjf` at Epic level, over the portfolio** — the judged part,
+   and the part that costs money. It runs AFTER the edges are applied, because it computes
+   RR-OE from the graph they form. One session scores every in-scope Epic, including ones
+   that already carry a score; never split the Epic set across sessions and never hand the
+   scoring session calibration bands of your own — the rubric owns its bands. Write the
+   result with the `beads-contract` CLI, and carry any `graphDefects` it reports into the
+   report at step 8.
 7. **`score [--epics <scope>]`** — the arithmetic: every in-scope Epic and its Tasks, value
    down and size up, in one loop.
 8. **Report** — the scope and why, the edges added and withdrawn, the Epics and Tasks
@@ -122,8 +114,8 @@ DS="${CLAUDE_PLUGIN_ROOT}/skills/dependencies-and-scoring/scripts/depscore.py"
 ## A hand-made edge is never removed
 
 The pass records the edges IT created on the blocked bead as `seq_owned_blockers`. The diff
-only ever withdraws an edge in that list, and only within the pass's scope. An edge Mark
-drew by hand is invisible to the withdrawal path and survives every pass.
+only ever withdraws an edge in that list, and only within the pass's scope. An edge drawn
+by hand is invisible to the withdrawal path and survives every pass.
 
 ## The edge file
 
@@ -138,7 +130,7 @@ the proposal; the scripts carry them through and do not judge them.
 
 ## When it runs
 
-- **On demand.** `/agent-teams-workforce:dependencies-and-scoring`. Mark starts it.
+- **On demand.** `/agent-teams-workforce:dependencies-and-scoring`. A person starts it.
 - **When a material change is queued.** A pending declaration means an agent that produced a
   work product DECLARED that what it changed is something others depend on, and named the
   decision ids. That declaration IS the scope. Recalculate against it, then drain.
@@ -159,9 +151,7 @@ the proposal; the scripts carry them through and do not judge them.
   were designed from it.
 - Handing the scoring session calibration bands, expected distributions, or a reachability
   table of your own. The rubric computes what it needs; supplied bands replace it.
-- Treating an edge and a score that agree as corroboration. RR-OE is computed from the
-  edges, so they cannot disagree about direction.
-- Deciding eligibility here, or reimplementing it. `nextwork.py` owns it.
+- Deciding eligibility here, or reimplementing it. This skill supplies its inputs only.
 - Judging a Task's value from the Task's own text. It is inherited, always.
 - Removing an edge the pass does not own, or one outside its scope.
 - Re-scoring an Epic from its Tasks' value. Only COST rolls up; value stays top-down.

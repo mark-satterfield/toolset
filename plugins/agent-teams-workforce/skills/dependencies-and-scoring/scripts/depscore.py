@@ -40,8 +40,7 @@ from scoring import score
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
 #: reasoning pass reads it. Eligibility itself is NOT decided here: it is dependencies and
-#: blockers, `ops/sdlc-automation/nextwork.py` is the one implementation, and a second copy
-#: here would drift from it.
+#: blockers, and whatever consumes these edges and scores decides it.
 ELAB_KEY = "elaboration_state"
 
 

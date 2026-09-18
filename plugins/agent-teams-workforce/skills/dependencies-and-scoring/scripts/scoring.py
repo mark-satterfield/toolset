@@ -12,8 +12,9 @@ of the same fact:
   mapped onto the span scale, and the Epic's score is recomputed from that concrete number.
 
 An Epic recalculated without its Tasks is half an answer, so there is no way to ask for
-half. The rubrics are `agent-teams-workforce:task-wsjf` and `:epic-wsjf`; the bands here
-are theirs and this module invents no second rubric.
+half. This module reads the tracker, assembles the inputs and writes the results back; the
+arithmetic, the bands and the roll-up table belong to `agent-teams-workforce:wsjf` and are
+called from there.
 
 Nothing here skips an item because it already carries a score. A score is a function of a
 graph that moves, so an in-scope item is recomputed and overwritten every time. The only
@@ -22,23 +23,38 @@ thing the comparison below decides is whether an identical value is worth a trac
 
 from __future__ import annotations
 
-from collections import deque
+import importlib.util
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from beadgraph import now_iso, write_metadata
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from beadgraph import Bead, Graph
 
-#: RR-OE bands for a Task, from `agent-teams-workforce:task-wsjf`. Read there, not here.
-RROE_BANDS = ((0, 1), (1, 3), (3, 5), (6, 8), (9, 13))
-RROE_TOP = 20
+#: The WSJF rubric's own implementation, loaded from the skill that owns it.
+WSJF_PATH = Path(__file__).resolve().parents[2] / "wsjf" / "scripts" / "wsjf.py"
 
-#: Developer-day sum -> Epic span rung, from `agent-teams-workforce:epic-wsjf`.
-SIZE_RUNGS = ((2, 1), (5, 2), (10, 3), (20, 5), (40, 8), (80, 13), (160, 20))
-SIZE_TOP = 40
+
+def _load_wsjf():  # noqa: ANN202
+    """Load the WSJF module from the skill that owns the arithmetic.
+
+    Returns:
+        The imported module.
+
+    Raises:
+        ImportError: The module could not be loaded from `WSJF_PATH`.
+    """
+    spec = importlib.util.spec_from_file_location("wsjf", WSJF_PATH)
+    if spec is None or spec.loader is None:
+        msg = f"cannot load the WSJF rubric from {WSJF_PATH}"
+        raise ImportError(msg)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+rubric = _load_wsjf()
 
 
 def _int(value: str | None) -> int | None:
@@ -54,44 +70,6 @@ def _int(value: str | None) -> int | None:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return None
-
-
-def band(value: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
-    """Map a count onto a rubric's bands, falling through to its top rung.
-
-    Args:
-        value: The count to place.
-        bands: Ceiling/rung pairs in ascending ceiling order.
-        top: The rung for anything above the last ceiling.
-
-    Returns:
-        The rung the value lands on.
-    """
-    for ceiling, rung in bands:
-        if value <= ceiling:
-            return rung
-    return top
-
-
-def reachable_count(start: str, successors: dict[str, set[str]]) -> int:
-    """How many DISTINCT beads are reachable forward from `start`, excluding itself.
-
-    Args:
-        start: The bead to walk from.
-        successors: Blocker id -> the ids it blocks.
-
-    Returns:
-        The size of the forward reachable set.
-    """
-    seen: set[str] = set()
-    pending = deque(successors.get(start, set()))
-    while pending:
-        node = pending.popleft()
-        if node in seen or node == start:
-            continue
-        seen.add(node)
-        pending.extend(successors.get(node, set()))
-    return len(seen)
 
 
 def task_successors(graph: Graph) -> dict[str, set[str]]:
@@ -153,26 +131,28 @@ def _score_task(
         return {"id": task.id, "reason": f"parent Epic {epic.id} carries no wsjf_ubv/wsjf_tc"}
     if size is None or size <= 0:
         return {"id": task.id, "reason": "no judged wsjf_size on the Task"}
-    unblocks = reachable_count(task.id, successors)
-    rroe = band(unblocks, RROE_BANDS, RROE_TOP)
-    cod = ubv + tc + rroe
-    wsjf = round(cod / size, 2)
-    pairs = {
-        "wsjf": f"{wsjf:.2f}",
-        "wsjf_calculated_at": now_iso(),
-        "wsjf_rubric": "task-wsjf",
-        "wsjf_ubv": str(ubv),
-        "wsjf_tc": str(tc),
-        "wsjf_value_from": epic.id,
-        "wsjf_rroe": str(rroe),
-        "wsjf_unblocks": str(unblocks),
-        "wsjf_cod": str(cod),
-        "wsjf_size": str(size),
+    item = {
+        "id": task.id,
+        "userBusinessValue": ubv,
+        "timeCriticality": tc,
+        "valueFrom": epic.id,
+        # The reachability count is taken over the WHOLE portfolio, so it is supplied
+        # rather than left to the rubric's own walk over an edge set scoped to one item.
+        "reaches": rubric.reachable_count(task.id, successors),
+        "jobSize": size,
+        "confidence": _int(epic.metadata.get("wsjf_confidence")),
     }
-    confidence = _int(epic.metadata.get("wsjf_confidence"))
-    if confidence is not None:
-        pairs["wsjf_confidence"] = str(confidence)
-    return {"id": task.id, "wsjf": wsjf, "written": _write(task, pairs, repo), **pairs}
+    result = rubric.score({"items": [item]}, "task")
+    if result["unscored"]:
+        return {"id": task.id, "reason": result["unscored"][0]["reason"]}
+    record = result["scores"][0]
+    pairs = dict(record["metadata"])
+    return {
+        "id": task.id,
+        "wsjf": record["wsjf"],
+        "written": _write(task, pairs, repo),
+        **pairs,
+    }
 
 
 def _rollup_epic(epic: Bead, tasks: list[Bead], repo: Path | None) -> dict:
@@ -193,7 +173,8 @@ def _rollup_epic(epic: Bead, tasks: list[Bead], repo: Path | None) -> dict:
             "reason": "no Tasks beneath it" if not tasks else "a Task carries no wsjf_size",
         }
     days = sum(s for s in sizes if s is not None)
-    rung = band(days, SIZE_RUNGS, SIZE_TOP)
+    epic_level = rubric.LEVELS["epic"]
+    rung = rubric.band(days, epic_level["rollupBands"], epic_level["rollupTop"])
     cod = _int(epic.metadata.get("wsjf_cod"))
     if cod is None:
         ubv = _int(epic.metadata.get("wsjf_ubv"))

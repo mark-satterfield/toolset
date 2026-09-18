@@ -37,7 +37,7 @@ into an Epic, a Task, or a closure — `route-build` skips it and there is no
 triage composite to dispatch. Do not query for them here.
 
 **Order by WSJF, descending.** WSJF is stored on the issue as Beads metadata by the
-sequencing capability (`dependencies-and-scoring`, under the `task-wsjf` rubric) — read it, do
+sequencing capability (`dependencies-and-scoring`, under the `wsjf` rubric at Task level) — read it, do
 not recompute it:
 
 ```bash

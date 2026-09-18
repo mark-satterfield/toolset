@@ -21,10 +21,10 @@ missing. That is its whole purpose, and running it there is what keeps an incomp
 from reaching the board in the first place.
 
 **It is NOT an eligibility gate.** Eligibility means dependencies and blockers. This skill
-has never consulted either, and both belong entirely to `ops/sdlc-automation/nextwork.py`.
+has never consulted either, and both belong entirely to whatever decides eligibility.
 
 **It does NOT score.** WSJF for a Task is computed outside this skill, by the sequencing
-capability, under the `task-wsjf` rubric — value and time criticality inherited from the
+capability, under the `wsjf` rubric at Task level — value and time criticality inherited from the
 parent Epic, risk-reduction computed from the dependency graph, size judged locally. This
 skill neither computes a score, nor reads one, nor backfills one, nor clears one. A Task
 with no score simply never appears in the sorted eligible list, so there is nothing here to

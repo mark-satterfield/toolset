@@ -7,7 +7,7 @@ account of the tiering that produced it.
 
 The judgment is about how domains relate to each other. An agent holding one domain cannot
 make it, and a panel of domain agents produces a set of local opinions nobody reconciled.
-Mark was explicit: splitting the domains across agents does not help.
+Splitting the domains across agents does not help.
 
 ## Outside-in, and revisited
 
@@ -16,13 +16,16 @@ level above it. Repeat until a pass changes nothing.
 
 ### 1. Tiers
 
-Order broad tiers by common sense about what must exist before anything can be built and
-TESTED. Roughly: platform foundations, then identity, then everything that presumes a user
-exists, then what presumes that user has content, and so on outward.
+Derive the domains yourself from the Epics in the snapshot — their titles, their scope and
+the documents they name. The set of Epics is the only description of the domains there is,
+and it changes between passes, so the grouping is derived fresh each time.
 
-The domain table in `domain-table.md` is a starting grouping, not an answer. It was derived
-from PRD file names and **its errors are to be corrected rather than trusted** — `shell` and
-`mobile/shell`, for instance, probably belong under platform.
+Then order broad tiers by common sense about what must exist before anything can be built
+and TESTED. Roughly: platform foundations, then identity, then everything that presumes a
+user exists, then what presumes that user has content, and so on outward.
+
+The grouping is provisional. It is a first reading of the portfolio, not an answer, and
+the detail below it will contradict it — when it does, redraw it.
 
 ### 2. Subdomains within a tier
 
@@ -42,16 +45,8 @@ excessive or because the result approaches a total order: how many Epics one Epi
 establishes the architecture for is a fact about the design, not an aesthetic defect in
 the graph.
 
-Withholding a true edge now corrupts the priority ranking as well as the eligibility pool.
-`agent-teams-workforce:epic-wsjf` computes RR-OE from transitive reachability in this
-graph, so an undrawn edge silently lowers the blocker's score — a foundation with no
-out-edges computes the bottom rung and reads as though nothing is designed from it. The
-score cannot be corrected downstream; the edge is the only place it can be fixed.
-
-The discipline runs the other way instead: never draw an edge that fails the test. A false
-edge costs the blocked Epic its eligibility until the blocker is elaborated, and inflates
-the blocker's RR-OE. Judge each candidate edge on the test alone, and let the count come
-out wherever it comes out.
+Never draw an edge that fails the test. Judge each candidate edge on the test alone, and
+let the count come out wherever it comes out.
 
 ### 4. Revisit
 
@@ -70,10 +65,6 @@ gets designed from password-reset requirements alone — a recovery flow's needs
 canonical identity model, and every later identity Epic inherits a design that was never
 meant to carry it. The edge exists to stop that, and edges that do not stop something of
 that kind should not exist.
-
-In WSJF terms the same fact shows up as RR-OE: sign-up scores high because it ESTABLISHES
-the pattern, password reset low because it CONSUMES it. The edge and the score agree, and
-when they disagree, one of the two is wrong and it is worth finding out which.
 
 ## Emitting
 

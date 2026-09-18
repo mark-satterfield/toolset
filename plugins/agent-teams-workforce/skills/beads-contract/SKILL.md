@@ -170,7 +170,7 @@ JSON list; it is how a changed architecture decision finds the work resting on i
 the SAD's own per-entry tags because those survive a rewording while a statement-derived id
 does not.
 
-WSJF rubrics (`epic-wsjf`, `task-wsjf`): the dimensions a score was built from —
+WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks`, `wsjf_cod`, `wsjf_size`,
 `wsjf_size_source`, `wsjf_size_task_days`, `wsjf_confidence`, `wsjf_value_from`. They are what
 lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without

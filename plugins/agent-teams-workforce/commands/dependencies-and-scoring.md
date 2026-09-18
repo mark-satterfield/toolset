@@ -32,7 +32,7 @@ Epic's estimate. That is not a second command and there is nothing to remember a
 ## Never
 
 - Start a pipeline run, a supervisor, a keeper or the dashboard from here. This ends with a
-  report; Mark starts the run.
+  report; a person starts the run.
 - Apply an edge set that failed validation.
-- Decide what is eligible to work on. Edges and scores are inputs to that decision;
-  `ops/sdlc-automation/nextwork.py` makes it.
+- Decide what is eligible to work on. Edges and scores are inputs to that decision, and
+  whatever consumes them makes it.

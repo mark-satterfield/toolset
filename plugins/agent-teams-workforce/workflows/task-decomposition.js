@@ -217,7 +217,7 @@ by nothing after it. When \`material\` is false, write nothing there.`
 //                                                              // ALREADY EXISTS; every emitted task
 //                                                              // is parented to it
 //   epic?: { id?, userBusinessValue?, timeCriticality?, confidence? },
-//                                                              // the parent Epic's WSJF, as epic-wsjf
+//                                                              // the parent Epic's WSJF, scored at Epic level
 //                                                              // wrote it (`wsjf_ubv`, `wsjf_tc`,
 //                                                              // `wsjf_confidence`). Every task INHERITS
 //                                                              // value and criticality from it; absent,
@@ -361,7 +361,7 @@ Return one entry per file, echoing its slot exactly as given: found=true with th
 const spec = a.spec || {}
 const story = a.story || {}
 // The parent Epic's own WSJF, which every Task in this set INHERITS its value and time
-// criticality from. See the task-wsjf block below for why a Task's own text cannot carry
+// criticality from. See the Task WSJF block below for why a Task's own text cannot carry
 // them. Absent -> the placeholder path, also below.
 const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
 const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
@@ -509,7 +509,7 @@ const testStrategySchema = {
 phase('Decompose')
 log(`Decomposing, sequencing, and scoring ${specRef}`)
 
-// ── TASK WSJF IS ARITHMETIC — the `agent-teams-workforce:task-wsjf` rubric ──────
+// ── TASK WSJF IS ARITHMETIC — `agent-teams-workforce:wsjf` at Task level ───────
 //
 // WSJF is the SOLE prioritization metric — no P0-P4 priorities. Three of its four
 // dimensions are not judged here, and that is the whole point of the rubric:
@@ -757,7 +757,7 @@ if (dag.acyclic === false) {
 // be redone by an agent, because nothing else in it was judged by one.
 async function scoreWsjf(feedback) {
   return await settleAgent(
-    `Re-size the tasks below under the \`agent-teams-workforce:task-wsjf\` rubric, which is loaded for you. ${JOB_SIZE_BRIEF}
+    `Re-size the tasks below under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. ${JOB_SIZE_BRIEF}
 
 WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme, and do NOT assign value, time criticality or risk reduction: those are inherited from the parent Epic and computed from the dependency graph below, and the composite score is arithmetic over the sizes you return. Reference tasks by their "key", size every key exactly once, and give a one-line rationale per task.
 
@@ -820,7 +820,7 @@ async function reviewScores(pass) {
   return await settleAgent(
     `${CHECKER_PREAMBLE}
 
-Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:task-wsjf\` rubric, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize on the developer-days scale (1, 2, 3, 5, 8, 13) and > 0; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
+Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize on the developer-days scale (1, 2, 3, 5, 8, 13) and > 0; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
 
 ${taskEvidence}
 

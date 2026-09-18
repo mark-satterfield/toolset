@@ -300,7 +300,7 @@ GATE_KEYS = (
     "reviewed_at",
 )
 
-#: Keys the WSJF rubrics own, from `agent-teams-workforce:epic-wsjf` and `:task-wsjf`.
+#: Keys the WSJF rubric owns, from `agent-teams-workforce:wsjf` at either level.
 #: The score itself and its timestamp, plus the dimensions it was built from, which is what
 #: lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
 #: either one re-judging anything.

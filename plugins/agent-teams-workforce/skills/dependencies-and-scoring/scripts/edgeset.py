@@ -7,7 +7,7 @@ APPLICABLE — acyclic, over beads that exist, no self-edge, nothing pointed at 
 item — because a wrong edge set applied is expensive to unpick.
 
 The diff never removes an edge this system did not create. Ownership is recorded on the
-BLOCKED bead as `seq_owned_blockers`, so an edge Mark drew by hand survives every pass,
+BLOCKED bead as `seq_owned_blockers`, so an edge drawn by hand survives every pass,
 and re-running a pass with an unchanged proposal writes nothing at all. It also never
 removes an edge outside the pass's scope: a narrow pass proposes edges for the Epics it
 reached, and silence about the rest is not a claim that the rest is gone.
