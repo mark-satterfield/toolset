@@ -3,7 +3,7 @@ name: event-schema-reviewer
 description: >-
   Validates event schemas against the event API envelope format — publishing
   conditions, consumer obligations, retry/DLQ behavior. Use for Spec Authoring
- work requiring envelope conformance, event contract
+  work requiring envelope conformance, event contract
   validation, and failure-semantics checks.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

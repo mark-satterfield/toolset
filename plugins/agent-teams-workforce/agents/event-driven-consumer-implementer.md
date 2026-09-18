@@ -3,7 +3,7 @@ name: event-driven-consumer-implementer
 description: >-
   Implements event consumers on the EventBridge-rule-to-SQS-to-Lambda chain;
   Lambdas never consume directly from EventBridge. Use for Implementation
- work requiring SQS consumer logic, batch processing, and event
+  work requiring SQS consumer logic, batch processing, and event
   envelope deserialization.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

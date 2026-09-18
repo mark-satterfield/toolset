@@ -3,7 +3,7 @@ name: nfr-analyst
 description: >-
   Extracts non-functional requirements from the raw PRD and flags unstated
   implied NFRs; never resolves or quantifies them. Use for PRD Validation
- work requiring NFR extraction, implied-NFR detection,
+  work requiring NFR extraction, implied-NFR detection,
   and quality-attribute analysis.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit

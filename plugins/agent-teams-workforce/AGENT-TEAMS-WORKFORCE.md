@@ -919,4 +919,4 @@ Every agent, with the team it is rostered under, its role, character types, task
 - The **Project Delivery Agentic Workforce Doctrine** and the **separation-of-duties rules** are now consolidated into this document — see [The doctrine, principles, and rules](#the-doctrine-principles-and-rules). The two standalone files linked below are slated for deletion; their content lives here.
 - [Doctrine — Project Delivery Agentic Workforce Doctrine](./Project%20Delivery%20Agentic%20Workforce%20Doctrine.md)
 - [Separation of duties](./rules/separation-of-duties.md)
-- [Agents directory](./agents/README.md)
+- [Agents directory](./AGENT-ROSTER.md)

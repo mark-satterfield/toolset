@@ -3,7 +3,7 @@ name: prd-trd-traceability-verifier
 description: >-
   Builds and checks the PRD-to-TRD traceability matrix proving a 1:1 relation,
   flagging orphans on either side and scope drift. Use for TRD Authoring
- work requiring requirement-to-technical-requirement
+  work requiring requirement-to-technical-requirement
   tracing, source-extract anchoring, and scope-drift detection.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

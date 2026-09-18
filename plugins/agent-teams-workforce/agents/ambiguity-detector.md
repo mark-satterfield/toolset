@@ -3,7 +3,7 @@ name: ambiguity-detector
 description: >-
   Scans the raw PRD for vague quantifiers, missing boundary conditions, and
   unstated assumptions; reports findings, never fixes. Use for PRD Validation
- work requiring ambiguity scanning, boundary-condition
+  work requiring ambiguity scanning, boundary-condition
   checks, and severity rating.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

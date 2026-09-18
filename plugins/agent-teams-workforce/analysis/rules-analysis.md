@@ -164,7 +164,7 @@ Two mechanisms already exist and partially overlap the boilerplate:
 1. `rules/separation-of-duties.md` — already the canonical home of the 5 task categories, no-self-
    tasking, no-self-approval, analysis-vs-decision separation, and gate semantics. Much of the
    Operating Rules "universal doctrine" is a prose restatement of this file. **No agent currently
-   references it** (only `agents/README.md` mentions it).
+   references it** (only `AGENT-ROSTER.md` mentions it).
 2. `skills/subagent-contract/SKILL.md` — loaded by all 171 agents via `skills:`. It already encodes
    scope discipline, DONE/BLOCKED signaling, "no scope creep", "no assumption-making", tool-grant
    respect, and a pre-DONE checklist. This overlaps the "collaborate through artifacts / review your

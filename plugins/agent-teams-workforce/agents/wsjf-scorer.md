@@ -3,7 +3,7 @@ name: wsjf-scorer
 description: >-
   Scores decomposed tasks with WSJF — (value + time criticality + risk
   reduction) / size — for economic sequencing. Use for Task Decomposition
- work requiring WSJF scoring, prioritization rationale,
+  work requiring WSJF scoring, prioritization rationale,
   and consistent scales.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

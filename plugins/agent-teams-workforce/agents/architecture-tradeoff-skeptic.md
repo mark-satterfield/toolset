@@ -3,7 +3,7 @@ name: architecture-tradeoff-skeptic
 description: >-
   Attacks trade-off ratings in architecture proposals, hunting hidden
   assumptions and optimistic estimates. Use for Architecture Analysis
- work requiring adversarial trade-off review,
+  work requiring adversarial trade-off review,
   assumption auditing, and failure mode discovery.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

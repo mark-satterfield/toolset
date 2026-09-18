@@ -3,7 +3,7 @@ name: dynamodb-streams-cdc-implementer
 description: >-
   Implements change data capture from DynamoDB Streams; writes minimum code
   to pass failing data-pipeline test suites. Use for Implementation
- work requiring stream record processing, change event
+  work requiring stream record processing, change event
   transformation, and exactly-once-effect handling.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

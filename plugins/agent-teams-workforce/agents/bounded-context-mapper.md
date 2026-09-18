@@ -3,7 +3,7 @@ name: bounded-context-mapper
 description: >-
   Maps domain boundaries and context relationships, returning the context
   map for the architecture decision. Use for Architecture Analysis
- work requiring domain-driven design,
+  work requiring domain-driven design,
   bounded-context identification, and relationship mapping.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit

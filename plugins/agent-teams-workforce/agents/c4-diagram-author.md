@@ -3,7 +3,7 @@ name: c4-diagram-author
 description: >-
   Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2
   Container, Level 3 Component) for the SAD. Use for Architecture Analysis
- work requiring C4 diagramming, container decomposition,
+  work requiring C4 diagramming, container decomposition,
   and component-view rendering.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

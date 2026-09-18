@@ -3,7 +3,7 @@ name: ubiquitous-language-writer
 description: >-
   Captures each bounded context's ubiquitous language — terms, definitions,
   usage rules — as a maintained glossary. Use for Architecture Analysis
- work requiring domain glossary authoring,
+  work requiring domain glossary authoring,
   terminology consistency, and language-to-code alignment.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

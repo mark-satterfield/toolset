@@ -3,7 +3,7 @@ name: requirements-conflict-detector
 description: >-
   Identifies PRD requirements that contradict each other, returning
   a structured conflict report; never resolves. Use for PRD Validation
- work requiring contradiction analysis and conflict classification.
+  work requiring contradiction analysis and conflict classification.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus

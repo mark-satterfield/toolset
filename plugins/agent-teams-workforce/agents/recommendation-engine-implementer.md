@@ -3,7 +3,7 @@ name: recommendation-engine-implementer
 description: >-
   Implements recommendation engine components for ML features; writes
   minimum code to pass failing unit tests. Use for Implementation
- work requiring recommendation pipeline assembly, candidate
+  work requiring recommendation pipeline assembly, candidate
   sourcing, re-ranking, and serving-layer composition.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

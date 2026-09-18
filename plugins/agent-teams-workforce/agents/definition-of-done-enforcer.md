@@ -3,7 +3,7 @@ name: definition-of-done-enforcer
 description: >-
   Writes the feature spec's Definition of Done as independently verifiable
   true/false statements rather than checklists. Use for Spec Authoring
- work requiring DoD authoring, verifiability
+  work requiring DoD authoring, verifiability
   discipline, and completion semantics.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

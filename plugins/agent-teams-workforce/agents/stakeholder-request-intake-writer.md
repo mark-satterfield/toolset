@@ -3,7 +3,7 @@ name: stakeholder-request-intake-writer
 description: >-
   Converts raw stakeholder requests into a structured intake brief: requestor,
   problem, desired outcome, constraints, urgency. Use for PRD Creation
- work requiring request structuring, problem framing,
+  work requiring request structuring, problem framing,
   and urgency classification.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

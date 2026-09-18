@@ -3,7 +3,7 @@ name: acceptance-criteria-reviewer
 description: >-
   Validates acceptance criteria are testable, complete, and unambiguous —
   derivable into tests without interpretation. Use for Spec Authoring
- work requiring testability review, ambiguity
+  work requiring testability review, ambiguity
   detection, and completeness checking.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

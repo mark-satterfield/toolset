@@ -3,7 +3,7 @@ name: sad-conformance-reviewer
 description: >-
   Verifies the living SAD against the arc42 section model and reports
   conformance findings without fixing them. Use for Architecture Analysis
- work requiring arc42 completeness checking, internal
+  work requiring arc42 completeness checking, internal
   consistency verification, and source-section (2/4/8) extractability and
   traceability.
 tools: Read, Glob, Grep, Bash, Write

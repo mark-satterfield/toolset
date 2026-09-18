@@ -3,7 +3,7 @@ name: test-isolation-specialist
 description: >-
   Validates test independence — no shared mutable state, isolated fixtures —
   reporting isolation defects without fixing them. Use for Test Design
- work requiring isolation validation, order-dependence detection,
+  work requiring isolation validation, order-dependence detection,
   fixture audit, and flakiness prevention.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

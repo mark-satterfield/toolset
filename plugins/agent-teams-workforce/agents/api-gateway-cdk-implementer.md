@@ -3,7 +3,7 @@ name: api-gateway-cdk-implementer
 description: >-
   Implements API Gateway resources, methods, and authorizers in CDK Python;
   writes minimum code to pass failing unit tests. Use for Implementation
- work requiring API Gateway constructs, CDK Python
+  work requiring API Gateway constructs, CDK Python
   infrastructure, and authorizer wiring.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

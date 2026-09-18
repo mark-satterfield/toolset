@@ -3,7 +3,7 @@ name: vector-search-embeddings-implementer
 description: >-
   Implements vector search and embeddings for ML features — embedding
   generation, index read/write, similarity queries. Use for Implementation
- work requiring embedding pipelines, vector index access, and
+  work requiring embedding pipelines, vector index access, and
   similarity queries.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent

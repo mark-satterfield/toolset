@@ -3,7 +3,7 @@ name: architecture-boundary-guardian
 description: >-
   Validates architecture proposals against the context map and integration
   constraints to catch cross-context coupling. Use for Architecture Analysis
- work requiring boundary validation, coupling
+  work requiring boundary validation, coupling
   detection, and context-map conformance.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent

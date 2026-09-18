@@ -3,7 +3,7 @@ name: architecture-pattern-challenger
 description: >-
   Counters each architecture proposal with a structurally different
   alternative; never proposes the final design. Use for Architecture Analysis
- work requiring adversarial design review, alternative
+  work requiring adversarial design review, alternative
   generation, and assumption stress-testing.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
