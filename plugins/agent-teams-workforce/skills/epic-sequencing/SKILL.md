@@ -18,8 +18,11 @@ domains relate to each other, which an agent holding one domain cannot make.
 ## What an edge decides
 
 - **The dependency graph decides ELIGIBILITY** — what may be elaborated at all. An Epic
-  whose architecture must be designed from another Epic's requirements is blocked until
-  that one is elaborated.
+  whose architecture must be designed from another Epic's requirements waits until that
+  one is elaborated. Each edge is stored as a beads `tracks` edge on the dependent Epic.
+  `tracks` is non-blocking, so an Epic edge orders elaboration and never holds the
+  Stories or Tasks beneath an Epic out of `bd ready`; their build order is their own
+  Task-to-Task `blocks` edges.
 - **WSJF decides PRIORITY** among what is eligible. The `agent-teams-workforce:wsjf`
   rubric computes each Epic's RR-OE from transitive reachability over these edges, so an
   Epic that establishes an architecture many others are designed from outranks one that
@@ -103,7 +106,8 @@ Alongside the file, write the tiering and the subdomain ordering in prose — th
 the residue of that reasoning, and the reasoning is what the next run revises.
 
 The file is the whole graph: an edge the sequencing pass created earlier and this file
-omits is withdrawn. An edge drawn by hand is never withdrawn.
+omits is withdrawn. An edge drawn by hand is never withdrawn. Both ends of every edge are
+Epics; validation refuses any other edge.
 
 ## Checks before handing it over
 

@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""The edge set: parse it, prove it, and apply the DIFF against what the tracker holds.
+"""The Epic edge set: parse it, prove it, and apply the DIFF against what the tracker holds.
 
-An edge means `blocker` must be elaborated before `blocked`. The reasoning pass proposes
+An edge means `blocker` must be elaborated before `blocked`, and both ends are Epics. It is
+stored as a beads `tracks` edge on the blocked Epic, written `bd dep add <blocked> <blocker>
+--type tracks`. `tracks` is non-blocking, so the edge orders elaboration and never removes
+the Epic, or any Story or Task beneath it, from `bd ready`. The reasoning pass proposes
 edges; nothing here judges whether one is right. What it does judge is whether the set is
-APPLICABLE — acyclic, over beads that exist, no self-edge, nothing pointed at a closed
-item — because a wrong edge set applied is expensive to unpick.
+APPLICABLE — Epic to Epic, acyclic, over beads that exist, no self-edge, nothing pointed at
+a closed item — because a wrong edge set applied is expensive to unpick.
 
 The diff never removes an edge this system did not create. Ownership is recorded on the
 BLOCKED bead as `seq_owned_blockers`, so an edge drawn by hand survives every pass,
 and re-running a pass with an unchanged proposal writes nothing at all.
+
+An owned edge stored as any type other than `tracks` is CONVERTED: `bd dep remove`, then
+`bd dep add --type tracks`. Beads holds one edge per pair of beads and refuses to add a
+second type onto an existing one, so the removal has to come first. The edge stays recorded
+as owned throughout, so a conversion interrupted between its two writes leaves an owned
+edge that is absent, and the next pass over the same proposal adds it.
 
 The proposal covers the whole portfolio, so an owned edge it does not contain is withdrawn.
 Once it is applied, every open Epic records the content fingerprint the sequencer read it
@@ -42,12 +51,16 @@ class SequencingError(RuntimeError):
 
 @dataclass(frozen=True)
 class Edge:
-    """A proposed blocking edge: `blocker` must be elaborated before `blocked`."""
+    """A proposed Epic edge: `blocker` must be elaborated before `blocked`."""
 
     blocker: str
     blocked: str
     reason: str = ""
     confidence: str = ""
+
+
+#: The dependency type every Epic edge is stored as.
+EDGE_TYPE = beadgraph.TRACKS
 
 
 # ------------------------------------------------------------------------------------
@@ -80,6 +93,27 @@ def read_edges(path: Path) -> list[Edge]:
             )
         )
     return edges
+
+
+def owned_edges(graph: Graph) -> list[Edge]:
+    """Every edge this system recorded as its own, as a proposal.
+
+    Proposing the owned set back withdraws nothing, adds any owned edge that is absent,
+    and converts any owned edge stored as the wrong type. Because it is read from the
+    ownership records rather than from the edges present, rerunning it after an
+    interrupted pass still names every edge that pass was converting.
+
+    Args:
+        graph: The tracker graph.
+
+    Returns:
+        One edge per owned blocker on every bead, in id order.
+    """
+    return [
+        Edge(blocker=blocker, blocked=bead.id, reason="owned edge")
+        for _, bead in sorted(graph.beads.items())
+        for blocker in bead.owned_blockers
+    ]
 
 
 # ------------------------------------------------------------------------------------
@@ -118,12 +152,22 @@ def find_cycle(edges: list[Edge]) -> list[str]:
 
 
 def validate(graph: Graph, edges: list[Edge]) -> dict:
-    """Report every defect in a proposed edge set: cycles, dangling, self, closed."""
+    """Report every defect in a proposed edge set: not Epic to Epic, cycles, dangling, self, closed."""
     dangling = sorted(
         {e.blocker for e in edges if e.blocker not in graph.beads}
         | {e.blocked for e in edges if e.blocked not in graph.beads}
     )
     self_edges = sorted({e.blocker for e in edges if e.blocker == e.blocked})
+    not_epic = sorted(
+        {
+            f"{e.blocker}->{e.blocked}"
+            for e in edges
+            if any(
+                end in graph.beads and graph.beads[end].kind != "epic"
+                for end in (e.blocker, e.blocked)
+            )
+        }
+    )
     onto_closed = sorted(
         {
             f"{e.blocker}->{e.blocked}"
@@ -149,10 +193,11 @@ def validate(graph: Graph, edges: list[Edge]) -> dict:
             > 1
         }
     )
-    ok = not (dangling or self_edges or onto_closed or cycle)
+    ok = not (dangling or self_edges or onto_closed or cycle or not_epic)
     return {
         "ok": ok,
         "edgeCount": len(edges),
+        "notEpicToEpic": not_epic,
         "cycle": cycle,
         "dangling": dangling,
         "selfEdges": self_edges,
@@ -175,14 +220,16 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
         edges: The proposed edge set, over the whole portfolio.
 
     Returns:
-        The additions, the withdrawals, the hand-made edges left alone, and the ownership
-        metadata the applied diff would write.
+        The additions, the conversions of owned edges stored as the wrong type, the
+        withdrawals, the hand-made edges left alone, and the ownership metadata the
+        applied diff would write.
     """
     desired: dict[str, set[str]] = {}
     for edge in edges:
         desired.setdefault(edge.blocked, set()).add(edge.blocker)
 
     add: list[dict] = []
+    convert: list[dict] = []
     remove: list[dict] = []
     keep = 0
     protected: list[str] = []
@@ -199,16 +246,29 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
             continue
         want = desired.get(blocked_id, set())
         owned = set(bead.owned_blockers)
-        current = set(bead.blockers)
-        for blocker in sorted(want - current):
+        current = set(bead.tracked)
+        # Beads holds one edge per pair, so a pair is present as `tracks` or as another
+        # type, never both.
+        mistyped = set(bead.blockers) - current
+        present = current | mistyped
+        for blocker in sorted(want - present):
             add.append({"blocker": blocker, "blocked": blocked_id})
-        # ONLY an edge this system recorded as its own is ever removed. An edge that is
-        # present but unowned was made by hand and stays, whatever the proposal says.
-        for blocker in sorted((owned - want) & current):
+        # ONLY an edge this system recorded as its own is ever converted or removed. An
+        # edge that is present but unowned was made by hand and stays, whatever the
+        # proposal says and whatever type it is stored as.
+        for blocker in sorted(want & mistyped & owned):
+            convert.append(
+                {"blocker": blocker, "blocked": blocked_id, "from": beadgraph.BLOCKS}
+            )
+        for blocker in sorted((owned - want) & present):
             remove.append({"blocker": blocker, "blocked": blocked_id})
-        protected += [f"{b}->{blocked_id}" for b in sorted(current - owned - want)]
+        hand_mistyped = (want & mistyped) - owned
+        protected += [
+            f"{b}->{blocked_id}"
+            for b in sorted((present - owned - want) | hand_mistyped)
+        ]
         keep += len(want & current)
-        new_owned = join_ids(want)
+        new_owned = join_ids(want - hand_mistyped)
         if new_owned != join_ids(owned):
             metadata[blocked_id] = {
                 beadgraph.OWNED_KEY: new_owned,
@@ -216,6 +276,7 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
             }
     return {
         "add": add,
+        "convert": convert,
         "remove": remove,
         "unchanged": keep,
         "protectedHandMadeEdges": protected,
@@ -257,16 +318,18 @@ def apply_edges(
 ) -> dict:
     """Validate, diff and write an edge set. Idempotent by construction.
 
-    An unchanged proposal adds nothing, withdraws nothing and writes no metadata. The
-    writes run in an order that never leaves an edge unowned: ownership covering every
-    edge to be added is written first, then the adds, then the withdrawals, then the
-    final ownership records, which drop the withdrawn edges.
+    An unchanged proposal adds nothing, converts nothing, withdraws nothing and writes no
+    metadata. The writes run in an order that never leaves an edge unowned: ownership
+    covering every edge to be added is written first, then the adds, then the
+    conversions — each one's removal immediately followed by its `tracks` add — then the
+    withdrawals, then the final ownership records, which drop the withdrawn edges.
 
     Args:
         graph: The tracker graph.
         edges: The proposed edge set, over the whole portfolio.
         writer: The tracker writer; a dry-run writer records the writes instead.
-        seen: Epic id -> the content fingerprint the sequencer read that Epic at.
+        seen: Epic id -> the content fingerprint the sequencer read that Epic at. Empty
+            when the proposal did not come from the sequencer, which records nothing.
 
     Returns:
         The validation verdict, the counts, the plan, the Epics whose `seq_content_hash`
@@ -281,7 +344,14 @@ def apply_edges(
     for bead_id, pairs in ahead.items():
         writer.metadata(bead_id, pairs)
     for entry in plan["add"]:
-        writer.bd(["dep", entry["blocker"], "--blocks", entry["blocked"]])
+        writer.bd(
+            ["dep", "add", entry["blocked"], entry["blocker"], "--type", EDGE_TYPE]
+        )
+    for entry in plan["convert"]:
+        writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
+        writer.bd(
+            ["dep", "add", entry["blocked"], entry["blocker"], "--type", EDGE_TYPE]
+        )
     for entry in plan["remove"]:
         writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
     for bead_id, pairs in plan["metadata"].items():
@@ -302,6 +372,7 @@ def apply_edges(
         "sequencedRecorded": len(recorded),
         "validation": report,
         "added": len(plan["add"]),
+        "converted": len(plan["convert"]),
         "removed": len(plan["remove"]),
         "unchanged": plan["unchanged"],
         "plan": plan,

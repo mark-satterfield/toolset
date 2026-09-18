@@ -9,8 +9,10 @@ them is an agent; everything here is code.
     judge-input   the whole portfolio at one level, as one judging session reads it
     snapshot      the tracker as a graph, which is what the sequencer reads
     validate      prove a proposed edge set is applicable before anything is written
-    apply-edges   apply the edge DIFF through `bd dep`, never touching a hand-made edge,
-                  and record which Epic content the sequencer read
+    apply-edges   apply the Epic edge DIFF through `bd dep` as `tracks` edges, never
+                  touching a hand-made edge, converting any owned edge stored as another
+                  type, and record which Epic content the sequencer read. `--owned`
+                  proposes the owned edge set back, which only adds and converts
     record        write judged values with the fingerprint they were judged from
     score         recompute every Epic's and Task's WSJF and write what changed
 
@@ -30,7 +32,7 @@ from pathlib import Path
 
 import beadgraph
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
-from edgeset import SequencingError, apply_edges, read_edges, validate
+from edgeset import SequencingError, apply_edges, owned_edges, read_edges, validate
 from scoring import ScoringError, judge_input, plan, record, score
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
@@ -45,7 +47,10 @@ def snapshot(
     include_closed: bool,
     epics: list[str] | None,
 ) -> dict:
-    """Every bead of the wanted kinds with its lineage, blockers and elaboration state.
+    """Every bead of the wanted kinds with its lineage, dependencies and elaboration state.
+
+    `blockers` lists what each bead depends on, read from the edge type of its level:
+    `tracks` edges for an Epic, `blocks` edges for a Story or Task.
 
     Args:
         graph: The tracker graph.
@@ -71,7 +76,7 @@ def snapshot(
             "status": bead.status,
             "parent": bead.parent,
             "epic": epic_id(bead),
-            "blockers": list(bead.blockers),
+            "blockers": list(bead.depends_on),
             "ownedBlockers": list(bead.owned_blockers),
             "elaborationState": bead.metadata.get(ELAB_KEY),
             "description": bead.description or None,
@@ -192,12 +197,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     app = sub.add_parser(
-        "apply-edges", help="apply an edge diff through `bd dep`", parents=[common]
+        "apply-edges",
+        help="apply an Epic edge diff through `bd dep` as `tracks` edges",
+        parents=[common],
+    )
+    source = app.add_mutually_exclusive_group(required=True)
+    source.add_argument("--edges", type=Path, help="edge file, or `-` for stdin")
+    source.add_argument(
+        "--owned",
+        action="store_true",
+        help="propose every owned edge back: adds absent ones, converts mistyped ones",
     )
     app.add_argument(
-        "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
+        "--plan",
+        type=Path,
+        default=None,
+        help="the `query` output; its fingerprints record what the sequencer read",
     )
-    app.add_argument("--plan", type=Path, required=True, help="the `query` output")
     _dry_run_flag(app)
 
     rec = sub.add_parser(
@@ -252,16 +268,16 @@ def run(args: argparse.Namespace) -> dict:
             | {"summary": {"ok": report["ok"], "edges": report["edgeCount"]}}
         )
     if args.command == "apply-edges":
-        the_plan = _read_json(args.plan)
-        result = apply_edges(
-            graph, read_edges(args.edges), writer, the_plan["fingerprints"]
-        )
+        seen = _read_json(args.plan)["fingerprints"] if args.plan else {}
+        proposal = owned_edges(graph) if args.owned else read_edges(args.edges)
+        result = apply_edges(graph, proposal, writer, seen)
         summary = {
             key: result.get(key)
             for key in (
                 "applied",
                 "dryRun",
                 "added",
+                "converted",
                 "removed",
                 "unchanged",
                 "sequencedRecorded",

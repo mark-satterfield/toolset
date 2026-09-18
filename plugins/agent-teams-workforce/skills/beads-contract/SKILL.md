@@ -186,8 +186,9 @@ the sum of its Tasks), `wsjf_size_low` and `wsjf_size_high` (its plausible range
 examination, not an error).
 `wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
 from. Sequencing (`dependencies-and-scoring`): `seq_owned_blockers`, a comma-separated id list
-of the blocking edges that pass created on the bead, and `seq_owned_blockers_at`. The pass only
-ever withdraws an edge that list names, which is how a hand-made edge survives it.
+of the Epic edges that pass created on the bead, each a `tracks` edge onto the Epic named, and
+`seq_owned_blockers_at`. The pass only ever withdraws or converts an edge that list names,
+which is how a hand-made edge survives it.
 `seq_content_hash` is the content fingerprint the sequencer last read the Epic at.
 
 The script is the list: `metadata set` names every key it accepts when it refuses one.

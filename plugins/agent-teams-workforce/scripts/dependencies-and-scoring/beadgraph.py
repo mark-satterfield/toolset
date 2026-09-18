@@ -5,9 +5,12 @@ The tracker is `bd`. The `.beads/issues.jsonl` export is a PASSIVE artifact writ
 `bd` and can lag it, so it is a fallback only, and whichever source answered is reported
 on every command so a caller never has to guess which one it read.
 
-Only `blocks` edges are sequencing edges. `parent-child` also appears in a record's
-`dependencies`, and treating it as a blocker would make every child of an open parent
-look blocked forever.
+Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
+edge: it orders ELABORATION, and `tracks` is non-blocking in beads, so it never removes an
+Epic, or anything beneath one, from `bd ready`. A Task-to-Task dependency is a `blocks` edge:
+it orders the BUILD, and `bd ready` releases the dependent Task when its blocker closes.
+`parent-child` also appears in a record's `dependencies`; it is hierarchy and is never read
+as a dependency.
 """
 
 from __future__ import annotations
@@ -30,14 +33,32 @@ CONTRACT = (
     / "beads-contract.py"
 )
 
-#: The only dependency type this system sets, reads, or removes.
+#: The dependency type of a Task-to-Task edge: a build prerequisite `bd ready` enforces.
 BLOCKS = "blocks"
+
+#: The dependency type of an Epic-to-Epic edge: an elaboration prerequisite. Non-blocking in
+#: beads, so it never holds an Epic's Stories or Tasks out of `bd ready`.
+TRACKS = "tracks"
+
+
+def edge_type(kind: str) -> str:
+    """The dependency type an edge onto a bead of this issue type is stored as.
+
+    Args:
+        kind: The issue type of the dependent bead.
+
+    Returns:
+        `tracks` for an Epic, `blocks` for everything else.
+    """
+    return TRACKS if kind == "epic" else BLOCKS
+
 
 #: Statuses that mean the bead is finished. An edge onto one of these is inert.
 CLOSED = frozenset({"closed"})
 
-#: Metadata key on the BLOCKED bead listing the blockers this system created, as a
-#: comma-separated id list. An edge absent from it was made by hand and is never removed.
+#: Metadata key on the DEPENDENT bead listing the Epic edges this system created, as a
+#: comma-separated id list of the beads it depends on. An edge absent from it was made by
+#: hand and is never removed.
 OWNED_KEY = "seq_owned_blockers"
 OWNED_AT_KEY = "seq_owned_blockers_at"
 
@@ -57,6 +78,7 @@ class Bead:
     parent: str | None
     metadata: dict[str, str]
     blockers: tuple[str, ...]
+    tracked: tuple[str, ...] = ()
     description: str = ""
 
     @property
@@ -65,8 +87,17 @@ class Bead:
         return self.status in CLOSED
 
     @property
+    def depends_on(self) -> tuple[str, ...]:
+        """The beads this one depends on, read from the edge type its level is stored as.
+
+        An Epic's dependencies are its `tracks` edges; every other bead's are its `blocks`
+        edges.
+        """
+        return self.tracked if edge_type(self.kind) == TRACKS else self.blockers
+
+    @property
     def owned_blockers(self) -> tuple[str, ...]:
-        """The blockers on this bead that this system created, per its own record."""
+        """The Epic edges on this bead that this system created, per its own record."""
         return tuple(split_ids(self.metadata.get(OWNED_KEY, "")))
 
 
@@ -320,11 +351,14 @@ def _bead_of(record: dict) -> Bead:
     metadata = record.get("metadata") or {}
     if isinstance(metadata, str):
         metadata = json.loads(metadata or "{}")
-    blockers = [
-        str(dep.get("depends_on_id"))
-        for dep in record.get("dependencies") or []
-        if dep.get("type") == BLOCKS and dep.get("depends_on_id")
-    ]
+
+    def targets(kind: str) -> list[str]:
+        return [
+            str(dep.get("depends_on_id"))
+            for dep in record.get("dependencies") or []
+            if dep.get("type") == kind and dep.get("depends_on_id")
+        ]
+
     return Bead(
         id=str(record["id"]),
         title=str(record.get("title") or ""),
@@ -332,7 +366,8 @@ def _bead_of(record: dict) -> Bead:
         status=str(record.get("status") or ""),
         parent=str(record["parent"]) if record.get("parent") else None,
         metadata={str(k): str(v) for k, v in metadata.items()},
-        blockers=tuple(sorted(set(blockers))),
+        blockers=tuple(sorted(set(targets(BLOCKS)))),
+        tracked=tuple(sorted(set(targets(TRACKS)))),
         description=str(record.get("description") or ""),
     )
 

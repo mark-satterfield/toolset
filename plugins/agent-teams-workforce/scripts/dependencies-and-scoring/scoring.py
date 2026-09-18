@@ -548,7 +548,10 @@ def record(
 
 
 def _edges(beads: list[Bead]) -> list[dict[str, str]]:
-    """The blocking edges among a set of beads, as the rubric takes them.
+    """The dependency edges among a set of beads, as the rubric takes them.
+
+    Each bead's edges are read from the type its level is stored as: `tracks` between
+    Epics, `blocks` between Tasks.
 
     Args:
         beads: The beads whose mutual edges are wanted.
@@ -558,10 +561,10 @@ def _edges(beads: list[Bead]) -> list[dict[str, str]]:
     """
     ids = {b.id for b in beads}
     return [
-        {"from": blocker, "to": b.id}
+        {"from": upstream, "to": b.id}
         for b in beads
-        for blocker in b.blockers
-        if blocker in ids
+        for upstream in b.depends_on
+        if upstream in ids
     ]
 
 

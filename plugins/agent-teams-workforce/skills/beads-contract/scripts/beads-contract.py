@@ -335,7 +335,7 @@ WSJF_KEYS = (
 )
 
 #: Keys the SEQUENCING pass owns. `seq_owned_blockers` is a comma-separated id list of the
-#: blocking edges this system created on that bead, and it exists so a hand-made edge is
+#: Epic `tracks` edges this system created on that bead, and it exists so a hand-made edge is
 #: never removed: the pass only ever withdraws an edge it recorded as its own.
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
