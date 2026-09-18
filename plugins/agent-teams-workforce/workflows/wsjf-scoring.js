@@ -251,7 +251,7 @@ Read ${judgeFiles.task}. Each item is an open Task with its own \`description\` 
 
 ${JUDGE_RULES}
 
-FOR EACH ITEM WITH \`judge: true\`, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task sized above 13 should have been split: that is a decomposition fault — size it at 13 and say so in its rationale.
+FOR EACH ITEM WITH \`judge: true\`, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split. It is a decomposition fault: say so in its rationale, and record the size you judged. Do not reduce it to 13.
 
 Write ${taskJudgments} as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
 

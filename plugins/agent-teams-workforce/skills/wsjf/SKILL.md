@@ -30,10 +30,10 @@ portfolio must not move the score of an item whose own inputs did not change.
 | What it is | a PRD, a business requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
 | UBV, TC | **judged** from the requirements document | **inherited** from the parent Epic, with its confidence |
 | RR-OE graph edges | DESIGN order — an architecture decision one Epic rests on should be designed from another Epic's requirements first; RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
-| Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale, 13 at most |
+| Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale; above 13 is a decomposition fault |
 
 The RR-OE bands differ by level and live in `scripts/wsjf.py`, with the size scale and the
-Task ceiling. Read them with `wsjf.py scales --level epic|task`; they are not restated here,
+Task decomposition-fault threshold. Read them with `wsjf.py scales --level epic|task`; they are not restated here,
 and a number quoted from anywhere else is not the rubric.
 
 ## Accept what is known; compute what is missing
@@ -233,10 +233,11 @@ decomposed.
 
 ### At Task level
 
-A Task is one agent's work in one repository, and its size is at most **13**. A Task that
-would size above 13 should have been split: it is a **decomposition fault**, not a large
-Task. The script places it at 13 and returns it under `sizeFaults`; report it against the
-decomposition.
+A Task is one agent's work in one repository, sized on the same unbounded scale. A Task
+above **13** should have been split. It is a **decomposition fault**: say so, and record the
+size you judged. Do not reduce it to 13. The script keeps the judged rung as the Task's
+size, so the Epic's refined size counts it in full, and returns the Task under `sizeFaults`
+with `aboveScale: true`; report it against the decomposition.
 
 ### The roll-up — top-down value, bottom-up cost
 
@@ -275,7 +276,7 @@ JSON
 Each scored item comes back with its dimensions, `reaches`, `costOfDelay`, `jobSize`,
 `sizeSource`, its estimate's fields, `wsjf`, and a `metadata` object carrying the exact keys
 and values to record. Everything the script could not score comes back in `unscored` with a
-reason; a Task above 13 comes back in `sizeFaults`; an Epic whose summed size falls outside
+reason; a Task above 13 keeps its judged size and comes back in `sizeFaults`; an Epic whose summed size falls outside
 its estimate's range comes back in `outsideRange`.
 
 `scripts/wsjf.py reach` returns the counts and bands alone, for a caller maintaining a
@@ -403,7 +404,7 @@ no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-cas
 - Leaving an estimate in place as the size after the Epic's Tasks exist, or snapping the
   summed size onto a rung.
 - Treating a refined size outside the estimate's range as an error rather than a flag.
-- Scoring a Task above 13 instead of reporting the decomposition fault.
+- Reducing a Task above 13 to 13, or scoring it without reporting the decomposition fault.
 - Normalizing CoD before dividing.
 - Re-deriving UBV or TC from the children. Value is top-down; only cost rolls up.
 - Recording the score only in prose.

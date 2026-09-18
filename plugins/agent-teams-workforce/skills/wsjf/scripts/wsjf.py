@@ -2,8 +2,8 @@
 """wsjf.py — the WSJF arithmetic, over whatever the caller already knows.
 
 This module owns the computed tables and rules: the RR-OE reachability bands, the
-Fibonacci job-size scale with the Task ceiling, and the Epic roll-up, which is the plain
-sum of its Tasks' sizes. Two levels parameterise them, `epic` and `task`.
+unbounded Fibonacci job-size scale with the Task decomposition-fault threshold, and the
+Epic roll-up, which is the plain sum of its Tasks' sizes. Two levels parameterise them, `epic` and `task`.
 
 It takes inputs and returns results. It reads no tracker, no repository and no file other
 than the one named on the command line, and it writes nothing anywhere — the `metadata`
@@ -53,7 +53,7 @@ Output for `score`:
     "level": "epic",
     "scores": [ { ...dimensions, "wsjf": 3.63, "metadata": {...} } ],
     "unscored": [ { "id": "C", "reason": "..." } ],
-    "sizeFaults": [ { "id": "D", "supplied": 21, "rung": 13 } ],
+    "sizeFaults": [ { "id": "D", "supplied": 21, "rung": 21, "aboveScale": true } ],
     "outsideRange": [ { "id": "E", "size": 47, "low": 21, "high": 34 } ],
     "cycle": null
   }
@@ -69,15 +69,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 #: Per-level parameters. Everything that differs between an Epic and a Task lives here.
-#: Both levels size on the one Fibonacci scale; a Task above `sizeCeiling` should have
-#: been split, and an Epic has no ceiling.
+#: Both levels size on the one unbounded Fibonacci scale. A Task whose rung is above
+#: `decompositionFaultAbove` should have been split: its size is recorded as judged and
+#: reported as a decomposition fault. An Epic has no such threshold.
 LEVELS: dict[str, dict[str, Any]] = {
     "epic": {
         "rubric": "epic-wsjf",
         # Reachability ceiling -> RR-OE rung, ascending; anything above takes rroeTop.
         "rroeBands": ((0, 1), (1, 3), (3, 5), (9, 8), (19, 13)),
         "rroeTop": 20,
-        "sizeCeiling": None,
+        "decompositionFaultAbove": None,
         "rollup": True,
         "reachKey": "wsjf_reaches",
     },
@@ -85,7 +86,7 @@ LEVELS: dict[str, dict[str, Any]] = {
         "rubric": "task-wsjf",
         "rroeBands": ((0, 1), (1, 3), (3, 5), (6, 8), (9, 13)),
         "rroeTop": 20,
-        "sizeCeiling": 13,
+        "decompositionFaultAbove": 13,
         "rollup": False,
         "reachKey": "wsjf_unblocks",
     },
@@ -140,15 +141,14 @@ def fibonacci(count: int) -> list[int]:
     return rungs[:count]
 
 
-def snap_size(value: float, ceiling: int | None) -> tuple[int, bool]:
-    """Put a judged size on the Fibonacci scale: the smallest rung at or above it.
+def snap_size(value: float) -> int:
+    """Put a judged size on the unbounded Fibonacci scale: the smallest rung at or above it.
 
     Args:
         value: The size the caller judged.
-        ceiling: The level's largest allowed rung, or None when the scale is unbounded.
 
     Returns:
-        The rung, and whether the value sat above the ceiling.
+        The rung.
 
     Raises:
         WsjfError: The value is not a positive number.
@@ -156,14 +156,12 @@ def snap_size(value: float, ceiling: int | None) -> tuple[int, bool]:
     if value <= 0:
         msg = f"jobSize must be greater than 0, got {value}"
         raise WsjfError(msg)
-    if ceiling is not None and value > ceiling:
-        return ceiling, True
     low, high = 1, 2
     if value <= low:
-        return low, False
+        return low
     while high < value:
         low, high = high, low + high
-    return high, False
+    return high
 
 
 def build_successors(edges: list[dict[str, str]], ids: set[str]) -> dict[str, set[str]]:
@@ -355,7 +353,9 @@ def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any
     supplied = estimate.get("sizeEstimate")
     if supplied is None:
         return {"reason": "no jobSize supplied and no childSizes to roll up"}
-    rung, over = snap_size(supplied, params["sizeCeiling"])
+    rung = snap_size(supplied)
+    threshold = params["decompositionFaultAbove"]
+    over = threshold is not None and rung > threshold
     record = {"jobSize": rung, "sizeSource": "supplied", **estimate}
     if over or rung != supplied:
         record["sizeFault"] = {"supplied": supplied, "rung": rung, "aboveScale": over}
@@ -619,13 +619,13 @@ def scales(level: str) -> dict[str, Any]:
         level: The level name.
 
     Returns:
-        The RR-OE bands, the job-size scale and its ceiling, and the roll-up rule.
+        The RR-OE bands, the job-size scale and its decomposition-fault threshold, and
+        the roll-up rule.
 
     Raises:
         WsjfError: The level is not one this module defines.
     """
     params = _resolve_level({}, level)
-    ceiling = params["sizeCeiling"]
     rungs = fibonacci(LISTED_RUNGS)
     return {
         "level": params["level"],
@@ -636,9 +636,9 @@ def scales(level: str) -> dict[str, Any]:
         },
         "jobSize": {
             "scale": "fibonacci",
-            "rungs": [r for r in rungs if ceiling is None or r <= ceiling],
-            "continuesUpward": ceiling is None,
-            "max": ceiling,
+            "rungs": rungs,
+            "continuesUpward": True,
+            "decompositionFaultAbove": params["decompositionFaultAbove"],
         },
         "childSizeRollup": (
             "the plain sum of the children's sizes" if params["rollup"] else None
@@ -863,12 +863,40 @@ def selftest() -> dict[str, Any]:
     )
     cases.append(
         _case(
-            "a Task above 13 is a decomposition fault",
-            {"rung": 13, "aboveScale": True},
+            "a Task above 13 is a decomposition fault recorded at its judged size",
             {
-                "rung": over["sizeFaults"][0]["rung"],
-                "aboveScale": over["sizeFaults"][0]["aboveScale"],
+                "jobSize": 21,
+                "sizeFaults": [
+                    {"id": "T", "supplied": 21, "rung": 21, "aboveScale": True}
+                ],
             },
+            {
+                "jobSize": over["scores"][0]["jobSize"],
+                "sizeFaults": over["sizeFaults"],
+            },
+        )
+    )
+
+    rolled = score(
+        {
+            "items": [
+                {
+                    "id": "E",
+                    "userBusinessValue": 8,
+                    "timeCriticality": 3,
+                    "riskReductionOpportunityEnablement": 5,
+                    "jobSize": 13,
+                    "childSizes": [21, 5],
+                }
+            ]
+        },
+        "epic",
+    )["scores"][0]
+    cases.append(
+        _case(
+            "an Epic rolls up a Task above 13 at its judged size",
+            {"jobSize": 26, "sizeEstimate": 13},
+            {"jobSize": rolled["jobSize"], "sizeEstimate": rolled.get("sizeEstimate")},
         )
     )
 

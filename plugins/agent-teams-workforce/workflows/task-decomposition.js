@@ -412,7 +412,8 @@ log(`Decomposing, sequencing, and scoring ${specRef}`)
 //     transitively, in the DAG the maker just emitted. The edges exist; counting them is
 //     evidence, arguing about them from prose is not.
 //   jobSize — the ONE judged input: relative work against the agent pipeline, on the
-//     rubric's Fibonacci scale, 13 at most for a Task, with its plausible range
+//     rubric's Fibonacci scale, a Task above 13 kept at its judged size and reported
+//     as a decomposition fault, with its plausible range
 //     (sizeLow, sizeHigh) and its confidence (sizeConfidence).
 //
 // So the agent supplies the size, its range and confidence, and a one-line rationale;
@@ -447,7 +448,7 @@ const WSJF_SKILL_DIR =
   typeof a.pluginRoot === 'string' && SAFE_ART_PATH.test(a.pluginRoot) && !a.pluginRoot.split('/').includes('..')
     ? `${a.pluginRoot.replace(/\/+$/, '')}/skills/wsjf`
     : null
-const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place it; never score them separately, add or multiply them. A Task is sized from the established architecture, design and implementation instructions its Spec gives it. The scale is Fibonacci (1, 2, 3, 5, 8, 13); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would size above 13 should have been split: that is a DECOMPOSITION FAULT — say so in your notes and size it at 13.`
+const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place it; never score them separately, add or multiply them. A Task is sized from the established architecture, design and implementation instructions its Spec gives it. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, and upward); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A Task above 13 should have been split. It is a DECOMPOSITION FAULT: say so in your notes, and record the size you judged. Do not reduce it to 13.`
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 // The Epic's judged value and criticality, inherited by every Task. A Task set is scored
@@ -594,7 +595,7 @@ async function applyTaskWsjf(judged, taskSet, edges) {
     `Value and time criticality inherited from Epic ${valueFrom}.`,
     unsized.length ? `No usable jobSize returned for: ${unsized.join(', ')} — left unscored.` : '',
     sizeFaults.length
-      ? `Sizes placed on the scale by wsjf.py: ${sizeFaults.map((f) => `${f.id} ${f.supplied} -> ${f.rung}${f.aboveScale ? ' (above the ceiling: a decomposition fault)' : ''}`).join(', ')}.`
+      ? `Sizes placed on the scale by wsjf.py: ${sizeFaults.map((f) => `${f.id} ${f.supplied} -> ${f.rung}${f.aboveScale ? ' (above 13: a decomposition fault)' : ''}`).join(', ')}.`
       : '',
     result.error ? `WSJF arithmetic did not run: ${result.error}.` : '',
   ]
@@ -768,7 +769,7 @@ async function reviewScores(pass) {
   return await settleAgent(
     `${CHECKER_PREAMBLE}
 
-Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize a Fibonacci rung from 1 to 13, meaning relative work against the agent pipeline rather than calendar time or human effort; sizeLow <= jobSize <= sizeHigh and sizeConfidence an integer percent, with a wider range and lower confidence where the task carries more uncertainty; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
+Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize a Fibonacci rung, meaning relative work against the agent pipeline rather than calendar time or human effort; sizeLow <= jobSize <= sizeHigh and sizeConfidence an integer percent, with a wider range and lower confidence where the task carries more uncertainty; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. A rung above 13 is a decomposition fault, not a sizing error: accept the size when it is otherwise sound, and report the task as a decomposition fault in your feedback; never reject a size for being above 13 or ask for it to be reduced. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
 
 ${taskEvidence}
 
