@@ -29,10 +29,10 @@ import importlib.util
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from beadgraph import fingerprints, write_metadata
+from beadgraph import fingerprints
 
 if TYPE_CHECKING:
-    from beadgraph import Bead, Graph
+    from beadgraph import Bead, Graph, Writer
 
 #: The WSJF rubric's own implementation, loaded from the skill that owns it.
 WSJF_PATH = (
@@ -109,16 +109,16 @@ def _same(stored: str | None, fresh: str) -> bool:
         return False
 
 
-def _write(bead: Bead, pairs: dict[str, str], repo: Path | None) -> bool:
+def _write(bead: Bead, pairs: dict[str, str], writer: Writer) -> bool:
     """Write metadata onto a bead unless every non-volatile value is already there.
 
     Args:
         bead: The bead being written.
         pairs: The metadata to store.
-        repo: The repository to run `bd` from, or None for the working directory.
+        writer: The tracker writer; a dry-run writer records the write instead.
 
     Returns:
-        True when the tracker was written.
+        True when the bead is written, or would be in a dry run.
     """
     changed = any(
         not _same(bead.metadata.get(k), v)
@@ -126,7 +126,7 @@ def _write(bead: Bead, pairs: dict[str, str], repo: Path | None) -> bool:
         if k not in VOLATILE_KEYS
     )
     if changed:
-        write_metadata(bead.id, pairs, repo)
+        writer.metadata(bead.id, pairs)
     return changed
 
 
@@ -335,34 +335,60 @@ def _positive(record: dict, key: str, bead_id: str) -> int:
     return value
 
 
+def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, str]:
+    """The metadata one judgment writes, with every judged value validated.
+
+    Args:
+        graph: The tracker graph.
+        level: `epic` or `task`.
+        bead: The judged bead.
+        one: The judgment for it.
+
+    Returns:
+        The judged keys and their values, without the fingerprint.
+
+    Raises:
+        ScoringError: A judged value is missing or not a positive integer.
+    """
+    pairs: dict[str, str] = {}
+    if level == "epic":
+        pairs["wsjf_ubv"] = str(_positive(one, "userBusinessValue", bead.id))
+        pairs["wsjf_tc"] = str(_positive(one, "timeCriticality", bead.id))
+        pairs["wsjf_confidence"] = str(_positive(one, "confidence", bead.id))
+        if not _tasks_of(graph, bead):
+            pairs["wsjf_size"] = str(_positive(one, "jobSize", bead.id))
+    else:
+        pairs["wsjf_size"] = str(_positive(one, "jobSize", bead.id))
+    return pairs
+
+
 def record(
-    graph: Graph, the_plan: dict, judgments: dict[str, list[dict]], repo: Path | None
+    graph: Graph, the_plan: dict, judgments: dict[str, list[dict]], writer: Writer
 ) -> dict:
     """Write judged values, each with the fingerprint of the content it was judged from.
 
-    The plan's adopted values get their fingerprint recorded beside them. Only items the plan named for judging are written; a judgment for anything else is
-    refused, because it was not asked for and carries no fingerprint from this run.
+    The plan's adopted values get their fingerprint recorded beside them. Only items the
+    plan named for judging are written; a judgment for anything else is refused, because
+    it was not asked for and carries no fingerprint from this run. Every judgment is
+    validated before anything is written, so a bad value refuses the whole record.
 
     Args:
         graph: The tracker graph.
         the_plan: The run's plan, from `plan`.
         judgments: `epic` and `task` lists of the rubric's per-item scores.
-        repo: The repository to run `bd` from, or None for the working directory.
+        writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
-        What was written, what the plan asked for and did not receive, and a summary.
+        What was written, what the plan asked for and did not receive, a summary, and —
+        in a dry run — every write in order.
 
     Raises:
         ScoringError: A judgment names an item outside the plan or carries a bad value.
     """
     prints = the_plan["fingerprints"]
-    written: list[str] = []
-    adopted: list[str] = []
     missing: list[str] = []
-    for level, keys in (
-        ("epic", ("userBusinessValue", "timeCriticality")),
-        ("task", ()),
-    ):
+    pending: list[tuple[Bead, dict[str, str]]] = []
+    for level in ("epic", "task"):
         asked = {j["id"] for j in the_plan["judge"][f"{level}s"]}
         got = {str(r.get("id")): r for r in judgments.get(level, [])}
         stray = sorted(set(got) - asked)
@@ -377,28 +403,24 @@ def record(
             if bead is None:
                 missing.append(bead_id)
                 continue
-            one = got[bead_id]
             pairs = {JUDGED_HASH_KEY: prints.get(bead_id, "")}
-            if level == "epic":
-                pairs["wsjf_ubv"] = str(_positive(one, keys[0], bead_id))
-                pairs["wsjf_tc"] = str(_positive(one, keys[1], bead_id))
-                pairs["wsjf_confidence"] = str(_positive(one, "confidence", bead_id))
-                if not _tasks_of(graph, bead):
-                    pairs["wsjf_size"] = str(_positive(one, "jobSize", bead_id))
-            else:
-                pairs["wsjf_size"] = str(_positive(one, "jobSize", bead_id))
-            if _write(bead, pairs, repo):
-                written.append(bead_id)
+            pairs |= _judged_pairs(graph, level, bead, got[bead_id])
+            pending.append((bead, pairs))
+    written = [bead.id for bead, pairs in pending if _write(bead, pairs, writer)]
+    adopted: list[str] = []
     for bead_id in the_plan.get("adopt", []):
         bead = graph.beads.get(bead_id)
         if bead is not None and prints.get(bead_id):
-            write_metadata(bead_id, {JUDGED_HASH_KEY: prints[bead_id]}, repo)
+            writer.metadata(bead_id, {JUDGED_HASH_KEY: prints[bead_id]})
             adopted.append(bead_id)
     return {
+        "dryRun": writer.dry_run,
         "written": written,
         "adopted": adopted,
         "missing": missing,
+        "planned": writer.planned,
         "summary": {
+            "dryRun": writer.dry_run,
             "written": len(written),
             "adopted": len(adopted),
             "missing": len(missing),
@@ -495,16 +517,16 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
     return items
 
 
-def _apply(graph: Graph, result: dict, repo: Path | None) -> list[dict]:
+def _apply(graph: Graph, result: dict, writer: Writer) -> list[dict]:
     """Write every scored item whose values changed.
 
     Args:
         graph: The tracker graph.
         result: The rubric's `score` output.
-        repo: The repository to run `bd` from, or None for the working directory.
+        writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
-        One record per scored item, marked with whether it was written.
+        One record per scored item, marked with whether it is written.
     """
     rows = []
     for scored in result["scores"]:
@@ -518,22 +540,25 @@ def _apply(graph: Graph, result: dict, repo: Path | None) -> list[dict]:
                 "reaches": scored["reaches"],
                 "jobSize": scored["jobSize"],
                 "sizeSource": scored["sizeSource"],
-                "written": _write(bead, scored["metadata"], repo),
+                "written": _write(bead, scored["metadata"], writer),
             }
         )
     return rows
 
 
-def score(graph: Graph, repo: Path | None) -> dict:
+def score(graph: Graph, writer: Writer) -> dict:
     """Recompute every open Epic's and every open Task's WSJF, and write what changed.
+
+    The edge lists handed to the rubric are the whole graph at each level, so a level
+    with no edges scores every item as reaching nothing.
 
     Args:
         graph: The tracker graph.
-        repo: The repository to run `bd` from, or None for the working directory.
+        writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
         The Epic and Task scores, everything that could not be scored and why, size
-        faults, any cycle, and a summary.
+        faults, any cycle, a summary, and — in a dry run — every write in order.
     """
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
@@ -542,8 +567,8 @@ def score(graph: Graph, repo: Path | None) -> dict:
     task_result = rubric.score(
         {"edges": _edges(tasks), "items": _task_items(graph, tasks)}, "task"
     )
-    epic_rows = _apply(graph, epic_result, repo)
-    task_rows = _apply(graph, task_result, repo)
+    epic_rows = _apply(graph, epic_result, writer)
+    task_rows = _apply(graph, task_result, writer)
     unscored = [{"level": "epic", **u} for u in epic_result["unscored"]] + [
         {"level": "task", **u} for u in task_result["unscored"]
     ]
@@ -554,7 +579,10 @@ def score(graph: Graph, repo: Path | None) -> dict:
         "incomplete": incomplete,
         "sizeFaults": epic_result["sizeFaults"] + task_result["sizeFaults"],
         "cycles": {"epic": epic_result["cycle"], "task": task_result["cycle"]},
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
         "summary": {
+            "dryRun": writer.dry_run,
             "epicsScored": len(epic_rows),
             "epicsWritten": sum(r["written"] for r in epic_rows),
             "tasksScored": len(task_rows),

@@ -24,12 +24,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import beadgraph
-from beadgraph import join_ids, now_iso, write_metadata
+from beadgraph import join_ids, now_iso
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from beadgraph import Graph
+    from beadgraph import Graph, Writer
 
 
 #: Metadata key on an Epic: the content fingerprint the sequencer last read it at.
@@ -223,47 +223,82 @@ def plan_edges(graph: Graph, edges: list[Edge]) -> dict:
     }
 
 
+def _owned_after_adds(graph: Graph, plan: dict) -> dict[str, dict[str, str]]:
+    """The ownership records that cover every edge the diff adds, before any is added.
+
+    Each blocked bead that gains an edge is recorded as owning its CURRENT owned edges
+    plus the ones about to be added. Written first, this guarantees an added edge is
+    never present without its ownership: a failure after it leaves an owned record
+    naming an edge that may not exist yet, which the next pass adds, never an unowned
+    edge that no pass would ever withdraw.
+
+    Args:
+        graph: The tracker graph.
+        plan: The diff, from `plan_edges`.
+
+    Returns:
+        Blocked bead id -> the ownership metadata to write ahead of the adds.
+    """
+    gaining: dict[str, set[str]] = {}
+    for entry in plan["add"]:
+        gaining.setdefault(entry["blocked"], set()).add(entry["blocker"])
+    records: dict[str, dict[str, str]] = {}
+    for blocked_id, blockers in sorted(gaining.items()):
+        bead = graph.beads[blocked_id]
+        records[blocked_id] = {
+            beadgraph.OWNED_KEY: join_ids(set(bead.owned_blockers) | blockers),
+            beadgraph.OWNED_AT_KEY: now_iso(),
+        }
+    return records
+
+
 def apply_edges(
-    graph: Graph, edges: list[Edge], repo: Path | None, seen: dict[str, str]
+    graph: Graph, edges: list[Edge], writer: Writer, seen: dict[str, str]
 ) -> dict:
     """Validate, diff and write an edge set. Idempotent by construction.
 
-    There is no dry run. A run costs the same whether or not it writes, so it writes; an
-    unchanged proposal adds nothing, withdraws nothing and writes no metadata, which is
-    what makes re-running it free rather than a rehearsal.
+    An unchanged proposal adds nothing, withdraws nothing and writes no metadata. The
+    writes run in an order that never leaves an edge unowned: ownership covering every
+    edge to be added is written first, then the adds, then the withdrawals, then the
+    final ownership records, which drop the withdrawn edges.
 
     Args:
         graph: The tracker graph.
         edges: The proposed edge set, over the whole portfolio.
-        repo: The repository to run `bd` from, or None for the working directory.
+        writer: The tracker writer; a dry-run writer records the writes instead.
         seen: Epic id -> the content fingerprint the sequencer read that Epic at.
 
     Returns:
-        The validation verdict, the counts, the plan that was applied, and the Epics whose
-        `seq_content_hash` was recorded. A proposal that fails validation is refused whole
-        — nothing is written.
+        The validation verdict, the counts, the plan, the Epics whose `seq_content_hash`
+        is recorded, and — in a dry run — every write in order. A proposal that fails
+        validation is refused whole — nothing is written.
     """
     report = validate(graph, edges)
     if not report["ok"]:
-        return {"applied": False, "validation": report}
+        return {"applied": False, "dryRun": writer.dry_run, "validation": report}
     plan = plan_edges(graph, edges)
+    ahead = _owned_after_adds(graph, plan)
+    for bead_id, pairs in ahead.items():
+        writer.metadata(bead_id, pairs)
     for entry in plan["add"]:
-        beadgraph.bd_write(
-            ["dep", entry["blocker"], "--blocks", entry["blocked"]], repo
-        )
+        writer.bd(["dep", entry["blocker"], "--blocks", entry["blocked"]])
     for entry in plan["remove"]:
-        beadgraph.bd_write(["dep", "remove", entry["blocked"], entry["blocker"]], repo)
+        writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
     for bead_id, pairs in plan["metadata"].items():
-        write_metadata(bead_id, pairs, repo)
+        written = ahead.get(bead_id, {}).get(beadgraph.OWNED_KEY)
+        if written != pairs[beadgraph.OWNED_KEY]:
+            writer.metadata(bead_id, pairs)
     recorded = []
     for bead in graph.of_kind("epic"):
         current = seen.get(bead.id)
         if bead.closed or not current or bead.metadata.get(SEEN_KEY) == current:
             continue
-        write_metadata(bead.id, {SEEN_KEY: current}, repo)
+        writer.metadata(bead.id, {SEEN_KEY: current})
         recorded.append(bead.id)
     return {
-        "applied": True,
+        "applied": not writer.dry_run,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
         "sequencedRecorded": len(recorded),
         "validation": report,
         "added": len(plan["add"]),

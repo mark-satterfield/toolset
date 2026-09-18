@@ -16,6 +16,10 @@ them is an agent; everything here is code.
 
 Every command prints ONE JSON object on stdout and names the tracker source it read. With
 `--out FILE` the full object is written to FILE and stdout carries only its `summary`.
+
+`apply-edges`, `record` and `score` take `--dry-run`: the command reads the tracker and
+computes exactly as it otherwise would, writes nothing, and returns every write it would
+have made, in order, under `planned`.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import json
 from pathlib import Path
 
 import beadgraph
-from beadgraph import Bead, Graph, GraphError, split_ids
+from beadgraph import Bead, Graph, GraphError, Writer, split_ids
 from edgeset import SequencingError, apply_edges, read_edges, validate
 from scoring import ScoringError, judge_input, plan, record, score
 
@@ -118,6 +122,19 @@ def _judgments(path: Path | None) -> list[dict]:
     return [s for s in scores if isinstance(s, dict)]
 
 
+def _dry_run_flag(parser: argparse.ArgumentParser) -> None:
+    """Give a writing subcommand its `--dry-run` flag.
+
+    Args:
+        parser: The subcommand's parser.
+    """
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="write nothing; return every write this command would make under `planned`",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command line: one subcommand per deterministic step.
 
@@ -181,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
     )
     app.add_argument("--plan", type=Path, required=True, help="the `query` output")
+    _dry_run_flag(app)
 
     rec = sub.add_parser(
         "record", help="write judged values with their fingerprints", parents=[common]
@@ -188,12 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--plan", type=Path, required=True, help="the `query` output")
     rec.add_argument("--epics", type=Path, default=None, help="the Epic judgments")
     rec.add_argument("--tasks", type=Path, default=None, help="the Task size judgments")
+    _dry_run_flag(rec)
 
-    sub.add_parser(
+    sco = sub.add_parser(
         "score",
         help="recompute every Epic and Task score and write what changed",
         parents=[common],
     )
+    _dry_run_flag(sco)
     return parser
 
 
@@ -211,6 +231,7 @@ def run(args: argparse.Namespace) -> dict:
     )
     graph = beadgraph.load(args.directory, with_description=descriptions)
     head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
+    writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if args.command == "query":
         return head | plan(graph, everything=args.all)
     if args.command == "judge-input":
@@ -233,19 +254,27 @@ def run(args: argparse.Namespace) -> dict:
     if args.command == "apply-edges":
         the_plan = _read_json(args.plan)
         result = apply_edges(
-            graph, read_edges(args.edges), args.directory, the_plan["fingerprints"]
+            graph, read_edges(args.edges), writer, the_plan["fingerprints"]
         )
         summary = {
             key: result.get(key)
-            for key in ("applied", "added", "removed", "unchanged", "sequencedRecorded")
+            for key in (
+                "applied",
+                "dryRun",
+                "added",
+                "removed",
+                "unchanged",
+                "sequencedRecorded",
+            )
         }
-        if not result["applied"]:
+        summary["plannedWrites"] = len(result.get("planned") or [])
+        if not result["validation"]["ok"]:
             summary["validation"] = result["validation"]
         return head | result | {"summary": summary}
     if args.command == "record":
         judgments = {"epic": _judgments(args.epics), "task": _judgments(args.tasks)}
-        return head | record(graph, _read_json(args.plan), judgments, args.directory)
-    return head | score(graph, args.directory)
+        return head | record(graph, _read_json(args.plan), judgments, writer)
+    return head | score(graph, writer)
 
 
 def main(argv: list[str] | None = None) -> int:

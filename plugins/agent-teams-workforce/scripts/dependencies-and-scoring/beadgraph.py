@@ -152,26 +152,111 @@ def _bd(args: list[str], repo: Path | None) -> str:
     return done.stdout
 
 
-def bd_write(args: list[str], repo: Path | None) -> str:
-    """Run a `bd` command that changes the tracker."""
-    return _bd(args, repo)
-
-
 def now_iso() -> str:
     """The current instant, ISO 8601 UTC, to the second."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _same_value(stored: object, wanted: str) -> bool:
+    """Whether a value read back from the tracker is the value that was written.
+
+    `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
+    parse to the same number are the same value.
+
+    Args:
+        stored: The value the read-back reported.
+        wanted: The value written.
+
+    Returns:
+        True when the read-back holds the written value.
+    """
+    text = "" if stored is None else str(stored)
+    if text == wanted:
+        return True
+    try:
+        return float(text) == float(wanted)
+    except ValueError:
+        return False
+
+
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
-    """Write pipeline metadata through the beads-contract CLI, which verifies the write."""
-    command = [sys.executable, str(CONTRACT), "metadata", "set", bead_id]
+    """Write pipeline metadata through the beads-contract CLI and verify the read-back.
+
+    Args:
+        bead_id: The bead to write.
+        pairs: The keys and values to merge onto its metadata.
+        repo: The repository to run `bd` from, or None for the working directory.
+
+    Raises:
+        GraphError: The CLI refused, or the value read back after the write is not the
+            value written.
+    """
+    command = [sys.executable, str(CONTRACT)]
     if repo is not None:
         command += ["-C", str(repo)]
+    command += ["metadata", "set", bead_id]
     command += [f"{key}={value}" for key, value in pairs.items()]
     done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         msg = f"metadata set on {bead_id} failed: {done.stdout.strip()} {done.stderr.strip()}"
         raise GraphError(msg)
+    try:
+        answer = json.loads(done.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        msg = f"metadata set on {bead_id} printed no read-back: {done.stdout.strip()}"
+        raise GraphError(msg) from exc
+    verified = answer.get("verified") if isinstance(answer, dict) else None
+    if not isinstance(verified, dict):
+        msg = f"metadata set on {bead_id} printed no read-back: {done.stdout.strip()}"
+        raise GraphError(msg)
+    wrong = {
+        key: verified.get(key)
+        for key, value in pairs.items()
+        if not _same_value(verified.get(key), value)
+    }
+    if wrong:
+        msg = (
+            f"metadata set on {bead_id} did not hold: read back {wrong}, wrote {pairs}"
+        )
+        raise GraphError(msg)
+
+
+@dataclass
+class Writer:
+    """The one path for tracker writes; a dry-run writer records each write instead.
+
+    Attributes:
+        repo: The repository to run `bd` from, or None for the working directory.
+        dry_run: True to record each write in `planned` and change nothing.
+        planned: The writes a dry run would have made, in order.
+    """
+
+    repo: Path | None
+    dry_run: bool = False
+    planned: list[dict] = field(default_factory=list)
+
+    def bd(self, args: list[str]) -> None:
+        """Run a `bd` command that changes the tracker, or record it in a dry run.
+
+        Args:
+            args: The `bd` arguments.
+        """
+        if self.dry_run:
+            self.planned.append({"op": "bd", "args": list(args)})
+            return
+        _bd(args, self.repo)
+
+    def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
+        """Write pipeline metadata onto one bead, or record it in a dry run.
+
+        Args:
+            bead_id: The bead to write.
+            pairs: The keys and values to merge onto its metadata.
+        """
+        if self.dry_run:
+            self.planned.append({"op": "metadata", "id": bead_id, "set": dict(pairs)})
+            return
+        write_metadata(bead_id, pairs, self.repo)
 
 
 def fingerprints(records: list[dict]) -> dict[str, str]:

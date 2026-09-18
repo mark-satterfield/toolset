@@ -21,7 +21,8 @@ Input for `score` and `reach`:
 
   {
     "level": "epic",                         // optional; --level wins
-    "edges": [{"from": "A", "to": "B"}],     // optional: A must come before B
+    "edges": [{"from": "A", "to": "B"}],     // optional: A must come before B; an
+                                             // empty list is a graph with no edges
     "items": [
       {
         "id": "A",
@@ -317,7 +318,7 @@ def _resolve_rroe(
         item: The item being scored.
         params: The level's parameter block.
         successors: The forward edge index.
-        has_edges: Whether the caller supplied any edges at all.
+        has_edges: Whether the caller supplied an edge list, empty or not.
 
     Returns:
         A record carrying `riskReductionOpportunityEnablement` and `reaches`, or `reason`.
@@ -418,6 +419,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
             msg = "every item needs an id"
             raise WsjfError(msg)
     ids = {str(i["id"]) for i in items}
+    has_graph = payload.get("edges") is not None
     edges = payload.get("edges") or []
     successors = build_successors(edges, ids)
     cycle = find_cycle(successors, ids)
@@ -445,7 +447,7 @@ def score(payload: dict[str, Any], level: str | None = None) -> dict[str, Any]:
                 {"id": item_id, "reason": "no userBusinessValue or timeCriticality"}
             )
             continue
-        rroe = _resolve_rroe(item, params, successors, bool(edges))
+        rroe = _resolve_rroe(item, params, successors, has_graph)
         if "reason" in rroe:
             unscored.append({"id": item_id, "reason": rroe["reason"]})
             continue
