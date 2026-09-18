@@ -6,7 +6,7 @@
 // A workflow script is not a module. The runner hands it seven globals and no loader, and
 // scripts/workflow-runner-constraints.mjs statically REFUSES an import statement, a
 // dynamic import and require() in a workflow script — that refusal is the standing P0
-// invariant and it is not negotiable for the sake of code sharing. So the four scripts
+// invariant and it is not negotiable for the sake of code sharing. So the scripts
 // that need this guard cannot import it; they carry it inline.
 //
 // Two inline copies drift, and drift is the failure this whole series is about: 6.0.8
@@ -137,4 +137,4 @@ export function extractPathGuardBlock(source) {
 }
 
 /** The workflow scripts required to carry the block. */
-export const PATH_GUARD_REQUIRED_IN = Object.freeze(['workspace.js', 'bug-fix.js', 'task-to-deploy.js', 'infra-change.js'])
+export const PATH_GUARD_REQUIRED_IN = Object.freeze(['workspace.js', 'settle.js', 'bug-fix.js'])

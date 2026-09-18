@@ -233,8 +233,8 @@ function persistRun(outcome) {
 // to commit there. Nothing writes before the workspace step, so until that step verifies
 // a tree there is genuinely nothing to land.
 let settleRepoPath = null
-// What the workspace step VERIFIED about that tree. Settle re-checks both before it is
-// willing to commit — see the guard in settleRun.
+// What the workspace step VERIFIED about that tree. The settle mini re-checks both before
+// it is willing to commit.
 let settleBranch = null
 let settleIsLinkedWorktree = false
 // THIS repository's default branch, as the workspace step's independent check read it
@@ -243,16 +243,6 @@ let settleIsLinkedWorktree = false
 // unobtainable, which narrows the guard back to the floor rather than widening it to a
 // guess.
 let settleDefaultBranch = null
-// A FLOOR, never the whole test. `main` and `master` are refused in every repository
-// because they are the fleet convention; the repository's actual default is refused as
-// well, and it is read, not assumed.
-const SETTLE_DEFAULT_BRANCHES = new Set(['main', 'master'])
-const settleNormalizeBranch = (b) =>
-  String(b || '')
-    .trim()
-    .replace(/^refs\/heads\//, '')
-    .replace(/^origin\//, '')
-    .toLowerCase()
 
 // ===== SHARED BLOCK path-guard — BEGIN (canonical: scripts/shared-path-guard.mjs) =====
 // ── PATH SAFETY: a path is COMMAND TEXT and PROMPT TEXT at the same time ─────
@@ -353,104 +343,20 @@ ${body}
 //
 // It gets its OWN phase for the same reason the ledger does: running on every exit
 // path, it must never be able to tick a work phase green.
-// Three worlds, three answers. A run with no repo path, a settle agent that threw, and a
-// genuine orphan used to be indistinguishable — all three returned null, and the first two
-// then flipped a successful run to ok:false and blamed a PR URL that was never withheld
-// because the agent never ran.
+// The settle mini owns the landing: its guards, its prompt and its dispatch. This hands it
+// the facts the workspace step verified and returns its report. A run that established no
+// tree has nothing to land and dispatches nothing.
 async function settleRun() {
-  const wt = settleRepoPath
-  if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
-  if (!PR_COMMAND) {
-    return {
-      status: 'blocked',
-      reason:
-        `settle has no PR command to land the work in ${wt} with: args.prCommand (the project's ATW_PR_COMMAND) ` +
-        'was not supplied as an absolute path to an executable. The work is left in the worktree.',
-    }
-  }
-  // Before the path becomes command text in the prompt below. A path that could reshape
-  // those commands is a blocked orphan: the work is named and left where a human can find
-  // it, never committed by a shell somebody else wrote.
-  const wtFault = pathFault('the worktree path settle was handed', wt)
-  if (wtFault) {
-    return {
-      status: 'blocked',
-      reason:
-        `settle refused to act on the worktree path it was handed because ${wtFault}. The path is ` +
-        'interpolated into git and PR commands another agent runs exactly as written, so it ' +
-        'is refused rather than rewritten.',
-    }
-  }
-  // Settle COMMITS, and then opens a PR on the CURRENT branch. Both are irreversible in
-  // the way that matters: the original incident left work uncommitted on main and
-  // therefore recoverable, whereas an unguarded settle in that same tree would have
-  // COMMITTED it onto main. So the tree settle is about to act in must still be the
-  // verified linked worktree the workspace step established, on a branch that is not the
-  // default one. An unverified tree is refused and reported as a blocked orphan — the
-  // work is named and left where a human can find it, never committed to find out.
-  const settleNormalized = settleNormalizeBranch(settleBranch || '')
-  if (settleIsLinkedWorktree !== true) {
-    return {
-      status: 'blocked',
-      reason:
-        `settle refused to commit in ${wt}: the workspace step did not affirm it is a linked worktree ` +
-        '(isLinkedWorktree=true). Committing into an unverified tree is how a fix lands on main.',
-    }
-  }
-  const settleRepoDefault = settleNormalizeBranch(settleDefaultBranch || '')
-  if (
-    !settleNormalized ||
-    SETTLE_DEFAULT_BRANCHES.has(settleNormalized) ||
-    settleNormalized === 'head' ||
-    (settleRepoDefault && settleNormalized === settleRepoDefault)
-  ) {
-    return {
-      status: 'blocked',
-      reason:
-        `settle refused to commit in ${wt}: its branch is "${settleBranch || '(none reported)'}" — a default ` +
-        'branch, a detached HEAD, or unreported. The PR command runs on the CURRENT branch, so this would ' +
-        'commit and push the work onto the default branch rather than onto a reviewable branch.' +
-        (settleRepoDefault && settleNormalized === settleRepoDefault
-          ? ` This repository's default branch is "${settleDefaultBranch}", as origin/HEAD names it — not every repo defaults to main.`
-          : ''),
-    }
-  }
-  // The worktree path is the one caller-reachable value in this prompt. It is validated
-  // above AND fenced here: the allowlist cannot refuse a dash-separated sentence that is
-  // also a legal directory name, so the block is what stops it reading as prose addressed
-  // to the agent that is about to COMMIT AND PUSH.
-  const settlePathBlock = dataFence('PATH', PATH_DATA_NOTICE, `Worktree: ${wt}`)
+  if (!settleRepoPath) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
   try {
-    const reported = await settleAgent(
-      `Land every change in this worktree, or say exactly why it could not be landed.\n\n` +
-        `${settlePathBlock}\n\n` +
-        `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command, which runs inside the tree.\n` +
-        `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
-        `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to origin/main, run \`git -C "${wt}" branch --unset-upstream\`. Never push to main.\n` +
-        `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from origin/main.\n` +
-        `4. If hasWork, \`cd "${wt}" && ${PR_COMMAND} --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch and opens the pull request. NEVER open the PR any other way, and NEVER merge it. A PR that already exists for this head is success, not failure — report its URL.\n` +
-        `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
-      {
-        label: 'settle:land-work',
-        rethrow: true,
-        phase: 'Settle',
-        agentType: 'agent-teams-workforce:github-actions-pipeline-implementer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['treeClean', 'hasWork', 'branch', 'prUrl'],
-          properties: {
-            treeClean: { type: 'boolean' },
-            hasWork: { type: 'boolean' },
-            branch: { type: 'string' },
-            prUrl: { type: 'string' },
-            blocked: { type: 'array', items: { type: 'string' } },
-          },
-        },
-      }
-    )
-    if (!reported) return { status: 'error', error: 'the settle agent returned no result' }
-    return { status: 'reported', ...reported }
+    const out = await workflow('agent-teams-workforce:settle', {
+      repoPath: settleRepoPath,
+      prCommand: PR_COMMAND,
+      branch: settleBranch,
+      isLinkedWorktree: settleIsLinkedWorktree,
+      defaultBranch: settleDefaultBranch,
+    })
+    return out && typeof out.status === 'string' ? out : { status: 'error', error: 'the settle step returned no result' }
   } catch (e) {
     const error = e && e.message ? e.message : String(e)
     log(`settle failed: ${error}`)

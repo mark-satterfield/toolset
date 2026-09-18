@@ -15,6 +15,7 @@
 // laxer than the runner, a green suite means nothing — see assertRunnerLoadable below.
 
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { assertRunnerLoadable, compileWorkflowBody, neutralizeMetaExport } from '../../../scripts/workflow-runner-constraints.mjs'
 
 /** Read the raw workflow source (for source-text assertions, e.g. D1-AC1's grep clause). */
@@ -30,6 +31,15 @@ export function readWorkflowSource(absPath) {
 export const PROJECT_CONFIG = Object.freeze({
   prCommand: '/opt/project/bin/open-pr',
   sadPath: '/opt/project/docs/architecture/sad',
+})
+
+/**
+ * Minis the harness runs as real scripts rather than handing to the test's workflow stub.
+ * The settle mini is the landing step of every build composite, so a composite under test
+ * lands through the same guards and prompt the runner would execute.
+ */
+const INLINE_MINIS = Object.freeze({
+  'agent-teams-workforce:settle': fileURLToPath(new URL('../../../workflows/settle.js', import.meta.url)),
 })
 
 /**
@@ -84,6 +94,15 @@ export async function runWorkflowScript(absPath, { args: callerArgs = {}, agentI
   const workflow = async (name, payload = {}) => {
     const call = { kind: 'workflow', name, payload }
     calls.push(call)
+    if (INLINE_MINIS[name]) {
+      // Executed for real, with the caller's agent stub: its dispatches join this call list
+      // exactly as they would join the run's.
+      const nested = await runWorkflowScript(INLINE_MINIS[name], { args: payload, agentImpl, workflowImpl, budget })
+      calls.push(...nested.calls)
+      logs.push(...nested.logs)
+      call.returned = nested.result
+      return nested.result
+    }
     const value = workflowImpl ? await workflowImpl(call, calls) : null
     call.returned = value
     return value

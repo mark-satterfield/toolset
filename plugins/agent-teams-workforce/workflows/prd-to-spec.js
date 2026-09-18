@@ -151,6 +151,8 @@ async function settleAgent(prompt, opts) {
 //                                 // see ARTIFACTS for the phase ids and file names.
 //   projectRoot?: string,         // the project root (ATW_PROJECT_ROOT), when `resume` carries no root
 //   artifactScript?: string,      // the artifact recorder (ATW_ARTIFACT_SCRIPT); absent, artifacts are off
+//   pluginRoot?: string,          // absolute path of this plugin's root, handed to task-decomposition,
+//                                 // which runs the WSJF rubric's script under it; absent, Tasks are unscored
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // Gate retry budget. One rework round, then proceed with the finding recorded.
@@ -4276,6 +4278,7 @@ function decompArgs(pair, feedback) {
     decisionIds: (pair.spec && Array.isArray(pair.spec.decisionIds) ? pair.spec.decisionIds : []),
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
     maxScoringPasses: 2,
+    ...(typeof a.pluginRoot === 'string' ? { pluginRoot: a.pluginRoot } : {}),
     artifacts: artFor(`tasks:${slug}`, [...specDocs, artPath(`story-${slug}.json`)], { slug }),
   }
 }

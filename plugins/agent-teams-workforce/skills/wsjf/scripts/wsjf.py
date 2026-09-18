@@ -117,7 +117,7 @@ def band(count: int, bands: tuple[tuple[int, int], ...], top: int) -> int:
     return top
 
 
-def snap_size(value: int, scale: tuple[int, ...]) -> tuple[int, bool]:
+def snap_size(value: float, scale: tuple[int, ...]) -> tuple[int, bool]:
     """Put a judged size on the level's scale.
 
     Args:
@@ -230,6 +230,28 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
+def _as_number(value: Any) -> int | float | None:
+    """Read a value as a number, keeping a fraction, or None when it is absent or unusable.
+
+    A judged size may fall between rungs, and snapping it up needs the fraction intact.
+
+    Args:
+        value: The raw value.
+
+    Returns:
+        The number, as an integer when it is whole, or None.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    return int(number) if number.is_integer() else number
+
+
 def _resolve_level(payload: dict[str, Any], override: str | None) -> dict[str, Any]:
     """Pick the level parameters for this run.
 
@@ -273,7 +295,7 @@ def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any
         total = sum(children)
         rung = band(total, params["rollupBands"], params["rollupTop"])
         return {"jobSize": rung, "sizeSource": "child-rollup", "sizeChildTotal": total}
-    supplied = _as_int(item.get("jobSize"))
+    supplied = _as_number(item.get("jobSize"))
     if supplied is None:
         return {"reason": "no jobSize supplied and no childSizes to roll up"}
     rung, over = snap_size(supplied, params["sizeScale"])

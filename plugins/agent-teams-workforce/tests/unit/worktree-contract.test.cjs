@@ -25,24 +25,27 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-// The worktree requirement used to be asserted against deploy.js, because deploy.js
-// was where the pipeline opened its pull request. It no longer opens one: deploying to
-// AWS dev and landing the work in git are separate things, and landing belongs to the
-// composites' Settle step. So the requirement is pinned where it now lives — a deploy
-// mini that never touches git has no business restating a git rule.
+// Landing belongs to the settle mini, which every build composite dispatches on every exit
+// path with the facts its workspace step verified. The requirement is pinned there, and
+// each composite is pinned to handing it those facts.
 test('landing still requires a feature branch in a verified worktree, in every composite', () => {
+  const settle = read('workflows/settle.js');
+  assert.match(
+    settle,
+    /settle refused to commit in \$\{wt\}: the workspace step did not affirm it is a linked worktree/,
+    'settle must refuse to commit into a tree the workspace step did not verify',
+  );
+  assert.match(
+    settle,
+    /SETTLE_DEFAULT_BRANCHES/,
+    'settle must refuse the default branch — the PR command runs on the CURRENT branch',
+  );
   for (const composite of ['task-to-deploy', 'bug-fix', 'infra-change']) {
     const src = read(`workflows/${composite}.js`);
-    assert.match(
-      src,
-      /settle refused to commit in \$\{wt\}: the workspace step did not affirm it is a linked worktree/,
-      `${composite}: settle must refuse to commit into a tree the workspace step did not verify`,
-    );
-    assert.match(
-      src,
-      /SETTLE_DEFAULT_BRANCHES/,
-      `${composite}: settle must refuse the default branch — skillspoke-pr runs on the CURRENT branch`,
-    );
+    assert.match(src, /workflow\('agent-teams-workforce:settle'/, `${composite}: must land through the settle mini`);
+    for (const fact of ['isLinkedWorktree: settleIsLinkedWorktree', 'branch: settleBranch', 'defaultBranch: settleDefaultBranch']) {
+      assert.ok(src.includes(fact), `${composite}: must hand settle the verified ${fact.split(':')[0]}`);
+    }
   }
 });
 
@@ -99,10 +102,11 @@ test('the default branch is READ per repository, not hardcoded to main and maste
   // read from origin/HEAD and refused as well.
   const ws = read('workflows/workspace.js');
   assert.match(ws, /refs\/remotes\/origin\/HEAD/, 'the real default branch must be obtained, not assumed');
+  const settle = read('workflows/settle.js');
+  assert.match(settle, /settleDefaultBranch/, "settle must test against THIS repo's default, not a hardcoded pair");
+  assert.match(settle, /SETTLE_DEFAULT_BRANCHES/, 'and must keep main/master as a floor');
   for (const f of ['workflows/bug-fix.js', 'workflows/task-to-deploy.js', 'workflows/infra-change.js']) {
-    const src = read(f);
-    assert.match(src, /settleDefaultBranch/, `${f}: settle must test against THIS repo's default, not a hardcoded pair`);
-    assert.match(src, /SETTLE_DEFAULT_BRANCHES/, `${f}: and must keep main/master as a floor`);
+    assert.match(read(f), /settleDefaultBranch = workspace\.defaultBranch/, `${f}: must carry the default branch the workspace step read`);
   }
 });
 

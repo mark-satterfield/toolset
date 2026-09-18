@@ -76,11 +76,15 @@ Workflow({scriptPath: "$ROOT/workflows/prd-to-spec.js", args: {
   brd:      <OPTIONAL — BRD objectives text, only if one happens to exist>,
   sadPath:        "$ATW_SAD_PATH",
   projectRoot:    "$ATW_PROJECT_ROOT",
-  artifactScript: "$ATW_ARTIFACT_SCRIPT"
+  artifactScript: "$ATW_ARTIFACT_SCRIPT",
+  pluginRoot:     "$ROOT"
 }})
 ```
 
-The last three are the project's configuration, read from the `ATW_*` environment (see
+`pluginRoot` is the directory the `ls` above printed; task decomposition runs the WSJF
+rubric's script under it.
+
+`sadPath`, `projectRoot` and `artifactScript` are the project's configuration, read from the `ATW_*` environment (see
 "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`) and passed as expanded values; a
 workflow script cannot read the environment itself. `ATW_SAD_PATH` is required — the
 architecture phase refuses without a SAD — so if it is unset, report `ATW_SAD_PATH is
