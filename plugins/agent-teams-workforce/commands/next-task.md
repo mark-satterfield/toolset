@@ -51,8 +51,8 @@ is left out of the ordering rather than given a fallback position — run
 `/agent-teams-workforce:wsjf-scoring` to score it. The readiness gate does not
 score and never has a number to backfill.
 
-Order the scored candidates by `wsjf` descending, breaking ties on `created_at`
-ascending so the oldest goes first.
+Order the scored candidates by `wsjf` descending. Break ties by putting a candidate
+whose status is `in_progress` first, then by bead id ascending.
 
 Then run `/agent-teams-workforce:task-ready <id>` on the candidates in that order.
 That gate judges whether the issue carries what someone needs in order to work it,
