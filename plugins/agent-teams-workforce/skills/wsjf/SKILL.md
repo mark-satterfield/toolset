@@ -1,11 +1,12 @@
 ---
 name: wsjf
 description: >-
-  Score work with WSJF at either level — an EPIC, the container for a requirement, or a
+  Score work with WSJF at either level — an EPIC, a PRD (a business requirement), or a
   TASK, one agent's work inside it. Cost of Delay is User-Business Value plus Time
   Criticality plus Risk Reduction / Opportunity Enablement, divided by Job Size. RR-OE is
   COMPUTED from transitive reachability over a dependency graph rather than argued from
-  prose, and `scripts/wsjf.py` owns every band, the size scale and the child-size roll-up.
+  prose — the design-order graph between Epics, where it measures the Epic as an
+  Architectural Enabler, or the build graph between Tasks — and `scripts/wsjf.py` owns every band, the size scale and the child-size roll-up.
   Job Size means the same thing at both levels: the relative amount of work to deliver the
   outcome, judged against the agent pipeline, on one Fibonacci scale, with a plausible
   range and a confidence.
@@ -26,9 +27,9 @@ portfolio must not move the score of an item whose own inputs did not change.
 
 | | Epic | Task |
 |---|---|---|
-| What it is | a container for a requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
+| What it is | a PRD, a business requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
 | UBV, TC | **judged** from the requirements document | **inherited** from the parent Epic, with its confidence |
-| RR-OE graph edges | the order in which architecture must be ESTABLISHED — one Epic's design is drawn from another Epic's requirements first | BUILD order — one Task must be built before another |
+| RR-OE graph edges | DESIGN order — an architecture decision one Epic rests on should be designed from another Epic's requirements first; RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
 | Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale, 13 at most |
 
 The RR-OE bands differ by level and live in `scripts/wsjf.py`, with the size scale and the
@@ -68,9 +69,9 @@ UBV asks what is lost if this requirement is never delivered:
   20  : Existential — regulatory mandate, platform failure, contract risk
 ```
 
-Judge the stated outcome, not the machinery underneath it. An Epic whose whole point is
-plumbing still carries the value of the capability it exists to deliver; that value is
-expressed in RR-OE, and a low UBV is not a penalty.
+Judge the stated outcome, not the machinery underneath it. An Epic whose requirements
+matter mostly because other requirements are designed on the decisions they drive carries
+that enabling value in RR-OE, and a low UBV is not a penalty.
 
 TC asks how fast that value decays if deferred:
 
@@ -124,16 +125,23 @@ this step, never re-judged.
 
 ## 2. RR-OE — a count over the dependency graph
 
-**This is the architectural dimension and it is what orders the portfolio. It is a count,
-not an argument.**
+**It is a count, not an argument.** What it measures depends on the level:
+
+- **Epic** — the Architectural Enabler measure. An Epic whose requirements should drive an
+  architecture decision many other Epics are designed on — sign-up and sign-in driving the
+  canonical identity pattern — scores high. An Epic designed on top of a pattern other
+  requirements drive — password reset on identity — scores low. The edges are design-order
+  edges (`agent-teams-workforce:epic-sequencing`), never build edges.
+- **Task** — how many Tasks it unblocks: the edges are ordinary build dependencies between
+  Tasks, known once the architecture is settled.
 
 ```
 reaches(X) = the number of DISTINCT items reachable from X by following edges
              forward, transitively, within the set (X itself excluded)
 ```
 
-Transitive, because something that unblocks one item which unblocks six has unblocked
-seven. The script walks it and bands the count.
+Transitive, because an item reaching one item that reaches six reaches seven. The script
+walks it and bands the count.
 
 The graph must be acyclic. When it is not, the count is undefined: the script reports the
 cycle and scores nothing.
@@ -150,21 +158,37 @@ is the test that discriminates.
 
 ### One scale, one meaning, both levels
 
-Job Size is the **relative amount of work to deliver the stated outcome**, judged against
-one reference capability: the agent pipeline with its normal tools, knowledge and practices.
-It is not calendar time, not human effort, and not a count of repositories. An Epic and a
-Task are sized on the same scale with the same meaning; an Epic is simply more of it.
+**Job size represents the relative amount of work required to deliver the stated outcome,
+considering volume, complexity, available knowledge, and uncertainty, against a consistent
+reference capability.** That reference capability is the agent pipeline with its normal
+tools, institutional knowledge and established practices — not an imagined human developer,
+and not whichever model performs the estimate. It is not calendar time and not a count of
+repositories.
 
-Four factors guide the comparison, at both levels. They are weighed together to place the
-item against its reference jobs, and they are never scored separately or added up:
+The Epic estimate covers delivery of the requirement; the Task estimate covers delivery of
+its assigned portion. Both use the same definition of a point. An Epic and a Task can both
+be 5: their tracking types do not determine their size.
 
-- **Volume** — how much has to be produced: components, interfaces, data, tests, material
-  to remove.
-- **Complexity** — how intricate the work is: interacting parts, states, edge cases,
-  concurrency, integration points.
-- **Knowledge** — how much of what the work needs is already established: architecture,
-  patterns, code and artifacts that exist versus what must be decided or built from scratch.
-- **Uncertainty** — how much is unknown about the work itself and could change its amount.
+Four factors guide the comparison, at both levels:
+
+| Factor | Question | What increases size |
+|---|---|---|
+| Volume | How much distinct work does the outcome require? | More behaviors, cases, transformations, or deliverables |
+| Complexity | How intricately do the parts interact? | Interdependent rules, exceptions, state transitions, ordering, concurrency, or precision constraints |
+| Knowledge | How much relevant understanding and proven practice is already available? | Required learning, unfamiliar domain rules, or absence of an applicable established approach |
+| Uncertainty | What unresolved facts could materially change the required work? | Ambiguous scope, unknown feasibility, or assumptions with substantially different consequences |
+
+Knowledge and uncertainty are different. An unfamiliar but well-documented operation
+involves learning. An unresolved question about whether an operation is possible introduces
+uncertainty.
+
+At Epic level, answer these from the requirement and institutional knowledge. At Task
+level, use the established architecture, design and implementation instructions. **Never
+require the Epic estimator to invent a solution.**
+
+The factors guide comparison. They are not independent quantities, and they are never
+scored separately, added or multiplied into a score. The numbers express approximate
+relative magnitude, not measured ratios or time commitments.
 
 The scale is Fibonacci and continues upward as far as the work needs:
 
@@ -192,15 +216,17 @@ comparison.
 
 Every judged size carries a **plausible range** — the lowest and highest size the work
 could reasonably turn out to be, with the estimate inside it — and a **confidence**, an
-integer percent in the estimate. Uncertainty widens the range and lowers the confidence; it
-does not raise the estimate.
+integer percent in the estimate. What remains unknown widens the range and lowers the
+confidence.
 
 ### At Epic level
 
-An Epic is sized before its design exists. **Missing design is normal at this level and does
-not enlarge the size**: judge the work the requirement implies, and let what is unknown show
-in the range and the confidence. Removal counts: an Epic that contradicts shipped material
-carries the cost of removing it.
+An Epic is sized before its design exists, from the requirement and institutional
+knowledge, without inventing a solution. **Do not automatically enlarge every uncertain
+Epic.** Missing implementation design is normal at this stage; it is not itself evidence of
+exceptional difficulty, and it shows in the range and the confidence. Uncertainty enlarges
+an Epic where the requirement leaves an unresolved fact that could materially change the
+work.
 
 There is no "score as-is, it should be decomposed" rung. An Epic IS the thing that gets
 decomposed.
@@ -368,8 +394,11 @@ no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-cas
 - Accepting calibration bands from a caller in place of the ones in this rubric.
 - Sizing in calendar time, human effort or repository counts instead of relative work
   against the agent pipeline.
-- Adding the four size factors up instead of weighing them to compare with reference jobs.
+- Adding or multiplying the four size factors instead of weighing them to compare with
+  reference jobs.
 - Enlarging an Epic's size because its design does not exist yet.
+- Inventing a solution in order to size an Epic.
+- Sizing an Epic larger than a Task because it is an Epic.
 - A size with no plausible range or no confidence.
 - Leaving an estimate in place as the size after the Epic's Tasks exist, or snapping the
   summed size onto a rung.

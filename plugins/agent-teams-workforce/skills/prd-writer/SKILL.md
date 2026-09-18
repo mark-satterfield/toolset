@@ -106,9 +106,10 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
 2. **Name the file with the grouping convention:** `[domain]-[area]-[feature].md` so files sort and
    group naturally — e.g. `opportunities-page-table-search.md`, not `search.md`.
 3. **Set `Last Updated`** to today's date in `YYYY-MM-DD`.
-4. **Scope to a single verifiable feature** — one outcome, a small set of tightly coupled files,
-   100–300 lines of change, completable in one think-plan-act-verify loop, with a pass/fail check.
-   Run the template's smell tests; if any trigger, **decompose into multiple PRDs**.
+4. **Scope to a single verifiable requirement** — one outcome, stated as observable behavior with
+   no components, files or technologies named, with a pass/fail check and an explicit
+   out-of-scope list. A PRD carries no size; WSJF sizing judges that later. Run the template's
+   smell tests; if any trigger, **decompose into multiple PRDs**.
 5. **State the Problem from the user's perspective** — the pain, not the absence of your solution —
    and back it with Evidence (or delete Evidence only if the problem is self-evident).
 6. **Write Requirements grouped by use case or capability.** Each carries a **Priority** (P0/P1/P2)

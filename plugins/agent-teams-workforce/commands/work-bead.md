@@ -76,7 +76,7 @@ The router returns `{action, composite, reason}`:
 | `skip` | **Stop.** Report the id and the reason. Do not dispatch anything. |
 
 A skip is an outcome, not an obstacle. Never relabel a bead to make it routable —
-a Task that skips for a missing Story needs a Story, not a new label.
+a skip's reason names what the bead needs, and a new label is never it.
 
 ## 3b. The worktree — owned by the composite, not by this command
 

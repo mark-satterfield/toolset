@@ -370,9 +370,10 @@ SEQUENCING_KEYS = (
     "seq_content_hash",
 )
 
-#: Keys the EPIC SUMMARY owns, on an Epic. `epic_summary` is a few hundred words on what the
-#: Epic needs and establishes architecturally, its value and urgency, and what already
-#: exists for it; sessions that hold the whole portfolio read it in place of the PRD.
+#: Keys the EPIC SUMMARY owns, on an Epic. `epic_summary` is a few hundred words on the
+#: architecture decisions the Epic's requirements should drive, the decisions it should be
+#: designed on top of, which of those the SAD already settles, and its value and urgency;
+#: sessions that hold the whole portfolio read it in place of the PRD.
 #: `epic_summary_hash` is the content fingerprint of the Epic it was written from, so a
 #: summary is regenerated exactly when the Epic changes, and `epic_summary_at` is when.
 SUMMARY_KEYS = (

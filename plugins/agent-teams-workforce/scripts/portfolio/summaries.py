@@ -2,9 +2,10 @@
 """Epic summaries: which ones are due, the portfolio as sessions read it, and recording them.
 
 An Epic's PRD is its description, and the open portfolio's PRDs together are far more than
-one session can hold. So every Epic carries a short stored summary — what it needs and
-establishes architecturally, the value and urgency it carries, and what already exists for
-it — beside the content fingerprint of the Epic it was written from. A session that must
+one session can hold. So every Epic carries a short stored summary — the architecture
+decisions its requirements should drive, the decisions it should be designed on top of,
+which of those the SAD already settles, and the value and urgency it carries — beside the
+content fingerprint of the Epic it was written from. A session that must
 hold the whole portfolio reads the summaries, and reads in full only the Epics it is
 assessing or judging.
 

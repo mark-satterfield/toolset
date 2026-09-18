@@ -253,7 +253,7 @@ const story = a.story || {}
 // criticality from. See the Task WSJF block below for why a Task's own text cannot carry
 // them.
 const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
-const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // scores are advisory now; an unresolved review no longer blocks emission
+const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // an unresolved scoring review does not block emission; the disputed scores are recorded and still order the work
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
@@ -389,11 +389,10 @@ const testStrategySchema = {
 }
 
 // ── Decompose + Sequence + Score: ONE maker session ───────────────────────────
-// Decomposing, DAG-mapping, and WSJF-scoring used to be three separate maker
-// sessions, each paying a full session-start to re-read the same Spec and the same
-// task list the previous one had just produced. All three are MAKER work — none of
-// them judges anything — so one session carrying all three preserves segregation of
-// duties exactly: the independent checker below still judges everything the maker
+// Decomposing, DAG-mapping, and WSJF-scoring all read the same Spec and the same task
+// list, so one session does all three rather than paying a session-start for each. All
+// three are MAKER work — none of them judges anything — so one session carrying all
+// three preserves segregation of duties exactly: the independent checker below still judges everything the maker
 // produced, and the maker still never judges its own work.
 phase('Decompose')
 log(`Decomposing, sequencing, and scoring ${specRef}`)
@@ -448,7 +447,7 @@ const WSJF_SKILL_DIR =
   typeof a.pluginRoot === 'string' && SAFE_ART_PATH.test(a.pluginRoot) && !a.pluginRoot.split('/').includes('..')
     ? `${a.pluginRoot.replace(/\/+$/, '')}/skills/wsjf`
     : null
-const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it; never score them separately or add them up. The scale is Fibonacci (1, 2, 3, 5, 8, 13); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would size above 13 should have been split: that is a DECOMPOSITION FAULT — say so in your notes and size it at 13.`
+const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place it; never score them separately, add or multiply them. A Task is sized from the established architecture, design and implementation instructions its Spec gives it. The scale is Fibonacci (1, 2, 3, 5, 8, 13); compare with the rubric's reference jobs, the elaborated Epics in the tracker, and while there are none, judge knowledge and uncertainty from what already exists — the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. The size is the one judgement in the rubric; value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A task that would size above 13 should have been split: that is a DECOMPOSITION FAULT — say so in your notes and size it at 13.`
 
 const finite = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 // The Epic's judged value and criticality, inherited by every Task. A Task set is scored
@@ -895,13 +894,10 @@ for (let pass = 2; !scoringAccepted && !replayScoring && pass <= MAX_SCORING_PAS
   )
 }
 
-// A scoring disagreement is NOT a reason to discard the decomposition.
-//
-// This used to return ok:false and throw away everything — the tasks, the DAG,
-// the whole structural result — because a scorer and a reviewer could not agree
-// on priority arithmetic within two passes. That is disproportionate: the tasks
-// are the deliverable and the scores are advisory. Prioritization can be revised
-// after the fact; a discarded decomposition has to be redone from the spec.
+// A scoring disagreement is NOT a reason to discard the decomposition: the tasks, the
+// DAG and the whole structural result stand. The tasks are the deliverable; a disputed
+// score still orders the work until a rescore replaces it, and a discarded decomposition
+// would have to be redone from the spec.
 //
 // So an unresolved review is recorded as a finding on the emitted set and the run
 // continues. The caller sees exactly which scores are disputed and why.
@@ -909,7 +905,7 @@ const scoringDisputed = !scoringAccepted
 if (scoringDisputed) {
   log(
     `WSJF review unresolved after ${MAX_SCORING_PASSES} passes — emitting tasks with the ` +
-      `latest scores and recording the dispute. Tasks are the deliverable; scores are advisory.`
+      `latest scores and recording the dispute. Tasks are the deliverable; disputed scores still order the work until rescored.`
   )
 }
 

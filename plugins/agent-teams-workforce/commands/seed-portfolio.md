@@ -13,8 +13,9 @@ them for the whole portfolio at once. It writes.
 It runs three workflows in order, and stops at the first that returns `ok: false`:
 
 1. `epic-summaries` — a summary for every open Epic that has none or whose PRD changed.
-2. `dependency-assessment` in mode `portfolio`, **only with `--assess`**. Without it the
-   edges already in the tracker stand.
+2. `dependency-assessment` in mode `portfolio`, **only with `--assess`** — the Epic
+   design-order edges, set before any score. Without it the edges already in the tracker
+   stand.
 3. `wsjf-scoring` with `all` and `rejudge` — every Epic's value, urgency and size, and every
    Task's size, judged again, then the arithmetic.
 
@@ -36,7 +37,7 @@ Leave `sadPath` or `projectRoot` out of every call when its value printed empty.
 ```
 Workflow({scriptPath: "<ROOT>/workflows/epic-summaries.js", args: {
   repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/summaries",
-  sadPath: "<SAD>", projectRoot: "<PROJECT>"
+  sadPath: "<SAD>"
 }})
 ```
 

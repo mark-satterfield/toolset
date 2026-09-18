@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives an existing, scored Epic and its PRD (or a request its PRD is authored from) all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and marks it done. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives an existing, scored Epic and its PRD (or a request its PRD is authored from) all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'refuse, with a named reason, unless the Epic is open, scored, every Epic it depends on has finished elaboration, and it is ready or in_progress with no other owner; then mark it in_progress' },
     { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
@@ -1349,7 +1349,8 @@ const emitPathFault = (() => {
 //   finish  `elaboration-finish` runs after the Tasks are written: it fingerprints the Task
 //           sizes this run judged, runs the WSJF arithmetic for this Epic and its Tasks —
 //           the Epic's size becomes the sum of its Tasks' sizes, the Epic is rescored, its
-//           Tasks are rescored — and marks the Epic `done` when every part of it landed.
+//           Tasks are rescored — and sets the Epic's elaboration_state to `done` when every
+//           part of it landed. The Epic stays open until its work is released.
 //   release `elaboration-release` clears this run's owner token on any other exit, so the
 //           Epic stays `in_progress` and the next run takes it up without a reclaim.
 //
@@ -3437,7 +3438,7 @@ const outOfSpanFindings = []
 // filled below in repo order from the settled batch, so the result is identical to the
 // serial one whatever order the batch completes in.
 //
-// The genuinely dependent step is the Story dependency mapping further down, which reads
+// The genuinely dependent step is the cross-Story Task dependency mapping further down, which reads
 // ALL of `specPairs`. That is the natural join, and it is what makes this a barrier
 // (`parallel`) rather than a pipeline.
 //
@@ -4391,10 +4392,10 @@ async function decomposeStory(pair) {
       { class: 'competitive', text: 'Beads format validates for every emitted task' },
     ],
     escalateTargets: ['spec-authoring'],
-    // THE non-empty task set this composite exists to produce. Decomposition into Tasks is
-    // what ends a PRD/Epic's life, so a decomposition that emitted none has decomposed
-    // nothing however well it reads — and with every criterion here competitive, that
-    // emptiness would pass under a flag and the run would report a decomposed Epic.
+    // THE non-empty task set this composite exists to produce. A decomposition that emitted
+    // no Task has decomposed nothing however well it reads — and with every criterion here
+    // competitive, that emptiness would pass under a flag and the run would report a
+    // decomposed Epic.
     structural: { requireOk: true, nonEmpty: ['beadSet'] },
     phaseFn: (feedback) => workflow('agent-teams-workforce:task-decomposition', decompArgs(pair, feedback)),
   })
@@ -4548,8 +4549,8 @@ if (!decompositions.length) {
 // ── Cross-Story Task dependencies ────────────────────────────────────────────────
 // Build dependencies are Task-to-Task edges and nothing else: a Story only groups Tasks,
 // and an Epic's dependencies order elaboration, not the build. Each Story's decomposition
-// drew the edges inside it; the edges BETWEEN Stories — a Task in one repository that
-// cannot be built before a Task in another — are derived here, once every Story is
+// drew the edges inside it; the Task-to-Task edges whose two ends sit in different Stories
+// — a Task in one repository that cannot be built before a Task in another — are derived here, once every Story is
 // decomposed, by task-dependency-mapper over the whole Task set. They are written as
 // `blocks` edges like every other Task edge, so a Task becomes eligible exactly when the
 // Tasks it depends on are built, and the WSJF arithmetic after the write counts them in
@@ -4618,7 +4619,7 @@ if (taskStories.size < 2) {
       .join('\n')
   ).join('\n\n')
   const mapped = await settleAgent(
-    `Derive the build dependencies BETWEEN the Stories of one Epic, as edges between their Tasks. Each Story is one repository's slice of Epic ${epic.id} — ${epic.title || ''}; every Task below is already decomposed, and the edges inside each Story are already drawn and listed. Return ONLY edges whose two ends are Tasks in DIFFERENT Stories. Reference Tasks by their key exactly as given. An edge "from -> to" means "from must be built before to".
+    `Derive the Task-to-Task build dependencies whose two ends are Tasks in different Stories of one Epic. A Story only groups Tasks and carries no dependency of its own. Each Story is one repository's slice of Epic ${epic.id} — ${epic.title || ''}; every Task below is already decomposed, and the edges inside each Story are already drawn and listed. Return ONLY edges whose two ends are Tasks in DIFFERENT Stories. Reference Tasks by their key exactly as given. An edge "from -> to" means "from must be built before to".
 
 Add an edge ONLY where a Task genuinely cannot be built until a Task in another Story is built: an API it consumes that the other Task provides, an event contract whose producer must publish first, a table, bucket or IAM grant the other repository provisions. Sharing a domain, a vocabulary or this Epic is NOT a dependency. When in doubt leave the edge out: a false edge serializes work that could run in parallel. Type each edge as data, contract, infrastructure or event-flow and justify it in one line from the two Tasks' contracts.
 
@@ -4782,7 +4783,7 @@ const knockOnSizing = { ran: false, sized: 0, unsized: [] }
 if (knockOnTasks.length) {
   knockOnSizing.ran = true
   const sized = await settleAgent(
-    `Size each task below under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric at Task level (${lifecycle.pluginRoot}/skills/wsjf/SKILL.md): the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it on the Fibonacci scale (1, 2, 3, 5, 8, 13); compare with the elaborated Epics in the tracker and, while there are none, judge knowledge and uncertainty from the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. A task that would size above 13 should have been split: say so in your notes and size it at 13. Do NOT assign value, time criticality or risk reduction: they are inherited from the Epic and computed from the dependency graph. Size every key exactly once with a one-line rationale naming what it was compared with.
+    `Size each task below under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric at Task level (${lifecycle.pluginRoot}/skills/wsjf/SKILL.md): the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place it on the Fibonacci scale (1, 2, 3, 5, 8, 13), sizing from the established architecture, design and implementation instructions the task carries; compare with the elaborated Epics in the tracker and, while there are none, judge knowledge and uncertainty from the architecture document, the existing code and other artifacts. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. A task that would size above 13 should have been split: that is a decomposition fault — say so in your notes, and the rubric places it at 13 and reports it under sizeFaults. Do NOT assign value, time criticality or risk reduction: they are inherited from the Epic and computed from the dependency graph. Size every key exactly once with a one-line rationale naming what it was compared with.
 
 Tasks:
 ${knockOnTasks.map((t) => `- ${t.key} [${t.repoPath || 'repository not recorded'}]: ${t.title} — ${t.description}`).join('\n')}`,
@@ -5292,13 +5293,13 @@ else {
 // `close` and `update` are decided HERE, one bead at a time, and handed to the writer as
 // named mutations. The writer picks nothing — see its charter.
 const reelabMutations = []
-const openChildren = (parentId) => (existingByParent.get(parentId) || []).filter((c) => c.status !== 'closed')
 
 // STORIES. A Story is matched by the repository it covers. A matched Story is adopted, so
 // the wave below skips it; the only thing that changes on it is prose, and only while it is
-// open. An existing Story this run no longer covers is closed only when nothing under it is
-// still open — a Story holding started or finished work is not "gone", whatever the new
-// span says, and closing it would hide that work.
+// open. An existing Story this run no longer covers is closed only when it holds no Task at
+// all. A Story holding open, started or finished Tasks stays open whatever the new span
+// says: a Story is not closed because its Tasks are closed, and closing it would hide that
+// work.
 const reelabStoryOf = new Map() // story local key -> matched node
 if (reelab.ran) {
   const covered = new Set()
@@ -5322,16 +5323,16 @@ if (reelab.ran) {
   }
   for (const node of existingStories.values()) {
     if (covered.has(node.id) || node.status === 'closed') continue
-    const open = openChildren(node.id)
-    if (open.length) {
-      reelab.failed.push({ what: node.id, reason: `left open: this Epic's span no longer covers it, but ${open.length} child(ren) under it are not closed` })
+    const held = existingByParent.get(node.id) || []
+    if (held.length) {
+      reelab.failed.push({ what: node.id, reason: `left open: this Epic's span no longer covers it, but it holds ${held.length} Task(s)` })
       continue
     }
     reelabMutations.push({
       key: `close:${node.id}`,
       op: 'close',
       id: node.id,
-      reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the repository this Story covered is no longer in the Epic's span, and nothing under it is still open.`,
+      reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the repository this Story covered is no longer in the Epic's span, and it holds no Task.`,
     })
   }
 }
@@ -5935,7 +5936,7 @@ const beadsEmitted = emission.created
 // sum of its Tasks' sizes with its estimate kept, the Epic is rescored, and its Tasks are
 // rescored with RR-OE counted over every Task edge, across Stories.
 //
-// The Epic is marked `done` only when every part of it landed: every bead and edge durable,
+// The Epic's elaboration_state is set to `done` only when every part of it landed: every bead and edge durable,
 // every repository specified and every Story decomposed. Otherwise it stays `in_progress`
 // and the next run completes it.
 const createdTaskKeys = new Set(emission.written.filter((w) => w.level === 'task').map((w) => String(w.key)))
@@ -6249,18 +6250,16 @@ return {
   beadsEmitted,
   // HOW MANY TASKS BECAME DURABLE, counted from the write rather than from the plan.
   //
-  // Decomposition into Tasks is what ENDS a PRD/Epic's own life: once the Tasks exist the
-  // Tasks are the workable items and the Epic is done, workable again only if a person
-  // puts it back. So the caller needs to know that Tasks actually landed, and
-  // `emissionOk`/`beadsEmitted` cannot tell it — `beadsEmitted` counts every level
-  // together, so a run that wrote an Epic and a Story and no Task at all reports 2 and
-  // looks like progress. An Epic retired on that number would be an Epic retired with
-  // nothing beneath it to work: the requirement would simply stop, and nothing would ever
-  // pick it up again.
+  // Elaboration is complete for an Epic once its Tasks exist: its elaboration_state becomes
+  // `done`, the Tasks are the workable items, and it is elaborated again only when a person
+  // sets it back to `ready`. The Epic itself stays open until its work is released. So the
+  // caller needs to know that Tasks actually landed, and `emissionOk`/`beadsEmitted` cannot
+  // tell it — `beadsEmitted` counts every level together, so a run that wrote an Epic and a
+  // Story and no Task at all reports 2 and looks like progress. An Epic whose elaboration
+  // were marked done on that number would have nothing beneath it to work.
   //
-  // This is also the ONLY thing that may end an Epic's life here. Existing deployed code
-  // never can: the three exits that used to close or reroute a PRD because something was
-  // already built are gone, and nothing may reintroduce that under another name.
+  // Existing deployed code never changes an Epic's elaboration state, closes it, or
+  // reroutes it.
   tasksEmitted: writtenTaskKeys.length,
   emission,
   // The Epic lifecycle this run owns: the start check, the scoring arithmetic and the
@@ -6324,7 +6323,7 @@ return {
     dispatchFailures: deaths,
   })
 } finally {
-  // A run that started the Epic and did not mark it `done` releases its owner token, so
+  // A run that started the Epic and did not set its elaboration to `done` releases its owner token, so
   // the Epic stays `in_progress` and the next run takes it up.
   const finishedDone = !!(lifecycle.finish && !lifecycle.finish.error && lifecycle.finish.lifecycle)
   if (lifecycle.started && !finishedDone) {

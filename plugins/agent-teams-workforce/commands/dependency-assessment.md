@@ -7,8 +7,10 @@ allowed-tools: [Bash, Workflow]
 # Dependency assessment
 
 Assess the Epic-to-Epic dependency edges in the beads tracker of the repository you are
-standing in, by dispatching the `dependency-assessment` workflow. It writes edges and nothing
-else, then triggers `wsjf-scoring`, because edges decide RR-OE.
+standing in, by dispatching the `dependency-assessment` workflow. An Epic edge records design
+order: an architecture decision one Epic rests on should be designed from another Epic's
+requirements first (`agent-teams-workforce:epic-sequencing`). The workflow writes edges and
+nothing else, then triggers `wsjf-scoring`, because edges decide RR-OE.
 
 - `<epic-id>` assesses that one Epic — new or changed — against the portfolio's summaries
   and its own full PRD. Only edges to or from that Epic are added or withdrawn.

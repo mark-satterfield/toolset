@@ -1,7 +1,7 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the Epic dependency edges, and writes edges and nothing else. An edge exists where one Epic's architecture must be designed from another Epic's requirements first, stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. Mode `epic` assesses ONE new or changed Epic against the portfolio's summaries and its own full PRD, and may add or withdraw only edges to or from that Epic — validation refuses any other edge, and the write is confined to that Epic's edges in code. Mode `portfolio` assesses the whole portfolio from the summaries. The epic-sequencer proposes; code validates and applies the diff, never touching a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE.",
+    "Assesses the Epic dependency edges, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is a judgment about design order made before the architecture exists: it exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. Mode `epic` assesses ONE new or changed Epic against the portfolio's summaries and its own full PRD, and may add or withdraw only edges to or from that Epic — validation refuses any other edge, and the write is confined to that Epic's edges in code. Mode `portfolio` assesses the whole portfolio from the summaries. The epic-sequencer proposes; code validates and applies the diff, never touching a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE.",
   whenToUse: "A new or changed Epic needs its dependencies assessed (mode epic), or the whole portfolio is being re-seeded (mode portfolio).",
   phases: [
     { title: "Summaries", detail: "bring the Epic summaries current" },
@@ -146,8 +146,8 @@ function enter(title) {
 //   workDir:      string,              // absolute path of a directory for this run's files; one per run
 //   mode:         'epic'|'portfolio',  // one Epic against the portfolio, or the whole portfolio
 //   epic?:        string,              // the Epic assessed, in mode 'epic'
-//   sadPath?:     string,              // the arc42 SAD (ATW_SAD_PATH), passed to the summaries it brings current
-//   projectRoot?: string,              // the project root (ATW_PROJECT_ROOT), likewise
+//   sadPath?:     string,              // the arc42 SAD (ATW_SAD_PATH): the decisions it settles need no edge
+//   projectRoot?: string,              // the project root (ATW_PROJECT_ROOT), passed to the scoring it triggers
 //   score?:       boolean,             // false: do not trigger scoring when the edges are applied
 // }
 //
@@ -220,7 +220,9 @@ const ASSESS_SCHEMA = {
     unsure: { type: 'array', items: { type: 'string' } },
   },
 }
-const READING = `THE PORTFOLIO is ${portfolioFile}: every open Epic with its elaboration state, the Epics it depends on now, the file holding its full PRD, and its stored summary — what it needs and establishes architecturally, its value and urgency, and what already exists for it. Read it in full; it is long, so read it in consecutive chunks until the end. An Epic marked "Summary unavailable" is read from its PRD file instead. Open any other Epic's PRD only where its summary cannot settle whether an edge passes the test.`
+const READING = `THE PORTFOLIO is ${portfolioFile}: every open Epic with its elaboration state, the Epics it depends on now, the file holding its full PRD, and its stored summary — the architecture decisions its requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and its value and urgency. Read it in full; it is long, so read it in consecutive chunks until the end. An Epic marked "Summary unavailable" is read from its PRD file instead. Open any other Epic's PRD only where its summary cannot settle whether an edge passes the test.
+
+THE TEST. An Epic is a PRD, a WHAT; its architecture does not exist yet. An edge from A to B says: an architecture decision B rests on should be designed from A's requirements first, because A's requirements are the fuller statement of what that decision must serve — sign-up and sign-in requirements drive the identity architecture, so password reset waits, or identity gets designed from a recovery flow's requirements alone. A reason that says something must exist, be built, be deployed or be testable first, that B presumes a user or a record exists, or that B reads data from or calls a capability of A, is a build dependency between Tasks and is never an Epic edge. ${a.sadPath ? `The SAD is ${a.sadPath}: a` : 'A'} decision the SAD already settles needs no edge; check it before drawing one.`
 const assessPrompt = target
   ? `Assess ONE Epic, ${target}, against the whole open Epic portfolio, following \`agent-teams-workforce:epic-sequencing\`. ${target} is new or has changed; every other Epic's edges stand.
 

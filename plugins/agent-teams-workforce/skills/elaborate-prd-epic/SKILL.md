@@ -51,7 +51,8 @@ refuses, with `stage: epic-lifecycle` and a `refusal` naming the code, when:
 | `epic-owned` | `in_progress` under another run's owner token | Pass `reclaim: true` only once that run is known not to be live |
 
 Report a refusal verbatim and stop. Otherwise the run marks the Epic `in_progress`, and
-when its Tasks are written it scores the Epic and its Tasks and marks the Epic `done`.
+when its Tasks are written it scores the Epic and its Tasks and sets the Epic's
+`elaboration_state` to `done`. The Epic stays open until its work is released.
 
 ## 1. Do NOT determine the repo span
 
@@ -127,8 +128,8 @@ creates the Stories under the Epic's real id, then each Story's Tasks under thei
 Story's real id, each carrying every WSJF component, then the Task dependency edges as
 `blocks` edges — within each Story and across Stories — parent before child, with a
 child of an unwritten parent never attempted. Writing any of it again creates
-duplicates. It then scores the Epic and its Tasks and, when every part landed, marks
-the Epic `done`.
+duplicates. It then scores the Epic and its Tasks and, when every part landed, sets
+the Epic's `elaboration_state` to `done`; the Epic itself stays open.
 
 What comes back:
 
@@ -137,8 +138,8 @@ What comes back:
 - `crossStoryDependencies` — `{ran, reason, edges[], rejected[]}`: the Task edges that
   cross Stories, each typed and justified, and any proposed edge not applied.
 - `lifecycle` — `{owner, start, finish, done}`: the start check, the scoring result for
-  the Epic and its Tasks, and whether the Epic is now `done`. When `done` is false the
-  Epic stays `in_progress` and the next run completes it.
+  the Epic and its Tasks, and whether the Epic's elaboration is now `done`. When `done`
+  is false the Epic's elaboration stays `in_progress` and the next run completes it.
 - `emissionOk` — true only when every bead and every edge landed.
 - `beadsEmitted` — how many beads this run actually created.
 - `emission` — `{verdict, target, created, adopted, failed[], skipped[], links, heal}`.
@@ -173,7 +174,7 @@ account of what you think landed.
 
 ## 4. Report
 
-- Epic: its id, and whether `lifecycle.done` marked it `done`
+- Epic: its id, and whether `lifecycle.done` set its `elaboration_state` to `done`
 - PRD: located, or minted from the Epic
 - Repo span: the repositories `repoSpan` names, and whether the run ruled them or a
   human pinned them
@@ -189,8 +190,8 @@ account of what you think landed.
   board beside the real one
 - Any gate that blocked — the composite's `headline` carries the phase, the reason and
   the first unmet criterion; the full gate feedback and every phase artifact are in the
-  run journal at `detailPath`. The composite no longer returns its phase artifacts: a
-  single run came back truncated and a campaign of them killed the dispatching session.
-  A blocked run also names what it DID produce under `partialProduced` — read the journal
+  run journal at `detailPath`; the composite returns no phase artifacts, because they
+  are too large for the dispatching session to hold. A blocked run also names what it DID produce under `partialProduced` — read the journal
   before re-running, because a fresh run reproduces exactly that work.
-- The exact next command: `/agent-teams-workforce:work-bead <first task id>`
+- The exact next command: `/agent-teams-workforce:next-task`, which claims the
+  highest-WSJF Task that is ready

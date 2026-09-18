@@ -111,8 +111,8 @@ what lets this run unattended.
 | `work` | Continue to step 4 |
 | `skip` | Release the claim, report the id and the reason **verbatim**, and stop |
 
-A skip is an outcome. Never relabel a bead to make it routable — a Task that skips
-for a missing Story needs a Story, not a new label. If the router names
+A skip is an outcome. Never relabel a bead to make it routable — a skip's reason
+names what the bead needs, and a new label is never it. If the router names
 `route-elaboration`, the bead is an Epic or a Story: that is not development work
 and does not belong to this command.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Epic elaboration lifecycle: whether an Epic may be elaborated now, and closing it out.
+"""The Epic elaboration lifecycle: whether an Epic may be elaborated now, and finishing it.
 
 `prd-to-spec` is the one elaborator, and every door into it — the headless lane, a person at
 `/work-bead` or `/start-prd` — arrives here twice.
@@ -11,8 +11,9 @@ fails is the refusal:
 * it is SCORED: it carries its judged User-Business Value and Time Criticality and its
   computed `wsjf`, because every Task it produces inherits the first two and an Epic's score
   is what orders elaboration;
-* every Epic it depends on has `elaboration_state = done` or is closed, because an Epic's
-  architecture is designed after the architecture of the Epics it depends on. Its
+* every Epic it depends on has `elaboration_state = done` or is closed, because an Epic
+  edge records design order: an architecture decision this Epic rests on is designed from
+  the requirements of the Epics it depends on first. Its
   dependencies are its `tracks` edges, and its `blocks` edges too, so an Epic edge stored
   as either type holds it; a `blocks` edge onto anything other than an Epic holds it until
   that bead closes;
@@ -33,10 +34,11 @@ At the FINISH, after the Tasks are written:
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
   over every Task edge, across Stories;
-* with `done`, the Epic is marked `done` with the cause `decomposed-into-tasks` and its owner
-  token is cleared.
+* with `done`, the Epic's `elaboration_state` is set to `done` with the cause
+  `decomposed-into-tasks` and its owner token is cleared. The Epic stays open; it closes
+  only when its work is released.
 
-A run that started an Epic and ends without marking it `done` RELEASES it: its owner token is
+A run that started an Epic and ends without setting its elaboration to `done` RELEASES it: its owner token is
 cleared and the Epic stays `in_progress`, so the next run takes it up without a reclaim.
 """
 
@@ -279,7 +281,7 @@ def finish(
         epic_id: The Epic.
         judged: The Tasks whose size this run judged from the content they now carry.
         owner: The owner token `start` returned.
-        done: Mark the Epic `done`.
+        done: Set the Epic's `elaboration_state` to `done`.
 
     Returns:
         The fingerprints written, the scoring result, and the lifecycle write.

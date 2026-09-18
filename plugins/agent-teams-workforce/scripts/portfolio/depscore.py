@@ -4,7 +4,7 @@
 The `epic-summaries`, `dependency-assessment`, `wsjf-scoring` and `prd-to-spec` workflows
 run these. Every judged step between them is an agent; everything here is code.
 
-    summary-plan      the open Epics whose summary is missing or older than their PRD
+    summary-plan      the open Epics whose summary is missing or whose fingerprint no longer matches
     record-summaries  write summaries with the fingerprint they were written from
     portfolio         every open Epic with its summary and edges, as one document
     assess-plan       every open Epic's fingerprint, and those not assessed as they stand
@@ -25,7 +25,7 @@ run these. Every judged step between them is an agent; everything here is code.
                       depends on elaborated, and ready or in progress with no other
                       owner. When it may, mark it `in_progress` under an owner token
     elaboration-finish after an Epic's Tasks are written: fingerprint the Task sizes the run
-                      judged, score the Epic and its Tasks, and with `--done` mark it `done`
+                      judged, score the Epic and its Tasks, and with `--done` set its elaboration to `done`
     elaboration-release clear a run's owner token from an Epic it started and did not
                       finish; the Epic stays `in_progress`
 
@@ -78,7 +78,8 @@ def snapshot(
     """Every bead of the wanted kinds with its lineage, dependencies and elaboration state.
 
     `blockers` lists what each bead depends on, read from the edge type of its level:
-    `tracks` edges for an Epic, `blocks` edges for a Story or Task.
+    `tracks` edges for an Epic, `blocks` edges for a Task. A Story only groups Tasks and
+    carries no dependency edge of its own.
 
     Args:
         graph: The tracker graph.
@@ -379,7 +380,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="the Tasks whose size this run judged from their current content",
     )
     efi.add_argument("--owner", default=None, help="the owner token the start returned")
-    efi.add_argument("--done", action="store_true", help="mark the Epic `done`")
+    efi.add_argument(
+        "--done",
+        action="store_true",
+        help="set the Epic's `elaboration_state` to `done`",
+    )
     _dry_run_flag(efi)
 
     erl = sub.add_parser(

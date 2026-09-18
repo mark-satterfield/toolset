@@ -1,7 +1,7 @@
 export const meta = {
   name: 'epic-summaries',
   description:
-    "Leaf mini — keeps a short stored summary on every open Epic, so a session that must hold the whole Epic portfolio reads the summaries and reads in full only the Epics it assesses or judges. A summary covers what the Epic needs and establishes architecturally, the value and urgency it carries, and what already exists for it in the SAD and the project; it describes the requirement and designs no solution. Each summary is stored in the Epic's metadata with the content fingerprint it was written from, and is regenerated only when that fingerprint no longer matches the Epic. Summarizing sessions each read a small batch of PRDs in full, concurrently; the code decides which Epics are due and records the result.",
+    "Leaf mini — keeps a short stored summary on every open Epic, so a session that must hold the whole Epic portfolio reads the summaries and reads in full only the Epics it assesses or judges. An Epic is a PRD, a business requirement, and its summary describes that requirement for two judgments: which requirements each architecture decision should be designed from first, and the Epic's value, urgency and size. It names the architecture decisions the PRD's requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and the value and urgency the PRD carries; it designs no solution and invents none. Each summary is stored in the Epic's metadata with the content fingerprint it was written from, and is regenerated only when that fingerprint no longer matches the Epic. Summarizing sessions each read a small batch of PRDs in full, concurrently; the code decides which Epics are due and records the result.",
   whenToUse: "Keeping the Epic summaries current; dependency-assessment and wsjf-scoring run it first.",
   phases: [
     { title: "Plan", detail: "the Epics whose summary is missing or older than their PRD" },
@@ -142,8 +142,7 @@ function enter(title) {
 //   repoPath:     string,           // absolute path of the repository whose `bd` tracker holds the Epics
 //   pluginRoot:   string,           // absolute path of this plugin's root
 //   workDir:      string,           // absolute path of a directory for this run's files; one per run
-//   sadPath?:     string,           // the arc42 SAD (ATW_SAD_PATH), searched for what already exists
-//   projectRoot?: string,           // the project root (ATW_PROJECT_ROOT), searched for existing artifacts
+//   sadPath?:     string,           // the arc42 SAD (ATW_SAD_PATH), searched for the decisions it settles
 //   epics?:       string[],         // restrict to these Epics; every open Epic when absent
 // }
 //
@@ -206,25 +205,24 @@ await parallel(
   batches.map((batch, n) => async () => {
     const out = file(`summaries-${n + 1}.json`)
     const done = await settleAgent(
-      `You write the stored summary of each Epic listed below. An Epic is a PRD: a business requirement, a WHAT. Sessions that must hold the whole Epic portfolio read these summaries in place of the PRDs, to judge which Epic's architecture must be designed before another's, and to judge value, urgency and size. Write for that reader.
+      `You write the stored summary of each Epic listed below. An Epic is a PRD: a business requirement, a WHAT and not a HOW. Its architecture is not designed yet. Sessions that must hold the whole Epic portfolio read these summaries in place of the PRDs, for two judgments. The first is design order: which requirements each architecture decision should be designed from first — sign-up and sign-in requirements should drive the identity architecture, so password reset is not elaborated first, or identity gets designed from a recovery flow's requirements alone. The second is the Epic's value, urgency and size. Write for that reader.
 
 Epics (id — title — PRD file):
 ${batch.map((e) => `- ${e.id} — ${e.title} — ${e.prdPath}`).join('\n')}
 
 Architecture document (arc42 SAD): ${a.sadPath || 'none supplied'}
-Project root: ${a.projectRoot || 'none supplied'}
 
 For each Epic:
 1. Read its PRD file in full.
-2. Search the SAD for the concepts the Epic needs and establishes — Grep for its key nouns and read only the matching sections — and, when a project root is supplied, search it for existing code and artifacts the PRD names. A handful of searches per Epic, not a survey.
+2. Think about what the architecture for these requirements could be — the decisions an architect would have to make — without deciding any of them. Then search the SAD for those decisions: Grep for their key nouns and read only the matching sections. A handful of searches per Epic, not a survey.
 3. Write the summary: plain text, 200 to 400 words, under exactly these four headings, each heading at the start of its own line followed by prose:
 
-Needs: the capabilities, data and decisions this Epic's architecture must be designed from — what it consumes from elsewhere, named as the concept, never as another Epic's id.
-Establishes: what this Epic's requirements define that other work is designed from — records, identities, contracts, rules, vocabularies — or "nothing others build on" when that is so.
-Value and urgency: who gains what when it is delivered, what is lost if it never is, and any date, window or commitment that makes delay costly, as the PRD states it; say so when the PRD states no urgency.
-Already exists: what the SAD and existing artifacts already decide or provide for this Epic, and what must be decided or built from scratch, citing the SAD section or file; "nothing found" when the searches found nothing.
+Drives: the architecture decisions this PRD's requirements should drive — the decisions that ought to be designed from these requirements because they are the fullest statement of what the decision must serve. Name each as the question to be decided ("how a person's professional history is modeled", "how a recurring schedule is represented"), never its answer. Write "none" when every decision its requirements touch is better driven by other requirements.
+Designed on: the architecture decisions this PRD should be designed on top of, which other requirements should drive — each named as a decision to be designed from those other requirements, with the concept whose requirements should drive it, never as another Epic's id. Every entry is a design-order statement. Something having to exist, be built, be deployed, be testable or be available at runtime first, data this PRD reads or writes, and a capability it calls are build facts about Tasks and never appear here. Write "none" when no decision it rests on is driven by other requirements.
+Settled: which of the decisions named under Drives and Designed on the SAD already settles, citing the SAD section or file, and which it leaves open. A decision the SAD settles needs no design order. "nothing found" when the searches found nothing.
+Value and urgency: who gains what when the requirement is delivered, what is lost if it never is, and any date, window or commitment that makes delay costly, as the PRD states it; say so when the PRD states no urgency.
 
-Describe the requirement. Do not design a solution, choose technology, propose an ordering, or score anything. Do not restate the PRD's section structure. Name each concept the way the PRD names it, so two summaries touching the same concept use the same word.
+Describe the requirement. Do not design a solution, invent one, choose technology, name services, repositories, tables or code, propose an ordering between Epics, or score anything. Do not restate the PRD's section structure or list its rules. Name each concept the way the PRD names it, so two summaries touching the same decision use the same words.
 
 Write ${out} as ONE JSON object: {"summaries": [{"id", "summary"}], "unsummarized": [{"id", "reason"}]}, with exactly one entry per Epic listed, in one list or the other, and none for any other Epic.
 

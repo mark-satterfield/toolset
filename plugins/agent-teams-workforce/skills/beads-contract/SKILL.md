@@ -180,7 +180,7 @@ WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`
 (Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size` (the size the
 score divides by: the judged estimate on the Fibonacci scale, or on an Epic with Tasks the plain
-sum of its Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
+sum of its distinct Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
 `wsjf_value_from`. They are what lets a Task INHERIT its Epic's value and an Epic roll its size
 up from its Tasks without either one re-judging anything. The judged size is stored apart from
 the size in use: `wsjf_size_estimate` (the judged estimate, kept after an Epic's size becomes
@@ -200,7 +200,7 @@ session that holds the whole portfolio in place of the PRDs:
 
 | Key | Value |
 | --- | --- |
-| `epic_summary` | a few hundred words: what the Epic needs and establishes architecturally, the value and urgency it carries, and what already exists for it. It describes the requirement and designs no solution |
+| `epic_summary` | a few hundred words: the architecture decisions the Epic's requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and the value and urgency it carries. Decisions are named as questions to be decided, never as things that must exist or be built. It describes the requirement and designs no solution |
 | `epic_summary_hash` | the content fingerprint of the Epic the summary was written from; the summary is regenerated when the Epic's fingerprint no longer matches it, and at no other time |
 | `epic_summary_at` | ISO 8601 timestamp of the write |
 

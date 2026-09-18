@@ -32,7 +32,7 @@ Names should sort and group naturally when listed alphabetically.
 <!--
   One sentence max. Adds enough context to make the title unambiguous.
   If the title is "Login Page", the description might be:
-  "Create a React login form component with Google OAuth and email/password authentication."
+  "Let a returning user sign in with a password or with their Google account."
 -->
 
 [One sentence description.]
@@ -42,21 +42,19 @@ Names should sort and group naturally when listed alphabetically.
 ## Feature Scope
 
 <!--
-  A feature is a single, verifiable change that an agent can complete
-  in one session without losing coherence.
+  A PRD states one business requirement: WHAT the user or the business
+  gets, never HOW it is built. Its size is judged later, by WSJF sizing
+  against the agent pipeline, and the PRD carries none.
 
   Rules:
   1. One specific outcome. If you need "and" to describe it, it's two features.
-  2. One file or a small set of tightly coupled files. If changes scatter
-     across unrelated parts of the codebase, decompose.
-  3. 100-300 lines of change. Under 100 is a bug fix or chore. Over 300
-     means the agent will start losing track.
-  4. Completable in a single think-plan-act-verify loop. If the agent needs
-     to context-switch or reload state, the feature is too big.
-  5. Has a pass/fail verification — a test, a linter check, a compilation,
-     a behavioral assertion. If you can't verify it mechanically, it isn't
-     defined well enough.
-  6. Explicitly states what it excludes. Scope grows silently without an
+  2. Stated as behavior a user or the business can observe, in the
+     domain's own words, with no components, files, services or
+     technologies named.
+  3. Has a pass/fail verification for every P0 requirement — a behavioral
+     assertion someone can check. If you can't verify it, it isn't defined
+     well enough.
+  4. Explicitly states what it excludes. Scope grows silently without an
      out-of-scope list.
 
   Smell tests for "too big":
