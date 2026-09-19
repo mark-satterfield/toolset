@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from beadgraph import TRACKS, fingerprints, now_iso
+from prds import write_prds
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,25 +69,6 @@ def _open_epics(graph: Graph, epics: list[str] | None) -> list[Bead]:
         raise SummaryError(msg)
     wanted = set(epics)
     return [b for b in open_epics if b.id in wanted]
-
-
-def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
-    """Write each Epic's PRD, its description, to its own file.
-
-    Args:
-        epics: The Epics.
-        prd_dir: The directory to write into; created when absent.
-
-    Returns:
-        Epic id -> the file holding its PRD.
-    """
-    prd_dir.mkdir(parents=True, exist_ok=True)
-    paths = {}
-    for epic in epics:
-        path = prd_dir / f"{epic.id}.md"
-        path.write_text(f"# {epic.title}\n\n{epic.description}\n", encoding="utf-8")
-        paths[epic.id] = str(path)
-    return paths
 
 
 def summary_reason(epic: Bead, fingerprint: str) -> str:

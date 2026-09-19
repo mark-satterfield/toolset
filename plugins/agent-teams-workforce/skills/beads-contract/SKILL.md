@@ -193,7 +193,13 @@ from. Dependency assessment (the `dependency-assessment` workflow): `seq_owned_b
 comma-separated id list of the Epic edges the assessment created on the bead, each a `tracks`
 edge onto the Epic named, and `seq_owned_blockers_at`. The assessment only ever withdraws or
 converts an edge that list names, which is how a hand-made edge survives it.
-`seq_content_hash` is the content fingerprint the assessment last read the Epic at.
+`seq_edge_reasons`, on the BLOCKED Epic, is a JSON object keyed by blocker id, each value
+`{"reason", "confidence", "setBy", "setAt"}`: why each owned edge onto that Epic stands, the
+Epic whose assessment set it, and when. It covers only owned edges, and an assessment rewrites
+only the entries for edges touching the Epic it assessed. `seq_content_hash` is the content
+fingerprint the assessment last read the Epic at, and `seq_assessed_at` is when that Epic's own
+assessment was last applied; both are written on the assessed Epic every time its assessment
+applies. `depscore.py apply-edges` writes all five keys; nothing else does.
 
 Epic summary, written on every open Epic by the `epic-summaries` workflow and read by every
 session that holds the whole portfolio in place of the PRDs:

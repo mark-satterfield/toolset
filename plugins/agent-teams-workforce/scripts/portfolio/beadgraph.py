@@ -192,7 +192,8 @@ def _same_value(stored: object, wanted: str) -> bool:
     """Whether a value read back from the tracker is the value that was written.
 
     `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
-    parse to the same number are the same value.
+    parse to the same number are the same value. It hands a JSON object or list back
+    parsed, so two values that both parse as the same object or list are the same value.
 
     Args:
         stored: The value the read-back reported.
@@ -201,6 +202,9 @@ def _same_value(stored: object, wanted: str) -> bool:
     Returns:
         True when the read-back holds the written value.
     """
+    structured = _structured(stored)
+    if structured is not None:
+        return structured == _structured(wanted)
     text = "" if stored is None else str(stored)
     if text == wanted:
         return True
@@ -208,6 +212,41 @@ def _same_value(stored: object, wanted: str) -> bool:
         return float(text) == float(wanted)
     except ValueError:
         return False
+
+
+def _structured(value: object) -> dict | list | None:
+    """A value as a JSON object or list, or None when it is neither.
+
+    Args:
+        value: A parsed object or list, or a string that may hold one.
+
+    Returns:
+        The object or list, or None.
+    """
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
+
+
+def _metadata_text(value: object) -> str:
+    """A metadata value as the string a Bead holds.
+
+    Args:
+        value: The value as `bd` returned it.
+
+    Returns:
+        An object or list as compact JSON with sorted keys; a string unchanged; anything
+        else as `str`.
+    """
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return value if isinstance(value, str) else str(value)
 
 
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
@@ -365,7 +404,7 @@ def _bead_of(record: dict) -> Bead:
         kind=str(record.get("issue_type") or ""),
         status=str(record.get("status") or ""),
         parent=str(record["parent"]) if record.get("parent") else None,
-        metadata={str(k): str(v) for k, v in metadata.items()},
+        metadata={str(k): _metadata_text(v) for k, v in metadata.items()},
         blockers=tuple(sorted(set(targets(BLOCKS)))),
         tracked=tuple(sorted(set(targets(TRACKS)))),
         description=str(record.get("description") or ""),

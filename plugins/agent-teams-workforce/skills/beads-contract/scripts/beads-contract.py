@@ -364,10 +364,15 @@ WSJF_KEYS = (
 #: Keys the SEQUENCING pass owns. `seq_owned_blockers` is a comma-separated id list of the
 #: Epic `tracks` edges this system created on that bead, and it exists so a hand-made edge is
 #: never removed: the pass only ever withdraws an edge it recorded as its own.
+#: `seq_edge_reasons`, on the blocked Epic, is a JSON object keyed by blocker id, each value
+#: `{"reason", "confidence", "setBy", "setAt"}`, covering the owned edges onto it.
+#: `seq_assessed_at` is when the Epic's own dependency assessment was last applied.
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
     "seq_owned_blockers_at",
     "seq_content_hash",
+    "seq_edge_reasons",
+    "seq_assessed_at",
 )
 
 #: Keys the EPIC SUMMARY owns, on an Epic. `epic_summary` is a few hundred words on the
@@ -974,7 +979,8 @@ def _same_value(stored: object, wanted: str) -> bool:
     """Whether a value read back from the tracker is the value that was written.
 
     `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
-    parse to the same number are the same value.
+    parse to the same number are the same value. It hands a JSON object or list back
+    parsed, so two values that both parse as the same object or list are the same value.
 
     Args:
         stored: The value read back.
@@ -983,6 +989,9 @@ def _same_value(stored: object, wanted: str) -> bool:
     Returns:
         True when the read-back holds the written value.
     """
+    structured = _structured(stored)
+    if structured is not None:
+        return structured == _structured(wanted)
     text = "" if stored is None else str(stored)
     if text == wanted:
         return True
@@ -990,6 +999,26 @@ def _same_value(stored: object, wanted: str) -> bool:
         return float(text) == float(wanted)
     except ValueError:
         return False
+
+
+def _structured(value: object) -> dict | list | None:
+    """A value as a JSON object or list, or None when it is neither.
+
+    Args:
+        value: A parsed object or list, or a string that may hold one.
+
+    Returns:
+        The object or list, or None.
+    """
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = json.loads(value)
+    except ValueError:
+        return None
+    return parsed if isinstance(parsed, (dict, list)) else None
 
 
 def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:

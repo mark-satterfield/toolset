@@ -8,15 +8,21 @@ run these. Every judged step between them is an agent; everything here is code.
     record-summaries  write summaries with the fingerprint they were written from
     portfolio         every open Epic with its summary and edges, as one document
     assess-plan       every open Epic's fingerprint, and those not assessed as they stand
+                      (with `--since`, also those not assessed since that instant)
+    assess-context    one Epic's assessment material: every open Epic's PRD as a file, an
+                      index of them, and every edge standing between the Epic and another
+                      open Epic with its recorded reason
     snapshot          the tracker as a graph
-    validate          prove a proposed edge set is applicable before anything is written;
-                      `--epic` refuses any edge that does not touch that Epic
-    apply-edges       apply the Epic edge DIFF through `bd dep` as `tracks` edges, never
-                      touching a hand-made edge, converting any owned edge stored as
-                      another type, and record which Epic content the sequencer read.
-                      `--epic` confines every write to edges touching that Epic.
-                      `--owned` proposes the owned edge set back, which only adds and
-                      converts
+    validate          prove one Epic's edge proposal (`--edges` with `--epic`) is
+                      applicable before anything is written: every edge touches the
+                      Epic and carries a reason, and every owned edge standing on it is
+                      kept or withdrawn with a reason
+    apply-edges       apply one Epic's edge DIFF (`--edges` with `--epic`) through `bd dep`
+                      as `tracks` edges, never touching a hand-made edge or an edge that
+                      does not touch the Epic, converting any owned edge stored as another
+                      type, recording each owned edge's reason and the Epic content the
+                      assessment read. `--owned` proposes the owned edge set back, which
+                      only adds and converts, and proposes no edge
     score-plan        what this scoring run judges, with the fingerprints that decide it
     judge-input       the whole portfolio at one level, as one judging session reads it
     record            write judged values with the fingerprint they were judged from
@@ -42,16 +48,20 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import beadgraph
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
+from assesscontext import assess_context
 from edgeset import (
+    ASSESSED_AT_KEY,
     SEEN_KEY,
     SequencingError,
     apply_edges,
     owned_edges,
     read_edges,
+    read_withdrawn,
     validate,
 )
 from elaboration import LifecycleError, finish, release, start
@@ -121,37 +131,75 @@ def snapshot(
     return {"beads": beads, "counts": counts, "summary": counts}
 
 
-def assess_plan(graph: Graph, *, epic: str | None) -> dict:
+def _instant(text: str) -> datetime | None:
+    """An ISO 8601 instant, or None when the text is not one.
+
+    Args:
+        text: The text; a trailing `Z` means UTC, and an instant with no offset is UTC.
+
+    Returns:
+        The instant, timezone-aware.
+    """
+    try:
+        value = datetime.fromisoformat(text.strip())
+    except ValueError:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def assess_plan(graph: Graph, *, epic: str | None, since: str | None = None) -> dict:
     """Every open Epic's fingerprint, and the Epics not assessed as they now stand.
 
     An Epic has been assessed as it stands when the `seq_content_hash` recorded on it
-    matches its fingerprint. The fingerprints are what `apply-edges --plan` records.
+    matches its fingerprint. With `since`, an Epic whose `seq_assessed_at` is absent or
+    earlier than that instant is unassessed too. The fingerprints are what
+    `apply-edges --plan` records.
 
     Args:
         graph: The tracker graph, read with descriptions.
-        epic: The one Epic to be assessed, or None for the whole portfolio.
+        epic: The one Epic to be assessed, or None for every open Epic.
+        since: An ISO 8601 instant, or None.
 
     Returns:
         The fingerprints, the unassessed Epics, the scope, and a summary.
 
     Raises:
-        SequencingError: `epic` is not an open Epic.
+        SequencingError: `epic` is not an open Epic, or `since` is not an ISO 8601
+            instant.
     """
     epics = [b for b in graph.of_kind("epic") if not b.closed]
     if epic is not None and epic not in {b.id for b in epics}:
         msg = f"{epic} is not an open Epic"
         raise SequencingError(msg)
+    cutoff = _instant(since) if since is not None else None
+    if since is not None and cutoff is None:
+        msg = f"--since {since!r} is not an ISO 8601 instant"
+        raise SequencingError(msg)
     prints = beadgraph.fingerprints(graph.records)
-    unassessed = [e.id for e in epics if e.metadata.get(SEEN_KEY) != prints.get(e.id)]
+
+    def assessed(bead: Bead) -> bool:
+        if bead.metadata.get(SEEN_KEY) != prints.get(bead.id):
+            return False
+        if cutoff is None:
+            return True
+        at = _instant(bead.metadata.get(ASSESSED_AT_KEY) or "")
+        return at is not None and at >= cutoff
+
+    unassessed = [e.id for e in epics if not assessed(e)]
+    summary = {
+        "scope": epic or "all",
+        "openEpics": len(epics),
+        "unassessed": len(unassessed),
+        "unassessedIds": sorted(unassessed),
+    }
+    if since is not None:
+        summary["since"] = since
     return {
-        "scope": epic or "portfolio",
+        "scope": epic or "all",
+        "since": since,
         "unassessed": unassessed,
         "fingerprints": {e.id: prints[e.id] for e in epics if e.id in prints},
-        "summary": {
-            "scope": epic or "portfolio",
-            "openEpics": len(epics),
-            "unassessed": len(unassessed),
-        },
+        "summary": summary,
     }
 
 
@@ -276,6 +324,24 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     asp.add_argument("--epic", default=None, help="the one Epic to be assessed")
+    asp.add_argument(
+        "--since",
+        default=None,
+        help="ISO 8601; an Epic not assessed since this instant is also unassessed",
+    )
+
+    acx = sub.add_parser(
+        "assess-context",
+        help="one Epic's assessment material: the PRD corpus, its index, standing edges",
+        parents=[common],
+    )
+    acx.add_argument("--epic", required=True, help="the Epic to be assessed")
+    acx.add_argument(
+        "--dir",
+        type=Path,
+        required=True,
+        help="write `prd/<id>.md` per open Epic and `index.md` here",
+    )
 
     snap = sub.add_parser("snapshot", help="the tracker as a graph", parents=[common])
     snap.add_argument("--kinds", default="epic,story,task")
@@ -283,11 +349,15 @@ def build_parser() -> argparse.ArgumentParser:
     snap.add_argument("--include-closed", action="store_true")
     snap.add_argument("--epics", default=None, help="restrict to these Epics")
 
-    val = sub.add_parser("validate", help="check a proposed edge set", parents=[common])
+    val = sub.add_parser(
+        "validate", help="check one Epic's edge proposal", parents=[common]
+    )
     val.add_argument(
         "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
     )
-    val.add_argument("--epic", default=None, help="the one Epic every edge must touch")
+    val.add_argument(
+        "--epic", default=None, help="the one Epic the proposal covers (required)"
+    )
 
     app = sub.add_parser(
         "apply-edges",
@@ -310,7 +380,7 @@ def build_parser() -> argparse.ArgumentParser:
     app.add_argument(
         "--epic",
         default=None,
-        help="the one Epic the proposal covers; only edges touching it are written",
+        help="the one Epic the proposal covers; required with `--edges`",
     )
     _dry_run_flag(app)
 
@@ -413,6 +483,7 @@ def run(args: argparse.Namespace) -> dict:
         "summary-plan",
         "portfolio",
         "assess-plan",
+        "assess-context",
         "score-plan",
         "judge-input",
         "elaboration-finish",
@@ -430,7 +501,9 @@ def run(args: argparse.Namespace) -> dict:
     if command == "portfolio":
         return head | portfolio(graph, prd_dir=args.prd_dir, markdown=args.markdown)
     if command == "assess-plan":
-        return head | assess_plan(graph, epic=args.epic)
+        return head | assess_plan(graph, epic=args.epic, since=args.since)
+    if command == "assess-context":
+        return head | assess_context(graph, args.epic, args.dir)
     if command == "score-plan":
         return head | plan(graph, include_all=args.all, rejudge=args.rejudge)
     if command == "judge-input":
@@ -445,8 +518,13 @@ def run(args: argparse.Namespace) -> dict:
             include_closed=args.include_closed,
             epics=epics,
         )
+    if command in ("validate", "apply-edges") and args.edges and not args.epic:
+        msg = "an edge proposal covers exactly one Epic: pass --epic"
+        raise SequencingError(msg)
     if command == "validate":
-        report = validate(graph, read_edges(args.edges), args.epic)
+        report = validate(
+            graph, read_edges(args.edges), args.epic, read_withdrawn(args.edges)
+        )
         return (
             head
             | report
@@ -455,7 +533,8 @@ def run(args: argparse.Namespace) -> dict:
     if command == "apply-edges":
         seen = _read_json(args.plan)["fingerprints"] if args.plan else {}
         proposal = owned_edges(graph) if args.owned else read_edges(args.edges)
-        result = apply_edges(graph, proposal, writer, seen, args.epic)
+        withdrawn = [] if args.owned else read_withdrawn(args.edges)
+        result = apply_edges(graph, proposal, writer, seen, args.epic, withdrawn)
         summary = {
             key: result.get(key)
             for key in (
@@ -467,8 +546,10 @@ def run(args: argparse.Namespace) -> dict:
                 "removed",
                 "unchanged",
                 "sequencedRecorded",
+                "reasonsRecorded",
             )
         }
+        summary["withdrawn"] = len(result.get("withdrawn") or [])
         summary["plannedWrites"] = len(result.get("planned") or [])
         if not result["validation"]["ok"]:
             summary["validation"] = result["validation"]

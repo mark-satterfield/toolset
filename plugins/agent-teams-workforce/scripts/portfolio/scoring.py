@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from beadgraph import fingerprints
-from summaries import write_prds
+from prds import write_prds
 
 if TYPE_CHECKING:
     from beadgraph import Bead, Graph, Writer
