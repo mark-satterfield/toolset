@@ -1,14 +1,13 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the Epic dependency edges, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is an architecture dependency, a judgment about the order in which architecture is established, made before that architecture exists: it exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. Mode `epic` assesses ONE new or changed Epic against the portfolio's summaries and its own full PRD, and may add or withdraw only edges to or from that Epic — validation refuses any other edge, and the write is confined to that Epic's edges in code. Mode `portfolio` assesses the whole portfolio from the summaries. The epic-sequencer proposes; code validates and applies the diff, never touching a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE. With `apply: false` it proposes only: it reads the stored summaries without bringing them current, computes the edge diff as a dry run, returns it, writes nothing to the tracker and triggers no scoring.",
-  whenToUse: "A new or changed Epic needs its dependencies assessed (mode epic), or the whole portfolio is being re-seeded (mode portfolio).",
+    "Assesses the architecture dependencies of ONE new or changed Epic, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is an architecture dependency: a judgment about the order in which architecture is established, made before that architecture exists. It exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. One epic-sequencer session reads the Epic's full PRD, names the architecture decisions its requirements drive and the ones it rests on, drops those the SAD settles, searches the other Epics' PRDs for the requirements that drive or rest on each remaining decision, reads those PRDs in full, and applies the edge test in both directions. It proposes every edge to or from the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on it. Code refuses an edge that does not touch the Epic, a cycle, an unaccounted standing edge and a missing reason, confines the write to that Epic's edges, and never touches a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE. With `apply: false` it proposes only: it computes the edge diff as a dry run, returns it, writes nothing to the tracker and triggers no scoring.",
+  whenToUse: 'A new or changed Epic needs its architecture dependencies assessed.',
   phases: [
-    { title: "Summaries", detail: "bring the Epic summaries current (skipped when proposing)" },
-    { title: "Plan", detail: "fingerprints and the rendered portfolio" },
-    { title: "Assess", detail: "the epic-sequencer proposes the edge set for the scope" },
-    { title: "Apply", detail: "validate and apply the edge diff for the scope, or compute it as a dry run" },
-    { title: "Score", detail: "wsjf-scoring over the new edges" },
+    { title: 'Context', detail: "the Epic's fingerprint, its standing edges, and the PRD corpus with its index" },
+    { title: 'Assess', detail: "the epic-sequencer proposes every edge to or from the Epic and accounts for every owned standing edge" },
+    { title: 'Apply', detail: "validate and apply the edge diff for the Epic, or compute it as a dry run" },
+    { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -103,7 +102,7 @@ async function settleAgent(prompt, opts) {
 //
 // Every tracker read and write is a `depscore.py` command. A workflow has no shell, so a
 // runner session executes exactly one command and hands back what it printed; the command
-// writes its full result to a file in the run directory and prints only a summary, so no
+// writes its full result to a file in the run directory and prints only its counts, so no
 // data a later step depends on passes through a model.
 const RUN_SCHEMA = {
   type: 'object',
@@ -141,50 +140,47 @@ function enter(title) {
 }
 
 // args: {
-//   repoPath:     string,              // absolute path of the repository whose `bd` tracker holds the Epics
-//   pluginRoot:   string,              // absolute path of this plugin's root
-//   workDir:      string,              // absolute path of a directory for this run's files; one per run
-//   mode:         'epic'|'portfolio',  // one Epic against the portfolio, or the whole portfolio
-//   epic?:        string,              // the Epic assessed, in mode 'epic'
-//   sadPath?:     string,              // the arc42 SAD (ATW_SAD_PATH): the decisions it settles need no edge
-//   projectRoot?: string,              // the project root (ATW_PROJECT_ROOT), passed to the scoring it triggers
-//   score?:       boolean,             // false: do not trigger scoring when the edges are applied
-//   apply?:       boolean,             // false: propose only — no summary, edge or score is written;
-//                                      // `edges` carries the diff (added, converted, removed,
-//                                      // unchanged, planned) computed as a dry run. Default true.
+//   repoPath:     string,   // absolute path of the repository whose `bd` tracker holds the Epics
+//   pluginRoot:   string,   // absolute path of this plugin's root
+//   workDir:      string,   // absolute path of a directory for this run's files; one per run
+//   epic:         string,   // the one Epic assessed
+//   sadPath?:     string,   // the arc42 SAD (ATW_SAD_PATH): the decisions it settles need no edge
+//   projectRoot?: string,   // the project root (ATW_PROJECT_ROOT), passed to the scoring it triggers
+//   score?:       boolean,  // false: do not trigger scoring when the edges are applied. Default true.
+//   apply?:       boolean,  // false: propose only — no edge, reason or score is written; `edges`
+//                           // carries the diff (added, converted, removed, withdrawn, unchanged,
+//                           // planned) computed as a dry run. Default true.
 // }
 //
-// Returns: { ok, apply, workDir, mode, epic, summaries, plan, assessment, edges, scoring,
+// Returns: { ok, apply, workDir, epic, plan, context, assessment, edges, scoring,
 //            failures, dispatchFailed, dispatchFailures }
-// With `apply: false`, `summaries` and `scoring` are null and `ok` means the diff was
-// proposed.
+// With `apply: false`, `scoring` is null and `ok` means the diff was proposed.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+if (Object.prototype.hasOwnProperty.call(a, 'mode')) {
+  return { ok: false, error: '`mode` is not an argument: dependency assessment covers exactly one Epic' }
+}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (missingArgs.length) {
   return { ok: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
 }
-const mode = a.mode
-if (mode !== 'epic' && mode !== 'portfolio') {
-  return { ok: false, error: "`mode` must be 'epic' or 'portfolio'" }
-}
-const target = mode === 'epic' ? a.epic : null
-if (mode === 'epic' && !(typeof target === 'string' && /^[A-Za-z0-9._-]+$/.test(target))) {
-  return { ok: false, error: "mode 'epic' needs `epic`, the id of the Epic to assess" }
+const target = a.epic
+if (!(typeof target === 'string' && /^[A-Za-z0-9._-]+$/.test(target))) {
+  return { ok: false, error: '`epic`, the id of the one Epic to assess, is required' }
 }
 const repo = a.repoPath.replace(/\/+$/, '')
 const work = a.workDir.replace(/\/+$/, '')
 const DS = `${a.pluginRoot.replace(/\/+$/, '')}/scripts/portfolio/depscore.py`
 const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
-const scope = target ? ` --epic ${shq(target)}` : ''
+const scope = ` --epic ${shq(target)}`
 const applies = a.apply !== false
 const project = { repoPath: repo, pluginRoot: a.pluginRoot, sadPath: a.sadPath, projectRoot: a.projectRoot }
 const fail = (error, extra) => ({
   ok: false,
+  apply: applies,
   workDir: work,
-  mode,
   epic: target,
   error,
   ...(extra || {}),
@@ -193,69 +189,70 @@ const fail = (error, extra) => ({
   dispatchFailures: dispatchDeaths(),
 })
 
-// ── Summaries ────────────────────────────────────────────────────────────────────
+// ── Context ──────────────────────────────────────────────────────────────────────
 //
-// The assessment reads the portfolio through the Epic summaries, so they are brought
-// current first. An Epic left without one is read from its PRD instead. A proposal
-// writes nothing, so it reads the summaries as stored.
-let summaries = null
-if (applies) {
-  enter('Summaries')
-  summaries = await workflow('agent-teams-workforce:epic-summaries', { ...project, workDir: file('summaries') })
-}
-
-// ── Plan ─────────────────────────────────────────────────────────────────────────
-enter('Plan')
+// The plan records the fingerprint the Epic is assessed at. The context writes every open
+// Epic's PRD to the corpus directory and an index of their titles and section headings, and
+// lists every edge standing between this Epic and another open Epic, with the reason
+// recorded for each owned one.
+enter('Context')
 const planFile = file('assess-plan.json')
-const portfolioFile = file('portfolio.md')
-const planned = await runStep('assess-plan', cmd('assess-plan', `${scope.trim()} --out ${shq(planFile)}`.trim()))
-if (!planned) return fail('the assessment plan could not be computed; nothing was written', { summaries })
+const contextDir = file('context')
+const contextFile = file('context.json')
+const corpusDir = `${contextDir}/prd`
+const indexFile = `${contextDir}/index.md`
+const epicPrd = `${corpusDir}/${target}.md`
+const planned = await runStep('assess-plan', cmd('assess-plan', `${scope.trim()} --out ${shq(planFile)}`))
+if (!planned) return fail('the assessment plan could not be computed; nothing was written')
 const plan = planned.summary || {}
-const rendered = await runStep('portfolio', cmd('portfolio', `--markdown ${shq(portfolioFile)} --prd-dir ${shq(file('prd'))}`))
-if (!rendered) return fail('the portfolio could not be rendered; nothing was written', { summaries, plan })
+const contexted = await runStep(
+  'assess-context',
+  cmd('assess-context', `${scope.trim()} --dir ${shq(contextDir)} --out ${shq(contextFile)}`)
+)
+if (!contexted) return fail('the assessment context could not be written; nothing was written', { plan })
+const context = contexted.summary || {}
 
 // ── Assess ───────────────────────────────────────────────────────────────────────
 enter('Assess')
 const edgesFile = file('edges.json')
-const tieringFile = file('tiering.md')
+const reasoningFile = file('reasoning.md')
 const ASSESS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['edgesPath', 'edgeCount', 'valid'],
+  required: ['edgesPath', 'edgeCount', 'valid', 'relatedRead'],
   properties: {
     edgesPath: { type: 'string' },
-    tieringPath: { type: 'string' },
+    reasoningPath: { type: 'string' },
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
+    relatedRead: { type: 'array', items: { type: 'string' } },
     unsure: { type: 'array', items: { type: 'string' } },
   },
 }
-const READING = `THE PORTFOLIO is ${portfolioFile}: every open Epic with its elaboration state, the Epics it depends on now, the file holding its full PRD, and its stored summary — the architecture decisions its requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and its value and urgency. Read it in full; it is long, so read it in consecutive chunks until the end. An Epic marked "Summary unavailable" is read from its PRD file instead. Open any other Epic's PRD only where its summary cannot settle whether an edge passes the test.
+const THE_TEST = `THE TEST. An Epic is a PRD, a WHAT; its architecture does not exist yet. An edge from A to B says: an architecture decision B rests on should be designed from A's requirements first, because A's requirements are the fuller statement of what that decision must serve — sign-up and sign-in requirements drive the identity architecture, so password reset waits, or identity gets designed from a recovery flow's requirements alone. A reason that says something must exist, be built, be deployed or be testable first, that B presumes a user or a record exists, or that B reads data from or calls a capability of A, is a build dependency between Tasks and is never an Epic edge. ${a.sadPath ? `The SAD is ${a.sadPath}: a` : 'A'} decision the SAD already settles needs no edge; check it before drawing one.`
+const assessPrompt = `Assess the architecture dependencies of ONE Epic, ${target}, following \`agent-teams-workforce:epic-sequencing\` for the edge test and its worked example. ${target} is new or has changed.
 
-THE TEST. An Epic is a PRD, a WHAT; its architecture does not exist yet. An edge from A to B says: an architecture decision B rests on should be designed from A's requirements first, because A's requirements are the fuller statement of what that decision must serve — sign-up and sign-in requirements drive the identity architecture, so password reset waits, or identity gets designed from a recovery flow's requirements alone. A reason that says something must exist, be built, be deployed or be testable first, that B presumes a user or a record exists, or that B reads data from or calls a capability of A, is a build dependency between Tasks and is never an Epic edge. ${a.sadPath ? `The SAD is ${a.sadPath}: a` : 'A'} decision the SAD already settles needs no edge; check it before drawing one.`
-const assessPrompt = target
-  ? `Assess ONE Epic, ${target}, against the whole open Epic portfolio, following \`agent-teams-workforce:epic-sequencing\`. ${target} is new or has changed; every other Epic's edges stand.
+THE FILES.
+- ${target}'s full PRD: ${epicPrd}
+- The context: ${contextFile}. \`standing\` lists every edge between ${target} and another open Epic, in either direction, as {from, to, type, owned, reason, confidence, setBy, setAt}; \`from\` is the Epic designed first. \`reason\` is the one recorded when the edge was set, or null.
+- The PRD corpus: ${corpusDir}, one file per open Epic, named <id>.md.
+- The index: ${indexFile}, one line per open Epic with its title, elaboration state, PRD path and section headings.
+${a.sadPath ? `- The SAD: ${a.sadPath}\n` : ''}
+${THE_TEST}
 
-${READING}
+Work in this order:
+1. Read ${target}'s full PRD.
+2. Name the architecture decisions its requirements should drive, and the architecture decisions it rests on.
+3. Check each against the SAD, and drop every decision the SAD already settles.
+4. For each remaining decision, search the corpus with Grep, and the index for titles and sections, for the PRDs whose requirements drive or rest on it. Read no PRD the search did not find related.
+5. Read in full every related PRD, and the PRD at the other end of every standing edge.
+6. Apply the test in both directions: an edge from another Epic to ${target} where the architecture ${target} rests on should be designed from that Epic's requirements first, and an edge from ${target} to another Epic where that Epic's architecture should be designed from ${target}'s requirements first.
+7. Write ${edgesFile} as {"edges": [{"from", "to", "reason", "confidence"}], "withdrawn": [{"from", "to", "reason"}]}. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the architecture decision and whose requirements should drive it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
+8. Validate: \`${cmd('validate', `--edges ${shq(edgesFile)}${scope}`)}\` — fix the file until \`ok\` is true. It refuses an edge that does not touch ${target}, a missing reason, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Epic edge. A cycle you cannot remove by dropping one of your own edges that fails the test is reported, not forced: return \`valid: false\` and name the cycle in \`unsure\`.
 
-1. Read ${target}'s full PRD, at the path the portfolio names for it.
-2. Read the portfolio as above.
-3. Apply the edge test in both directions: every Epic whose requirements ${target}'s architecture must be designed from (an edge from that Epic to ${target}), and every Epic whose architecture must be designed from ${target}'s requirements (an edge from ${target} to that Epic).
-4. Write ${edgesFile} holding EVERY edge to or from ${target} — the ones that stand today and pass the test included — and no edge that does not touch ${target}. An edge to or from ${target} that stands today and is not in the file is withdrawn. Write the reasoning, per edge, to ${tieringFile}.
-5. Validate: \`${cmd('validate', `--edges ${shq(edgesFile)} --epic ${shq(target)}`)}\` — fix the file until \`ok\` is true. It refuses any edge that does not touch ${target}, and checks for cycles against every other Epic edge.
-
-Return the edge file path, the edge count, whether the final validation passed, and each edge you were unsure of with what would settle it.`
-  : `Order the whole open Epic portfolio and emit its dependency edge set, following \`agent-teams-workforce:epic-sequencing\`.
-
-${READING}
-
-1. Read the portfolio as above, and work outside-in: tiers, subdomains, then edges, revisiting.
-2. Write the edge file, over the WHOLE portfolio, to ${edgesFile}, and the tiering account to ${tieringFile}.
-3. Validate: \`${cmd('validate', `--edges ${shq(edgesFile)}`)}\` — fix the file until \`ok\` is true.
-
-Return the edge file path, the edge count, whether the final validation passed, and each edge you were unsure of with what would settle it.`
+Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Epic whose PRD you read in full, other than ${target} — and each edge you were unsure of with what would settle it.`
 const assessed = await settleAgent(assessPrompt, {
-  label: target ? `epic-sequencer:${target}` : 'epic-sequencer',
+  label: `epic-sequencer:${target}`,
   phase: 'Assess',
   agentType: 'agent-teams-workforce:epic-sequencer',
   schema: ASSESS_SCHEMA,
@@ -277,34 +274,50 @@ if (assessed && assessed.valid && !applies) {
     ? {
         applied: false,
         proposed: proposed.validation ? proposed.validation.ok === true : false,
-        scope: proposed.scope || target || 'portfolio',
+        scope: proposed.scope || target,
         added: diff.add || [],
         converted: diff.convert || [],
         removed: diff.remove || [],
+        withdrawn: proposed.withdrawn || [],
         unchanged: diff.unchanged ?? null,
         protectedHandMadeEdges: diff.protectedHandMadeEdges || [],
         planned: proposed.planned || [],
         validation: proposed.validation || null,
         diffFile,
         edgesFile,
-        tiering: tieringFile,
+        reasoning: reasoningFile,
         unsure: assessed.unsure || [],
       }
     : { applied: false, proposed: false, reason: 'the dry run did not complete; nothing was written' }
 } else if (assessed && assessed.valid) {
+  // The full result is printed and kept in the run directory, so the withdrawals come back
+  // with their reasons.
+  const applyFile = file('apply-edges.json')
   const applied = await runStep(
     'apply-edges',
-    cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)}${scope} --out ${shq(file('apply-edges.json'))}`)
+    `set -o pipefail; ${cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)}${scope}`)} | tee ${shq(applyFile)}`
   )
-  edges = { ...(applied ? applied.summary || {} : { applied: false }), tiering: tieringFile, unsure: assessed.unsure || [] }
+  edges = {
+    ...(applied ? applied.summary || {} : { applied: false }),
+    withdrawn: (applied && applied.withdrawn) || [],
+    resultFile: applyFile,
+    edgesFile,
+    reasoning: reasoningFile,
+    unsure: assessed.unsure || [],
+  }
 } else {
   edges = {
     applied: false,
-    reason: assessed ? 'the proposed edge set did not validate; the tracker keeps its current edges' : 'the epic-sequencer returned no result; the tracker keeps its current edges',
+    reason: assessed
+      ? 'the proposed edge set did not validate; the tracker keeps its current edges'
+      : 'the epic-sequencer returned no result; the tracker keeps its current edges',
+    edgesFile,
+    reasoning: reasoningFile,
+    unsure: (assessed && assessed.unsure) || [],
   }
 }
-if (edges.proposed) log(`Proposed edges (${target || 'portfolio'}): ${edges.added.length} to add, ${edges.converted.length} to convert, ${edges.removed.length} to withdraw, ${edges.unchanged} unchanged — nothing written; detail in ${edges.diffFile}`)
-if (edges.applied) log(`Edges (${target || 'portfolio'}): ${edges.added} added, ${edges.converted} converted, ${edges.removed} withdrawn, ${edges.unchanged} unchanged`)
+if (edges.proposed) log(`Proposed edges (${target}): ${edges.added.length} to add, ${edges.converted.length} to convert, ${edges.removed.length} to withdraw, ${edges.unchanged} unchanged — nothing written; detail in ${edges.diffFile}`)
+if (edges.applied) log(`Edges (${target}): ${edges.added} added, ${edges.converted} converted, ${edges.removed} withdrawn, ${edges.unchanged} unchanged`)
 
 // ── Score ────────────────────────────────────────────────────────────────────────
 //
@@ -321,10 +334,9 @@ return {
   ok: (applies ? edges.applied === true : edges.proposed === true) && failures.length === 0 && (!scores || (!!scoring && scoring.ok === true)),
   apply: applies,
   workDir: work,
-  mode,
   epic: target,
-  summaries,
   plan,
+  context,
   assessment: assessed || { failed: true },
   edges,
   scoring,

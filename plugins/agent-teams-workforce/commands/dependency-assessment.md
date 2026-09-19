@@ -1,26 +1,31 @@
 ---
-description: "Assess the Epic dependency edges for one Epic or the whole portfolio, then score"
-argument-hint: "<epic-id> | --portfolio [--propose]"
+description: "Assess the architecture dependencies of one Epic, then score"
+argument-hint: "<epic-id> [--propose]"
 allowed-tools: [Bash, Workflow]
 ---
 
 # Dependency assessment
 
-Assess the Epic-to-Epic dependency edges in the beads tracker of the repository you are
-standing in, by dispatching the `dependency-assessment` workflow. An Epic edge records design
-order: an architecture decision one Epic rests on should be designed from another Epic's
-requirements first (`agent-teams-workforce:epic-sequencing`). The workflow writes edges and
-nothing else, then triggers `wsjf-scoring`, because edges decide RR-OE.
+Assess the architecture dependencies of one Epic in the beads tracker of the repository you
+are standing in, by dispatching the `dependency-assessment` workflow. An edge between two
+Epics is an architecture dependency: an architecture decision one Epic rests on should be
+designed from another Epic's requirements first, and the SAD does not already settle it
+(`agent-teams-workforce:epic-sequencing`). The workflow writes edges and nothing else, then
+triggers `wsjf-scoring`, because edges decide RR-OE.
 
-- `<epic-id>` assesses that one Epic — new or changed — against the portfolio's summaries
-  and its own full PRD. Only edges to or from that Epic are added or withdrawn.
-- `--portfolio` assesses the whole portfolio.
+`<epic-id>` is required: the one Epic, new or changed, to assess. Report the usage and stop
+without it. The epic-sequencer reads that Epic's full PRD, names the architecture decisions its
+requirements drive and the ones it rests on, drops those the SAD settles, searches the other
+Epics' PRDs for the requirements that drive or rest on each remaining decision, reads those
+PRDs in full, and applies the edge test in both directions. It proposes every edge to or from
+the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on
+it. Code refuses any edge that does not touch the Epic, a cycle, an unaccounted standing edge
+and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
 
-Exactly one of the two is required; report the usage and stop otherwise. It writes, unless
-`--propose` is given.
+It writes, unless `--propose` is given.
 
-- `--propose` passes `apply: false`: the workflow reads the summaries as stored, computes the
-  edge diff as a dry run, returns it, and writes nothing — no summary, no edge, no score.
+- `--propose` passes `apply: false`: the workflow computes the edge diff as a dry run,
+  returns it, and writes nothing — no edge, no reason, no score.
 
 ## Dispatch
 
@@ -44,8 +49,7 @@ Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
   workDir:     "<REPO>/.claude/workflow-runs/dependency-assessment/<RUN>",
   sadPath:     "<SAD>",
   projectRoot: "<PROJECT>",
-  mode:        <"portfolio" for --portfolio, otherwise "epic">,
-  epic:        "<epic-id>"   (mode "epic" only),
+  epic:        "<epic-id>",
   apply:       false         (with --propose only)
 }})
 ```
@@ -54,13 +58,16 @@ Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
 
 From the workflow's result:
 
-- `edges` — added, converted, withdrawn and unchanged; the reasoning file (`tiering`); the
-  edges the sequencer was unsure of. When `edges.applied` is false, its `reason`, or the
-  validation defects.
+- `edges` — added, converted, withdrawn and unchanged; every withdrawal in `edges.withdrawn`
+  as `blocker -> blocked` with its reason; the reasoning file (`reasoning`); the edges the
+  sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
+  defects.
+- `assessment.relatedRead` — the Epics whose PRDs the session read in full.
 - With `--propose`: `edges.proposed`, then every edge in `edges.added`, `edges.converted`
-  and `edges.removed` as `blocker -> blocked`, the `unchanged` count, the
-  `protectedHandMadeEdges`, and the files holding the full diff (`diffFile`), the proposed
-  edge set with its reasons (`edgesFile`) and the reasoning (`tiering`).
+  and `edges.removed` as `blocker -> blocked`, `edges.withdrawn` with reasons, the
+  `unchanged` count, the `protectedHandMadeEdges`, and the files holding the full diff
+  (`diffFile`), the proposed edge set with its reasons (`edgesFile`) and the reasoning
+  (`reasoning`).
 - `scoring` — the `wsjf-scoring` result it triggered, reported as that command reports it.
 - `failures` and `dispatchFailures`, verbatim, when present.
 
