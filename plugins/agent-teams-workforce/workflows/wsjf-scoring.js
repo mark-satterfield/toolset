@@ -1,7 +1,7 @@
 export const meta = {
   name: 'wsjf-scoring',
   description:
-    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing. Each Epic's value, time criticality and — for an Epic without Tasks — size are judged from its full PRD, one Epic per session, against the rubric's rungs and the reference jobs, with no other Epic's PRD or values as an input; each Epic's Tasks are sized together, in a session per Epic. Every size is on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. A judgment off the rubric's scale is rejected and reported, and the rest are written. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over every open item, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again; `only` restricts the judging to named items; `dryRun` writes nothing.",
+    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing. Each Epic's value, time criticality and — for an Epic without Tasks — size are judged from its full PRD, one Epic per session, against the rubric's rungs and the reference jobs, with no other Epic's PRD or values as an input; each Epic's Tasks are sized together, in a session per Epic. Every size is on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. A judgment off the rubric's scale is rejected and reported, and the rest are written. A judging session that returns nothing fails the run and names the items it left unjudged; the judgments that did return are still recorded and the arithmetic still runs. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over every open item, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again; `only` restricts the judging to named items; `dryRun` writes nothing.",
   whenToUse: "Scoring after Epics or Tasks are added or changed, or after dependency assessment applies edges; with all and rejudge, re-judging every Epic and Task.",
   phases: [
     { title: "Plan", detail: "fingerprints decide what is judged" },
@@ -150,8 +150,14 @@ function enter(title) {
 //   dryRun?:      boolean,   // compute everything and write nothing to the tracker
 // }
 //
-// Returns: { ok, workDir, dryRun, plan, judging, record, score, failures,
-//            dispatchFailed, dispatchFailures }
+// Returns: { ok, workDir, dryRun, plan, judging, judgingFailed, error?, record, score,
+//            failures, dispatchFailed, dispatchFailures }
+//
+// A judging session that returns nothing fails the run: `ok` is false and
+// `judgingFailed` names the items it left unjudged — the Epic of an Epic session, every
+// Task of a Task group (the group keys are in `judging.task.failedGroups`) — and `error`
+// names them too. The judgments that did return are still recorded and the arithmetic
+// still runs; the unjudged items keep no new value and stay to judge.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
@@ -255,13 +261,15 @@ Return the path you wrote, how many Tasks you judged, and the ids you could not 
   )
 }
 
+// Each job carries the ids of the items it judges, so a session that returns nothing
+// names every item it left unjudged: one Epic, or every Task of one group.
 const jobs = [
-  ...epicIds.map((id) => ({ level: 'epic', key: id, run: () => judgeEpic(id) })),
-  ...taskGroups.map((g) => ({ level: 'task', key: g.key, run: () => judgeTasks(g) })),
+  ...epicIds.map((id) => ({ level: 'epic', key: id, ids: [id], run: () => judgeEpic(id) })),
+  ...taskGroups.map((g) => ({ level: 'task', key: g.key, ids: g.tasks.slice(), run: () => judgeTasks(g) })),
 ]
 const judging = {
-  epic: { sessions: 0, judged: 0, failed: [] },
-  task: { sessions: 0, judged: 0, failed: [] },
+  epic: { sessions: 0, judged: 0, failed: [], failedSessions: 0 },
+  task: { sessions: 0, judged: 0, failed: [], failedGroups: [], failedSessions: 0 },
 }
 for (let i = 0; i < jobs.length; i += JUDGE_CONCURRENCY) {
   const batch = jobs.slice(i, i + JUDGE_CONCURRENCY)
@@ -270,11 +278,17 @@ for (let i = 0; i < jobs.length; i += JUDGE_CONCURRENCY) {
     const out = results[n]
     const tally = judging[job.level]
     tally.sessions += 1
-    if (out) tally.judged += out.judged || 0
-    else tally.failed.push(job.key)
+    if (out) {
+      tally.judged += out.judged || 0
+      return
+    }
+    tally.failedSessions += 1
+    tally.failed.push(...job.ids)
+    if (job.level === 'task') tally.failedGroups.push(job.key)
   })
 }
-log(`Judged ${judging.epic.judged} Epic(s) in ${judging.epic.sessions} session(s) and ${judging.task.judged} Task(s) in ${judging.task.sessions} session(s); ${judging.epic.failed.length + judging.task.failed.length} session(s) failed`)
+const judgingFailed = [...judging.epic.failed, ...judging.task.failed]
+log(`Judged ${judging.epic.judged} Epic(s) in ${judging.epic.sessions} session(s) and ${judging.task.judged} Task(s) in ${judging.task.sessions} session(s); ${judging.epic.failedSessions + judging.task.failedSessions} session(s) failed, leaving ${judgingFailed.length} item(s) unjudged`)
 
 // ── Apply ────────────────────────────────────────────────────────────────────────
 //
@@ -283,8 +297,8 @@ log(`Judged ${judging.epic.judged} Epic(s) in ${judging.epic.sessions} session(s
 // tracker.
 enter('Apply')
 const recordArgs = [`--plan ${shq(planFile)}`]
-if (judging.epic.sessions > judging.epic.failed.length) recordArgs.push(`--epics-dir ${shq(epicDir)}`)
-if (judging.task.sessions > judging.task.failed.length) recordArgs.push(`--tasks-dir ${shq(taskDir)}`)
+if (judging.epic.sessions > judging.epic.failedSessions) recordArgs.push(`--epics-dir ${shq(epicDir)}`)
+if (judging.task.sessions > judging.task.failedSessions) recordArgs.push(`--tasks-dir ${shq(taskDir)}`)
 let recorded = null
 if ((plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0) {
   const out = await runStep('record', cmd('record', `${recordArgs.join(' ')}${dry} --out ${shq(file('record.json'))}`))
@@ -301,12 +315,18 @@ if (score) {
   )
 }
 
+const judgingError = judgingFailed.length
+  ? { error: `judging failed for ${judgingFailed.length} item(s): ${judgingFailed.join(', ')}; their values were not recorded and they stay to judge` }
+  : {}
+
 return {
-  ok: !!score && failures.length === 0,
+  ok: !!score && failures.length === 0 && judgingFailed.length === 0,
   workDir: work,
   dryRun,
   plan,
   judging,
+  judgingFailed,
+  ...judgingError,
   record: recorded,
   score,
   failures,
