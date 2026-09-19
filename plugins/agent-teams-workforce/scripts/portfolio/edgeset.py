@@ -454,9 +454,9 @@ def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set: over the whole portfolio, or every edge to or
-            from `epic`.
-        epic: The one Epic the proposal is scoped to, or None for the whole portfolio.
+        edges: The proposed edge set: every edge to or from `epic`, or, with `epic`
+            None, the owned edges proposed back by the `--owned` repair.
+        epic: The one Epic the proposal covers, or None for the owned-edge repair.
             Scoped, an edge that does not touch it is neither added, converted,
             withdrawn nor re-recorded.
 
