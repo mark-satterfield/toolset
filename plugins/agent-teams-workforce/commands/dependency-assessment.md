@@ -33,6 +33,10 @@ It writes, unless `--propose` is given.
 ## Dispatch
 
 ```bash
+if [ -z "${ATW_SAD_PATH}" ]; then
+  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:dependency-assessment judges against the architecture document (the arc42 SAD) and does not run without it. Set ATW_SAD_PATH in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
+  exit 1
+fi
 REPO="$(git rev-parse --show-toplevel)"
 RUN="$(date -u +%Y%m%dT%H%M%SZ)"
 echo "REPO=$REPO"
@@ -42,8 +46,9 @@ echo "SAD=${ATW_SAD_PATH}"
 echo "PROJECT=${ATW_PROJECT_ROOT}"
 ```
 
-Use the printed values below. Leave `sadPath` or `projectRoot` out when its value printed
-empty.
+When the block prints `REFUSED`, report that line verbatim and stop; dispatch nothing.
+
+Use the printed values below. Leave `projectRoot` out when it printed empty.
 
 ```
 Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {

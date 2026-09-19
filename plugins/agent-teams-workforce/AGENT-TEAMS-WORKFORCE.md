@@ -175,12 +175,12 @@ A composite runs two ways. **On-demand**, a single call drives one unit of work:
 
 ### Project configuration
 
-The plugin knows nothing about the project it is installed in. Everything project-specific reaches it through these environment variables, which the project exports (in its shell profile, or in the environment of whatever launches its sessions). A workflow script has no process access, so the commands and skills that dispatch a workflow read these variables and pass their values as the named arguments; hooks and skill scripts read them directly. A required variable that is unset stops the step that needs it, by name.
+The plugin knows nothing about the project it is installed in. Everything project-specific reaches it through these environment variables, which the project exports (in its shell profile, in the environment of whatever launches its sessions, or, for Claude Code sessions, the `env` block of the project's `.claude/settings.json`). A workflow script has no process access, so the commands and skills that dispatch a workflow read these variables and pass their values as the named arguments; hooks and skill scripts read them directly. A required variable that is unset stops the step that needs it, by name.
 
 | Variable | Meaning | Required | Reaches |
 |---|---|---|---|
 | `ATW_PR_COMMAND` | Absolute path of an executable that, run inside a worktree as `<cmd> --title T --body B`, pushes the current branch and opens its pull request (a PR that already exists for the branch is success) | Yes, for any composite that lands work | `prCommand` on `task-to-deploy`, `bug-fix`, `infra-change` |
-| `ATW_SAD_PATH` | The arc42 Software Architecture Document — a file or a directory of section files | Yes, for elaboration | `sadPath` on `prd-to-spec` and `architecture` |
+| `ATW_SAD_PATH` | The arc42 Software Architecture Document — a file or a directory of section files | Yes, for elaboration, dependency assessment and scoring | `sadPath` on `prd-to-spec` and `architecture`; `sadPath` on `dependency-assessment`, `seed-portfolio` and `wsjf-scoring`, which `/dependency-assessment`, `/seed-portfolio` and `/wsjf-scoring` refuse to dispatch without |
 | `ATW_PRD_DIR` | The directory PRDs live under | Yes, for `/start-prd` and for elaborating an Epic | read by `commands/start-prd.md`, `commands/work-bead.md` |
 | `ATW_FLEET_DIR` | The directory that holds the project's repositories | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
 | `ATW_CONTROL_REPO` | The root repository that holds the tracker; its beads `issue_prefix` is the project's issue prefix | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
