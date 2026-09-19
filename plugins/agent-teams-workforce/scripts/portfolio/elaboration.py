@@ -12,7 +12,7 @@ fails is the refusal:
   computed `wsjf`, because every Task it produces inherits the first two and an Epic's score
   is what orders elaboration;
 * every Epic it depends on has `elaboration_state = done` or is closed, because an Epic
-  edge records design order: an architecture decision this Epic rests on is designed from
+  edge is an architecture dependency: an architecture decision this Epic rests on is designed from
   the requirements of the Epics it depends on first. Its
   dependencies are its `tracks` edges, and its `blocks` edges too, so an Epic edge stored
   as either type holds it; a `blocks` edge onto anything other than an Epic holds it until

@@ -5,7 +5,7 @@ description: >-
   TASK, one agent's work inside it. Cost of Delay is User-Business Value plus Time
   Criticality plus Risk Reduction / Opportunity Enablement, divided by Job Size. RR-OE is
   COMPUTED from transitive reachability over a dependency graph rather than argued from
-  prose — the design-order graph between Epics, where it measures the Epic as an
+  prose — the architecture-dependency graph between Epics, where it measures the Epic as an
   Architectural Enabler, or the build graph between Tasks — and `scripts/wsjf.py` owns every band, the size scale and the child-size roll-up.
   Job Size means the same thing at both levels: the relative amount of work to deliver the
   outcome, judged against the agent pipeline, on one Fibonacci scale, with a plausible
@@ -29,7 +29,7 @@ portfolio must not move the score of an item whose own inputs did not change.
 |---|---|---|
 | What it is | a PRD, a business requirement — it spans repositories, becomes many Tasks, and nobody implements it directly | one agent's work inside one repository |
 | UBV, TC | **judged** from the requirements document | **inherited** from the parent Epic, with its confidence |
-| RR-OE graph edges | DESIGN order — an architecture decision one Epic rests on should be designed from another Epic's requirements first; RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
+| RR-OE graph edges | ARCHITECTURE dependency — an architecture decision one Epic rests on should be designed from another Epic's requirements first; RR-OE measures the Epic as an Architectural Enabler | BUILD order — one Task must be built before another; RR-OE measures how many sibling Tasks it unblocks |
 | Job Size | **judged** as an estimate with a plausible range; once Tasks exist, the plain sum of their sizes | **judged** on the same scale; above 13 is a decomposition fault |
 
 The RR-OE bands differ by level and live in `scripts/wsjf.py`, with the size scale and the
@@ -130,8 +130,8 @@ this step, never re-judged.
 - **Epic** — the Architectural Enabler measure. An Epic whose requirements should drive an
   architecture decision many other Epics are designed on — sign-up and sign-in driving the
   canonical identity pattern — scores high. An Epic designed on top of a pattern other
-  requirements drive — password reset on identity — scores low. The edges are design-order
-  edges (`agent-teams-workforce:epic-sequencing`), never build edges.
+  requirements drive — password reset on identity — scores low. The edges are architecture
+  dependencies (`agent-teams-workforce:epic-sequencing`), never build edges.
 - **Task** — how many Tasks it unblocks: the edges are ordinary build dependencies between
   Tasks, known once the architecture is settled.
 

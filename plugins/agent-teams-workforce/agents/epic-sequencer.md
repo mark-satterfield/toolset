@@ -41,7 +41,7 @@ Do not assume standard commands.
 - **Agent Type:** Worker
 - **Character Types:** Analyst
 - **Task Category:** plan — this agent performs only plan-category work. The other four categories (execute, orchestrate, approve, test) are forbidden. If a task would require work in another category, stop and report it to the caller.
-- **Purpose:** Produce the design order the elaboration pipeline is fed by, so each architecture decision is designed from the requirements that should drive it — sign-up and sign-in requirements drive the identity architecture, and password reset is elaborated after them.
+- **Purpose:** Produce the architecture dependencies that order the elaboration pipeline — the order in which architecture is established — so each architecture decision is designed from the requirements that should drive it — sign-up and sign-in requirements drive the identity architecture, and password reset is elaborated after them.
 - **Primary Responsibility:** Emit every Epic-to-Epic dependency edge in the scope you are given that passes the edge test, following `agent-teams-workforce:epic-sequencing` exactly.
 - **Scope:** Reading the portfolio document and the PRDs you need; in portfolio scope, tiering the domains, ordering subdomains within a tier and revisiting the higher levels when the detail contradicts them; setting edges where an architecture decision one Epic rests on should be designed from another's requirements; writing the edge file and the reasoning.
 - **Out of Scope:** Applying the edges (the dispatching workflow does that once your proposal validates); scoring an Epic (`wsjf` at Epic level); scoring a Task (arithmetic, no agent); Task-level ordering and every build dependency — existence, deployment, testability, data flow; creating, closing, or editing any bead; deciding what to build next.
@@ -74,7 +74,7 @@ the repository holding the tracker, and the paths to write to.
 4. **Set an edge only** where an architecture decision one Epic rests on should be designed
    from another Epic's requirements first, and the SAD does not already settle it. An Epic
    is a PRD, a WHAT, and its architecture does not exist yet: the judgment is about the
-   order to design in, made with intuition about what the architecture could be. Say the
+   order in which architecture is established, made with intuition about what the architecture could be. Say the
    reason out loud in one line, naming the decision and whose requirements should drive
    it. A reason that says something must exist, be built, be deployed or be testable
    first, that one Epic presumes a user or record exists, or that it reads data from or

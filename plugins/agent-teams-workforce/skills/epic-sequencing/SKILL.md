@@ -3,7 +3,7 @@ name: epic-sequencing
 description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it in either scope:
   one Epic against the portfolio, or the whole portfolio outside-in. An Epic is a PRD, a
-  business requirement, and an edge is a judgment about DESIGN order: it exists exactly
+  business requirement, and an edge is an ARCHITECTURE dependency, a judgment about the order in which architecture is established: it exists exactly
   where an architecture decision one Epic rests on should be designed from another Epic's
   requirements first, and the SAD does not already settle it. Edges decide
   ELIGIBILITY (what may be elaborated at all); WSJF decides PRIORITY among what is
@@ -79,7 +79,7 @@ Derive the domains from the Epics in the portfolio — their titles, their scope
 documents they name. The set of Epics is the only description of the domains there is,
 and it changes between runs, so the grouping is derived fresh each time.
 
-Order broad tiers by design order: which architecture decisions the rest of the portfolio
+Order broad tiers by the order in which architecture is established: which architecture decisions the rest of the portfolio
 will be designed on top of, and whose requirements should drive them. Roughly: the
 requirements that drive decisions cutting across every domain, then the requirements that
 drive a domain's core decisions — sign-up and sign-in driving identity — then the
