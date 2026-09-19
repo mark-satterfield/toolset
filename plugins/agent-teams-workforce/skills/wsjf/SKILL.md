@@ -56,7 +56,7 @@ dimension cannot be computed and score nothing — never substitute a judgment o
 
 ## 1. User-Business Value and Time Criticality
 
-### At Epic level — judge them, and judge the whole portfolio in one session
+### At Epic level — judge them from the full requirements document, one Epic at a time
 
 UBV asks what is lost if this requirement is never delivered:
 
@@ -89,15 +89,11 @@ Importance is UBV. Do not inflate TC because an item feels important. Work with 
 date, no customers and no external commitment has little for TC to measure; say so in the
 confidence rather than manufacturing urgency.
 
-These two are judged against descriptive rungs, and descriptive rungs drift: one session's
-"significant" is another's "high". An agent holding a subset cannot see where it has put
-the line, so its 3 and another agent's 2 mean nothing to each other, and the ranking that
-results is an artifact of how the work was divided. **Judge the portfolio whole, in one
-session, or not at all.** The session holds the portfolio through each Epic's stored
-summary (`epic_summary`, see `agent-teams-workforce:beads-contract`) and reads in full the
-requirements documents of the Epics it judges. Where those are too many to read in full,
-it judges from the summaries and opens the full document for each one whose UBV, TC or Job
-Size its summary cannot support.
+Each Epic is judged on its own, from its full requirements document, against the rungs
+above and the reference jobs. The rungs are the calibration: an Epic is placed on them by
+what its own document says, not by where other Epics sit. No condensed version of the
+document, no other Epic's document and no other Epic's values are an input, so adding an
+Epic never moves another Epic's judged values.
 
 Nothing here is scored from calibration guidance a caller supplies. The rungs above, the
 requirements document and the dependency graph are the whole input.
@@ -209,8 +205,7 @@ comparison.
   `wsjf_size` on each of its Tasks); the set grows as Epics are elaborated.
 - **Until any exist**, judge knowledge and uncertainty from what already exists: the
   architecture document, the existing code, and the other artifacts that show what is
-  already decided or built and what must be decided or built from scratch. Compare items
-  with one another across the portfolio.
+  already decided or built and what must be decided or built from scratch.
 
 ### Range and confidence
 
@@ -390,8 +385,8 @@ no character a shell would mis-split: numbers, ISO timestamps, ids and kebab-cas
 - Overriding a computed RR-OE that looks wrong instead of reporting the missing edge.
 - Re-deriving UBV or TC from a Task's own description. They are inherited, always.
 - Inventing a value for a Task whose parent is unscored.
-- Splitting a portfolio across sessions, or judging one item in isolation against no
-  portfolio at all.
+- Judging an Epic from anything but its own full requirements document: a condensed
+  version, an excerpt, or other Epics' values.
 - Accepting calibration bands from a caller in place of the ones in this rubric.
 - Sizing in calendar time, human effort or repository counts instead of relative work
   against the agent pipeline.

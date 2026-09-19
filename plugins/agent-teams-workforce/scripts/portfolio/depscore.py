@@ -24,8 +24,10 @@ run these. Every judged step between them is an agent; everything here is code.
                       assessment read. `--owned` proposes the owned edge set back, which
                       only adds and converts, and proposes no edge
     score-plan        what this scoring run judges, with the fingerprints that decide it
-    judge-input       the whole portfolio at one level, as one judging session reads it
-    record            write judged values with the fingerprint they were judged from
+    judge-input       the items one level judges, with the PRD of each Epic to judge as a
+                      file, and the sessions: one Epic each, or one Epic's Tasks each
+    record            write judged values with the fingerprint they were judged from, from
+                      every judgment file in `--epics-dir` and `--tasks-dir`
     score             recompute every Epic's and Task's WSJF and write what changed
     elaboration-start whether one Epic may be elaborated now: open, scored, every Epic it
                       depends on elaborated, and ready or in progress with no other
@@ -238,6 +240,27 @@ def _entries(path: Path | None, key: str) -> list[dict]:
     return [e for e in entries if isinstance(e, dict)]
 
 
+def _dir_entries(directory: Path | None, key: str) -> list[dict]:
+    """The per-item records from every output file in a directory.
+
+    Args:
+        directory: The directory of session output files, or None when there is none.
+        key: The list's key in each file.
+
+    Returns:
+        The records, file by file in name order.
+
+    Raises:
+        ScoringError: `directory` is not a directory.
+    """
+    if directory is None:
+        return []
+    if not directory.is_dir():
+        msg = f"{directory} is not a directory"
+        raise ScoringError(msg)
+    return [e for path in sorted(directory.glob("*.json")) for e in _entries(path, key)]
+
+
 def _dry_run_flag(parser: argparse.ArgumentParser) -> None:
     """Give a writing subcommand its `--dry-run` flag.
 
@@ -397,22 +420,37 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="judge again the existing values of the items included",
     )
+    que.add_argument(
+        "--only",
+        default=None,
+        help="judge only these open Epics and Tasks; the arithmetic is unaffected",
+    )
 
     jin = sub.add_parser(
-        "judge-input", help="the portfolio one judging session reads", parents=[common]
+        "judge-input", help="the items to judge at one level", parents=[common]
     )
     jin.add_argument("--plan", type=Path, required=True, help="the `score-plan` output")
     jin.add_argument("--level", choices=("epic", "task"), required=True)
     jin.add_argument(
-        "--prd-dir", type=Path, default=None, help="write each open Epic's PRD here"
+        "--prd-dir", type=Path, default=None, help="write each Epic to judge's PRD here"
     )
 
     rec = sub.add_parser(
         "record", help="write judged values with their fingerprints", parents=[common]
     )
     rec.add_argument("--plan", type=Path, required=True, help="the `score-plan` output")
-    rec.add_argument("--epics", type=Path, default=None, help="the Epic judgments")
-    rec.add_argument("--tasks", type=Path, default=None, help="the Task size judgments")
+    rec.add_argument(
+        "--epics-dir",
+        type=Path,
+        default=None,
+        help="a directory whose every `*.json` file holds Epic judgments",
+    )
+    rec.add_argument(
+        "--tasks-dir",
+        type=Path,
+        default=None,
+        help="a directory whose every `*.json` file holds Task size judgments",
+    )
     _dry_run_flag(rec)
 
     sco = sub.add_parser(
@@ -505,7 +543,8 @@ def run(args: argparse.Namespace) -> dict:
     if command == "assess-context":
         return head | assess_context(graph, args.epic, args.dir)
     if command == "score-plan":
-        return head | plan(graph, include_all=args.all, rejudge=args.rejudge)
+        only = split_ids(args.only) if args.only else None
+        return head | plan(graph, include_all=args.all, rejudge=args.rejudge, only=only)
     if command == "judge-input":
         return head | judge_input(
             graph, _read_json(args.plan), args.level, prd_dir=args.prd_dir
@@ -556,8 +595,8 @@ def run(args: argparse.Namespace) -> dict:
         return head | result | {"summary": summary}
     if command == "record":
         judgments = {
-            "epic": _entries(args.epics, "scores"),
-            "task": _entries(args.tasks, "scores"),
+            "epic": _dir_entries(args.epics_dir, "scores"),
+            "task": _dir_entries(args.tasks_dir, "scores"),
         }
         return head | record(graph, _read_json(args.plan), judgments, writer)
     if command == "elaboration-start":

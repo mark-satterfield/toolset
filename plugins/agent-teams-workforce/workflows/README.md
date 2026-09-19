@@ -21,7 +21,7 @@ Until that automation lands:
 - **Portfolio** — three workflows over the Epic portfolio, each runnable alone, sharing `../scripts/portfolio/depscore.py`:
   - `epic-summaries.js` keeps a short stored summary on every open Epic, regenerated only when its PRD changes, so a session holds the whole portfolio through the summaries and reads in full only the Epics it assesses or judges.
   - `dependency-assessment.js` writes Epic dependency edges — architecture dependencies: which requirements an architecture decision is designed from first — and nothing else — for one new or changed Epic at a time: it reads that Epic's full PRD, searches the other Epics' PRDs for the ones related through an architecture decision the SAD leaves open, reads those in full, and writes only that Epic's edges, each with its reason — then triggers `wsjf-scoring.js`.
-  - `wsjf-scoring.js` reads the edges from beads and never sets one; it judges value, urgency and size only where the source content changed or a value is missing, then recomputes every WSJF over the whole portfolio.
+  - `wsjf-scoring.js` reads the edges from beads and never sets one; it judges value, urgency and size only where the source content changed or a value is missing — each Epic from its full PRD, one Epic per session, and each Epic's Tasks in a session per Epic — then recomputes every WSJF over the whole portfolio.
 - **Routing & gates** — `route-build.js`, `route-elaboration.js`, `bug-triage.js`, `gate-enforce.js`, `gate-constitutional.js`.
 - **Docs** — `ROUTING.md` (how a bead is routed to a composite), `../AGENT-TEAMS-WORKFORCE.md` (the full workforce/pipeline reference).
 

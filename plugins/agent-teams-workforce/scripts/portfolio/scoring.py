@@ -49,6 +49,9 @@ JUDGED_HASH_KEY = "wsjf_content_hash"
 #: Metadata that changes on every write and so never, by itself, justifies one.
 VOLATILE_KEYS = frozenset({"wsjf_calculated_at"})
 
+#: The top rung of User-Business Value and Time Criticality in the `wsjf` rubric.
+VALUE_TOP = 20
+
 #: The judged size keys. `record` writes them; `score` reads them and never writes them.
 ESTIMATE_KEY = "wsjf_size_estimate"
 SIZE_JUDGED_KEYS = (
@@ -231,26 +234,45 @@ def _disposition(state: str, *, include_all: bool, rejudge: bool) -> str:
     return "adopt" if state == "unfingerprinted" else "keep"
 
 
-def plan(graph: Graph, *, include_all: bool, rejudge: bool) -> dict:
+def plan(
+    graph: Graph,
+    *,
+    include_all: bool,
+    rejudge: bool,
+    only: list[str] | None = None,
+) -> dict:
     """Decide which judged inputs this run judges, and which stored ones it adopts.
 
     Args:
         graph: The tracker graph, read with descriptions.
         include_all: Include items that already have a value.
         rejudge: Judge again the existing values of the items included.
+        only: Restrict what is judged and adopted to these open Epics and Tasks, or None
+            for every one. The fingerprints still cover every open item, and the
+            arithmetic is unaffected.
 
     Returns:
         The Epics and Tasks to judge with a reason each, the judged values to adopt,
         every open Epic's and Task's fingerprint, and a summary of counts.
+
+    Raises:
+        ScoringError: An id in `only` is not an open Epic or Task.
     """
     prints = fingerprints(graph.records)
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
+    ids = {e.id for e in epics} | {t.id for t in tasks}
+    wanted = None if only is None else set(only)
+    if wanted is not None and wanted - ids:
+        msg = f"not an open Epic or Task: {', '.join(sorted(wanted - ids))}"
+        raise ScoringError(msg)
     adopt: list[str] = []
     states: dict[str, int] = {}
     judge: dict[str, list[dict]] = {"epics": [], "tasks": []}
     for level, beads in (("epics", epics), ("tasks", tasks)):
         for bead in beads:
+            if wanted is not None and bead.id not in wanted:
+                continue
             if level == "epics":
                 required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
                 if not _tasks_of(graph, bead):
@@ -268,21 +290,23 @@ def plan(graph: Graph, *, include_all: bool, rejudge: bool) -> dict:
                     epic = graph.epic_of(bead.id)
                     entry["epic"] = epic.id if epic else None
                 judge[level].append(entry)
-    ids = {e.id for e in epics} | {t.id for t in tasks}
+    summary: dict[str, Any] = {
+        "includeAll": include_all,
+        "rejudge": rejudge,
+        "openEpics": len(epics),
+        "openTasks": len(tasks),
+        "states": states,
+        "epicsToJudge": len(judge["epics"]),
+        "tasksToJudge": len(judge["tasks"]),
+        "toAdopt": len(adopt),
+    }
+    if wanted is not None:
+        summary["only"] = sorted(wanted)
     return {
         "judge": judge,
         "adopt": adopt,
         "fingerprints": {i: prints[i] for i in sorted(ids) if i in prints},
-        "summary": {
-            "includeAll": include_all,
-            "rejudge": rejudge,
-            "openEpics": len(epics),
-            "openTasks": len(tasks),
-            "states": states,
-            "epicsToJudge": len(judge["epics"]),
-            "tasksToJudge": len(judge["tasks"]),
-            "toAdopt": len(adopt),
-        },
+        "summary": summary,
     }
 
 
@@ -340,72 +364,68 @@ def reference_jobs(graph: Graph) -> list[dict]:
 def judge_input(
     graph: Graph, the_plan: dict, level: str, prd_dir: Path | None = None
 ) -> dict:
-    """The material one judging session reads: the whole portfolio at one level.
+    """The material the judging sessions at one level read: the items to judge, and no other.
 
-    Every open item is included, whether or not it is judged in this run, because the
-    rubric judges against descriptive rungs and reference jobs, and a session can only
-    place an item by comparing it with the rest. Items not being judged carry their
-    current judged values as that comparison set; items being judged carry none, so the
-    session judges them from their content. The reference jobs — elaborated Epics with
-    their original estimate and refined size — are the size comparison at both levels.
-    No computed value is included: RR-OE, reachability and WSJF are arithmetic over the
-    graph and are not the session's to see or set.
-
-    A Task carries its own description. An Epic carries no PRD text: the session reads the
-    portfolio through the Epic summaries, and with `prd_dir` every Epic's PRD is written
-    to a file the item names, for the session to read in full where it judges.
+    Each Epic is judged in a session of its own, from its own full PRD, against the
+    rubric's rungs and the reference jobs; each Epic's Tasks are sized together in a
+    session per Epic, and every Task with no Epic in a session of its own. No item carries
+    another item's judged values, and no Epic carries another Epic's PRD, so adding an item
+    never moves another item's judgment. The reference jobs — elaborated Epics with their
+    original estimate and refined size — are the size comparison at both levels. No
+    computed value is included: RR-OE, reachability and WSJF are arithmetic over the graph
+    and are not a session's to see or set.
 
     Args:
         graph: The tracker graph, read with descriptions.
         the_plan: The run's plan, from `plan`.
         level: `epic` or `task`.
-        prd_dir: Where to write each open Epic's PRD, or None.
+        prd_dir: Where to write the PRD of each Epic to judge, or None.
 
     Returns:
-        The items, each flagged `judge` with its reason when it is to be judged, and the
-        reference jobs.
+        The items to judge, each with its reason; the reference jobs; and a summary naming
+        the sessions: `ids`, one Epic per session, or `groups`, a session each, every
+        group `{key, epic, tasks}` — an Epic's Tasks keyed by the Epic, or one Task with no
+        Epic keyed by itself with `epic` null.
     """
     wanted = {j["id"]: j["reason"] for j in the_plan["judge"][f"{level}s"]}
-    beads = _open(graph, level)
+    beads = [b for b in _open(graph, level) if b.id in wanted]
     paths = write_prds(beads, prd_dir) if level == "epic" and prd_dir else {}
     items = []
+    groups: dict[str, dict[str, Any]] = {}
     for bead in beads:
         entry: dict[str, Any] = {
             "id": bead.id,
             "title": bead.title,
-            "judge": bead.id in wanted,
-            "reason": wanted.get(bead.id),
+            "reason": wanted[bead.id],
         }
         if level == "epic":
             entry["prdPath"] = paths.get(bead.id)
-            has_tasks = bool(_tasks_of(graph, bead))
-            entry["hasTasks"] = has_tasks
-            entry["current"] = (
-                None
-                if entry["judge"]
-                else {
-                    "userBusinessValue": _int(bead.metadata.get("wsjf_ubv")),
-                    "timeCriticality": _int(bead.metadata.get("wsjf_tc")),
-                    "confidence": _int(bead.metadata.get("wsjf_confidence")),
-                    **({} if has_tasks else _size_of(bead)),
-                }
-            )
+            entry["hasTasks"] = bool(_tasks_of(graph, bead))
         else:
             entry["description"] = bead.description
             epic = graph.epic_of(bead.id)
             entry["epic"] = {"id": epic.id, "title": epic.title} if epic else None
-            entry["current"] = None if entry["judge"] else _size_of(bead)
+            key = epic.id if epic else bead.id
+            group = groups.setdefault(
+                key, {"key": key, "epic": epic.id if epic else None, "tasks": []}
+            )
+            group["tasks"].append(bead.id)
         items.append(entry)
     jobs = reference_jobs(graph)
+    summary: dict[str, Any] = {
+        "items": len(items),
+        "toJudge": len(items),
+        "referenceJobs": len(jobs),
+    }
+    if level == "epic":
+        summary["ids"] = [item["id"] for item in items]
+    else:
+        summary["groups"] = list(groups.values())
     return {
         "level": level,
         "items": items,
         "referenceJobs": jobs,
-        "summary": {
-            "items": len(items),
-            "toJudge": len(wanted),
-            "referenceJobs": len(jobs),
-        },
+        "summary": summary,
     }
 
 
@@ -484,6 +504,27 @@ def _size_pairs(one: dict, bead_id: str) -> dict[str, str]:
     }
 
 
+def _value(record: dict, key: str, bead_id: str) -> int:
+    """Read one judged UBV or TC as an integer on the rubric's scale.
+
+    Args:
+        record: The judgment for one item.
+        key: The field.
+        bead_id: The item, for the error message.
+
+    Returns:
+        The value.
+
+    Raises:
+        ScoringError: The value is missing or outside 1 to the rubric's top rung.
+    """
+    value = _positive(record, key, bead_id)
+    if value > VALUE_TOP:
+        msg = f"{bead_id}: `{key}` tops out at {VALUE_TOP}, got {record.get(key)!r}"
+        raise ScoringError(msg)
+    return value
+
+
 def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, str]:
     """The metadata one judgment writes, with every judged value validated.
 
@@ -497,12 +538,12 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, 
         The judged keys and their values, without the fingerprint.
 
     Raises:
-        ScoringError: A judged value is missing or not a positive integer.
+        ScoringError: A judged value is missing or off the rubric's scale.
     """
     pairs: dict[str, str] = {}
     if level == "epic":
-        pairs["wsjf_ubv"] = str(_positive(one, "userBusinessValue", bead.id))
-        pairs["wsjf_tc"] = str(_positive(one, "timeCriticality", bead.id))
+        pairs["wsjf_ubv"] = str(_value(one, "userBusinessValue", bead.id))
+        pairs["wsjf_tc"] = str(_value(one, "timeCriticality", bead.id))
         pairs["wsjf_confidence"] = str(_percent(one, "confidence", bead.id))
         if not _tasks_of(graph, bead):
             pairs |= _size_pairs(one, bead.id)
@@ -517,9 +558,11 @@ def record(
     """Write judged values, each with the fingerprint of the content it was judged from.
 
     The plan's adopted values get their fingerprint recorded beside them. Only items the
-    plan named for judging are written; a judgment for anything else is refused, because
-    it was not asked for and carries no fingerprint from this run. Every judgment is
-    validated before anything is written, so a bad value refuses the whole record.
+    plan named for judging are written. A judgment for an item the plan did not name, or
+    two judgments for one item, refuses the whole record, because the judgments no longer
+    say which value belongs to which item. Every judgment is validated before anything is
+    written; one with a value off the rubric's scale is not written and is listed under
+    `rejected` with its reason, and the others are written.
 
     Args:
         graph: The tracker graph.
@@ -528,18 +571,29 @@ def record(
         writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
-        What was written, what the plan asked for and did not receive, a summary, and —
-        in a dry run — every write in order.
+        What was written, what was rejected and why, what the plan asked for and did not
+        receive, a summary, and — in a dry run — every write in order.
 
     Raises:
-        ScoringError: A judgment names an item outside the plan or carries a bad value.
+        ScoringError: A judgment names an item outside the plan, or two judgments name
+            one item.
     """
     prints = the_plan["fingerprints"]
     missing: list[str] = []
+    rejected: list[dict[str, str]] = []
     pending: list[tuple[Bead, dict[str, str]]] = []
     for level in ("epic", "task"):
         asked = {j["id"] for j in the_plan["judge"][f"{level}s"]}
-        got = {str(r.get("id")): r for r in judgments.get(level, [])}
+        got: dict[str, dict] = {}
+        twice: set[str] = set()
+        for one in judgments.get(level, []):
+            bead_id = str(one.get("id"))
+            if bead_id in got:
+                twice.add(bead_id)
+            got[bead_id] = one
+        if twice:
+            msg = f"{level} judged more than once: {', '.join(sorted(twice))}"
+            raise ScoringError(msg)
         stray = sorted(set(got) - asked)
         if stray:
             msg = (
@@ -552,9 +606,12 @@ def record(
             if bead is None:
                 missing.append(bead_id)
                 continue
-            pairs = {JUDGED_HASH_KEY: prints.get(bead_id, "")}
-            pairs |= _judged_pairs(graph, level, bead, got[bead_id])
-            pending.append((bead, pairs))
+            try:
+                judged = _judged_pairs(graph, level, bead, got[bead_id])
+            except ScoringError as exc:
+                rejected.append({"id": bead_id, "level": level, "reason": str(exc)})
+                continue
+            pending.append((bead, {JUDGED_HASH_KEY: prints.get(bead_id, "")} | judged))
     written = [bead.id for bead, pairs in pending if _write(bead, pairs, writer)]
     adopted: list[str] = []
     for bead_id in the_plan.get("adopt", []):
@@ -566,12 +623,14 @@ def record(
         "dryRun": writer.dry_run,
         "written": written,
         "adopted": adopted,
+        "rejected": rejected,
         "missing": missing,
         "planned": writer.planned,
         "summary": {
             "dryRun": writer.dry_run,
             "written": len(written),
             "adopted": len(adopted),
+            "rejected": len(rejected),
             "missing": len(missing),
         },
     }

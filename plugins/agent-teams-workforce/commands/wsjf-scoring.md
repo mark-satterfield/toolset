@@ -11,13 +11,14 @@ by dispatching the `wsjf-scoring` workflow. The workflow does all of it; this co
 resolves its arguments, dispatches it, and reports.
 
 Scoring reads the dependency edges from beads and never sets one. A model judges only
-values that are missing or whose source content changed; then the arithmetic runs over the
-whole portfolio and only changed values are written.
+values that are missing or whose source content changed: each Epic from its full PRD, one
+Epic per session, and each Epic's Tasks together, in a session per Epic. Then the
+arithmetic runs over the whole portfolio and only changed values are written.
 
 - `--all` includes items that already have a value.
 - `--rejudge` judges the existing values of the included items again.
 
-Together they re-judge the whole portfolio. It writes.
+Together they re-judge every Epic and Task. It writes.
 
 ## Dispatch
 
@@ -52,9 +53,13 @@ Anything else in `$ARGUMENTS` is ignored.
 
 From the workflow's result:
 
-- `summaries` — how many Epic summaries were due and written.
 - `plan` — how many Epics and Tasks were judged, the state counts (`missing`, `changed`,
   `unfingerprinted`, `current`), and how many stored values were adopted.
+- `judging` — per level, the sessions run, the items judged, and the ids of the sessions
+  that failed.
+- `record` — values written and adopted; `rejected`, each judgment refused for a value off
+  the rubric's scale, named with its reason from `<workDir>/record.json`; and `missing`,
+  what the plan asked for and no session returned.
 - `score` — Epics and Tasks scored and written, and the counts of unscored, incomplete and
   outside-range items. Name them from `<workDir>/score.json`: a Task with no inherited value
   sits under an unscored Epic or under no Epic; an `incomplete` Epic has Tasks with no size.

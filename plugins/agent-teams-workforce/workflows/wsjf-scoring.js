@@ -1,13 +1,12 @@
 export const meta = {
   name: 'wsjf-scoring',
   description:
-    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing: ONE session judges Epic value, time criticality and — for an Epic without Tasks — size, holding the whole portfolio through the Epic summaries and reading in full the PRDs of the Epics it judges; ONE session judges Task sizes; every size on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over the WHOLE portfolio, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again.",
-  whenToUse: "Scoring after Epics or Tasks are added or changed, or after dependency assessment applies edges; with all and rejudge, re-judging the whole portfolio.",
+    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing. Each Epic's value, time criticality and — for an Epic without Tasks — size are judged from its full PRD, one Epic per session, against the rubric's rungs and the reference jobs, with no other Epic's PRD or values as an input; each Epic's Tasks are sized together, in a session per Epic. Every size is on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. A judgment off the rubric's scale is rejected and reported, and the rest are written. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over every open item, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again; `only` restricts the judging to named items; `dryRun` writes nothing.",
+  whenToUse: "Scoring after Epics or Tasks are added or changed, or after dependency assessment applies edges; with all and rejudge, re-judging every Epic and Task.",
   phases: [
-    { title: "Summaries", detail: "bring the Epic summaries current" },
     { title: "Plan", detail: "fingerprints decide what is judged" },
-    { title: "Judge", detail: "Epic value and size, and Task size, concurrently" },
-    { title: "Apply", detail: "judged values, then the whole-portfolio arithmetic" },
+    { title: "Judge", detail: "a session per Epic, and a session per Epic's Tasks" },
+    { title: "Apply", detail: "judged values, then the arithmetic over every open item" },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -140,16 +139,18 @@ function enter(title) {
 }
 
 // args: {
-//   repoPath:     string,   // absolute path of the repository whose `bd` tracker is scored
-//   pluginRoot:   string,   // absolute path of this plugin's root
-//   workDir:      string,   // absolute path of a directory for this run's files; one per run
-//   sadPath?:     string,   // the arc42 SAD (ATW_SAD_PATH): what already exists informs size
-//   projectRoot?: string,   // the project root (ATW_PROJECT_ROOT), likewise
-//   all?:         boolean,  // include items that already have a value
-//   rejudge?:     boolean,  // judge again the existing values of the items included
+//   repoPath:     string,    // absolute path of the repository whose `bd` tracker is scored
+//   pluginRoot:   string,    // absolute path of this plugin's root
+//   workDir:      string,    // absolute path of a directory for this run's files; one per run
+//   sadPath?:     string,    // the arc42 SAD (ATW_SAD_PATH): what already exists informs size
+//   projectRoot?: string,    // the project root (ATW_PROJECT_ROOT), likewise
+//   all?:         boolean,   // include items that already have a value
+//   rejudge?:     boolean,   // judge again the existing values of the items included
+//   only?:        string[],  // judge only these open Epics and Tasks
+//   dryRun?:      boolean,   // compute everything and write nothing to the tracker
 // }
 //
-// Returns: { ok, workDir, summaries, plan, judging, record, score, failures,
+// Returns: { ok, workDir, dryRun, plan, judging, record, score, failures,
 //            dispatchFailed, dispatchFailures }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
@@ -158,53 +159,51 @@ const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a
 if (missingArgs.length) {
   return { ok: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
 }
+const ID = /^[A-Za-z0-9._-]+$/
+const only = a.only == null ? [] : a.only
+if (!Array.isArray(only) || !only.every((id) => typeof id === 'string' && ID.test(id))) {
+  return { ok: false, error: '`only` must be a list of bead ids' }
+}
+const dryRun = a.dryRun === true
 const repo = a.repoPath.replace(/\/+$/, '')
 const work = a.workDir.replace(/\/+$/, '')
 const DS = `${a.pluginRoot.replace(/\/+$/, '')}/scripts/portfolio/depscore.py`
 const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
-const flags = `${a.all === true ? '--all ' : ''}${a.rejudge === true ? '--rejudge ' : ''}`
-
-// ── Summaries ────────────────────────────────────────────────────────────────────
-//
-// The Epic judge reads the portfolio through the Epic summaries, so they are brought
-// current first. An Epic left without one is read from its PRD instead.
-enter('Summaries')
-const summaries = await workflow('agent-teams-workforce:epic-summaries', {
-  repoPath: repo,
-  pluginRoot: a.pluginRoot,
-  workDir: file('summaries'),
-  sadPath: a.sadPath,
-})
+const flags = `${a.all === true ? '--all ' : ''}${a.rejudge === true ? '--rejudge ' : ''}${only.length ? `--only ${shq(only.join(','))} ` : ''}`
+const dry = dryRun ? ' --dry-run' : ''
+const stop = (error, extra) => ({ ok: false, workDir: work, dryRun, error, ...extra, failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() })
 
 // ── Plan ─────────────────────────────────────────────────────────────────────────
 enter('Plan')
 const planFile = file('score-plan.json')
 const planned = await runStep('score-plan', cmd('score-plan', `${flags}--out ${shq(planFile)}`))
-if (!planned) {
-  return { ok: false, workDir: work, summaries, error: 'the plan could not be computed; nothing was judged or written', failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() }
-}
+if (!planned) return stop('the plan could not be computed; nothing was judged or written')
 const plan = planned.summary || {}
 log(`Plan: ${plan.epicsToJudge || 0} Epic(s) and ${plan.tasksToJudge || 0} Task(s) to judge, ${plan.toAdopt || 0} stored value(s) to adopt`)
-const portfolioFile = file('portfolio.md')
-const judgeFiles = {}
-await parallel(
-  ['epic', 'task']
-    .filter((level) => (level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)
-    .map((level) => async () => {
-      const path = file(`judge-input-${level}.json`)
-      const ok = await runStep(`judge-input:${level}`, cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(file('prd'))}` : ''} --out ${shq(path)}`))
-      if (!ok) return
-      if (level === 'epic' && !(await runStep('portfolio', cmd('portfolio', `--markdown ${shq(portfolioFile)}`)))) return
-      judgeFiles[level] = path
-    })
-)
+
+const prdDir = file('prd')
+const inputs = {}
+for (const level of ['epic', 'task']) {
+  if (!((level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)) continue
+  const path = file(`judge-input-${level}.json`)
+  const out = await runStep(`judge-input:${level}`, cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(path)}`))
+  if (out) inputs[level] = { path, summary: out.summary || {} }
+}
+const epicIds = inputs.epic && Array.isArray(inputs.epic.summary.ids) ? inputs.epic.summary.ids.filter((id) => typeof id === 'string' && ID.test(id)) : []
+const taskGroups = inputs.task && Array.isArray(inputs.task.summary.groups)
+  ? inputs.task.summary.groups.filter((g) => g && typeof g.key === 'string' && ID.test(g.key) && Array.isArray(g.tasks) && g.tasks.length)
+  : []
+if (inputs.epic && epicIds.length !== plan.epicsToJudge) {
+  return stop(`the plan names ${plan.epicsToJudge} Epic(s) to judge and the judge input lists ${epicIds.length}; nothing was judged or written`, { plan })
+}
 
 // ── Judge ────────────────────────────────────────────────────────────────────────
 //
-// The two judging sessions read different inputs and write different files, so they run
-// concurrently. Neither writes to the tracker.
+// A session per Epic, and a session per Epic's Tasks. Each writes its own file and none
+// writes to the tracker, so they run concurrently, JUDGE_CONCURRENCY at a time.
 enter('Judge')
+const JUDGE_CONCURRENCY = 6
 const JUDGE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -215,51 +214,66 @@ const JUDGE_SCHEMA = {
     unscored: { type: 'array', items: { type: 'string' } },
   },
 }
-const epicJudgments = file('epic-judgments.json')
-const taskJudgments = file('task-judgments.json')
+const epicDir = file('judgments/epic')
+const taskDir = file('judgments/task')
 
-const JUDGE_RULES = `THE INPUT. Every open item at this level is in the file, whether or not you judge it. Items with \`judge: true\` are yours to judge. Items with \`judge: false\` carry their \`current\` judged values: they are the comparison set that tells you where the rungs sit, and you do not change them. Judge each item from its own content against the rubric's rungs.
-
-JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the file's \`referenceJobs\` — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists: the architecture document${a.sadPath ? ` (${a.sadPath})` : ''}, the existing code${a.projectRoot ? ` (under ${a.projectRoot})` : ''}, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
+const JUDGE_RULES = `JOB SIZE follows the rubric's "Job Size" section, which is the same at both levels: the relative amount of work to deliver the outcome, judged against the agent pipeline as the reference capability — not calendar time, not human effort, not a count of repositories. Weigh volume, complexity, knowledge and uncertainty, as the rubric defines them, together to place the item; never score them separately or add them up. The numbers express approximate relative magnitude, not measured ratios or time commitments, and an item's tracking type does not decide its size: an Epic and a Task can both be 5. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, and upward). Place each size by comparison with the \`referenceJobs\` in the judge-input file — elaborated Epics, each with its original estimate and its refined size, the sum of its Tasks — and name the comparison in the rationale. When \`referenceJobs\` is empty, judge knowledge and uncertainty from what already exists: the architecture document${a.sadPath ? ` (${a.sadPath})` : ''}, the existing code${a.projectRoot ? ` (under ${a.projectRoot})` : ''}, and the other artifacts that show what is already decided or built and what must be decided or built from scratch. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the estimate inside it, and \`sizeConfidence\`, an integer percent. What remains unknown widens the range and lowers the size confidence.
 
 THE RUBRIC OWNS ITS BANDS. The rungs in \`agent-teams-workforce:wsjf\` are the whole scale. RR-OE, reachability and WSJF are arithmetic computed after you return; they are not in your input and are not yours to state, estimate or reason about.`
 
-const [epicJudged, taskJudged] = await parallel([
-  async () => {
-    if (!judgeFiles.epic) return null
-    return settleAgent(
-      `You are the ONE session judging the Epic portfolio under \`agent-teams-workforce:wsjf\` at Epic level. Load that skill with the Skill tool and follow it.
+const judgeEpic = (id) => settleAgent(
+  `You judge ONE Epic, ${id}, under \`agent-teams-workforce:wsjf\` at Epic level. Load that skill with the Skill tool and follow it.
 
-Read ${judgeFiles.epic}. Each item is an open Epic, and \`prdPath\` names the file holding its full requirements document (the PRD). Read ${portfolioFile} as well — every open Epic with its stored summary: the architecture decisions its requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and its value and urgency. It is long; read it in consecutive chunks until the end. You hold the portfolio through the summaries, and read in full the PRD of each item you judge. Where the items to judge are too many to read every PRD in full, judge from the summaries and open the PRD of each item whose summary cannot support its value, urgency or size.
+An Epic is a PRD: a business requirement. Read its full requirements document at ${prdDir}/${id}.md, to the end. Its entry in ${inputs.epic && inputs.epic.path} (the item whose \`id\` is ${id}) says whether it \`hasTasks\`; the same file holds the \`referenceJobs\`. Judge it from its own document against the rubric's rungs and the reference jobs, using the SAD and the project root for what is already decided or built. Read no other Epic's PRD and no other Epic's values: each Epic is judged on its own, so adding an Epic never moves another Epic's judged values.
 
 ${JUDGE_RULES}
 
-FOR EACH ITEM WITH \`judge: true\`, judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`hasTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. An Epic with Tasks takes its size from them. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the SAD and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences.
+Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integer percent — the value confidence, covering UBV and TC only), and — only when \`hasTasks\` is false — the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. An Epic with Tasks takes its size from them. An Epic is sized before its design exists: judge the work to deliver the requirement from the requirement itself and from institutional knowledge — the SAD and what is already decided — and never invent a solution in order to size it. Missing implementation design is normal at this stage and is not itself evidence of exceptional difficulty, so it does not enlarge the size; let it show in the range and the size confidence. Uncertainty enlarges an Epic only where the PRD leaves an unresolved fact that could materially change the work — ambiguous scope, unknown feasibility, or assumptions with substantially different consequences. Each rationale cites the PRD.
 
-Write ${epicJudgments} as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
+Write ${epicDir}/${id}.json as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}.
 
-Return the path you wrote, how many items you judged, and the ids you could not judge.`,
-      { label: 'judge:epic', phase: 'Judge', effort: 'high', schema: JUDGE_SCHEMA }
-    )
-  },
-  async () => {
-    if (!judgeFiles.task) return null
-    return settleAgent(
-      `You are the ONE session judging Task sizes under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size and nothing else; value, time criticality and their confidence are inherited from each Task's Epic by arithmetic. A Task is sized from the established architecture, design and implementation instructions it carries.
+Return the path you wrote, how many items you judged (1 or 0), and the ids you could not judge.`,
+  { label: `judge:epic:${id}`, phase: 'Judge', effort: 'high', schema: JUDGE_SCHEMA }
+)
 
-Read ${judgeFiles.task}. Each item is an open Task with its own \`description\` and the Epic it sits under.
+const judgeTasks = (group) => {
+  const whose = group.epic ? `the Tasks of one Epic, ${group.epic}` : `one Task with no Epic, ${group.key}`
+  return settleAgent(
+    `You size ${whose}, under \`agent-teams-workforce:wsjf\` at Task level. Load that skill with the Skill tool and follow it. You judge Job Size and nothing else; value, time criticality and their confidence are inherited from each Task's Epic by arithmetic. A Task is sized from the established architecture, design and implementation instructions it carries.
+
+Read ${inputs.task && inputs.task.path}. Size exactly these items in it, each an open Task with its own \`description\` and the Epic it sits under: ${group.tasks.join(', ')}. The same file holds the \`referenceJobs\`.
 
 ${JUDGE_RULES}
 
-FOR EACH ITEM WITH \`judge: true\`, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split. It is a decomposition fault: say so in its rationale, and record the size you judged. Do not reduce it to 13.
+For each of those Tasks, judge the size estimate \`jobSize\` with \`sizeLow\`, \`sizeHigh\` and \`sizeConfidence\`. A Task above 13 should have been split. It is a decomposition fault: say so in its rationale, and record the size you judged. Do not reduce it to 13.
 
-Write ${taskJudgments} as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per \`judge: true\` item, in \`scores\` or in \`unscored\`, and none for any other item.
+Write ${taskDir}/${group.key}.json as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item.
 
-Return the path you wrote, how many items you judged, and the ids you could not judge.`,
-      { label: 'judge:task', phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
-    )
-  },
-])
+Return the path you wrote, how many Tasks you judged, and the ids you could not judge.`,
+    { label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
+  )
+}
+
+const jobs = [
+  ...epicIds.map((id) => ({ level: 'epic', key: id, run: () => judgeEpic(id) })),
+  ...taskGroups.map((g) => ({ level: 'task', key: g.key, run: () => judgeTasks(g) })),
+]
+const judging = {
+  epic: { sessions: 0, judged: 0, failed: [] },
+  task: { sessions: 0, judged: 0, failed: [] },
+}
+for (let i = 0; i < jobs.length; i += JUDGE_CONCURRENCY) {
+  const batch = jobs.slice(i, i + JUDGE_CONCURRENCY)
+  const results = await parallel(batch.map((job) => () => job.run()))
+  batch.forEach((job, n) => {
+    const out = results[n]
+    const tally = judging[job.level]
+    tally.sessions += 1
+    if (out) tally.judged += out.judged || 0
+    else tally.failed.push(job.key)
+  })
+}
+log(`Judged ${judging.epic.judged} Epic(s) in ${judging.epic.sessions} session(s) and ${judging.task.judged} Task(s) in ${judging.task.sessions} session(s); ${judging.epic.failed.length + judging.task.failed.length} session(s) failed`)
 
 // ── Apply ────────────────────────────────────────────────────────────────────────
 //
@@ -268,15 +282,16 @@ Return the path you wrote, how many items you judged, and the ids you could not 
 // tracker.
 enter('Apply')
 const recordArgs = [`--plan ${shq(planFile)}`]
-if (epicJudged) recordArgs.push(`--epics ${shq(epicJudgments)}`)
-if (taskJudged) recordArgs.push(`--tasks ${shq(taskJudgments)}`)
+if (judging.epic.sessions > judging.epic.failed.length) recordArgs.push(`--epics-dir ${shq(epicDir)}`)
+if (judging.task.sessions > judging.task.failed.length) recordArgs.push(`--tasks-dir ${shq(taskDir)}`)
 let recorded = null
 if ((plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0) {
-  const out = await runStep('record', cmd('record', `${recordArgs.join(' ')} --out ${shq(file('record.json'))}`))
+  const out = await runStep('record', cmd('record', `${recordArgs.join(' ')}${dry} --out ${shq(file('record.json'))}`))
   recorded = out ? out.summary || {} : null
+  if (recorded && recorded.rejected) log(`Record: ${recorded.rejected} judgment(s) rejected — detail in ${file('record.json')}`)
 }
 
-const scored = await runStep('score', cmd('score', `--out ${shq(file('score.json'))}`))
+const scored = await runStep('score', cmd('score', `--out ${shq(file('score.json'))}${dry}`))
 const score = scored ? scored.summary || {} : null
 if (score) {
   log(
@@ -288,12 +303,9 @@ if (score) {
 return {
   ok: !!score && failures.length === 0,
   workDir: work,
-  summaries,
+  dryRun,
   plan,
-  judging: {
-    epic: judgeFiles.epic ? epicJudged || { failed: true } : null,
-    task: judgeFiles.task ? taskJudged || { failed: true } : null,
-  },
+  judging,
   record: recorded,
   score,
   failures,
