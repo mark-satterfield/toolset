@@ -57,7 +57,7 @@ when it printed empty. Pass `EPICS` as a JSON list. When it is empty, go to scor
 ### The seeding
 
 ```
-Workflow({scriptPath: "<ROOT>/workflows/seed-portfolio.js", args: {
+Workflow({name: "agent-teams-workforce:seed-portfolio", args: {
   repoPath:    "<REPO>",
   pluginRoot:  "<ROOT>",
   workDir:     "<WORK>",
@@ -85,7 +85,7 @@ changed during the seeding or was reported applied without its assessment being 
 Only after the seeding returned `ok: true` and `LEFT` is empty, dispatch from here:
 
 ```
-Workflow({scriptPath: "<ROOT>/workflows/wsjf-scoring.js", args: {
+Workflow({name: "agent-teams-workforce:wsjf-scoring", args: {
   repoPath:    "<REPO>",
   pluginRoot:  "<ROOT>",
   workDir:     "<REPO>/.claude/workflow-runs/wsjf-scoring/<RUN>",

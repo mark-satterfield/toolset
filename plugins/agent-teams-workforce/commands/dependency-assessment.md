@@ -51,7 +51,7 @@ When the block prints `REFUSED`, report that line verbatim and stop; dispatch no
 Use the printed values below. Leave `projectRoot` out when it printed empty.
 
 ```
-Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
+Workflow({name: "agent-teams-workforce:dependency-assessment", args: {
   repoPath:    "<REPO>",
   pluginRoot:  "<ROOT>",
   workDir:     "<REPO>/.claude/workflow-runs/dependency-assessment/<RUN>",
