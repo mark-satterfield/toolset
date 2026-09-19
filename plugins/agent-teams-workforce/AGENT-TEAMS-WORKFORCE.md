@@ -175,7 +175,7 @@ A composite runs two ways. **On-demand**, a single call drives one unit of work:
 
 ### Project configuration
 
-The plugin knows nothing about the project it is installed in. Everything project-specific reaches it through these environment variables, which the project exports (in its shell profile, in the environment of whatever launches its sessions, or, for Claude Code sessions, the `env` block of the project's `.claude/settings.json`). A workflow script has no process access, so the commands and skills that dispatch a workflow read these variables and pass their values as the named arguments; hooks and skill scripts read them directly. A required variable that is unset stops the step that needs it, by name.
+The plugin knows nothing about the project it is installed in. Everything project-specific reaches it through these environment variables, which the project exports (in its shell profile, or in the environment of whatever launches its sessions). A workflow script has no process access, so the commands and skills that dispatch a workflow read these variables and pass their values as the named arguments; hooks and skill scripts read them directly. A required variable that is unset stops the step that needs it, by name.
 
 | Variable | Meaning | Required | Reaches |
 |---|---|---|---|

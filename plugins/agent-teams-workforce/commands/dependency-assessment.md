@@ -21,9 +21,9 @@ PRDs in full, and applies the edge test in both directions. It proposes every ed
 the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on
 it. Code refuses any edge that does not touch the Epic, a cycle, an unaccounted standing edge
 and a missing reason, and writes only that Epic's edges. Hand-made edges are never touched.
-Code validates every proposal; one that does not validate is assessed again with the
-validator's findings, at most twice, and then the run stops, naming the Epic and each
-finding, and writes nothing.
+The session validates its proposal and runs apply-edges, which validates it again and
+writes nothing unless it passes. A proposal that does not validate stops the run, naming
+the Epic and each finding, and writes nothing.
 
 It writes, unless `--propose` is given.
 
@@ -34,7 +34,7 @@ It writes, unless `--propose` is given.
 
 ```bash
 if [ -z "${ATW_SAD_PATH}" ]; then
-  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:dependency-assessment judges against the architecture document (the arc42 SAD) and does not run without it. Set ATW_SAD_PATH in the project's environment (for Claude Code, the env block of the project's .claude/settings.json) and start a new session."
+  echo "REFUSED: ATW_SAD_PATH is not set. /agent-teams-workforce:dependency-assessment judges against the architecture document (the arc42 SAD) and does not run without it. Export ATW_SAD_PATH in your shell environment and start a new session."
   exit 1
 fi
 REPO="$(git rev-parse --show-toplevel)"
@@ -70,18 +70,17 @@ From the workflow's result:
   as `blocker -> blocked` with its reason; the reasoning file (`reasoning`); the edges the
   sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
   defects.
-- `assessment.relatedRead` — the Epics whose PRDs the session read in full, and `attempts`.
-- `stop` — when no attempt validated: the Epic, the `attempts` and every finding in
+- `assessment.relatedRead` — the Epics whose PRDs the session read in full.
+- `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct
   the PRD, or the hand-made edge a cycle runs through, then assess the Epic again. Under the
   ops triggers the Epic is assessed again once its content changes.
 - With `--propose`: `edges.proposed`, then every edge in `edges.added`, `edges.converted`
   and `edges.removed` as `blocker -> blocked`, `edges.withdrawn` with reasons, the
-  `unchanged` count, the `protectedHandMadeEdges`, and the files holding the full diff
-  (`diffFile`), the proposed edge set with its reasons (`edgesFile`) and the reasoning
+  `unchanged` count, and the files holding the full diff (`resultFile`), the proposed edge set with its reasons (`edgesFile`) and the reasoning
   (`reasoning`).
 - `scoring` — the `wsjf-scoring` result it triggered, reported as that command reports it.
-- `failures` and `dispatchFailures`, verbatim, when present.
+- `error` and `dispatchFailures`, verbatim, when present.
 
 ## Never
 

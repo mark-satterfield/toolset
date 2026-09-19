@@ -364,6 +364,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="write `prd/<id>.md` per open Epic (or `task/<id>.md` per open Task) "
         "and `index.md` here",
     )
+    acx.add_argument(
+        "--corpus-ready",
+        action="store_true",
+        help="`--epic` only: the PRD corpus and index in `--dir` were already written "
+        "by this seeding; read them rather than writing them again",
+    )
 
     snap = sub.add_parser("snapshot", help="the tracker as a graph", parents=[common])
     snap.add_argument("--kinds", default="epic,story,task")
@@ -544,7 +550,9 @@ def run(args: argparse.Namespace) -> dict:
             raise SequencingError(msg)
         if args.task is not None:
             return head | task_context(graph, args.task, args.dir)
-        return head | assess_context(graph, args.epic, args.dir)
+        return head | assess_context(
+            graph, args.epic, args.dir, corpus_ready=args.corpus_ready
+        )
     if command == "score-plan":
         only = split_ids(args.only) if args.only else None
         return head | plan(graph, include_all=args.all, rejudge=args.rejudge, only=only)

@@ -16,6 +16,7 @@ must keep or withdraw each owned one with a reason that answers the recorded one
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import beadgraph
@@ -23,12 +24,12 @@ from edgeset import SequencingError, scope_defect, standing_edges
 from prds import ELAB_KEY, write_index, write_prds
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from beadgraph import Bead, Graph
 
 
-def assess_context(graph: Graph, epic: str, out_dir: Path) -> dict:
+def assess_context(
+    graph: Graph, epic: str, out_dir: Path, *, corpus_ready: bool = False
+) -> dict:
     """Write the PRD corpus and index, and return the Epic and its standing edges.
 
     Args:
@@ -36,6 +37,8 @@ def assess_context(graph: Graph, epic: str, out_dir: Path) -> dict:
         epic: The Epic to be assessed.
         out_dir: The directory to write into: `prd/<id>.md` per open Epic, and
             `index.md`.
+        corpus_ready: The corpus and index in `out_dir` were written by an earlier
+            assessment of the same seeding; they are read, not written again.
 
     Returns:
         `epic` (`{id, title, fingerprint, elaborationState, prdPath}`), `standing` (every
@@ -52,8 +55,14 @@ def assess_context(graph: Graph, epic: str, out_dir: Path) -> dict:
         raise SequencingError(msg)
     corpus = out_dir / "prd"
     index = out_dir / "index.md"
-    paths = write_prds(epics, corpus)
-    write_index(graph, epics, paths, index)
+    if corpus_ready:
+        paths = {b.id: str(corpus / f"{b.id}.md") for b in epics}
+        if not (index.is_file() and Path(paths[bead.id]).is_file()):
+            msg = f"--corpus-ready: no corpus for {epic} in {out_dir}"
+            raise SequencingError(msg)
+    else:
+        paths = write_prds(epics, corpus)
+        write_index(graph, epics, paths, index)
     prints = beadgraph.fingerprints(graph.records)
     standing = standing_edges(graph, epic)
     owned = sum(1 for s in standing if s["owned"])
