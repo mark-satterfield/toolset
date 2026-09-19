@@ -361,12 +361,13 @@ WSJF_KEYS = (
     "wsjf_content_hash",
 )
 
-#: Keys the SEQUENCING pass owns. `seq_owned_blockers` is a comma-separated id list of the
-#: Epic `tracks` edges this system created on that bead, and it exists so a hand-made edge is
+#: Keys the SEQUENCING pass owns, on an Epic or on a Task created outside elaboration.
+#: `seq_owned_blockers` is a comma-separated id list of the edges this system created on that
+#: bead (`tracks` between Epics, `blocks` between Tasks), and it exists so a hand-made edge is
 #: never removed: the pass only ever withdraws an edge it recorded as its own.
-#: `seq_edge_reasons`, on the blocked Epic, is a JSON object keyed by blocker id, each value
+#: `seq_edge_reasons`, on the blocked bead, is a JSON object keyed by blocker id, each value
 #: `{"reason", "confidence", "setBy", "setAt"}`, covering the owned edges onto it.
-#: `seq_assessed_at` is when the Epic's own dependency assessment was last applied.
+#: `seq_assessed_at` is when the item's own dependency assessment was last applied.
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
     "seq_owned_blockers_at",

@@ -189,17 +189,20 @@ the sum of its Tasks), `wsjf_size_low` and `wsjf_size_high` (its plausible range
 `wsjf_size_outside_range` (`true` when that sum falls outside the estimate's range — a flag for
 examination, not an error).
 `wsjf_content_hash` is the content fingerprint of the bead its judged dimensions were read
-from. Dependency assessment (the `dependency-assessment` workflow): `seq_owned_blockers`, a
-comma-separated id list of the Epic edges the assessment created on the bead, each a `tracks`
-edge onto the Epic named, and `seq_owned_blockers_at`. The assessment only ever withdraws or
-converts an edge that list names, which is how a hand-made edge survives it.
-`seq_edge_reasons`, on the BLOCKED Epic, is a JSON object keyed by blocker id, each value
-`{"reason", "confidence", "setBy", "setAt"}`: why each owned edge onto that Epic stands, the
-Epic whose assessment set it, and when. It covers only owned edges, and an assessment rewrites
-only the entries for edges touching the Epic it assessed. `seq_content_hash` is the content
-fingerprint the assessment last read the Epic at, and `seq_assessed_at` is when that Epic's own
-assessment was last applied; both are written on the assessed Epic every time its assessment
-applies. `depscore.py apply-edges` writes all five keys; nothing else does.
+from. Dependency assessment (the `dependency-assessment` workflow for an Epic, the
+`task-dependency-assessment` workflow for a Task created outside elaboration, one with no
+`elab_key`): `seq_owned_blockers`, a comma-separated id list of the edges the assessment
+created on the bead — on an Epic each a `tracks` edge onto the Epic named, on such a Task each
+a `blocks` edge onto the Task named — and `seq_owned_blockers_at`. The assessment only ever
+withdraws or converts an edge that list names, which is how a hand-made edge survives it.
+`seq_edge_reasons`, on the BLOCKED Epic or Task, is a JSON object keyed by blocker id, each
+value `{"reason", "confidence", "setBy", "setAt"}`: why each owned edge onto that bead stands,
+the item whose assessment set it, and when. It covers only owned edges, and an assessment
+rewrites only the entries for edges touching the item it assessed. `seq_content_hash` is the
+content fingerprint the assessment last read the item at, and `seq_assessed_at` is when that
+item's own assessment was last applied; both are written on the assessed Epic or Task every
+time its assessment applies. A Task elaboration wrote carries none of the five: its edges are
+elaboration's. `depscore.py apply-edges` writes all five keys; nothing else does.
 
 The script is the list: `metadata set` names every key it accepts when it refuses one.
 

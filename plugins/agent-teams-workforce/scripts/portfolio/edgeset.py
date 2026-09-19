@@ -1,38 +1,46 @@
 #!/usr/bin/env python3
-"""The Epic edge set: parse it, prove it, and apply the DIFF against what the tracker holds.
+"""The dependency edge set: parse it, prove it, and apply the DIFF against what the tracker holds.
 
-An edge means `blocker` must be elaborated before `blocked`, and both ends are Epics. It is
-stored as a beads `tracks` edge on the blocked Epic, written `bd dep add <blocked> <blocker>
---type tracks`. `tracks` is non-blocking, so the edge orders elaboration and never removes
-the Epic, or any Story or Task beneath it, from `bd ready`. The reasoning pass proposes
-edges; nothing here judges whether one is right. What it does judge is whether the set is
-APPLICABLE — Epic to Epic, acyclic, over beads that exist, no self-edge, nothing pointed at
-a closed item — because a wrong edge set applied is expensive to unpick.
+Edges are proposed at one of two levels, and both ends of an edge are of that level.
+
+- An EPIC edge means `blocker` must be elaborated before `blocked`. It is stored as a beads
+  `tracks` edge on the blocked Epic, written `bd dep add <blocked> <blocker> --type tracks`.
+  `tracks` is non-blocking, so the edge orders elaboration and never removes the Epic, or
+  any Story or Task beneath it, from `bd ready`.
+- A TASK edge means `blocker` must be built before `blocked`. It is stored as a beads
+  `blocks` edge on the blocked Task, which `bd ready` enforces. Only a Task created outside
+  elaboration is assessed here: a Task elaboration wrote carries `elab_key`, and its edges
+  are elaboration's.
+
+The reasoning pass proposes edges; nothing here judges whether one is right. What it does
+judge is whether the set is APPLICABLE — both ends of the level, acyclic, over beads that
+exist, no self-edge, nothing pointed at a closed item — because a wrong edge set applied is
+expensive to unpick.
 
 The diff never removes an edge this system did not create. Ownership is recorded on the
 BLOCKED bead as `seq_owned_blockers`, so an edge drawn by hand survives every pass,
 and re-running a pass with an unchanged proposal writes nothing at all.
 
-An owned edge stored as any type other than `tracks` is CONVERTED: `bd dep remove`, then
-`bd dep add --type tracks`. Beads holds one edge per pair of beads and refuses to add a
-second type onto an existing one, so the removal has to come first. The edge stays recorded
+An owned edge stored as the other level's type is CONVERTED to its own level's type:
+`bd dep remove`, then `bd dep add --type <type>`. Beads holds one edge per pair of beads and
+refuses to add a second type onto an existing one, so the removal has to come first. The edge stays recorded
 as owned throughout, so a conversion interrupted between its two writes leaves an owned
 edge that is absent, and the next pass over the same proposal adds it.
 
-A proposal covers ONE EPIC: every edge to or from that Epic, each with a reason, and a
-`withdrawn` entry, with a reason, for every owned edge standing on that Epic that the
-proposal does not keep. An edge that does not touch the Epic is refused, an owned standing
-edge the proposal neither keeps nor withdraws is refused, and only edges touching the Epic
-are added, converted or withdrawn. Acyclicity is checked over the proposal together with
-every Epic edge that does not touch the Epic.
+A proposal covers ONE EPIC, or ONE TASK created outside elaboration: every edge to or from
+that item, each with a reason, and a `withdrawn` entry, with a reason, for every owned edge
+standing on that item that the proposal does not keep. An edge that does not touch the item
+is refused, an owned standing edge the proposal neither keeps nor withdraws is refused, and
+only edges touching the item are added, converted or withdrawn. Acyclicity is checked over
+the proposal together with every edge of the level that does not touch the item.
 
-The reason for each owned edge is stored on its BLOCKED Epic as `seq_edge_reasons`, with
-the Epic whose assessment set it, so a later assessment of either end sees why the edge
-stands. The assessed Epic records the content fingerprint it was assessed at as
-`seq_content_hash`, and when, as `seq_assessed_at`; an Epic whose fingerprint no longer
-matches is one that has not been assessed as it now stands.
+Both levels carry the same records. The reason for each owned edge is stored on its BLOCKED
+bead as `seq_edge_reasons`, with the item whose assessment set it, so a later assessment of
+either end sees why the edge stands. The assessed item records the content fingerprint it
+was assessed at as `seq_content_hash`, and when, as `seq_assessed_at`; an item whose
+fingerprint no longer matches is one that has not been assessed as it now stands.
 
-`--owned` is the one tracker-wide operation: it proposes every owned edge back, which
+`--owned` is the one tracker-wide operation: it proposes every owned Epic edge back, which
 repairs ownership and edge type, and proposes no edge of its own.
 """
 
@@ -52,15 +60,19 @@ if TYPE_CHECKING:
     from beadgraph import Bead, Graph, Writer
 
 
-#: Metadata key on an Epic: the content fingerprint the sequencer last read it at.
+#: Metadata key on an assessed item: the content fingerprint its assessment last read it at.
 SEEN_KEY = "seq_content_hash"
 
-#: Metadata key on a BLOCKED Epic: a JSON object keyed by blocker id, each value
+#: Metadata key on a BLOCKED item: a JSON object keyed by blocker id, each value
 #: `{"reason", "confidence", "setBy", "setAt"}`, covering only the owned edges onto it.
 REASONS_KEY = "seq_edge_reasons"
 
-#: Metadata key on an Epic: when its dependency assessment was last applied.
+#: Metadata key on an assessed item: when its dependency assessment was last applied.
 ASSESSED_AT_KEY = "seq_assessed_at"
+
+#: Metadata key elaboration writes on every Story and Task it creates. A Task carrying it
+#: has its edges from elaboration and is never assessed here.
+ELAB_IDENTITY_KEY = "elab_key"
 
 
 class SequencingError(RuntimeError):
@@ -69,7 +81,7 @@ class SequencingError(RuntimeError):
 
 @dataclass(frozen=True)
 class Edge:
-    """A proposed Epic edge: `blocker` must be elaborated before `blocked`."""
+    """A proposed edge: `blocker` must be elaborated (Epic) or built (Task) before `blocked`."""
 
     blocker: str
     blocked: str
@@ -77,8 +89,55 @@ class Edge:
     confidence: str = ""
 
 
+#: The dependency type each level's edges are stored as.
+LEVEL_TYPES = {"epic": beadgraph.TRACKS, "task": beadgraph.BLOCKS}
+
 #: The dependency type every Epic edge is stored as.
-EDGE_TYPE = beadgraph.TRACKS
+EDGE_TYPE = LEVEL_TYPES["epic"]
+
+#: How each level is named in a message.
+LEVEL_NAMES = {"epic": "Epic", "task": "Task"}
+
+
+def _level(level: str) -> str:
+    """A level, checked.
+
+    Args:
+        level: `epic` or `task`.
+
+    Returns:
+        The level.
+
+    Raises:
+        SequencingError: The level is neither.
+    """
+    if level not in LEVEL_TYPES:
+        msg = f"level {level!r} is not one of {sorted(LEVEL_TYPES)}"
+        raise SequencingError(msg)
+    return level
+
+
+def scope_defect(graph: Graph, item: str, level: str = "epic") -> str:
+    """Why one item cannot be the scope of a proposal at a level, or empty when it can.
+
+    Args:
+        graph: The tracker graph.
+        item: The Epic or Task the proposal covers.
+        level: `epic` or `task`.
+
+    Returns:
+        The defect, or an empty string. At Task level a Task elaboration wrote is refused,
+        because its edges are elaboration's.
+    """
+    bead = graph.beads.get(item)
+    if bead is None or bead.kind != _level(level) or bead.closed:
+        return f"{item} is not an open {LEVEL_NAMES[level]}"
+    if level == "task" and bead.metadata.get(ELAB_IDENTITY_KEY):
+        return (
+            f"`{item}` was written by elaboration (`{ELAB_IDENTITY_KEY}`); "
+            "its edges are elaboration's"
+        )
+    return ""
 
 
 # ------------------------------------------------------------------------------------
@@ -190,22 +249,23 @@ def edge_reasons(bead: Bead) -> dict:
     return {str(k): v for k, v in value.items() if isinstance(v, dict)}
 
 
-def standing_edges(graph: Graph, epic: str) -> list[dict]:
-    """Every edge the tracker holds between one Epic and another open Epic.
+def standing_edges(graph: Graph, item: str, level: str = "epic") -> list[dict]:
+    """Every edge the tracker holds between one item and another open bead of its level.
 
     Both directions and every dependency type except `parent-child`, which is hierarchy.
 
     Args:
         graph: The tracker graph.
-        epic: The Epic.
+        item: The Epic or Task.
+        level: `epic` or `task`: the kind of bead at both ends.
 
     Returns:
         One `{from, to, type, owned, reason, confidence, setBy, setAt}` per edge, in
-        (from, to) order. `owned` is whether the blocked Epic's `seq_owned_blockers`
+        (from, to) order. `owned` is whether the blocked bead's `seq_owned_blockers`
         names the blocker; the last four come from its `seq_edge_reasons` and are None
         when none is recorded.
     """
-    open_epics = {b.id for b in graph.of_kind("epic") if not b.closed}
+    open_items = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
     found: dict[tuple[str, str], str] = {}
     for record in graph.records:
         blocked = str(record.get("id") or "")
@@ -214,9 +274,9 @@ def standing_edges(graph: Graph, epic: str) -> list[dict]:
             kind = str(dep.get("type") or "")
             if kind == "parent-child" or blocker == blocked:
                 continue
-            if epic not in (blocker, blocked):
+            if item not in (blocker, blocked):
                 continue
-            if blocker in open_epics and blocked in open_epics:
+            if blocker in open_items and blocked in open_items:
                 found[(blocker, blocked)] = kind
     edges = []
     for (blocker, blocked), kind in sorted(found.items()):
@@ -238,22 +298,23 @@ def standing_edges(graph: Graph, epic: str) -> list[dict]:
 
 
 def owned_edges(graph: Graph) -> list[Edge]:
-    """Every edge this system recorded as its own, as a proposal.
+    """Every Epic edge this system recorded as its own, as a proposal.
 
     Proposing the owned set back withdraws nothing, adds any owned edge that is absent,
     and converts any owned edge stored as the wrong type. Because it is read from the
     ownership records rather than from the edges present, rerunning it after an
-    interrupted pass still names every edge that pass was converting.
+    interrupted pass still names every edge that pass was converting. Only Epics are
+    read: an owned Task edge is never proposed as an Epic edge.
 
     Args:
         graph: The tracker graph.
 
     Returns:
-        One edge per owned blocker on every bead, in id order.
+        One edge per owned blocker on every Epic, in id order.
     """
     return [
         Edge(blocker=blocker, blocked=bead.id, reason="owned edge")
-        for _, bead in sorted(graph.beads.items())
+        for bead in graph.of_kind("epic")
         for blocker in bead.owned_blockers
     ]
 
@@ -293,23 +354,33 @@ def find_cycle(edges: list[Edge]) -> list[str]:
     return []
 
 
-def _standing_epic_edges(graph: Graph, epic: str) -> list[Edge]:
-    """Every Epic-to-Epic edge the tracker holds that does not touch one Epic.
+def _standing_level_edges(graph: Graph, item: str, level: str) -> list[Edge]:
+    """Every edge between two beads of a level that does not touch one item.
+
+    Epic edges are read whether stored as `tracks` or `blocks`; Task edges are the
+    `blocks` edges, the only type that orders a build.
 
     Args:
         graph: The tracker graph.
-        epic: The Epic whose own edges are left out.
+        item: The item whose own edges are left out.
+        level: `epic` or `task`.
 
     Returns:
-        The edges, whatever type each is stored as.
+        The edges.
     """
+
+    def upstreams(bead: Bead) -> set[str]:
+        if level == "epic":
+            return set(bead.tracked) | set(bead.blockers)
+        return set(bead.blockers)
+
     return [
         Edge(blocker=upstream, blocked=bead.id)
-        for bead in graph.of_kind("epic")
-        for upstream in sorted(set(bead.tracked) | set(bead.blockers))
-        if epic not in (upstream, bead.id)
+        for bead in graph.of_kind(_level(level))
+        for upstream in sorted(upstreams(bead))
+        if item not in (upstream, bead.id)
         and upstream in graph.beads
-        and graph.beads[upstream].kind == "epic"
+        and graph.beads[upstream].kind == level
     ]
 
 
@@ -321,39 +392,44 @@ def _pair(edge: Edge) -> str:
 def validate(
     graph: Graph,
     edges: list[Edge],
-    epic: str | None = None,
+    item: str | None = None,
     withdrawn: list[Edge] | tuple[Edge, ...] = (),
+    level: str = "epic",
 ) -> dict:
     """Report every defect in a proposed edge set.
 
-    The defects are: an edge that is not Epic to Epic, a cycle, a dangling id, a
-    self-edge, an edge onto a closed bead, an edge out of a closed bead, and — for a
-    proposal covering one Epic — a scope that is not an open Epic, an edge that does not
-    touch that Epic, an edge or withdrawal with an empty reason, an owned edge standing
-    on that Epic that is neither kept nor withdrawn, a withdrawal that is not an owned
-    edge standing on that Epic (every hand-made edge is one), and a pair both kept and
-    withdrawn.
+    The defects are: an edge whose ends are not both of the level (`notEpicToEpic` or
+    `notTaskToTask`), a cycle, a dangling id, a self-edge, an edge onto a closed bead, an
+    edge out of a closed bead, and — for a proposal covering one item — a scope that is
+    not an open item of the level (at Task level, also one elaboration wrote), an edge
+    that does not touch that item, an edge or withdrawal with an empty reason, an owned
+    edge standing on that item that is neither kept nor withdrawn, a withdrawal that is
+    not an owned edge standing on that item (every hand-made edge is one), and a pair
+    both kept and withdrawn.
 
     Args:
         graph: The tracker graph.
         edges: The proposed edge set.
-        epic: The one Epic the proposal covers, or None for the owned-edge repair.
+        item: The one Epic or Task the proposal covers, or None for the owned-edge
+            repair.
         withdrawn: The owned standing edges the proposal drops, each with its reason.
+        level: `epic` or `task`.
 
     Returns:
         The verdict and every defect found.
     """
+    _level(level)
     dangling = sorted(
         {e.blocker for e in edges if e.blocker not in graph.beads}
         | {e.blocked for e in edges if e.blocked not in graph.beads}
     )
     self_edges = sorted({e.blocker for e in edges if e.blocker == e.blocked})
-    not_epic = sorted(
+    wrong_kind = sorted(
         {
             f"{e.blocker}->{e.blocked}"
             for e in edges
             if any(
-                end in graph.beads and graph.beads[end].kind != "epic"
+                end in graph.beads and graph.beads[end].kind != level
                 for end in (e.blocker, e.blocked)
             )
         }
@@ -378,21 +454,21 @@ def validate(
     withdrawn_not_owned: list[str] = []
     kept_and_withdrawn: list[str] = []
     bad_scope = ""
-    if epic is None:
+    if item is None:
         cycle = find_cycle(edges)
     else:
-        scope = graph.beads.get(epic)
-        if scope is None or scope.kind != "epic" or scope.closed:
-            bad_scope = f"{epic} is not an open Epic"
+        bad_scope = scope_defect(graph, item, level)
         outside = sorted(
-            {_pair(e) for e in edges if epic not in (e.blocker, e.blocked)}
+            {_pair(e) for e in edges if item not in (e.blocker, e.blocked)}
         )
-        cycle = find_cycle(edges + _standing_epic_edges(graph, epic))
+        cycle = find_cycle(edges + _standing_level_edges(graph, item, level))
         missing_reason = sorted(
             {_pair(e) for e in [*edges, *withdrawn] if not e.reason.strip()}
         )
         owned_standing = {
-            f"{s['from']}->{s['to']}" for s in standing_edges(graph, epic) if s["owned"]
+            f"{s['from']}->{s['to']}"
+            for s in standing_edges(graph, item, level)
+            if s["owned"]
         }
         kept = {_pair(e) for e in edges}
         dropped = {_pair(e) for e in withdrawn}
@@ -415,7 +491,7 @@ def validate(
         or onto_closed
         or from_closed
         or cycle
-        or not_epic
+        or wrong_kind
         or outside
         or bad_scope
         or missing_reason
@@ -425,16 +501,17 @@ def validate(
     )
     return {
         "ok": ok,
+        "level": level,
         "edgeCount": len(edges),
         "withdrawnCount": len(withdrawn),
-        "scope": epic or "owned",
+        "scope": item or "owned",
         "badScope": bad_scope or None,
         "outsideScope": outside,
         "missingReason": missing_reason,
         "unaccounted": unaccounted,
         "withdrawnNotOwned": withdrawn_not_owned,
         "keptAndWithdrawn": kept_and_withdrawn,
-        "notEpicToEpic": not_epic,
+        "notEpicToEpic" if level == "epic" else "notTaskToTask": wrong_kind,
         "cycle": cycle,
         "dangling": dangling,
         "selfEdges": self_edges,
@@ -449,22 +526,30 @@ def validate(
 # ------------------------------------------------------------------------------------
 
 
-def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict:
+def plan_edges(
+    graph: Graph, edges: list[Edge], item: str | None = None, level: str = "epic"
+) -> dict:
     """Diff the proposed edge set against the tracker, respecting hand-made edges.
+
+    Only beads of the level are diffed, so an Epic pass never touches a Task's edges and
+    a Task pass never touches an Epic's.
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set: every edge to or from `epic`, or, with `epic`
+        edges: The proposed edge set: every edge to or from `item`, or, with `item`
             None, the owned edges proposed back by the `--owned` repair.
-        epic: The one Epic the proposal covers, or None for the owned-edge repair.
-            Scoped, an edge that does not touch it is neither added, converted,
+        item: The one Epic or Task the proposal covers, or None for the owned-edge
+            repair. Scoped, an edge that does not touch it is neither added, converted,
             withdrawn nor re-recorded.
+        level: `epic` or `task`.
 
     Returns:
-        The additions, the conversions of owned edges stored as the wrong type, the
-        withdrawals, the hand-made edges left alone, and the ownership metadata the
-        applied diff would write.
+        The additions, the conversions of owned edges stored as the other level's type
+        (each naming the type it is converted `from`), the withdrawals, the hand-made
+        edges left alone, and the ownership metadata the applied diff would write.
     """
+    own_type = LEVEL_TYPES[_level(level)]
+    other_type = next(t for t in LEVEL_TYPES.values() if t != own_type)
     desired: dict[str, set[str]] = {}
     for edge in edges:
         desired.setdefault(edge.blocked, set()).add(edge.blocker)
@@ -477,7 +562,10 @@ def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict
     metadata: dict[str, dict[str, str]] = {}
 
     def in_scope(blocker: str, blocked: str) -> bool:
-        return epic is None or epic in (blocker, blocked)
+        return item is None or item in (blocker, blocked)
+
+    def of_type(bead: Bead, kind: str) -> tuple[str, ...]:
+        return bead.tracked if kind == beadgraph.TRACKS else bead.blockers
 
     touched = set(desired) | {
         bead.id
@@ -486,15 +574,17 @@ def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict
     }
     for blocked_id in sorted(touched):
         bead = graph.beads.get(blocked_id)
-        if bead is None:
+        if bead is None or bead.kind != level:
             continue
         want = desired.get(blocked_id, set())
         all_owned = set(bead.owned_blockers)
         owned = {b for b in all_owned if in_scope(b, blocked_id)}
-        current = {b for b in bead.tracked if in_scope(b, blocked_id)}
-        # Beads holds one edge per pair, so a pair is present as `tracks` or as another
-        # type, never both.
-        mistyped = {b for b in bead.blockers if in_scope(b, blocked_id)} - current
+        current = {b for b in of_type(bead, own_type) if in_scope(b, blocked_id)}
+        # Beads holds one edge per pair, so a pair is present as the level's type or as
+        # the other, never both.
+        mistyped = {
+            b for b in of_type(bead, other_type) if in_scope(b, blocked_id)
+        } - current
         present = current | mistyped
         for blocker in sorted(want - present):
             add.append({"blocker": blocker, "blocked": blocked_id})
@@ -503,7 +593,7 @@ def plan_edges(graph: Graph, edges: list[Edge], epic: str | None = None) -> dict
         # proposal says and whatever type it is stored as.
         for blocker in sorted(want & mistyped & owned):
             convert.append(
-                {"blocker": blocker, "blocked": blocked_id, "from": beadgraph.BLOCKS}
+                {"blocker": blocker, "blocked": blocked_id, "from": other_type}
             )
         for blocker in sorted((owned - want) & present):
             remove.append({"blocker": blocker, "blocked": blocked_id})
@@ -559,11 +649,11 @@ def _owned_after_adds(graph: Graph, plan: dict) -> dict[str, dict[str, str]]:
 
 
 def _reason_records(
-    graph: Graph, edges: list[Edge], plan: dict, epic: str
+    graph: Graph, edges: list[Edge], plan: dict, item: str, level: str = "epic"
 ) -> dict[str, str]:
-    """The `seq_edge_reasons` value each blocked Epic must carry after a proposal applies.
+    """The `seq_edge_reasons` value each blocked bead must carry after a proposal applies.
 
-    For every blocked Epic an edge in scope touches, the recorded reasons keep every
+    For every blocked bead an edge in scope touches, the recorded reasons keep every
     out-of-scope entry, drop every in-scope blocker that is no longer owned, and record
     each proposed edge that ends up owned as `{reason, confidence, setBy, setAt}`. An
     entry whose reason, confidence and setter are unchanged keeps its recorded `setAt`,
@@ -571,20 +661,21 @@ def _reason_records(
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edges, every one touching `epic`.
+        edges: The proposed edges, every one touching `item`.
         plan: The diff, from `plan_edges`.
-        epic: The Epic whose assessment made the proposal.
+        item: The Epic or Task whose assessment made the proposal.
+        level: `epic` or `task`.
 
     Returns:
-        Blocked Epic id -> the JSON value to write, for each Epic whose value changes.
+        Blocked bead id -> the JSON value to write, for each bead whose value changes.
     """
     proposed: dict[str, dict[str, Edge]] = {}
     for edge in edges:
         proposed.setdefault(edge.blocked, {})[edge.blocker] = edge
     touched = (
-        {epic}
+        {item}
         | set(proposed)
-        | {s["to"] for s in standing_edges(graph, epic) if s["owned"]}
+        | {s["to"] for s in standing_edges(graph, item, level) if s["owned"]}
     )
     stamp = now_iso()
     out: dict[str, str] = {}
@@ -602,7 +693,7 @@ def _reason_records(
         after = {
             blocker: entry
             for blocker, entry in before.items()
-            if epic not in (blocker, blocked_id) or blocker in owned_after
+            if item not in (blocker, blocked_id) or blocker in owned_after
         }
         for blocker, edge in proposed.get(blocked_id, {}).items():
             if blocker not in owned_after:
@@ -610,7 +701,7 @@ def _reason_records(
             entry = {
                 "reason": edge.reason,
                 "confidence": edge.confidence,
-                "setBy": epic,
+                "setBy": item,
             }
             old = before.get(blocker, {})
             same = all(old.get(k) == v for k, v in entry.items())
@@ -626,52 +717,58 @@ def apply_edges(
     edges: list[Edge],
     writer: Writer,
     seen: dict[str, str],
-    epic: str | None = None,
+    item: str | None = None,
     withdrawn: list[Edge] | tuple[Edge, ...] = (),
+    level: str = "epic",
 ) -> dict:
     """Validate, diff and write an edge set. Idempotent by construction.
 
     An unchanged proposal adds nothing, converts nothing, withdraws nothing and writes no
     edge metadata. The writes run in an order that never leaves an edge unowned:
     ownership covering every edge to be added is written first, then the adds, then the
-    conversions — each one's removal immediately followed by its `tracks` add — then the
-    withdrawals, then the final ownership records, which drop the withdrawn edges and
-    carry the reasons for the owned edges onto that bead. A bead whose reasons change and
-    whose ownership does not gets its reasons in a write of their own. Last, the assessed
-    Epic records the fingerprint it was assessed at and when, on every call that applies.
+    conversions — each one's removal immediately followed by its add as the level's type
+    — then the withdrawals, then the final ownership records, which drop the withdrawn
+    edges and carry the reasons for the owned edges onto that bead. A bead whose reasons
+    change and whose ownership does not gets its reasons in a write of their own. Last,
+    the assessed item records the fingerprint it was assessed at and when, on every call
+    that applies.
 
     Args:
         graph: The tracker graph.
-        edges: The proposed edge set: every edge to or from `epic`, or with `epic`
+        edges: The proposed edge set: every edge to or from `item`, or with `item`
             None, the owned edges proposed back.
         writer: The tracker writer; a dry-run writer records the writes instead.
-        seen: Epic id -> the content fingerprint the sequencer read that Epic at. Empty
-            when the proposal did not come from the sequencer, which records nothing.
-        epic: The one Epic the proposal covers, or None for the owned-edge repair, which
-            records no reason and no assessment.
+        seen: Item id -> the content fingerprint the assessment read that item at. Empty
+            when the proposal did not come from an assessment, which records nothing.
+        item: The one Epic or Task the proposal covers, or None for the owned-edge
+            repair, which records no reason and no assessment.
         withdrawn: The owned standing edges the proposal drops, each with its reason.
+        level: `epic` (`tracks` edges) or `task` (`blocks` edges).
 
     Returns:
         The validation verdict, the counts, the plan, the withdrawals with their reasons,
-        the Epics whose reasons are recorded, and — in a dry run — every write in order.
+        the beads whose reasons are recorded, and — in a dry run — every write in order.
         A proposal that fails validation is refused whole — nothing is written.
     """
-    report = validate(graph, edges, epic, withdrawn)
+    report = validate(graph, edges, item, withdrawn, level)
     if not report["ok"]:
         return {"applied": False, "dryRun": writer.dry_run, "validation": report}
-    plan = plan_edges(graph, edges, epic)
-    reasons = _reason_records(graph, edges, plan, epic) if epic is not None else {}
+    edge_type = LEVEL_TYPES[level]
+    plan = plan_edges(graph, edges, item, level)
+    reasons = (
+        _reason_records(graph, edges, plan, item, level) if item is not None else {}
+    )
     ahead = _owned_after_adds(graph, plan)
     for bead_id, pairs in ahead.items():
         writer.metadata(bead_id, pairs)
     for entry in plan["add"]:
         writer.bd(
-            ["dep", "add", entry["blocked"], entry["blocker"], "--type", EDGE_TYPE]
+            ["dep", "add", entry["blocked"], entry["blocker"], "--type", edge_type]
         )
     for entry in plan["convert"]:
         writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
         writer.bd(
-            ["dep", "add", entry["blocked"], entry["blocker"], "--type", EDGE_TYPE]
+            ["dep", "add", entry["blocked"], entry["blocker"], "--type", edge_type]
         )
     for entry in plan["remove"]:
         writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
@@ -686,23 +783,24 @@ def apply_edges(
     for bead_id, value in sorted(pending_reasons.items()):
         writer.metadata(bead_id, {REASONS_KEY: value})
     recorded = []
-    for bead in graph.of_kind("epic"):
+    for bead in graph.of_kind(level):
         current = seen.get(bead.id)
-        if epic is not None and bead.id != epic:
+        if item is not None and bead.id != item:
             continue
         if bead.closed or not current:
             continue
-        if epic is None and bead.metadata.get(SEEN_KEY) == current:
+        if item is None and bead.metadata.get(SEEN_KEY) == current:
             continue
         pairs = {SEEN_KEY: current}
-        if epic is not None:
+        if item is not None:
             pairs[ASSESSED_AT_KEY] = now_iso()
         writer.metadata(bead.id, pairs)
         recorded.append(bead.id)
     return {
         "applied": not writer.dry_run,
         "dryRun": writer.dry_run,
-        "scope": epic or "owned",
+        "level": level,
+        "scope": item or "owned",
         "planned": writer.planned,
         "sequencedRecorded": len(recorded),
         "validation": report,

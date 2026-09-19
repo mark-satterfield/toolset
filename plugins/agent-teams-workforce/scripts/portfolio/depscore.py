@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
 """The Epic portfolio — the deterministic half, over the tracker graph.
 
-The `dependency-assessment`, `wsjf-scoring` and `prd-to-spec` workflows run these. Every judged step between them is an agent; everything here is code.
+The `dependency-assessment`, `task-dependency-assessment`, `wsjf-scoring` and `prd-to-spec`
+workflows run these. Every judged step between them is an agent; everything here is code.
 
-    assess-plan       every open Epic's fingerprint, and those not assessed as they stand
-                      (with `--since`, also those not assessed since that instant)
-    assess-context    one Epic's assessment material: every open Epic's PRD as a file, an
-                      index of them, and every edge standing between the Epic and another
-                      open Epic with its recorded reason
+Dependency assessment has two scopes, and each command that takes a proposal covers exactly
+one item: ONE Epic (`--epic`, `tracks` edges between Epics), or ONE Task created outside
+elaboration (`--task`, `blocks` edges between Tasks). A Task elaboration wrote carries
+`elab_key`, and its edges are elaboration's.
+
+    assess-plan       the fingerprint of every open item of a level (`--level epic`, the
+                      default, or `--level task`: the open Tasks with no `elab_key`), and
+                      those not assessed as they stand (with `--since`, also those not
+                      assessed since that instant)
+    assess-context    one item's assessment material. `--epic`: every open Epic's PRD as a
+                      file and an index of them. `--task`: every open Task as a file and an
+                      index of them. Either way, every edge standing between the item and
+                      another open bead of its level, with its recorded reason
     snapshot          the tracker as a graph
-    validate          prove one Epic's edge proposal (`--edges` with `--epic`) is
-                      applicable before anything is written: every edge touches the
-                      Epic and carries a reason, and every owned edge standing on it is
-                      kept or withdrawn with a reason
-    apply-edges       apply one Epic's edge DIFF (`--edges` with `--epic`) through `bd dep`
-                      as `tracks` edges, never touching a hand-made edge or an edge that
-                      does not touch the Epic, converting any owned edge stored as another
-                      type, recording each owned edge's reason and the Epic content the
-                      assessment read. `--owned` proposes the owned edge set back, which
-                      only adds and converts, and proposes no edge
+    validate          prove one item's edge proposal (`--edges` with `--epic` or `--task`)
+                      is applicable before anything is written: every edge joins two beads
+                      of the level, touches the item and carries a reason, and every owned
+                      edge standing on it is kept or withdrawn with a reason
+    apply-edges       apply one item's edge DIFF (`--edges` with `--epic` or `--task`)
+                      through `bd dep` as the level's type, never touching a hand-made edge
+                      or an edge that does not touch the item, converting any owned edge
+                      stored as the other level's type, recording each owned edge's reason
+                      and the item content the assessment read. `--owned` proposes the owned
+                      Epic edge set back, which only adds and converts, and proposes no edge
     score-plan        what this scoring run judges, with the fingerprints that decide it
     judge-input       the items one level judges, with the PRD of each Epic to judge as a
                       file, and the sessions: one Epic each, or one Epic's Tasks each
@@ -51,14 +60,17 @@ from pathlib import Path
 import beadgraph
 from beadgraph import Bead, Graph, GraphError, Writer, split_ids
 from assesscontext import assess_context
+from assesscontext import task_context
 from edgeset import (
     ASSESSED_AT_KEY,
+    ELAB_IDENTITY_KEY,
     SEEN_KEY,
     SequencingError,
     apply_edges,
     owned_edges,
     read_edges,
     read_withdrawn,
+    scope_defect,
     validate,
 )
 from elaboration import LifecycleError, finish, release, start
@@ -138,30 +150,53 @@ def _instant(text: str) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def assess_plan(graph: Graph, *, epic: str | None, since: str | None = None) -> dict:
-    """Every open Epic's fingerprint, and the Epics not assessed as they now stand.
+def assess_plan(
+    graph: Graph,
+    *,
+    epic: str | None,
+    since: str | None = None,
+    level: str = "epic",
+    task: str | None = None,
+) -> dict:
+    """Every candidate's fingerprint at a level, and those not assessed as they now stand.
 
-    An Epic has been assessed as it stands when the `seq_content_hash` recorded on it
-    matches its fingerprint. With `since`, an Epic whose `seq_assessed_at` is absent or
-    earlier than that instant is unassessed too. The fingerprints are what
-    `apply-edges --plan` records.
+    At Epic level the candidates are the open Epics; at Task level, the open Tasks with no
+    `elab_key`, because a Task elaboration wrote has its edges from elaboration. An item
+    has been assessed as it stands when the `seq_content_hash` recorded on it matches its
+    fingerprint. With `since`, an item whose `seq_assessed_at` is absent or earlier than
+    that instant is unassessed too. The fingerprints are what `apply-edges --plan`
+    records.
 
     Args:
         graph: The tracker graph, read with descriptions.
-        epic: The one Epic to be assessed, or None for every open Epic.
+        epic: The one Epic to be assessed, or None. Epic level only.
         since: An ISO 8601 instant, or None.
+        level: `epic` or `task`.
+        task: The one Task to be assessed, or None. Task level only.
 
     Returns:
-        The fingerprints, the unassessed Epics, the scope, and a summary.
+        The level, the fingerprints, the unassessed items, the scope, and a summary.
 
     Raises:
-        SequencingError: `epic` is not an open Epic, or `since` is not an ISO 8601
-            instant.
+        SequencingError: A scope was given for the other level, the scope is not a
+            candidate of its level, or `since` is not an ISO 8601 instant.
     """
-    epics = [b for b in graph.of_kind("epic") if not b.closed]
-    if epic is not None and epic not in {b.id for b in epics}:
-        msg = f"{epic} is not an open Epic"
+    if level == "epic" and task is not None:
+        msg = "--task needs --level task"
         raise SequencingError(msg)
+    if level == "task" and epic is not None:
+        msg = "--epic needs --level epic"
+        raise SequencingError(msg)
+    item = epic if level == "epic" else task
+    if item is not None:
+        defect = scope_defect(graph, item, level)
+        if defect:
+            raise SequencingError(defect)
+    candidates = [
+        b
+        for b in graph.of_kind(level)
+        if not b.closed and not (level == "task" and b.metadata.get(ELAB_IDENTITY_KEY))
+    ]
     cutoff = _instant(since) if since is not None else None
     if since is not None and cutoff is None:
         msg = f"--since {since!r} is not an ISO 8601 instant"
@@ -176,20 +211,23 @@ def assess_plan(graph: Graph, *, epic: str | None, since: str | None = None) -> 
         at = _instant(bead.metadata.get(ASSESSED_AT_KEY) or "")
         return at is not None and at >= cutoff
 
-    unassessed = [e.id for e in epics if not assessed(e)]
-    summary = {
-        "scope": epic or "all",
-        "openEpics": len(epics),
-        "unassessed": len(unassessed),
-        "unassessedIds": sorted(unassessed),
-    }
+    unassessed = [c.id for c in candidates if not assessed(c)]
+    summary: dict = {"level": level, "scope": item or "all"}
+    if level == "epic":
+        summary["openEpics"] = len(candidates)
+    else:
+        summary["openTasks"] = sum(1 for b in graph.of_kind("task") if not b.closed)
+        summary["candidates"] = len(candidates)
+    summary["unassessed"] = len(unassessed)
+    summary["unassessedIds"] = sorted(unassessed)
     if since is not None:
         summary["since"] = since
     return {
-        "scope": epic or "all",
+        "level": level,
+        "scope": item or "all",
         "since": since,
         "unassessed": unassessed,
-        "fingerprints": {e.id: prints[e.id] for e in epics if e.id in prints},
+        "fingerprints": {c.id: prints[c.id] for c in candidates if c.id in prints},
         "summary": summary,
     }
 
@@ -293,27 +331,38 @@ def build_parser() -> argparse.ArgumentParser:
 
     asp = sub.add_parser(
         "assess-plan",
-        help="fingerprints, and the Epics not assessed as they stand",
+        help="fingerprints, and the Epics or Tasks not assessed as they stand",
         parents=[common],
     )
+    asp.add_argument(
+        "--level",
+        choices=("epic", "task"),
+        default="epic",
+        help="`epic` (default), or `task`: the open Tasks created outside elaboration",
+    )
     asp.add_argument("--epic", default=None, help="the one Epic to be assessed")
+    asp.add_argument("--task", default=None, help="the one Task to be assessed")
     asp.add_argument(
         "--since",
         default=None,
-        help="ISO 8601; an Epic not assessed since this instant is also unassessed",
+        help="ISO 8601; an item not assessed since this instant is also unassessed",
     )
 
     acx = sub.add_parser(
         "assess-context",
-        help="one Epic's assessment material: the PRD corpus, its index, standing edges",
+        help="one Epic's or one Task's assessment material: corpus, index, standing edges",
         parents=[common],
     )
-    acx.add_argument("--epic", required=True, help="the Epic to be assessed")
+    acx.add_argument("--epic", default=None, help="the Epic to be assessed")
+    acx.add_argument(
+        "--task", default=None, help="the Task, created outside elaboration, to assess"
+    )
     acx.add_argument(
         "--dir",
         type=Path,
         required=True,
-        help="write `prd/<id>.md` per open Epic and `index.md` here",
+        help="write `prd/<id>.md` per open Epic (or `task/<id>.md` per open Task) "
+        "and `index.md` here",
     )
 
     snap = sub.add_parser("snapshot", help="the tracker as a graph", parents=[common])
@@ -323,18 +372,20 @@ def build_parser() -> argparse.ArgumentParser:
     snap.add_argument("--epics", default=None, help="restrict to these Epics")
 
     val = sub.add_parser(
-        "validate", help="check one Epic's edge proposal", parents=[common]
+        "validate",
+        help="check one Epic's or one Task's edge proposal",
+        parents=[common],
     )
     val.add_argument(
         "--edges", type=Path, required=True, help="edge file, or `-` for stdin"
     )
-    val.add_argument(
-        "--epic", default=None, help="the one Epic the proposal covers (required)"
-    )
+    val.add_argument("--epic", default=None, help="the one Epic the proposal covers")
+    val.add_argument("--task", default=None, help="the one Task the proposal covers")
 
     app = sub.add_parser(
         "apply-edges",
-        help="apply an Epic edge diff through `bd dep` as `tracks` edges",
+        help="apply an edge diff through `bd dep`: `tracks` between Epics, "
+        "`blocks` between Tasks",
         parents=[common],
     )
     source = app.add_mutually_exclusive_group(required=True)
@@ -353,7 +404,12 @@ def build_parser() -> argparse.ArgumentParser:
     app.add_argument(
         "--epic",
         default=None,
-        help="the one Epic the proposal covers; required with `--edges`",
+        help="the one Epic the proposal covers; `--edges` takes this or `--task`",
+    )
+    app.add_argument(
+        "--task",
+        default=None,
+        help="the one Task the proposal covers; `--edges` takes this or `--epic`",
     )
     _dry_run_flag(app)
 
@@ -479,8 +535,15 @@ def run(args: argparse.Namespace) -> dict:
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     command = args.command
     if command == "assess-plan":
-        return head | assess_plan(graph, epic=args.epic, since=args.since)
+        return head | assess_plan(
+            graph, epic=args.epic, since=args.since, level=args.level, task=args.task
+        )
     if command == "assess-context":
+        if (args.epic is None) == (args.task is None):
+            msg = "assess-context covers exactly one Epic or one Task: pass --epic or --task"
+            raise SequencingError(msg)
+        if args.task is not None:
+            return head | task_context(graph, args.task, args.dir)
         return head | assess_context(graph, args.epic, args.dir)
     if command == "score-plan":
         only = split_ids(args.only) if args.only else None
@@ -497,12 +560,21 @@ def run(args: argparse.Namespace) -> dict:
             include_closed=args.include_closed,
             epics=epics,
         )
-    if command in ("validate", "apply-edges") and args.edges and not args.epic:
-        msg = "an edge proposal covers exactly one Epic: pass --epic"
+    if command in ("validate", "apply-edges") and args.edges:
+        if bool(args.epic) == bool(args.task):
+            msg = (
+                "an edge proposal covers exactly one Epic or one Task: "
+                "pass --epic or --task"
+            )
+            raise SequencingError(msg)
+    if command == "apply-edges" and args.owned and args.task:
+        msg = "--owned repairs the owned Epic edges; it takes no --task"
         raise SequencingError(msg)
+    level = "task" if getattr(args, "task", None) else "epic"
+    item = args.task if level == "task" else getattr(args, "epic", None)
     if command == "validate":
         report = validate(
-            graph, read_edges(args.edges), args.epic, read_withdrawn(args.edges)
+            graph, read_edges(args.edges), item, read_withdrawn(args.edges), level
         )
         return (
             head
@@ -513,12 +585,13 @@ def run(args: argparse.Namespace) -> dict:
         seen = _read_json(args.plan)["fingerprints"] if args.plan else {}
         proposal = owned_edges(graph) if args.owned else read_edges(args.edges)
         withdrawn = [] if args.owned else read_withdrawn(args.edges)
-        result = apply_edges(graph, proposal, writer, seen, args.epic, withdrawn)
+        result = apply_edges(graph, proposal, writer, seen, item, withdrawn, level)
         summary = {
             key: result.get(key)
             for key in (
                 "applied",
                 "dryRun",
+                "level",
                 "scope",
                 "added",
                 "converted",
