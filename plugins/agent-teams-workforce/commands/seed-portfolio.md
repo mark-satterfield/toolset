@@ -13,7 +13,9 @@ open Epic at once. It writes.
 
 The workflow runs the per-Epic `dependency-assessment` for every open Epic not assessed
 since `since`, one Epic after another in id order, each applying its own edges with their
-reasons and seeing every edge the earlier ones set. An edge between two Epics is an
+reasons and seeing every edge the earlier ones set. An assessment whose edge proposal does
+not validate is assessed again with the validator's findings, at most twice; if it still
+does not validate, the seeding stops at that Epic and writes nothing for it. An edge between two Epics is an
 architecture dependency (`agent-teams-workforce:epic-sequencing`). When every open Epic has
 been assessed since `since`, it runs `wsjf-scoring` with `all` and `rejudge`: every Epic's
 value, urgency and size, and every Task's size, judged again, then the arithmetic.
@@ -62,10 +64,11 @@ From the workflow's result:
 - `assessed` — per Epic: edges added, converted and withdrawn, and the `unchanged` count;
   every added edge as `blocker -> blocked` with its reason, from the Epic's `edgesFile` and
   `resultFile`; every withdrawal in `withdrawn` as `blocker -> blocked` with its reason.
-- `unresolved` — each Epic whose proposed edges did not validate, with the cycle or doubt
-  each names in `unsure`. Its edges were left as they stood.
 - `stoppedAt` — when the seeding stopped: the Epic, its `error`, `failures` and
-  `dispatchFailures`, verbatim, and the `remaining` Epics.
+  `dispatchFailures`, verbatim, and the `remaining` Epics. When its edge proposal did not
+  validate, also the `attempts` and every finding in `findings`, with the `edgesFile` and
+  `validationFile`, and what a person does: correct the PRD, or the hand-made edge a cycle
+  runs through, then resume with `--since <since>`.
 - `remaining` — the open Epics still not assessed since `since`; scoring runs only when it
   is empty.
 - `scoring` — the `wsjf-scoring` result, reported as `/agent-teams-workforce:wsjf-scoring`

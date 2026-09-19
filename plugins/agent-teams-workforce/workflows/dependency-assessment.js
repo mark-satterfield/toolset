@@ -1,11 +1,11 @@
 export const meta = {
   name: 'dependency-assessment',
   description:
-    "Assesses the architecture dependencies of ONE new or changed Epic, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is an architecture dependency: a judgment about the order in which architecture is established, made before that architecture exists. It exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. One epic-sequencer session reads the Epic's full PRD, names the architecture decisions its requirements drive and the ones it rests on, drops those the SAD settles, searches the other Epics' PRDs for the requirements that drive or rest on each remaining decision, reads those PRDs in full, and applies the edge test in both directions. It proposes every edge to or from the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on it. Code refuses an edge that does not touch the Epic, a cycle, an unaccounted standing edge and a missing reason, confines the write to that Epic's edges, and never touches a hand-made edge. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE. With `apply: false` it proposes only: it computes the edge diff as a dry run, returns it, writes nothing to the tracker and triggers no scoring.",
+    "Assesses the architecture dependencies of ONE new or changed Epic, and writes edges and nothing else. An Epic is a PRD, a business requirement, and an Epic edge is an architecture dependency: a judgment about the order in which architecture is established, made before that architecture exists. It exists where an architecture decision one Epic rests on should be designed from another Epic's requirements first, and the SAD does not already settle that decision. It is stored as a beads `tracks` edge that orders elaboration and never holds work out of `bd ready`. One epic-sequencer session reads the Epic's full PRD, names the architecture decisions its requirements drive and the ones it rests on, drops those the SAD settles, searches the other Epics' PRDs for the requirements that drive or rest on each remaining decision, reads those PRDs in full, and applies the edge test in both directions. It proposes every edge to or from the Epic with a reason, and keeps or withdraws, with a reason, every owned edge standing on it. Code refuses an edge that does not touch the Epic, a cycle, an unaccounted standing edge and a missing reason, confines the write to that Epic's edges, and never touches a hand-made edge. A proposal that does not validate is assessed again with the validator's findings, at most twice, and then the run stops, naming the Epic and the findings and writing nothing. When the edges are applied it triggers wsjf-scoring, because edges decide RR-OE. With `apply: false` it proposes only: it computes the edge diff as a dry run, returns it, writes nothing to the tracker and triggers no scoring.",
   whenToUse: 'A new or changed Epic needs its architecture dependencies assessed.',
   phases: [
     { title: 'Context', detail: "the Epic's fingerprint, its standing edges, and the PRD corpus with its index" },
-    { title: 'Assess', detail: "the epic-sequencer proposes every edge to or from the Epic and accounts for every owned standing edge" },
+    { title: 'Assess', detail: "the epic-sequencer proposes every edge to or from the Epic and accounts for every owned standing edge; code validates each attempt, up to three" },
     { title: 'Apply', detail: "validate and apply the edge diff for the Epic, or compute it as a dry run" },
     { title: 'Score', detail: 'wsjf-scoring over the new edges' },
   ],
@@ -152,22 +152,27 @@ function enter(title) {
 //                           // planned) computed as a dry run. Default true.
 // }
 //
-// Returns: { ok, apply, workDir, epic, plan, context, assessment, edges, scoring,
-//            failures, dispatchFailed, dispatchFailures }
+// Returns: { ok, apply, settled, attempts, workDir, epic, plan, context, assessment, edges,
+//            scoring, stop, error?, headline?, failures, dispatchFailed, dispatchFailures }
+//   settled:    the validator passed an attempt's edge file; nothing is applied otherwise
+//   attempts:   the epic-sequencer sessions run, at most 3
+//   assessment: the last session's result
+//   stop:       null, or { epic, attempts, findings, edgesFile, validationFile, reasoning } when
+//               no attempt validated; `error` and `headline` then name the Epic and each finding
 // With `apply: false`, `scoring` is null and `ok` means the diff was proposed.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 if (Object.prototype.hasOwnProperty.call(a, 'mode')) {
-  return { ok: false, error: '`mode` is not an argument: dependency assessment covers exactly one Epic' }
+  return { ok: false, settled: false, attempts: 0, error: '`mode` is not an argument: dependency assessment covers exactly one Epic' }
 }
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (missingArgs.length) {
-  return { ok: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
+  return { ok: false, settled: false, attempts: 0, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
 }
 const target = a.epic
 if (!(typeof target === 'string' && /^[A-Za-z0-9._-]+$/.test(target))) {
-  return { ok: false, error: '`epic`, the id of the one Epic to assess, is required' }
+  return { ok: false, settled: false, attempts: 0, error: '`epic`, the id of the one Epic to assess, is required' }
 }
 const repo = a.repoPath.replace(/\/+$/, '')
 const work = a.workDir.replace(/\/+$/, '')
@@ -180,6 +185,8 @@ const project = { repoPath: repo, pluginRoot: a.pluginRoot, sadPath: a.sadPath, 
 const fail = (error, extra) => ({
   ok: false,
   apply: applies,
+  settled: false,
+  attempts: 0,
   workDir: work,
   epic: target,
   error,
@@ -251,17 +258,91 @@ Work in this order:
 8. Validate: \`${cmd('validate', `--edges ${shq(edgesFile)}${scope}`)}\` — fix the file until \`ok\` is true. It refuses an edge that does not touch ${target}, a missing reason, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Epic edge. A cycle you cannot remove by dropping one of your own edges that fails the test is reported, not forced: return \`valid: false\` and name the cycle in \`unsure\`.
 
 Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Epic whose PRD you read in full, other than ${target} — and each edge you were unsure of with what would settle it.`
-const assessed = await settleAgent(assessPrompt, {
-  label: `epic-sequencer:${target}`,
-  phase: 'Assess',
-  agentType: 'agent-teams-workforce:epic-sequencer',
-  schema: ASSESS_SCHEMA,
-})
+
+// Code validates every attempt, whatever the session claims. A proposal that does not
+// validate is assessed again with the validator's findings, at most ASSESS_ATTEMPTS
+// sessions in all; one that never validates writes nothing, and the run stops naming the
+// Epic and each finding.
+const ASSESS_ATTEMPTS = 3
+const FINDING_KEYS = [
+  'badScope',
+  'outsideScope',
+  'missingReason',
+  'unaccounted',
+  'withdrawnNotOwned',
+  'keptAndWithdrawn',
+  'notEpicToEpic',
+  'cycle',
+  'dangling',
+  'selfEdges',
+  'ontoClosed',
+  'fromClosed',
+  'duplicates',
+]
+function findingsOf(report) {
+  const found = {}
+  for (const key of FINDING_KEYS) {
+    const v = report ? report[key] : null
+    if ((typeof v === 'string' && v) || (Array.isArray(v) && v.length)) found[key] = v
+  }
+  return found
+}
+const validationFile = (n) => file(`validation-${n}.json`)
+let assessed = null
+let settled = false
+let attempts = 0
+let findings = {}
+for (let attempt = 1; attempt <= ASSESS_ATTEMPTS; attempt++) {
+  attempts = attempt
+  const prompt =
+    attempt === 1
+      ? assessPrompt
+      : `${assessPrompt}
+
+Attempt ${attempt - 1} did not validate. The validator's findings, verbatim: ${JSON.stringify(findings)}. The full report is ${validationFile(attempt - 1)}. Revise ${edgesFile} until every finding is gone, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason; a cycle through an edge with \`owned: false\` is not yours to remove — name it in \`unsure\`.`
+  const session = await settleAgent(prompt, {
+    label: `epic-sequencer:${target}#${attempt}`,
+    phase: 'Assess',
+    agentType: 'agent-teams-workforce:epic-sequencer',
+    schema: ASSESS_SCHEMA,
+  })
+  if (!session) break
+  assessed = session
+  // Printed without --out, so the whole report comes back.
+  const report = await runStep(
+    `validate#${attempt}`,
+    `set -o pipefail; ${cmd('validate', `--edges ${shq(edgesFile)}${scope}`)} | tee ${shq(validationFile(attempt))}`
+  )
+  if (!report) break
+  if (report.ok === true) {
+    settled = true
+    findings = {}
+    break
+  }
+  findings = findingsOf(report)
+}
+const stopped = !settled && !!assessed && attempts === ASSESS_ATTEMPTS && failures.length === 0
+const stop = stopped
+  ? {
+      epic: target,
+      attempts,
+      findings,
+      edgesFile,
+      validationFile: validationFile(attempts),
+      reasoning: reasoningFile,
+    }
+  : null
+const stopMessage = stop
+  ? `${target}: its edge proposal did not validate after ${ASSESS_ATTEMPTS} assessments — ${Object.entries(findings)
+      .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
+      .join('; ')}`
+  : null
+if (stopMessage) log(stopMessage)
 
 // ── Apply ────────────────────────────────────────────────────────────────────────
 enter('Apply')
 let edges
-if (assessed && assessed.valid && !applies) {
+if (settled && !applies) {
   // The dry run prints its full result, which is also kept in the run directory: the
   // diff is the deliverable, so it comes back whole rather than as counts.
   const diffFile = file('apply-edges-dry-run.json')
@@ -289,7 +370,7 @@ if (assessed && assessed.valid && !applies) {
         unsure: assessed.unsure || [],
       }
     : { applied: false, proposed: false, reason: 'the dry run did not complete; nothing was written' }
-} else if (assessed && assessed.valid) {
+} else if (settled) {
   // The full result is printed and kept in the run directory, so the withdrawals come back
   // with their reasons.
   const applyFile = file('apply-edges.json')
@@ -308,9 +389,11 @@ if (assessed && assessed.valid && !applies) {
 } else {
   edges = {
     applied: false,
-    reason: assessed
-      ? 'the proposed edge set did not validate; the tracker keeps its current edges'
-      : 'the epic-sequencer returned no result; the tracker keeps its current edges',
+    reason: stop
+      ? `the proposed edge set did not validate after ${ASSESS_ATTEMPTS} assessments; the tracker keeps its current edges`
+      : assessed
+        ? 'the proposed edge set could not be validated; the tracker keeps its current edges'
+        : 'the epic-sequencer returned no result; the tracker keeps its current edges',
     edgesFile,
     reasoning: reasoningFile,
     unsure: (assessed && assessed.unsure) || [],
@@ -331,8 +414,10 @@ if (scores) {
 }
 
 return {
-  ok: (applies ? edges.applied === true : edges.proposed === true) && failures.length === 0 && (!scores || (!!scoring && scoring.ok === true)),
+  ok: settled && (applies ? edges.applied === true : edges.proposed === true) && failures.length === 0 && (!scores || (!!scoring && scoring.ok === true)),
   apply: applies,
+  settled,
+  attempts,
   workDir: work,
   epic: target,
   plan,
@@ -340,6 +425,8 @@ return {
   assessment: assessed || { failed: true },
   edges,
   scoring,
+  stop,
+  ...(stop ? { error: stopMessage, headline: stopMessage } : {}),
   failures,
   dispatchFailed: dispatchDeaths().length > 0,
   dispatchFailures: dispatchDeaths(),

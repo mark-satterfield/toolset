@@ -1,7 +1,7 @@
 export const meta = {
   name: 'seed-portfolio',
   description:
-    "Seeds the Epic portfolio once: the per-Epic dependency assessment for every open Epic, one Epic after another in id order, then a full WSJF re-judge. Seeding is the same assessment normal operation runs for a new or changed Epic, dispatched by name for each Epic with `score: false`: each one reads its Epic's full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. An Epic whose assessment could not settle its edges — a cycle it could not remove, or a doubt it could not resolve — is recorded as unresolved and the seeding continues; any other failure stops it at that Epic. When every open Epic has been assessed since the seeding began, one wsjf-scoring run with `all` and `rejudge` judges every Epic from its full PRD and runs the arithmetic. A seeding is resumed by passing the same `since`: only the Epics not assessed since then are assessed again. With `apply: false` every assessment proposes only, nothing is written and no scoring runs.",
+    "Seeds the Epic portfolio once: the per-Epic dependency assessment for every open Epic, one Epic after another in id order, then a full WSJF re-judge. Seeding is the same assessment normal operation runs for a new or changed Epic, dispatched by name for each Epic with `score: false`: each one reads its Epic's full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. An Epic whose edge proposal did not validate after three assessments stops the seeding at that Epic, naming each finding, as any other failure does; a person settles it and the seeding resumes. When every open Epic has been assessed since the seeding began, one wsjf-scoring run with `all` and `rejudge` judges every Epic from its full PRD and runs the arithmetic. A seeding is resumed by passing the same `since`: only the Epics not assessed since then are assessed again. With `apply: false` every assessment proposes only, nothing is written and no scoring runs.",
   whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed, then every Epic and Task is scored.',
   phases: [
     { title: 'Plan', detail: 'the open Epics not assessed since the seeding began, in id order' },
@@ -151,13 +151,14 @@ function enter(title) {
 //                            // scoring runs. Default true.
 // }
 //
-// Returns: { ok, since, apply, assessed, unresolved, stoppedAt, remaining, scoring,
+// Returns: { ok, since, apply, assessed, stoppedAt, remaining, scoring,
 //            failures, dispatchFailed, dispatchFailures }
 //   assessed:   [{ id, added, converted, removed, unchanged, withdrawn, edgesFile, reasoning, resultFile }]
 //               — counts, the withdrawals with their reasons, and the files holding every edge
 //               with its reason and the full applied or proposed diff
-//   unresolved: [{ id, unsure, edgesFile, reasoning }] — assessments whose edges did not validate
-//   stoppedAt:  null, or { id, error, failures, dispatchFailures } for the assessment that stopped it
+//   stoppedAt:  null, or { id, error, findings, attempts, edgesFile, validationFile, failures,
+//               dispatchFailures } for the assessment that stopped it; the four from the
+//               assessment's `stop` are null when it has none
 //   remaining:  the open Epics still not assessed since `since`
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
@@ -183,7 +184,6 @@ const applies = a.apply !== false
 const project = { repoPath: repo, pluginRoot: a.pluginRoot, sadPath: a.sadPath, projectRoot: a.projectRoot }
 const count = (v) => (Array.isArray(v) ? v.length : typeof v === 'number' ? v : 0)
 const assessed = []
-const unresolved = []
 let stoppedAt = null
 let remaining = []
 let scoring = null
@@ -192,7 +192,6 @@ const result = (ok, extra) => ({
   since: a.since,
   apply: applies,
   assessed,
-  unresolved,
   stoppedAt,
   remaining,
   scoring,
@@ -256,14 +255,14 @@ for (let i = 0; i < queue.length; i++) {
     log(`${id}: ${count(edges.added)} added, ${count(edges.converted)} converted, ${count(edges.removed)} withdrawn${applies ? '' : ' (proposed)'}`)
     continue
   }
-  if (r && r.assessment && r.assessment.valid === false) {
-    unresolved.push({ id, unsure: edges.unsure || r.assessment.unsure || [], edgesFile: edges.edgesFile || null, reasoning: edges.reasoning || null })
-    log(`${id}: unresolved — its proposed edges did not validate; the tracker keeps its current edges`)
-    continue
-  }
+  const stop = (r && r.stop) || null
   stoppedAt = {
     id,
     error: thrown || (r && (r.error || edges.reason)) || 'the dependency assessment returned no result',
+    findings: stop ? stop.findings || null : null,
+    attempts: stop ? stop.attempts ?? r.attempts ?? null : null,
+    edgesFile: stop ? stop.edgesFile || null : null,
+    validationFile: stop ? stop.validationFile || null : null,
     failures: (r && r.failures) || [],
     dispatchFailures: (r && r.dispatchFailures) || [],
   }
@@ -271,7 +270,12 @@ for (let i = 0; i < queue.length; i++) {
   log(`Seeding stopped at ${id}: ${stoppedAt.error}`)
   break
 }
-if (stoppedAt) return result(false, { error: `the seeding stopped at ${stoppedAt.id}; resume with the same since, ${a.since}` })
+if (stoppedAt) {
+  const error = stoppedAt.findings
+    ? `the seeding stopped at ${stoppedAt.id}: its edge proposal did not validate after ${stoppedAt.attempts} assessments; settle the findings in stoppedAt, then resume with the same since, ${a.since}`
+    : `the seeding stopped at ${stoppedAt.id}; resume with the same since, ${a.since}`
+  return result(false, { error })
+}
 if (!applies) return result(failures.length === 0)
 
 // ── Score ────────────────────────────────────────────────────────────────────────
@@ -284,7 +288,7 @@ if (!after) return result(false, { error: 'the assessment plan could not be reco
 remaining = (after.summary && after.summary.unassessedIds) || []
 if (remaining.length) {
   return result(false, {
-    error: `${remaining.length} open Epic(s) are not assessed since ${a.since}; no scoring ran. Resolve them and resume with the same since.`,
+    error: `${remaining.length} open Epic(s) are not assessed since ${a.since}; no scoring ran. Settle them and resume with the same since.`,
   })
 }
 scoring = await workflow('agent-teams-workforce:wsjf-scoring', {
