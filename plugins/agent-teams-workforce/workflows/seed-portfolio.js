@@ -1,12 +1,12 @@
 export const meta = {
   name: 'seed-portfolio',
   description:
-    "Seeds the Epic portfolio once: the per-Epic dependency assessment for every open Epic, one Epic after another in id order, then a full WSJF re-judge. Seeding is the same assessment normal operation runs for a new or changed Epic, dispatched by name for each Epic with `score: false`: each one reads its Epic's full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. An Epic whose edge proposal did not validate after three assessments stops the seeding at that Epic, naming each finding, as any other failure does; a person settles it and the seeding resumes. When every open Epic has been assessed since the seeding began, one wsjf-scoring run with `all` and `rejudge` judges every Epic from its full PRD and runs the arithmetic. A seeding is resumed by passing the same `since`: only the Epics not assessed since then are assessed again. With `apply: false` every assessment proposes only, nothing is written and no scoring runs.",
-  whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed, then every Epic and Task is scored.',
+    "Seeds the Epic portfolio's architecture dependencies, one batch per run: the per-Epic dependency assessment for at most `batch` open Epics (default 40), one Epic after another in id order, each dispatched by name with `score: false`. It is the same assessment normal operation runs for a new or changed Epic: each one reads its Epic's full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. It returns the open Epics still to assess in `remaining` and never scores. /seed-portfolio runs it again with the same `since` until `remaining` is empty, then dispatches wsjf-scoring with `all` and `rejudge` as a workflow of its own, so every batch and the scoring have their own agent budget. An Epic whose edge proposal did not validate after three assessments stops the seeding at that Epic, naming each finding, as any other failure does; a person settles it and the seeding resumes with the same `since`. With `apply: false` every assessment proposes only and nothing is written.",
+  whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed, one batch per run, before every Epic and Task is scored by wsjf-scoring.',
   phases: [
-    { title: 'Plan', detail: 'the open Epics not assessed since the seeding began, in id order' },
-    { title: 'Assess', detail: 'dependency-assessment for each Epic, one after another, with score: false' },
-    { title: 'Score', detail: 'wsjf-scoring with all and rejudge, once every open Epic is assessed' },
+    { title: 'Plan', detail: 'the open Epics not assessed since the seeding began, in id order; this run takes the first `batch`' },
+    { title: 'Assess', detail: 'dependency-assessment for each Epic of the batch, one after another, with score: false' },
+    { title: 'Remaining', detail: 'the open Epics still not assessed since the seeding began' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -144,22 +144,36 @@ function enter(title) {
 //   workDir:      string,    // absolute path of a directory for this run's files; one per run
 //   since:        string,    // ISO 8601: the instant the seeding began. An open Epic not assessed
 //                            // since then is assessed; a resumed seeding passes the same value.
-//   sadPath?:     string,    // the arc42 SAD (ATW_SAD_PATH), passed to every assessment and the scoring
+//   sadPath?:     string,    // the arc42 SAD (ATW_SAD_PATH), passed to every assessment
 //   projectRoot?: string,    // the project root (ATW_PROJECT_ROOT), passed the same way
 //   epics?:       string[],  // assess only these open Epics (a rehearsal); the rest are left alone
-//   apply?:       boolean,   // false: every assessment proposes only; nothing is written and no
-//                            // scoring runs. Default true.
+//   batch?:       integer,   // the most Epics this run assesses, 1 to SEED_BATCH_MAX. Default SEED_BATCH.
+//   apply?:       boolean,   // false: every assessment proposes only; nothing is written.
+//                            // Default true.
 // }
 //
-// Returns: { ok, since, apply, assessed, stoppedAt, remaining, scoring,
+// Returns: { ok, since, apply, batch, assessed, stoppedAt, remaining,
 //            failures, dispatchFailed, dispatchFailures }
+//   ok:         true when nothing stopped and `failures` is empty
 //   assessed:   [{ id, added, converted, removed, unchanged, withdrawn, edgesFile, reasoning, resultFile }]
 //               — counts, the withdrawals with their reasons, and the files holding every edge
 //               with its reason and the full applied or proposed diff
 //   stoppedAt:  null, or { id, error, findings, attempts, edgesFile, validationFile, failures,
 //               dispatchFailures } for the assessment that stopped it; the four from the
 //               assessment's `stop` are null when it has none
-//   remaining:  the open Epics still not assessed since `since`
+//   remaining:  the open Epics still not assessed since `since` (restricted to `epics` when
+//               given); the caller runs the seeding again with the same `since` until it is
+//               empty. With `apply: false` it is the queue past this batch, because a
+//               proposal stamps nothing.
+//
+// ── The agent budget ─────────────────────────────────────────────────────────────
+//
+// The runtime caps one workflow, nested workflows included, at 1000 agent sessions. One
+// assessment uses at most 9: `assess-plan`, `assess-context`, up to ASSESS_ATTEMPTS = 3
+// sequencer sessions and 3 validations, and `apply-edges`. A batch adds its own two plan
+// steps. So a batch of 100 uses at most 902, and the default of 40 at most 362.
+const SEED_BATCH = 40
+const SEED_BATCH_MAX = 100
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
@@ -175,6 +189,10 @@ if (!(typeof a.since === 'string' && ISO.test(a.since))) {
 if (a.epics !== undefined && !(Array.isArray(a.epics) && a.epics.length && a.epics.every((e) => typeof e === 'string' && ID.test(e)))) {
   return { ok: false, error: '`epics`, when given, is a non-empty list of Epic ids' }
 }
+if (a.batch !== undefined && !(Number.isInteger(a.batch) && a.batch >= 1 && a.batch <= SEED_BATCH_MAX)) {
+  return { ok: false, error: `\`batch\`, when given, is an integer from 1 to ${SEED_BATCH_MAX}` }
+}
+const batch = a.batch === undefined ? SEED_BATCH : a.batch
 const repo = a.repoPath.replace(/\/+$/, '')
 const work = a.workDir.replace(/\/+$/, '')
 const DS = `${a.pluginRoot.replace(/\/+$/, '')}/scripts/portfolio/depscore.py`
@@ -186,15 +204,14 @@ const count = (v) => (Array.isArray(v) ? v.length : typeof v === 'number' ? v : 
 const assessed = []
 let stoppedAt = null
 let remaining = []
-let scoring = null
 const result = (ok, extra) => ({
   ok,
   since: a.since,
   apply: applies,
+  batch,
   assessed,
   stoppedAt,
   remaining,
-  scoring,
   ...(extra || {}),
   failures,
   dispatchFailed: dispatchDeaths().length > 0,
@@ -215,17 +232,18 @@ if (chosen) {
   const skipped = a.epics.filter((id) => !unassessedIds.includes(id))
   if (skipped.length) log(`Not assessed — assessed since ${a.since}, or not an open Epic: ${skipped.join(', ')}`)
 }
-log(`${queue.length} Epic(s) to assess since ${a.since}`)
+const slice = queue.slice(0, batch)
+log(`${queue.length} Epic(s) to assess since ${a.since}: this run assesses ${slice.length}, ${queue.length - slice.length} left for later runs`)
 
 // ── Assess ───────────────────────────────────────────────────────────────────────
 //
 // One Epic after another, never concurrently: each assessment sees every edge the earlier
 // ones set, with its reason, and the cycle check runs against the live graph while the
 // session can still revise its proposal. `score: false` because one scoring run follows
-// them all.
+// the last batch.
 enter('Assess')
-for (let i = 0; i < queue.length; i++) {
-  const id = queue[i]
+for (let i = 0; i < slice.length; i++) {
+  const id = slice[i]
   let r = null
   let thrown = null
   try {
@@ -276,25 +294,25 @@ if (stoppedAt) {
     : `the seeding stopped at ${stoppedAt.id}; resume with the same since, ${a.since}`
   return result(false, { error })
 }
-if (!applies) return result(failures.length === 0)
 
-// ── Score ────────────────────────────────────────────────────────────────────────
+// ── Remaining ────────────────────────────────────────────────────────────────────
 //
-// Edges come first, then scores: scoring runs only once every open Epic has been assessed
-// since the seeding began.
-enter('Score')
+// The Epics a later run assesses. Applied, they are read back from the tracker, so an Epic
+// that changed while this batch ran is assessed again. Proposed only, nothing was stamped,
+// so they are the queue past this batch. Scoring is never run here: /seed-portfolio runs
+// wsjf-scoring as its own workflow once `remaining` is empty.
+enter('Remaining')
+if (!applies) {
+  remaining = queue.slice(batch)
+  return result(failures.length === 0)
+}
 const after = await runStep('assess-plan (after)', cmd('assess-plan', `--since ${shq(a.since)} --out ${shq(file('seed-plan-after.json'))}`))
-if (!after) return result(false, { error: 'the assessment plan could not be recomputed; no scoring ran' })
-remaining = (after.summary && after.summary.unassessedIds) || []
-if (remaining.length) {
+if (!after) {
   return result(false, {
-    error: `${remaining.length} open Epic(s) are not assessed since ${a.since}; no scoring ran. Settle them and resume with the same since.`,
+    error: `the assessment plan could not be recomputed after this batch; run the seeding again with the same since, ${a.since}`,
   })
 }
-scoring = await workflow('agent-teams-workforce:wsjf-scoring', {
-  ...project,
-  workDir: file('scoring'),
-  all: true,
-  rejudge: true,
-})
-return result(failures.length === 0 && !!scoring && scoring.ok === true)
+const stillUnassessed = (after.summary && after.summary.unassessedIds) || []
+remaining = chosen ? stillUnassessed.filter((id) => chosen.has(id)) : stillUnassessed.slice()
+log(`${remaining.length} Epic(s) remain to assess since ${a.since}`)
+return result(failures.length === 0)
