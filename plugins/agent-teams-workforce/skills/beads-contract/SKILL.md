@@ -201,15 +201,6 @@ fingerprint the assessment last read the Epic at, and `seq_assessed_at` is when 
 assessment was last applied; both are written on the assessed Epic every time its assessment
 applies. `depscore.py apply-edges` writes all five keys; nothing else does.
 
-Epic summary, written on every open Epic by the `epic-summaries` workflow and read by every
-session that holds the whole portfolio in place of the PRDs:
-
-| Key | Value |
-| --- | --- |
-| `epic_summary` | a few hundred words: the architecture decisions the Epic's requirements should drive, the decisions it should be designed on top of, which of those the SAD already settles, and the value and urgency it carries. Decisions are named as questions to be decided, never as things that must exist or be built. It describes the requirement and designs no solution |
-| `epic_summary_hash` | the content fingerprint of the Epic the summary was written from; the summary is regenerated when the Epic's fingerprint no longer matches it, and at no other time |
-| `epic_summary_at` | ISO 8601 timestamp of the write |
-
 The script is the list: `metadata set` names every key it accepts when it refuses one.
 
 `metadata set` refuses any key outside that namespace. A typo'd key is not a small mistake — it

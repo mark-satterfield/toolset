@@ -375,18 +375,6 @@ SEQUENCING_KEYS = (
     "seq_assessed_at",
 )
 
-#: Keys the EPIC SUMMARY owns, on an Epic. `epic_summary` is a few hundred words on the
-#: architecture decisions the Epic's requirements should drive, the decisions it should be
-#: designed on top of, which of those the SAD already settles, and its value and urgency;
-#: sessions that hold the whole portfolio read it in place of the PRD.
-#: `epic_summary_hash` is the content fingerprint of the Epic it was written from, so a
-#: summary is regenerated exactly when the Epic changes, and `epic_summary_at` is when.
-SUMMARY_KEYS = (
-    "epic_summary",
-    "epic_summary_hash",
-    "epic_summary_at",
-)
-
 #: Keys the ELABORATION lane owns. Listed so `metadata get` can say which keys on a bead
 #: belong to a known lane and which are strangers, and so a `metadata set` typo of one of
 #: them is refused rather than written into a key nothing reads.
@@ -417,7 +405,6 @@ KNOWN_KEYS = frozenset(
     + list(LANE_KEYS)
     + list(WSJF_KEYS)
     + list(SEQUENCING_KEYS)
-    + list(SUMMARY_KEYS)
 )
 
 
@@ -1062,7 +1049,6 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
             "sequencing": {
                 key: metadata[key] for key in SEQUENCING_KEYS if key in metadata
             },
-            "summary": {key: metadata[key] for key in SUMMARY_KEYS if key in metadata},
             "unrecognized": sorted(key for key in metadata if key not in KNOWN_KEYS),
         }
 

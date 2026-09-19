@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """The Epic portfolio — the deterministic half, over the tracker graph.
 
-The `epic-summaries`, `dependency-assessment`, `wsjf-scoring` and `prd-to-spec` workflows
-run these. Every judged step between them is an agent; everything here is code.
+The `dependency-assessment`, `wsjf-scoring` and `prd-to-spec` workflows run these. Every judged step between them is an agent; everything here is code.
 
-    summary-plan      the open Epics whose summary is missing or whose fingerprint no longer matches
-    record-summaries  write summaries with the fingerprint they were written from
-    portfolio         every open Epic with its summary and edges, as one document
     assess-plan       every open Epic's fingerprint, and those not assessed as they stand
                       (with `--since`, also those not assessed since that instant)
     assess-context    one Epic's assessment material: every open Epic's PRD as a file, an
@@ -40,10 +36,9 @@ run these. Every judged step between them is an agent; everything here is code.
 Every command prints ONE JSON object on stdout and names the tracker source it read. With
 `--out FILE` the full object is written to FILE and stdout carries only its `summary`.
 
-`record-summaries`, `apply-edges`, `record`, `score` and the three `elaboration-` commands
-take `--dry-run`: the command reads the tracker and
-computes exactly as it otherwise would, writes nothing, and returns every write it would
-have made, in order, under `planned`.
+`apply-edges`, `record`, `score` and the three `elaboration-` commands take `--dry-run`:
+the command reads the tracker and computes exactly as it otherwise would, writes nothing,
+and returns every write it would have made, in order, under `planned`.
 """
 
 from __future__ import annotations
@@ -68,12 +63,6 @@ from edgeset import (
 )
 from elaboration import LifecycleError, finish, release, start
 from scoring import ScoringError, judge_input, plan, record, score
-from summaries import (
-    SummaryError,
-    portfolio,
-    record_summaries,
-    summary_plan,
-)
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
 #: sequencer reads it.
@@ -225,11 +214,11 @@ def _read_json(path: Path) -> dict:
 
 
 def _entries(path: Path | None, key: str) -> list[dict]:
-    """The per-item records from a judging or summarizing session's output file.
+    """The per-item records from a judging session's output file.
 
     Args:
         path: The output (`{key: [...]}`), or None when there is none.
-        key: The list's key: `scores` or `summaries`.
+        key: The list's key: `scores`.
 
     Returns:
         The records.
@@ -301,45 +290,6 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     sub = parser.add_subparsers(dest="command", required=True)
-
-    spl = sub.add_parser(
-        "summary-plan",
-        help="the open Epics whose summary is due",
-        parents=[common],
-    )
-    spl.add_argument("--epics", default=None, help="restrict to these Epics")
-    spl.add_argument(
-        "--prd-dir", type=Path, default=None, help="write each due Epic's PRD here"
-    )
-
-    rsu = sub.add_parser(
-        "record-summaries",
-        help="write summaries with their fingerprints",
-        parents=[common],
-    )
-    rsu.add_argument(
-        "--plan", type=Path, required=True, help="the `summary-plan` output"
-    )
-    rsu.add_argument(
-        "--summaries",
-        type=Path,
-        action="append",
-        required=True,
-        help="a summarizing session's output; repeatable",
-    )
-    _dry_run_flag(rsu)
-
-    por = sub.add_parser(
-        "portfolio",
-        help="every open Epic with its summary, as one document",
-        parents=[common],
-    )
-    por.add_argument(
-        "--markdown", type=Path, required=True, help="the document to write"
-    )
-    por.add_argument(
-        "--prd-dir", type=Path, default=None, help="write every open Epic's PRD here"
-    )
 
     asp = sub.add_parser(
         "assess-plan",
@@ -518,8 +468,6 @@ def run(args: argparse.Namespace) -> dict:
         The payload to print as JSON.
     """
     descriptions = args.command in (
-        "summary-plan",
-        "portfolio",
         "assess-plan",
         "assess-context",
         "score-plan",
@@ -530,14 +478,6 @@ def run(args: argparse.Namespace) -> dict:
     head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     command = args.command
-    if command == "summary-plan":
-        epics = split_ids(args.epics) if args.epics else None
-        return head | summary_plan(graph, epics=epics, prd_dir=args.prd_dir)
-    if command == "record-summaries":
-        entries = [e for path in args.summaries for e in _entries(path, "summaries")]
-        return head | record_summaries(graph, _read_json(args.plan), entries, writer)
-    if command == "portfolio":
-        return head | portfolio(graph, prd_dir=args.prd_dir, markdown=args.markdown)
     if command == "assess-plan":
         return head | assess_plan(graph, epic=args.epic, since=args.since)
     if command == "assess-context":
@@ -635,7 +575,6 @@ def main(argv: list[str] | None = None) -> int:
         SequencingError,
         ScoringError,
         LifecycleError,
-        SummaryError,
         GraphError,
         json.JSONDecodeError,
         OSError,

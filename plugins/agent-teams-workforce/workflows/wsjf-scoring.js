@@ -190,7 +190,8 @@ for (const level of ['epic', 'task']) {
   const out = await runStep(`judge-input:${level}`, cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(path)}`))
   if (out) inputs[level] = { path, summary: out.summary || {} }
 }
-const epicIds = inputs.epic && Array.isArray(inputs.epic.summary.ids) ? inputs.epic.summary.ids.filter((id) => typeof id === 'string' && ID.test(id)) : []
+const epicInput = inputs.epic
+const epicIds = epicInput && Array.isArray(epicInput.summary.ids) ? epicInput.summary.ids.filter((id) => typeof id === 'string' && ID.test(id)) : []
 const taskGroups = inputs.task && Array.isArray(inputs.task.summary.groups)
   ? inputs.task.summary.groups.filter((g) => g && typeof g.key === 'string' && ID.test(g.key) && Array.isArray(g.tasks) && g.tasks.length)
   : []
