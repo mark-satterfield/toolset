@@ -1,87 +1,79 @@
 ---
-description: "Seed the Epic portfolio once: optionally dependencies, then a full WSJF re-judge"
-argument-hint: "[--assess | --propose]"
+description: "Seed the portfolio once: the per-Epic dependency assessment for every open Epic, then a full WSJF re-judge"
+argument-hint: "[--since <iso>]"
 allowed-tools: [Bash, Workflow]
 ---
 
 # Seed the portfolio
 
-A one-time batch over the beads tracker of the repository you are standing in. The normal
-path sets edges and scores as Epics and Tasks are created or changed; this sets
-them for the whole portfolio at once. It writes.
+A one-time batch over the beads tracker of the repository you are standing in, by
+dispatching the `seed-portfolio` workflow. The normal path assesses an Epic's architecture
+dependencies and scores it when it is created or changed; seeding does the same for every
+open Epic at once. It writes.
 
-It runs two workflows in order, and stops at the first that returns `ok: false`:
+The workflow runs the per-Epic `dependency-assessment` for every open Epic not assessed
+since `since`, one Epic after another in id order, each applying its own edges with their
+reasons and seeing every edge the earlier ones set. An edge between two Epics is an
+architecture dependency (`agent-teams-workforce:epic-sequencing`). When every open Epic has
+been assessed since `since`, it runs `wsjf-scoring` with `all` and `rejudge`: every Epic's
+value, urgency and size, and every Task's size, judged again, then the arithmetic.
 
-1. `dependency-assessment` in mode `portfolio`, **only with `--assess`** — the Epic
-   architecture-dependency edges, set before any score. Without it the edges already in the tracker
-   stand.
-2. `wsjf-scoring` with `all` and `rejudge` — every Epic's value, urgency and size, and every
-   Task's size, judged again, then the arithmetic.
-
-With `--propose` it runs `dependency-assessment` in mode `portfolio` with
-`apply: false`, and stops there: it reports the proposed edge diff against the edges in the
-tracker, writes no edge and runs no scoring. `--assess` and `--propose` are exclusive; report
-the usage and stop when both are given.
+- `--since <iso>` resumes an interrupted seeding: pass the `since` the interrupted run
+  printed. Only the Epics not assessed since then are assessed, then scoring runs. Without
+  it, `since` is now.
 
 ## Dispatch
 
 ```bash
 REPO="$(git rev-parse --show-toplevel)"
 RUN="$(date -u +%Y%m%dT%H%M%SZ)"
+SINCE="<the value after --since in $ARGUMENTS, or empty>"
+[ -n "$SINCE" ] || SINCE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "REPO=$REPO"
 echo "ROOT=${CLAUDE_PLUGIN_ROOT}"
 echo "RUN=$RUN"
+echo "SINCE=$SINCE"
 echo "SAD=${ATW_SAD_PATH}"
 echo "PROJECT=${ATW_PROJECT_ROOT}"
 ```
 
-Use the printed values below; `<BASE>` is `<REPO>/.claude/workflow-runs/seed-portfolio/<RUN>`.
-Leave `sadPath` or `projectRoot` out of every call when its value printed empty.
-
-With `--assess` in `$ARGUMENTS`:
+Tell the user the printed `SINCE` before dispatching: an interrupted seeding resumes with
+`--since <SINCE>`. Use the printed values below. Leave `sadPath` or `projectRoot` out when
+its value printed empty.
 
 ```
-Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
-  repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/assessment",
-  sadPath: "<SAD>", projectRoot: "<PROJECT>",
-  mode: "portfolio", score: false
+Workflow({scriptPath: "<ROOT>/workflows/seed-portfolio.js", args: {
+  repoPath:    "<REPO>",
+  pluginRoot:  "<ROOT>",
+  workDir:     "<REPO>/.claude/workflow-runs/seed-portfolio/<RUN>",
+  since:       "<SINCE>",
+  sadPath:     "<SAD>",
+  projectRoot: "<PROJECT>"
 }})
 ```
 
-`score: false` because the next step scores the whole portfolio.
-
-With `--propose` in `$ARGUMENTS`, instead of the call above:
-
-```
-Workflow({scriptPath: "<ROOT>/workflows/dependency-assessment.js", args: {
-  repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/proposal",
-  sadPath: "<SAD>", projectRoot: "<PROJECT>",
-  mode: "portfolio", apply: false
-}})
-```
-
-Then stop: `wsjf-scoring` does not run.
-
-```
-Workflow({scriptPath: "<ROOT>/workflows/wsjf-scoring.js", args: {
-  repoPath: "<REPO>", pluginRoot: "<ROOT>", workDir: "<BASE>/scoring",
-  sadPath: "<SAD>", projectRoot: "<PROJECT>",
-  all: true, rejudge: true
-}})
-```
+Anything else in `$ARGUMENTS` is ignored.
 
 ## Report back
 
-With `--propose`: the proposed diff — every edge to add,
-convert and withdraw as `blocker -> blocked` with its reason from `edgesFile`, the
-`unchanged` count, the `protectedHandMadeEdges`, and the paths of `diffFile`, `edgesFile`
-and `tiering`.
+From the workflow's result:
 
-Otherwise, per step: `ok`, and the step's own report — edges added,
-converted and withdrawn; Epics and Tasks judged, scored and written, with the unscored,
-incomplete and outside-range counts. When a step stopped the seeding, which one and its
-`error`, `failures` and `dispatchFailures`, verbatim.
+- `since`, so the seeding can be resumed.
+- `assessed` — per Epic: edges added, converted and withdrawn, and the `unchanged` count;
+  every added edge as `blocker -> blocked` with its reason, from the Epic's `edgesFile` and
+  `resultFile`; every withdrawal in `withdrawn` as `blocker -> blocked` with its reason.
+- `unresolved` — each Epic whose proposed edges did not validate, with the cycle or doubt
+  each names in `unsure`. Its edges were left as they stood.
+- `stoppedAt` — when the seeding stopped: the Epic, its `error`, `failures` and
+  `dispatchFailures`, verbatim, and the `remaining` Epics.
+- `remaining` — the open Epics still not assessed since `since`; scoring runs only when it
+  is empty.
+- `scoring` — the `wsjf-scoring` result, reported as `/agent-teams-workforce:wsjf-scoring`
+  reports it.
+- `failures` and `dispatchFailures`, verbatim, when present.
 
 ## Never
 
+- Dispatch `dependency-assessment` or `wsjf-scoring` yourself; the workflow runs both, in
+  order.
 - Start a pipeline run, a supervisor, a keeper or the dashboard from here.
