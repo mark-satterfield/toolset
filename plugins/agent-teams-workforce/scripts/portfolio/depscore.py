@@ -72,6 +72,7 @@ from edgeset import (
     read_withdrawn,
     scope_defect,
     validate,
+    withdraw_edge,
 )
 from elaboration import LifecycleError, finish, release, start
 from scoring import ScoringError, judge_input, plan, record, score
@@ -419,6 +420,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _dry_run_flag(app)
 
+    wdr = sub.add_parser(
+        "withdraw-edge",
+        help="withdraw one standing owned edge, recording why",
+        parents=[common],
+    )
+    wdr.add_argument("--from", dest="blocker", required=True, help="the `from` end")
+    wdr.add_argument("--to", dest="blocked", required=True, help="the `to` end")
+    wdr.add_argument(
+        "--reason", required=True, help="why the edge does not exist; recorded"
+    )
+    wdr.add_argument(
+        "--by",
+        default="review",
+        help="what withdrew it, recorded with the reason (default: review)",
+    )
+    wdr.add_argument(
+        "--level", choices=("epic", "task"), default="epic", help="`epic` (default)"
+    )
+    _dry_run_flag(wdr)
+
     que = sub.add_parser(
         "score-plan", help="what this scoring run judges", parents=[common]
     )
@@ -614,6 +635,16 @@ def run(args: argparse.Namespace) -> dict:
         if not result["validation"]["ok"]:
             summary["validation"] = result["validation"]
         return head | result | {"summary": summary}
+    if command == "withdraw-edge":
+        return head | withdraw_edge(
+            graph,
+            args.blocker,
+            args.blocked,
+            args.reason,
+            writer,
+            args.by,
+            args.level,
+        )
     if command == "record":
         judgments = {
             "epic": _dir_entries(args.epics_dir, "scores"),

@@ -844,6 +844,85 @@ def _withdrawal_records(
     return out
 
 
+def withdraw_edge(
+    graph: Graph,
+    blocker: str,
+    blocked: str,
+    reason: str,
+    writer: Writer,
+    withdrawn_by: str,
+    level: str = "epic",
+) -> dict:
+    """Withdraw ONE standing owned edge, and record the withdrawal with its reason.
+
+    The edge is removed, its ownership and recorded reason are dropped, and the
+    withdrawal is recorded on the blocked bead, so no later assessment sets the edge
+    again without answering this reason. Nothing else about either bead changes, and a
+    hand-made edge is refused rather than removed.
+
+    Args:
+        graph: The tracker graph.
+        blocker: The bead at the `from` end.
+        blocked: The bead at the `to` end.
+        reason: Why the edge does not exist. Recorded, and answered by any later
+            proposal that sets the edge again.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        withdrawn_by: What withdrew it, recorded alongside the reason.
+        level: `epic` or `task`.
+
+    Returns:
+        What was withdrawn and what was written.
+
+    Raises:
+        SequencingError: The edge does not stand between two open beads of the level,
+            it was drawn by hand, or no reason was given.
+    """
+    if not reason.strip():
+        msg = "a withdrawal states why the edge does not exist: pass --reason"
+        raise SequencingError(msg)
+    standing = {(s["from"], s["to"]): s for s in standing_edges(graph, blocked, level)}
+    edge = standing.get((blocker, blocked))
+    if edge is None:
+        msg = f"no {LEVEL_NAMES[_level(level)]} edge {blocker}->{blocked} stands between two open beads"
+        raise SequencingError(msg)
+    if not edge["owned"]:
+        msg = f"{blocker}->{blocked} was drawn by hand and is never withdrawn here"
+        raise SequencingError(msg)
+    bead = graph.beads[blocked]
+    reasons = edge_reasons(bead)
+    recorded = reasons.pop(blocker, {})
+    withdrawals = edge_withdrawals(bead)
+    withdrawals[blocker] = {
+        "reason": reason,
+        "withdrawnBy": withdrawn_by,
+        "withdrawnAt": now_iso(),
+    }
+    writer.bd(["dep", "remove", blocked, blocker])
+    writer.metadata(
+        blocked,
+        {
+            beadgraph.OWNED_KEY: join_ids(set(bead.owned_blockers) - {blocker}),
+            beadgraph.OWNED_AT_KEY: now_iso(),
+            REASONS_KEY: json.dumps(reasons, sort_keys=True, separators=(",", ":")),
+            WITHDRAWN_KEY: json.dumps(
+                withdrawals, sort_keys=True, separators=(",", ":")
+            ),
+        },
+    )
+    return {
+        "withdrawn": {"from": blocker, "to": blocked, "reason": reason},
+        "replaced": recorded,
+        "applied": not writer.dry_run,
+        "dryRun": writer.dry_run,
+        "level": level,
+        "planned": writer.planned,
+        "summary": {
+            "withdrawn": f"{blocker}->{blocked}",
+            "applied": not writer.dry_run,
+        },
+    }
+
+
 def apply_edges(
     graph: Graph,
     edges: list[Edge],

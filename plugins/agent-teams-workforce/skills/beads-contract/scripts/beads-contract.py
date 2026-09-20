@@ -367,12 +367,16 @@ WSJF_KEYS = (
 #: never removed: the pass only ever withdraws an edge it recorded as its own.
 #: `seq_edge_reasons`, on the blocked bead, is a JSON object keyed by blocker id, each value
 #: `{"reason", "confidence", "setBy", "setAt"}`, covering the owned edges onto it.
+#: `seq_edge_withdrawn`, on the blocked bead, is a JSON object keyed by blocker id, each value
+#: `{"reason", "withdrawnBy", "withdrawnAt"}`, for every owned edge onto it that an assessment
+#: withdrew; an edge it covers is set again only by a proposal answering that reason.
 #: `seq_assessed_at` is when the item's own dependency assessment was last applied.
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
     "seq_owned_blockers_at",
     "seq_content_hash",
     "seq_edge_reasons",
+    "seq_edge_withdrawn",
     "seq_assessed_at",
 )
 

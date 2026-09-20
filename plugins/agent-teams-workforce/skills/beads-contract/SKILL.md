@@ -198,11 +198,16 @@ withdraws or converts an edge that list names, which is how a hand-made edge sur
 `seq_edge_reasons`, on the BLOCKED Epic or Task, is a JSON object keyed by blocker id, each
 value `{"reason", "confidence", "setBy", "setAt"}`: why each owned edge onto that bead stands,
 the item whose assessment set it, and when. It covers only owned edges, and an assessment
-rewrites only the entries for edges touching the item it assessed. `seq_content_hash` is the
+rewrites only the entries for edges touching the item it assessed. `seq_edge_withdrawn`, also on the BLOCKED bead, is a JSON object keyed by blocker id, each
+value `{"reason", "withdrawnBy", "withdrawnAt"}`: every owned edge onto that bead an
+assessment withdrew, and why. An edge it covers is set again only by a proposal that answers
+the recorded reason, so a later assessment cannot quietly overturn an earlier one.
+`seq_content_hash` is the
 content fingerprint the assessment last read the item at, and `seq_assessed_at` is when that
 item's own assessment was last applied; both are written on the assessed Epic or Task every
-time its assessment applies. A Task elaboration wrote carries none of the five: its edges are
-elaboration's. `depscore.py apply-edges` writes all five keys; nothing else does.
+time its assessment applies. A Task elaboration wrote carries none of the six: its edges are
+elaboration's. `depscore.py apply-edges` writes all six keys, and `depscore.py
+withdraw-edge` writes the records for the one edge it withdraws; nothing else does.
 
 The script is the list: `metadata set` names every key it accepts when it refuses one.
 
