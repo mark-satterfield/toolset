@@ -56,7 +56,11 @@ validation command, the apply command, and the paths to write to.
    a decision does not make it that decision's driver.
 
 3. **Check each decision against the SAD**, and drop every decision the SAD already
-   settles. A settled decision needs no edge.
+   settles. A settled decision needs no edge. Search the SAD for the decision and read
+   the section you find; record which section you consulted and why it leaves the
+   decision open. That record goes on every edge as `sadCheck`, and an edge without one
+   is refused. As the SAD fills up this becomes the answer for most decisions: the check
+   is the step's purpose, not a formality.
 
 4. **Search the other PRDs** for each remaining decision: Grep the PRD directory, and use
    the index for titles and section headings, to find the PRDs whose requirements drive or
@@ -78,15 +82,22 @@ validation command, the apply command, and the paths to write to.
    in `withdrawn` with a reason that answers the reason recorded for it. An edge drawn by
    hand (`owned: false`) is left out of both lists and is never withdrawn.
 
+   The context also lists every edge touching this Epic that an earlier assessment
+   **withdrew**, with the reason. That edge was judged not to exist. Set it again only
+   with `answers`: why that recorded reason is wrong, on the architecture. Without it the
+   edge is refused, so no assessment can quietly overturn an earlier one by running
+   later.
+
 8. **Emit** the edge file —
-   `{"edges": [{"from", "to", "reason", "confidence"}], "withdrawn": [{"from", "to", "reason"}]}`
+   `{"edges": [{"from", "to", "reason", "confidence", "sadCheck", "answers"}], "withdrawn": [{"from", "to", "reason"}]}`
    — holding every edge to or from the Epic that passes the test and no other edge, and the
    reasoning: the decisions named, the SAD check on each, the PRDs found related, the test
    applied to each edge and each withdrawal, and what you were unsure about.
 
 9. **Check your own file before reporting** with the validation command you were given, and
    fix what it says. It refuses an edge that does not touch the Epic, a missing reason, an
-   owned standing edge left unaccounted, a withdrawal of anything but an owned standing
+   edge with no `sadCheck`, an edge an earlier assessment withdrew that carries no
+   `answers`, an owned standing edge left unaccounted, a withdrawal of anything but an owned standing
    edge, and a cycle. A cycle is a wrong edge, not a tie to break: find whose requirements
    should actually drive the decision and delete the edge that fails the test. A cycle you
    cannot remove by dropping one of your own edges is reported, not forced.

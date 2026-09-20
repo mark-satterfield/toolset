@@ -67,6 +67,13 @@ SEEN_KEY = "seq_content_hash"
 #: `{"reason", "confidence", "setBy", "setAt"}`, covering only the owned edges onto it.
 REASONS_KEY = "seq_edge_reasons"
 
+#: Metadata key on a BLOCKED item: a JSON object keyed by blocker id, each value
+#: `{"reason", "withdrawnBy", "withdrawnAt"}`, for every owned edge onto it that an
+#: assessment withdrew. An edge a withdrawal covers is not set again until a later
+#: proposal answers that recorded reason, so the outcome cannot depend on which Epic was
+#: assessed last.
+WITHDRAWN_KEY = "seq_edge_withdrawn"
+
 #: Metadata key on an assessed item: when its dependency assessment was last applied.
 ASSESSED_AT_KEY = "seq_assessed_at"
 
@@ -87,6 +94,12 @@ class Edge:
     blocked: str
     reason: str = ""
     confidence: str = ""
+    #: What the SAD was checked for, and its verdict: why the decision this edge orders
+    #: is not one the SAD already settles. Required on every kept edge.
+    sad_check: str = ""
+    #: The answer to the recorded reason an earlier assessment withdrew this edge for.
+    #: Required only on an edge a withdrawal record covers.
+    answers: str = ""
 
 
 #: The dependency type each level's edges are stored as.
@@ -191,6 +204,8 @@ def _parse(entries: object, field: str) -> list[Edge]:
                 blocked=blocked,
                 reason=str(entry.get("reason") or ""),
                 confidence=str(entry.get("confidence") or ""),
+                sad_check=str(entry.get("sadCheck") or ""),
+                answers=str(entry.get("answers") or ""),
             )
         )
     return edges
@@ -247,6 +262,60 @@ def edge_reasons(bead: Bead) -> dict:
     if not isinstance(value, dict):
         return {}
     return {str(k): v for k, v in value.items() if isinstance(v, dict)}
+
+
+def edge_withdrawals(bead: Bead) -> dict:
+    """The recorded withdrawals of owned edges onto a bead.
+
+    Args:
+        bead: The blocked bead.
+
+    Returns:
+        Blocker id -> `{"reason", "withdrawnBy", "withdrawnAt"}`; empty when the bead
+        records none or the value does not parse as a JSON object.
+    """
+    raw = bead.metadata.get(WITHDRAWN_KEY)
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {str(k): v for k, v in value.items() if isinstance(v, dict)}
+
+
+def withdrawal_history(graph: Graph, item: str, level: str = "epic") -> list[dict]:
+    """Every withdrawal an assessment recorded for an edge touching one item.
+
+    Args:
+        graph: The tracker graph.
+        item: The Epic or Task.
+        level: `epic` or `task`: the kind of bead at both ends.
+
+    Returns:
+        One `{from, to, reason, withdrawnBy, withdrawnAt}` per recorded withdrawal, in
+        (from, to) order. An edge this lists is set again only by a proposal that
+        answers the recorded reason.
+    """
+    open_items = {b.id for b in graph.of_kind(_level(level)) if not b.closed}
+    out = []
+    for blocked_id in sorted(open_items):
+        bead = graph.beads[blocked_id]
+        for blocker, entry in sorted(edge_withdrawals(bead).items()):
+            if item not in (blocker, blocked_id) or blocker not in open_items:
+                continue
+            out.append(
+                {
+                    "from": blocker,
+                    "to": blocked_id,
+                    "reason": entry.get("reason"),
+                    "withdrawnBy": entry.get("withdrawnBy"),
+                    "withdrawnAt": entry.get("withdrawnAt"),
+                }
+            )
+    return sorted(out, key=lambda e: (e["from"], e["to"]))
 
 
 def standing_edges(graph: Graph, item: str, level: str = "epic") -> list[dict]:
@@ -450,6 +519,8 @@ def validate(
     )
     outside: list[str] = []
     missing_reason: list[str] = []
+    missing_sad_check: list[str] = []
+    readds_withdrawn: list[str] = []
     unaccounted: list[str] = []
     withdrawn_not_owned: list[str] = []
     kept_and_withdrawn: list[str] = []
@@ -472,6 +543,16 @@ def validate(
         }
         kept = {_pair(e) for e in edges}
         dropped = {_pair(e) for e in withdrawn}
+        missing_sad_check = sorted({_pair(e) for e in edges if not e.sad_check.strip()})
+        withdrawn_before = {
+            f"{w['from']}->{w['to']}": w for w in withdrawal_history(graph, item, level)
+        }
+        readds_withdrawn = sorted(
+            f"{_pair(e)} (withdrawn by {withdrawn_before[_pair(e)].get('withdrawnBy')}: "
+            f"{withdrawn_before[_pair(e)].get('reason')})"
+            for e in edges
+            if _pair(e) in withdrawn_before and not e.answers.strip()
+        )
         unaccounted = sorted(owned_standing - kept - dropped)
         withdrawn_not_owned = sorted(dropped - owned_standing)
         kept_and_withdrawn = sorted(kept & dropped)
@@ -495,6 +576,8 @@ def validate(
         or outside
         or bad_scope
         or missing_reason
+        or missing_sad_check
+        or readds_withdrawn
         or unaccounted
         or withdrawn_not_owned
         or kept_and_withdrawn
@@ -508,6 +591,8 @@ def validate(
         "badScope": bad_scope or None,
         "outsideScope": outside,
         "missingReason": missing_reason,
+        "missingSadCheck": missing_sad_check,
+        "readdsWithdrawn": readds_withdrawn,
         "unaccounted": unaccounted,
         "withdrawnNotOwned": withdrawn_not_owned,
         "keptAndWithdrawn": kept_and_withdrawn,
@@ -712,6 +797,53 @@ def _reason_records(
     return out
 
 
+def _withdrawal_records(
+    graph: Graph,
+    edges: list[Edge],
+    withdrawn: list[Edge] | tuple[Edge, ...],
+    item: str,
+) -> dict[str, str]:
+    """The `seq_edge_withdrawn` value each blocked bead must carry after a proposal applies.
+
+    A withdrawal is recorded on the bead it blocked, with the reason and who withdrew it,
+    so a later assessment of either end cannot set that edge again without answering it.
+    An edge this proposal sets again — which validation admits only when the proposal
+    answers the recorded reason — has its record dropped.
+
+    Args:
+        graph: The tracker graph.
+        edges: The proposed edges, every one touching `item`.
+        withdrawn: The owned standing edges the proposal drops, each with its reason.
+        item: The Epic or Task whose assessment made the proposal.
+
+    Returns:
+        Blocked bead id -> the JSON value to write, for each bead whose value changes.
+    """
+    stamp = now_iso()
+    touched = {e.blocked for e in withdrawn} | {e.blocked for e in edges}
+    out: dict[str, str] = {}
+    for blocked_id in sorted(touched):
+        bead = graph.beads.get(blocked_id)
+        if bead is None:
+            continue
+        before = edge_withdrawals(bead)
+        after = dict(before)
+        for edge in withdrawn:
+            if edge.blocked != blocked_id:
+                continue
+            after[edge.blocker] = {
+                "reason": edge.reason,
+                "withdrawnBy": item,
+                "withdrawnAt": stamp,
+            }
+        for edge in edges:
+            if edge.blocked == blocked_id:
+                after.pop(edge.blocker, None)
+        if after != before:
+            out[blocked_id] = json.dumps(after, sort_keys=True, separators=(",", ":"))
+    return out
+
+
 def apply_edges(
     graph: Graph,
     edges: list[Edge],
@@ -728,7 +860,8 @@ def apply_edges(
     ownership covering every edge to be added is written first, then the adds, then the
     conversions — each one's removal immediately followed by its add as the level's type
     — then the withdrawals, then the final ownership records, which drop the withdrawn
-    edges and carry the reasons for the owned edges onto that bead. A bead whose reasons
+    edges and carry the reasons for the owned edges onto that bead and the record of
+    every edge withdrawn from it. A bead whose reasons
     change and whose ownership does not gets its reasons in a write of their own. Last,
     the assessed item records the fingerprint it was assessed at and when, on every call
     that applies.
@@ -758,6 +891,14 @@ def apply_edges(
     reasons = (
         _reason_records(graph, edges, plan, item, level) if item is not None else {}
     )
+    withdrawals = (
+        _withdrawal_records(graph, edges, withdrawn, item) if item is not None else {}
+    )
+    pending: dict[str, dict[str, str]] = {}
+    for bead_id, value in reasons.items():
+        pending.setdefault(bead_id, {})[REASONS_KEY] = value
+    for bead_id, value in withdrawals.items():
+        pending.setdefault(bead_id, {})[WITHDRAWN_KEY] = value
     ahead = _owned_after_adds(graph, plan)
     for bead_id, pairs in ahead.items():
         writer.metadata(bead_id, pairs)
@@ -772,16 +913,14 @@ def apply_edges(
         )
     for entry in plan["remove"]:
         writer.bd(["dep", "remove", entry["blocked"], entry["blocker"]])
-    pending_reasons = dict(reasons)
     for bead_id, pairs in plan["metadata"].items():
         written = ahead.get(bead_id, {}).get(beadgraph.OWNED_KEY)
         if written != pairs[beadgraph.OWNED_KEY]:
             final = dict(pairs)
-            if bead_id in pending_reasons:
-                final[REASONS_KEY] = pending_reasons.pop(bead_id)
+            final.update(pending.pop(bead_id, {}))
             writer.metadata(bead_id, final)
-    for bead_id, value in sorted(pending_reasons.items()):
-        writer.metadata(bead_id, {REASONS_KEY: value})
+    for bead_id, values in sorted(pending.items()):
+        writer.metadata(bead_id, values)
     recorded = []
     for bead in graph.of_kind(level):
         current = seen.get(bead.id)
@@ -812,5 +951,6 @@ def apply_edges(
             {"from": e.blocker, "to": e.blocked, "reason": e.reason} for e in withdrawn
         ],
         "reasonsRecorded": sorted(reasons),
+        "withdrawalsRecorded": sorted(withdrawals),
         "plan": plan,
     }

@@ -20,7 +20,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import beadgraph
-from edgeset import SequencingError, scope_defect, standing_edges
+from edgeset import (
+    SequencingError,
+    scope_defect,
+    standing_edges,
+    withdrawal_history,
+)
 from prds import ELAB_KEY, write_index, write_prds
 
 if TYPE_CHECKING:
@@ -43,6 +48,8 @@ def assess_context(
     Returns:
         `epic` (`{id, title, fingerprint, elaborationState, prdPath}`), `standing` (every
         edge between the Epic and another open Epic, from `edgeset.standing_edges`),
+        `withdrawn` (every edge touching it that an assessment withdrew, with the reason,
+        from `edgeset.withdrawal_history`),
         `corpusDir`, `indexPath`, and a `summary` of counts.
 
     Raises:
@@ -65,6 +72,7 @@ def assess_context(
         write_index(graph, epics, paths, index)
     prints = beadgraph.fingerprints(graph.records)
     standing = standing_edges(graph, epic)
+    withdrawn = withdrawal_history(graph, epic)
     owned = sum(1 for s in standing if s["owned"])
     return {
         "epic": {
@@ -75,12 +83,14 @@ def assess_context(
             "prdPath": paths[bead.id],
         },
         "standing": standing,
+        "withdrawn": withdrawn,
         "corpusDir": str(corpus),
         "indexPath": str(index),
         "summary": {
             "epic": bead.id,
             "openEpics": len(epics),
             "standing": len(standing),
+            "withdrawn": len(withdrawn),
             "owned": owned,
             "handMade": len(standing) - owned,
         },
