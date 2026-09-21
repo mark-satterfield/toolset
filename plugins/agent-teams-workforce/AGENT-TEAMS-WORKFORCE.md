@@ -39,29 +39,27 @@ The realized substrate matches this separation. Orchestration is native `Workflo
 
 ### Phase 0 — PRD Creation
 
-Upstream of everything, the PRD Creation team turns raw stakeholder requests into a structured intake brief, persona profiles, an OKR cascade, and a draft PRD. Its independent review is the next team in line — the draft is handed to PRD Validation, so the creators never grade their own work.
+Upstream of everything, the PRD Creation team turns raw stakeholder requests into a structured intake brief, persona profiles, an OKR cascade, and a draft PRD. No pipeline picks its draft up: `prd-to-spec` starts only from a ready PRD.
 
 ### PRD to Spec and Tasks
 
-Five phases, five gates. PRD Validation runs one independent validation-analyst session over the draft through six read-only lenses (ambiguity, completeness, conflict, constraints, domain boundaries, requirements clarification), plus an informational BRD mapping when a BRD is supplied, and feeds Gate 1. Architecture Analysis fans out a proposals sub-team and a challenge sub-team in parallel, then fans everything into a dedicated Decider who produced none of the analysis; fitness functions and diagrams are written from its decision, and Gate 2 is constitutional. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and translates it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself; a maker-checker loop (with a decider for deadlocks) feeds Gate 2b. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria — through its own maker-checker loop feeding Gate 3. Task Decomposition breaks each Spec into sized, dependency-mapped tasks in Beads format for Gate 4; once every Story is decomposed, `task-dependency-mapper` derives the Task-to-Task edges that cross Stories.
+Four phases, four gates, starting from a ready PRD that the run reads and never writes. Architecture Analysis fans out a proposals sub-team and a challenge sub-team in parallel, then fans everything into a dedicated Decider who produced none of the analysis; fitness functions and diagrams are written from its decision, and Gate 2 is constitutional. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and translates it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself; a maker-checker loop (with a decider for deadlocks) feeds Gate 2b. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria — through its own maker-checker loop feeding Gate 3. Task Decomposition breaks each Spec into sized, dependency-mapped tasks in Beads format for Gate 4; once every Story is decomposed, `task-dependency-mapper` derives the Task-to-Task edges that cross Stories.
 
 `prd-to-spec` owns the Epic's elaboration lifecycle, and every door into elaboration passes through it. At its start it refuses, with a named reason, an Epic that is not open, carries no WSJF score, depends (through `tracks` edges, which record architecture dependencies: an architecture decision it rests on is established from that Epic's requirements first) on an Epic whose `elaboration_state` is not `done`, or is not `ready` or `in_progress` with no other owner; otherwise it marks the Epic `in_progress` under an owner token. Each Task inherits the Epic's value and time criticality, carries its own judged size, and is written with every WSJF component. Build dependencies are Task-to-Task `blocks` edges only — a Story only groups Tasks. When the Tasks are written, `depscore.py elaboration-finish` runs the WSJF arithmetic for the Epic: its size becomes the plain sum of its Tasks' sizes with its estimate kept, the Epic is rescored, its Tasks are rescored with RR-OE counted across Stories, and the Epic's `elaboration_state` is set to `done` when every part of it landed; the Epic itself stays open until its work is released.
 
 ```mermaid
 graph LR
-  V[PRD Validation] --> G1{Gate 1}
-  G1 --> A[Architecture Analysis] --> G2{Gate 2 — constitutional}
+  P[Ready PRD] --> A[Architecture Analysis] --> G2{Gate 2 — constitutional}
   G2 --> R[TRD Authoring] --> G2B{Gate 2b}
   G2B --> S[Spec Authoring] --> G3{Gate 3}
   G3 --> T[Task Decomposition] --> G4{Gate 4}
 
-  G1 -. loop .-> V
   G2 -. loop .-> A
   G2B -. loop .-> R
   G3 -. loop .-> S
   G4 -. loop .-> T
 
-  G2 -. escalate .-> V
+  G2 -. escalate .-> P
   G2B -. escalate .-> A
   G3 -. escalate .-> R
   G4 -. escalate .-> S
@@ -504,7 +502,7 @@ PRD-to-Spec pipeline, phase 0 — creates the PRD from stakeholder intake, perso
 
 ### PRD Validation — Execution Team
 
-PRD-to-Spec pipeline, phase 1 — concurrent analysts validate the PRD; feeds Gate 1. 10 agents.
+Not dispatched by `prd-to-spec`, which starts from a ready PRD; the `prd-validation` workflow can still be run on its own. 10 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |

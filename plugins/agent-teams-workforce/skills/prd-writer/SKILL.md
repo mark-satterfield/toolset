@@ -66,7 +66,7 @@ Three consequences bind every PRD author and reviewer:
    description. Do not add YAML frontmatter, and do not introduce a second `# ` heading; both break
    the split. `.delta.md` files are working artifacts, not PRDs, and are never synced.
 3. **A PRD edit is not finished until the Epic matches.** After writing or revising a PRD, bring its
-   Epic into sync, and say in your handoff that you did. The project supplies the commands (see
+   Epic into sync, and say in your reply that you did. The project supplies the commands (see
    "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`):
 
    ```bash
@@ -128,20 +128,19 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    could not certify the requirement. The repair was to close the second `Given`: "Given a settings
    write containing no unknown fields **and no field value outside its defined type or range** …".
 
-   **When you find a contradiction like this — in your own draft or an existing PRD — fix it and
-   carry on.** Close the under-specified `Given`; do not reword it into vagueness, do not delete the
-   criterion that exposed the conflict, and do not escalate. Name the repair in your handoff. This is
-   the one exception to review-only routing: a self-contradictory criterion blocks every downstream
-   phase, and it is repairable from the document alone.
+   **When you find a contradiction like this in your own draft, fix it.** Close the under-specified
+   `Given`; do not reword it into vagueness, and do not delete the criterion that exposed the
+   conflict. **In an existing PRD, show the user the contradiction and the repair, and edit the PRD
+   only with their OK.** No workflow or pipeline ever edits a PRD.
 8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
    Dependencies (table + status), Measurable Outcomes (table + baseline/target/method), Visual
    References, Definition of Done.
-9. **Report every unresolved input gap in your handoff, never in the PRD.** A PRD holds requirements
+9. **Raise every unresolved input gap with the user, never in the PRD.** A PRD holds requirements
    only — no risks, open questions, notes, or discussion. Never invent a requirement, metric, or
    constraint to look finished; never smooth an upstream contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
-11. **Run `scripts/check_prd.py` on your draft and resolve every error** before handoff.
-12. **Sync the Epic half** — `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — and say so in the handoff.
+11. **Run `scripts/check_prd.py` on your draft and resolve every error** before you finish.
+12. **Sync the Epic half** — `"$ATW_PRD_EPIC_SYNC" --only <slug> --apply` — and say so in your reply.
 
 ## Validate Mode — Workflow
 

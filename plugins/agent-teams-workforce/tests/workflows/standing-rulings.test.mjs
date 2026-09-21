@@ -213,7 +213,7 @@ test('file present: resolved once, threaded to every judgment mini, and injected
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.equal(agentCalls(calls, 'resolve:run-inputs').length, 1, 'the file is read once per run, not once per agent')
   assert.equal(agentCalls(calls, 'resolve:standing-rulings').length, 0, 'and not in a session of its own — it rides with the checkpoint read')
-  for (const mini of ['prd-reconciliation', 'prd-validation', 'architecture', 'repo-scoping', 'trd-authoring', 'task-decomposition']) {
+  for (const mini of ['prd-reconciliation', 'architecture', 'repo-scoping', 'trd-authoring', 'task-decomposition']) {
     const [wf] = workflowCalls(calls, `agent-teams-workforce:${mini}`)
     assert.ok(wf, `${mini} must have been dispatched`)
     assert.equal(wf.payload.standingRulings, RULINGS, `${mini} must receive the rulings text via args`)
@@ -237,7 +237,7 @@ test('file absent: nothing is injected anywhere and no mini receives rulings', a
   for (const c of calls.filter((x) => x.kind === 'agent')) {
     assert.ok(!String(c.prompt).includes(MARKER), `${c.label} must be unchanged when no file exists`)
   }
-  for (const mini of ['prd-reconciliation', 'prd-validation', 'trd-authoring']) {
+  for (const mini of ['prd-reconciliation', 'trd-authoring']) {
     const [wf] = workflowCalls(calls, `agent-teams-workforce:${mini}`)
     assert.ok(!wf.payload.standingRulings, `${mini} receives no rulings when the file is absent`)
   }

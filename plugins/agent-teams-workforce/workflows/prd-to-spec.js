@@ -1,11 +1,10 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives an existing, scored Epic and its PRD (or a request its PRD is authored from) all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: PRD validation, architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (optional PRD creation, PRD validation, architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G1 PRD validation, G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives an existing, scored Epic and its ready PRD all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'refuse, with a named reason, unless the Epic is open, scored, every Epic it depends on has finished elaboration, and it is ready or in_progress with no other owner; then mark it in_progress' },
-    { title: 'PRD Creation', detail: 'optional — only when a raw request is supplied and no PRD exists' },
-    { title: 'PRD Validation' },
+    { title: 'PRD', detail: 'read the ready PRD the caller supplied — this run never writes to a PRD' },
     { title: 'Epic', detail: "adopt the caller's Epic, the bead face of the PRD" },
     { title: 'Architecture', detail: 'runs only when a read-only triage over the PRD finds a genuine technical choice open — a difference from what is deployed and any UI/UX difference are both settled already, and convene no panel' },
     { title: 'Architecture Impact', detail: 'runs only when the ruling created, changed or retired SAD entries, as the entry tags the sad-maintainer reports show — an analyst judges every item citing them: not yet elaborated (nothing to do), elaborated but unbuilt (re-elaborate), already built (this Epic carries a knock-on Task; the built Task is never rewritten)' },
@@ -106,13 +105,8 @@ async function settleAgent(prompt, opts) {
 }
 
 // args: {
-//   request?: { id?, title?, description?, repoPath?, requestedBy? },  // raw request — triggers optional PRD creation
-//   prd?: { id?, title?, body?, content?, path?, repoPath?, acceptanceCriteria?[] }, // existing PRD; skips creation
-//   context?: string,             // bounded-context / service-boundary notes for PRD validation
-//   brd?: string,                 // OPTIONAL BRD objectives text. Supplying one adds an informational
-//                                 // traceability mapping to PRD validation; omitting one costs nothing,
-//                                 // because the PRD is the top of the requirements chain and never has
-//                                 // to trace to, cite, or derive from a BRD
+//   prd: { id?, title?, body?, content?, path?, repoPath?, acceptanceCriteria?[] }, // the ready PRD, REQUIRED.
+//                                 // It is read, never written: no phase of this run edits a PRD
 //   decision?: { id?, title?, context?, drivers?[], repoPath? }, // the architecture question
 //   sad?: { path?, sectionLayout? },  // arc42 SAD location for TRD extraction
 //   sadPath?: string,             // arc42 SAD path (ATW_SAD_PATH); the architecture mini refuses without it
@@ -143,10 +137,6 @@ async function settleAgent(prompt, opts) {
 //                                 // the run's two input files, already read by the caller.
 //                                 // Supplying them skips the `resolve:run-inputs` session,
 //                                 // which exists only because scripts cannot open a file.
-//   prdReviewed?: boolean,        // the caller recorded a COMPLETE readiness review for this PRD.
-//                                 // EVIDENCE, not preference — set only from a stored review
-//                                 // status. True skips PRD Validation and Gate 1, which would
-//                                 // otherwise re-derive a verdict already on the tracker.
 //   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
 //   dimensions?: string[],        // size the analyst panel to exactly these axes; overrides both triage steps
 //   forceFullPanel?: boolean,     // run every analyst axis and the challenge wave, skipping both triage steps
@@ -177,7 +167,7 @@ const MAX_LOOPS = a.maxLoops || 2
 // `prd.body = '   '` both used to sail through as "present" and hand every
 // downstream agent an empty document.
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
-const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.prd.repoPath) || null
+const repoPath = a.repoPath || (a.prd && a.prd.repoPath) || null
 // ── The repo span is RULED, not supplied ────────────────────────────────────────
 //
 // One Epic may span repositories and a Story is scoped to exactly one, so spec authoring
@@ -199,7 +189,7 @@ const repoPath = a.repoPath || (a.request && a.request.repoPath) || (a.prd && a.
 const callerRepos = (Array.isArray(a.repos) ? a.repos : []).filter((r) => r != null && String(r).trim() !== '')
 const seedRepos = (callerRepos.length ? callerRepos : [repoPath]).filter((r) => r != null)
 let repos = callerRepos.slice()
-if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither request nor prd supplied — refusing to run without a work item' }
+if (!a.prd) return { ok: false, stage: 'input', error: 'no prd supplied — prd-to-spec starts from a ready PRD and never writes one' }
 
 // ── Run budget ──────────────────────────────────────────────────────────────────
 // MAX_LOOPS bounds ONE gate. Nothing bounded the RUN, so a composite with five
@@ -213,22 +203,22 @@ if (!a.request && !a.prd) return { ok: false, stage: 'input', error: 'neither re
 //
 // The ceiling MUST scale with the fan-out, because most phases here are per-repo.
 // A clean run with zero retries costs:
-//     3 fixed gates (G1 PRD Validation, G2 Architecture, G2b TRD Authoring)
+//     2 fixed gates (G2 Architecture, G2b TRD Authoring)
 //   + 2 gates per repo (G3 Spec Authoring, G4 Task Decomposition)
-// so 3 + 2N. A flat ceiling of 6 fit N=1 with one retry to spare and was
+// so 2 + 2N. A flat ceiling of 6 fit N=1 with one retry to spare and was
 // mathematically unreachable from N=2 upward: a two-repo PRD needs 7 attempts to
 // succeed perfectly on the first try. Every multi-repo PRD therefore died at G4
 // with "run attempt budget exhausted" having never decomposed a single Story —
 // and one Story per repo is the normal shape of this pipeline, not an edge case.
 // Scaling the floor keeps the runaway protection (worst case is still
-// (3 + 2N) * MAX_LOOPS, well above this) while guaranteeing a clean run always fits.
+// (2 + 2N) * MAX_LOOPS, well above this) while guaranteeing a clean run always fits.
 //
 // The span is no longer known when this is first computed — it is ruled mid-run — so the
 // ceiling is SEEDED from the caller's starting point and RESCALED once the ruling lands.
 // It only ever grows: a scoping step that finds three repositories where the caller named
 // one has discovered more legitimate work, not less budget. A caller who pinned
 // maxTotalAttempts keeps exactly that number, which is what pinning it means.
-const FIXED_GATES = 3
+const FIXED_GATES = 2
 const GATES_PER_REPO = 2
 const RETRY_HEADROOM = a.retryHeadroom || 3
 const attemptsFor = (repoCount) =>
@@ -256,9 +246,9 @@ const budgetStop = () => {
 }
 
 // The work item this run is about. This composite has no bead of its own — the Epic is
-// minted downstream — so the caller's PRD or request identifies it, and every return names
+// minted downstream — so the caller's PRD identifies it, and every return names
 // it under the same key the code-writing composites use.
-const subjectId = (a.prd && (a.prd.id || a.prd.path)) || (a.request && a.request.id) || (a.epic && a.epic.key) || null
+const subjectId = (a.prd && (a.prd.id || a.prd.path)) || (a.epic && a.epic.key) || null
 
 // ── Partial results ─────────────────────────────────────────────────────────────
 // Every stage used to end `return { ok:false, stage, detail }`, which threw away
@@ -364,7 +354,7 @@ function persistRun(outcome) {
     // `bead` was hardcoded null, so every ledger row for a failed run lost the work item
     // it belonged to — the one field the board needs to show the failure against anything.
     // `subjectId` is what every other ledger row in this file already reports as `beadId`.
-    log(`RUN-JOURNAL ${JSON.stringify({ composite: 'prd-to-spec', bead: subjectId, subject: (a.prd && a.prd.id) || (a.request && a.request.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`)
+    log(`RUN-JOURNAL ${JSON.stringify({ composite: 'prd-to-spec', bead: subjectId, subject: (a.prd && a.prd.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`)
   } catch (e) {
     log(`run journal could not be serialized (non-fatal): ${e && e.message ? e.message : e}`)
   }
@@ -836,8 +826,7 @@ let currentPhase = null
 // permission dialog, so it cannot read this constant either; the two are kept in step by
 // hand, and the workflow test suite is the thing that notices when they drift.
 const EXPECTED_PHASES = [
-  'PRD Creation',
-  'PRD Validation',
+  'PRD',
   'Epic',
   'Architecture',
   'Repo Scoping',
@@ -900,11 +889,6 @@ const recN = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : A
 const recFlags = (r) => {
   const f = (r && Array.isArray(r.flags) && r.flags) || []
   return f.length ? ` Passed under ${f.length} competitive flag(s): ${f.join('; ')}.` : ''
-}
-function validationRuling(validation) {
-  const art = (validation && validation.artifact) || {}
-  const summary = typeof art.summary === 'string' && art.summary.trim() ? ` ${art.summary.trim()}` : ''
-  return `Gate G1 ruled the PRD valid enough to specify against.${summary}${recFlags(validation)}`
 }
 function architectureRuling(triage, architecture) {
   const art = (architecture && architecture.artifact) || {}
@@ -1062,7 +1046,7 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
       {
         label: `advantage:exhausted-${ctx.gate}`,
         effort: 'medium',
-        phase: currentPhase || 'PRD Validation',
+        phase: currentPhase || 'PRD',
         agentType: 'agent-teams-workforce:advantage-evaluator',
         schema: {
           type: 'object',
@@ -1292,9 +1276,6 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
   }
 }
 
-// ── PRD Creation (optional) ────────────────────────────────────────────────────
-// Only when a raw request is supplied and no PRD already exists. The created PRD
-// becomes the input to validation; otherwise the supplied PRD is used directly.
 // What the host needs about this run's artifacts, filled in as phases complete and attached to
 // the result on every exit path (see the `finally` below): the working directory, which phases
 // passed their gate or were reused IN THIS RUN, and where the TRD is filed once the run is Done.
@@ -1462,35 +1443,10 @@ recRuled(
 )
 log(`Epic ${epicBeadId}: elaboration started (was ${startOut.previousState}); plugin root ${lifecycle.pluginRoot}`)
 
-enterPhase('PRD Creation')
-let creation = null
-let prd = a.prd || null
-if (!prd && a.request) {
-  log(`Creating PRD from request ${a.request.id || '(no id)'} — ${a.request.title || ''}`)
-  creation = await workflow('agent-teams-workforce:prd-creation', { request: a.request })
-  if (!creation || !creation.ok) {
-    return handback(false, 'prd-creation', 'PRD creation did not produce an aligned PRD', creation)
-  }
-  // Thread the created PRD forward as the validation input.
-  prd = {
-    id: (creation.prd && creation.prd.title) || (a.request && a.request.id) || null,
-    title: creation.prd && creation.prd.title,
-    body: creation.prd && creation.prd.prd,
-    acceptanceCriteria: creation.prd && creation.prd.acceptanceCriteria,
-    repoPath,
-  }
-} else {
-  log(prd ? 'PRD supplied — skipping creation' : 'No request and no PRD — nothing to create')
-}
-recRuled(
-  creation
-    ? `PRD authored from raw request ${(a.request && a.request.id) || '(no id)'}.`
-    : prd
-      ? 'No PRD was authored: the caller supplied one, so creation was skipped.'
-      : 'No PRD was authored and none was supplied — there is nothing to validate.',
-  creation ? { status: 'done' } : { status: 'skipped', skipReason: prd ? 'the caller supplied a PRD' : 'neither a request nor a PRD was supplied' }
-)
-if (!prd) return handback(false, 'prd-creation', 'no PRD available to validate (supply args.prd or args.request)')
+
+enterPhase('PRD')
+let prd = a.prd
+recRuled('The caller supplied the ready PRD. This run reads it and never writes it.', { status: 'done' })
 
 // ── PRD text resolution ─────────────────────────────────────────────────────────
 // The args contract advertises body, content and path; only `body` was ever read.
@@ -1498,7 +1454,7 @@ if (!prd) return handback(false, 'prd-creation', 'no PRD available to validate (
 // read nowhere at all, so a caller who supplied either — both of which the contract
 // invites — got a run in which every downstream agent received an empty PRD. The
 // failure did not surface at dispatch: it surfaced minutes and a full analyst
-// fan-out later, as G1 correctly refusing to validate nothing. Run wf_63a9f03f-6d7
+// fan-out later, as a phase correctly refusing to work on nothing. Run wf_63a9f03f-6d7
 // died exactly this way.
 //
 // All three fields are now honoured, in the order body -> content -> path, and a
@@ -1527,7 +1483,7 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
         // session model. It carries no agentType, so without this it inherits whatever the
         // run is on.
         model: 'haiku',
-        phase: 'PRD Creation',
+        phase: 'PRD',
         effort: 'low',
         schema: {
           type: 'object',
@@ -1636,11 +1592,10 @@ If the path does not resolve to a readable file, set ok=false and say why in \`e
 // deterministic reduction over them (decision 6: documents pass between agents as paths,
 // never as content). Inlined `data` still wins where it is present, because it costs no
 // session at all. A bare string ('fresh' / 'stale: <why>') is accepted for a phase that
-// needs no content — prd-validation, architecture with its ruling on disk, and trd, all of
+// needs no content — architecture with its ruling on disk, and trd, both of
 // which hand a path to the phase below them and nothing else.
 //
 // Phase ids and the files each one's sessions write:
-//   prd-validation  prd-validation.json
 //   architecture    architecture-triage.json, architecture-decision.md, architecture-proposal-<dim>.json,
 //                   architecture-analysis.json, architecture-challenges.json, architecture-fitness.json,
 //                   architecture-design-drafts.json, sad-update.json
@@ -1850,7 +1805,7 @@ C. TWO VALUES THIS WORKFLOW CANNOT OBSERVE FOR ITSELF. A workflow script may not
         // PLUMBING — see resolve:prd-text. Lists a directory and reads named files,
         // returning each one's text verbatim; it decides nothing about any of them.
         model: 'haiku',
-        phase: currentPhase || 'PRD Creation',
+        phase: currentPhase || 'PRD',
         effort: 'low',
         schema: {
           type: 'object',
@@ -1943,7 +1898,7 @@ SIZE IS NOT A REASON TO DECLINE. A previous read of these files answered with a 
         {
           label: 'resolve:checkpoint-reread',
           model: 'haiku',
-          phase: currentPhase || 'PRD Creation',
+          phase: currentPhase || 'PRD',
           schema: {
             type: 'object',
             additionalProperties: false,
@@ -2035,190 +1990,15 @@ if (cpGet('reconciliation') !== undefined) {
   )
 }
 // `prd` is never rebound anywhere in this composite, so this IS the PRD every phase reads.
-// Recorded before the first gate so a run that stops at G1 still shows the journal what it
-// was validating.
+// Recorded before the first gate so a run that stops early still shows the journal which
+// PRD it was working on.
 produced.prd = prd
 
-
-// A G1 loop that re-validates the SAME unedited document gets the same verdict every attempt,
-// spends the budget, and parks. That is not a quality control; it is a stall with a budget.
-// Before a retry, REPAIR the document against the criteria the gate named. prd-writer is the
-// only agent that may edit a PRD, and it repairs a self-contradictory acceptance criterion in
-// place rather than escalating — see its charter. The repaired body comes back in the agent's
-// return value (this script has no filesystem access), so the in-memory PRD keeps up with the
-// file the agent just edited.
-async function repairPrdForGate(feedback, unmet) {
-  if (!prd || !hasText(prd.path)) {
-    log('G1: no PRD path on disk, so the document cannot be repaired between attempts')
-    return false
-  }
-  const defects = (unmet || [])
-    .map((c) => `- ${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`)
-    .join('\n')
-  const outcome = await settleAgent(
-    `Gate G1 refused to certify the PRD at ${prd.path}.\n\n` +
-      `Unmet criteria:\n${defects || '- (none itemised — use the gate feedback)'}\n\n` +
-      `Gate feedback:\n${feedback || '(none)'}\n\n` +
-      `Repair the DOCUMENT so the named defects are gone, editing ${prd.path} in place, then return ` +
-      `its full repaired body. Close under-specified Given clauses so no two acceptance criteria can ` +
-      `apply to the same input and demand opposite outcomes. Never reword a criterion into vagueness, ` +
-      `never delete the criterion that exposed a conflict, and change nothing the gate did not name. ` +
-      `A defect you cannot repair from the document alone goes in \`unrepairable\` — leave that text as it is.`,
-    {
-      label: 'g1:repair-prd',
-      phase: 'PRD Validation',
-      effort: 'medium',
-      agentType: 'agent-teams-workforce:prd-writer',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['repaired'],
-        properties: {
-          repaired: { type: 'boolean' },
-          body: { type: 'string' },
-          changes: { type: 'array', items: { type: 'string' } },
-          unrepairable: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    }
-  )
-  const changed = !!(outcome && outcome.repaired)
-  if (changed && hasText(outcome.body)) {
-    prd = { ...prd, body: outcome.body, content: outcome.body }
-  }
-  const changes = (outcome && outcome.changes) || []
-  const stuck = (outcome && outcome.unrepairable) || []
-  runLedger.push({
-    phase: 'gate:G1',
-    gate: 'G1',
-    repair: 'prd-document',
-    repaired: changed,
-    changes,
-    unrepairable: stuck,
-  })
-  log(
-    changed
-      ? `G1: repaired the PRD before re-validating — ${changes.length} change(s)${stuck.length ? `, ${stuck.length} left unrepairable` : ''}`
-      : `G1: the PRD was NOT repaired${stuck.length ? ` — ${stuck.length} defect(s) need input the document does not hold` : ''}`
-  )
-  return changed
-}
-
-// ── PRD Validation (Gate 1) ─────────────────────────────────────────────────────
-//
-// A PRD THAT ALREADY PASSED A READINESS GATE IS NOT RE-VALIDATED.
-//
-// This phase asks whether the PRD is complete, unambiguous, internally consistent and
-// bounded to one domain. When the caller has already run its readiness gate over this
-// work item and recorded COMPLETE, every one of those questions has an answer that was
-// reached by the same kind of read this phase performs. Asking again spends the
-// validation analyst, the G1 enforcer, and — whenever G1 flags anything competitive —
-// an advantage-evaluator too, to re-derive a verdict already on the tracker.
-//
-// `prdReviewed` is EVIDENCE FROM THE CALLER, not a preference: the dispatcher sets it
-// only from a recorded review status. Absent, this phase runs exactly as before, which
-// is the correct default for a PRD nobody has vouched for.
-enterPhase('PRD Validation')
-let validation
-const validationHit = resumeFresh('prd-validation')
-if (validationHit) {
-  reuseFrom('prd-validation', validationHit, 'the PRD is not re-validated and Gate 1 is not re-spent')
-  acceptPhase('prd-validation', 'reused')
-  validation = {
-    ok: true,
-    resumed: true,
-    artifact: {
-      validatedPrd: { id: prd.id || null, title: prd.title || null, body: prd.body, verdict: 'pass' },
-      resumedFrom: artPath('prd-validation.json'),
-      ledger: { phase: 'prd-validation', beadId: subjectId, chosen: [], mode: 'resumed-from-artifact', ok: true },
-    },
-  }
-  await cpSave('validation', validation, reusedDecision('prd-validation'))
-} else {
-  validation = cpGet('validation')
-}
-if (validation === undefined && a.prdReviewed === true) {
-  log('PRD Validation: the caller reports this PRD already passed its readiness review — skipping validation and Gate 1')
-  validation = {
-    ok: true,
-    artifact: {
-      validatedPrd: prd,
-      alreadySatisfied: true,
-      reason: 'the caller recorded a COMPLETE readiness review for this PRD; re-validating re-derives a verdict already on the tracker',
-      ledger: { phase: 'prd-validation', beadId: subjectId, chosen: [], mode: 'reviewed-upstream', ok: true },
-    },
-  }
-  await cpSave('validation', validation, 'PRD Validation SKIPPED as already satisfied — the caller carried a stored COMPLETE readiness review for this PRD, so Gate 1 was not spent re-deriving a verdict already on the tracker.')
-}
-if (validation === undefined) {
-validation = await gateLoop({
-  gate: 'G1', phaseName: 'PRD Validation',
-  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag
-  // routed to the advantage-evaluator. Nearly every criterion at this gate is a COMPLETENESS
-  // or CLARITY judgment about a document, and none of those invalidates the work — a thin PRD
-  // produces a thin spec, which the downstream gates then see. Exactly one criterion is not
-  // of that kind, and it is marked below.
-  // Consumed by: architecture (G2), trd-authoring (G2b) and spec-authoring (G3) all read
-  // this PRD as their source document — a contradiction admitted here is re-derived by
-  // each of them and fails several phases later, expensively. The actor/trigger/outcome
-  // criterion is consumed by the acceptance criteria spec-authoring derives from it, which
-  // tdd-red then turns into tests.
-  criteria: [
-    // The ONE hard stop at G1. A self-contradictory PRD cannot be specified: there is no
-    // "proceed under a flag" that yields a coherent spec, because architecture, TRD and spec
-    // would each run on an incoherent input and fail several phases later, expensively. That
-    // is the case the constitutive class exists for — not the borderline call the competitive
-    // default is for. It also keeps the gate able to LOOP, which is what makes
-    // repairPrdForGate above reachable at all: the repair only runs on attempt 2.
-    { class: 'constitutive', text: 'No unresolved internal contradictions between requirements that cannot be built around (a genuine WHAT-level conflict)' },
-    { class: 'competitive', text: 'Every requirement the PRD STATES names an actor, a trigger, and an observable outcome. Judge ONLY what the PRD claims. A PRD is a business requirement and may be a single sentence — it is NOT required to define the surrounding feature, screen, or system, and omitting that context is NOT a defect.' },
-    { class: 'competitive', text: 'Do NOT fail a PRD for anything the SAD, TRD, or spec owns: crosscutting quality intent (privacy, security, accessibility, abuse-resistance), bounded-context placement, dependency naming or readiness, error/empty/cancel paths, mechanism, algorithms, thresholds, schemas, quantified NFRs, or SLOs. Those are defined downstream and their absence here is correct, not missing.' },
-  ],
-  // NO escalation target. prd-creation only runs when there is no PRD at all (`!prd && a.request`),
-  // so naming it here declared an exit that could never be taken: the escalate verdict fell through
-  // to partial() and was reported as a retryable failure, which re-dispatched the identical run.
-  // A PRD that exists is repaired in place by the loop below, or it fails honestly at exhaustion.
-  escalateTargets: [],
-  // Established in code before the criteria above are judged: a validation phase that
-  // returned no validated PRD has produced nothing there is an opinion to have about, and
-  // every criterion here is competitive but one — so without this the gate would convert
-  // its own loop into a pass and hand an absent document to architecture and the TRD.
-  structural: { requireOk: true, required: ['validatedPrd'] },
-  phaseFn: async (feedback, ctx) => {
-    // First attempt validates what reconciliation produced. Every attempt after that repairs the
-    // document against the gate's own findings first — otherwise the retry is guaranteed to fail
-    // the same way, which is exactly what it used to do.
-    if (ctx && ctx.attempt > 1) await repairPrdForGate(feedback, ctx.unmetCriteria)
-    return workflow('agent-teams-workforce:prd-validation', {
-      prd,
-      standingRulings,
-      artifacts: artFor('prd-validation', PRD_INPUTS),
-      // A BRD is OPTIONAL. When the caller supplies one it is threaded through so prd-validation
-      // can return an informational requirement-to-objective mapping; when it is absent that lens
-      // simply does not run. Either way the PRD is judged on its own terms — it is the top of the
-      // requirements chain, so tracing to a BRD is never a condition of passing.
-      brd: a.brd,
-      context: feedback ? `${a.context || ''}\n\nGate feedback:\n${feedback}` : a.context,
-    })
-  },
-})
-if (validation.ok) {
-  acceptPhase('prd-validation', 'passed', { gate: 'G1' })
-  await cpSave('validation', validation, validationRuling(validation))
-}
-}
-if (validation.artifact && validation.artifact.ledger) runLedger.push(validation.artifact.ledger)
-produced.prd = prd
-produced.validation = validation.artifact || null
-if (!validation.ok) return partial('prd-validation', validation)
-const validatedPrd = (validation.artifact && validation.artifact.validatedPrd) || prd
-produced.validatedPrd = validatedPrd
 
 // ── Epic (adopt) ─────────────────────────────────────────────────────────────────
 // A PRD and its Epic are ONE work item in two representations — the document and the
 // bead. The Epic is the caller's, established and scored before the run: the lifecycle
-// phase refused the run unless it is. It is adopted as it stands; an Epic prd-creation
-// returns alongside a PRD it authored is not written, because this Epic already exists.
+// phase refused the run unless it is. It is adopted as it stands.
 enterPhase('Epic')
 const epic = {
   key: a.epic.key || epicBeadId,
@@ -2233,7 +2013,7 @@ recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
 log(`Epic ${epicBeadId} adopted`)
 
 // ── Architecture (Gate 2 — constitutional) ──────────────────────────────────────
-// Consumes the validated PRD; produces the ruled decision + arc42 SAD source feed.
+// Consumes the PRD; produces the ruled decision + arc42 SAD source feed.
 enterPhase('Architecture')
 // Not every PRD contains an architecture decision. This phase is the most
 // expensive in the composite — a full analyst panel plus a challenge wave, ~17
@@ -2284,7 +2064,7 @@ const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk'
 let archNeeded = true
 let archTriage = null
 let architecture = null
-const ARCH_INPUTS = [...PRD_INPUTS, artPath('prd-validation.json')].filter(Boolean)
+const ARCH_INPUTS = PRD_INPUTS
 // ── A RESTART INSIDE THE ARCHITECTURE PHASE ──────────────────────────────────────
 //
 // When the phase is STALE it re-runs — but the proposals, the analysis packet and the
@@ -2292,20 +2072,22 @@ const ARCH_INPUTS = [...PRD_INPUTS, artPath('prd-validation.json')].filter(Boole
 // analyst panel is the most expensive thing this composite does. So the mini is handed their
 // PATHS and reuses what it can, re-running only the ruling.
 //
-// THE GATE IS `prd-validation` BEING FRESH, and that is the whole safety argument. This
-// script cannot hash a file, so it cannot judge for itself whether a saved proposal is still
-// current. It does not have to: ARCH_INPUTS is exactly the PRD plus prd-validation.json, and
-// the host rules prd-validation fresh only when every input it was made from still hashes as
-// recorded AND its own bytes still hash as recorded. A fresh prd-validation is therefore
-// hash-backed proof that both of this phase's inputs are unchanged — which is precisely the
+// THE GATE IS THE PRD BEING UNCHANGED, and that is the whole safety argument. This script
+// cannot hash a file, so it cannot judge for itself whether a saved proposal is still
+// current. The host can, and says so in the architecture phase's own ruling: it checks every
+// recorded architecture artifact, and the PRD each was made from, against the hashes
+// recorded for them, and only then asks whether the phase was accepted. A phase ruled stale
+// for that last reason alone — its draft intact but no acceptance recorded — is therefore
+// hash-backed proof that the PRD and the saved files are unchanged, which is precisely the
 // condition under which a saved proposal is still a proposal about this question.
 //
-// Stale prd-validation means the PRD moved, so nothing is offered and the panel runs cold.
+// Any other reason — a changed input, a damaged or missing file — offers nothing, and the
+// panel runs cold.
 const ARCH_REPLAY_SLOTS = ['analysis', 'challenges']
 function archReplayFiles(dims) {
   if (!RESUME || !ART_ON) return null
-  const upstream = RESUME.phases['prd-validation']
-  if (!upstream || !upstream.fresh) return null
+  const own = RESUME.phases.architecture
+  if (!own || own.fresh || !/its draft is intact but no gate acceptance is recorded/.test(own.reason || '')) return null
   const files = {}
   for (const d of Array.isArray(dims) ? dims : []) files[`proposal-${d}`] = artPath(`architecture-proposal-${d}.json`)
   files.analysis = artPath('architecture-analysis.json')
@@ -2414,7 +2196,7 @@ if (a.skipArchitecture === true) {
       `Repositories the run was launched from (${seedRepos.length}): ${seedRepos.join(', ') || '(none named)'}. ` +
       `This is a STARTING POINT, not the span — which repositories this PRD lands in is ruled later in this run, after you answer. Do not treat the count as evidence about scope.\n` +
       `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
-      `PRD:\n${validatedPrd.body || prd.body || '(no body supplied)'}` +
+      `PRD:\n${prd.body || '(no body supplied)'}` +
       `\n\nWhen needed is true, ALSO name in \`dimensions\` the analysis axes this decision could genuinely turn on, drawn from ${JSON.stringify(ARCH_DIMENSIONS)}. Include an axis only where the decision could plausibly turn on it, never by reflex: each axis you name costs an analyst, and each one you omit is an angle the panel will not cover. Leave the list empty only when you cannot tell — that runs every axis.` +
       `\n\nALSO classify two things. Both are REQUIRED on every answer. You are CLASSIFYING, not ruling — these decide whether an adversarial challenge pass runs after the analysts, and nothing else:\n` +
       `- highStakes: true when the question implicates a constitutive constraint — a security or trust boundary, data isolation, a legal or external contract, an irreversible migration, or a platform ban. Difficulty alone is NOT high stakes.\n` +
@@ -2536,27 +2318,7 @@ if (!archNeeded) {
   }
   // What the architecture phase is told, and what it is NOT told.
   //
-  // The decision's `context` slot used to carry `validation.artifact.summary` —
-  // the prd-validation-lead's consolidated FINDINGS report, written by the
-  // analysts BEFORE the gate adjudicated their severities. Two things went wrong
-  // at once, and run wf_e1736f55-1fe showed both: the panel never received the
-  // PRD it was convened to analyze, and what it received instead was a defect
-  // report closing with "Recommend returning to the PRD owner to resolve the two
-  // blockers". The coordinator held on that basis, its HOLD propagated through
-  // the framing into all seven analysts, and every one of them returned
-  // STATUS: BLOCKED without opening its lens. A phase whose gate had PASSED
-  // produced zero proposals and escalated.
-  //
-  // The PRD is the artifact under analysis, so the PRD is the context. G1's
-  // outcome travels separately as a driver, and it is the GATE's verdict rather
-  // than the lead's draft — because the gate is what settles severity. A finding
-  // the gate declined to uphold is CLOSED, and must not travel downstream still
-  // wearing the grading the gate removed.
-  //
-  // The flags themselves are deliberately NOT forwarded. They are written in the
-  // analysts' voice, and reproducing that voice is what caused the panel to
-  // stand down in the first place.
-  const g1 = (validation.verdict && validation.verdict.verdict) || 'pass'
+  // The PRD is the artifact under analysis, so the PRD is the context.
   // The open questions come from the TRIAGE that convened this panel, and from nowhere
   // else. They used to come from reconciliation as attributed `{ requirementId, question }`
   // pairs, which is how a survey of deployed material came to set the panel's agenda; the
@@ -2567,10 +2329,6 @@ if (!archNeeded) {
     .map((q) => (hasText(q) ? q.trim() : q && hasText(q.question) ? `${q.requirementId ? `${q.requirementId}: ` : ''}${q.question.trim()}` : ''))
     .filter((q) => hasText(q))
   const archDrivers = [
-    `Gate G1 (PRD validation) returned ${String(g1).toUpperCase()}. The PRD in Context is VALIDATED.`,
-    'Findings raised during validation were adjudicated AT that gate. Any the gate did not uphold are closed. ' +
-      'Do NOT treat validation-phase findings as open defects, and do NOT withhold analysis on account of them — ' +
-      'if you believe the PRD is undecidable, say so about text you have read in the PRD itself.',
     // ── WHAT THIS PANEL IS NOT TOLD, AND WHY ──────────────────────────────────────
     //
     // No material inventory. This panel used to receive one — every requirement, its
@@ -2617,23 +2375,23 @@ if (!archNeeded) {
       'No security or data-isolation finding is left UNMITIGATED or silently downgraded. ' +
         'A finding that has been mitigated, and whose remaining exposure is recorded in the SAD as an accepted residual with its mitigations and rationale stated, SATISFIES this criterion — recorded residual risk is the expected output of a threat model, not a defect. ' +
         'Fail only when: a finding has no mitigation at all; or a residual is undocumented; or the residual could be eliminated by a change THIS phase owns and was not. ' +
-        'If elimination would require changing the PRD, that is an UPSTREAM defect — return escalate (escalateTo prd-validation), never loop, because re-running architecture cannot fix a requirement.',
+        'If elimination would require changing the PRD, that is an UPSTREAM defect — return escalate (escalateTo prd-author), never loop, because re-running architecture cannot fix a requirement.',
     ],
-    escalateTargets: ['prd-validation'],
+    escalateTargets: ['prd-author'],
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:architecture', {
         standingRulings,
         decision: a.decision || {
           id: prd.id,
           title: `Architecture for ${prd.title || prd.id || 'PRD'}`,
-          context: validatedPrd.body || prd.body || '',
+          context: prd.body || '',
           drivers: archDrivers,
           repoPath,
         },
         sadPath: a.sadPath,
         artifacts: artFor('architecture', ARCH_INPUTS, { beadId: epicBeadId }),
         // The intermediates a previous attempt at this phase saved, as paths. Absent unless
-        // prd-validation is fresh — see archReplayFiles for why that is the right gate.
+        // the host proved the PRD unchanged — see archReplayFiles for why that is the right gate.
         ...(archReplayFiles(archDimensions) ? { replay: { files: archReplayFiles(archDimensions) } } : {}),
         dimensions: archDimensions,
         // Handed down WITH the dimensions, and only meaningful alongside them. Sizing
@@ -2926,7 +2684,7 @@ if (callerRepos.length) {
     // The WHOLE PRD. Nothing in this run subtracts from it, and a span ruled against a
     // subtracted version would leave out repositories whose only stake is material that
     // has to come OUT — which is exactly a reason for a repository to be in scope.
-    prd: { id: prd.id, title: prd.title, body: validatedPrd.body || prd.body },
+    prd: { id: prd.id, title: prd.title, body: prd.body },
     architecture: architecture.skipped ? { skipped: true } : architecture.artifact || null,
     // NO `reconciliation` KEY, DELIBERATELY. This is where a material inventory used to be
     // passed as evidence for the ruling step. There is no inventory at this point in the
@@ -3038,7 +2796,7 @@ if (!repos.length) {
       `the work lands in ${newRepos.length} repositor(ies) that do not exist yet, so no Spec or Story could be authored. ` +
         `Create them — ${newRepos.map((n) => n.proposedName).join(', ') || '(unnamed)'} — through the polyrepo-steward so the manifest is written too, then re-run this PRD. ` +
         'This run created nothing: a repository is an outward-facing, effectively irreversible addition, and a phase that minted one would mint a second on the next pass.',
-      { action: 'create-repos', scoping, prd: validatedPrd, epic }
+      { action: 'create-repos', scoping, prd, epic }
     ),
     action: 'create-repos',
     newRepos,
@@ -3105,7 +2863,7 @@ trdAuthoring = await gateLoop({
     { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
     { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
   ],
-  escalateTargets: ['architecture', 'prd-validation'],
+  escalateTargets: ['architecture', 'prd-author'],
   // Every criterion at this gate is competitive, so an unmet one passes with a flag. That
   // is right for "the TRD is thin" and wrong for "there is no TRD": spec authoring below
   // takes this document as its input packet.
@@ -3154,7 +2912,7 @@ trdAuthoring = await gateLoop({
         // is still reinstating it. So the TRD is written from the PRD and the SAD, and the
         // moved ground is applied where it is discovered: in the specs, per repo, which is
         // the layer that has to turn Y into X anyway.
-        content: validatedPrd.body || prd.body,
+        content: prd.body,
         acceptanceCriteria: prd.acceptanceCriteria,
       },
       sad: a.sad || { path: a.sadPath },
@@ -6132,10 +5890,9 @@ const degraded =
 // that decomposed and could not persist any of it has produced exactly as much phase
 // detail as one that did, and the failure is the case where that detail matters most.
 const runJournal = {
-  prd: validatedPrd,
+  prd,
   stagesComplete: [
-    creation ? 'prd-creation' : 'prd-supplied',
-    'prd-validation',
+    'prd-supplied',
     epicPath,
     architecture.skipped ? 'architecture-skipped' : 'architecture',
     scoping ? 'repo-scoping' : 'repo-span-pinned-by-caller',
@@ -6157,9 +5914,7 @@ const runJournal = {
   emission,
   budget: { attemptsSpent, maxTotalAttempts: MAX_TOTAL_ATTEMPTS },
   results: {
-    creation,
     reconciliationByRepo: Array.from(reconByRepo, ([repoPath, recon]) => ({ repoPath, recon })),
-    validation: validation.artifact,
     architecture: architecture.artifact,
     architectureTriage: archTriage,
     repoScoping: scoping,

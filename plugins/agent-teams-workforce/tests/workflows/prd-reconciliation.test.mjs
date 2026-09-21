@@ -395,25 +395,24 @@ async function composite(reconResult, { onCalls, args } = {}) {
   return { result, seen, calls, logs }
 }
 
-test('the comparison runs at SPEC AUTHORING — after G1 and the TRD, never before them', async () => {
+test('the comparison runs at SPEC AUTHORING — after the TRD, never before it', async () => {
   const { seen } = await composite(RECON_OK)
   const idx = (suffix) => seen.findIndex((c) => String(c.name || '').endsWith(suffix))
   const reconIdx = idx('prd-reconciliation')
   assert.ok(reconIdx >= 0, 'the composite still reconciles')
-  assert.ok(reconIdx > idx('prd-validation'), 'PRD validation judges the document, not the system')
   assert.ok(reconIdx > idx('architecture'), 'the architecture panel designs from the PRD and the SAD')
   assert.ok(reconIdx > idx('repo-scoping'), 'the span is ruled before anything looks at what is deployed')
   assert.ok(reconIdx > idx('trd-authoring'), 'the TRD is HOW, derived from best practice and blind to the status quo')
   assert.ok(reconIdx < idx('spec-authoring'), 'and it lands immediately before the spec that has to turn Y into X')
 })
 
-test('neither PRD validation, nor architecture, nor the TRD is handed a deployed-state inventory', async () => {
+test('neither architecture nor the TRD is handed a deployed-state inventory', async () => {
   // The negative half, and the one that matters: the relocation is only real if the
   // upstream phases genuinely stop receiving the material. The inventory's own header text
   // is the marker — it is what `renderInventory` emits and nothing else in the run does.
   const { seen, calls } = await composite(RECON_OK)
   const INVENTORY = /MATERIAL INVENTORY FOR/
-  for (const suffix of ['prd-validation', 'architecture', 'trd-authoring', 'repo-scoping']) {
+  for (const suffix of ['architecture', 'trd-authoring', 'repo-scoping']) {
     const call = seen.find((c) => String(c.name || '').endsWith(suffix))
     assert.ok(call, `${suffix} ran`)
     assert.ok(
@@ -442,17 +441,16 @@ test('the comparison is scoped to ONE repository, and it is the ruled path', asy
   assert.equal(recons[0].payload.prd.body, PRD.body, 'the REQUIREMENTS never narrow — only the search does')
 })
 
-test('a PRD whose requirements ALL conform is not closed — the run carries on and validates it', async () => {
+test('a PRD whose requirements ALL conform is not closed — the run carries on', async () => {
   // The close short-circuit is deleted. No work item is ever ended on the grounds that
   // code exists: the material is reused, and the PRD is still specified.
-  const { result, seen } = await composite({
+  const { result } = await composite({
     ...RECON_OK,
     requirements: [{ id: 'R1', requirement: 'a', status: 'conforms', evidence: ['x:1'], conformingMaterial: ['x.py'], surface: 'service' }],
     conformsCount: 1,
     absentCount: 0,
   })
   assert.notEqual(result.action, 'close')
-  assert.equal(seen.filter((c) => c.name === 'agent-teams-workforce:prd-validation').length, 1, 'the PRD is still validated')
 })
 
 test('an infrastructure-only PRD is not rerouted away from the pipeline', async () => {
@@ -460,28 +458,18 @@ test('an infrastructure-only PRD is not rerouted away from the pipeline', async 
   // kept SYNTHETIC on purpose: it is the only thing that makes this a regression guard
   // against reintroducing the reroute, which was computed off the subtracted remainder.
   // Drop it and the test asserts nothing.
-  const { result, seen } = await composite({ ...RECON_OK, infraOnly: true })
+  const { result } = await composite({ ...RECON_OK, infraOnly: true })
   assert.notEqual(result.action, 'reroute')
   assert.equal(result.composite, undefined)
-  assert.equal(seen.filter((c) => c.name === 'agent-teams-workforce:prd-validation').length, 1)
-})
-
-test('downstream phases receive the ORIGINAL PRD — there is no delta to rebind to', async () => {
-  const { seen } = await composite(RECON_OK)
-  const validation = seen.find((c) => c.name === 'agent-teams-workforce:prd-validation')
-  assert.ok(validation, 'validation ran')
-  assert.equal(validation.payload.prd.body, PRD.body, 'the ambition is what gets specified')
-  assert.equal(validation.payload.prd.path, PRD.path)
 })
 
 test('every phase that sees a PRD sees the same text — none of them a narrowed one', async () => {
-  // The run reaches every phase now, so this sweeps the whole pipeline rather than
-  // stopping at validation. Phases carry the text under different keys — trd-authoring
+  // The run reaches every phase now, so this sweeps the whole pipeline. Phases carry the text under different keys — trd-authoring
   // takes `content`, the rest take `body` — so the invariant is the TEXT, not the field
   // name: no phase anywhere receives a subtracted or rewritten PRD.
   const { seen } = await composite(RECON_OK)
   const withPrd = seen.filter((c) => c.payload && c.payload.prd && typeof c.payload.prd === 'object')
-  assert.ok(withPrd.length >= 4, `more than one phase reads the PRD (saw ${withPrd.length})`)
+  assert.ok(withPrd.length >= 3, `more than one phase reads the PRD (saw ${withPrd.length})`)
   for (const c of withPrd) {
     const text = c.payload.prd.body || c.payload.prd.content
     assert.equal(text, PRD.body, `${c.name} must receive the original PRD, not a narrowed one`)
@@ -565,14 +553,13 @@ test('the composite declares NO PRD Reconciliation phase, and Spec Authoring own
   )
   assert.match(
     phases,
-    /phases: \[\s*\{ title: 'Epic Lifecycle'[^\n]*\n\s*\{ title: 'PRD Creation'/,
+    /phases: \[\s*\{ title: 'Epic Lifecycle'[^\n]*\n\s*\{ title: 'PRD'/,
     'the run opens on the Epic lifecycle check, then the PRD itself',
   )
   assert.match(phases, /\{ title: 'Spec Authoring', detail: '[^']*current-state reconciliation runs HERE/)
 })
 
-test('the comparison and validation are separate workflow dispatches', async () => {
+test('the comparison is a workflow dispatch of its own', async () => {
   const { seen } = await composite(RECON_OK)
   assert.equal(workflowCalls(seen, 'agent-teams-workforce:prd-reconciliation').length, 1)
-  assert.equal(workflowCalls(seen, 'agent-teams-workforce:prd-validation').length, 1)
 })
