@@ -239,18 +239,6 @@ Names should sort and group naturally when listed alphabetically.
 
 ---
 
-## Risks & Open Questions
-
-<!--
-  Unknowns that need resolution before or during build.
-  Flag anything where the wrong assumption could invalidate the approach.
--->
-
-- **[Risk/Question]:** [Context. What needs to be true, or what could go wrong.]
-- **[Risk/Question]:** [Context.]
-
----
-
 ## Visual References
 
 <!--

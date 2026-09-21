@@ -134,9 +134,10 @@ It **cannot** decide *semantic* conformance — that is the reviewer's job (see 
    the one exception to review-only routing: a self-contradictory criterion blocks every downstream
    phase, and it is repairable from the document alone.
 8. **Fill every structured section:** Out of Scope, Constraints (behavioral, not tech choices),
-   Dependencies (table + status), Measurable Outcomes (table + baseline/target/method), Risks &
-   Open Questions, Visual References, Definition of Done.
-9. **Record every unresolved input gap as an Open Question.** Never invent a requirement, metric, or
+   Dependencies (table + status), Measurable Outcomes (table + baseline/target/method), Visual
+   References, Definition of Done.
+9. **Report every unresolved input gap in your handoff, never in the PRD.** A PRD holds requirements
+   only — no risks, open questions, notes, or discussion. Never invent a requirement, metric, or
    constraint to look finished; never smooth an upstream contradiction into vague language.
 10. **Delete every template comment (`<!-- ... -->`) and `[placeholder]`** before saving.
 11. **Run `scripts/check_prd.py` on your draft and resolve every error** before handoff.

@@ -39,6 +39,8 @@ TITLE_RE = re.compile(r"^#\s+Feature PRD:")
 LAST_UPDATED_RE = re.compile(r"^\*\*Last Updated:\*\*\s*(.+?)\s*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PRIORITY_RE = re.compile(r"\*\*Priority:\*\*\s*(.+?)\s*$")
+# A PRD holds requirements only; these sections are never allowed.
+FORBIDDEN_SECTIONS = ("Risks & Open Questions", "Open Questions", "Risks", "Notes")
 ACCEPTANCE_RE = re.compile(r"\*\*Acceptance Criteria:?\*\*", re.IGNORECASE)
 # A bracketed placeholder like [Feature Name] or [Goal], but not a markdown
 # link [text](url) and not a task checkbox [ ] / [x].
@@ -58,7 +60,9 @@ def iter_logical_lines(text: str):
     for i, raw in enumerate(text.splitlines(), start=1):
         stripped = raw.lstrip()
         # Toggle fenced code blocks.
-        if not in_comment and (stripped.startswith("```") or stripped.startswith("~~~")):
+        if not in_comment and (
+            stripped.startswith("```") or stripped.startswith("~~~")
+        ):
             token = stripped[:3]
             if not in_code:
                 in_code, fence = True, token
@@ -126,8 +130,14 @@ def check_prd(prd_path: Path, template_path: Path) -> dict:
     if misordered:
         errors.append("Sections out of template order: " + ", ".join(misordered))
 
-    # 4. Extra (non-template) sections — informational only.
-    extra = [s for s in actual if s not in expected]
+    # 4. Forbidden sections are errors; other extra sections are informational only.
+    forbidden = [s for s in actual if s in FORBIDDEN_SECTIONS]
+    if forbidden:
+        errors.append(
+            "Forbidden sections (a PRD holds requirements only): "
+            + ", ".join(forbidden)
+        )
+    extra = [s for s in actual if s not in expected and s not in FORBIDDEN_SECTIONS]
     if extra:
         warnings.append("Extra sections not in template: " + ", ".join(extra))
 
@@ -260,9 +270,13 @@ def format_report(result: dict) -> str:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Check a PRD against the canonical template.")
+    parser = argparse.ArgumentParser(
+        description="Check a PRD against the canonical template."
+    )
     parser.add_argument("prd", help="Path to the PRD markdown file to check.")
-    default_template = Path(__file__).resolve().parent.parent / "references" / "prd-template.md"
+    default_template = (
+        Path(__file__).resolve().parent.parent / "references" / "prd-template.md"
+    )
     parser.add_argument(
         "--template",
         default=str(default_template),
