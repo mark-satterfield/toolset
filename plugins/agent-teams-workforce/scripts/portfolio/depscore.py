@@ -526,6 +526,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="set the Epic's `elaboration_state` to `done`",
     )
+    efi.add_argument(
+        "--sad-files",
+        default="",
+        help=(
+            "the SAD files this run's architecture phase changed, comma-separated. With "
+            "`--done` they are promoted to `lifecycle_state: effective`; without it they "
+            "are ignored, because only a completed elaboration vouches for a SAD entry"
+        ),
+    )
+    efi.add_argument(
+        "--sad-root",
+        default=None,
+        help="the SAD directory every `--sad-files` path must sit under",
+    )
     _dry_run_flag(efi)
 
     erl = sub.add_parser(
@@ -663,6 +677,9 @@ def run(args: argparse.Namespace) -> dict:
             judged=split_ids(args.judged),
             owner=args.owner,
             done=args.done,
+            # Paths, not bead ids — `split_ids` validates an id shape these would fail.
+            sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
+            sad_root=args.sad_root,
         )
     if command == "elaboration-release":
         return head | release(graph, writer, args.epic, owner=args.owner)

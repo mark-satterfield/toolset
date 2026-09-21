@@ -5951,10 +5951,29 @@ const epicDone =
   emission.verdict === 'complete' &&
   specFailures.length === 0 &&
   decompositionFailures.length === 0
+// ── THE SAD ENTRIES THIS RUN VETTED BECOME `effective` HERE ────────────────────
+// A SAD entry settles an architecture decision only when its ruling came out of a COMPLETED
+// elaboration. Everything the architecture phase writes lands as `in-review`; this is the
+// one transition that promotes it, and it rides on `--done` so a run that ends with its
+// Tasks unwritten promotes nothing. The predicate is false across the whole SAD until a run
+// makes it true, one Epic at a time, and nobody sets a flag.
+//
+// The files come from the sad-maintainer's own account of what it changed. `depscore.py`
+// holds every one of them to the SAD root before writing, because this rewrites documents
+// in the vault and a wrong path there is not a scoring mistake.
+const sadChangedFiles = (
+  (architecture && architecture.artifact && architecture.artifact.sadUpdate &&
+    Array.isArray(architecture.artifact.sadUpdate.changedFiles))
+    ? architecture.artifact.sadUpdate.changedFiles
+    : []
+).map((f) => String(f || '').trim()).filter(Boolean)
+const sadPromotionArgs = epicDone && sadChangedFiles.length
+  ? ` --sad-files ${shellq(sadChangedFiles.join(','))}${a.sadPath ? ` --sad-root ${shellq(a.sadPath)}` : ''}`
+  : ''
 // Nothing beneath the Epic is durable when the verdict is `none`, so there is nothing to score.
 const finishOut = emission.verdict === 'none' ? null : await runLifecycle(
   'epic:finish',
-  `elaboration-finish --epic ${epicBeadId} --owner ${lifecycle.owner}${judgedTaskIds.length ? ` --judged ${judgedTaskIds.join(',')}` : ''}${epicDone ? ' --done' : ''}`,
+  `elaboration-finish --epic ${epicBeadId} --owner ${lifecycle.owner}${judgedTaskIds.length ? ` --judged ${judgedTaskIds.join(',')}` : ''}${epicDone ? ' --done' : ''}${sadPromotionArgs}`,
   'Emit Beads'
 )
 lifecycle.finish = finishOut
@@ -5970,6 +5989,26 @@ const scoringLine = !finishOut
       : `Epic ${epicBeadId} stays in_progress — ${taskIds.size ? 'part of it did not land' : 'no Task is durable'}, and the next run completes it. `)
   : `SCORING DID NOT RUN for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'} — its Tasks carry the scores their decomposition computed, and it stays in_progress. `
 if (scoringLine) log(scoringLine)
+// What the promotion actually did. A refusal or a failure here means SAD entries this run
+// vetted are still `in-review` and downstream readers will keep treating them as unsettled,
+// which is a quiet wrong answer rather than a loud one — so it is logged either way.
+const sadPromotion = (finishOut && finishOut.sad) || null
+if (sadPromotion) {
+  const s = sadPromotion.summary || {}
+  log(
+    sadPromotion.dryRun
+      ? `SAD promotion skipped (dry run): ${(sadPromotion.wouldPromote || []).length} file(s) would become effective.`
+      : `SAD: ${s.promoted || 0} entr(ies) promoted to effective, ${s.unchanged || 0} already effective` +
+        `${s.noFrontmatter ? `, ${s.noFrontmatter} carrying no frontmatter` : ''}` +
+        `${s.refused ? `, ${s.refused} REFUSED as outside the SAD` : ''}` +
+        `${s.failed ? `, ${s.failed} FAILED` : ''}.`
+  )
+} else if (sadChangedFiles.length && epicDone) {
+  log(
+    `SAD promotion did not run although this elaboration changed ${sadChangedFiles.length} SAD file(s) — ` +
+      `they stay in-review and nothing downstream will treat them as settled.`
+  )
+}
 log(
   `Emission ${emission.verdict.toUpperCase()} from ${emission.target || '(no target)'}: ` +
     `${emission.created} created, ${emission.adopted} adopted, ${emission.failed.length} failed, ` +
@@ -6265,6 +6304,10 @@ return {
   // The Epic lifecycle this run owns: the start check, the scoring arithmetic and the
   // lifecycle write at the finish.
   lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
+  // Which SAD entries this run promoted to `effective`. It crosses the boundary because it
+  // is the run's one durable claim about the architecture record itself: after this, those
+  // entries are settled for every later Epic's dependency assessment.
+  ...(sadPromotion ? { sadPromotion } : {}),
   crossStoryDependencies: crossStory,
   hierarchy,
   beadSet,
