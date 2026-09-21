@@ -40,7 +40,17 @@ LAST_UPDATED_RE = re.compile(r"^\*\*Last Updated:\*\*\s*(.+?)\s*$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 PRIORITY_RE = re.compile(r"\*\*Priority:\*\*\s*(.+?)\s*$")
 # A PRD holds requirements only; these sections are never allowed.
-FORBIDDEN_SECTIONS = ("Risks & Open Questions", "Open Questions", "Risks", "Notes")
+FORBIDDEN_SECTIONS = (
+    "Risks & Open Questions",
+    "Open Questions",
+    "Risks",
+    "Notes",
+    "Assumptions",
+    "Constraints Followed",
+    "Constraints at Risk",
+    "Scope Exceptions",
+    "Audit Trail",
+)
 ACCEPTANCE_RE = re.compile(r"\*\*Acceptance Criteria:?\*\*", re.IGNORECASE)
 # A bracketed placeholder like [Feature Name] or [Goal], but not a markdown
 # link [text](url) and not a task checkbox [ ] / [x].
@@ -106,6 +116,11 @@ def order_violations(expected: list[str], actual: list[str]) -> list[str]:
     return problems
 
 
+def is_forbidden(section: str) -> bool:
+    """True for a section a PRD may never carry: agent handoff notes and appendices."""
+    return section in FORBIDDEN_SECTIONS or section.startswith("Appendix")
+
+
 def check_prd(prd_path: Path, template_path: Path) -> dict:
     errors: list[str] = []
     warnings: list[str] = []
@@ -131,13 +146,13 @@ def check_prd(prd_path: Path, template_path: Path) -> dict:
         errors.append("Sections out of template order: " + ", ".join(misordered))
 
     # 4. Forbidden sections are errors; other extra sections are informational only.
-    forbidden = [s for s in actual if s in FORBIDDEN_SECTIONS]
+    forbidden = [s for s in actual if is_forbidden(s)]
     if forbidden:
         errors.append(
             "Forbidden sections (a PRD holds requirements only): "
             + ", ".join(forbidden)
         )
-    extra = [s for s in actual if s not in expected and s not in FORBIDDEN_SECTIONS]
+    extra = [s for s in actual if s not in expected and not is_forbidden(s)]
     if extra:
         warnings.append("Extra sections not in template: " + ", ".join(extra))
 
