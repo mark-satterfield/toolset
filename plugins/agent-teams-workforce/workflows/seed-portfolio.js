@@ -1,10 +1,11 @@
 export const meta = {
   name: 'seed-portfolio',
   description:
-    "Seeds the Epic portfolio's architecture dependencies: the per-Epic dependency assessment for every Epic in `epics`, one Epic after another in the order given, each dispatched by name with `score: false`. It is the same assessment normal operation runs for a new or changed Epic: one session per Epic reads its full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. The PRD corpus is written once, by the first assessment, and read by the rest. /seed-portfolio computes `epics` with `assess-plan --since` before dispatching it, checks what is left with the same command afterwards, and then dispatches wsjf-scoring with `all` and `rejudge` as a workflow of its own. It never scores. An Epic whose edge proposal did not validate, or that failed any other way, stops the seeding at that Epic, naming each finding; a person settles it and the seeding resumes with the same `since`. With `apply: false` every assessment proposes only and nothing is written.",
+    "Seeds the Epic portfolio: it assesses the architecture dependencies of every Epic in `epics`, then scores every open Epic and Task with WSJF. The assessment is the per-Epic dependency assessment, one Epic after another in the order given, each dispatched by name with `score: false`: the same assessment normal operation runs for a new or changed Epic, in which one session per Epic reads its full PRD, searches the other PRDs, and sets or withdraws that Epic's architecture dependencies with a reason, seeing every edge the earlier assessments set. The PRD corpus is written once, by the first assessment, and read by the rest. When every Epic is assessed and applied, the seeding dispatches wsjf-scoring once, without `all` or `rejudge`: it judges the items whose source content changed or whose value is missing, then runs the arithmetic, RR-OE from the new edges included, over every open item and writes the values that changed. /seed-portfolio computes `epics` with `assess-plan --since` before dispatching it and checks what is left with the same command afterwards. An Epic whose edge proposal did not validate, or that failed any other way, stops the seeding at that Epic, naming each finding, and nothing is scored, because the edge set is incomplete; a person settles it and the seeding resumes with the same `since`, which finishes the edges and then scores. With `apply: false` every assessment proposes only, nothing is written and nothing is scored.",
   whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed before every Epic and Task is scored by wsjf-scoring.',
   phases: [
     { title: 'Assess', detail: 'dependency-assessment for each Epic, one after another, with score: false' },
+    { title: 'Score', detail: 'wsjf-scoring once, over the completed edge set' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -108,12 +109,14 @@ async function settleAgent(prompt, opts) {
 //                            // Default true.
 // }
 //
-// Returns: { ok, since, apply, assessed, stoppedAt, remaining, dispatchFailed, dispatchFailures }
-//   ok:         true when every Epic was assessed
+// Returns: { ok, since, apply, assessed, stoppedAt, remaining, scoring, dispatchFailed,
+//            dispatchFailures }
+//   ok:         true when every Epic was assessed and, when it applies, scoring returned ok
 //   assessed:   [{ id, added, converted, removed, unchanged, withdrawn, edgesFile, reasoning, resultFile }]
 //   stoppedAt:  null, or { id, error, findings, edgesFile, validationFile, dispatchFailures } for
 //               the assessment that stopped it
 //   remaining:  the Epics of `epics` not assessed, the stopped one first
+//   scoring:    the wsjf-scoring result, or null when the seeding stopped or proposed only
 //
 // ── The agent budget ─────────────────────────────────────────────────────────────
 //
@@ -143,6 +146,7 @@ const queue = a.epics.slice()
 const assessed = []
 let stoppedAt = null
 let remaining = []
+let scoring = null
 const result = (ok, extra) => ({
   ok,
   since: a.since,
@@ -150,6 +154,7 @@ const result = (ok, extra) => ({
   assessed,
   stoppedAt,
   remaining,
+  scoring,
   ...(extra || {}),
   dispatchFailed: dispatchDeaths().length > 0,
   dispatchFailures: dispatchDeaths(),
@@ -161,7 +166,7 @@ log(`${queue.length} Epic(s) to assess since ${a.since}`)
 // One Epic after another, never concurrently: each assessment sees every edge the earlier
 // ones set, with its reason, and the cycle check runs against the live graph. The first
 // assessment writes the PRD corpus into one directory for the whole seeding and the rest
-// read it. `score: false` because one scoring run follows the seeding.
+// read it. `score: false` because one scoring run follows the whole seeding.
 phase('Assess')
 let corpusReady = false
 for (let i = 0; i < queue.length; i++) {
@@ -210,5 +215,26 @@ for (let i = 0; i < queue.length; i++) {
   remaining = queue.slice(i)
   log(`Seeding stopped at ${id}: ${stoppedAt.error}`)
   return result(false, { error: `the seeding stopped at ${id}; settle it, then resume with the same since, ${a.since}` })
+}
+
+// ── Score ────────────────────────────────────────────────────────────────────────
+//
+// Reached only when every Epic in `epics` was assessed and applied: a stopped seeding
+// returned above, so RR-OE is never computed from a half-assessed graph. Neither `all` nor
+// `rejudge`: missing values are judged, unchanged ones are not judged again, and the
+// arithmetic recomputes RR-OE from the new edges and rewrites every WSJF that changed.
+// A resume with an empty `epics` comes straight here.
+if (!applies) return result(true)
+phase('Score')
+let scoringThrown = null
+try {
+  scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+} catch (err) {
+  scoringThrown = String((err && err.message) || err).slice(0, 500)
+}
+if (!(scoring && scoring.ok === true)) {
+  const why = scoringThrown || (scoring && scoring.error) || 'wsjf-scoring returned no result'
+  log(`Scoring failed: ${why}`)
+  return result(false, { error: `every Epic was assessed, but scoring failed: ${why}; resume with the same since, ${a.since}, to score` })
 }
 return result(true)

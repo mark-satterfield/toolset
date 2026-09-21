@@ -1,5 +1,5 @@
 ---
-description: "Seed the portfolio once: the per-Epic dependency assessment for every open Epic, then a full WSJF re-judge"
+description: "Seed the portfolio once: the per-Epic dependency assessment for every open Epic, then WSJF scoring over the new edges"
 argument-hint: "[--since <iso>]"
 allowed-tools: [Bash, Workflow]
 ---
@@ -7,22 +7,22 @@ allowed-tools: [Bash, Workflow]
 # Seed the portfolio
 
 A one-time run over the beads tracker of the repository you are standing in, by dispatching
-the `seed-portfolio` workflow, then the `wsjf-scoring` workflow. The normal path assesses an
-Epic's architecture dependencies and scores it when it is created or changed; seeding does
-the same for every open Epic at once. It writes.
+the `seed-portfolio` workflow. Seeding is both halves: dependency assessment and WSJF
+scoring. The normal path assesses an Epic's architecture dependencies and scores it when it
+is created or changed; seeding does the same for every open Epic at once. It writes.
 
 `seed-portfolio.js` assesses every open Epic not assessed since `since`, one Epic after
 another in id order, each in one session that applies its own edges with their reasons and
-sees every edge the earlier ones set. It never scores. Then scoring runs, as its own
-workflow: `wsjf-scoring` with `all` and `rejudge` judges every Epic's value, urgency and
-size, and every Task's size, again, then runs the arithmetic.
+sees every edge the earlier ones set. When every Epic is assessed and applied, it runs
+`wsjf-scoring` itself, once: missing values are judged, and the arithmetic recomputes RR-OE
+from the new edges and every WSJF over every open item.
 
-An assessment whose edge proposal does not validate stops the seeding at that Epic and
-writes nothing for it. An edge between two Epics is an architecture dependency
+An assessment whose edge proposal does not validate stops the seeding at that Epic, writes
+nothing for it, and nothing is scored. An edge between two Epics is an architecture dependency
 (`agent-teams-workforce:epic-sequencing`).
 
 - `--since <iso>` resumes an interrupted seeding: pass the `since` the interrupted run
-  printed. Only the Epics not assessed since then are assessed, then scoring runs. Without
+  printed. Only the Epics not assessed since then are assessed, then the workflow scores. Without
   it, `since` is now.
 
 ## Dispatch
@@ -52,7 +52,8 @@ dispatch nothing.
 
 Tell the user the printed `SINCE` and the number of Epics before dispatching: an interrupted
 seeding resumes with `--since <SINCE>`. Use the printed values below. Leave `projectRoot` out
-when it printed empty. Pass `EPICS` as a JSON list. When it is empty, go to scoring.
+when it printed empty. Pass `EPICS` as a JSON list. When it is empty, dispatch anyway: the workflow then only
+scores.
 
 ### The seeding
 
@@ -68,7 +69,9 @@ Workflow({name: "agent-teams-workforce:seed-portfolio", args: {
 }})
 ```
 
-`ok` is false: stop, report, and do not score.
+`ok` is false: stop and report. The seeding either stopped at an Epic (`stoppedAt`), and
+nothing was scored, or assessed every Epic and scoring failed (`scoring`); either way a
+resume with `--since <SINCE>` finishes it.
 
 When `ok` is true, check what is left, from the tracker rather than the workflow's word:
 
@@ -77,30 +80,15 @@ python3 "<ROOT>/scripts/portfolio/depscore.py" assess-plan -C "<REPO>" --since "
   | python3 -c 'import json,sys; print("LEFT=" + json.dumps(json.load(sys.stdin)["summary"]["unassessedIds"]))'
 ```
 
-`LEFT` is not empty: stop and report those Epics; do not score. An Epic listed there either
-changed during the seeding or was reported applied without its assessment being recorded.
-
-### Scoring
-
-Only after the seeding returned `ok: true` and `LEFT` is empty, dispatch from here:
-
-```
-Workflow({name: "agent-teams-workforce:wsjf-scoring", args: {
-  repoPath:    "<REPO>",
-  pluginRoot:  "<ROOT>",
-  workDir:     "<REPO>/.claude/workflow-runs/wsjf-scoring/<RUN>",
-  sadPath:     "<SAD>",
-  projectRoot: "<PROJECT>",
-  all:         true,
-  rejudge:     true
-}})
-```
+`LEFT` is not empty: report those Epics and tell the user to resume with `--since <SINCE>`.
+An Epic listed there either changed during the seeding or was reported applied without its
+assessment being recorded.
 
 Anything else in `$ARGUMENTS` is ignored.
 
 ## Report back
 
-From the seeding result and the scoring result:
+From the seeding result:
 
 - `since`, so the seeding can be resumed.
 - `assessed` — per Epic: edges added, converted and withdrawn, and the `unchanged` count;
@@ -112,14 +100,13 @@ From the seeding result and the scoring result:
   correct the PRD, or the hand-made edge a cycle runs through, then resume with
   `--since <since>`.
 - `LEFT`, when it is not empty.
-- `scoring` — the `wsjf-scoring` result, reported as `/agent-teams-workforce:wsjf-scoring`
-  reports it.
+- `scoring` — the `wsjf-scoring` result the seeding returned, reported as
+  `/agent-teams-workforce:wsjf-scoring` reports it; when it is null, say that nothing was
+  scored and why (the seeding stopped).
 - `dispatchFailures`, verbatim, when present.
 
 ## Never
 
-- Dispatch `dependency-assessment` yourself; the seeding runs it, one Epic at a time.
+- Dispatch `dependency-assessment` or `wsjf-scoring` yourself; the seeding runs both.
 - Run two seedings at once: each assessment must see the edges the earlier ones set.
-- Dispatch `wsjf-scoring` before the seeding returns `ok: true` with `LEFT` empty, or with
-  anything but `all` and `rejudge`.
 - Start a pipeline run, a supervisor, a keeper or the dashboard from here.
