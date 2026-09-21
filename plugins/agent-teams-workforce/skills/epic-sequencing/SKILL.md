@@ -42,6 +42,27 @@ build dependencies of their own.
 A decision the SAD already settles is designed; no Epic edge is needed for it. As the SAD
 accumulates decisions, fewer Epic edges exist.
 
+### Only an `effective` SAD entry settles anything
+
+A SAD entry settles a decision when, and only when, its frontmatter carries
+`lifecycle_state: effective`. An entry at `in-review`, `draft`, or any other state settles
+NOTHING, however normatively it is worded and whatever date it carries.
+
+Read the state; never infer it. A dated ruling, a MUST, a table of values and a confident
+tone are all properties of the wording, and the wording is what an unvetted entry has most
+of. The only entries marked `effective` are those a completed `prd-to-spec` elaboration
+vetted and approved — that transition is the sole writer of the value, and it runs when an
+Epic's Tasks land.
+
+So when an entry that bears on a decision is not `effective`, the SAD does not settle that
+decision, and the edge test proceeds as though the entry were absent. Record the state you
+read in the entry's `sadCheck`, so a later reader can tell an entry that settled the
+question from one that only sounded like it did.
+
+This is why the check exists at all. Every entry in the SAD today is `in-review`: no Epic
+has yet completed elaboration, so nothing in it has provenance. An assessment that drops an
+edge by citing an `in-review` entry has ordered the portfolio on an unchecked claim.
+
 ## What an edge decides
 
 - **The dependency graph decides ELIGIBILITY** — what may be elaborated at all. An Epic
@@ -89,7 +110,9 @@ another Epic set.
 1. Read the Epic's full PRD.
 2. Name the architecture decisions its requirements should drive, and the architecture
    decisions it rests on.
-3. Check each against the SAD, and drop every decision the SAD already settles.
+3. Check each against the SAD, and drop every decision the SAD already settles. An entry
+   settles a decision only when its frontmatter reads `lifecycle_state: effective` — read
+   that field on every entry you rely on, and treat an entry in any other state as absent.
 4. For each remaining decision, search the other Epics' PRDs — Grep the PRD directory, and
    use the index for titles and section headings — for the PRDs whose requirements drive or
    rest on it. Read no PRD the search did not find related.
@@ -166,7 +189,11 @@ revises.
 - Adding an edge to force a total order.
 - Adding an edge for a build fact — existence, deployment, testability, data flow — which
   belongs to Tasks.
-- Adding an edge for a decision the SAD already settles.
+- Adding an edge for a decision the SAD already settles — one whose entry reads
+  `lifecycle_state: effective`.
+- Dropping an edge by citing a SAD entry that is not `effective`. The wording of an
+  unvetted entry is not evidence that the decision was made, and this is the error that
+  most easily ships as a confident reason nobody re-reads.
 - Withdrawing a standing edge without a reason that answers the reason recorded for it.
 - Reading PRDs that the search did not find related.
 - Scoring anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from
