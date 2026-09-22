@@ -1096,6 +1096,15 @@ Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rul
 }
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
+//
+// TWO THINGS A PHASE CAN SAY THAT STOP THE LOOP DEAD, and they are the same rule seen from
+// two sides: a re-run has to have something new to work with. `dispatchFailed: true` says
+// the producing agents never ran, so there is no artifact to judge. `deterministicFailure:
+// true` says they did not need to — the failure was settled by arithmetic over inputs this
+// run cannot change, so the next attempt computes the same answer. Either one returns
+// immediately with the phase's own reason and spends no retry. Everything else loops, and
+// a LOOP verdict carrying feedback is exactly what it should do: feedback is a changed
+// instruction, which is the one thing that makes a re-run worth paying for.
 async function gateLoop({ gate, phaseName, criteria, checks, structural, escalateTargets, phaseFn, gateWorkflow }) {
   let feedback = ''
   // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
@@ -1185,6 +1194,38 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
         dispatchFailures: artifact.dispatchFailures || [],
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
+    }
+    // ── A FAILURE THAT CANNOT COME OUT DIFFERENTLY IS NOT RETRIED ───────────────
+    //
+    // Nothing is retried unless something VERIFIABLY CHANGED that gives real confidence the
+    // next attempt will differ — the instruction, the code, or the data. A gate that loops
+    // WITH feedback satisfies that rule and must keep looping: the feedback is a changed
+    // instruction, and re-running the phase against it is the case this whole loop was
+    // built for. Retry for retry's sake is not, and this project has already paid for it in
+    // runs that were dispatched again and again with no chance of coming out differently.
+    //
+    // Some phase failures are settled by arithmetic before a single agent is dispatched.
+    // The instance that motivated this: trd-authoring computes its SAD shard plan from the
+    // section-8 file inventory and, when the inventory overflowed the plan, returned
+    // ok:false with a reason naming a constant that has to be raised in source. No agent
+    // had run. The gate failed the structural check, gateLoop re-ran the phase from cold,
+    // the identical arithmetic over the identical file inventory produced the identical
+    // failure, and the run halted having spent two full phase attempts on an outcome that
+    // was decided before the first one started.
+    //
+    // So a phase may declare that its failure is DETERMINISTIC: same inputs, same failure.
+    // That declaration stops the loop here — no gate dispatch, because the judge can only
+    // concur at the cost of a session, and no retry, because the phase has told us a retry
+    // cannot help. The phase's own reason is surfaced as-is: it already names the thing a
+    // human has to change. This is a correctness check, not an optimisation; deleting it
+    // restores the blind re-run.
+    if (artifact && artifact.deterministicFailure === true && artifact.ok !== true) {
+      const why =
+        artifact.reason ||
+        `${phaseName} reported a deterministic failure and gave no reason`
+      log(`${phaseName}: DETERMINISTIC FAILURE — ${why} Gate ${gate} is NOT run and no retry is spent: the same inputs produce the same failure, so only a change outside this run can alter it.`)
+      recordGate(attempt, null, { terminal: 'deterministic-failure', deterministicReason: why })
+      return { ok: false, deterministicFailure: true, reason: why, artifact }
     }
     const gateArgs = { gate, phaseName, criteria, checks, structural, artifact, escalateTargets }
     let verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
