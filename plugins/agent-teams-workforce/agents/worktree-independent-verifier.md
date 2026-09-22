@@ -60,7 +60,6 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Run every command as `git -C "<path>" …`. Never `cd` into a tree and rely on the ambient directory — you may be running inside an isolation copy of a different repository, so a bare `git status` can inspect the wrong tree entirely.
 - If a command does not answer, say so for that command alone. One failing probe must never discard the answer another probe already gave.
 - Absence of an error is not evidence of a fact. If you did not obtain a value, report it as not obtained.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 
 ## When You're in Over Your Head
 

@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 12
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:product-discovery]
-effort: medium
+effort: low
 color: blue
 ---
 
@@ -53,9 +53,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every entry.
 - Quote the PRD verbatim when citing a gap; never paraphrase in a way that changes meaning.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in the register: confidence level per finding, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but never approve it; the work is not done until independently reviewed.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 
 ## When You're in Over Your Head
 

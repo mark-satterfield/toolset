@@ -182,13 +182,13 @@ And the intake brief:
       ],
       properties: {
         scopeSummary: { type: 'string' },
-        inScope: { type: 'array', items: { type: 'string' } },
-        outOfScope: { type: 'array', items: { type: 'string' } },
+        inScope: { type: 'array', maxItems: 15, items: { type: 'string' } },
+        outOfScope: { type: 'array', maxItems: 15, items: { type: 'string' } },
         problem: { type: 'string' },
         audience: { type: 'string' },
         desiredOutcome: { type: 'string' },
-        constraints: { type: 'array', items: { type: 'string' } },
-        openQuestions: { type: 'array', items: { type: 'string' } },
+        constraints: { type: 'array', maxItems: 20, items: { type: 'string' } },
+        openQuestions: { type: 'array', maxItems: 15, items: { type: 'string' } },
       },
     },
   }
@@ -245,8 +245,8 @@ Deliver:
           properties: {
             name: { type: 'string' },
             summary: { type: 'string' },
-            goals: { type: 'array', items: { type: 'string' } },
-            frustrations: { type: 'array', items: { type: 'string' } },
+            goals: { type: 'array', maxItems: 8, items: { type: 'string' } },
+            frustrations: { type: 'array', maxItems: 8, items: { type: 'string' } },
             context: { type: 'string' },
           },
         },
@@ -275,6 +275,8 @@ Deliver:
             objective: { type: 'string' },
             keyResults: {
               type: 'array',
+              // An objective with more than a handful of key results has no objective.
+              maxItems: 6,
               items: {
                 type: 'object',
                 additionalProperties: false,
@@ -293,6 +295,21 @@ Deliver:
 
 // ── PRD Draft (maker-checker, bounded loop) ───────────────────────────────────
 phase('PRD Draft')
+
+// A dead maker is a dispatch failure, not a persona with no name. Reading `.name` off
+// null threw a TypeError out of this mini, out of the composite, and killed the run —
+// the same class of crash the settleAgent block above exists to prevent.
+if (!persona || !okrs) {
+  return {
+    ok: false,
+    stage: 'persona-okr',
+    error: `${!persona ? 'the persona writer' : ''}${!persona && !okrs ? ' and ' : ''}${!okrs ? 'the OKR writer' : ''} returned nothing — the PRD has no persona or OKRs to be authored against`,
+    intakeBrief,
+    scope,
+    persona: persona || null,
+    okrs: okrs || null,
+  }
+}
 
 const personaBlock = `Persona: ${persona.name} — ${persona.summary}
 Goals: ${(persona.goals || []).join('; ') || 'n/a'}
@@ -324,7 +341,7 @@ Deliver:
 - title: the PRD title.
 - prd: the full PRD body in Markdown, template-conformant.
 - sections: the section headings present (array), to confirm template coverage.
-- acceptanceCriteria: P0 acceptance criteria as given/when/then (array).
+- acceptanceCriteria: P0 acceptance criteria as given/when/then (array) — P0 ONLY, at most 40, each clause under 30 words.
 - epicScope: a one-paragraph scope statement for the Epic that pairs with this PRD — a container-level summary of the scope the PRD owns, with no acceptance criteria and no repository specifics (one Epic may span repos).${
       feedback
         ? `\n\nALIGNMENT FEEDBACK from the independent checker — address every point before resubmitting:\n${feedback}`
@@ -342,10 +359,13 @@ Deliver:
         properties: {
           title: { type: 'string' },
           prd: { type: 'string' },
-          sections: { type: 'array', items: { type: 'string' } },
+          sections: { type: 'array', maxItems: 30, items: { type: 'string' } },
           epicScope: { type: 'string' },
           acceptanceCriteria: {
             type: 'array',
+            // P0 only, as the brief says. Everything here is re-read by the alignment
+            // checker, by PRD validation, by the TRD author and by every spec author.
+            maxItems: 40,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -385,7 +405,10 @@ Decide exactly one verdict:
 For each dimension (intake, persona, okr, template), state whether it is satisfied with evidence.`,
     {
       label: 'prd:alignment-check',
-      effort: 'medium',
+      // A checker, and the prd-alignment-verifier's own file already says `effort: low`
+      // — this override was RAISING it. It judges a document against three stated inputs;
+      // the expensive judgment in this mini is the deadlock ruling below.
+      effort: 'low',
       phase: 'PRD Draft',
       agentType: 'agent-teams-workforce:prd-alignment-verifier',
       schema: {
@@ -396,6 +419,8 @@ For each dimension (intake, persona, okr, template), state whether it is satisfi
           verdict: { type: 'string', enum: ['aligned', 'misaligned'] },
           dimensions: {
             type: 'array',
+            // Exactly the four dimensions the enum names, one entry each.
+            maxItems: 4,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -420,6 +445,10 @@ let feedback = ''
 let deadlocked = false
 for (let pass = 1; pass <= MAX_PASSES; pass++) {
   prd = await draftPRD(feedback)
+  // Same guard, same reason: verifyAlignment reads `prd.title` and `prd.prd`.
+  if (!prd) {
+    return { ok: false, stage: 'prd-draft', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope }
+  }
   alignmentVerdict = await verifyAlignment(prd)
   if (!alignmentVerdict) {
     return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', prd }

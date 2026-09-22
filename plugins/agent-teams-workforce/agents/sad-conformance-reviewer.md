@@ -8,13 +8,13 @@ description: >-
   work in progress, brought up to date one Epic at a time.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: opus
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
 # arc42-verify is NOT loaded: its contract is a whole-document verdict over a
 # document that is deliberately incomplete while the pipeline fills it in.
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:arc42]
-effort: medium
+effort: low
 isolation: worktree
 color: cyan
 ---
@@ -60,10 +60,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Validate with evidence: every FAIL cites the exact arc42 section and the exact quoted line or named absence that proves it; observed non-conformance, not interpretive stretch, is the bar. Run every check before emitting — do not stop at the first failure.
 - Never invent a conformance rule the arc42 reference tree does not establish; the reference is the source of truth for what each section must contain. Judge presence, extractability, consistency, and traceability — never architectural merit.
 - For source sections 2/4/8, traceability means each can be lifted out cleanly AND points back to a decided source artifact (a Decider decision or a recorded constraint); a source section grounded only in unratified prose fails integrity.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in your findings: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

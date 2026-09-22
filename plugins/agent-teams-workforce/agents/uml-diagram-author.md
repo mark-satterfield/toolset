@@ -56,10 +56,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Pick the UML type by what the decided behaviour needs: ordered collaboration across participants → sequence; the changing mode of one entity → state; the domain vocabulary and its structure → class. Do not substitute one for another to make a render easier.
 - Validate before claiming done: cross-check every participant, message, class, attribute, state, and transition against the decision record, event model, and glossary; syntax-check and render every Mermaid source; observed correctness, not absence of errors, is the bar.
 - You never approve your own diagrams and never write the checks that gate them; your work is not done until architecture-boundary-guardian and architecture-decider have passed it.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — anything in a diagram not traceable to the record, event model, or glossary must be declared an assumption.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail with the diagram set: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

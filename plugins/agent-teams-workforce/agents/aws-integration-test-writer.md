@@ -11,7 +11,7 @@ model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:aws-serverless-eda]
-effort: xhigh
+effort: medium
 color: red
 ---
 
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Analysis and decision are separate tasks performed by different agents; recommend harness or environment changes, but do not decide or implement them.
 - A testing agent reports findings; it never fixes what it finds — contract and environment defects go upstream as structured findings.
 - Collaborate through explicit artifacts — test files, harness configuration, Red evidence, traceability mappings. The durable record is the artifact.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every deliverable.
 - Prefer the skills and tools provided to you over internal training, especially the event-driven architecture guidance loaded at startup.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work before handoff, but it is not done until the required reviewers have passed it — no self-approval.
 
 ## When You're in Over Your Head

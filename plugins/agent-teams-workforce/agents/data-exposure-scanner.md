@@ -12,7 +12,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-secops]
-effort: medium
+effort: low
 isolation: worktree
 color: orange
 ---
@@ -55,10 +55,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Never copy real secrets or PII into a report; reference each exposure by data class and location only, with a minimal reproduction that proves it without echoing the value.
 - Stay inside the authorization boundary at all times — this project's own code and designated test environments only, as an authorized stage of this pipeline.
 - Collaborate through explicit artifacts — the durable record is the artifact; your finding report must be independently verifiable without your session context.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

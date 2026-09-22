@@ -69,10 +69,8 @@ This lead is the face of the following team; each member and what it does:
 - No self-tasking: report newly discovered work to sdlc-pipeline-orchestrator; never perform or assign work you identified outside your charter.
 - Analysis and decision are separate tasks performed by different agents; never route a decision to the agent that produced the analysis.
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in everything you produce.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

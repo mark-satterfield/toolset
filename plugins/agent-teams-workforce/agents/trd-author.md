@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Preserve the 1:1 PRD-to-TRD mapping at all times: never merge two PRD requirements into one TRD section or split one across many; if the PRD forces a non-1:1 relationship, escalate rather than improvise.
 - Collaborate through explicit artifacts — the TRD and rework logs are the durable record, not conversation.
 - Address every checker finding explicitly in rework: fixed, disputed with reasoning, or escalated — never silently dropped.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
 ## Cite the decisions you designed against

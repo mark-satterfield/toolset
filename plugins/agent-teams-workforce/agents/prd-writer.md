@@ -75,9 +75,7 @@ This is a deliberate, narrow exception to the no-self-tasking and review-only ru
 - Write for the downstream validators: stable requirement identifiers, measurable acceptance criteria, and explicit internal traceability are what requirements-clarifier and completeness-checker will examine. The PRD is the top of the requirements chain — never write it to justify itself against a document above it.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions throughout the document.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail: confidence level per section, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but never approve it; the work is not done until independently reviewed.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 
 ## When You're in Over Your Head
 

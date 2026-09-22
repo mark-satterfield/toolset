@@ -175,8 +175,8 @@ const ASSESS_SCHEMA = {
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
     findings: { type: 'object' },
-    relatedRead: { type: 'array', items: { type: 'string' } },
-    unsure: { type: 'array', items: { type: 'string' } },
+    relatedRead: { type: 'array', maxItems: 40, items: { type: 'string' } },
+    unsure: { type: 'array', maxItems: 20, items: { type: 'string' } },
     applyExitCode: { type: 'integer' },
     applySummary: { type: 'object' },
     error: { type: 'string' },
@@ -208,6 +208,9 @@ Return the edge file path, the reasoning file path, the edge count, whether the 
 const assessed = await settleAgent(assessPrompt, {
   label: `epic-sequencer:${target}`,
   phase: 'Assess',
+  // A maker: it proposes the edge set. Stated here rather than inherited, so the cost of
+  // an assessment is a property of this dispatch and not of an agent file elsewhere.
+  effort: 'medium',
   agentType: 'agent-teams-workforce:epic-sequencer',
   schema: ASSESS_SCHEMA,
 })

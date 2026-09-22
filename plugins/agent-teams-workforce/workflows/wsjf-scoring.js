@@ -218,7 +218,8 @@ const JUDGE_SCHEMA = {
   properties: {
     path: { type: 'string' },
     judged: { type: 'integer' },
-    unscored: { type: 'array', items: { type: 'string' } },
+    // An Epic session judges one item; a Task session judges one Epic's Tasks.
+    unscored: { type: 'array', maxItems: 60, items: { type: 'string' } },
   },
 }
 const epicDir = file('judgments/epic')
@@ -240,7 +241,11 @@ Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integ
 Write ${epicDir}/${id}.json as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}.
 
 Return the path you wrote, how many items you judged (1 or 0), and the ids you could not judge.`,
-  { label: `judge:epic:${id}`, phase: 'Judge', effort: 'high', schema: JUDGE_SCHEMA }
+  // A scorer against a published rubric, not a decider: `rejudge` re-runs it by design
+  // and the arithmetic is recomputed on every edge change, so no ruling here is expensive
+  // to reverse. At `high` this was the portfolio's largest recurring cost — one session
+  // per open Epic, on every seeding.
+  { label: `judge:epic:${id}`, phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
 )
 
 const judgeTasks = (group) => {

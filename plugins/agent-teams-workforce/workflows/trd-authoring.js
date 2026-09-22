@@ -239,6 +239,10 @@ For every entry: assign a stable ID, capture the verbatim-grounded statement, an
       $defs: {
         feed: {
           type: 'array',
+          // The SAD's own sections are finite and this is a normalization, not a survey.
+          // A feed longer than this is the extractor reconstructing architecture from code,
+          // which the brief above forbids.
+          maxItems: 40,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -354,6 +358,8 @@ ${feedback ? `\nFeedback on the previous version (checker, gate or decider) — 
 
 Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
 
+VOLUME IS THE COST OF THIS PHASE. Return AT MOST 40 technical requirements, each stated in under 60 words, and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than 40 requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+
 CITE THE DECISIONS, IN THE DOCUMENT AS WELL AS IN YOUR RESULT.
 A \`sadRefs\` entry that reaches only your structured result is read by this run and by nothing after it. The TRD file itself carries the citation twice:
 - in YAML frontmatter at the top of the document, \`decisionIds:\` listing every SAD entry id any requirement in this TRD depends on, as a flat list;
@@ -373,9 +379,13 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
           // Every SAD entry id this TRD depends on, flat — the same list the document's
           // frontmatter carries. It is what the impact pass matches a changed decision
           // against, so it lives on the document and not only inside a requirement.
-          decisionIds: { type: 'array', items: { type: 'string' } },
+          decisionIds: { type: 'array', maxItems: 60, items: { type: 'string' } },
           requirements: {
             type: 'array',
+            // The ceiling stated in the brief above. Output volume is what this phase
+            // costs in wall-clock: the TRD is re-read by the verifier, by the decider and
+            // by every spec author downstream, so an unbounded list is paid for repeatedly.
+            maxItems: 40,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -383,8 +393,8 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
               properties: {
                 id: { type: 'string' },
                 requirement: { type: 'string' },
-                prdRefs: { type: 'array', items: { type: 'string' } },
-                sadRefs: { type: 'array', items: { type: 'string' } },
+                prdRefs: { type: 'array', maxItems: 10, items: { type: 'string' } },
+                sadRefs: { type: 'array', maxItems: 10, items: { type: 'string' } },
                 verification: { type: 'string' },
               },
             },
@@ -425,7 +435,10 @@ ${extractText}`,
     {
       label: 'verify:trd-and-traceability',
       phase: 'Verify & Traceability',
-      effort: 'medium',
+      // A checker, and the trd-validator's own file already says `effort: low` — this
+      // override was RAISING it. Judging a document against stated criteria is the
+      // cheapest kind of judgment there is; the expensive one is the decider below.
+      effort: 'low',
       agentType: 'agent-teams-workforce:trd-validator',
       schema: {
         type: 'object',
@@ -440,6 +453,10 @@ ${extractText}`,
               verdict: { type: 'string', enum: ['pass', 'reject'] },
               findings: {
                 type: 'array',
+                // A checker's job is to name what blocks, not to enumerate everything it
+                // noticed. Past 25 findings the author cannot act on them in one pass
+                // anyway, and the loop below only has one pass.
+                maxItems: 25,
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -462,6 +479,11 @@ ${extractText}`,
               verdict: { type: 'string', enum: ['pass', 'reject'] },
               links: {
                 type: 'array',
+                // The traceability matrix is the one place where completeness IS the
+                // check, so this cap is a blow-up guard rather than a budget: at most 40
+                // TRD requirements against a PRD's requirements, one row per real link.
+                // A matrix longer than this is a cross-product, not a mapping.
+                maxItems: 200,
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -472,8 +494,8 @@ ${extractText}`,
                   },
                 },
               },
-              prdGaps: { type: 'array', items: { type: 'string' } },
-              trdOrphans: { type: 'array', items: { type: 'string' } },
+              prdGaps: { type: 'array', maxItems: 40, items: { type: 'string' } },
+              trdOrphans: { type: 'array', maxItems: 40, items: { type: 'string' } },
               feedback: { type: 'string' },
             },
           },
@@ -537,7 +559,9 @@ Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 
           properties: {
             verdict: { type: 'string', enum: ['accept', 'reject', 'revise'] },
             rationale: { type: 'string' },
-            requiredChanges: { type: 'array', items: { type: 'string' } },
+            // A revise buys exactly ONE targeted author pass. A change list longer than
+            // this is not targeted — it is a rewrite the decider had no mandate to order.
+            requiredChanges: { type: 'array', maxItems: 15, items: { type: 'string' } },
           },
         },
       }

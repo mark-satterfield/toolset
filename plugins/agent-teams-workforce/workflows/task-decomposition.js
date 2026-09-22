@@ -253,7 +253,7 @@ const story = a.story || {}
 // criticality from. See the Task WSJF block below for why a Task's own text cannot carry
 // them.
 const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
-const MAX_SCORING_PASSES = a.maxScoringPasses || 2 // an unresolved scoring review does not block emission; the disputed scores are recorded and still order the work
+const MAX_SCORING_PASSES = a.maxScoringPasses || 1 // ONE pass: an unresolved scoring review does not block emission — the disputed scores are recorded and still order the work — so a second pass buys an adjustment to numbers nobody is waiting on, at the price of a scorer session and a reviewer session
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
@@ -905,7 +905,7 @@ for (let pass = 2; !scoringAccepted && !replayScoring && pass <= MAX_SCORING_PAS
 const scoringDisputed = !scoringAccepted
 if (scoringDisputed) {
   log(
-    `WSJF review unresolved after ${MAX_SCORING_PASSES} passes — emitting tasks with the ` +
+    `WSJF review unresolved after ${MAX_SCORING_PASSES} pass${MAX_SCORING_PASSES === 1 ? '' : 'es'} — emitting tasks with the ` +
       `latest scores and recording the dispute. Tasks are the deliverable; disputed scores still order the work until rescored.`
   )
 }

@@ -8,6 +8,7 @@ description: >-
   conventions, rules, search recipes, or documentation pointers without
   loading the full manifest into session context.
 allowed-tools: [Read, Glob, Grep, Bash]
+effort: low
 ---
 
 # Polyrepo Cartographer

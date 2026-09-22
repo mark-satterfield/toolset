@@ -52,10 +52,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact; the guide and its claims trace are the deliverable.
 - Validate before claiming done: trace every walkthrough against the shipped behavior and every claim against its source; a guide is truthful when its claims were observed, not when they read well.
 - You never approve your own guide and never audit its currency; your work is not done until documentation-accuracy-reviewer has passed it.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — a behavior inferred from code but never observed is an inference and must be labeled as one.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

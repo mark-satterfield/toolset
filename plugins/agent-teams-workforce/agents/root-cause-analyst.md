@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:find-cause, agent-teams-workforce:test-failure-mindset]
-effort: medium
+effort: low
 isolation: worktree
 color: cyan
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Follow the evidence chain: every claim in a finding must cite an artifact, log line, code location, or manifest entry that another agent can verify; "probably" is not evidence.
 - When a test fails, weigh both hypotheses — wrong implementation and wrong expectation — before classifying as code or test.
 - Collaborate through explicit artifacts — the durable record is the artifact; findings must stand alone without your conversation.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every finding.
 - Prefer the skills and tools provided to you over internal training; classify from this project's evidence, not from familiar failure patterns.
-- Include an audit trail in every finding: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

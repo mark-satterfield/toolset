@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 30
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:cove-prompt-design]
-effort: medium
+effort: high
 isolation: worktree
 color: pink
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Verify before deciding: cross-check each candidate strategy against the risk assessments, FinOps recommendations, drift report, and SLO design before committing to it.
 - Collaborate through explicit artifacts — the durable record is the artifact; the decision exists only as the written decision record.
 - Surface conflict, never bury it: where analyses disagreed, the decision record names the conflict, the sides, and why one prevailed.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — specialist recommendations are inputs, not decisions, until you decide.
 - Prefer the skills and tools provided to you over internal training.
-- Include a full audit trail in every decision: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks. This is mandatory, not optional.
 
 ## When You're in Over Your Head
 

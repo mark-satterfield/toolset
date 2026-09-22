@@ -183,8 +183,13 @@ const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
 const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
 
 // A finding-list schema reused across the lenses that emit flat findings.
+// The caps are set against what this phase actually produces. Across eleven recorded
+// Epic runs the largest ambiguities list was 8 and the largest completenessGaps 11, so
+// these are blow-up guards rather than budgets: a lens returning more than this is
+// enumerating restatements of one finding, and every extra entry is re-read by the gate.
 const findingItems = {
   type: 'array',
+  maxItems: 15,
   items: {
     type: 'object',
     additionalProperties: false,
@@ -216,18 +221,20 @@ const traceabilitySchema = {
     traceable: { type: 'boolean' },
     matrix: {
       type: 'array',
+      // Informational only — it binds nothing, so it never earns an unbounded budget.
+      maxItems: 60,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['requirement', 'objectives'],
         properties: {
           requirement: { type: 'string' },
-          objectives: { type: 'array', items: { type: 'string' } },
+          objectives: { type: 'array', maxItems: 10, items: { type: 'string' } },
         },
       },
     },
-    orphanRequirements: { type: 'array', items: { type: 'string' } },
-    unimplementedObjectives: { type: 'array', items: { type: 'string' } },
+    orphanRequirements: { type: 'array', maxItems: 40, items: { type: 'string' } },
+    unimplementedObjectives: { type: 'array', maxItems: 40, items: { type: 'string' } },
   },
 }
 
@@ -240,12 +247,13 @@ const analysisSchema = {
     completenessGaps: findingItems,
     conflicts: {
       type: 'array',
+      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['requirements', 'contradiction', 'severity'],
         properties: {
-          requirements: { type: 'array', items: { type: 'string' } },
+          requirements: { type: 'array', maxItems: 6, items: { type: 'string' } },
           contradiction: { type: 'string' },
           severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'info'] },
         },
@@ -253,6 +261,8 @@ const analysisSchema = {
     },
     constraints: {
       type: 'array',
+      // Largest observed: 21. A PRD does not impose more distinct constraints than this.
+      maxItems: 25,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -267,6 +277,7 @@ const analysisSchema = {
     },
     boundaryFindings: {
       type: 'array',
+      maxItems: 12,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -281,6 +292,7 @@ const analysisSchema = {
     },
     clarifications: {
       type: 'array',
+      maxItems: 15,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -331,7 +343,10 @@ ${prdBlock}
 READING BUDGET (binding): the PRD is quoted in full above and it is the entire object of every lens — a PRD is judged on what it SAYS, so the codebase cannot make an ambiguous requirement clear or a conflict go away. Read nothing unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document. Do not survey the repository or the polyrepo. Roughly five tool calls is the expected shape, and zero is a correct answer.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
   {
     label: 'validate:all-lenses',
-    effort: 'medium',
+    // Every lens is a CHECK on a document authored upstream, applied against stated
+    // criteria — the cheapest kind of judgment. Nothing here decides anything that is
+    // expensive to reverse: a blocker sends the PRD back to its author.
+    effort: 'low',
     phase: 'Validate',
     schema: analysisSchema,
   }

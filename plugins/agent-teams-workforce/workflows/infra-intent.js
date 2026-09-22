@@ -169,7 +169,13 @@ phase('Freshness')
 
 const intentText = JSON.stringify(intent, null, 2)
 
-const dependencyChanges = await settleAgent(
+// THE HEADER SAID "IN PARALLEL" AND THE CODE RAN THEM ONE AFTER ANOTHER. The freshness
+// check, the security scan and the first cost pass all read the SAME intent text and none
+// of them reads another's output — three independent checkers on one artifact, serialized
+// for no reason on the phase's longest stretch. They are dispatched together below, once
+// `reviewCost` is in scope.
+const checkFreshness = () =>
+  settleAgent(
   `Detect dependency changes that would INVALIDATE this provisioning intent — CDK/construct-library version drift, removed or renamed constructs, deprecated properties, or upstream service changes. You are an independent checker — you did not author the intent and you do not modify it.
 
 ${changeHeader}
@@ -206,13 +212,12 @@ Report each dependency change that affects the intent and whether it invalidates
   }
 )
 
-const fresh = dependencyChanges.invalidated !== true
-
 // ── Phase 3: Review (independent checkers; cost can drive a bounded maker loop) ─
 phase('Review')
 
 // Security scan is independent of the maker and does not change between cost passes.
-const securityFindings = await settleAgent(
+const scanSecurity = () =>
+  settleAgent(
   `Independently scan this provisioning intent for security misconfiguration — public exposure, missing encryption, over-broad IAM, unencrypted/unversioned buckets, insecure defaults. You are an independent scanner — you did not author the intent and you do not modify it.
 
 ${changeHeader}
@@ -292,7 +297,18 @@ Estimate the recurring + one-time cost drivers and flag anything materially over
   )
 }
 
-let costFindings = await reviewCost(intent, 1)
+// The three independent first-pass checkers, dispatched together. Each reads the intent
+// as `makeIntent` returned it and nothing else; the cost LOOP below is sequential because
+// every pass after the first reads an intent the maker has since rewritten.
+const [dependencyChanges, securityFindings, firstCostPass] = await parallel([
+  checkFreshness,
+  scanSecurity,
+  () => reviewCost(intent, 1),
+])
+
+const fresh = dependencyChanges.invalidated !== true
+
+let costFindings = firstCostPass
 let costResolved = costFindings.blocking !== true
 let costDecision = null
 

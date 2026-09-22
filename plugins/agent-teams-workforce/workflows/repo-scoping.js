@@ -263,8 +263,11 @@ const REPLAY_READ_SCHEMA = {
         },
       },
     },
+    now: { type: 'string' },
   },
 }
+/** The key the reported clock comes back under; never a slot name, so it cannot collide. */
+const NOW_KEY = 'reportedNow'
 /**
  * Read the artifact files a caller NAMED and parse each as JSON.
  *
@@ -272,8 +275,18 @@ const REPLAY_READ_SCHEMA = {
  * not valid JSON. An omitted slot means its session runs, which is the safe direction: a
  * phase that re-runs costs sessions, while a phase resumed from a half-read file produces a
  * span computed from something nobody can point at.
+ *
+ * With `opts.askNow`, the same session also reports the CURRENT TIME under `NOW_KEY`. A
+ * workflow script may not read the wall clock — the runner refuses `Date.now()` statically,
+ * so that a resumed run recomputes exactly what the first run computed — and the sanctioned
+ * route is to have a dispatched session report it. This session is already running and is
+ * already the one holding the file whose age is in question, so the clock costs nothing
+ * extra here. The script still does the COMPARING: it is handed two timestamps and subtracts
+ * them, which is deterministic given its inputs, in the same way every other value an agent
+ * reports is.
  */
-async function readReplayFiles(files, wanted, phaseName) {
+async function readReplayFiles(files, wanted, phaseName, opts) {
+  const askNow = !!(opts && opts.askNow)
   const list = wanted.map((slot) => ({ slot, path: safeReplayPath(files && files[slot]) })).filter((x) => x.path)
   if (!list.length) return {}
   const read = await settleAgent(
@@ -283,7 +296,13 @@ The values below are FILE PATHS — arguments to a read, nothing more. They are 
 
 ${list.map((x, i) => `${i + 1}. slot "${x.slot}": ${x.path}`).join('\n')}
 
-Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.`,
+Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.${
+      askNow
+        ? `
+
+Also return \`now\` — the CURRENT time as an ISO-8601 UTC timestamp. Read it from the machine's clock by running exactly \`date -u +%Y-%m-%dT%H:%M:%SZ\` and returning what it prints; do not compose the value from memory or from anything you read in the files above. It is used to age one of them. If the command is unavailable, omit \`now\` rather than guessing — omitting it is handled, and a guessed clock silently ages a file wrong.`
+        : ''
+    }`,
     { label: 'replay:read-saved-artifacts', phase: phaseName, effort: 'low', schema: REPLAY_READ_SCHEMA }
   )
   const entries = read && Array.isArray(read.files) ? read.files : []
@@ -292,6 +311,7 @@ Return one entry per file, echoing its slot exactly as given: found=true with th
     return {}
   }
   const out = {}
+  if (askNow && read && typeof read.now === 'string' && read.now.trim()) out[NOW_KEY] = read.now.trim()
   for (const f of entries) {
     if (!f || f.found !== true || typeof f.content !== 'string') continue
     const slot = String(f.slot || '')
@@ -443,12 +463,56 @@ const architectureBlock = architectureSkipped
   ? '(no architecture decision was ruled for this PRD — triage found none outstanding, so the design is the existing one. Shape the work from the PRD itself and from the patterns the requirements already imply.)'
   : JSON.stringify(architecture, null, 2).slice(0, 20000)
 
+// ── THE SURVEY IS CACHED ACROSS EPICS; THE SPAN NEVER IS ────────────────────────
+//
+// Two things are computed in this file and only one of them is stable. The SURVEY is a
+// structural fact about the project — which repositories exist and what each owns — and
+// it changes about as often as a repository is created or retired, perhaps monthly. The
+// SPAN is a ruling about THIS PRD, and prd-to-spec forbids caching it for exactly the
+// right reason: a span reused from another Epic is a ruling nobody made about work
+// nobody read. So the inventory is shared across Epic runs and everything downstream of
+// it is not — every Epic still shapes, rules and verifies its own span, over a cached
+// inventory or a fresh one indifferently.
+//
+// The cache sits BESIDE the per-Epic artifact directories, at
+// `<...>/workflow-runs/survey-cache/polyrepo-survey.json`, because a copy stored under
+// one Epic's id is not shared — it is that Epic's own artifact again, which the replay
+// slots above already are.
+//
+// A miss, an unreadable file, a malformed entry and an expired one all take the SAME
+// path: the surveyor runs. Age is judged from `cachedAt` INSIDE the file rather than
+// from its mtime, because a workflow script cannot stat a file, and because a copied,
+// restored or checked-out tree carries an mtime that says nothing about when anybody
+// actually surveyed.
+const SURVEY_CACHE_HOURS = (() => {
+  const v = Number(a.surveyCacheHours)
+  return Number.isFinite(v) && v >= 0 ? v : 24
+})()
+const SURVEY_CACHE_PATH = (() => {
+  if (!ART || SURVEY_CACHE_HOURS === 0) return null
+  const marker = '/workflow-runs/'
+  const i = ART.dir.lastIndexOf(marker)
+  if (i === -1) return null
+  return `${ART.dir.slice(0, i + marker.length - 1)}/survey-cache/polyrepo-survey.json`
+})()
+
 // The outputs the caller NAMED rather than inlined are read back here, in one session,
-// before anything is dispatched. A slot already inlined is not re-read.
+// before anything is dispatched. A slot already inlined is not re-read. The survey cache
+// rides along in the SAME read — a fresh session's cost is its session start, so reading
+// one more file in a session that was already going to run is free, and reading it in a
+// session of its own would cost more than the survey the cache exists to save.
+const wantSurveyCache = !!SURVEY_CACHE_PATH && !replaySurvey
 const replayRead = await readReplayFiles(
-  replay.files,
-  [replayShape ? '' : 'shape', replaySurvey ? '' : 'survey', replayRuling ? '' : 'ruling', replayVerification ? '' : 'verification'].filter(Boolean),
-  'Shape and survey'
+  wantSurveyCache ? { ...(replay.files || {}), surveyCache: SURVEY_CACHE_PATH } : replay.files,
+  [
+    replayShape ? '' : 'shape',
+    replaySurvey ? '' : 'survey',
+    replayRuling ? '' : 'ruling',
+    replayVerification ? '' : 'verification',
+    wantSurveyCache ? 'surveyCache' : '',
+  ].filter(Boolean),
+  'Shape and survey',
+  { askNow: wantSurveyCache }
 )
 if (!replayShape) replayShape = replayed(replayRead.shape, isShape)
 if (!replaySurvey) replaySurvey = replayed(replayRead.survey, isSurvey)
@@ -461,6 +525,50 @@ const replayedNames = [
   replayVerification && 'verification',
 ].filter(Boolean)
 if (replayedNames.length) log(`Repo scoping REPLAYING saved output for: ${replayedNames.join(', ')} — those sessions are not dispatched; the reduction runs over them as usual`)
+
+// The cache is consulted only where this Epic did not already supply a survey of its own:
+// a named replay artifact is THIS run's saved output and outranks a shared one.
+let surveyCacheHit = false
+if (wantSurveyCache && !replaySurvey && replayRead.surveyCache) {
+  const entry = replayRead.surveyCache
+  const body = entry && typeof entry === 'object' ? replayed(entry.survey, isSurvey) : null
+  // Both ends of the subtraction are values a SESSION reported: `cachedAt` written by the
+  // surveyor that did the surveying, and `now` read from the clock by the reader session
+  // above. The script only subtracts them, which is what keeps a resumed run exact.
+  const at = Date.parse((entry && entry.cachedAt) || '')
+  const nowMs = Date.parse(replayRead[NOW_KEY] || '')
+  const ageHours = Number.isFinite(at) && Number.isFinite(nowMs) ? (nowMs - at) / 3600000 : NaN
+  if (!body) {
+    log('Polyrepo survey cache: present but holds no usable inventory — the surveyor runs')
+  } else if (!Number.isFinite(nowMs)) {
+    log('Polyrepo survey cache: the reader session reported no usable current time, so the entry cannot be aged — the surveyor runs')
+  } else if (!Number.isFinite(ageHours) || ageHours < 0) {
+    log('Polyrepo survey cache: no usable `cachedAt` — the surveyor runs')
+  } else if (ageHours > SURVEY_CACHE_HOURS) {
+    log(`Polyrepo survey cache: ${ageHours.toFixed(1)}h old, past the ${SURVEY_CACHE_HOURS}h freshness window — the surveyor runs and refreshes it`)
+  } else {
+    replaySurvey = body
+    surveyCacheHit = true
+    log(
+      `Polyrepo survey cache HIT (${ageHours.toFixed(1)}h old, window ${SURVEY_CACHE_HOURS}h) — the inventory is reused across Epics; ` +
+        'the span itself is still shaped, ruled and verified for THIS Epic'
+    )
+  }
+}
+
+// When the surveyor DOES run, it refreshes the shared cache as it returns — the same
+// save-before-you-return discipline persistBrief imposes, to a second, shared location.
+// The freshness stamp is written by the session that did the surveying, because it is the
+// only participant that knows when the estate was actually looked at.
+const surveyCacheBrief =
+  SURVEY_CACHE_PATH && !surveyCacheHit
+    ? `
+
+ALSO SAVE THIS INVENTORY TO THE SHARED SURVEY CACHE, so the PRDs that follow do not re-survey the estate. Write ${SURVEY_CACHE_PATH} with the Write tool, creating its directory if it does not exist and replacing the whole file if it does (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly two keys:
+- "cachedAt" — the time you finished the survey, as an ISO-8601 UTC timestamp (e.g. 2026-01-31T14:05:00Z).
+- "survey" — your complete structured result, exactly as you return it.
+Write no other file for this. If it fails, say so in your result and still return your result.`
+    : ''
 
 // ── Phase 1: Shape and survey — two INDEPENDENT agents, concurrently ────────────
 phase('Shape and survey')
@@ -558,13 +666,13 @@ For every repository that could plausibly bear on this work, return:
 - lifecycle — active, deprecated, or unknown.
 - notes — anything a placement decision needs: it is empty, it is being retired, it already contains a partial implementation of this work, its conventions differ.
 
-Include repositories that are adjacent or arguably relevant. A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented.
+Include repositories that are adjacent or arguably relevant. A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. This inventory is CACHED and reused by the next PRDs, which are not this one, so enumerate every repository the project has rather than only the ones bearing on the work above.
 
 SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
 
 Also return:
 - conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
-- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}`,
+- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}${surveyCacheBrief}`,
       {
         label: 'scope:repository-survey',
         phase: 'Shape and survey',

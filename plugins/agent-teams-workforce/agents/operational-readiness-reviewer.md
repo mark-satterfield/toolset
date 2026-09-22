@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:observability-designer]
-effort: medium
+effort: low
 isolation: worktree
 color: cyan
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Evaluate against the real platform: telemetry comes from the configured Lambda Power Tools (never propose rebuilding it); the event path is central event API to EventBridge rule to SQS to Lambda with at-least-once delivery, so duplicate handling and dead-letter operations are mandatory scenarios; all Lambdas extend the common chassis; deploys are per-repo GitHub Actions, so partial-deployment states are real operational states.
 - Collaborate through explicit artifacts — the durable record is the artifact; an operability concern not in the report does not exist.
 - Validate with evidence: every finding traces a concrete incident scenario from trigger to detection to recovery, showing where the proposal's story breaks.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in your findings: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

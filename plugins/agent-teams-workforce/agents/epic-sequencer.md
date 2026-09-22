@@ -16,7 +16,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 120
 skills: [agent-teams-workforce:epic-sequencing]
-effort: high
+effort: medium
 isolation: none
 color: purple
 ---

@@ -155,14 +155,14 @@ const SPEC_SCHEMA = {
   additionalProperties: false,
   required: ['artifactPaths', 'summary', 'content'],
   properties: {
-    artifactPaths: { type: 'array', items: { type: 'string' } },
+    artifactPaths: { type: 'array', maxItems: 10, items: { type: 'string' } },
     summary: { type: 'string' },
     content: { type: 'string' },
-    openQuestions: { type: 'array', items: { type: 'string' } },
+    openQuestions: { type: 'array', maxItems: 15, items: { type: 'string' } },
     // The SAD entry ids this artifact was designed against, cited as the SAD tags them.
     // A spec that cites a decision can be found again when that decision changes; one
     // that cites a section number cannot, because a section number moves and a tag does not.
-    decisionIds: { type: 'array', items: { type: 'string' } },
+    decisionIds: { type: 'array', maxItems: 30, items: { type: 'string' } },
   },
 }
 
@@ -173,6 +173,10 @@ const AC_SCHEMA = {
   properties: {
     acceptanceCriteria: {
       type: 'array',
+      // One repo's Spec. Happy path, error paths and boundaries for one Story's worth of
+      // behaviour do not need more than this, and every criterion is re-read by the
+      // reviewer, the decider, decomposition and every test writer downstream.
+      maxItems: 40,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -193,7 +197,7 @@ const DOD_SCHEMA = {
   additionalProperties: false,
   required: ['definitionOfDone'],
   properties: {
-    definitionOfDone: { type: 'array', items: { type: 'string' } },
+    definitionOfDone: { type: 'array', maxItems: 20, items: { type: 'string' } },
     notes: { type: 'string' },
   },
 }
@@ -206,6 +210,10 @@ const REVIEW_SCHEMA = {
     verdict: { type: 'string', enum: ['approve', 'reject'] },
     findings: {
       type: 'array',
+      // Per artifact, and this schema is used four times in one review result. The
+      // prompt already caps each finding at 40 words; this caps how many there are.
+      // Only ONE maker pass follows a rejection, so findings past this cannot be acted on.
+      maxItems: 15,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -241,6 +249,8 @@ const DECISION_SCHEMA = {
   properties: {
     rulings: {
       type: 'array',
+      // Exactly one per deadlocked artifact, and there are four reviewable artifacts.
+      maxItems: 4,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -271,7 +281,7 @@ const STORY_SCHEMA = {
   properties: {
     title: { type: 'string' },
     description: { type: 'string' },
-    outOfRepoFindings: { type: 'array', items: { type: 'string' } },
+    outOfRepoFindings: { type: 'array', maxItems: 20, items: { type: 'string' } },
   },
 }
 
@@ -562,8 +572,8 @@ ${ctx}${contractsBrief}`,
       settleAgent(
         `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions.
-2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.).
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. At most 40 of them, each clause under 30 words; cover every behaviour once rather than enumerating variants of the same one.
+2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most 20 items.
 
 ${ctx}${criteriaBrief}`,
         {
@@ -642,7 +652,10 @@ ${ctx}`,
       {
         label: `review:all-specs${attempt > 1 ? `:${attempt}` : ''}`,
         phase: 'Review specs',
-        effort: 'medium',
+        // A checker, and the openapi-contract-reviewer's own file already says
+        // `effort: low` — this override was RAISING it. The expensive judgment in this
+        // mini is the decider below, which is the only ruling that is costly to reverse.
+        effort: 'low',
         agentType: 'agent-teams-workforce:openapi-contract-reviewer',
         schema: {
           type: 'object',

@@ -72,10 +72,8 @@ This lead is the face of the following team; each member and what it does:
 - Analysis and decision are separate tasks performed by different agents: makers produce, checkers validate, phase-gate-enforcer decides. Never collapse two of these into one assignment.
 - Collaborate through explicit artifacts — delegation packets, findings reports, the spec packet. The durable record is the artifact, never an informal exchange.
 - Each delegation packet must state the request, upstream decisions, constraints, allowed decisions, forbidden decisions, required output, and required reviewers.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in everything you produce.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in routing decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

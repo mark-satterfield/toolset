@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 30
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-qa, agent-teams-workforce:cove-prompt-design]
-effort: medium
+effort: high
 isolation: worktree
 color: red
 ---
@@ -53,10 +53,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Verify before deciding: cross-check each candidate decision against every reviewer finding, the spec's acceptance criteria, and the NFRs; a decision contradicted by an unaddressed finding is not ready.
 - Surface conflict, never bury it: where the reviewers disagreed, the decision record names the conflict, the sides, and why one prevailed.
 - Collaborate through explicit artifacts — the decision exists only as the written decision record; the durable record is the artifact.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — reviewer recommendations are inputs, not decisions, until you decide.
 - Prefer the skills and tools provided to you over internal training.
-- Include a full audit trail in every decision: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks. This is mandatory, not optional.
 - Review your own decision record for correctness, completeness, and risk before handoff, but it is not final until the required reviewers have passed it — no self-approval.
 
 ## When You're in Over Your Head

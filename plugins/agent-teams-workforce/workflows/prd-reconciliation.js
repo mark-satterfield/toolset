@@ -528,13 +528,18 @@ You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVE
               // defect this mini exists to catch, so the schema refuses to express one.
               // The reduction below enforces the same rule again, because a schema
               // constrains what a model is ASKED for, not what it returns.
-              evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+              // maxItems is the counterpart to minItems: the brief says "prefer several
+              // pieces of evidence over one", and several is not twenty. Past this it is
+              // corroborating a settled status, which the search budget forbids.
+              evidence: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'string' } },
               surface: { type: 'string', enum: ['ui', 'service', 'infra', 'data', 'unknown'] },
-              conformingMaterial: { type: 'array', items: { type: 'string' } },
-              removalTargets: { type: 'array', items: { type: 'string' } },
+              conformingMaterial: { type: 'array', maxItems: 20, items: { type: 'string' } },
+              removalTargets: { type: 'array', maxItems: 20, items: { type: 'string' } },
               missing: { type: 'string' },
               needsNewContract: { type: 'boolean' },
-              repos: { type: 'array', items: { type: 'string' } },
+              // This mini runs once per repository in the span, so a requirement names
+              // that repository and at most a few others its work reaches.
+              repos: { type: 'array', maxItems: 8, items: { type: 'string' } },
             },
           },
         },
@@ -545,9 +550,9 @@ You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVE
           properties: {
             bundlePath: { type: 'string' },
             mocksDir: { type: 'string' },
-            artifactsConsulted: { type: 'array', items: { type: 'string' } },
-            shellsConsulted: { type: 'array', items: { type: 'string' } },
-            pagesConsulted: { type: 'array', items: { type: 'string' } },
+            artifactsConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
+            shellsConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
+            pagesConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
           },
         },
         dependencyChanges: {
@@ -558,6 +563,7 @@ You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVE
             current: { type: 'boolean' },
             changeFindings: {
               type: 'array',
+              maxItems: 20,
               items: {
                 type: 'object',
                 additionalProperties: false,

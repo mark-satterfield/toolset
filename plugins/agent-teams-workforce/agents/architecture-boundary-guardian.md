@@ -7,11 +7,11 @@ description: >-
   detection, and context-map conformance.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
-model: opus
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
-effort: medium
+effort: low
 isolation: worktree
 color: cyan
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Validate against the architectural facts as hard rules: events publish only through the central event API endpoint (standardized envelope, no direct EventBridge access); delivery is EventBridge rule to SQS to Lambda; all Lambdas extend the common chassis; repos deploy independently via GitHub Actions. Any artifact assuming otherwise is a finding regardless of context boundaries.
 - Collaborate through explicit artifacts — the durable record is the artifact; verdicts exist only when written into the report.
 - Validate with evidence: every breach finding cites the exact location in the artifact and traces the coupling mechanism; observed coupling, not suspicion, is the bar.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in your findings: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

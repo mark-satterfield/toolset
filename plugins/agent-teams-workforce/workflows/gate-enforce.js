@@ -342,7 +342,11 @@ READING BUDGET (binding): the artifact is quoted above in full and the determini
 For each criterion, state whether it is met with evidence.`,
   {
     label: `gate:${a.gate || a.phaseName || 'phase'}`,
-    effort: 'high',
+    // The enforcer adjudicates a short structured artifact against a handful of stated
+    // criteria, with the mechanical part already settled above and a binding reading
+    // budget below. That is a medium-effort judgment, and at `high` it was ~9% of the
+    // measured per-Epic spend on its own.
+    effort: 'medium',
     phase: 'Gate',
     agentType: 'agent-teams-workforce:phase-gate-enforcer',
     schema: {
@@ -413,6 +417,47 @@ if (ruled && ruled.verdict) {
       verdict: 'loop',
       feedback: `A constitutive criterion is unmet, which is a hard stop: ${detail}. ${ruled.feedback || ''}`.trim(),
       classOverride: 'pass-converted-to-loop: unmet constitutive criterion',
+    }
+  }
+
+  // ── A VERDICT THAT RECORDS NO REASON IS A DEFECT, NOT A RULING ───────────────
+  //
+  // Across the recorded runs, seventeen gates exhausted their retries and killed the run.
+  // Six of those final verdicts named nothing at all — no unmet criterion, no flag, no
+  // feedback — and one exhaustion was ruled `constitutive` on empty findings AND an empty
+  // rationale. A retry against an empty answer has nothing to fix, so it meets the same
+  // wall, spends the loop budget, and every artifact the run had already paid for is
+  // discarded on the strength of a judgment that stated no reason.
+  //
+  // So a verdict that still BLOCKS after the class conversions above, while naming no
+  // unmet criterion, no flag and no feedback, is treated as a malformed verdict rather
+  // than a ruling on the work. It is surfaced the way this file already surfaces a broken
+  // gate rather than broken work — an `escalate` carrying the gate and the phase by name
+  // (see the empty-criteria refusal far above) — so the caller reports a defect in the
+  // judgment instead of silently ruling the work constitutive.
+  //
+  // A verdict that DOES state a reason is untouched, however briefly it states it. This
+  // weakens no gate: nothing here overturns an itemised finding, and a `pass` cannot
+  // reach it.
+  const statedReason =
+    unmet.length > 0 ||
+    (Array.isArray(ruled.flags) && ruled.flags.some((f) => String(f == null ? '' : f).trim())) ||
+    (typeof ruled.feedback === 'string' && ruled.feedback.trim().length > 0)
+  if ((ruled.verdict === 'loop' || ruled.verdict === 'escalate') && !statedReason) {
+    const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
+    const why =
+      `${where}: MALFORMED VERDICT — the enforcer returned ${ruled.verdict.toUpperCase()} but named no unmet criterion, ` +
+      'no flag and no feedback. A retry has nothing to fix and a ruling has nothing to weigh, so this is a defect in the ' +
+      'adjudication rather than a finding about the work. It is NOT a constitutive failure and must not be recorded as one.'
+    log(why)
+    ruled = {
+      ...ruled,
+      verdict: 'escalate',
+      feedback: why,
+      escalateTo: ruled.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
+      flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), `gate-malformed-verdict: ${where} stated no reason`],
+      malformedVerdict: true,
+      classOverride: 'malformed-verdict: the gate blocked without naming a reason',
     }
   }
 }

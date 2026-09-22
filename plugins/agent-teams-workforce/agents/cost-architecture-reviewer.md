@@ -5,9 +5,9 @@ description: >-
   chooses an option. Use for Architecture Analysis
   work requiring AWS cost estimation, cost-cliff identification, and
   per-option comparison.
-tools: Read, Glob, Grep, Write
-disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
-model: opus
+tools: Read, Glob, Grep, Bash, Write
+disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+model: sonnet
 permissionMode: acceptEdits
 maxTurns: 40
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:aws-cost-operations]
@@ -53,10 +53,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact.
 - Cost the architecture that actually exists: every event flows through the central event API and the EventBridge rule to SQS to Lambda path; all compute is chassis-based Lambda; telemetry comes from configured Power Tools; infrastructure is CDK in Python deployed via GitHub Actions per repo. Do not cost hypothetical shortcuts.
 - Expect adversarial review: cost-impact-reviewer will re-run your model at 10x/100x/1000x. Show your unit math so the attack lands on numbers, not prose.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — especially provided volumes vs. assumed volumes.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in your analysis: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

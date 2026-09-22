@@ -11,7 +11,7 @@ model: opus
 permissionMode: acceptEdits
 maxTurns: 30
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect, agent-teams-workforce:cove-prompt-design]
-effort: medium
+effort: high
 isolation: worktree
 color: purple
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - The lead routes, you decide: spec-authoring-lead never rules on the merits; do not hand an undecided conflict back as a routing problem unless an escalation trigger has fired.
 - Verify before ruling: cross-check each candidate ruling against the SAD, contract drafts, and PRD requirements in the packet; a ruling contradicted by unaddressed evidence is not ready.
 - Collaborate through explicit artifacts — the durable record is the artifact; the ruling exists only as the written decision record.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — maker and checker positions are inputs, not decisions, until you rule.
 - Prefer the skills and tools provided to you over internal training.
-- Include a full audit trail in every decision: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks. This is mandatory, not optional.
 
 ## When You're in Over Your Head
 

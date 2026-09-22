@@ -11,7 +11,7 @@ model: fable
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-architect]
-effort: xhigh
+effort: medium
 isolation: worktree
 color: cyan
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Hold every alternative to the same architectural facts as the proposals: events publish only through the central event API (standardized envelope, no direct EventBridge access), delivery is EventBridge rule to SQS to Lambda, all Lambdas extend the common chassis, Power Tools is configured not rebuilt, CDK in Python, GitHub Actions with independently deployable repos. An alternative that cheats the constraints is not a valid challenge.
 - Collaborate through explicit artifacts — the durable record is the artifact; an unwritten objection does not exist.
 - Validate your attacks: demonstrate each claimed weakness with a concrete scenario or trace, not an assertion.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in your findings: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

@@ -246,9 +246,26 @@ const budgetStop = () => {
 }
 
 // The work item this run is about. This composite has no bead of its own — the Epic is
-// minted downstream — so the caller's PRD identifies it, and every return names
+// established before the run — so the caller's PRD identifies it, and every return names
 // it under the same key the code-writing composites use.
-const subjectId = (a.prd && (a.prd.id || a.prd.path)) || (a.epic && a.epic.key) || null
+//
+// IT IS ALSO THE CHECKPOINT SUBJECT, WHICH IS WHY THE EPIC ARM MATTERS. `cpInit` refuses a
+// null subject and checkpointing is then off for the WHOLE run: every phase runs at full
+// cost and nothing can be resumed. An Epic-dispatched run supplies no PRD argument at all,
+// and the caller builds its epic argument as `{id, title}` — no `key` — so reading only
+// `a.epic.key` resolved the subject to null and silently disabled checkpointing on every
+// such run. A live run got six phases and 151 minutes into elaboration with no checkpoint
+// directory written, while the PRD-dispatched Epics beside it had one.
+//
+// So the Epic arm reads the same three fields the rest of this file already reads for the
+// Epic's identity (`a.epic.id || a.epic.beadId`, the pair `epicBeadId` is built from, plus
+// `key`). PRD id and PRD path keep their precedence, and `key` keeps its precedence inside
+// the Epic arm, so no PRD-dispatched run's checkpoint directory name changes and every
+// existing checkpoint stays addressable.
+const subjectId =
+  (a.prd && (a.prd.id || a.prd.path)) ||
+  (a.epic && typeof a.epic === 'object' ? a.epic.key || a.epic.id || a.epic.beadId || null : null) ||
+  null
 
 // ── Partial results ─────────────────────────────────────────────────────────────
 // Every stage used to end `return { ok:false, stage, detail }`, which threw away
@@ -2404,26 +2421,40 @@ if (!archNeeded) {
         // forwarded verbatim rather than defaulted to false.
         triageVerdict: archTriageVerdict,
         forceFullPanel: a.forceFullPanel === true ? true : undefined,
-        // ── THE LAST THREE-DEEP RETRY NEST, CAPPED ──────────────────────────────
+        // ── THE ARCHITECTURE MINI'S RETRY BOUNDS ────────────────────────────────
         //
-        // This file already passes maxLoops:1 to spec-authoring and trd-authoring for
-        // exactly this reason, and passed nothing here — so architecture composed
-        // MAX_LOOPS (this gate, 2) x MAX_DECIDE_LOOPS (2) x MAX_SAD_LOOPS (2) and a
-        // single phase could spend ~30 sequential sessions, against the <=4 total
-        // attempts every other composite/mini pair is bounded at.
+        // `maxLoops` is the architecture mini's SAD maker-checker bound — how many
+        // sad-maintainer/sad-conformance-reviewer pairs run before the decider is asked
+        // for a deadlock ruling. It is NOT this gate's bound, which is MAX_LOOPS above.
         //
-        // The SAD loop is the one that costs on EVERY run: sad-maintainer and
-        // sad-conformance-reviewer always run at least once, and a second pass is a
-        // straight repeat of the pair. Capped to one, with the decider's deadlock
-        // ruling — which already exists below it — carrying the reject case.
+        // It was 1, capped here because this phase once composed MAX_LOOPS (this gate, 2)
+        // x MAX_DECIDE_LOOPS (2) x MAX_SAD_LOOPS (2) and was read as ~30 sequential
+        // sessions against the <=4 every other composite/mini pair is bounded at. Two
+        // things about that arithmetic turned out to be wrong, and both matter:
         //
-        // maxDecideLoops is deliberately LEFT at 2. It costs nothing on the normal
-        // path: the loop breaks the moment a ruling is admissible. It fires only when
-        // the decider can rule on nothing, and then it re-dispatches just the analyst
-        // panel with the blocking constraints attached — strictly cheaper, and better
-        // aimed, than the alternative of failing the mini and letting this gate re-run
-        // the whole thing including triage. 2 x 2 x 1 = 4 attempts, which is the bar.
-        maxLoops: 1,
+        //   THE TWO INNER LOOPS ARE SEQUENTIAL, NOT NESTED. In architecture.js the
+        //   decide loop and the SAD loop are separate `for` statements one after the
+        //   other, so a gate attempt costs MAX_DECIDE_LOOPS + MAX_SAD_LOOPS rounds, not
+        //   their product. The real worst case is 2 x (2 + 2) = 8 rounds, and the normal
+        //   case is 2: the decide loop breaks the moment a ruling is admissible, and the
+        //   SAD loop breaks the moment conformance passes.
+        //
+        //   CAPPING IT AT 1 MADE THE CHEAP PATH UNREACHABLE. With one pass, a single
+        //   conformance rejection — routinely a wording finding — skipped the re-author
+        //   entirely and went straight to a deadlock ruling by an opus decider at high
+        //   effort. That is the expensive road taken to avoid the cheap one. A measured
+        //   run shows exactly that shape: conformance pass 1, deadlock ruling, SAD
+        //   update, conformance pass 2 — the second pass happened anyway, with an
+        //   adjudication bolted in front of it.
+        //
+        // So it is 2, which is also architecture.js's own default and its floor, meaning
+        // the 1 was already being overridden there and this line was stating a bound that
+        // was not in force. maxDecideLoops is deliberately LEFT at its default of 2: it
+        // costs nothing on the normal path and fires only when the decider can rule on
+        // nothing, re-dispatching just the analyst panel with the blocking constraints
+        // attached — cheaper and better aimed than failing the mini and re-running the
+        // whole phase including triage.
+        maxLoops: 2,
         feedback,
       }),
   })
@@ -2518,9 +2549,93 @@ const changedDecisionIds = [
   ),
 ]
 const sadUpdateSummary = (architecture.artifact && architecture.artifact.sadUpdate && architecture.artifact.sadUpdate.summary) || null
-if (!architecture.skipped && changedDecisionIds.length) {
-  enterPhase('Architecture Impact')
-  log(`Architecture ruling created, changed or retired ${changedDecisionIds.length} SAD entry id(s) — judging what already cites them`)
+
+// ── AND ONLY ONCE THERE IS SOMETHING BUILT FOR THE CHANGE TO REACH ───────────────
+//
+// The analyst's four verdicts are `unaffected`, `not-yet-elaborated`, `elaborated-unbuilt`
+// and `already-built`, and three of them require work that has moved past creation. While
+// every Task in the tracker is still `open`, the only verdict the analyst can honestly
+// reach is `not-yet-elaborated` — which means "nothing to do". It was costing roughly 18%
+// of a whole run's token budget to search the tracker and come back with a guaranteed-empty
+// answer.
+//
+// So the phase now has a PRECONDITION, and the decision on it is made HERE, by the script,
+// from a counted fact: at least one Task exists in a non-open state. The counting itself
+// needs the `bd` CLI and a workflow script has no shell, so one cheap, low-effort session
+// runs the command and reports the number — it judges nothing and its answer is a count,
+// not a verdict. The branch is this script's.
+//
+// IT FAILS OPEN, in every direction. A probe that dies, returns nothing, reports an error,
+// or cannot be dispatched at all means the count is UNKNOWN, and an unknown count runs the
+// analyst. The expensive error is skipping an impact pass while something built is quietly
+// broken by the ruling; paying for one analyst run against an empty tracker is the cheap one.
+const IMPACT_PRECONDITION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['nonOpenTaskCount', 'command'],
+  properties: {
+    // The number of Tasks whose status is anything other than `open`. -1 means the count
+    // could not be established — which is NOT zero, and is treated as unknown.
+    nonOpenTaskCount: { type: 'integer' },
+    command: { type: 'string' },
+    error: { type: 'string' },
+  },
+}
+// { run: boolean, reason: string, counted: number|null }
+async function impactPrecondition() {
+  if (emitPathFault) {
+    return { run: true, reason: `the tracker path could not be used to count Tasks (${emitPathFault}), so the count is unknown and the analyst runs`, counted: null }
+  }
+  const probe = await settleAgent(
+    `Count the Tasks in the Beads tracker at ${emitTarget} whose status is NOT \`open\`, and report the number. That is the whole assignment.
+
+Run the \`bd\` CLI from that repository. The \`agent-teams-workforce:beads-contract\` skill is the one authority on reading a bead and its CLI is how you read one. A Task is a bead of type \`task\`; "not open" means any status other than \`open\` — in progress, blocked, closed, or anything else the tracker uses.
+
+Report the count in \`nonOpenTaskCount\` and the exact command you ran in \`command\`. If the command fails, the tracker cannot be read, or you cannot establish the number for any other reason, report \`nonOpenTaskCount: -1\` and put the reason in \`error\`. DO NOT report 0 for a count you could not take — 0 and "unknown" are acted on differently, and guessing 0 would cancel work that needs to happen.
+
+Judge nothing. Do not read a PRD, do not open a spec, do not form an opinion about any bead.`,
+    {
+      label: 'precondition:architecture-impact',
+      phase: 'Architecture Impact',
+      effort: 'low',
+      schema: IMPACT_PRECONDITION_SCHEMA,
+    }
+  )
+  if (!probe) {
+    return { run: true, reason: 'the Task-state probe returned nothing, so the count is unknown and the analyst runs', counted: null }
+  }
+  const n = typeof probe.nonOpenTaskCount === 'number' && Number.isFinite(probe.nonOpenTaskCount) ? probe.nonOpenTaskCount : -1
+  if (n < 0) {
+    return { run: true, reason: `the Task-state probe could not establish a count (${probe.error || 'no reason given'}), so it is unknown and the analyst runs`, counted: null }
+  }
+  if (n === 0) {
+    return {
+      run: false,
+      reason:
+        `no Task in the tracker has moved out of \`open\` (counted with \`${probe.command || 'the bd CLI'}\`), so nothing has been elaborated ` +
+        'or built for this ruling to reach. The analyst could only return `not-yet-elaborated`, which is the same as not running it.',
+      counted: 0,
+    }
+  }
+  return { run: true, reason: `${n} Task(s) are past \`open\`, so work exists that the ruling may reach`, counted: n }
+}
+
+const impactWanted = !architecture.skipped && changedDecisionIds.length > 0
+// Returns { ran, impact, reason } — the dispatch only. Every record entry, log line and
+// derived field for this phase is written after the concurrent join below.
+async function runArchitectureImpact() {
+  if (!impactWanted) {
+    return {
+      ran: false,
+      impact: null,
+      reason: architecture.skipped
+        ? 'the architecture phase was skipped, so no decision changed'
+        : 'the ruling created, changed or retired no SAD entry, so nothing cites a changed decision',
+    }
+  }
+  const pre = await impactPrecondition()
+  if (!pre.run) return { ran: false, impact: null, reason: pre.reason }
+  log(`Architecture ruling created, changed or retired ${changedDecisionIds.length} SAD entry id(s) — ${pre.reason}; judging what already cites them`)
   const impact = await settleAgent(
     `You are the architecture-impact-analyst. An architecture ruling has just changed decisions that other work was designed against. Find every work item that cites them and judge each one. You judge and report; you write no code, you author no document, and you change no bead.
 
@@ -2553,37 +2668,7 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
       schema: IMPACT_SCHEMA,
     }
   )
-  const rulings = impact && Array.isArray(impact.rulings) ? impact.rulings : []
-  architectureImpact = {
-    ran: true,
-    decisionIds: changedDecisionIds,
-    searched: (impact && impact.searched) || null,
-    rulings,
-    // The analyst died, or returned nothing. That is recorded as a gap in the record — never
-    // as "nothing was affected", which is the one reading that would be actively harmful.
-    reason: impact ? null : 'the impact analyst returned no result; nothing was judged, and this is NOT a finding that nothing is affected',
-    reElaborate: rulings.filter((r) => r.verdict === 'elaborated-unbuilt').map((r) => r.beadId),
-    knockOn: rulings.filter((r) => r.verdict === 'already-built' && r.knockOn).map((r) => ({ follows: r.beadId, decisionIds: r.decisionIds || [], ...r.knockOn })),
-  }
-  const impactLine =
-    `Architecture impact: ${rulings.length} item(s) judged — ` +
-    `${architectureImpact.reElaborate.length} to re-elaborate, ${architectureImpact.knockOn.length} knock-on Task(s) for work already built, ` +
-    `${rulings.filter((r) => r.verdict === 'unaffected').length} unaffected.` +
-    (architectureImpact.reason ? ` ${architectureImpact.reason}` : '')
-  log(impactLine)
-  recRuled(impactLine, { status: architectureImpact.reason ? 'failed' : 'done' })
-} else {
-  architectureImpact = {
-    ran: false,
-    decisionIds: changedDecisionIds,
-    reason: architecture.skipped
-      ? 'the architecture phase was skipped, so no decision changed'
-      : 'the ruling created, changed or retired no SAD entry, so nothing cites a changed decision',
-    rulings: [],
-    reElaborate: [],
-    knockOn: [],
-  }
-  recSkipped('Architecture Impact', architectureImpact.reason)
+  return { ran: true, impact, reason: null }
 }
 
 // ── Repo Scoping (no gate) ───────────────────────────────────────────────────────
@@ -2630,15 +2715,17 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
 // deterministic and lives in the mini's own reduction. A gate here would buy an
 // adjudication of a list rather than of a document, at the price of one more attempt
 // against the run budget before a single spec is authored.
-enterPhase('Repo Scoping')
 let scoping = null
-if (callerRepos.length) {
-  // An explicit span is an override for THIS run — an argument the caller passed in band,
-  // not a stored artifact — so it wins and nothing is dispatched. A re-run that does not
-  // pass it is scoped afresh, which is the property the whole phase exists to preserve.
-  repos = callerRepos
-  log(`Repo Scoping SKIPPED — the caller pinned the span explicitly (${repos.length}): ${repos.join(', ')}`)
-} else {
+// Returns { pinned: true } when the caller pinned the span, or
+// { scoping, scopeReplay, fromCheckpoint } — the dispatch only. The phase record, the
+// acceptance, the checkpoint, the span itself and every exit are settled after the join.
+async function runRepoScoping() {
+  if (callerRepos.length) {
+    // An explicit span is an override for THIS run — an argument the caller passed in band,
+    // not a stored artifact — so it wins and nothing is dispatched. A re-run that does not
+    // pass it is scoped afresh, which is the property the whole phase exists to preserve.
+    return { pinned: true }
+  }
   const scopeHit = resumeFresh('repo-scoping')
   let scopeReplay = null
   if (scopeHit) {
@@ -2675,9 +2762,9 @@ if (callerRepos.length) {
   }
   const cpScope = scopeReplay ? undefined : cpGet('repo-scoping')
   if (cpScope !== undefined) {
-    scoping = cpScope
-  } else {
-  scoping = await workflow('agent-teams-workforce:repo-scoping', {
+    return { scoping: cpScope, scopeReplay, fromCheckpoint: true }
+  }
+  const ruled = await workflow('agent-teams-workforce:repo-scoping', {
     standingRulings,
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture-triage.json'), artPath('architecture-decision.md')]),
     ...(scopeReplay ? { replay: scopeReplay } : {}),
@@ -2695,7 +2782,208 @@ if (callerRepos.length) {
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
+  return { scoping: ruled, scopeReplay, fromCheckpoint: false }
+}
+
+// ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
+// Consumes PRD + SAD extract; produces the TRD + bidirectional traceability matrix.
+// The TRD is per-PRD, not per-repo: it is authored exactly ONCE here and never
+// fanned out with the per-repo spec passes below.
+const TRD_INPUTS = [
+  ...PRD_INPUTS,
+  artPath('architecture-decision.md'),
+  artPath('sad-update.json'),
+  (a.sad && a.sad.path) || a.sadPath || null,
+].filter(Boolean)
+// Held across the G2b rework loop so a second TRD pass reuses the first pass's SAD extract.
+let trdSadExtract = null
+// Returns { trdAuthoring, mode } — the dispatch only; mode is 'resumed', 'checkpoint' or
+// 'ran', and the acceptance, the checkpoint write and the exit are settled after the join.
+async function runTrdAuthoring() {
+  const trdHit = resumeFresh('trd')
+  if (trdHit && trdHit.artifacts['trd.md']) {
+    reuseFrom('trd', trdHit, 'spec authoring reads the TRD from its file')
+    return {
+      mode: 'resumed',
+      trdAuthoring: {
+        ok: true,
+        resumed: true,
+        artifact: {
+          trdPath: artPath('trd.md'),
+          filingPath: null,
+          trd: { trdPath: artPath('trd.md'), summary: '' },
+          ledger: { phase: 'trd-authoring', beadId: subjectId, chosen: [], mode: 'resumed-from-artifact', ok: true },
+        },
+      },
+    }
   }
+  if (trdHit) log("Phase 'trd' is fresh but the plan names no trd.md — it runs")
+  const cpTrd = cpGet('trd-authoring')
+  if (cpTrd !== undefined) return { mode: 'checkpoint', trdAuthoring: cpTrd }
+  const ruled = await gateLoop({
+    gate: 'G2b', phaseName: 'TRD Authoring',
+    // Every criterion here is a completeness or traceability judgment about a document.
+    // Competitive: a partial TRD is flagged and carried forward, not looped over.
+    // Consumed by: spec-authoring (G3) takes the TRD as its input packet and elaborates the
+    // API, data model, event and error specs from it. The validator/verifier criterion is a
+    // control-boundary assertion (Rule 4): trd-authoring.js runs both checkers structurally
+    // and loops on reject, and this criterion is what makes that binding at the gate.
+    criteria: [
+      { class: 'competitive', text: 'The TRD derives only from the PRD and the SAD source extract (no invented requirements)' },
+      { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
+      { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
+    ],
+    escalateTargets: ['architecture', 'prd-author'],
+    // Every criterion at this gate is competitive, so an unmet one passes with a flag. That
+    // is right for "the TRD is thin" and wrong for "there is no TRD": spec authoring below
+    // takes this document as its input packet.
+    structural: { requireOk: true, required: ['trd'] },
+    phaseFn: (feedback) =>
+      workflow('agent-teams-workforce:trd-authoring', {
+        // The first pass's SAD extract, reused on a rework pass: the SAD does not change
+        // inside this gate loop (an architecture change escalates and ends the run).
+        sadExtract: trdSadExtract || undefined,
+        standingRulings,
+        prd: {
+          id: prd.id,
+          title: prd.title,
+          // ── THE MATERIAL INVENTORY IS DELIBERATELY NOT HERE ──────────────────────
+          //
+          // A TRD states HOW, and it derives that from expert architecture and best
+          // practice — NOT from what happens to be deployed in a dev account today. The
+          // three documents are blind to different things on purpose:
+          //
+          //   PRD  — WHAT. Never knows or cares what is deployed. Deployed state is not a
+          //          requirements input and never shrinks a PRD's scope.
+          //   TRD  — HOW, from the PRD and the SAD. Also blind to deployed state, because
+          //          a design that is reverse-engineered from the existing implementation
+          //          inherits that implementation's mistakes and calls them requirements.
+          //   SPEC — the ONLY place reconciliation belongs: "X is what we want, Y is what
+          //          we have, how do we turn Y into X". It is also the only layer scoped to
+          //          ONE repository, which is the only scope at which that question has a
+          //          concrete answer.
+          //
+          // The inventory used to be fenced on as an appendix here, and the reasoning for
+          // it was sound as far as it went — an author who cannot see the existing code
+          // re-specifies working code and leaves contradicting code standing. But that is a
+          // SPEC-layer concern, and spec authoring receives the inventory through its
+          // `constraints` channel (see the spec phase below) at per-repo scope, where
+          // reuse-or-remove is a decision someone can actually make. Feeding it to the TRD as
+          // well bought nothing the spec layer was not already doing and cost the design its
+          // independence from the status quo.
+          //
+          // THE UPSTREAM-DEPENDENCY APPENDIX IS GONE TOO, and that one was a closer call. An
+          // upstream contract or schema that MOVED is a constraint on the design rather than
+          // an inventory of what is built, so on its own terms it belonged here. But the only
+          // thing that established it was the reconciler's dependency check, which now runs
+          // per repository at spec authoring — downstream of this phase. Keeping the appendix
+          // would mean keeping a deployed-state survey at the front of the run to fill it,
+          // which is the arrangement being retired, and reinstating it under a narrower name
+          // is still reinstating it. So the TRD is written from the PRD and the SAD, and the
+          // moved ground is applied where it is discovered: in the specs, per repo, which is
+          // the layer that has to turn Y into X anyway.
+          content: prd.body,
+          acceptanceCriteria: prd.acceptanceCriteria,
+        },
+        sad: a.sad || { path: a.sadPath },
+        // A TRD is not transient — it must reach a file. WHERE is not this composite's
+        // call: when no path is supplied, trd-authoring asks the project's filing clerk,
+        // which owns document placement. Passing undefined is what triggers that.
+        trdPath: a.trdPath,
+        artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
+        repoPath,
+        maxLoops: 1,
+        feedback,
+      }).then((r) => {
+        if (r && r.sadExtract && !trdSadExtract) trdSadExtract = r.sadExtract
+        return r
+      }),
+  })
+  return { mode: 'ran', trdAuthoring: ruled }
+}
+
+// ── THREE PHASES THAT DO NOT FEED EACH OTHER, RUN CONCURRENTLY ───────────────────
+//
+// Architecture Impact, Repo Scoping and TRD Authoring were a plain sequential await
+// chain, and nothing in the chain justified the ordering. Repo scoping's inputs are the
+// PRD, the architecture ruling, the seed repos and the Epic — it never sees the impact
+// analyst's answer. The TRD's inputs are the PRD and the SAD, and it is authored once
+// per PRD rather than per repo, so it does not care what the span turns out to be.
+// Neither reads the other's result and none of the three writes anything the others
+// read, so the chain was paying three serial waits for no dependency at all.
+//
+// WHAT EACH THUNK DOES, AND WHAT IT DELIBERATELY DOES NOT. A thunk performs only its
+// DISPATCH and hands back what came out of it. Every phase record, log ruling,
+// acceptance, checkpoint write, budget rescale and early exit stays SEQUENTIAL, below
+// the join, in the original order — because `recRuled` attaches a ruling to whichever
+// phase was entered LAST, and three concurrent `enterPhase` calls would file all three
+// phases' rulings under whichever one happened to be entered last. A composite that
+// reports a repo-scoping failure against the TRD phase is worse than a slow one.
+//
+// The attempt-budget rescale sits after the join for the same reason, which costs the
+// TRD gate the rescaled ceiling: G2b is a single per-PRD gate rather than one of the
+// per-repo gates the rescale exists to make room for, so it spends one attempt against
+// the pre-rescale ceiling and the fan-out below is still rescaled before the first
+// per-repo gate — which is the condition the rescale's own note states.
+log('Architecture Impact, Repo Scoping and TRD Authoring have no data dependency on each other — running them concurrently')
+const [impactSettled, scopeSettled, trdSettled] = await parallel([
+  () => runArchitectureImpact(),
+  () => runRepoScoping(),
+  () => runTrdAuthoring(),
+])
+
+// ── Architecture Impact: the record ──────────────────────────────────────────────
+if (impactSettled && impactSettled.ran) {
+  enterPhase('Architecture Impact')
+  const impact = impactSettled.impact
+  const rulings = impact && Array.isArray(impact.rulings) ? impact.rulings : []
+  architectureImpact = {
+    ran: true,
+    decisionIds: changedDecisionIds,
+    searched: (impact && impact.searched) || null,
+    rulings,
+    // The analyst died, or returned nothing. That is recorded as a gap in the record — never
+    // as "nothing was affected", which is the one reading that would be actively harmful.
+    reason: impact ? null : 'the impact analyst returned no result; nothing was judged, and this is NOT a finding that nothing is affected',
+    reElaborate: rulings.filter((r) => r.verdict === 'elaborated-unbuilt').map((r) => r.beadId),
+    knockOn: rulings.filter((r) => r.verdict === 'already-built' && r.knockOn).map((r) => ({ follows: r.beadId, decisionIds: r.decisionIds || [], ...r.knockOn })),
+  }
+  const impactLine =
+    `Architecture impact: ${rulings.length} item(s) judged — ` +
+    `${architectureImpact.reElaborate.length} to re-elaborate, ${architectureImpact.knockOn.length} knock-on Task(s) for work already built, ` +
+    `${rulings.filter((r) => r.verdict === 'unaffected').length} unaffected.` +
+    (architectureImpact.reason ? ` ${architectureImpact.reason}` : '')
+  log(impactLine)
+  recRuled(impactLine, { status: architectureImpact.reason ? 'failed' : 'done' })
+} else {
+  // A thunk that threw resolves to null in `parallel`'s result array. That is not "nothing
+  // was affected" either, so it is recorded as the phase not having run, with the reason.
+  architectureImpact = {
+    ran: false,
+    decisionIds: changedDecisionIds,
+    reason: impactSettled
+      ? impactSettled.reason
+      : 'the architecture impact phase returned nothing at all (it threw or was skipped); nothing was judged, and this is NOT a finding that nothing is affected',
+    rulings: [],
+    reElaborate: [],
+    knockOn: [],
+  }
+  recSkipped('Architecture Impact', architectureImpact.reason)
+}
+
+// ── Repo Scoping: the ruling, the span, and every exit ───────────────────────────
+enterPhase('Repo Scoping')
+if (!scopeSettled) {
+  // The thunk threw. A failed scoping is NOT a single-repo span — see below.
+  return partial('repo-scoping', {
+    reason: 'repo scoping returned nothing at all (it threw or was skipped) — which repositories this PRD lands in could not be established, and the run will not guess.',
+  })
+}
+if (scopeSettled.pinned) {
+  repos = callerRepos
+  log(`Repo Scoping SKIPPED — the caller pinned the span explicitly (${repos.length}): ${repos.join(', ')}`)
+} else {
+  scoping = scopeSettled.scoping
   if (scoping && scoping.ledger) runLedger.push(scoping.ledger)
   produced.repoScoping = scoping || null
   if (!scoping || scoping.ok === false) {
@@ -2708,9 +2996,9 @@ if (callerRepos.length) {
         'repo scoping returned nothing — which repositories this PRD lands in could not be established, and the run will not guess.',
     })
   }
-  if (cpScope === undefined) {
-    acceptPhase('repo-scoping', scopeReplay ? 'reused' : 'passed')
-    await cpSave('repo-scoping', scoping, scopeReplay ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
+  if (!scopeSettled.fromCheckpoint) {
+    acceptPhase('repo-scoping', scopeSettled.scopeReplay ? 'reused' : 'passed')
+    await cpSave('repo-scoping', scoping, scopeSettled.scopeReplay ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
 }
@@ -2816,124 +3104,28 @@ if (rescaled > MAX_TOTAL_ATTEMPTS) {
   MAX_TOTAL_ATTEMPTS = rescaled
 }
 
-// ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
-// Consumes PRD + SAD extract; produces the TRD + bidirectional traceability matrix.
-// The TRD is per-PRD, not per-repo: it is authored exactly ONCE here and never
-// fanned out with the per-repo spec passes below.
+// ── TRD Authoring (Gate 2b): the record ──────────────────────────────────────────
+//
+// The dispatch itself ran in the concurrent block far above, alongside Architecture
+// Impact and Repo Scoping. What is left here is what has to stay sequential: the phase
+// record, the acceptance, the checkpoint write and the exit.
 enterPhase('TRD Authoring')
-const TRD_INPUTS = [
-  ...PRD_INPUTS,
-  artPath('architecture-decision.md'),
-  artPath('sad-update.json'),
-  (a.sad && a.sad.path) || a.sadPath || null,
-].filter(Boolean)
-let trdAuthoring
-// Held across the G2b rework loop so a second TRD pass reuses the first pass's SAD extract.
-let trdSadExtract = null
-const trdHit = resumeFresh('trd')
-if (trdHit && trdHit.artifacts['trd.md']) {
-  reuseFrom('trd', trdHit, 'spec authoring reads the TRD from its file')
-  acceptPhase('trd', 'reused')
-  trdAuthoring = {
-    ok: true,
-    resumed: true,
-    artifact: {
-      trdPath: artPath('trd.md'),
-      filingPath: null,
-      trd: { trdPath: artPath('trd.md'), summary: '' },
-      ledger: { phase: 'trd-authoring', beadId: subjectId, chosen: [], mode: 'resumed-from-artifact', ok: true },
-    },
-  }
-  await cpSave('trd-authoring', trdAuthoring, reusedDecision('trd'))
-} else {
-  if (trdHit) log("Phase 'trd' is fresh but the plan names no trd.md — it runs")
-  trdAuthoring = cpGet('trd-authoring')
+if (!trdSettled || !trdSettled.trdAuthoring) {
+  // A thunk that threw resolves to null in `parallel`'s result array. Spec authoring takes
+  // the TRD as its input packet, so there is nothing to author against and nothing to guess.
+  return partial('trd-authoring', {
+    ok: false,
+    reason: 'TRD authoring returned nothing at all (it threw or was skipped), and spec authoring takes the TRD as its input packet.',
+  })
 }
-if (trdAuthoring === undefined) {
-trdAuthoring = await gateLoop({
-  gate: 'G2b', phaseName: 'TRD Authoring',
-  // Every criterion here is a completeness or traceability judgment about a document.
-  // Competitive: a partial TRD is flagged and carried forward, not looped over.
-  // Consumed by: spec-authoring (G3) takes the TRD as its input packet and elaborates the
-  // API, data model, event and error specs from it. The validator/verifier criterion is a
-  // control-boundary assertion (Rule 4): trd-authoring.js runs both checkers structurally
-  // and loops on reject, and this criterion is what makes that binding at the gate.
-  criteria: [
-    { class: 'competitive', text: 'The TRD derives only from the PRD and the SAD source extract (no invented requirements)' },
-    { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
-    { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
-  ],
-  escalateTargets: ['architecture', 'prd-author'],
-  // Every criterion at this gate is competitive, so an unmet one passes with a flag. That
-  // is right for "the TRD is thin" and wrong for "there is no TRD": spec authoring below
-  // takes this document as its input packet.
-  structural: { requireOk: true, required: ['trd'] },
-  phaseFn: (feedback) =>
-    workflow('agent-teams-workforce:trd-authoring', {
-      // The first pass's SAD extract, reused on a rework pass: the SAD does not change
-      // inside this gate loop (an architecture change escalates and ends the run).
-      sadExtract: trdSadExtract || undefined,
-      standingRulings,
-      prd: {
-        id: prd.id,
-        title: prd.title,
-        // ── THE MATERIAL INVENTORY IS DELIBERATELY NOT HERE ──────────────────────
-        //
-        // A TRD states HOW, and it derives that from expert architecture and best
-        // practice — NOT from what happens to be deployed in a dev account today. The
-        // three documents are blind to different things on purpose:
-        //
-        //   PRD  — WHAT. Never knows or cares what is deployed. Deployed state is not a
-        //          requirements input and never shrinks a PRD's scope.
-        //   TRD  — HOW, from the PRD and the SAD. Also blind to deployed state, because
-        //          a design that is reverse-engineered from the existing implementation
-        //          inherits that implementation's mistakes and calls them requirements.
-        //   SPEC — the ONLY place reconciliation belongs: "X is what we want, Y is what
-        //          we have, how do we turn Y into X". It is also the only layer scoped to
-        //          ONE repository, which is the only scope at which that question has a
-        //          concrete answer.
-        //
-        // The inventory used to be fenced on as an appendix here, and the reasoning for
-        // it was sound as far as it went — an author who cannot see the existing code
-        // re-specifies working code and leaves contradicting code standing. But that is a
-        // SPEC-layer concern, and spec authoring receives the inventory through its
-        // `constraints` channel (see the spec phase below) at per-repo scope, where
-        // reuse-or-remove is a decision someone can actually make. Feeding it to the TRD as
-        // well bought nothing the spec layer was not already doing and cost the design its
-        // independence from the status quo.
-        //
-        // THE UPSTREAM-DEPENDENCY APPENDIX IS GONE TOO, and that one was a closer call. An
-        // upstream contract or schema that MOVED is a constraint on the design rather than
-        // an inventory of what is built, so on its own terms it belonged here. But the only
-        // thing that established it was the reconciler's dependency check, which now runs
-        // per repository at spec authoring — downstream of this phase. Keeping the appendix
-        // would mean keeping a deployed-state survey at the front of the run to fill it,
-        // which is the arrangement being retired, and reinstating it under a narrower name
-        // is still reinstating it. So the TRD is written from the PRD and the SAD, and the
-        // moved ground is applied where it is discovered: in the specs, per repo, which is
-        // the layer that has to turn Y into X anyway.
-        content: prd.body,
-        acceptanceCriteria: prd.acceptanceCriteria,
-      },
-      sad: a.sad || { path: a.sadPath },
-      // A TRD is not transient — it must reach a file. WHERE is not this composite's
-      // call: when no path is supplied, trd-authoring asks the project's filing clerk,
-      // which owns document placement. Passing undefined is what triggers that.
-      trdPath: a.trdPath,
-      artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
-      repoPath,
-      maxLoops: 1,
-      feedback,
-    }).then((r) => {
-      if (r && r.sadExtract && !trdSadExtract) trdSadExtract = r.sadExtract
-      return r
-    }),
-})
-if (trdAuthoring.ok) {
+const trdAuthoring = trdSettled.trdAuthoring
+if (trdSettled.mode === 'resumed') {
+  acceptPhase('trd', 'reused')
+  await cpSave('trd-authoring', trdAuthoring, reusedDecision('trd'))
+} else if (trdSettled.mode === 'ran' && trdAuthoring.ok) {
   acceptPhase('trd', 'passed', { gate: 'G2b' })
   if (trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
   await cpSave('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
-}
 }
 if (trdAuthoring.artifact && trdAuthoring.artifact.ledger) runLedger.push(trdAuthoring.artifact.ledger)
 produced.trdAuthoring = trdAuthoring.artifact || null

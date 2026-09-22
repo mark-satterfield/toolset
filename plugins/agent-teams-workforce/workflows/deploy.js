@@ -234,11 +234,35 @@ log(
     `and ${changedPaths.length} changed file(s): ${artifacts.join(', ') || 'none — their absence never blocks a dev rollout'}`
 )
 
+// Selected readiness artifacts — concurrent, distinct concerns. finops/slo are advisory;
+// runbook/pipeline author operational artifacts (none of them deploy).
+//
+// THEY ARE BUILT HERE, ABOVE THE DISPATCH, so they can ride the SAME wave as the readiness
+// core below. They were a second `parallel` awaited after the first, and nothing in their
+// prompts reads `smoke` or `cdk` — the phase paid two serialized waves for two groups that
+// share only their inputs.
+const ARTIFACT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary'],
+  properties: {
+    summary: { type: 'string' },
+    paths: { type: 'array', items: { type: 'string' } },
+    concerns: { type: 'array', items: { type: 'string' } },
+  },
+}
+const artifactSpecs = []
+if (artifacts.includes('finops')) artifactSpecs.push(['finops-analyst', 'deploy:finops', 'Analyze the pre-deployment cost posture: unit economics, scaling cost curve, budget impact. Recommend only — do not decide.'])
+if (artifacts.includes('slo')) artifactSpecs.push(['slo-error-budget-designer', 'deploy:slo', 'Design the SLOs and error budgets for this change: SLIs, targets, burn-rate alerts, budget policy.'])
+if (artifacts.includes('runbook')) artifactSpecs.push(['incident-response-runbook-designer', 'deploy:runbook', 'Produce the incident-response and rollback runbook for this change.'])
+if (artifacts.includes('pipeline')) artifactSpecs.push(['github-actions-pipeline-implementer', 'deploy:pipeline', 'Ensure the GitHub Actions deploy pipeline (OIDC auth, build, test, deploy stages) is present and current for this change; author or update it as needed. Do NOT trigger a deploy.'])
+
 // Fixed readiness core: smoke tests + CDK synth/drift (always; read-only validation).
 // They are dispatched CONCURRENTLY: smoke authoring reads the bead and the changed
 // files, CDK validation reads the repo, and neither consumes the other's output. They
-// were sequential for no reason, on the longest stretch of the phase.
-const [smoke, cdk] = await parallel([
+// were sequential for no reason, on the longest stretch of the phase. The selected
+// readiness artifacts join them in the same wave.
+const [smoke, cdk, ...readinessRaw] = await parallel([
   () =>
     settleAgent(
       `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy. Work within: ${repo}
@@ -261,7 +285,13 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
       }
     ),
   () => cdkValidate(),
+  ...artifactSpecs.map(([at, label, ask]) => () =>
+    settleAgent(`${ask}\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\nWork within: ${repo}`, {
+      label, phase: 'Deploy-readiness', agentType: `agent-teams-workforce:${at}`, schema: ARTIFACT_SCHEMA,
+    })
+  ),
 ])
+const readinessArtifacts = readinessRaw.filter(Boolean)
 
 // NOT-APPLICABLE CARVE-OUT. Not every deployable repo has a CDK surface. A static web app
 // ships by `aws s3 sync` + a CloudFront invalidation and owns no CloudFormation stack at all.
@@ -311,31 +341,6 @@ const cdkStatus = !cdk
       ? `CDK: NOT APPLICABLE — this repo owns no CDK app or stack, so synth and drift are out of scope and MUST NOT count against readiness. Judge readiness on the tests and smoke evidence alone. Validator evidence for the not-applicable claim: ${cdkDetails}`
       : 'CDK: the validator claims NOT APPLICABLE but supplied no supporting details. The claim is UNSUBSTANTIATED — treat it as unverified, and do not absolve synth and drift on an unevidenced claim.'
     : `CDK: synthValid=${cdk.synthValid}, drift=${cdk.driftDetected}${cdkDetails ? ` — details: ${cdkDetails}` : ''}`
-
-// Selected readiness artifacts — concurrent, distinct concerns. finops/slo are advisory;
-// runbook/pipeline author operational artifacts (none of them deploy).
-const ARTIFACT_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary'],
-  properties: {
-    summary: { type: 'string' },
-    paths: { type: 'array', items: { type: 'string' } },
-    concerns: { type: 'array', items: { type: 'string' } },
-  },
-}
-const artifactSpecs = []
-if (artifacts.includes('finops')) artifactSpecs.push(['finops-analyst', 'deploy:finops', 'Analyze the pre-deployment cost posture: unit economics, scaling cost curve, budget impact. Recommend only — do not decide.'])
-if (artifacts.includes('slo')) artifactSpecs.push(['slo-error-budget-designer', 'deploy:slo', 'Design the SLOs and error budgets for this change: SLIs, targets, burn-rate alerts, budget policy.'])
-if (artifacts.includes('runbook')) artifactSpecs.push(['incident-response-runbook-designer', 'deploy:runbook', 'Produce the incident-response and rollback runbook for this change.'])
-if (artifacts.includes('pipeline')) artifactSpecs.push(['github-actions-pipeline-implementer', 'deploy:pipeline', 'Ensure the GitHub Actions deploy pipeline (OIDC auth, build, test, deploy stages) is present and current for this change; author or update it as needed. Do NOT trigger a deploy.'])
-const readinessArtifacts = artifactSpecs.length
-  ? (await parallel(artifactSpecs.map(([at, label, ask]) => () =>
-      settleAgent(`${ask}\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\nWork within: ${repo}`, {
-        label, phase: 'Deploy-readiness', agentType: `agent-teams-workforce:${at}`, schema: ARTIFACT_SCHEMA,
-      })
-    ))).filter(Boolean)
-  : []
 
 // Rollout target. Hoisted above the strategy decision because it is what decides whether
 // that decision has more than one legal answer. Every repository deploys independently, and

@@ -14,6 +14,7 @@ description: >-
   territory: repository knowledge and every manifest change flow THROUGH the
   steward, never around it.
 model: sonnet
+effort: medium
 color: yellow
 skills:
   # Preloaded into context at startup so the steward has its full toolkit ready. It can

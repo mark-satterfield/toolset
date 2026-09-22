@@ -241,6 +241,8 @@ Verdicts:
 - "pass": every constitutive criterion is met, with evidence.
 - "loop": a criterion fails and is fixable within the phase — give precise feedback.
 - "escalate": failure originates upstream${a.escalateTargets && a.escalateTargets.length ? ` (options: ${a.escalateTargets.join(', ')})` : ''}.
+Return exactly one entry in \`criteria\` per criterion listed above, in the same order, and keep each \`evidence\` under 40 words and \`feedback\` under 200. Judgments, not essays — a loop's whole value is the precision of the feedback, never its length.
+
 If you encounter a NOVEL conflict between constitutive objectives that you cannot resolve from the criteria alone, set needsConstitutionalRuling=true and describe the conflict.`,
   {
     label: `gate-const:${a.gate || a.phaseName || 'phase'}`,
@@ -255,6 +257,9 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
         verdict: { type: 'string', enum: ['pass', 'loop', 'escalate'] },
         criteria: {
           type: 'array',
+          // One entry per criterion the caller supplied, and nothing else: the enforcer
+          // judges the stated criteria, it does not invent more.
+          maxItems: 40,
           items: {
             type: 'object',
             additionalProperties: false,

@@ -285,6 +285,8 @@ Deliver:
   {
     label: 'classify:ambiguous-bead',
     phase: 'Classify',
+    // A classifier over one bead's title and description. Stated rather than inherited.
+    effort: 'low',
     agentType: 'agent-teams-workforce:ambiguity-detector',
     schema: {
       type: 'object',

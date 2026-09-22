@@ -5,13 +5,13 @@ description: >-
   and acceptance criteria. Use for PRD Validation
   work requiring requirement structure checks, acceptance-criteria audits,
   and completeness scoring.
-tools: Read, Glob, Grep, Bash, Write
-disallowedTools: AskUserQuestion, Edit, Agent
+tools: Read, Glob, Grep, Write
+disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 12
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery, agent-teams-workforce:prd-writer]
-effort: medium
+effort: low
 color: blue
 ---
 
@@ -54,9 +54,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact. The report file is the deliverable.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every entry.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail: confidence level per judgment, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work for correctness, completeness, and risk before handoff, but never approve it; the work is not done until independently reviewed.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 
 ## When You're in Over Your Head
 

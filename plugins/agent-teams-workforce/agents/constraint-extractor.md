@@ -11,7 +11,7 @@ model: sonnet
 permissionMode: acceptEdits
 maxTurns: 12
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:product-discovery]
-effort: medium
+effort: low
 color: blue
 ---
 
@@ -53,9 +53,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact. The manifest file is the deliverable; downstream phases must be able to rely on it without consulting this agent.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every manifest entry; the manifest body carries provided facts only.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail: confidence level per extraction, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Verify the manifest with evidence before handoff: re-read it against the PRD and confirm every entry's quote is exact; an error-free write is not proof of a faithful extraction.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 
 ## When You're in Over Your Head
 

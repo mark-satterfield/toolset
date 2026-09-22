@@ -270,7 +270,12 @@ const replaySummary = () => ({
 const d = a.decision || {}
 const sadPath = typeof a.sadPath === 'string' ? a.sadPath.trim() : ''
 const repo = d.repoPath || '(repo path not provided — ask before editing files)'
-const MAX_SAD_LOOPS = a.maxLoops || 2
+// TWO passes is the floor, not a caller preference. At 1, a single conformance reject —
+// ordinarily a wording or a missing-clause fix the maintainer can make in one targeted
+// edit — goes straight to the architecture-decider deadlock ruling, which is a
+// higher-effort session than the re-author it replaced. The cheap re-author is tried
+// first; the decider still carries the case that survives it.
+const MAX_SAD_LOOPS = Math.max(a.maxLoops || 2, 2)
 const upstream = a.feedback ? `\nUpstream gate feedback to fold in:\n${a.feedback}` : ''
 if (!d.title) return { ok: false, stage: 'input', error: 'no decision.title supplied — refusing to run without a work item' }
 if (!sadPath) return { ok: false, stage: 'input', error: 'no sadPath supplied (the project\'s ATW_SAD_PATH) — refusing to rule on an architecture with no SAD to rule against' }
@@ -306,6 +311,9 @@ const PROPOSAL_SCHEMA = {
     lens: { type: 'string' },
     options: {
       type: 'array',
+      // Three options is the job (see SURVEY_BOUND). A fourth is not a richer panel —
+      // it is more text for the decider to read and for the challenge wave to stress.
+      maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -625,7 +633,11 @@ past that, you are auditing rather than proposing — stop and return what you h
 
 Returning three well-reasoned options with honest tradeoffs is the whole job. An option set
 is not improved by having read more of the repository, and an incomplete survey stated as
-fact is worse than an option marked with the uncertainty you actually have.`
+fact is worse than an option marked with the uncertainty you actually have.
+
+AT MOST THREE OPTIONS, and keep every tradeoff, failure mode and assumption under 30 words.
+A pro, a con, a risk: one sentence each. The decider rules on the substance, not the prose,
+and a long option set costs every session downstream that has to read it.`
 
 const makers = [
   {
@@ -916,6 +928,45 @@ READING BUDGET (binding): everything you are judging is in this prompt. The prop
 // decider still never analyzes, and challengers still never decide. The judgment is
 // recorded either way — "challenge ran: <trigger>" / "challenge skipped: <evidence>"
 // — so every run's trace shows the decision being made, not silence.
+//
+// The computation is a FUNCTION because it is asked twice: once of the round-1 option
+// set, and again of a re-proposed one. A re-proposal round used to challenge
+// unconditionally on the reasoning that an inadmissible ruling is a live conflict by
+// construction — but the conflict the decider named was with a RULE, and the fresh
+// option set was written to honor that rule. Whether the NEW set is contested is a
+// question only the new set answers, and it answers it the same way round 1 does.
+function computeChallengeTrigger(proposalSet) {
+  const triggers = []
+  const ambiguities = []
+  if (a.forceFullPanel === true) triggers.push('caller forced the full panel')
+  if (!triage) ambiguities.push('no triage verdict exists (caller-forced dimensions or triage failure)')
+  const contestedLenses = proposalSet.filter((p) => p && p.contested === true)
+  if (contestedLenses.length) {
+    triggers.push(
+      `${contestedLenses.length} analyst lens(es) report a live conflict: ` +
+        contestedLenses.map((p) => `${p.lens}${p.contestedReason ? ` (${p.contestedReason})` : ''}`).join('; ')
+    )
+  }
+  if (triage && triage.reversalRisk === true) triggers.push('triage: a plausible ruling could reverse or contradict a recorded SAD decision')
+  if (triage && triage.highStakes === true) triggers.push('triage: the question implicates a constitutive/high-stakes constraint')
+  // Affirmative-evidence checks — each failure is ambiguity, and ambiguity challenges.
+  const missingLenses = activeMakers.length - proposalSet.length
+  if (missingLenses > 0) ambiguities.push(`${missingLenses} dispatched analyst lens(es) returned nothing, so their view of the contest is unknown`)
+  const unstated = proposalSet.filter((p) => typeof (p && p.contested) !== 'boolean')
+  if (unstated.length) ambiguities.push(`${unstated.length} lens(es) did not state contested either way`)
+  if (triage && typeof triage.reversalRisk !== 'boolean') ambiguities.push('triage did not state reversalRisk either way')
+  if (triage && typeof triage.highStakes !== 'boolean') ambiguities.push('triage did not state highStakes either way')
+  return { triggers, ambiguities }
+}
+
+/** Fold triggers and ambiguities into the one-line reason the run journal records. */
+function challengeReason({ triggers, ambiguities }) {
+  return [
+    ...triggers,
+    ...(ambiguities.length ? [`signals ambiguous, challenging by default: ${ambiguities.join('; ')}`] : []),
+  ].join(' | ')
+}
+
 let challengeResults = null
 let challengeWave = null
 if (!settled && proposals.length && replayChallenges && allLensesReplayed) {
@@ -932,32 +983,10 @@ if (!settled && proposals.length && replayChallenges && allLensesReplayed) {
   }
   log(challengeWave.reason)
 } else if (!settled && proposals.length) {
-  const triggers = []
-  const ambiguities = []
-  if (a.forceFullPanel === true) triggers.push('caller forced the full panel')
-  if (!triage) ambiguities.push('no triage verdict exists (caller-forced dimensions or triage failure)')
-  const contestedLenses = proposals.filter((p) => p && p.contested === true)
-  if (contestedLenses.length) {
-    triggers.push(
-      `${contestedLenses.length} analyst lens(es) report a live conflict: ` +
-        contestedLenses.map((p) => `${p.lens}${p.contestedReason ? ` (${p.contestedReason})` : ''}`).join('; ')
-    )
-  }
-  if (triage && triage.reversalRisk === true) triggers.push('triage: a plausible ruling could reverse or contradict a recorded SAD decision')
-  if (triage && triage.highStakes === true) triggers.push('triage: the question implicates a constitutive/high-stakes constraint')
-  // Affirmative-evidence checks — each failure is ambiguity, and ambiguity challenges.
-  const missingLenses = activeMakers.length - proposals.length
-  if (missingLenses > 0) ambiguities.push(`${missingLenses} dispatched analyst lens(es) returned nothing, so their view of the contest is unknown`)
-  const unstated = proposals.filter((p) => typeof (p && p.contested) !== 'boolean')
-  if (unstated.length) ambiguities.push(`${unstated.length} lens(es) did not state contested either way`)
-  if (triage && typeof triage.reversalRisk !== 'boolean') ambiguities.push('triage did not state reversalRisk either way')
-  if (triage && typeof triage.highStakes !== 'boolean') ambiguities.push('triage did not state highStakes either way')
+  const { triggers, ambiguities } = computeChallengeTrigger(proposals)
 
   if (triggers.length || ambiguities.length) {
-    const why = [
-      ...triggers,
-      ...(ambiguities.length ? [`signals ambiguous, challenging by default: ${ambiguities.join('; ')}`] : []),
-    ].join(' | ')
+    const why = challengeReason({ triggers, ambiguities })
     challengeWave = { ran: true, reason: `challenge ran: ${why}` }
     log(challengeWave.reason)
     phase('Challenge')
@@ -1172,12 +1201,32 @@ Propose a NEW option set. Requirements for this round:
   proposals = reProposed
   proposalsText = JSON.stringify(proposals, null, 2)
 
-  phase('Challenge')
-  // A re-proposal round is contested BY CONSTRUCTION — the decider just ruled every
-  // option inadmissible — so the wave runs here regardless of the round-1 trigger.
-  challengeWave = { ran: true, reason: `challenge ran: re-proposal round ${round + 1} — the previous option set was ruled inadmissible, which is a live conflict by construction` }
-  challenges = foldChallenges(await runChallengeWave())
-  challengesText = JSON.stringify(challenges, null, 2)
+  // The wave runs on round 2 under THE SAME criteria as round 1 — a live conflict an
+  // analyst reports, SAD-reversal risk, high stakes, or any ambiguous signal. It used
+  // to run unconditionally on the argument that an inadmissible ruling is a live
+  // conflict by construction, but that conflict was with a RULE the decider named, and
+  // this option set was written to honor it. Re-challenging a converged set costs the
+  // most expensive session in the mini to confirm what the analysts already affirmed.
+  const r2 = computeChallengeTrigger(proposals)
+  if (r2.triggers.length || r2.ambiguities.length) {
+    phase('Challenge')
+    challengeWave = { ran: true, reason: `challenge ran: re-proposal round ${round + 1} — ${challengeReason(r2)}` }
+    log(challengeWave.reason)
+    challenges = foldChallenges(await runChallengeWave())
+    challengesText = JSON.stringify(challenges, null, 2)
+  } else {
+    // The previous wave's findings were raised against options that no longer exist, so
+    // carrying them forward would have the decider resolve challenges to eliminated text.
+    challengeWave = {
+      ran: false,
+      reason:
+        `challenge skipped: re-proposal round ${round + 1} — all ${proposals.length}/${activeMakers.length} re-proposed lenses ` +
+        'affirmed contested=false, and triage affirmed reversalRisk=false and highStakes=false',
+    }
+    log(challengeWave.reason)
+    challenges = foldChallenges(null)
+    challengesText = JSON.stringify(challenges, null, 2)
+  }
 }
 
 // ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────────
@@ -1279,13 +1328,13 @@ function authorDecisionArtifacts() {
   return settleAgent(
   `Author the decision artifacts FROM the ruling below — do NOT re-decide anything. Two artifacts, each under its own key:
 
-1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis".
+1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis". AT MOST 12, and only the ones THIS ruling creates or changes. Do not restate standing platform constraints (the bans, service isolation, Powertools-only, REST v1) — they hold already and a fitness function repeating one buys nothing. Keep each \`assertion\` and each \`check\` under 30 words.
 2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
 
 ${decisionContext}${persistBrief(ART, 'architecture-fitness.json', PROPOSAL_WHAT)}`,
   { label: 'author:decision-artifacts', phase: 'Update SAD', effort: 'medium', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
     schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions', 'diagrams'], properties: {
-      fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
+      fitnessFunctions: { type: 'array', maxItems: 12, items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
       diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } },
     } } }
   )
@@ -1449,9 +1498,12 @@ async function authorSad(reviewerFeedback) {
   return await settleAgent(
     `You are the sad-maintainer. Consolidate the ruling below into the living arc42 SAD, editing ONLY the source-feed sections it touches: §2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts. Keep those sections mutually consistent. Edit the living document in place — no changelog narrative, no rewriting history. SAD location: ${sadPath}.
 
-SWEEP EVERY CLAIM YOU CHANGE — THIS IS NOT OPTIONAL.
-The SAD states the same normative claim in several places: a §2 constraint, a §4 strategy bullet, a §8 concept, a §5 building-block description, and a §8 README index row can all name the same store, protocol, or topology. Changing one and leaving the others is the single most common way this document self-contradicts, and a downstream extractor then reads whichever copy it happens to hit.
-For EVERY claim the ruling changes: grep the WHOLE SAD tree for the OLD value and for the subject of the claim, and correct EVERY statement of it in the same pass — including index/summary rows, which are claims too. Then re-grep for the old value and confirm the only remaining hits are ones that legitimately describe a different mechanism. Report the sweep you ran.
+SWEEP EVERY CLAIM YOU CHANGE — BOUNDED TO THE ENTRIES THIS RULING TOUCHES.
+The SAD states the same normative claim in several places: a §2 constraint, a §4 strategy bullet, a §8 concept, a §5 building-block description, and a §8 README index row can all name the same store, protocol, or topology. Changing one and leaving the others is the single most common way this document self-contradicts, and a downstream extractor then reads whichever copy it happens to hit. That is what the sweep exists to prevent — and it is why the sweep is scoped to the claims you actually changed, not to the document.
+The sweep set is: the entries this ruling MINTS, REWORDS or SUPERSEDES (the ones that end up in \`entryTags\`), plus their BACKLINKS — the other SAD statements, including index/summary rows, that restate or cite one of those entries. Find the backlinks with one targeted grep per changed claim, on the old value and on the subject of the claim, and correct every hit that restates it. Then re-grep ONLY those claims and confirm the remaining hits legitimately describe a different mechanism. Report the sweep you ran.
+An entry outside that set is not yours this pass: do not re-read it, do not re-diff it, do not "verify" it. A statement that is stale for some other reason is a \`collisions\` entry, not an edit.
+
+READING BUDGET (binding). Open and edit ONLY the sections this ruling touches and the backlinks your targeted greps return. Do not read the SAD end to end, do not re-diff sections you did not change, and do not print whole files — grep with line numbers and open the ranges you need. Report under \`entryTags\` only the tags that this pass minted, preserved-by-rewording or superseded; an entry you left alone is not a report item.
 
 A COLLISION WITH OLDER CONTENT IS REPORTED, NEVER WRITTEN INTO THE SAD.
 The SAD is brought up to date one Epic at a time, so it holds rules from earlier rulings — including for features nobody is building yet — that this ruling does not reach. When your edit collides with one, do NOT write a referral, an open-question marker or a "these cannot both hold" note into the document: that is workflow state, and it makes the section unusable for the TRD and Spec authors who extract it. State the ruling this run settled, and report the collision under \`collisions\` in your result, naming the older rule and where it lives, so it reaches the Epic that owns it.

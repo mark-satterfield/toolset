@@ -230,8 +230,8 @@ const ASSESS_SCHEMA = {
     reasoningPath: { type: 'string' },
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
-    relatedRead: { type: 'array', items: { type: 'string' } },
-    unsure: { type: 'array', items: { type: 'string' } },
+    relatedRead: { type: 'array', maxItems: 40, items: { type: 'string' } },
+    unsure: { type: 'array', maxItems: 20, items: { type: 'string' } },
   },
 }
 const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, an event contract, a table, an IAM grant, a deployed resource. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`
@@ -260,7 +260,13 @@ Return the edge file path, the reasoning file path, the edge count, whether the 
 // validate is assessed again with the validator's findings, at most ASSESS_ATTEMPTS
 // sessions in all; one that never validates writes nothing, and the run stops naming the
 // Task and each finding.
-const ASSESS_ATTEMPTS = 3
+// TWO, not three. Step 7 of the brief already has the mapper run the validator itself
+// and fix the file until `ok` is true, so this outer loop is a SECOND loop around a
+// session that already self-corrects — and each extra turn costs a mapper session plus a
+// runner session. One outer correction pass catches the case the session got wrong; a
+// third attempt at the same proposal, with the same findings, is where the sibling
+// dependency-assessment mini spends nothing at all, because it keeps the loop in-session.
+const ASSESS_ATTEMPTS = 2
 const FINDING_KEYS = [
   'badScope',
   'outsideScope',
@@ -300,6 +306,8 @@ Attempt ${attempt - 1} did not validate. The validator's findings, verbatim: ${J
   const session = await settleAgent(prompt, {
     label: `task-dependency-mapper:${target}#${attempt}`,
     phase: 'Assess',
+    // A maker: it proposes the edge set. Stated here rather than inherited.
+    effort: 'medium',
     agentType: 'agent-teams-workforce:task-dependency-mapper',
     schema: ASSESS_SCHEMA,
   })

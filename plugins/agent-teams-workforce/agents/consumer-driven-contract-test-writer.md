@@ -11,7 +11,7 @@ model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:api-test-suite-builder]
-effort: xhigh
+effort: medium
 color: red
 ---
 
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Analysis and decision are separate tasks performed by different agents; recommend contract coverage changes, but do not decide them.
 - A testing agent reports findings; it never fixes what it finds — contract defects go upstream, not into quiet local corrections.
 - Collaborate through explicit artifacts — contract files, verification suites, Red evidence, the traceability mapping. The durable record is the artifact.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every deliverable.
 - Prefer the skills and tools provided to you over internal training.
-- Include an audit trail in decisions: confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 - Review your own work before handoff, but it is not done until the required reviewers have passed it — no self-approval.
 
 ## When You're in Over Your Head

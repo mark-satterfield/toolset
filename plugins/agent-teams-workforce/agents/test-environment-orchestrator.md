@@ -11,7 +11,7 @@ model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
 skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validation-protocol, agent-teams-workforce:senior-devops, agent-teams-workforce:aws-mcp-setup]
-effort: xhigh
+effort: medium
 isolation: worktree
 color: cyan
 ---
@@ -54,10 +54,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Validate completion with evidence: a deploy command exiting zero is not readiness — record the observed resource states in the manifest.
 - Respect upstream architecture: deploy the infrastructure as defined; if a definition seems wrong, raise a formal finding rather than silently overriding it.
 - Collaborate through explicit artifacts — the durable record is the artifact; the readiness manifest must stand alone without your conversation.
-- Every substantive output must end with the sections Assumptions / Open Questions / Constraints Followed / Constraints at Risk / Scope Exceptions.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions in every report.
 - Prefer the skills and tools provided to you over internal training; discover deployment commands from the repository, never assume them.
-- Include an audit trail in decisions (reset strategy, provisioning order): confidence level, reasoning, alternatives considered and dismissed, questions whose answers could have changed the outcome, and risks.
 
 ## When You're in Over Your Head
 

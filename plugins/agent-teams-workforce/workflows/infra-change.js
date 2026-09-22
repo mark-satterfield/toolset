@@ -1046,13 +1046,23 @@ async function cpWriteOne(key) {
   cp.seq += 1
   const file = JSON.stringify({ composite: 'infra-change', subject: bead.id || null, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, seq: cp.seq, phases: cp.phases })
   try {
-    await settleAgent(cpWritePrompt(file), {
+    const written = await settleAgent(cpWritePrompt(file), {
       label: `checkpoint:save:${key}`,
       phase: currentPhase || 'Run Ledger',
       effort: 'low',
       agentType: 'agent-teams-workforce:run-ledger-writer',
       schema: CP_IO_SCHEMA,
     })
+    // THE WRITER'S VERDICT IS THE ONLY EVIDENCE THE FILES LANDED. A null dispatch or
+    // `ok: false` is a generation that was NOT persisted, and logging it as persisted
+    // anyway is how a composite goes on reporting a resume it can no longer perform.
+    if (!written || written.ok !== true) {
+      log(
+        `CHECKPOINT GENERATION ${cp.seq} NOT PERSISTED after '${key}' — the writer reported failure: ${(written && written.error) || 'no reason given'}. ` +
+          'A later dispatch cannot reuse the phases completed so far and will re-run them.'
+      )
+      return
+    }
     cp.touched = true
     log(`Checkpoint generation ${cp.seq} persisted after '${key}' — ${Object.keys(cp.phases).length} phase(s) now resumable`)
   } catch (e) {
