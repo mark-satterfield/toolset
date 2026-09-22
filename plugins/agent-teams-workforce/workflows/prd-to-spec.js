@@ -2081,6 +2081,9 @@ const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk'
 let archNeeded = true
 let archTriage = null
 let architecture = null
+// Held across the G2 rework loop so a second architecture pass reuses the first pass's SAD
+// extract instead of re-reading the whole SAD to rebuild an identical packet.
+let archSadExtract = null
 const ARCH_INPUTS = PRD_INPUTS
 // ── A RESTART INSIDE THE ARCHITECTURE PHASE ──────────────────────────────────────
 //
@@ -2455,7 +2458,15 @@ if (!archNeeded) {
         // attached — cheaper and better aimed than failing the mini and re-running the
         // whole phase including triage.
         maxLoops: 2,
+        // The first pass's SAD extract, reused on a G2 rework pass — the same threading
+        // trd-authoring already gets below. The mini shards and extracts the whole SAD
+        // itself, and the SAD does not change inside this gate loop, so without this a
+        // rework re-reads ~1.7MB to rebuild an identical packet.
+        sadExtract: archSadExtract || undefined,
         feedback,
+      }).then((r) => {
+        if (r && r.sadExtract && !archSadExtract) archSadExtract = r.sadExtract
+        return r
       }),
   })
 }
@@ -4195,6 +4206,10 @@ if (removalNotEmitted.length || removalWeaklyPlaced.length || removalMalformed.l
 const stories = specPairs.map((p) => p.story)
 const decompositions = [] // one { repoPath, storyKey, artifact } per Story that passed G4
 const decompositionFailures = [] // Stories whose task set failed G4 — kept, never dropped
+// repoPath -> the spec documents the decomposer reported it could not open or found empty.
+// Read at the write below, so a Task that ends up with no spec reference is reported with
+// the reason it actually has rather than the one that used to be the only possibility.
+const specDocsUnreadableByRepo = new Map()
 const tasks = []
 // Decomposed CONCURRENTLY, for the same reason and under the same rules as the per-repo
 // spec fan-out above: Story *i* consumes nothing from Story *j* — each reads its own
@@ -4393,7 +4408,34 @@ for (const [pairIndex, pair] of specPairs.entries()) {
   // task keeps the documents it cited from this Story's set, and one that cited none of
   // them is linked to the whole set. A Story with no root-relative document leaves its
   // tasks with an empty link, which the write below reports as a named failure.
-  const storyRefs = specRefsFor(pair)
+  //
+  // A DOCUMENT THE DECOMPOSER COULD NOT OPEN IS NOT A REF. `specDocsFor` builds the
+  // `spec-<slug>.*` paths from the naming convention and nothing has ever confirmed they
+  // exist, so a maker whose save failed left every Task carrying a ref to a file that is not
+  // there — and a Task with a spec ref reads as CONTRACT-COMPLETE to the build lane, which
+  // dispatches it and finds out only when an implementer tries to open the document. The
+  // decomposer is the one session that actually opens these files, so it reports the ones it
+  // could not read or found empty, and those are dropped here rather than asserted onward. A
+  // Task left with no ref at all is named in `emission.specReferenceMissing`, which already
+  // holds the verdict short of `complete` — visibly short of its contract instead of falsely
+  // complete.
+  const unreadable = new Set(
+    ((decomposition.artifact && Array.isArray(decomposition.artifact.specDocsUnreadable)) ? decomposition.artifact.specDocsUnreadable : [])
+      .filter((p) => typeof p === 'string' && p.trim())
+      .map((p) => p.trim())
+  )
+  // Reported as absolute read paths; a Task records the root-relative ref. Both forms of
+  // each unreadable document are refused, so neither spelling survives the filter.
+  const readableDoc = (d) => !unreadable.has(d.path) && !(d.ref && unreadable.has(d.ref))
+  const storyDocs = specDocsFor(pair)
+  const storyRefs = storyDocs.filter(readableDoc).map((d) => d.ref).filter(Boolean)
+  if (unreadable.size) {
+    specDocsUnreadableByRepo.set(pair.repoPath, [...unreadable])
+    log(
+      `Spec documents NOT readable for ${pair.repoPath} (${unreadable.size}): ${[...unreadable].join(', ')} — ` +
+        `their refs are dropped, leaving ${storyRefs.length} of ${storyDocs.length} document(s) citable.`
+    )
+  }
   for (const t of storyTasks) {
     const cited = (Array.isArray(t.specPaths) ? t.specPaths : []).filter((p) => storyRefs.includes(p))
     t.specPaths = cited.length ? [...new Set(cited)] : storyRefs.slice()
@@ -4512,7 +4554,11 @@ if (!decompositions.length) {
 // whole Task graph stops the run, because no build order exists for it.
 const storyOfTask = new Map(tasks.map((t) => [t.key, t.parentStoryId]))
 const taskStories = new Set(tasks.map((t) => t.parentStoryId))
-const crossStory = { ran: false, reason: null, edges: [], rejected: [] }
+// `degraded` is set, with its reason, when the cross-Story mapper produced no answer and the
+// run carried on without its edges. It is read by the emission verdict, which cannot be
+// `complete` while it is set — so the hierarchy is still written and the Epic is still not
+// marked done.
+const crossStory = { ran: false, reason: null, degraded: null, edges: [], rejected: [] }
 /** One cycle over `{from, to}` edges as a key path, or null when there is none. */
 function taskCycle(edgeList) {
   const next = new Map()
@@ -4609,18 +4655,39 @@ ${listing}`,
       },
     }
   )
+  // ── A DEAD MAPPER DEGRADES THE EDGES; IT DOES NOT DESTROY THE ELABORATION ──────
+  //
+  // This used to `return partial(...)`, and this dispatch runs BEFORE emission — so one
+  // null return aborted the run with NOTHING written: no Story, no Task, every spec and
+  // decomposition the run had paid for discarded. It is skipped for single-Story Epics, so
+  // it bit exactly the multi-repo Epics that cost the most to get this far.
+  //
+  // The two costs are not close. Losing the cross-Story edges means Tasks can be picked up
+  // out of order, which a person or a later dependency-assessment pass can repair against a
+  // hierarchy that EXISTS. Losing the elaboration means re-running everything from the
+  // architecture ruling down. So the run proceeds, the reason is recorded, and the Epic is
+  // NOT marked done — `degraded` is read by the emission verdict below, which cannot be
+  // `complete` while it is set, which is what holds `epicDone` false.
   if (!mapped) {
-    return partial('task-dependencies', {
-      reason: 'the cross-Story Task dependencies could not be derived — the mapper returned nothing, and Tasks written without them could be built out of order',
-      dispatchFailed: dispatchDeaths('Task Decomposition').length > 0,
-      dispatchFailures: dispatchDeaths('Task Decomposition'),
-    })
-  }
+    crossStory.degraded =
+      'the mapper returned nothing, so no cross-Story edge was derived. The Tasks are written with their intra-Story edges only and could be built out of order across Stories.'
+    crossStory.reason = crossStory.degraded
+    log(`Cross-Story Task dependencies DEGRADED — ${crossStory.degraded} The hierarchy is still emitted; this Epic will not be marked done.`)
+    recRuled(`Cross-Story Task dependencies could not be derived: ${crossStory.degraded}`, { status: 'failed' })
+  } else {
+  // A REPORTED CYCLE IS LOUD, AND IT IS NOT FATAL. The mapper returns no edges when it
+  // reports one, so there is nothing to omit: the Stories and Tasks beneath this Epic are
+  // not what is wrong — some cross-Story edge would have been — and aborting here would
+  // discard every bead the run produced in order to avoid writing an edge that is not
+  // going to be written anyway.
   if (mapped.acyclic === false) {
-    return partial('task-dependencies', {
-      reason: `the Task dependency graph across Stories is not acyclic — cycle: ${(mapped.cycle || []).join(' -> ') || '(not reported)'}`,
-    })
-  }
+    crossStory.degraded =
+      `the mapper reported that the only honest reading implies a CYCLE across Stories (${(mapped.cycle || []).join(' -> ') || 'cycle not reported'}), so it returned no edges. ` +
+      'The Tasks are written with their intra-Story edges only and could be built out of order across Stories.'
+    crossStory.reason = crossStory.degraded
+    log(`Cross-Story Task dependencies DEGRADED — ${crossStory.degraded} The hierarchy is still emitted; this Epic will not be marked done.`)
+    recRuled(`Cross-Story Task dependencies form a cycle: ${crossStory.degraded}`, { status: 'failed' })
+  } else {
   const seenEdge = new Set()
   for (const e of Array.isArray(mapped.edges) ? mapped.edges : []) {
     const from = e && typeof e.from === 'string' ? e.from : ''
@@ -4645,10 +4712,22 @@ ${listing}`,
   ]
   const cycle = taskCycle(allEdges)
   if (cycle) {
-    return partial('task-dependencies', {
-      reason: `the cross-Story edges close a cycle over the Task graph — ${cycle.join(' -> ')}`,
-    })
-  }
+    // The proposed edges close a cycle over a graph whose intra-Story halves are each
+    // already acyclic, so the fault is in the cross-Story set. ALL of it is dropped rather
+    // than the edges on the reported cycle alone: a cycle is evidence that the set as a
+    // whole was derived wrongly, and a partial removal that leaves one bad edge standing is
+    // worse than none — a false edge serializes work that could run in parallel, while a
+    // missing one is recoverable by a later dependency-assessment pass. Nothing has been
+    // applied to any Task at this point; the application loop below is skipped.
+    crossStory.rejected.push(...crossStory.edges.map((e) => ({ from: e.from, to: e.to, reason: 'dropped: the cross-Story edge set closes a cycle' })))
+    crossStory.degraded =
+      `the ${crossStory.edges.length} proposed cross-Story edge(s) close a CYCLE over the Task graph (${cycle.join(' -> ')}), so none of them was applied. ` +
+      'The Tasks are written with their intra-Story edges only and could be built out of order across Stories.'
+    crossStory.reason = crossStory.degraded
+    crossStory.edges = []
+    log(`Cross-Story Task dependencies DEGRADED — ${crossStory.degraded} The hierarchy is still emitted; this Epic will not be marked done.`)
+    recRuled(`Cross-Story Task dependencies form a cycle: ${crossStory.degraded}`, { status: 'failed' })
+  } else {
   for (const e of crossStory.edges) {
     const t = tasks.find((x) => x.key === e.to)
     t.dependsOn = [...(t.dependsOn || []), e.from]
@@ -4657,6 +4736,9 @@ ${listing}`,
     `Cross-Story Task dependencies: ${crossStory.edges.length} edge(s) across ${taskStories.size} Stories` +
       `${crossStory.rejected.length ? `; ${crossStory.rejected.length} proposed edge(s) not applied — ${crossStory.rejected.map((r) => `${r.from}->${r.to} (${r.reason})`).join(', ')}` : ''}.`
   )
+  } // end: the edge set is acyclic
+  } // end: the mapper did not report a cycle
+  } // end: the mapper answered
 }
 produced.crossStoryDependencies = crossStory
 
@@ -4980,29 +5062,64 @@ const writerPreamble =
  * Write one LEVEL of the hierarchy and return a Map of local key -> real bead id.
  * Ordering across levels is the caller's; ordering within a level is the list's.
  */
+// ── ONE WRITER SESSION CANNOT WRITE AN UNBOUNDED LEVEL ───────────────────────────
+//
+// A bead-writer session runs exactly one `bd create` per bead, one create is one Bash call
+// is one TURN, and the agent carries a hard turn cap. A whole level in one dispatch
+// therefore wrote the first handful of beads, ran out of turns, and every bead past that
+// point was silently never written: settleAgent normalizes the dead session to null, the
+// unreported keys fall through the per-item loop below as `id = null`, and they land in
+// `emission.failed`. The verdict is then never `complete`, so `epicDone` is never true, so
+// NO Epic with more than a handful of Tasks has ever finished elaboration.
+//
+// So a level is written in chunks, one session each. The chunk size is well under the turn
+// cap on purpose — the cap is the wall, not the target, and a session needs turns for its
+// structured reply and for a create that has to be retried. It also bounds the payload and
+// the context each session carries, which raising the cap alone would not.
+//
+// SEQUENTIAL, not concurrent. These are `bd` writes into one local database; running the
+// chunks at once would put several writers on the same tracker for no gain that matters
+// here. Ordering within a level is the list's, and chunking preserves it.
+const WRITE_CHUNK = 8
+const chunked = (list, size) => {
+  const out = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
+}
 async function writeWave(level, items) {
   const ids = new Map()
   if (!items.length) return ids
   emission.attempted += items.length
-  let reply = null
-  let fault = null
-  try {
-    reply = await settleAgent(`${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level, beads: items, links: [] })}`, {
-      label: `beads:write-${level}`,
-      phase: 'Emit Beads',
-      effort: 'low',
-      agentType: 'agent-teams-workforce:bead-writer',
-      schema: WRITE_SCHEMA,
-    })
-  } catch (e) {
-    fault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
-  }
   const reported = new Map()
-  for (const r of (reply && Array.isArray(reply.results) ? reply.results : [])) {
-    if (r && r.key != null) reported.set(String(r.key), r)
+  // A dispatch failure belongs to the chunk it happened in. Recorded per key so the items in
+  // a surviving chunk are never blamed for a sibling chunk's fault, and the reason a bead is
+  // missing stays the reason it is actually missing.
+  const faultFor = new Map()
+  const batches = chunked(items, WRITE_CHUNK)
+  if (batches.length > 1) log(`Writing ${items.length} ${level}(s) in ${batches.length} chunk(s) of at most ${WRITE_CHUNK} — one writer session each`)
+  for (let b = 0; b < batches.length; b++) {
+    const batch = batches[b]
+    let reply = null
+    let fault = null
+    try {
+      reply = await settleAgent(`${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level, beads: batch, links: [] })}`, {
+        label: batches.length > 1 ? `beads:write-${level} (${b + 1}/${batches.length})` : `beads:write-${level}`,
+        phase: 'Emit Beads',
+        effort: 'low',
+        agentType: 'agent-teams-workforce:bead-writer',
+        schema: WRITE_SCHEMA,
+      })
+    } catch (e) {
+      fault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
+    }
+    for (const r of (reply && Array.isArray(reply.results) ? reply.results : [])) {
+      if (r && r.key != null) reported.set(String(r.key), r)
+    }
+    if (fault) for (const it of batch) faultFor.set(String(it.key), fault)
   }
   for (const it of items) {
     const r = reported.get(String(it.key))
+    const fault = faultFor.get(String(it.key)) || null
     // An id counts only when the writer says ok AND hands back text. A missing entry, a
     // null id, or an ok with nothing in it is a bead that was not written — silence is
     // never read as success here, because the whole point of the phase is durability.
@@ -5056,11 +5173,16 @@ function taskContractMetadata(t) {
     m.spec_path = c.specPaths[0]
     m.spec_paths = JSON.stringify(c.specPaths)
   } else {
+    // Two different causes reach here and they are repaired differently: a document that was
+    // never saved has to be re-authored, while one saved outside the project root only has to
+    // be recorded. Naming the wrong one sends whoever reads this to the wrong place.
+    const unreadableHere = specDocsUnreadableByRepo.get(t.repoPath) || []
     emission.specReferenceMissing.push({
       key: t.key,
-      reason:
-        'spec-reference-missing: no project-root-relative spec document is known for its Story ' +
-        `(${SS_ROOT ? `the spec documents were not saved under the project root ${SS_ROOT}` : 'no project root was supplied as args.projectRoot (ATW_PROJECT_ROOT) or args.resume.root'})`,
+      reason: unreadableHere.length
+        ? `spec-reference-missing: the decomposer could not open its Story's spec document(s) — ${unreadableHere.join(', ')} — so no ref was recorded rather than one pointing at a file that is not there`
+        : 'spec-reference-missing: no project-root-relative spec document is known for its Story ' +
+          `(${SS_ROOT ? `the spec documents were not saved under the project root ${SS_ROOT}` : 'no project root was supplied as args.projectRoot (ATW_PROJECT_ROOT) or args.resume.root'})`,
     })
   }
   return m
@@ -5572,29 +5694,47 @@ for (const n of tasks) {
     else pendingLinks.push({ fromId, dependsOnId, from: n.key, to: dep })
   }
 }
+// CHUNKED FOR THE SAME REASON THE BEAD WAVES ARE — see WRITE_CHUNK above. One `bd dep add`
+// is one turn, so a single dispatch could only ever confirm the first handful of edges and
+// every edge past that came back unconfirmed, filling `emission.links.failed` and holding
+// the verdict short of `complete` exactly as the truncated Task wave did.
 if (pendingLinks.length) {
-  let linkReply = null
-  let linkFault = null
-  try {
-    linkReply = await settleAgent(
-      `${writerPreamble}${JSON.stringify({
-        repoPath: emitTarget,
-        level: 'link',
-        beads: [],
-        links: pendingLinks.map(({ fromId, dependsOnId }) => ({ fromId, dependsOnId })),
-      })}`,
-      { label: 'beads:link', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
-    )
-  } catch (e) {
-    linkFault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
-  }
   const linked = new Set()
-  for (const r of (linkReply && Array.isArray(linkReply.links) ? linkReply.links : [])) {
-    if (r && r.ok === true) linked.add(`${r.fromId}->${r.dependsOnId}`)
+  const linkFaultFor = new Map()
+  const edgeKey = (e) => `${e.fromId}->${e.dependsOnId}`
+  const linkBatches = chunked(pendingLinks, WRITE_CHUNK)
+  if (linkBatches.length > 1) log(`Linking ${pendingLinks.length} dependency edge(s) in ${linkBatches.length} chunk(s) of at most ${WRITE_CHUNK} — one writer session each`)
+  for (let b = 0; b < linkBatches.length; b++) {
+    const batch = linkBatches[b]
+    let linkReply = null
+    let linkFault = null
+    try {
+      linkReply = await settleAgent(
+        `${writerPreamble}${JSON.stringify({
+          repoPath: emitTarget,
+          level: 'link',
+          beads: [],
+          links: batch.map(({ fromId, dependsOnId }) => ({ fromId, dependsOnId })),
+        })}`,
+        {
+          label: linkBatches.length > 1 ? `beads:link (${b + 1}/${linkBatches.length})` : 'beads:link',
+          phase: 'Emit Beads',
+          effort: 'low',
+          agentType: 'agent-teams-workforce:bead-writer',
+          schema: WRITE_SCHEMA,
+        }
+      )
+    } catch (e) {
+      linkFault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
+    }
+    for (const r of (linkReply && Array.isArray(linkReply.links) ? linkReply.links : [])) {
+      if (r && r.ok === true) linked.add(`${r.fromId}->${r.dependsOnId}`)
+    }
+    if (linkFault) for (const e of batch) linkFaultFor.set(edgeKey(e), linkFault)
   }
   for (const e of pendingLinks) {
-    if (linked.has(`${e.fromId}->${e.dependsOnId}`)) emission.links.linked += 1
-    else emission.links.failed.push({ from: e.from, to: e.to, reason: linkFault || 'the writer did not confirm this edge' })
+    if (linked.has(edgeKey(e))) emission.links.linked += 1
+    else emission.links.failed.push({ from: e.from, to: e.to, reason: linkFaultFor.get(edgeKey(e)) || 'the writer did not confirm this edge' })
   }
 }
 
@@ -5850,14 +5990,19 @@ const durable = emission.created + emission.adopted
 const durableBeneath = storyIds.size + taskIds.size
 const unwritten = emission.failed.length + emission.skipped.length
 if (!durableBeneath) emission.verdict = 'none'
-else if (unwritten || emission.links.failed.length || emission.specReferenceMissing.length) emission.verdict = 'partial'
+// `crossStory.degraded` is part of this test because the hierarchy it describes is
+// INCOMPLETE in a way none of the counts above can see: every bead landed and every edge the
+// run knew about was written, but a whole class of edge was never derived. Complete would be
+// a false claim, and it is what marks the Epic done.
+else if (unwritten || emission.links.failed.length || emission.specReferenceMissing.length || crossStory.degraded) emission.verdict = 'partial'
 else emission.verdict = 'complete'
 if (!emission.reason) {
   emission.reason =
     emission.verdict === 'complete'
       ? `all ${durable} bead(s) of this hierarchy are durable`
       : `${durable} bead(s) durable, ${unwritten} NOT written, ${emission.links.failed.length} dependency edge(s) unlinked, ` +
-        `${emission.specReferenceMissing.length} Task(s) written with no spec reference`
+        `${emission.specReferenceMissing.length} Task(s) written with no spec reference` +
+        (crossStory.degraded ? `; the cross-Story dependency edges were never derived — ${crossStory.degraded}` : '')
 }
 if (emission.specReferenceMissing.length) {
   log(`SPEC REFERENCE MISSING on ${emission.specReferenceMissing.length} Task(s): ${emission.specReferenceMissing.map((x) => x.key).join(', ')} — ${emission.specReferenceMissing[0].reason}`)

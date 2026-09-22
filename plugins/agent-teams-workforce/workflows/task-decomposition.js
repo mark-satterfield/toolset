@@ -635,7 +635,9 @@ JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`)
 
 JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, \`sizeLow\`, \`sizeHigh\`, \`sizeConfidence\`, and a one-line \`rationale\` naming what the size was compared with. Every key exactly once.
 
-${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, notes — exactly as you return them) as ONE JSON object')}`,
+ALSO REPORT WHICH SPEC DOCUMENTS YOU COULD NOT READ (return in \`specDocsUnreadable\`): you are the first and only session that actually OPENS these files, so you are the only one that learns whether they are really there. A path was built from a naming convention or from what the spec maker said it wrote, and neither is a confirmation. List, as the absolute paths you were given, every spec document that was absent, unreadable, or empty. Absent or unreadable or empty — not merely short, not merely thinner than you expected: a document that opens and has content is readable, whatever you think of it. Return an EMPTY list when every one of them opened, which is a positive statement that you checked, not a field you left blank.
+
+${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, specDocsUnreadable, notes — exactly as you return them) as ONE JSON object')}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
@@ -644,7 +646,7 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['tasks', 'testStrategy', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores'],
+      required: ['tasks', 'testStrategy', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores', 'specDocsUnreadable'],
       properties: {
         tasks: { type: 'array', items: taskSchema },
         testStrategy: testStrategySchema,
@@ -665,6 +667,10 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
         acyclic: { type: 'boolean' },
         cycle: { type: 'array', items: { type: 'string' } },
         scores: { type: 'array', items: wsjfTaskSchema },
+        // Required, so that an empty list is a STATEMENT that every document opened rather
+        // than a field the maker never filled in. The two cases are indistinguishable when
+        // the field is optional, and they mean opposite things to the caller.
+        specDocsUnreadable: { type: 'array', items: { type: 'string' } },
         notes: { type: 'string' },
       },
     },
@@ -1004,6 +1010,12 @@ return {
   buildOrder: dag.buildOrder,
   testStrategy,
   specDocs: citableRefs,
+  // The one confirmation anybody gets that the spec documents the Tasks cite are really
+  // there. The decomposer opened them; the caller drops the refs it names and records each
+  // as a missing spec reference, which holds the emission verdict short of complete. A
+  // replayed maker output authored before this field existed yields [] — the same as a
+  // clean read, and the safe direction: an old artifact was already emitted on those terms.
+  specDocsUnreadable: strList(maker && maker.specDocsUnreadable),
   wsjfScores,
   decisionIds: [...new Set(beadSet.flatMap((b) => b.decisionIds))],
   scoringReview,

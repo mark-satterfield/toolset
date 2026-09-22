@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. ONE independent read-only checker session takes an INVENTORY of the material that already exists for a PRD, and detects upstream dependency changes, in a single pass. THE PRD IS CANONICAL: what already ships is material, not authority — where it conforms to the PRD it is reused, where it contradicts the PRD it is removed, and where nothing exists it is built. No requirement is ever filtered out, narrowed, deferred, or written off because code exists, and the inventory is context for the phases downstream, never a filter on their scope. EVERY requirement the PRD states comes back with a status; a conforms/contradicts claim with no file:line, URL, endpoint or arn:aws behind it is demoted to absent, because reusing material that may not match the PRD is the expensive error. UI requirements are resolved against the cds design system, which is the authority for layout, shells, navigation, components and interaction: the hand-off bundle first (a packaged artifact carries a build-spec the app repo builds to), then the loose composed mock, then the PRD prose, and what is deployed is never authoritative — a deployed UI that differs from the packaged artifact is material to bring into line, never an open question. Read-only: it writes no document at all and returns structured output only.',
+    'Leaf mini — PRD Reconciliation. ONE independent read-only checker session takes an INVENTORY of the material that already exists for a PRD, and detects upstream dependency changes, in a single pass. THE PRD IS CANONICAL: what already ships is material, not authority — where it conforms to the PRD it is reused, where it contradicts the PRD it is removed, and where nothing exists it is built. No requirement is ever filtered out, narrowed, deferred, or written off because code exists, and the inventory is context for the phases downstream, never a filter on their scope. EVERY requirement the PRD states comes back with a status; a conforms/contradicts claim with no file:line, URL, endpoint or arn:aws behind it is demoted to absent, because reusing material that may not match the PRD is the expensive error. UI requirements are resolved against the cds design system, which is the authority for layout, shells, navigation, components and interaction: the hand-off bundle first (a packaged artifact carries a build-spec the app repo builds to), then the loose composed mock, then the PRD prose, and what is deployed is never authoritative — a deployed UI that differs from the packaged artifact is material to bring into line, never an open question. THE SEARCH BUDGET IS MEASURED FROM THE PRD, not fixed: the ceiling is this PRD\'s own requirement count at the stated per-requirement rate plus overhead, so every requirement can actually be looked at. A requirement the run did NOT examine comes back NAMED in `coverage.unexaminedRequirementIds` and in `unexaminedRequirements` — never reported as `absent`, because "I did not look" and "it is not there" are different claims and only one of them is a finding. Read-only: it writes no document at all and returns structured output only.',
   phases: [
     { title: 'Reconciliation checks', detail: 'one independent read-only checker session inventories the material and checks upstream dependencies' },
   ],
@@ -254,6 +254,10 @@ const fail = (reason, extra) => ({
   absentCount: 0,
   removalWork: [],
   reuseWork: [],
+  // Nothing was examined, and the shape stays uniform so a caller reads coverage the same
+  // way on every path. `complete: false` is the honest reading of a run that never ran.
+  coverage: { requirementCount: 0, examinedCount: 0, unexaminedRequirementIds: [], budgetExhausted: false, complete: false },
+  unexaminedRequirements: [],
   repos: [],
   existingRepos: [],
   spansMultipleRepos: false,
@@ -294,13 +298,52 @@ const repoBlock = repos.length
 // this repository is `absent` HERE — which is the honest answer for this repository — and it
 // is never dropped from the inventory.
 //
-// One repository is a smaller haystack than sixty, so the ceiling scales with the scope
-// actually given. An empty or multi-repo `repos` means the scope is NOT known to be one
-// repository, and that keeps the original wide budget: unknown is unknown, and the
+// One repository is a smaller haystack than sixty, so the per-requirement rate scales with
+// the scope actually given. An empty or multi-repo `repos` means the scope is NOT known to
+// be one repository, and that keeps the original wide rate: unknown is unknown, and the
 // fail-safe stays "search widely", never "search less".
+//
+// ── THE CEILING IS DERIVED FROM THE PRD, NOT GUESSED ────────────────────────────
+//
+// The ceiling used to be a constant — 30 single-repo, 50 otherwise — while the rate beside
+// it was stated per requirement. Those two numbers contradicted each other for any PRD with
+// more than about seven requirements, and the prompt says exactly what the contradiction
+// costs: "a requirement you never looked at comes back as `absent` and gets built from
+// scratch beside material that already exists". Measured over the 147 PRDs in this project:
+// 1291 stated requirements, mean 8.8, median 8, max 18 — so the constant was binding on
+// essentially every real PRD, and the failure it produced was silent.
+//
+// So the ceiling is now MEASURED from the PRD this run was handed. The count is estimated
+// from the document's own structure — the heading level the requirements are written at,
+// and the requirement-id labels (REQ-…, EA-001, BG-003) the templates use — and the ceiling
+// is that count at the stated rate plus a fixed overhead for the work that is not
+// per-requirement: selecting the cds bundle batch, reading MANIFEST.tsv, the dependency
+// check. Over-estimating costs tool calls; under-estimating costs correctness, so the
+// estimator is biased high and floored, never trimmed.
 const singleRepo = repos.length === 1
 const CALLS_PER_REQUIREMENT = singleRepo ? 4 : 6
-const CALL_CEILING = singleRepo ? 30 : 50
+// Bundle selection, MANIFEST.tsv, unpackaged.md, the dependency check — work that exists
+// once per run rather than once per requirement.
+const BUDGET_OVERHEAD = 20
+// A floor, so a PRD whose structure the estimator cannot read is not starved; and a cap, so
+// a pathological document cannot ask for an unbounded session.
+const MIN_REQUIREMENTS = 8
+const MAX_REQUIREMENTS = 40
+const countMatches = (re) => (prdBody.match(re) || []).length
+const headingEstimate = Math.max(
+  countMatches(/^#{3}\s+\S/gm),
+  countMatches(/^#{4}\s+\S/gm),
+  countMatches(/^#{5}\s+\S/gm),
+  countMatches(/^#{6}\s+\S/gm)
+)
+const labelEstimate = new Set(prdBody.match(/\b[A-Z]{2,6}-\d{2,3}\b/g) || []).size
+const requirementEstimate = Math.min(MAX_REQUIREMENTS, Math.max(MIN_REQUIREMENTS, headingEstimate, labelEstimate))
+const CALL_CEILING = requirementEstimate * CALLS_PER_REQUIREMENT + BUDGET_OVERHEAD
+log(
+  `Search budget: ~${requirementEstimate} requirement(s) estimated from the PRD structure ` +
+    `(${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) × ${CALLS_PER_REQUIREMENT} call(s) each ` +
+    `+ ${BUDGET_OVERHEAD} overhead = ${CALL_CEILING} tool calls.`
+)
 const scopeBlock = singleRepo
   ? `THE ONE REPOSITORY YOU SEARCH — this run is scoped to it, and only it:
 ${repoBlock}
@@ -503,7 +546,13 @@ Determine whether any upstream contract, shared schema, event, library version, 
 
 Your structured output IS the deliverable. Nothing you read reaches anybody except through it, so an exhaustive investigation that ends without it is worth exactly as much as no investigation at all — and it is how this phase has failed in practice: the reconciler explored until it ran out of room and returned nothing, so the whole run aborted and the work was re-dispatched from zero.
 
-You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVERY requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call ${CALL_CEILING}, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not. Report thin coverage in \`evidenceSummary\` rather than spending more turns on it.`,
+You have roughly ${CALL_CEILING} tool calls — that figure is this PRD's own requirement count at ${CALLS_PER_REQUIREMENT} calls each, plus overhead, so it is sized to let you look at EVERY requirement. Spend it breadth-first: cover every requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call ${CALL_CEILING}, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not.
+
+AN UNEXAMINED REQUIREMENT IS NAMED, NEVER REPORTED AS \`absent\`. \`absent\` is a FINDING: it means you searched for the material and it is not there. "I ran out of budget before reaching it" is not that finding, and reporting it as one is the single most expensive error this phase can make. So return \`coverage\` on every run:
+- \`unexaminedRequirementIds\` — the id of EVERY requirement you did not actually search for, exactly as you numbered it in \`requirements\`. Empty when you covered them all, which is the expected outcome.
+- \`budgetExhausted\` — true if you stopped because you reached the ceiling rather than because the work was done.
+- \`note\` — one sentence on what was left and why, when either of the above is non-empty.
+Such a requirement still appears in \`requirements\` with its honest status, and the phase reports it as unexamined to its caller.`,
   {
     label: 'reconcile:reality-and-dependencies',
     phase: 'Reconciliation checks',
@@ -512,8 +561,21 @@ You have roughly ${CALL_CEILING} tool calls. Spend them breadth-first: cover EVE
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['requirements', 'evidenceSummary', 'dependencyChanges'],
+      required: ['requirements', 'evidenceSummary', 'dependencyChanges', 'coverage'],
       properties: {
+        // Required, so "I covered everything" is a STATED empty list rather than a silence
+        // the reduction has to interpret. A budget that cuts the input short must surface as
+        // a named, machine-readable finding — never as a requirement quietly called absent.
+        coverage: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['unexaminedRequirementIds', 'budgetExhausted'],
+          properties: {
+            unexaminedRequirementIds: { type: 'array', maxItems: 60, items: { type: 'string' } },
+            budgetExhausted: { type: 'boolean' },
+            note: { type: 'string' },
+          },
+        },
         requirements: {
           type: 'array',
           items: {
@@ -739,6 +801,40 @@ const requirements = reality.requirements.map((r, i) => {
   }
 })
 
+// ── AN UNEXAMINED REQUIREMENT IS NOT AN ABSENT ONE ──────────────────────────────
+//
+// `absent` is a finding — searched for, not there — and the phases downstream act on it by
+// building the thing. "Never looked at" reduces to the same three-letter status and is NOT
+// the same claim: it is the budget silently shrinking the input, which is the defect this
+// coverage contract exists to make visible. So the ids the reconciler names as unexamined
+// are carried on the requirement AND reported as their own list, and the phase says plainly
+// when its budget ran out.
+const cov = (reality && reality.coverage) || {}
+const unexaminedIds = new Set(
+  (Array.isArray(cov.unexaminedRequirementIds) ? cov.unexaminedRequirementIds : []).filter((x) => hasText(x)).map((x) => x.trim())
+)
+for (const r of requirements) r.examined = !unexaminedIds.has(r.id)
+const unexaminedRequirements = requirements
+  .filter((r) => !r.examined)
+  .map((r) => ({ id: r.id, requirement: r.requirement, reportedStatus: r.status }))
+const coverage = {
+  requirementCount: requirements.length,
+  examinedCount: requirements.length - unexaminedRequirements.length,
+  unexaminedRequirementIds: unexaminedRequirements.map((r) => r.id),
+  budgetExhausted: !!cov.budgetExhausted,
+  callCeiling: CALL_CEILING,
+  requirementEstimate,
+  note: hasText(cov.note) ? cov.note.trim() : null,
+  complete: unexaminedRequirements.length === 0,
+}
+if (!coverage.complete || coverage.budgetExhausted) {
+  log(
+    `Coverage shortfall: ${unexaminedRequirements.length} of ${requirements.length} requirement(s) went UNEXAMINED` +
+      `${coverage.budgetExhausted ? ` (the ${CALL_CEILING}-call ceiling was reached)` : ''} — ` +
+      `${coverage.unexaminedRequirementIds.join(', ') || 'none named'}. These are NOT findings of absence; their status is unestablished.`
+  )
+}
+
 if (evidenceViolations.length) {
   log(
     `Evidence enforcement: ${evidenceViolations.length} requirement status claim(s) could not be honoured — unevidenced, ` +
@@ -831,6 +927,9 @@ const ledger = {
   absentCount,
   removalWork: removalWork.length,
   evidenceViolations: evidenceViolations.length,
+  unexaminedCount: unexaminedRequirements.length,
+  budgetExhausted: coverage.budgetExhausted,
+  callCeiling: CALL_CEILING,
   ok: true,
 }
 
@@ -853,6 +952,10 @@ return {
   uiAuthority,
   dependencyChanges,
   evidenceViolations,
+  // What was actually looked at. `unexaminedRequirements` is a first-class finding: those
+  // requirements' statuses are unestablished, not established as absent.
+  coverage,
+  unexaminedRequirements,
   evidenceSummary: (reality && reality.evidenceSummary) || null,
   ledger,
 }

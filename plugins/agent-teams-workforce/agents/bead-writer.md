@@ -14,7 +14,7 @@ disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, Notebook
 skills: [agent-teams-workforce:beads-contract]
 model: haiku
 permissionMode: acceptEdits
-maxTurns: 12
+maxTurns: 30
 effort: low
 ---
 

@@ -39,6 +39,11 @@ function dispatchDeaths(...phases) {
   const set = new Set(named)
   return dispatchFailures.filter((f) => set.has(f.phase))
 }
+// The same deaths, shaped as the `dispatchFailed` contract a returning stage reports.
+function dispatchFailedReport(...phases) {
+  const deaths = dispatchDeaths(...phases)
+  return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
+}
 function settleSchemaName(o) {
   if (typeof o.schemaName === 'string' && o.schemaName) return o.schemaName
   const s = o.schema
@@ -100,7 +105,13 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   decision: { id?, title, context, drivers?, repoPath? },  // the architecture question
-//   sadPath: string,         // path to the arc42 SAD (ATW_SAD_PATH) — required
+//   sadPath: string,         // path to the arc42 SAD (ATW_SAD_PATH) — required. NOT in the
+//                            // product repo: the SAD is its own repository, and every
+//                            // SAD-reading dispatch is pointed here rather than at repoPath.
+//   sadExtract?: { constraints, solutionStrategy, crosscuttingConcepts },
+//                            // a packet an earlier pass of THIS run already extracted.
+//                            // Supplied -> the inventory and shard sessions are skipped.
+//                            // The mini returns its packet under the same key for that purpose.
 //   feedback?: string,       // optional upstream gate feedback to fold in
 //   maxLoops?: number,       // SAD maker-checker passes before decider deadlock (default 2)
 //   maxDecideLoops?: number, // re-proposal rounds after an inadmissible ruling (default 2)
@@ -409,6 +420,296 @@ const TRIAGE_SCHEMA = {
   },
 }
 
+// ── Phase -1: Extract SAD ──────────────────────────────────────────────────────
+//
+// THE ARCHITECTURE IS RULED AGAINST THE ARCHITECTURE THAT EXISTS.
+//
+// This mini used to dispatch its analysts and its decider with ZERO bytes of the SAD.
+// The decider's prompt was charter + decision header + proposals; `sadPath` was never
+// interpolated, so it was not given the document and was not told where it lives — and
+// its ruling was then written into §2/§4/§8 and promoted to effective. The analysts were
+// worse than blind: SURVEY_BOUND told them "your inputs are the framing above and the
+// SAD extract it carries" when the prompt carried no extract at all, and the only
+// repository they were given was the PRODUCT repo, while the SAD lives in another one.
+//
+// So the SAD is extracted ONCE per run, here, before anything is triaged or proposed,
+// and the same typed packet reaches every consumer. The design is trd-authoring.js's,
+// deliberately: one cheap inventory dispatch resolves the layout and lists the files
+// with their sizes, shardFiles() packs §8 into slices small enough to read IN FULL,
+// the shards run concurrently, and the SCRIPT merges the typed entries. No model reads
+// another model's shard and no session summarizes another's output.
+phase('Extract SAD')
+
+const isExtract = (x) =>
+  !!x && typeof x === 'object' && ['constraints', 'solutionStrategy', 'crosscuttingConcepts'].every((k) => Array.isArray(x[k]))
+// A packet the caller already holds is reused, not re-bought: the composite re-runs this
+// mini when its gate sends the ruling back, and the SAD cannot change between those passes.
+const suppliedExtract = isExtract(a.sadExtract) ? a.sadExtract : null
+if (suppliedExtract) log('SAD extract supplied by the caller from an earlier pass of this run — reused; the extractor is not dispatched')
+else log(`Extracting arc42 source feeds from the SAD at ${sadPath}`)
+
+const SHARD_TARGET_BYTES = 175000
+// A file ceiling as well as a byte one: sad-source-extractor runs with maxTurns 50, and
+// every assigned file costs at least one Read turn. 16 leaves room to finish even when
+// the inventory reported no sizes at all.
+const SHARD_MAX_FILES = 16
+const MAX_SHARDS = 8
+const ASSUMED_BYTES = 20000 // an inventory entry with no usable size is costed pessimistically
+
+const readingRule = `READING RULE (binding): read EVERY file assigned to you below, IN FULL — none of them is optional, and an index, README or table of contents is never read in place of the files it lists. Do NOT read any file outside the SAD, and do not survey the product repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.`
+
+// THE SAD IS NOT IN THE PRODUCT REPOSITORY. Every SAD-reading dispatch is pointed at the
+// SAD path and told so, because the product repoPath this mini carries is a different
+// repository and an extractor sent there finds no architecture and reports none.
+const sadWhere = `SAD location (AUTHORITATIVE — read here, and only here): ${sadPath}
+This path is NOT inside the product repository this decision is about. Do not look for the SAD under ${repo}, and do not substitute anything you find there for what the SAD states.`
+
+const feedSchema = (cap) => ({
+  type: 'array',
+  maxItems: cap,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'statement', 'source'],
+    properties: {
+      id: { type: 'string' },
+      statement: { type: 'string' },
+      source: { type: 'string' },
+    },
+  },
+})
+const extractSchema = (crosscuttingCap) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
+  properties: {
+    constraints: feedSchema(40),
+    solutionStrategy: feedSchema(40),
+    crosscuttingConcepts: feedSchema(crosscuttingCap),
+    sadLocation: { type: 'string' },
+    notes: { type: 'string' },
+  },
+})
+
+// One shard dispatch. `feeds` names the sections this session owns; every other feed in
+// its result is discarded by the merge, so a shard can never widen its own assignment.
+function extractShardAgent(label, feeds, files, crosscuttingCap) {
+  return settleAgent(
+    `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for an architecture decision. Do NOT author anything, do NOT change any file, and invent NOTHING the SAD does not state.
+
+${sadWhere}
+
+YOUR ASSIGNMENT — these arc42 sections and no others:
+${feeds.map((f) => `- ${f.title}`).join('\n')}
+
+FILES ASSIGNED TO YOU (${files.length}) — read every one of them in full:
+${files.map((f) => `- ${f}`).join('\n')}
+
+${readingRule}
+
+Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
+
+For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.`,
+    {
+      label,
+      phase: 'Extract SAD',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:sad-source-extractor',
+      schema: extractSchema(crosscuttingCap),
+    }
+  )
+}
+
+// Greedy, size-ordered packing in the order the inventory gave it, so related concept
+// files stay together and a re-run shards identically.
+function shardFiles(entries) {
+  const shards = []
+  let current = []
+  let bytes = 0
+  for (const e of entries) {
+    const size = Number.isFinite(e.bytes) && e.bytes > 0 ? e.bytes : ASSUMED_BYTES
+    const full = current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)
+    if (full && shards.length < MAX_SHARDS - 1) {
+      shards.push(current)
+      current = []
+      bytes = 0
+    }
+    current.push(e.path)
+    bytes += size
+  }
+  if (current.length) shards.push(current)
+  return shards
+}
+
+const fileList = (x) =>
+  (Array.isArray(x) ? x : [])
+    .map((e) => (typeof e === 'string' ? { path: e, bytes: 0 } : e))
+    .filter((e) => e && typeof e.path === 'string' && e.path.trim())
+    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
+
+let sadExtract = suppliedExtract
+
+if (!sadExtract) {
+  // ── Step 1: inventory. Cheap, read-only, and the only thing that knows the layout.
+  const inventory = await settleAgent(
+    `You are READ-ONLY and you are taking an INVENTORY, not an extract. Do not extract any content, do not summarize anything, and change no file.
+
+${sadWhere}
+
+Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes:
+- Section 2 — Constraints
+- Section 4 — Solution Strategy
+- Section 8 — Crosscutting Concepts
+
+A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere. If a section has no files at all, return it as an empty array.`,
+    {
+      label: 'inventory:sad',
+      phase: 'Extract SAD',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:sad-source-extractor',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['constraintsFiles', 'solutionStrategyFiles', 'crosscuttingFiles'],
+        properties: {
+          constraintsFiles: { $ref: '#/$defs/files' },
+          solutionStrategyFiles: { $ref: '#/$defs/files' },
+          crosscuttingFiles: { $ref: '#/$defs/files' },
+          sadLocation: { type: 'string' },
+          layout: { type: 'string' },
+          notes: { type: 'string' },
+        },
+        $defs: {
+          files: {
+            type: 'array',
+            maxItems: 400,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path'],
+              properties: { path: { type: 'string' }, bytes: { type: 'number' } },
+            },
+          },
+        },
+      },
+    }
+  )
+  if (!inventory) {
+    return {
+      ok: false,
+      stage: 'extract',
+      error: `SAD inventory produced nothing — the files holding sections 2, 4 and 8 at ${sadPath} could not be listed, so no extraction was attempted. Nothing was triaged, proposed or ruled.`,
+      ...dispatchFailedReport('Extract SAD'),
+    }
+  }
+
+  const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
+  const crossEntries = fileList(inventory.crosscuttingFiles)
+  const crossShards = shardFiles(crossEntries)
+  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+
+  // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
+  const jobs = []
+  if (coreFiles.length) {
+    jobs.push({
+      label: 'extract:sad-core',
+      feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
+      files: coreFiles,
+    })
+  }
+  crossShards.forEach((files, i) => {
+    jobs.push({
+      label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
+      feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
+      files,
+    })
+  })
+  if (!jobs.length) {
+    return {
+      ok: false,
+      stage: 'extract',
+      error: `SAD inventory listed no files for sections 2, 4 or 8 at ${sadPath} — there is nothing to rule against, so no architecture decision was made.`,
+    }
+  }
+
+  const results = await parallel(
+    jobs.map((j) => () => extractShardAgent(j.label, j.feeds, j.files, j.feeds.some((f) => f.key === 'crosscuttingConcepts') ? 60 : 40))
+  )
+
+  // ── Step 3: the SCRIPT merges, in shard order, de-duplicated by stable id.
+  const merged = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
+  const seen = { constraints: new Set(), solutionStrategy: new Set(), crosscuttingConcepts: new Set() }
+  const notes = []
+  const deadShards = []
+  jobs.forEach((job, i) => {
+    const out = results[i]
+    if (!out) {
+      deadShards.push(job)
+      return
+    }
+    if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${job.label}] ${out.notes.trim()}`)
+    for (const feed of job.feeds) {
+      for (const entry of Array.isArray(out[feed.key]) ? out[feed.key] : []) {
+        if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id.trim()) continue
+        let id = entry.id.trim()
+        if (seen[feed.key].has(id)) {
+          let n = 2
+          while (seen[feed.key].has(`${id}#${n}`)) n++
+          id = `${id}#${n}`
+        }
+        seen[feed.key].add(id)
+        merged[feed.key].push({ id, statement: String(entry.statement || ''), source: String(entry.source || '') })
+      }
+    }
+  })
+
+  // ── A SHARD THAT DIED NEVER SHRINKS THE PACKET QUIETLY ─────────────────────────
+  // A ruling made on part of the SAD is the defect this phase exists to fix: the
+  // decider cannot tell a constraint the SAD does not state from one nobody read, and
+  // its ruling is written back into the document as effective architecture. So a dead
+  // shard ENDS the run before triage, naming every file that went unread.
+  if (deadShards.length) {
+    const unread = deadShards.flatMap((j) => j.files)
+    log(`SAD extraction INCOMPLETE — ${deadShards.length} of ${jobs.length} shard(s) returned nothing; ${unread.length} file(s) went unread`)
+    return {
+      ok: false,
+      stage: 'extract',
+      error: `SAD extraction is INCOMPLETE: ${deadShards.length} of ${jobs.length} shard(s) returned nothing, so ${unread.length} SAD file(s) were never read. NO architecture decision was made — a ruling derived from part of the architecture is wrong output, not cheaper output, and it would be written back into §2/§4/§8 as effective. Unread: ${unread.join(', ')}`,
+      unreadSadFiles: unread,
+      deadShards: deadShards.map((j) => ({ label: j.label, files: j.files })),
+      partialSadExtract: merged,
+      ...dispatchFailedReport('Extract SAD'),
+    }
+  }
+
+  sadExtract = {
+    ...merged,
+    sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadPath,
+    notes: notes.join('\n'),
+  }
+  log(`SAD extracted whole: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ${merged.crosscuttingConcepts.length} crosscutting concept(s) from ${jobs.length} shard(s)`)
+}
+if (!sadExtract) return { ok: false, stage: 'extract', error: 'SAD extraction produced nothing', ...dispatchFailedReport('Extract SAD') }
+
+// Rendered as lines rather than JSON: the same entries, materially fewer bytes, and
+// this packet is interpolated into every analyst prompt, the decider's and the
+// re-proposal round's. The id is what downstream documents cite, so it leads.
+const renderFeed = (title, entries) =>
+  `${title} (${entries.length}):\n` +
+  (entries.length ? entries.map((e) => `- [${e.id}] ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
+const sadExtractText = [
+  renderFeed('§2 Constraints', sadExtract.constraints),
+  renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
+  renderFeed('§8 Crosscutting Concepts', sadExtract.crosscuttingConcepts),
+].join('\n\n')
+
+// The block every SAD-consuming prompt in this file carries. It is the architecture that
+// EXISTS; the decision under consideration changes it, and cannot be made without it.
+const sadBlock = `THE ARCHITECTURE AS IT STANDS — the arc42 SAD source feed (§2, §4, §8), extracted whole for this run from ${sadExtract.sadLocation || sadPath}.
+This is the document your work is ruled against and written back into. Every entry below is current, normative state. Cite entries by the id in brackets.
+${sadExtract.notes ? `Extractor notes: ${sadExtract.notes}\n` : ''}
+${sadExtractText}`
+
 // ── Phase 0: Triage ────────────────────────────────────────────────────────────
 // ONE read-only agent sizes the panel to the decision before anything is dispatched,
 // because running the full 23-agent fan-out on a question the SAD already answers is
@@ -426,6 +727,7 @@ const forcedDimensions = Array.isArray(a.dimensions)
 let triage = null
 let settled = false
 let verifiedDecisions = []
+let verifiedDecisionText = ''
 let activeDimensions = []
 if (a.forceFullPanel === true) {
   activeDimensions = ALL_DIMENSIONS
@@ -537,6 +839,13 @@ a FAILURE, not an ambiguity — the cost of a false confirm is that an unexamine
 architecture decision ships, while the cost of a false denial is only that the
 full analysis runs.
 
+ALSO RETURN THE TEXT. For each reference you confirm, put its VERBATIM content in
+\`text\` — the decision as the SAD states it, not your summary of it. The
+architecture-decider is asked to rule by citing these decisions and cannot open the
+document; a name with no text is a citation it has to take on trust, which is the
+failure this verification exists to prevent. A reference you could not locate has no
+text, which is another way of saying it failed.
+
 SAD location: ${sadPath}
 Cited prior decisions: ${cited.join('; ')}
 Triage rationale: ${triage.rationale}
@@ -564,6 +873,9 @@ ${decisionHeader}`,
                     exists: { type: 'boolean' },
                     current: { type: 'boolean' },
                     onPoint: { type: 'boolean' },
+                    // The cited decision as the SAD states it. The decider rules by
+                    // citing these and cannot open the document — see the prompt.
+                    text: { type: 'string' },
                     note: { type: 'string' },
                   },
                 },
@@ -581,6 +893,12 @@ ${decisionHeader}`,
       } else {
         settled = true
         verifiedDecisions = cited
+        // The TEXT of what was verified, carried to the decider. Without it the settled
+        // branch asked for a ruling that cites documents the decider cannot open.
+        verifiedDecisionText = (Array.isArray(verification.perReference) ? verification.perReference : [])
+          .filter((r) => r && typeof r.text === 'string' && r.text.trim())
+          .map((r) => `--- ${r.reference}${r.note ? ` (${r.note})` : ''}\n${r.text.trim()}`)
+          .join('\n\n')
         log(`Triage: SETTLED — ${triage.rationale}`)
         log(`Citations VERIFIED by sad-conformance-reviewer: ${cited.join('; ')} — skipping the analyst fan-out and the challenge wave`)
       }
@@ -624,7 +942,12 @@ ${decisionHeader}`,
 // the decider keeps the session's effort. And an explicit reading budget in the
 // prompt, because effort alone does not stop a tool loop.
 const SURVEY_BOUND = `READING BUDGET — this is a bounded proposal, not a codebase audit.
-Your inputs are the framing above and the SAD extract it carries. Reason from those first.
+Your inputs are the framing above and the SAD source feed printed with it — §2 Constraints,
+§4 Solution Strategy and §8 Crosscutting Concepts, extracted WHOLE for this run. That is the
+architecture you are proposing against, it is complete, and it is already in this prompt.
+Reason from it first, and cite the entries you rely on by their bracketed id.
+Do NOT go looking for the SAD: it lives in a different repository from the product repo named
+above, you have its content here, and nothing you could find under the product repo overrides it.
 Open files ONLY to resolve a specific question the framing leaves genuinely unanswered, and
 prefer one targeted search over browsing. Do not survey the repository, do not enumerate
 services or repositories to build a picture, and do not read a file to confirm something the
@@ -741,7 +1064,7 @@ Propose from YOUR lens only. The other axes above are covered by the analysts di
 
   const jobs = pending.map((m) => () =>
     settleAgent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${sadBlock}\n\n${frameBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
       {
         label: `proposals:${m.lens}`,
         phase: 'Proposals',
@@ -764,6 +1087,8 @@ ${wantsContextMap ? `
 - \`failureModes\`: model the failure modes the proposed directions must withstand — DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages. For each, name the failure, what it affects, and its blast radius.` : ''}
 
 ${decisionHeader}
+
+${sadBlock}
 
 ${frameBlock}
 
@@ -1037,7 +1362,10 @@ const evidenceBlock = settled
 Triage rationale: ${triage.rationale}
 Relevant prior decisions (independently verified as existing, current, and on point): ${verifiedDecisions.join('; ') || '(none)'}
 
-Rule by CITING those prior decisions rather than re-deriving the analysis. If you find they do not actually answer this question, say so in the ruling and impose a constraint that the decision be re-run with forceFullPanel.`
+THE PRIOR DECISIONS, AS THE SAD STATES THEM:
+${verifiedDecisionText || '(the verifier confirmed these references but returned no text for them — treat the citation as unevidenced: rule only on what the SAD source feed above actually states, and if it does not answer this question, say so)'}
+
+Rule by CITING those prior decisions — the text is above and in the source feed; rule on it rather than re-deriving the analysis. If you find they do not actually answer this question, say so in the ruling and impose a constraint that the decision be re-run with forceFullPanel.`
   : `Proposals:
 ${proposalsText}
 
@@ -1107,6 +1435,8 @@ const DECISION_SCHEMA = {
 
 const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architecture given the evidence below. You do not analyze and you do not write the SAD.
 
+YOU HAVE THE SAD. Its source feed (§2, §4, §8) is printed below, extracted whole for this run — you are not ruling from the proposals alone. Your ruling is written back into those sections and becomes effective architecture, so rule AGAINST what they already state: an option that contradicts a standing entry is either wrong or is a deliberate supersession you must say you are making, naming the entry id. Do not go looking for the SAD on disk; it is in another repository and you have its content here.
+
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
 - If NO proposed option can be ruled on, set admissible=false and leave chosenApproach empty. Populate blockingRules with the specific rules that eliminated every option. This is a reportable outcome, not a failure to do your job — do NOT manufacture a ruling to avoid it, and do NOT dress a rejection up as a decision.
@@ -1150,6 +1480,8 @@ Blocking challenges must be resolved by the ruling or the ruling is invalid.`
 
 ${decisionHeader}
 
+${sadBlock}
+
 ${evidence}${persistBrief(ART, 'architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
     {
       label: round === 1 ? 'decide:ruling' : `decide:ruling-r${round}`,
@@ -1189,7 +1521,7 @@ Propose a NEW option set. Requirements for this round:
 
   const reJobs = activeMakers.map((m) => () =>
     settleAgent(
-      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${frameBlock}\n\n${blockingBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
+      `${rulingsBlock}${m.ask}\n\n${CONTESTED_GUIDE}\n\n${decisionHeader}\n\n${sadBlock}\n\n${frameBlock}\n\n${blockingBlock}\n\n${SURVEY_BOUND}${persistBrief(ART, `architecture-proposal-${m.dim}.json`, PROPOSAL_WHAT)}`,
       { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA, effort: 'low' }
     )
   )
@@ -1273,6 +1605,7 @@ if (!admissible) {
     panelDimensions: activeDimensions,
     challengeWave,
     replayed: replaySummary(),
+    sadExtract,
     proposals,
     contextMap,
     failureModes,
@@ -1776,6 +2109,7 @@ return {
   // Which intermediates this run read off disk instead of authoring. The caller records it on
   // the run journal, so a cheap resumed attempt is distinguishable from a full cold panel.
   replayed: replaySummary(),
+  sadExtract,
   proposals,
   tradeoffs: proposals.map((p) => ({ lens: p.lens, recommendation: p.recommendation, options: p.options })),
   contextMap,

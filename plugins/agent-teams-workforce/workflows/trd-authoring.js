@@ -186,6 +186,18 @@ const prdRef = prd.path || prd.id || '(inline content)'
 const sadRef = sad.path || '(SAD path not provided — ask before extracting)'
 const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-per-section)'
 
+// ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────────
+//
+// An extractor or author that DIED did not produce a TRD the checkers found wanting — it
+// never ran. Reported as an ordinary failure, the caller adjudicates it at its gate,
+// every deterministic check fails against the artifact that does not exist, the gate
+// loops, the re-dispatch meets the same wall, and the budget is spent. So a death in the
+// producing phases is reported AS a death: no gate dispatch, no retry spent.
+const died = (...phases) => {
+  const deaths = dispatchDeaths(...phases)
+  return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
+}
+
 // ── Phase 1: Extract SAD ──────────────────────────────────────────────────────
 // Read-only extraction of the four arc42 source sections into a stably-identified
 // packet. The extractor authors no TRD content — it only normalizes what the SAD
@@ -206,68 +218,268 @@ const suppliedExtract = isExtract(a.sadExtract) ? a.sadExtract : null
 if (suppliedExtract) log('SAD extract supplied by the caller from an earlier pass of this run — reused; the extractor is not dispatched')
 else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 
-const sadExtract = suppliedExtract || await settleAgent(
-  `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
+// ── THE SAD IS READ WHOLE, IN SHARDS — IT IS NEVER TRUNCATED ────────────────────
+//
+// This dispatch used to carry "read the SAD and the files it points at — at most 12
+// files". §8 (Crosscutting Concepts) is a DIRECTORY: 67 concept files, 787KB. Under a
+// 12-file cap the extractor could not open them, so it read §8's README — an index —
+// and reported the concepts it had never opened. The TRD, whose entire job is to be
+// derived from the PRD and the SAD, was then authored from a summary of the
+// architecture. That is wrong output, not cheaper output.
+//
+// The constraint that matters is "never read OUTSIDE the SAD"; the file count was a
+// proxy for it that became a cap on the authoritative input. So the anti-sprawl rule
+// stays verbatim in spirit and the volume is handled by SHARDING instead: §2+§4 in one
+// session (~239KB), §8 split across concurrent sessions of roughly 175KB each, every
+// assigned file read IN FULL. The SCRIPT merges the typed entries — no model merges
+// another model's shards, and no session summarizes another's output.
+//
+// Workflow scripts have no filesystem, so the §8 file list cannot be globbed here. It
+// comes from one cheap inventory dispatch, which is also what resolves single-file vs
+// one-file-per-section layout — the same detection the extractor already does.
+const SHARD_TARGET_BYTES = 175000
+// A file ceiling as well as a byte one: sad-source-extractor runs with maxTurns 50, and
+// every assigned file costs at least one Read turn (a large one costs two). 16 leaves the
+// session room to finish even when the inventory reported no sizes at all.
+const SHARD_MAX_FILES = 16
+const MAX_SHARDS = 8
+const ASSUMED_BYTES = 20000 // an inventory entry with no usable size is costed pessimistically
+
+const readingRule = `READING RULE (binding): read EVERY file assigned to you below, IN FULL — none of them is optional, and an index, README or table of contents is never read in place of the files it lists. Do NOT read any file outside the SAD, and do not survey this repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.`
+
+// The SAD's own sections are finite and this is a normalization, not a survey. A feed
+// longer than its cap is the extractor reconstructing architecture from code, which the
+// reading rule forbids. The cap is now PER SHARD, not per document — §8 is read in
+// slices, so each slice gets room for what its own files actually state.
+const feedSchema = (cap) => ({
+  type: 'array',
+  maxItems: cap,
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'statement', 'source'],
+    properties: {
+      id: { type: 'string' },
+      statement: { type: 'string' },
+      source: { type: 'string' },
+    },
+  },
+})
+const extractSchema = (crosscuttingCap) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
+  properties: {
+    constraints: feedSchema(40),
+    solutionStrategy: feedSchema(40),
+    crosscuttingConcepts: feedSchema(crosscuttingCap),
+    sadLocation: { type: 'string' },
+    notes: { type: 'string' },
+  },
+})
+
+// One shard dispatch. `feeds` names the sections this session owns; every other feed in
+// its result is discarded by the merge, so a shard can never widen its own assignment.
+function extractShardAgent(label, feeds, files, crosscuttingCap) {
+  return settleAgent(
+    `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
 
 SAD location: ${sadRef}
 SAD layout: ${sadLayout}
 
-READING BUDGET (binding): the SAD is at the location above. Read it and the files it points at — at most 12 files — and do not survey the repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.
+YOUR ASSIGNMENT — these arc42 sections and no others:
+${feeds.map((f) => `- ${f.title}`).join('\n')}
 
-Locate and normalize each source feed reliably across both single-file and one-file-per-section arc42 layouts:
+FILES ASSIGNED TO YOU (${files.length}) — read every one of them in full:
+${files.map((f) => `- ${f}`).join('\n')}
+
+${readingRule}
+
+Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
+
+For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.`,
+    {
+      label,
+      phase: 'Extract SAD',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:sad-source-extractor',
+      schema: extractSchema(crosscuttingCap),
+    }
+  )
+}
+
+// Greedy, size-ordered packing over the inventory in the order the inventory gave it,
+// so related concept files stay together and a re-run shards identically. Derived from
+// the real file sizes rather than a hardcoded list — the concept set grows as Epics
+// complete, and a list would rot the first time one is added.
+function shardFiles(entries) {
+  const shards = []
+  let current = []
+  let bytes = 0
+  for (const e of entries) {
+    const size = Number.isFinite(e.bytes) && e.bytes > 0 ? e.bytes : ASSUMED_BYTES
+    const full = current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)
+    if (full && shards.length < MAX_SHARDS - 1) {
+      shards.push(current)
+      current = []
+      bytes = 0
+    }
+    current.push(e.path)
+    bytes += size
+  }
+  if (current.length) shards.push(current)
+  return shards
+}
+
+const fileList = (x) =>
+  (Array.isArray(x) ? x : [])
+    .map((e) => (typeof e === 'string' ? { path: e, bytes: 0 } : e))
+    .filter((e) => e && typeof e.path === 'string' && e.path.trim())
+    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
+
+let sadExtract = suppliedExtract
+let sadUnread = []
+
+if (!sadExtract) {
+  // ── Step 1: inventory. Cheap, read-only, and the only thing that knows the layout.
+  const inventory = await settleAgent(
+    `You are READ-ONLY and you are taking an INVENTORY, not an extract. Do not extract any content, do not summarize anything, and change no file. Work within the repository at: ${repo}
+
+SAD location: ${sadRef}
+SAD layout: ${sadLayout}
+
+Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes:
 - Section 2 — Constraints
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
 
-For every entry: assign a stable ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If a section is absent, return it as an empty array — do not fabricate.`,
-  {
-    label: 'extract:sad',
-    phase: 'Extract SAD',
-    effort: 'low',
-    agentType: 'agent-teams-workforce:sad-source-extractor',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['constraints', 'solutionStrategy', 'crosscuttingConcepts'],
-      properties: {
-        constraints: { $ref: '#/$defs/feed' },
-        solutionStrategy: { $ref: '#/$defs/feed' },
-        crosscuttingConcepts: { $ref: '#/$defs/feed' },
-        sadLocation: { type: 'string' },
-        notes: { type: 'string' },
-      },
-      $defs: {
-        feed: {
-          type: 'array',
-          // The SAD's own sections are finite and this is a normalization, not a survey.
-          // A feed longer than this is the extractor reconstructing architecture from code,
-          // which the brief above forbids.
-          maxItems: 40,
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['id', 'statement', 'source'],
-            properties: {
-              id: { type: 'string' },
-              statement: { type: 'string' },
-              source: { type: 'string' },
+A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere in this repository or in another repository. If a section has no files at all, return it as an empty array.`,
+    {
+      label: 'inventory:sad',
+      phase: 'Extract SAD',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:sad-source-extractor',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['constraintsFiles', 'solutionStrategyFiles', 'crosscuttingFiles'],
+        properties: {
+          constraintsFiles: { $ref: '#/$defs/files' },
+          solutionStrategyFiles: { $ref: '#/$defs/files' },
+          crosscuttingFiles: { $ref: '#/$defs/files' },
+          sadLocation: { type: 'string' },
+          layout: { type: 'string' },
+          notes: { type: 'string' },
+        },
+        $defs: {
+          files: {
+            type: 'array',
+            maxItems: 400,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path'],
+              properties: { path: { type: 'string' }, bytes: { type: 'number' } },
             },
           },
         },
       },
-    },
+    }
+  )
+  if (!inventory) {
+    return {
+      ok: false,
+      stage: 'extract',
+      reason: 'SAD inventory produced nothing — the files holding sections 2, 4 and 8 could not be listed, so no extraction was attempted. Nothing was read and nothing was authored.',
+      ...died('Extract SAD'),
+    }
   }
-)
-// ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────────
-//
-// An extractor or author that DIED did not produce a TRD the checkers found wanting — it
-// never ran. Reported as an ordinary failure, the caller adjudicates it at its gate,
-// every deterministic check fails against the artifact that does not exist, the gate
-// loops, the re-dispatch meets the same wall, and the budget is spent. So a death in the
-// producing phases is reported AS a death: no gate dispatch, no retry spent.
-const died = (...phases) => {
-  const deaths = dispatchDeaths(...phases)
-  return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
+
+  const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
+  const crossEntries = fileList(inventory.crosscuttingFiles)
+  const crossShards = shardFiles(crossEntries)
+  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+
+  // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
+  const jobs = []
+  if (coreFiles.length) {
+    jobs.push({
+      label: 'extract:sad-core',
+      feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
+      files: coreFiles,
+    })
+  }
+  crossShards.forEach((files, i) => {
+    jobs.push({
+      label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
+      feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
+      files,
+    })
+  })
+  if (!jobs.length) {
+    return {
+      ok: false,
+      stage: 'extract',
+      reason: `SAD inventory listed no files for sections 2, 4 or 8 at ${sadRef} — there is nothing to extract, so no TRD was authored.`,
+    }
+  }
+
+  const results = await parallel(jobs.map((j) => () => extractShardAgent(j.label, j.feeds, j.files, j.feeds.some((f) => f.key === 'crosscuttingConcepts') ? 60 : 40)))
+
+  // ── Step 3: the SCRIPT merges. Each shard contributes only the feeds it was assigned,
+  // in shard order, de-duplicated by stable id. No model sees another model's shard.
+  const merged = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
+  const seen = { constraints: new Set(), solutionStrategy: new Set(), crosscuttingConcepts: new Set() }
+  const notes = []
+  const deadShards = []
+  jobs.forEach((job, i) => {
+    const out = results[i]
+    if (!out) {
+      deadShards.push(job)
+      return
+    }
+    if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${job.label}] ${out.notes.trim()}`)
+    for (const feed of job.feeds) {
+      for (const entry of Array.isArray(out[feed.key]) ? out[feed.key] : []) {
+        if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || !entry.id.trim()) continue
+        let id = entry.id.trim()
+        if (seen[feed.key].has(id)) {
+          // Two shards minted the same content-anchored id for different text. Keeping
+          // both, disambiguated, loses nothing; dropping one would silently shrink §8.
+          let n = 2
+          while (seen[feed.key].has(`${id}#${n}`)) n++
+          id = `${id}#${n}`
+        }
+        seen[feed.key].add(id)
+        merged[feed.key].push({ id, statement: String(entry.statement || ''), source: String(entry.source || '') })
+      }
+    }
+  })
+
+  // ── A SHARD THAT DIED NEVER SHRINKS THE PACKET QUIETLY ─────────────────────────
+  // A partial §8 that looks whole is the exact defect this sharding was built to fix:
+  // the TRD author cannot tell a concept the SAD does not state from one nobody read.
+  // So a dead shard ENDS the run, naming every file that went unread.
+  if (deadShards.length) {
+    sadUnread = deadShards.flatMap((j) => j.files)
+    log(`SAD extraction INCOMPLETE — ${deadShards.length} of ${jobs.length} shard(s) returned nothing; ${sadUnread.length} file(s) went unread`)
+    return {
+      ok: false,
+      stage: 'extract',
+      reason: `SAD extraction is INCOMPLETE: ${deadShards.length} of ${jobs.length} shard(s) returned nothing, so ${sadUnread.length} SAD file(s) were never read. No TRD was authored — a TRD derived from part of the architecture is wrong output, not cheaper output. Unread: ${sadUnread.join(', ')}`,
+      unreadSadFiles: sadUnread,
+      deadShards: deadShards.map((j) => ({ label: j.label, files: j.files })),
+      partialSadExtract: merged,
+      ...died('Extract SAD'),
+    }
+  }
+
+  sadExtract = {
+    ...merged,
+    sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadRef,
+    notes: notes.join('\n'),
+  }
+  log(`SAD extracted whole: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ${merged.crosscuttingConcepts.length} crosscutting concept(s) from ${jobs.length} shard(s)`)
 }
 if (!sadExtract) return { ok: false, stage: 'extract', reason: 'SAD extraction produced nothing', ...died('Extract SAD') }
 

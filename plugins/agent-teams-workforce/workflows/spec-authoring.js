@@ -131,7 +131,11 @@ async function settleAgent(prompt, opts) {
 //                                 // the spec documents themselves are handed on as paths.
 //
 // returns { ok, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
-// acceptanceCriteria, definitionOfDone, reviewFindings, decision, outOfRepoFindings, note }
+// acceptanceCriteria, definitionOfDone, reviewFindings, decision, outOfRepoFindings,
+// coverageShortfalls, criteriaShortfall, note } where coverageShortfalls names every maker
+// that could not cover the repository within its reading budget (empty is the expected
+// case) and criteriaShortfall names the acceptance criteria the 80-item cap cut off (null
+// is the expected case)
 // where story is the ONE Story bead specification this Spec pairs with (a Spec and its
 // Story are created together; nothing here writes to .beads — the caller writes it with bd):
 //   story: {
@@ -150,6 +154,23 @@ async function settleAgent(prompt, opts) {
 
 // ── Schemas (strict: additionalProperties:false + explicit required) ─────────────
 
+// A BUDGET MUST NEVER SHRINK AN INPUT SILENTLY.
+//
+// The reading budget in ctxBlock() bounds SCOPE — one repository — and caps the number of
+// files at a figure above the real corpus. A maker that still cannot cover the repository
+// says so HERE, in a typed field the script collects and hands to its caller, instead of
+// emitting a partial contract that reads exactly like a complete one. Absent means the
+// maker covered what it needed, which is the expected case.
+const COVERAGE_SHORTFALL_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['filesRead', 'uncovered'],
+  properties: {
+    filesRead: { type: 'number' },
+    uncovered: { type: 'string' },
+  },
+}
+
 const SPEC_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -159,6 +180,7 @@ const SPEC_SCHEMA = {
     summary: { type: 'string' },
     content: { type: 'string' },
     openQuestions: { type: 'array', maxItems: 15, items: { type: 'string' } },
+    coverageShortfall: COVERAGE_SHORTFALL_SCHEMA,
     // The SAD entry ids this artifact was designed against, cited as the SAD tags them.
     // A spec that cites a decision can be found again when that decision changes; one
     // that cites a section number cannot, because a section number moves and a tag does not.
@@ -173,10 +195,19 @@ const AC_SCHEMA = {
   properties: {
     acceptanceCriteria: {
       type: 'array',
-      // One repo's Spec. Happy path, error paths and boundaries for one Story's worth of
-      // behaviour do not need more than this, and every criterion is re-read by the
-      // reviewer, the decider, decomposition and every test writer downstream.
-      maxItems: 40,
+      // One repo's Spec. The old cap of 40 was asserted, not measured, and the measurement
+      // contradicts it: across the 147 PRDs in this project the given/when/then criteria the
+      // PRD ITSELF states run to a max of 68, median 33, mean 34.2, and 46 of them — 31% —
+      // already exceed 40 before this maker adds the error paths and boundary conditions the
+      // prompt demands of it. A criterion dropped here is a test tdd-red never writes and a
+      // behaviour Green never builds, and the schema drops it silently.
+      //
+      // 80 clears the worst single-repo case (68) with room for the error paths on top. The
+      // cap is PER REPO, so a multi-repo PRD splits this load across its Stories; a
+      // single-repo one does not, which is the case this is sized for. It is a guard against
+      // a runaway enumeration, not a budget — a maker that would exceed it reports
+      // `criteriaShortfall` rather than truncating.
+      maxItems: 80,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -418,6 +449,9 @@ async function replayStory(a, repoPath, epic) {
     spec: { id: s.id || null, title: s.title || null, service: s.service || null, repoPath },
     specPaths,
     outOfRepoFindings: Array.isArray(saved.outOfRepoFindings) ? saved.outOfRepoFindings : [],
+    // No maker ran on a replay, so no maker reported a shortfall. The shape stays uniform.
+    coverageShortfalls: [],
+    criteriaShortfall: null,
     // The summary is a navigation aid downstream and the documents are the contract. An
     // empty one makes the consumer fall back to the TRD summary rather than believe this.
     apiSpec: { summary: '' },
@@ -441,7 +475,20 @@ function ctxBlock(s, trd, constraints) {
     // Without a stated bound, a session at inherited effort surveys a ~60-repository
     // polyrepo looking for context it was already handed, and that unbounded survey —
     // not the authoring — is what dominates the cost of this phase.
-    'READING BUDGET (binding): the packet above is your source. Read at most 15 files, and only inside the repository named above — never survey other repositories. Prefer one targeted search over a directory walk. If a fact you need is genuinely not in the packet and not in those files, record it as an open question rather than searching further for it.',
+    // THE SCOPE IS THE BUDGET; THE FILE COUNT IS NOT.
+    //
+    // The anti-sprawl intent — one repository, never the estate — is the part that was
+    // right, and it is unchanged. The file count beside it was not: 15, against repositories
+    // that hold 36 to 62 first-party source files (880 in the web app). These three makers
+    // produce the OpenAPI contract, the acceptance criteria and the Definition of Done that
+    // Red and Green build against, so a cap below the real corpus does not make the spec
+    // cheaper — it makes it partial, and every test and every implementation downstream
+    // inherits the omission without anyone seeing it happen.
+    //
+    // So the cap is now above the corpus, and reaching it is a REPORTED event rather than a
+    // silent truncation: a maker that cannot cover the repository says so in
+    // `coverageShortfall`, which travels out of this mini with the spec set.
+    'READING BUDGET (binding on SCOPE, not on thoroughness): the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories, ever. Within it, read what the spec actually requires: prefer one targeted search over a directory walk, never re-open a file you have already read, and stop reading a file once it has told you what you needed. Read at most 80 files. If you reach that cap with the repository still not adequately covered for the artifact you are authoring, DO NOT quietly author a partial contract: return `coverageShortfall` with the number of files you read and one sentence naming what you could not cover, and record the specific gaps as open questions. A spec that states what it could not establish is usable; one that silently omits it is not.',
     constraints && constraints.length
       ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
@@ -533,6 +580,22 @@ async function main(a) {
       acceptanceCriteria: AC_SCHEMA.properties.acceptanceCriteria,
       definitionOfDone: DOD_SCHEMA.properties.definitionOfDone,
       notes: { type: 'string' },
+      // The criteria maker gets the same escape as the contract makers: the acceptance
+      // criteria and the Definition of Done are what Red and Green build against, so a
+      // repository it could not cover must reach the caller as a stated finding.
+      coverageShortfall: COVERAGE_SHORTFALL_SCHEMA,
+      // …and the same rule applied to the OTHER limit this maker works under. The 80-criteria
+      // cap is a guard against runaway enumeration; where it binds, what it cut off is named
+      // rather than dropped, because the schema's own truncation is invisible downstream.
+      criteriaShortfall: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['omittedCount', 'omitted'],
+        properties: {
+          omittedCount: { type: 'number' },
+          omitted: { type: 'string' },
+        },
+      },
     },
   }
 
@@ -572,7 +635,7 @@ ${ctx}${contractsBrief}`,
       settleAgent(
         `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. At most 40 of them, each clause under 30 words; cover every behaviour once rather than enumerating variants of the same one.
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, keep each clause under 30 words, and stay within 80 criteria. If covering this repository's behaviour honestly needs more than 80, do not silently drop the remainder: return the 80 that matter most and report \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered.
 2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most 20 items.
 
 ${ctx}${criteriaBrief}`,
@@ -594,6 +657,28 @@ ${ctx}${criteriaBrief}`,
       ? { acceptanceCriteria: criteriaDraft.acceptanceCriteria, notes: criteriaDraft.notes }
       : null,
     dod: criteriaDraft ? { definitionOfDone: criteriaDraft.definitionOfDone, notes: criteriaDraft.notes } : null,
+  }
+
+  for (const [artifact, draft] of [
+    ['contracts', contractsDraft],
+    ['data-model', dataModelSpecDraft],
+    ['criteria', criteriaDraft],
+  ]) {
+    const sf = draft && draft.coverageShortfall
+    const one = sf && typeof sf === 'object' ? sf : draft && draft.apiSpec && draft.apiSpec.coverageShortfall
+    if (one && typeof one === 'object') {
+      log(`Coverage shortfall (${artifact}): ${one.filesRead} file(s) read in ${repoPath} — not covered: ${String(one.uncovered || '').slice(0, 200)}`)
+    }
+  }
+  const criteriaShortfall =
+    criteriaDraft && criteriaDraft.criteriaShortfall && typeof criteriaDraft.criteriaShortfall === 'object'
+      ? { repoPath, ...criteriaDraft.criteriaShortfall }
+      : null
+  if (criteriaShortfall) {
+    log(
+      `Acceptance-criteria shortfall: ${criteriaShortfall.omittedCount} criterion/criteria omitted at the 80 cap in ${repoPath} — ` +
+        `${String(criteriaShortfall.omitted || '').slice(0, 200)}. These behaviours have no test in tdd-red unless someone acts on this.`
+    )
   }
 
   // ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────
@@ -921,6 +1006,20 @@ For each, rule:
         .filter(Boolean)
     )],
     outOfRepoFindings: storyDraft.outOfRepoFindings || [],
+    // Every maker that could not cover the repository, named. Empty is the expected case and
+    // means the makers covered what the spec required — never that nobody checked.
+    coverageShortfalls: [
+      ['apiSpec', contractsDraft && contractsDraft.apiSpec],
+      ['eventContracts', contractsDraft && contractsDraft.eventContracts],
+      ['errorSpec', contractsDraft && contractsDraft.errorSpec],
+      ['dataModelSpec', dataModelSpecDraft],
+      ['criteria', criteriaDraft],
+    ]
+      .filter(([, x]) => x && x.coverageShortfall && typeof x.coverageShortfall === 'object')
+      .map(([artifact, x]) => ({ artifact, repoPath, ...x.coverageShortfall })),
+    // Null is the expected case: the criteria maker covered this repository's behaviour
+    // within the cap. Non-null names behaviours that will otherwise reach no test.
+    criteriaShortfall,
     note:
       'errorSpec, definitionOfDone, and the story bead have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
   }
