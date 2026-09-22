@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that returns nothing is dispatched again and then split in half down to a single file, every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD, and no schema caps what a batch may return — a cap is for cost and must never fail the run; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that returns nothing is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD, and no schema caps what a batch may return — a cap is for cost and must never fail the run; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -194,10 +194,10 @@ const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-
 // loops, the re-dispatch meets the same wall, and the budget is spent. So a death in the
 // producing phases is reported AS a death: no gate dispatch, no retry spent.
 //
-// A death this file RECOVERED from is not one of those. The SAD extract retries a batch and
-// then splits it, and when that works the artifact exists — so `retireFailures` takes those
-// attempts back out of `dispatchFailures` before they can tell the caller to refuse to
-// adjudicate a phase that succeeded. What stays in the list is what nobody recovered.
+// A death whose work got done anyway is not one of those. The SAD extract answers an empty
+// batch by splitting it, and when the halves return, the artifact exists — so
+// `retireFailures` takes the parent back out of `dispatchFailures` before it can tell the
+// caller to refuse to adjudicate a phase that succeeded. What stays is what nobody covered.
 const died = (...phases) => {
   const deaths = dispatchDeaths(...phases)
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
@@ -245,9 +245,10 @@ else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 //
 // EVERYTHING BELOW EXISTS SO THIS PHASE NEVER SIMPLY STOPS. The number of shards follows
 // from the file count instead of capping it; no schema caps what a batch may return; a
-// batch that comes back empty is dispatched again and then split in half until it is one
-// file; and every batch that succeeds is written to disk, so a run that does end here
-// resumes at the failure rather than re-reading 787KB to get back to it. What remains a
+// batch that comes back empty is split in half and its halves dispatched, down to one file,
+// with no dispatch ever repeated unchanged; and every batch that succeeds is written to
+// disk, so a run that does end here resumes at the failure rather than re-reading 787KB to
+// get back to it. What remains a
 // hard stop is a file that could not be read at all — the TRD is not authored from part of
 // the architecture, because these documents drive the build and truncated detail is worse
 // than no output.
@@ -256,7 +257,7 @@ const SHARD_TARGET_BYTES = 175000
 // every assigned file costs at least one Read turn (a large one costs two). 16 leaves the
 // session room to finish even when the inventory reported no sizes at all, and room for the
 // Read-then-Write the batch's own save costs. A batch that runs out of turns anyway is no
-// longer fatal — it is split in half and dispatched again, which halves what it must read.
+// longer fatal — it is split, and each half is a new, smaller dispatch rather than a repeat.
 const SHARD_MAX_FILES = 16
 const ASSUMED_BYTES = 20000 // an inventory entry with no usable size is costed pessimistically
 
@@ -318,6 +319,11 @@ const TYPICAL_ENTRIES = { constraints: 40, solutionStrategy: 40, crosscuttingCon
 // the split below resumable: a batch that was halved comes back as its halves, each with
 // its own key, and a plan that changed because the SAD changed simply misses and re-reads.
 //
+// The directory is named by the EPIC, not by the mini, and that is deliberate: this
+// extraction is the same text in architecture.js and in trd-authoring.js, both run against
+// the same SAD for the same Epic, and architecture runs first. A batch either of them pays
+// for is therefore a batch the other does not.
+//
 // Without an Epic working directory there is nowhere durable to write, and the phase
 // behaves exactly as it did before.
 const SHARD_SAVE_DIR = ART ? `${ART.dir}/sad-shards` : null
@@ -374,12 +380,12 @@ Write no other file for this. If it fails, say so in your result and still retur
   )
 }
 
-// ── A DISPATCH WE RECOVERED FROM IS NOT A DEATH THE CALLER MUST HONOR ───────────
+// ── A DISPATCH WHOSE WORK WAS DONE ANYWAY IS NOT A DEATH THE CALLER MUST HONOR ──
 // `dispatchFailures` exists so a gate never adjudicates an artifact that was never
-// produced. When a retry, or a split whose halves both came back, produced the artifact
-// after all, leaving the first attempt in that list would tell the caller to refuse to
+// produced. When a batch came back empty but the halves it was split into both returned,
+// the artifact exists; leaving the parent in that list would tell the caller to refuse to
 // adjudicate a phase that succeeded. Entries are matched by label, which is unique per
-// attempt, so concurrent lanes can never retire each other's.
+// dispatch, so concurrent lanes can never retire each other's.
 function retireFailures(labels) {
   const set = new Set(labels)
   for (let i = dispatchFailures.length - 1; i >= 0; i--) {
@@ -387,47 +393,53 @@ function retireFailures(labels) {
   }
 }
 
-// ── A BATCH IS RETRIED, THEN SPLIT — IT IS NEVER SIMPLY DEAD ────────────────────
+// ── A BATCH THAT COMES BACK EMPTY IS SPLIT, AND IS NEVER RE-SENT AS IT WAS ──────
 //
 // One null from `extractShardAgent` used to end the whole run and report sixteen files
-// unread. Almost none of those nulls are the batch being impossible; they are one session
-// falling over, or an assignment that was too big for the turns it had. So a null buys a
-// second dispatch of the same batch, and a second null halves the file list and dispatches
-// both halves, recursively. A batch of ONE file that has failed twice is the only true
-// floor — there is nothing left to split — and it alone is reported unread.
+// unread. Almost none of those nulls are the batch being impossible; they are an
+// assignment larger than the turns it had, or one session falling over on a payload this
+// size. So a null is answered — but NOT by sending the same dispatch again.
+//
+// NOTHING HERE IS RETRIED, and that is a rule of this project rather than a preference.
+// Re-issuing an identical batch — identical files, identical prompt, identical schema —
+// changes nothing that could make the second outcome differ from the first, so there is
+// no basis for expecting one; it is a hope with a token cost, and against a hard API
+// failure it doubles the spend of every batch to achieve nothing. An attempt is re-earned
+// by a VERIFIABLE CHANGE to the instruction, the code or the data, never by having failed,
+// which is the same rule that stops the supervisor re-dispatching a repair that published
+// no change.
+//
+// The SPLIT is that change. Each half carries materially less input than the dispatch that
+// failed — an inspectable difference in the data, not an expectation — so each half is a
+// DIFFERENT dispatch, not a second try at this one. A batch that is already ONE file has
+// nothing left to change, so it is not dispatched again at all: that is the floor, and it
+// is reported unread. If you are reading the `if (!out)` below and reaching for an attempt
+// counter, a loop is precisely what this must not become.
 //
 // Returns one leaf outcome per batch that actually ran: { label, feeds, files, out }, with
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
-// escapes this and every death is recorded before it is retried.
+// escapes this and every death is recorded before it is answered.
 async function runBatch(label, feeds, files, saved) {
   const hit = saved.get(batchKey(files))
   if (hit) {
     log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
     return [{ label, feeds, files, out: hit, resumed: true }]
   }
-  const attempts = []
-  for (const suffix of ['', ' (retry)']) {
-    const attemptLabel = `${label}${suffix}`
-    attempts.push(attemptLabel)
-    const out = await extractShardAgent(attemptLabel, feeds, files)
-    if (out) {
-      retireFailures(attempts)
-      return [{ label: attemptLabel, feeds, files, out }]
-    }
-  }
+  const out = await extractShardAgent(label, feeds, files)
+  if (out) return [{ label, feeds, files, out }]
   if (files.length === 1) {
-    log(`${label}: one file, failed twice — that is the floor, so it is reported unread: ${files[0]}`)
+    log(`${label}: one file and nothing came back — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
     return [{ label, feeds, files, out: null }]
   }
   const mid = Math.ceil(files.length / 2)
-  log(`${label}: failed twice on ${files.length} file(s) — splitting into ${mid} + ${files.length - mid} and dispatching the halves`)
+  log(`${label}: nothing came back for ${files.length} file(s) — splitting into ${mid} + ${files.length - mid}; each half is a smaller dispatch, not a retry of this one`)
   // Sequential on purpose: this is the recovery path inside a lane that is already running
   // concurrently with every other lane, and nesting `parallel` inside it buys little.
   const halves = [
     ...(await runBatch(`${label}-a`, feeds, files.slice(0, mid), saved)),
     ...(await runBatch(`${label}-b`, feeds, files.slice(mid), saved)),
   ]
-  if (halves.every((h) => h.out)) retireFailures(attempts)
+  if (halves.every((h) => h.out)) retireFailures([label])
   return halves
 }
 
@@ -625,8 +637,8 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     }
   }
 
-  // Each lane recovers on its own — retry, then split — so what comes back is not one
-  // result per planned shard but one LEAF OUTCOME per batch that actually ran.
+  // Each lane covers its own gaps by splitting, so what comes back is not one result per
+  // planned shard but one LEAF OUTCOME per batch that actually ran.
   const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.files, savedBatches)))
   const outcomes = lanes.flatMap((r) => (Array.isArray(r) ? r : []))
 
@@ -676,25 +688,27 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   // ── A BATCH THAT DIED NEVER SHRINKS THE PACKET QUIETLY ─────────────────────────
   // A partial §8 that looks whole is the exact defect this sharding was built to fix: the
   // TRD author cannot tell a concept the SAD does not state from one nobody read. So a
-  // batch that is still dead after its retry, after being split down to a single file, and
-  // after that single file's own retry ENDS the run, naming every file that went unread.
+  // batch that is still empty after being split down to a single file — the point at which
+  // there is nothing left to change about the dispatch — ENDS the run, naming every file
+  // that went unread.
   //
   // This is the ONE remaining stop in this phase, and it should now be unreachable in
   // practice. It is deliberately not softened into a partial TRD: these documents drive
   // the build, and truncated detail is worse than no output. What it does instead is cost
   // nothing on the way back — every batch that DID come back is on disk, so the re-run
-  // this message asks for resumes at the failure and re-reads nothing else.
+  // this message asks for resumes at the failure and re-reads nothing else. That durable
+  // copy is the resume path; the phase used to return the partial packet to its caller
+  // instead, which no caller ever read — resilience promised rather than delivered.
   if (deadBatches.length) {
     sadUnread = deadBatches.flatMap((b) => b.files)
     const done = outcomes.length - deadBatches.length
-    log(`SAD extraction INCOMPLETE — ${deadBatches.length} batch(es) still dead after retry and splitting; ${sadUnread.length} file(s) went unread`)
+    log(`SAD extraction INCOMPLETE — ${deadBatches.length} batch(es) still empty after splitting; ${sadUnread.length} file(s) went unread`)
     return {
       ok: false,
       stage: 'extract',
-      reason: `SAD extraction is INCOMPLETE: ${deadBatches.length} batch(es) returned nothing even after being dispatched twice and split down to single files, so ${sadUnread.length} SAD file(s) were never read. No TRD was authored — a TRD derived from part of the architecture is wrong output, not cheaper output. The ${done} batch(es) that DID complete are saved${SHARD_SAVE_DIR ? ` under ${SHARD_SAVE_DIR}` : ''}, so re-running this phase resumes at the failure and re-reads nothing else. Unread: ${sadUnread.join(', ')}`,
+      reason: `SAD extraction is INCOMPLETE: ${deadBatches.length} batch(es) returned nothing even after being split down to single files, so ${sadUnread.length} SAD file(s) were never read. No TRD was authored — a TRD derived from part of the architecture is wrong output, not cheaper output. The ${done} batch(es) that DID complete are saved${SHARD_SAVE_DIR ? ` under ${SHARD_SAVE_DIR}` : ''}, so re-running this phase resumes at the failure and re-reads nothing else. Unread: ${sadUnread.join(', ')}`,
       unreadSadFiles: sadUnread,
       deadShards: deadBatches.map((b) => ({ label: b.label, files: b.files })),
-      partialSadExtract: merged,
       ...died('Extract SAD'),
     }
   }
