@@ -1089,6 +1089,12 @@ YOUR AUTHORITY, AND ITS LIMITS:
 - A CONSTITUTIVE rule is never overridden on best-practice grounds. Rule on the options that honor it; if you believe the rule itself is wrong, HONOR IT AND CHALLENGE IT — record a ruleChallenge and let the human owner change the rule. Overriding one here only moves the failure to the gate, which will refuse it.
 - ruleChallenges go to the human owner; they are never applied by this run.
 
+NEVER REFER A QUESTION ONWARD. A ruling that says a point is "referred to" another agent, another phase, another document or a later decision is not a ruling: it becomes a referral note in the SAD, which the source feed cannot be extracted from and which the conformance review then blocks on. Every point in front of you ends one of three ways, and you say which:
+- RULED — you decide it, here, and state the decision.
+- OUT OF SCOPE — it is not this ruling's to make. Say so plainly and say which requirement owns it. That is a statement of scope, not a referral, and nothing downstream waits on it.
+- BLOCKING — no option can be ruled on, so admissible=false with the rules that eliminated them.
+"Referred", "to be determined", "pending", "the coordinator will decide" and "open question" are none of the three. Do not write them.
+
 Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).`
 
 const MAX_DECIDE_LOOPS = a.maxDecideLoops || 2
@@ -1613,6 +1619,8 @@ if (!sadUpdateFailed && (!conformanceVerdict || conformanceVerdict.verdict !== '
   log('SAD maker-checker deadlock — escalating to architecture-decider for a binding ruling')
   const deadlockRuling = await settleAgent(
     `You are the architecture-decider acting as the deadlock authority. The sad-maintainer and sad-conformance-reviewer could not converge within ${MAX_SAD_LOOPS} passes. Rule on how the SAD must read so the source feed (§2/§4/§8) is valid. You ONLY rule — do not author or re-review.
+
+YOUR DIRECTIVE IS CARRIED OUT BY A MAINTAINER PASS, so write it as instructions that can be followed: which file, which line, what it must say. NEVER refer a point onward — "referred to", "pending", "to be determined" and "open question" are not rulings, and a referral written into the SAD is what the review blocks on. Rule it, or say plainly that it is out of this ruling's scope and which requirement owns it.
 
 Ruling being consolidated: ${decision.ruling}
 Last SAD edit attempted:
