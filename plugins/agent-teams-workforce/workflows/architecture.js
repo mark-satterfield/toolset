@@ -1334,6 +1334,22 @@ const SAD_UPDATE_SCHEMA = {
     updatedSections: { type: 'array', items: { type: 'string' } },
     changedFiles: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
+    // Older SAD content this edit collides with and does NOT own: reported here so
+    // it reaches the Epic that owns it, instead of being written into the document
+    // as a referral note that no downstream extractor can act on.
+    collisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rule', 'where', 'collision'],
+        properties: {
+          rule: { type: 'string' },
+          where: { type: 'string' },
+          collision: { type: 'string' },
+        },
+      },
+    },
     entryTags: {
       type: 'array',
       items: {
@@ -1372,14 +1388,55 @@ identity the moment anybody rewords it, and every citation to it rots without a 
   prevent, and it is worse than a tag nobody cites.
 - Report every tag you minted, preserved or superseded under \`entryTags\`.`
 
+// A REJECT MUST EXPLAIN ITSELF, AGAINST A NAMED RULE, IN WRITING THAT SURVIVES.
+// A free-text findings list let the reviewer halt the phase on taste alone: no rule
+// cited, no location, no severity, and nothing on disk afterwards. Every finding now
+// names the conformance rule it breaks and where, and says whether it BLOCKS; a
+// reject is only honored when at least one finding does.
 const CONFORMANCE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['verdict', 'findings'],
   properties: {
     verdict: { type: 'string', enum: ['pass', 'reject'] },
-    findings: { type: 'array', items: { type: 'string' } },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rule', 'where', 'finding', 'blocking', 'why', 'needsRuling'],
+        properties: {
+          rule: { type: 'string' },
+          where: { type: 'string' },
+          finding: { type: 'string' },
+          blocking: { type: 'boolean' },
+          why: { type: 'string' },
+          needsRuling: { type: 'boolean' },
+        },
+      },
+    },
   },
+}
+
+/** Render findings as the lines a maker, a log and a ledger all read. */
+function findingLines(findings) {
+  return (Array.isArray(findings) ? findings : []).map((f) =>
+    typeof f === 'string'
+      ? f
+      : `[${f.blocking ? 'BLOCKING' : 'non-blocking'}] ${f.rule} @ ${f.where}: ${f.finding} — ${f.why}`
+  )
+}
+
+/** Report whether any finding was marked blocking. */
+function anyBlocking(findings) {
+  return (Array.isArray(findings) ? findings : []).some((f) => f && typeof f === 'object' && f.blocking === true)
+}
+
+/** Report whether a blocking finding needs a decision the maintainer has no authority to make. */
+function needsRuling(findings) {
+  return (Array.isArray(findings) ? findings : []).some(
+    (f) => f && typeof f === 'object' && f.blocking === true && f.needsRuling === true
+  )
 }
 
 async function authorSad(reviewerFeedback) {
@@ -1389,6 +1446,9 @@ async function authorSad(reviewerFeedback) {
 SWEEP EVERY CLAIM YOU CHANGE — THIS IS NOT OPTIONAL.
 The SAD states the same normative claim in several places: a §2 constraint, a §4 strategy bullet, a §8 concept, a §5 building-block description, and a §8 README index row can all name the same store, protocol, or topology. Changing one and leaving the others is the single most common way this document self-contradicts, and a downstream extractor then reads whichever copy it happens to hit.
 For EVERY claim the ruling changes: grep the WHOLE SAD tree for the OLD value and for the subject of the claim, and correct EVERY statement of it in the same pass — including index/summary rows, which are claims too. Then re-grep for the old value and confirm the only remaining hits are ones that legitimately describe a different mechanism. Report the sweep you ran.
+
+A COLLISION WITH OLDER CONTENT IS REPORTED, NEVER WRITTEN INTO THE SAD.
+The SAD is brought up to date one Epic at a time, so it holds rules from earlier rulings — including for features nobody is building yet — that this ruling does not reach. When your edit collides with one, do NOT write a referral, an open-question marker or a "these cannot both hold" note into the document: that is workflow state, and it makes the section unusable for the TRD and Spec authors who extract it. State the ruling this run settled, and report the collision under \`collisions\` in your result, naming the older rule and where it lives, so it reaches the Epic that owns it.
 
 A DECIDED QUESTION IS NOT AN OPEN ONE.
 Never record an "unresolved" or "contradiction" marker for a claim this ruling settles. If the SAD contradicts the ruling, the SAD is the defect: correct it. Reserve unresolved-markers for questions genuinely outside this ruling's reach.
@@ -1421,16 +1481,39 @@ Deliver: which §2/§4/§8 sections you changed, the file paths edited, every en
   )
 }
 
-async function reviewSad(sadUpdate) {
+async function reviewSad(sadUpdate, pass) {
   return await settleAgent(
-    `You are the sad-conformance-reviewer — INDEPENDENT of the sad-maintainer. Check the SAD edit for arc42 conformance and living-document hygiene: are §2/§4/§8 internally consistent, does the edit reflect the ruling without introducing changelog narrative, and is the source feed still valid for downstream TRD/Spec consumers? You only judge — do not edit the SAD. Verdict "pass" only if every finding is non-blocking; otherwise "reject" with specific, actionable findings.
+    `You are the sad-conformance-reviewer — INDEPENDENT of the sad-maintainer. Judge THIS EDIT, against THIS RULING. You only judge — do not edit the SAD.
+
+THE SAD IS A WORK IN PROGRESS AND YOU DO NOT JUDGE IT. It is brought up to date ONE EPIC AT A TIME, from a starting point that is stale nearly everywhere, and most of what it holds has not been through this pipeline at all. An internal-consistency verdict over that document is not a quality bar — it is a guarantee that every Epic fails on the last Epic's leftovers. You are NOT checking whether the SAD is consistent, complete, or correct. Do not run a completeness pass, a consistency pass, or a whole-document review of any kind.
+
+YOU JUDGE ONE THING: is THIS RULING now recorded in the document, faithfully? Ask only:
+- Is every part of the ruling written down, or is some of it missing?
+- Does what was written say what the ruling says, or something else?
+- Was a decision this ruling settles left recorded as an open question, a referral, or process narrative?
+
+Nothing else can block. Where the edit collides with older SAD content this ruling does not own, or where you notice staleness elsewhere, report it as a NON-BLOCKING finding naming the older rule and where it lives, so it reaches the Epic that owns it. Pre-existing wrongness, however glaring, is never this Epic's to fix and never grounds for a reject.
+
+EVERY FINDING EXPLAINS ITSELF OR IT DOES NOT COUNT. For each one give:
+- \`rule\`: the arc42 conformance or living-document rule it breaks, named. Not "this looks wrong".
+- \`where\`: the SAD file and, when you can give one, the line — the place a person opens to see it.
+- \`finding\`: what is actually wrong there.
+- \`blocking\`: true only when THIS RULING is not faithfully recorded — part of it is missing from the document, what was written says something the ruling does not, or a decision it settles is still recorded as an open question or a referral. Style, wording and polish are never blocking, and neither is anything this ruling does not own, however wrong it is.
+- \`why\`: why it blocks, or why it does not.
+- \`needsRuling\`: true when fixing it takes a DECISION nobody has made — two rules that contradict each other, a question of which mechanism wins. The sad-maintainer consolidates a ruling and has no authority to choose one, so a finding marked this way goes straight to the architecture-decider instead of costing another maintainer pass that cannot succeed. False when the maintainer can fix it by editing, which is the ordinary case.
+
+Verdict "reject" ONLY when at least one finding is blocking; otherwise "pass", findings and all. A reject carrying no blocking finding is not honored — the edit is treated as passed — so do not use it to register preferences.
 
 Ruling consolidated: ${decision.ruling}
 
 SAD edit under review:
-${JSON.stringify(sadUpdate, null, 2)}`,
+${JSON.stringify(sadUpdate, null, 2)}${persistBrief(
+      ART,
+      `sad-conformance-pass${pass}.json`,
+      'ONE JSON object holding this pass number, your verdict, your findings exactly as you return them, and under `sadUpdateReviewed` the SAD edit you were given above verbatim — so a rejected edit and the reason for rejecting it both survive this run'
+    )}`,
     {
-      label: 'sad:conformance',
+      label: `sad:conformance#${pass}`,
       effort: 'low',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-conformance-reviewer',
@@ -1493,7 +1576,7 @@ for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
     }
     break
   }
-  conformanceVerdict = await reviewSad(sadUpdate)
+  conformanceVerdict = await reviewSad(sadUpdate, pass)
   if (!conformanceVerdict) {
     log(`SAD conformance pass ${pass}: reviewer returned no verdict`)
     break
@@ -1502,8 +1585,27 @@ for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
     log(`SAD conformance: PASS on pass ${pass}/${MAX_SAD_LOOPS}`)
     break
   }
-  log(`SAD conformance: REJECT pass ${pass}/${MAX_SAD_LOOPS} — ${(conformanceVerdict.findings || []).join('; ')}`)
-  reviewerFeedback = (conformanceVerdict.findings || []).join('\n')
+  // A reject with nothing blocking behind it is a preference, not a defect, and it
+  // does not get to cost a second maintainer pass and a re-run of this whole phase.
+  if (!anyBlocking(conformanceVerdict.findings)) {
+    log(
+      `SAD conformance: reject on pass ${pass}/${MAX_SAD_LOOPS} carried NO blocking finding — treated as PASS. ` +
+        `Findings recorded: ${findingLines(conformanceVerdict.findings).join('; ') || '(none)'}`
+    )
+    conformanceVerdict = { ...conformanceVerdict, verdict: 'pass', rejectWithoutBlockingFinding: true }
+    break
+  }
+  log(`SAD conformance: REJECT pass ${pass}/${MAX_SAD_LOOPS} — ${findingLines(conformanceVerdict.findings).join('; ')}`)
+  // A FINDING THE MAKER CANNOT FIX DOES NOT GET ANOTHER MAKER PASS. When the
+  // reviewer says the fix takes a ruling — two rules contradict each other and
+  // which one wins is undecided — handing it back to the sad-maintainer buys a
+  // second identical rejection: it consolidates rulings and makes none. This is
+  // what the ssbd-smoos run spent its second pass on. Go to the decider now.
+  if (needsRuling(conformanceVerdict.findings)) {
+    log('SAD conformance: a blocking finding needs a RULING, not an edit — going to the architecture-decider now')
+    break
+  }
+  reviewerFeedback = findingLines(conformanceVerdict.findings).join('\n')
 }
 
 // Deadlock: maker-checker exhausted without a pass → the decider rules (never the maker).
@@ -1516,7 +1618,11 @@ Ruling being consolidated: ${decision.ruling}
 Last SAD edit attempted:
 ${JSON.stringify(sadUpdate, null, 2)}
 Unresolved conformance findings:
-${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none captured)'}`,
+${findingLines(conformanceVerdict && conformanceVerdict.findings).join('\n') || '(none captured)'}${persistBrief(
+      ART,
+      'sad-deadlock-ruling.json',
+      'ONE JSON object holding your verdict and your directive exactly as you return them, plus under `unresolvedFindings` the findings you ruled on — this is the durable record of why the SAD edit was blocked and how it must read'
+    )}`,
     {
       label: 'sad:deadlock-ruling',
       effort: 'high',
@@ -1533,10 +1639,56 @@ ${(conformanceVerdict && conformanceVerdict.findings || []).join('\n') || '(none
       },
     }
   )
-  conformanceVerdict = {
-    verdict: deadlockRuling && deadlockRuling.verdict === 'accept' ? 'pass' : 'reject',
-    findings: deadlockRuling ? [deadlockRuling.directive] : (conformanceVerdict && conformanceVerdict.findings) || [],
-    ruledByDecider: true,
+  // ── THE RULING IS CARRIED OUT, NOT FILED ───────────────────────────────────
+  //
+  // A decider that rules `reject` has just said HOW the SAD must read. Recording
+  // that and stopping is how a run ends with seven numbered directives and a SAD
+  // nobody edited: the gate above then fails the phase, the caller loops it, and
+  // the whole panel — triage, proposals, challenge, decider — is paid for again
+  // to arrive back at this same step. One maintainer pass carries the directive
+  // out, and one independent review judges the result.
+  if (deadlockRuling && deadlockRuling.verdict !== 'accept' && deadlockRuling.directive) {
+    log('SAD deadlock ruling: applying the directive in one maintainer pass, then one independent review')
+    const applied = await authorSad(
+      `The architecture-decider has ruled as the deadlock authority. Carry this directive out EXACTLY, in this pass, and report what you changed:\n${deadlockRuling.directive}`
+    )
+    if (applied) {
+      sadUpdate = applied
+      const reviewed = await reviewSad(applied, MAX_SAD_LOOPS + 1)
+      if (reviewed && (reviewed.verdict === 'pass' || !anyBlocking(reviewed.findings))) {
+        log('SAD conformance: PASS after the deadlock directive was applied')
+        conformanceVerdict = { ...reviewed, verdict: 'pass', ruledByDecider: true, directiveApplied: true }
+      } else {
+        conformanceVerdict = {
+          verdict: 'reject',
+          findings: (reviewed && reviewed.findings) || [],
+          ruledByDecider: true,
+          directiveApplied: true,
+          directive: deadlockRuling.directive,
+        }
+        log(
+          `SAD conformance: REJECT after the deadlock directive was applied — ${
+            findingLines(conformanceVerdict.findings).join('; ') || '(no findings returned)'
+          }`
+        )
+      }
+    } else {
+      conformanceVerdict = {
+        verdict: 'reject',
+        findings: [`The deadlock directive was not applied: the sad-maintainer returned no result. Directive: ${deadlockRuling.directive}`],
+        ruledByDecider: true,
+        directiveApplied: false,
+        directive: deadlockRuling.directive,
+      }
+      log('SAD deadlock ruling: the maintainer returned no result, so the directive is recorded unapplied')
+    }
+  } else {
+    conformanceVerdict = {
+      verdict: deadlockRuling && deadlockRuling.verdict === 'accept' ? 'pass' : 'reject',
+      findings: deadlockRuling ? [deadlockRuling.directive] : (conformanceVerdict && conformanceVerdict.findings) || [],
+      ruledByDecider: true,
+      ...(deadlockRuling ? { directive: deadlockRuling.directive } : {}),
+    }
   }
 }
 

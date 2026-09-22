@@ -65,7 +65,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | uml-diagram-author | execute | Renders the decided behaviours and structures as UML Mermaid diagrams (sequence, class, state) for the SAD. |
 | sad-maintainer | execute | Consolidates the decided constraints, solution strategy, and cross-cutting concepts into the single living arc42 Software Architecture Document, updating current state in place. |
 | sad-source-extractor | execute | Extracts the SAD's section-2/4/8 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet for TRD and spec authoring. |
-| sad-conformance-reviewer | test | Verifies the living SAD against the arc42 section model and reports conformance findings without fixing them. |
+| sad-conformance-reviewer | test | Judges whether ONE architecture ruling was faithfully recorded in the living SAD and reports findings without fixing them; it never audits the document itself. |
 | graphql-schema-designer | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track |
 | failure-mode-analyst | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages |
 
