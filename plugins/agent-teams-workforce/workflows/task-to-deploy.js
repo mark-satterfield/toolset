@@ -10,6 +10,7 @@ export const meta = {
     { title: 'Refactor' },
     { title: 'Integration' },
     { title: 'Adversarial' },
+    { title: 'Documentation', detail: 'a parallel TRACK started after Green and awaited before the deploy; a deploy correction re-runs it over the repaired code, serialized behind the repair' },
     { title: 'Deploy-to-dev', detail: 'deploys to AWS dev and smoke-checks the deployed endpoints; re-enters Green and redeploys on a smoke failure, bounded' },
     { title: 'Settle', detail: 'lands the work in git — commit, push, PR — AFTER deployment, on EVERY exit path; never evidence a work phase completed, and never a precondition of deploying' },
     { title: 'Run Ledger', detail: 'telemetry — runs on EVERY exit path, including failure; never evidence the run succeeded' },
@@ -719,12 +720,45 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
-    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, checks, structural, artifact, escalateTargets,
-    })
+    const gateArgs = { gate, phaseName, criteria, checks, structural, artifact, escalateTargets }
+    let verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    // ── A DEAD JUDGE GETS A SECOND LOOK BEFORE FINISHED WORK IS DISCARDED ────────
+    //
+    // The gate is READ-ONLY: it produces nothing, changes nothing, and judging the same
+    // artifact twice cannot corrupt anything. The phase below it, by contrast, has already
+    // run to completion and its output is durable. Throwing that away because the judge was
+    // skipped or hit an account limit is the same asymmetry as aborting an elaboration over
+    // a dead dependency mapper — the expensive error taken to avoid the cheap one. So a null
+    // verdict is re-asked once, against the identical artifact, before it is given up on.
+    // It does NOT spend a phase attempt: `attemptsSpent` counts re-running the PHASE, and
+    // nothing about the phase is re-run here.
+    if (!verdict) {
+      log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
+      verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
-      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+      return {
+        ok: false,
+        reason: `gate ${gate} returned no verdict twice — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
+        artifact,
+        dispatchFailed: true,
+      }
+    }
+    // The gate itself reports a dead judge rather than a verdict. Same reading: the work was
+    // never judged, so it is reported under the environment stage and no retry is spent on a
+    // wall the re-dispatch would meet again.
+    if (verdict.dispatchFailed === true) {
+      recordGate(attempt, verdict, { terminal: 'gate-dispatch-failed', dispatchFailures: verdict.dispatchFailures || [] })
+      log(`Gate ${gate} (${phaseName}): the judge never ruled — ${verdict.feedback || 'no reason given'}`)
+      return {
+        ok: false,
+        dispatchFailed: true,
+        dispatchFailures: verdict.dispatchFailures || [],
+        reason: verdict.feedback || `gate ${gate}'s judge returned no verdict`,
+        artifact,
+        verdict,
+      }
     }
     recordGate(attempt, verdict)
     lastVerdict = verdict
@@ -2163,8 +2197,14 @@ return {
   // and the caller's `detailPath` is the path this returns. A journal that could not be
   // written yields detailPath:null — an honest "the detail is gone", never a path to a file
   // nobody wrote.
+  // Telemetry and landing each run on every exit path and each gets its own progress group,
+  // which `meta.phases` has always declared — but nothing ever entered either one, so both
+  // groups stayed empty for the whole run and the work appeared to happen inside whichever
+  // phase died.
+  enterPhase('Run Ledger')
   const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   if (result) result.detailPath = detailPath || null
+  enterPhase('Settle')
   const settle = await settleRun()
   if (result) applySettle(result, settle)
   // A COMPLETED run retires its checkpoint — resuming finished work replays it.

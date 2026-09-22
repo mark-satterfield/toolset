@@ -312,14 +312,30 @@ For every entry: assign a stable, content-anchored ID, capture the verbatim-grou
 // so related concept files stay together and a re-run shards identically. Derived from
 // the real file sizes rather than a hardcoded list — the concept set grows as Epics
 // complete, and a list would rot the first time one is added.
+//
+// THE LAST SHARD IS NOT A DUMPING GROUND. An earlier version stopped splitting once the
+// shard cap was reached and let every remaining file accumulate into the final shard with
+// no ceiling at all — which is the defect this sharding exists to remove, reintroduced
+// silently at the one size where nobody is watching. So the cap TRUNCATES THE PLAN, not
+// the reading: files past it come back as `overflow` and are reported UNREAD, down the
+// same path a dead shard takes. A SAD too large for MAX_SHARDS stops the run and says so.
 function shardFiles(entries) {
   const shards = []
+  const overflow = []
   let current = []
   let bytes = 0
   for (const e of entries) {
+    if (overflow.length) {
+      overflow.push(e.path)
+      continue
+    }
     const size = Number.isFinite(e.bytes) && e.bytes > 0 ? e.bytes : ASSUMED_BYTES
     const full = current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)
-    if (full && shards.length < MAX_SHARDS - 1) {
+    if (full) {
+      if (shards.length >= MAX_SHARDS - 1) {
+        overflow.push(e.path)
+        continue
+      }
       shards.push(current)
       current = []
       bytes = 0
@@ -328,7 +344,7 @@ function shardFiles(entries) {
     bytes += size
   }
   if (current.length) shards.push(current)
-  return shards
+  return { shards, overflow }
 }
 
 const fileList = (x) =>
@@ -397,8 +413,16 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 
   const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  const crossShards = shardFiles(crossEntries)
-  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+  const { shards: crossShards, overflow: crossOverflow } = shardFiles(crossEntries)
+  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)${crossOverflow.length ? `; ${crossOverflow.length} file(s) OVER the ${MAX_SHARDS}-shard plan` : ''}`)
+  if (crossOverflow.length) {
+    return {
+      ok: false,
+      stage: 'extract',
+      reason: `SAD extraction is INCOMPLETE: section 8 needs more than the ${MAX_SHARDS} shards this phase plans for, so ${crossOverflow.length} SAD file(s) were never read and nothing was extracted from them. No TRD was authored — a TRD derived from part of the architecture is wrong output, not cheaper output. Raise MAX_SHARDS in trd-authoring.js. Unread: ${crossOverflow.join(', ')}`,
+      unreadSadFiles: crossOverflow,
+    }
+  }
 
   // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
   const jobs = []

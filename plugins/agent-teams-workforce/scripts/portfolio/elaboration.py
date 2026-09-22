@@ -47,7 +47,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from beadgraph import fingerprints, now_iso
+from beadgraph import SCOPE_JUDGING, fingerprints, now_iso
 from sadstate import promote as promote_sad
 from scoring import JUDGED_HASH_KEY, SIZE_JUDGED_KEYS, score
 
@@ -319,7 +319,7 @@ def finish(
     if unsized:
         msg = f"judged Tasks carrying no judged size: {', '.join(unsized)}"
         raise LifecycleError(msg)
-    prints = fingerprints(graph.records)
+    prints = fingerprints(graph.records, SCOPE_JUDGING)
     stamped = []
     for task_id in sorted(set(judged)):
         current = prints.get(task_id, "")

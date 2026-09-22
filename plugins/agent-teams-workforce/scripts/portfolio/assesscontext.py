@@ -70,7 +70,7 @@ def assess_context(
     else:
         paths = write_prds(epics, corpus)
         write_index(graph, epics, paths, index)
-    prints = beadgraph.fingerprints(graph.records)
+    prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
     standing = standing_edges(graph, epic)
     withdrawn = withdrawal_history(graph, epic)
     owned = sum(1 for s in standing if s["owned"])
@@ -163,7 +163,14 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
     Returns:
         `task` (`{id, title, fingerprint, epic, repoPath, path}`), `standing` (every edge
         between the Task and another open Task, from `edgeset.standing_edges`),
-        `corpusDir`, `indexPath`, and a `summary` of counts.
+        `withdrawn` (every edge touching it that an assessment withdrew, with the reason,
+        from `edgeset.withdrawal_history`), `corpusDir`, `indexPath`, and a `summary` of
+        counts.
+
+        `withdrawn` is here because `edgeset` enforces `readdsWithdrawn` at Task level as
+        well as Epic level: a proposal that re-adds a withdrawn edge without answering the
+        recorded reason is refused, so a session assessed without this list is refused for
+        a record it was never shown.
 
     Raises:
         SequencingError: `task` is not an open Task, or elaboration wrote it.
@@ -177,8 +184,9 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
     index = out_dir / "index.md"
     paths = write_tasks(graph, tasks, corpus)
     write_task_index(graph, tasks, paths, index)
-    prints = beadgraph.fingerprints(graph.records)
+    prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
     standing = standing_edges(graph, task, "task")
+    withdrawn = withdrawal_history(graph, task, "task")
     owned = sum(1 for s in standing if s["owned"])
     epic = graph.epic_of(task)
     return {
@@ -191,6 +199,7 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
             "path": paths[bead.id],
         },
         "standing": standing,
+        "withdrawn": withdrawn,
         "corpusDir": str(corpus),
         "indexPath": str(index),
         "summary": {
@@ -199,5 +208,6 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
             "standing": len(standing),
             "owned": owned,
             "handMade": len(standing) - owned,
+            "withdrawn": len(withdrawn),
         },
     }

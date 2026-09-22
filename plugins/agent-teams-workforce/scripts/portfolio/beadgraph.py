@@ -329,7 +329,14 @@ class Writer:
         write_metadata(bead_id, pairs, self.repo)
 
 
-def fingerprints(records: list[dict]) -> dict[str, str]:
+#: The fingerprint scope a caller asks for. `judging` covers only the material a judging
+#: or assessing session is handed; `readiness` also covers the build contract. The scopes
+#: themselves are defined once, in `beads-contract.py`; this is only how a caller names one.
+SCOPE_JUDGING = "judging"
+SCOPE_READINESS = "readiness"
+
+
+def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str, str]:
     """The content fingerprint of every record, from the beads-contract CLI in one call.
 
     The records are handed over rather than re-fetched, so the fingerprint is taken over
@@ -337,6 +344,9 @@ def fingerprints(records: list[dict]) -> dict[str, str]:
 
     Args:
         records: Tracker records as `bd list --json` returned them, descriptions included.
+        scope: Which fingerprint — `readiness` or `judging`. A caller must pass the scope
+            matching the key it stores the answer under, or it will compare a watermark
+            with a fingerprint of something else.
 
     Returns:
         Bead id -> content fingerprint.
@@ -344,7 +354,15 @@ def fingerprints(records: list[dict]) -> dict[str, str]:
     Raises:
         GraphError: The CLI refused or answered with something unusable.
     """
-    command = [sys.executable, str(CONTRACT), "--records", "-", "fingerprint-batch"]
+    command = [
+        sys.executable,
+        str(CONTRACT),
+        "--records",
+        "-",
+        "fingerprint-batch",
+        "--scope",
+        scope,
+    ]
     done = subprocess.run(
         command, input=json.dumps(records), capture_output=True, text=True, check=False
     )

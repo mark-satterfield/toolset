@@ -210,7 +210,13 @@ comes back on stdout.
 }
 ```
 
-Return only the keys for the lists you were given; omit the rest. One `results` entry per
+ALWAYS return `results`, and ALWAYS return every other list you were handed work for —
+an empty array when the answer is nothing. An empty array is a positive statement that you
+LOOKED and found nothing; omitting the key says only that nobody asked you, and the caller
+cannot tell those apart. So a survey dispatch returns `surveys: []` when the parent has no
+children, a mutation dispatch returns `mutations: []` when nothing was applied, and a pure
+create wave omits both because it was handed neither. Never omit a list you were given work
+for. One `results` entry per
 bead you were handed, one `surveys` entry per survey, one `mutations` entry per mutation,
 each in the order you were handed them. Anything you did not attempt is reported with
 `ok: false` and the reason. Honesty here is the whole value of this agent: the caller counts

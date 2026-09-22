@@ -202,7 +202,7 @@ def assess_plan(
     if since is not None and cutoff is None:
         msg = f"--since {since!r} is not an ISO 8601 instant"
         raise SequencingError(msg)
-    prints = beadgraph.fingerprints(graph.records)
+    prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
 
     def assessed(bead: Bead) -> bool:
         if bead.metadata.get(SEEN_KEY) != prints.get(bead.id):
@@ -252,6 +252,32 @@ def _read_json(path: Path) -> dict:
     return payload
 
 
+def _plan_fingerprints(path: Path) -> dict:
+    """The fingerprint map an `assess-plan` output records.
+
+    A bare `["fingerprints"]` raised KeyError, which is outside the refusal tuple `main`
+    catches, so a malformed plan exited 1 with a traceback instead of the documented
+    exit-2 JSON refusal.
+
+    Args:
+        path: The plan file.
+
+    Returns:
+        Bead id -> the fingerprint the plan was made at.
+
+    Raises:
+        ScoringError: The file is not an `assess-plan` output.
+    """
+    payload = _read_json(path)
+    seen = payload.get("fingerprints")
+    if not isinstance(seen, dict):
+        msg = (
+            f"{path} is not an `assess-plan` output: it holds no `fingerprints` object"
+        )
+        raise ScoringError(msg)
+    return seen
+
+
 def _entries(path: Path | None, key: str) -> list[dict]:
     """The per-item records from a judging session's output file.
 
@@ -261,10 +287,19 @@ def _entries(path: Path | None, key: str) -> list[dict]:
 
     Returns:
         The records.
+
+    Raises:
+        ScoringError: The file holds no `key` list. A typo'd top-level key used to yield
+            zero records, and the items then surfaced in `record`'s `missing` list — the
+            effect visible, the cause not.
     """
     if path is None:
         return []
-    entries = _read_json(path).get(key) or []
+    payload = _read_json(path)
+    if key not in payload:
+        msg = f"{path} holds no {key!r} list; its top-level keys are {', '.join(sorted(payload)) or 'none'}"
+        raise ScoringError(msg)
+    entries = payload.get(key) or []
     return [e for e in entries if isinstance(e, dict)]
 
 
@@ -625,7 +660,7 @@ def run(args: argparse.Namespace) -> dict:
             | {"summary": {"ok": report["ok"], "edges": report["edgeCount"]}}
         )
     if command == "apply-edges":
-        seen = _read_json(args.plan)["fingerprints"] if args.plan else {}
+        seen = _plan_fingerprints(args.plan) if args.plan else {}
         proposal = owned_edges(graph) if args.owned else read_edges(args.edges)
         withdrawn = [] if args.owned else read_withdrawn(args.edges)
         result = apply_edges(graph, proposal, writer, seen, item, withdrawn, level)

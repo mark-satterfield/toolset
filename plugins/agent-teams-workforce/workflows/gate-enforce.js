@@ -92,6 +92,31 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── THE `dispatchFailed` CONTRACT THIS GATE OWES ITS CALLER ──────────────────────
+//
+// A judge that DIED did not find the work wanting — it never ruled. This file built
+// `dispatchFailures` and defined `dispatchDeaths` above and then called neither, so a dead
+// enforcer returned null, and every caller reads a null verdict as `ok:false, "gate N
+// returned no verdict"` and ends the phase. A phase whose work is COMPLETE AND DURABLE was
+// therefore discarded because the read-only judge hit an account limit, and it was filed as
+// a failure of that phase rather than of the environment — which is how a bead gets blamed,
+// and eventually quarantined, for a wall nobody could have avoided.
+//
+// The asymmetry is the same one that governs the producing phases: a death is reported AS a
+// death, so the caller can tell "the work is bad" from "nobody looked". Every gate exit that
+// comes of a dead dispatch carries `dispatchFailed: true` and the identities of what died.
+const failDispatch = (reason, ...phases) => {
+  const deaths = dispatchDeaths(...phases)
+  return {
+    verdict: 'escalate',
+    criteria: [],
+    feedback: reason,
+    escalateTo: 'upstream',
+    flags: [`gate-dispatch-failed: ${reason}`],
+    ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+  }
+}
+
 // args: {
 //   gate: string,                 // gate id, e.g. "2a"
 //   phaseName: string,            // human name of the phase being judged
@@ -503,6 +528,16 @@ ${ruled.flags.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
   return { ...ruled, advantage: advantage || null, deterministicChecks: checkResults }
 }
 
+// THE JUDGE DIED. Not "the work failed" — see failDispatch above. The deterministic checks
+// all HELD to reach this line, so what is being reported is an environment failure over work
+// that passed everything mechanical, and the caller must not spend a retry re-asking a judge
+// that hit the same wall.
+if (!ruled) {
+  const why = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the phase-gate-enforcer returned no verdict — it was skipped, or it died. The work was NOT judged and this is not a finding against it; every deterministic check for this gate held.`
+  log(why)
+  return { ...failDispatch(why, 'Gate'), deterministicChecks: checkResults }
+}
+
 // The deterministic results ride out on EVERY verdict, not just the ones this file
 // short-circuits on. On the judgment path they reach the enforcer only as prose in
 // `settledBlock` and never appeared in the returned verdict at all — so the caller
@@ -510,4 +545,4 @@ ${ruled.flags.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
 // artifact from one that was argued about. That distinction is the whole basis on which
 // an exhausted gate is ruled competitive or constitutive upstream: a mechanically-settled
 // failure is not a matter of opinion and must never be waived as one.
-return ruled ? { ...ruled, deterministicChecks: checkResults } : ruled
+return { ...ruled, deterministicChecks: checkResults }

@@ -280,6 +280,30 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
   }
 )
 
+// ── THE `dispatchFailed` CONTRACT THIS GATE OWES ITS CALLER ──────────────────────
+//
+// A judge that DIED did not find the work wanting — it never ruled. This file built
+// `dispatchFailures` and defined `dispatchDeaths` above and then called neither, so a dead
+// enforcer returned null and every caller reads a null verdict as `ok:false, "gate N
+// returned no verdict"` and ends the phase — discarding work that is complete and durable
+// because the read-only judge hit an account limit, and filing it as a failure of the phase
+// rather than of the environment. A death is reported AS a death so the caller can tell "the
+// work is bad" from "nobody looked", and so no retry is spent on the same wall.
+if (!verdict) {
+  const deaths = dispatchDeaths('Gate (constitutional)')
+  const why =
+    `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the phase-gate-enforcer returned no verdict — it was skipped, or it died. ` +
+    'The work was NOT judged and this is not a finding against it.'
+  log(why)
+  return {
+    verdict: 'escalate',
+    criteria: [],
+    feedback: why,
+    escalateTo: (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
+    ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+  }
+}
+
 // ── Precedent store ─────────────────────────────────────────────────────────────
 // The constitutional-agent is told its ruling "becomes reusable precedent", and its
 // schema returns a `precedent` field — and nothing wrote that field anywhere, and
@@ -452,6 +476,42 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
       precedent: ruling.precedent,
       packetContradiction: !!packetConflict,
     }
+  }
+}
+
+// ── A DECLARED CONSTITUTIONAL CONFLICT NEVER EXITS AS A PASS ─────────────────────
+//
+// This is the worst failure shape the system can produce, and it was reachable. The enforcer
+// returns `pass` WITH `needsConstitutionalRuling: true` — a real combination: no criterion is
+// itemised as unmet, but the judge has declared that two constitutive constraints conflict
+// and it cannot settle which binds. If the precedent lookup found nothing and the
+// constitutional-agent dispatch then returned null, control fell past the appeals block, past
+// the contradiction guard below (which only fires on `loop`), to `return verdict` — a clean
+// PASS on a security or validity conflict that NOBODY RULED ON.
+//
+// A flag that says "this needs a ruling" and no ruling is not a pass. The conflict is
+// unresolved, and unresolved at a CONSTITUTIONAL gate means the work is not established as
+// valid — so it escalates, naming the conflict, whatever the enforcer's own verdict was.
+if (verdict && verdict.needsConstitutionalRuling && !verdict.ruledByConstitutionalAgent) {
+  const conflict = verdict.conflict || '(unspecified)'
+  const why =
+    `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): a constitutive conflict was DECLARED and no ruling was obtained — ` +
+    'the precedent store settled nothing and the constitutional-agent produced no ruling (it was skipped, or it died). ' +
+    `The conflict stands unresolved: ${conflict}. ` +
+    'An unresolved constitutive conflict is never a pass: this gate defines whether the work is valid at all, and passing ' +
+    'here would wave through exactly the security or validity question that was escalated because nobody could settle it.'
+  log(why)
+  return {
+    ...verdict,
+    verdict: 'escalate',
+    feedback: why,
+    escalateTo: verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
+    unresolvedConstitutionalConflict: conflict,
+    ruledByConstitutionalAgent: false,
+    ...(dispatchDeaths('Gate (constitutional)').length
+      ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Gate (constitutional)') }
+      : {}),
+    packetContradiction: !!packetConflict,
   }
 }
 

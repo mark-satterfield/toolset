@@ -332,18 +332,42 @@ def _resolve_size(item: dict[str, Any], params: dict[str, Any]) -> dict[str, Any
         when the size is missing.
 
     Raises:
-        WsjfError: A supplied size is not a positive number, or children were supplied at
+        WsjfError: A supplied size is not a positive number, a child size is not a
+            positive integer, the roll-up is not positive, or children were supplied at
             a level that does not roll up.
     """
     estimate = _estimate(item)
-    children = [
-        c for c in (_as_int(c) for c in item.get("childSizes") or []) if c is not None
+    supplied_children = list(item.get("childSizes") or [])
+    children = [_as_int(c) for c in supplied_children]
+    # A child size that would not read as an integer used to be FILTERED OUT here, and
+    # the sum of what survived was returned as the roll-up: a smaller job size, so a
+    # LARGER WSJF, with no finding anywhere. A non-positive child was worse — the total
+    # reached the `cod / jobSize` division at the end of `score`, so a zero aborted the
+    # entire run with an uncaught ZeroDivisionError AFTER every judging session had been
+    # paid for, and a negative one scored silently. A roll-up that cannot be computed is
+    # refused here, by id, as the documented exit-2 refusal.
+    unusable = [
+        raw
+        for raw, value in zip(supplied_children, children, strict=True)
+        if value is None or value <= 0
     ]
+    if unusable:
+        msg = (
+            f"{item.get('id')}: {len(unusable)} of {len(supplied_children)} childSizes "
+            f"are not positive integers, so the roll-up would be wrong rather than "
+            f"absent: {unusable!r}"
+        )
+        raise WsjfError(msg)
     if children:
         if not params["rollup"]:
             msg = f"level {params['level']} does not roll child sizes up"
             raise WsjfError(msg)
         total = sum(children)
+        # The division at the end of `score` has no guard of its own, so nothing
+        # non-positive may leave here by any path.
+        if total <= 0:
+            msg = f"{item.get('id')}: the child-size roll-up is {total}, which is not a usable job size"
+            raise WsjfError(msg)
         record = {"jobSize": total, "sizeSource": "child-rollup", **estimate}
         if "sizeLow" in estimate and "sizeHigh" in estimate:
             record["sizeOutsideRange"] = not (

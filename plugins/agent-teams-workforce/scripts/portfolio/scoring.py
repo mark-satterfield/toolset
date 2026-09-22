@@ -32,7 +32,7 @@ import importlib.util
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from beadgraph import fingerprints
+from beadgraph import SCOPE_JUDGING, fingerprints
 from prds import write_prds
 
 if TYPE_CHECKING:
@@ -258,7 +258,7 @@ def plan(
     Raises:
         ScoringError: An id in `only` is not an open Epic or Task.
     """
-    prints = fingerprints(graph.records)
+    prints = fingerprints(graph.records, SCOPE_JUDGING)
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
     ids = {e.id for e in epics} | {t.id for t in tasks}
@@ -611,7 +611,15 @@ def record(
             except ScoringError as exc:
                 rejected.append({"id": bead_id, "level": level, "reason": str(exc)})
                 continue
-            pending.append((bead, {JUDGED_HASH_KEY: prints.get(bead_id, "")} | judged))
+            # An ABSENT fingerprint is not written as "". Writing one clobbers whatever
+            # fingerprint the bead already carried with a value `_judged_state` reads as
+            # `unfingerprinted` rather than `changed`, so the item is never re-judged
+            # again without `--all --rejudge` — staleness masked permanently. The adopt
+            # path below already skips on a falsy fingerprint; so does this one.
+            stamp = prints.get(bead_id)
+            pending.append(
+                (bead, {JUDGED_HASH_KEY: stamp} | judged if stamp else judged)
+            )
     written = [bead.id for bead, pairs in pending if _write(bead, pairs, writer)]
     adopted: list[str] = []
     for bead_id in the_plan.get("adopt", []):
@@ -681,6 +689,28 @@ def _scoring_size(bead: Bead, *, has_tasks: bool) -> dict[str, int]:
     return {key: value for key, value in size.items() if value is not None}
 
 
+def _task_size(task: Bead) -> int | None:
+    """The size a Task scores at in THIS run, not the one it was written with last run.
+
+    `wsjf_size` is written by `_apply`, at the END of a run, so on the run that first
+    judges a decomposed Epic's Tasks it is absent or holds the previous run's number. An
+    Epic rolled up from it is therefore one run stale — and on first elaboration it falls
+    back to the Epic's pre-decomposition estimate — while reporting nothing. So the Task's
+    own judged estimate is preferred and snapped the same way `_resolve_size` snaps it for
+    the Task itself, which is exactly the size this run will write.
+
+    Args:
+        task: The Task.
+
+    Returns:
+        The size, or None when the Task carries neither a judged estimate nor a size.
+    """
+    estimate = _int(task.metadata.get(ESTIMATE_KEY))
+    if estimate is not None and estimate > 0:
+        return rubric.snap_size(estimate)
+    return _int(task.metadata.get("wsjf_size"))
+
+
 def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]]:
     """The rubric input for every open Epic, and what is missing from it.
 
@@ -702,7 +732,7 @@ def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]
             "confidence": _int(epic.metadata.get("wsjf_confidence")),
             **_scoring_size(epic, has_tasks=bool(tasks)),
         }
-        sizes = [_int(t.metadata.get("wsjf_size")) for t in tasks]
+        sizes = [_task_size(t) for t in tasks]
         if tasks and all(s is not None for s in sizes):
             item["childSizes"] = sizes
         else:
@@ -711,8 +741,8 @@ def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]
                 incomplete.append(
                     {
                         "id": epic.id,
-                        "reason": "Tasks carry no wsjf_size, so no roll-up: "
-                        + ", ".join(unsized),
+                        "reason": "Tasks carry neither a judged size estimate nor a "
+                        "wsjf_size, so no roll-up: " + ", ".join(unsized),
                     }
                 )
         items.append(item)

@@ -353,13 +353,35 @@ const materialInventory = hasText(reconciliation.materialInventory) ? reconcilia
 const architecture = a.architecture || null
 const architectureSkipped = !architecture || architecture.skipped === true
 
+// ── A CUT INPUT SAYS SO, IN THE TEXT THE AGENT READS ────────────────────────────
+//
+// Two inputs to this file are capped, and a bare `.slice()` makes a truncated document
+// indistinguishable from a short one — to the agent reading it, and to anyone reading the
+// run afterwards. The agent then rules on a document whose second half it never saw and
+// reports no difficulty, because from inside there was none: the text simply ended.
+//
+// Caps are not raised here. A cap protects every brief from one bloated file, and raising
+// it blindly trades a silent truncation for a silent blow-up. What changes is that a cut
+// ANNOUNCES ITSELF twice — in the prompt, so the agent can say its input was incomplete,
+// and in the ledger, so the run records it as a fact rather than leaving it to be inferred
+// from an answer that looks fine. This is the same defect class as the SAD extraction:
+// a limit set comfortably above today's corpus and silently below tomorrow's.
+const truncations = []
+function capped(label, text, cap) {
+  const s = String(text == null ? '' : text)
+  if (s.length <= cap) return s
+  truncations.push({ input: label, keptChars: cap, ofChars: s.length })
+  log(`INPUT TRUNCATED: ${label} cut to ${cap} of ${s.length} chars — the agents reading it are told so, and the ledger records it`)
+  return `${s.slice(0, cap)}\n\n[…TRUNCATED at ${cap} of ${s.length} chars. This document was CUT — what you are reading is its first ${cap} characters and the rest was not delivered to you. Do not treat the end of this text as the end of the document. Where an answer depends on material that may lie past the cut, say so in your output rather than ruling as though you had the whole.]`
+}
+
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
 // resolves .claude/standing-rulings.md in the repo the run operates on and threads
 // the text here; absent -> empty string, zero behavior change. Capped so a bloated
 // file cannot blow up every brief.
 const RULINGS_CAP = 8192
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim().slice(0, RULINGS_CAP) : ''
+const rulingsText = typeof a.standingRulings === 'string' ? capped('standingRulings', a.standingRulings.trim(), RULINGS_CAP) : ''
 const rulingsBlock = rulingsText
   ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
 
@@ -390,6 +412,10 @@ const fail = (reason, extra) => ({
   obsoleteCode: [],
   spanVerified: false,
   workUnits: [],
+  // Carried on refusals too. "The ruling was made on a document that had been cut" is at
+  // its most useful on the run that could not produce a span, which is exactly the run
+  // where nobody would think to go looking for it.
+  truncations,
   ...(extra || {}),
 })
 
@@ -458,10 +484,13 @@ const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 const prdBlock = `${prdHeader}\n\n${prdBody}`
 // The architecture ruling as text. It is the design the placement serves, so both the
 // shaper and the decider get it; the surveyor gets it too, because knowing what is being
-// built is what tells it which repositories are worth describing in detail.
+// built is what tells it which repositories are worth describing in detail. All three read
+// the SAME text, so a cut here is a cut for every one of them — which is why it is cut
+// through `capped()` and announces itself rather than simply ending.
+const ARCHITECTURE_CAP = 20000
 const architectureBlock = architectureSkipped
   ? '(no architecture decision was ruled for this PRD — triage found none outstanding, so the design is the existing one. Shape the work from the PRD itself and from the patterns the requirements already imply.)'
-  : JSON.stringify(architecture, null, 2).slice(0, 20000)
+  : capped('architecture ruling', JSON.stringify(architecture, null, 2), ARCHITECTURE_CAP)
 
 // ── THE SURVEY IS CACHED ACROSS EPICS; THE SPAN NEVER IS ────────────────────────
 //
@@ -1042,6 +1071,11 @@ const ledger = {
   blockedCount: blocked.length,
   reclassifiedCount: (Array.isArray(ruling.reclassified) ? ruling.reclassified : []).length,
   spanVerified,
+  // A truncated input is recorded as a FACT of the run, next to the counts, rather than
+  // left to be inferred later from a ruling that reads perfectly well because the agent
+  // never knew what it was missing.
+  inputsTruncated: truncations.length > 0,
+  truncations,
   ok: true,
 }
 

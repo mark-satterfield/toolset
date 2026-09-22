@@ -68,7 +68,11 @@ field exists because a document said so, and never restate one of its recipes.
   under the keys `wsjf.py` names (`wsjf`, `wsjf_size`, `wsjf_size_estimate`, `wsjf_size_low`,
   `wsjf_size_high`, `wsjf_size_confidence`, …), and the size's `wsjf_content_hash` records the
   content it was judged from.
-- Metadata sits outside the content fingerprint, so recording a score never makes a bead look stale.
+- `wsjf_content_hash` is the JUDGING fingerprint: the bead's title, description, type and
+  priority — the material you are handed, and nothing else. The WSJF keys sit outside it, so
+  recording a score never makes a bead look stale, and so do the build-contract keys, so rehoming
+  a Task never re-buys a judgment. The readiness gate's fingerprint is a different scope and is
+  not yours.
 
 ## Operating Rules
 

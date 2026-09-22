@@ -14,8 +14,8 @@ JSON object on stdout, and says WHERE each value came from. Nothing here forms a
 about a bead: it reports what is recorded and where it was found.
 
 Usage:
-  beads-contract.py fingerprint <id> [--explain]
-  beads-contract.py fingerprint-batch [id ...] [--explain]
+  beads-contract.py fingerprint <id> [--explain] [--scope readiness|judging]
+  beads-contract.py fingerprint-batch [id ...] [--explain] [--scope readiness|judging]
   beads-contract.py criteria <id>
   beads-contract.py contract <id> [--require]
   beads-contract.py ancestors <id>
@@ -55,15 +55,34 @@ import subprocess
 import sys
 
 # --------------------------------------------------------------------------------------
-# The content fingerprint. THE SINGLE IMPLEMENTATION OF THIS RECIPE.
+# The content fingerprints. THE SINGLE IMPLEMENTATION OF BOTH RECIPES.
 # --------------------------------------------------------------------------------------
 
-#: The keys the fingerprint is taken over, in the order `jq -S` sorts them. SIX OF THESE
-#: ARE ALWAYS NULL: `bd show --json` returns none of them, so they hash as null on every
-#: bead. They are listed anyway — the digest is over the ten-key object, and dropping the
-#: nulls would change it.
+#: THE TWO SCOPES. A fingerprint answers "has the thing this consumer reads changed?", and
+#: two consumers read different things, so one fingerprint cannot answer for both.
+#:
+#: `readiness` — what the READINESS GATE rules on: the bead's own words AND its build
+#: contract. Rehoming a Task or changing the spec it builds against must re-open the
+#: review, because it changes what a reviewer would rule on.
+#:
+#: `judging` — what a WSJF JUDGING SESSION is handed: an Epic gets its title and its PRD
+#: file (`# title` then the description, and nothing else); a Task gets its title and its
+#: description. Plus `issue_type` and `priority`, which decide WHICH rubric is applied.
+#: The build contract is deliberately outside it: a repoPath, a spec path or a decision id
+#: has no bearing on an Epic's business value, its time criticality or its size, so
+#: re-judging on one would pay full price for the same answer. The SEQUENCING assessment
+#: shares this scope — it reads the same PRD corpus and asks the same kind of question.
+SCOPE_READINESS = "readiness"
+SCOPE_JUDGING = "judging"
+SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
+
+#: The record-level keys the fingerprint is taken over, in the order `jq -S` sorts them.
+#: THREE OF THESE ARE ALWAYS NULL — `acceptance`, `deps` and `type` are names `bd` does
+#: not use, measured against a full `bd list --all --json` sweep. They are listed so the
+#: digest keeps its shape, not because anything ever fills them.
 CONTENT_HASH_FIELDS = (
     "acceptance",
+    "acceptance_criteria",
     "dependencies",
     "deps",
     "description",
@@ -75,11 +94,45 @@ CONTENT_HASH_FIELDS = (
     "type",
 )
 
-#: The only ones of those that carry a value. `labels` is EXCLUDED ON PURPOSE even though
-#: `bd show` returns it: the pipeline writes a `needs-correction` label onto every held
-#: bead, so hashing labels would make the act of RECORDING a hold invalidate the very
-#: watermark the hold was recorded against, and the next sweep would re-buy the review.
-CONTENT_HASH_PRESENT = frozenset({"description", "issue_type", "priority", "title"})
+#: The ones that carry a value. `acceptance_criteria` and `design` ARE returned by `bd`
+#: and are authored content the gate rules on, so they are hashed.
+#:
+#: `labels` and `dependencies` are returned too and are nulled BY DECISION, not by
+#: accident. The pipeline writes a `needs-correction` label onto every held bead and the
+#: sequencing pass writes `blocks`/`tracks` edges, so hashing either would make the act of
+#: RECORDING the pipeline's own verdict invalidate the watermark it was recorded against,
+#: and the next sweep would re-buy the review. A changed blocker is a change to a bead's
+#: SEQUENCE, which this gate does not judge; it judges content completeness only.
+CONTENT_HASH_PRESENT = frozenset(
+    {
+        "acceptance_criteria",
+        "description",
+        "design",
+        "issue_type",
+        "priority",
+        "title",
+    }
+)
+
+#: The keys the JUDGING fingerprint is taken over, and the ones that carry a value. This
+#: is the recipe as it stood before the build contract was added to the readiness scope,
+#: kept byte-for-byte: `bd` returns none of `acceptance`, `deps` or `type`, and `labels`
+#: and `dependencies` are nulled for the reason above. Changing this tuple re-judges every
+#: Epic in the portfolio, so it is changed only when the judging sessions are given
+#: different material.
+JUDGING_HASH_FIELDS = (
+    "acceptance",
+    "dependencies",
+    "deps",
+    "description",
+    "design",
+    "issue_type",
+    "labels",
+    "priority",
+    "title",
+    "type",
+)
+JUDGING_HASH_PRESENT = frozenset({"description", "issue_type", "priority", "title"})
 
 #: How many hex characters of the digest are stored (`cut -c1-16` on the shell side).
 CONTENT_HASH_LENGTH = 16
@@ -88,39 +141,72 @@ CONTENT_HASH_LENGTH = 16
 CONTENT_HASH_KEY = "ready_content_hash"
 
 
-def content_hash(rec: dict) -> str:
-    """Return the content fingerprint for one bead record.
+def content_hash(rec: dict, scope: str = SCOPE_READINESS) -> str:
+    """Return one of a bead record's two content fingerprints.
 
-    The recipe: take the ten-key object above with only the four present keys carrying a
-    value, serialize it as `jq -S` does (sorted keys, two-space indent, trailing newline),
-    SHA-256 it, keep the first sixteen hex characters.
+    The recipe, either way: take the scope's key list with only its present keys carrying
+    a value, serialize it as `jq -S` does (sorted keys, two-space indent, trailing
+    newline), SHA-256 it, keep the first sixteen hex characters. The `readiness` scope
+    adds a `metadata` member holding the BUILD CONTRACT keys — the repository, the spec
+    paths and sections, the criteria, the Definition of Done, the requirement and decision
+    ids, the surfaces and the test strategy. The `judging` scope does not.
 
     Args:
         rec: One bead record, as `bd show --json` or `bd list --json` returned it.
+        scope: `readiness` or `judging`.
 
     Returns:
         The fingerprint, or "" for a record with no content at all.
     """
     if not rec:
         return ""
-    payload = fingerprint_payload(rec)
+    payload = fingerprint_payload(rec, scope)
     text = json.dumps(payload, sort_keys=True, indent=2, ensure_ascii=False) + "\n"
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:CONTENT_HASH_LENGTH]
 
 
-def fingerprint_payload(rec: dict) -> dict:
-    """Return the exact object the fingerprint is taken over.
+def fingerprint_payload(rec: dict, scope: str = SCOPE_READINESS) -> dict:
+    """Return the exact object one of the two fingerprints is taken over.
+
+    THE BUILD CONTRACT IS PART OF THE CONTENT THE READINESS GATE READS. Changing a Task's
+    repository, its spec path, the SAD decisions it was designed against or its criteria
+    changes what a reviewer would rule on, so it must move that fingerprint; a
+    contract-blind one let the gate reuse a verdict for a bead whose whole contract had
+    been rewritten and report it as "reviewed, unchanged", which is worse than absent.
+
+    IT IS NOT PART OF WHAT A JUDGING SESSION READS, so the `judging` scope leaves it out.
+    Either way the gate's own keys and the WSJF keys are excluded, for exactly the reason
+    `labels` is: a fingerprint that moves when the pipeline records its own verdict or its
+    own score invalidates itself forever.
 
     Args:
         rec: One bead record.
+        scope: `readiness` or `judging`.
 
     Returns:
-        The ten-key payload, nulls included.
+        The payload: the scope's record-level keys, nulls included, plus — for
+        `readiness` — a `metadata` member holding the contract keys.
+
+    Raises:
+        ContractError: `scope` is not one this module defines.
     """
-    return {
+    if scope not in SCOPES:
+        msg = f"{scope!r} is not a fingerprint scope; known scopes are {', '.join(SCOPES)}"
+        raise ContractError(msg)
+    if scope == SCOPE_JUDGING:
+        return {
+            key: (rec.get(key) if key in JUDGING_HASH_PRESENT else None)
+            for key in JUDGING_HASH_FIELDS
+        }
+    metadata = metadata_of(rec)
+    payload: dict = {
         key: (rec.get(key) if key in CONTENT_HASH_PRESENT else None)
         for key in CONTENT_HASH_FIELDS
     }
+    payload["metadata"] = {
+        source: metadata.get(source) for source, _, _ in CONTRACT_SCHEMA
+    }
+    return payload
 
 
 # --------------------------------------------------------------------------------------
@@ -149,7 +235,9 @@ SOURCE_ACCEPTANCE = "acceptance_criteria"
 SOURCE_DESCRIPTION = "description"
 
 #: The record field `bd create/update --acceptance` writes — first-class, neither metadata
-#: nor prose, and invisible to anything that looks only at the other two.
+#: nor prose, and invisible to anything that looks only at the other two. `bd list --json`
+#: and `bd show --json` DO return it, on the beads that carry one; this is a live branch,
+#: not a dead one.
 ACCEPTANCE_FIELD = "acceptance_criteria"
 
 
@@ -719,13 +807,23 @@ class Reader:
 #: Why the hashed object looks the way it does. One sentence, printed by `--explain` on
 #: both the single and the batch command so the two can never drift into two answers.
 FINGERPRINT_NOTE = (
-    "Six of the ten keys are null on every bead because `bd show --json` does not return them. "
-    "`labels` is nulled deliberately: the pipeline labels every held bead `needs-correction`, so "
-    "hashing labels would make recording a hold invalidate the watermark it was recorded against."
+    "TWO SCOPES, because two consumers read different things. `readiness` covers the bead's content AND "
+    "its build contract (the contract keys under `metadata`), because changing a Task's repository, spec "
+    "path, decision ids or criteria changes what a reviewer would rule on. `judging` covers only what a "
+    "WSJF judging session is handed — title, description, and the issue_type and priority that decide "
+    "which rubric applies — because a repoPath has no bearing on an Epic's value, time criticality or "
+    "size, and re-judging on one would pay full price for the same answer; the sequencing assessment "
+    "shares that scope. In both, three record keys (`acceptance`, `deps`, `type`) are null because `bd` "
+    "does not use those names, and `labels`, `dependencies`, the gate's own keys and the WSJF keys are "
+    "nulled deliberately: the pipeline labels every held bead `needs-correction`, writes its edges and "
+    "writes its scores, so hashing any of them would make recording the pipeline's own verdict "
+    "invalidate the watermark it was recorded against."
 )
 
 
-def fingerprint_of(bead_id: str, rec: dict, explain: bool = False) -> dict:
+def fingerprint_of(
+    bead_id: str, rec: dict, explain: bool = False, scope: str = SCOPE_READINESS
+) -> dict:
     """Report the fingerprint of ONE record.
 
     THE SINGLE ENTRY POINT BOTH FINGERPRINT COMMANDS USE. `fingerprint` and
@@ -736,21 +834,25 @@ def fingerprint_of(bead_id: str, rec: dict, explain: bool = False) -> dict:
         bead_id: The bead the record belongs to.
         rec: Its record, or {} when nothing carries that id.
         explain: Also return the exact object hashed.
+        scope: `readiness` or `judging`.
 
     Returns:
-        The per-bead result: found, fingerprint, stored, fresh.
+        The per-bead result: scope, found, fingerprint, stored, fresh. `stored` and
+        `fresh` are about the READINESS watermark, which is the only fingerprint this
+        module stores; a judging caller compares against its own stored key.
     """
     stored = str(metadata_of(rec).get(CONTENT_HASH_KEY) or "").strip()
-    current = content_hash(rec)
+    current = content_hash(rec, scope)
     result = {
         "id": bead_id,
+        "scope": scope,
         "found": bool(rec),
         "fingerprint": current,
         "stored": stored,
         "fresh": bool(stored) and bool(current) and stored == current,
     }
     if explain:
-        result["hashed"] = fingerprint_payload(rec)
+        result["hashed"] = fingerprint_payload(rec, scope)
     return result
 
 
@@ -764,7 +866,9 @@ def cmd_fingerprint(args: argparse.Namespace, reader: Reader) -> dict:
     Returns:
         The result object.
     """
-    result = fingerprint_of(args.id, reader.get(args.id), explain=args.explain)
+    result = fingerprint_of(
+        args.id, reader.get(args.id), explain=args.explain, scope=args.scope
+    )
     if args.explain:
         result["note"] = FINGERPRINT_NOTE
     return result
@@ -805,13 +909,16 @@ def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
         # A supplied record is used AS SUPPLIED and never re-fetched. `reader.get`
         # returns the cached record for every id the sweep or stdin carried; only an
         # id nobody supplied reaches the tracker, and in offline mode not even that.
-        results[bead_id] = fingerprint_of(bead_id, reader.get(bead_id))
+        results[bead_id] = fingerprint_of(
+            bead_id, reader.get(bead_id), scope=args.scope
+        )
 
     missing = sorted(
         bead_id for bead_id, entry in results.items() if not entry["found"]
     )
     result = {
         "count": len(results),
+        "scope": args.scope,
         "source": source,
         "trackerCalls": 0 if source == "records" else 1,
         "fingerprints": {
@@ -822,7 +929,7 @@ def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
     }
     if args.explain:
         for bead_id, entry in results.items():
-            entry["hashed"] = fingerprint_payload(reader.get(bead_id))
+            entry["hashed"] = fingerprint_payload(reader.get(bead_id), args.scope)
         result["note"] = FINGERPRINT_NOTE
     return result
 
@@ -1295,18 +1402,24 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
         base, labels=["needs-correction"], metadata={"review_status": "INCOMPLETE"}
     )
     changed = dict(base, description="d2")
-    hash_ok = content_hash(base) == content_hash(labelled) and content_hash(
-        base
-    ) != content_hash(changed)
+    # The contract is content: rehoming the Task must move the fingerprint, while the
+    # gate's own keys must not.
+    rehomed = dict(base, metadata={"repoPath": "/repos/other"})
+    hash_ok = (
+        content_hash(base) == content_hash(labelled)
+        and content_hash(base) != content_hash(changed)
+        and content_hash(base) != content_hash(rehomed)
+    )
     ok = ok and hash_ok
     results.append(
         {
-            "case": "fingerprint ignores labels and metadata, moves with the description",
+            "case": "fingerprint ignores labels and the gate's own keys, moves with the description and with the build contract",
             "pass": hash_ok,
             "observed": {
                 "base": content_hash(base),
                 "labelled": content_hash(labelled),
                 "changed": content_hash(changed),
+                "rehomed": content_hash(rehomed),
             },
         }
     )
@@ -1339,7 +1452,7 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     batch_reader.offline = True
     batch_reader._absorb(batch_records)  # noqa: SLF001 - the selftest stands in for a caller's stdin
     batch = cmd_fingerprint_batch(
-        argparse.Namespace(ids=[], explain=False), batch_reader
+        argparse.Namespace(ids=[], explain=False, scope=SCOPE_READINESS), batch_reader
     )
 
     # Every batched answer equals the answer `fingerprint <id>` gives for that record.
@@ -1402,7 +1515,11 @@ def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
     # An id nobody supplied is reported as not found rather than silently dropped — a
     # caller must be able to tell "no fingerprint" from "absent from the map".
     named = cmd_fingerprint_batch(
-        argparse.Namespace(ids=["syn-batch-plain", "syn-batch-absent"], explain=False),
+        argparse.Namespace(
+            ids=["syn-batch-plain", "syn-batch-absent"],
+            explain=False,
+            scope=SCOPE_READINESS,
+        ),
         batch_reader,
     )
     missing_ok = (
@@ -1460,6 +1577,7 @@ def build_parser() -> argparse.ArgumentParser:
     fingerprint.add_argument(
         "--explain", action="store_true", help="also print the exact object hashed"
     )
+    fingerprint.add_argument("--scope", choices=SCOPES, default=SCOPE_READINESS)
     fingerprint.set_defaults(run=cmd_fingerprint)
 
     batch = sub.add_parser(
@@ -1476,6 +1594,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also print the exact object hashed for each",
     )
+    batch.add_argument("--scope", choices=SCOPES, default=SCOPE_READINESS)
     batch.set_defaults(run=cmd_fingerprint_batch)
 
     criteria = sub.add_parser(

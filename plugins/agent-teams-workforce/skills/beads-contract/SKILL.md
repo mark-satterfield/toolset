@@ -42,8 +42,8 @@ required part is missing.
 | --- | --- |
 | `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description and the contract — passed as-is. Add `--require` to exit 3 rather than report. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
-| `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--explain` prints the exact object hashed. |
-| `fingerprint-batch [id ...]` | The same answer for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
+| `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--scope judging` returns the judging fingerprint instead; `--explain` prints the exact object hashed. |
+| `fingerprint-batch [id ...]` | The same answer, in either `--scope`, for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
 | `ancestors <id>` | The parent chain, nearest first, cycle-safe. |
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
@@ -132,8 +132,9 @@ than appearing to invent criteria.
 ## The metadata key namespace
 
 `bd` metadata is flat `key=value` TEXT, so **every value is a string**: lists and the strategy
-object are compact JSON. Metadata sits OUTSIDE the content fingerprint, which is what lets the
-gate store its own verdict without invalidating it.
+object are compact JSON. The BUILD CONTRACT keys are inside the READINESS fingerprint and outside
+the JUDGING one; the gate's own keys, the WSJF keys, the lane keys and the sequencing keys are
+outside both, which is what lets each consumer store its own verdict without invalidating it.
 
 Build contract, written by the decomposition phase onto each Task and read back by `contract`:
 
@@ -217,22 +218,39 @@ is silently invisible to every reader, and the bead looks unset forever.
 **Always `--set-metadata` (merges), never `--metadata` (replaces the whole object and drops every
 key the write did not name).** `metadata set` uses the right one and reads back to verify.
 
-## The content fingerprint
+## The content fingerprints
 
-The staleness watermark. Its ONE implementation is `content_hash` in
-`scripts/beads-contract.py`; `fingerprint <id> --explain` prints the exact object hashed. Do not
-reproduce the recipe in prose, in `jq`, or in a second language.
+The staleness watermark, in TWO SCOPES. A fingerprint answers "has the thing this consumer reads
+changed?", and two consumers read different things, so one fingerprint cannot answer for both.
+Both scopes have ONE implementation, `content_hash` in `scripts/beads-contract.py`;
+`fingerprint <id> --scope <scope> --explain` prints the exact object hashed. Do not reproduce
+either recipe in prose, in `jq`, or in a second language.
+
+**`--scope readiness`** (the default) is what the READINESS GATE rules on, stored as
+`ready_content_hash`. **`--scope judging`** is what a WSJF judging session is handed, stored as
+`wsjf_content_hash`; the SEQUENCING assessment shares it, stored as `seq_content_hash`, because
+it reads the same PRD corpus. **Pass the scope that matches the key you store the answer under**,
+or you will compare a watermark against a fingerprint of something else.
 
 What matters to a caller:
 
-- It covers `title`, `description`, `issue_type` and `priority`, and nothing else. Six of the ten
-  keys in the hashed object are null on every bead because `bd show` does not return them; they
-  stay in the object because the digest is over its shape.
-- **`labels` is nulled deliberately.** The pipeline writes `needs-correction` onto every held
-  bead. If labels were hashed, RECORDING a hold would change the fingerprint, the bead would read
-  as stale on the very next pass, and the sweep would re-buy the review it just held to avoid.
-- Metadata, timestamps, status and comments are outside it, so storing a verdict never
-  invalidates it.
+- BOTH cover `title`, `description`, `issue_type` and `priority`.
+- READINESS ALSO covers the `acceptance_criteria` and `design` record fields and the BUILD
+  CONTRACT keys — the repository, the spec paths and sections, the criteria, the Definition of
+  Done, the requirement and decision ids, the surfaces and the test strategy. Rehoming a Task or
+  changing the spec it builds against makes it stale, because it changes what a reviewer would
+  rule on.
+- JUDGING covers NONE of those. An Epic's judging session is handed its title and its PRD file,
+  a Task's its title and description, and a repoPath or a decision id has no bearing on business
+  value, time criticality or size — re-judging on one would pay full price for the same answer.
+- In both, three record keys (`acceptance`, `deps`, `type`) are null on every bead because `bd`
+  does not use those names; they stay in the object because the digest is over its shape.
+- **`labels` and `dependencies` are nulled deliberately**, as are the gate's own keys, the WSJF
+  keys, the lane keys and the sequencing keys. The pipeline writes `needs-correction` onto every
+  held bead, writes its own edges and writes its own scores. If any of those were hashed,
+  RECORDING the pipeline's verdict would change the fingerprint, the bead would read as stale on
+  the very next pass, and the sweep would re-buy the review it just held to avoid.
+- Timestamps, status and comments are outside it, so storing a verdict never invalidates it.
 - Criteria in the Task's OWN description ARE covered, because `description` is. Criteria on a
   PARENT are NOT — the fingerprint is over this bead's own record. Editing a parent's criteria
   does not make this Task stale; that is a real limitation, and it is about where the prose sits.

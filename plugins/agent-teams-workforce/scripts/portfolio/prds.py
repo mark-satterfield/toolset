@@ -48,9 +48,13 @@ def headings(description: str) -> list[str]:
     Args:
         description: The PRD text.
 
+    EVERY heading, uncapped. The cap belongs to the index line, which states how many it
+    withheld; capping here returned a partial list a caller could not tell from a complete
+    one, and the index is what narrows a search before a PRD is opened.
+
     Returns:
         The text of every line that starts with `#`, with the `#` characters and the
-        surrounding space stripped, empty ones left out, at most `MAX_HEADINGS`.
+        surrounding space stripped, empty ones left out.
     """
     found = []
     for line in description.splitlines():
@@ -59,8 +63,6 @@ def headings(description: str) -> list[str]:
         text = line.lstrip("#").strip()
         if text:
             found.append(text)
-        if len(found) == MAX_HEADINGS:
-            break
     return found
 
 
@@ -71,7 +73,9 @@ def write_index(
 
     One heading line, `# Open Epics`, then one line per Epic:
     `- <id> | <title> | elaboration: <state or unset> | PRD: <path> | sections: <headings>`.
-    Nothing else from the Epic's text or metadata is written.
+    Nothing else from the Epic's text or metadata is written. At most `MAX_HEADINGS`
+    sections are listed, and a PRD with more says how many were withheld, so a truncated
+    line is never read as a complete one.
 
     Args:
         graph: The tracker graph the Epics were read from.
@@ -83,7 +87,10 @@ def write_index(
     for epic in epics:
         bead = graph.beads.get(epic.id, epic)
         state = bead.metadata.get(ELAB_KEY) or "unset"
-        sections = "; ".join(headings(bead.description))
+        found = headings(bead.description)
+        sections = "; ".join(found[:MAX_HEADINGS])
+        if len(found) > MAX_HEADINGS:
+            sections += f"; +{len(found) - MAX_HEADINGS} more headings not listed"
         lines.append(
             f"- {bead.id} | {bead.title} | elaboration: {state} | "
             f"PRD: {paths.get(bead.id, '')} | sections: {sections}"

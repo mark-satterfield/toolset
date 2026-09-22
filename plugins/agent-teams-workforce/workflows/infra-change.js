@@ -422,6 +422,13 @@ function deployEvidence(rows) {
   }
 }
 
+// A phase whose producing agents — or whose JUDGE — died is the harness failing, not the
+// work, so it is reported under its own stage rather than under the phase name, which
+// would read as "the tests were bad" for what was an account limit. The two siblings
+// already carried this; this file filed every such failure against the bead.
+const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
+const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
+
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
 // WHAT was unmet and on what evidence; a headline that says only "green failed" makes
 // the caller open the journal to learn anything at all.
@@ -599,12 +606,45 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       recordGate(gate, phaseName, attempt, null, { terminal: 'phase-blocked', blockedReason: why })
       return { ok: false, phaseBlocked: true, reason: why, artifact }
     }
-    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, checks, artifact, escalateTargets,
-    })
+    const gateArgs = { gate, phaseName, criteria, checks, artifact, escalateTargets }
+    let verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    // ── A DEAD JUDGE GETS A SECOND LOOK BEFORE FINISHED WORK IS DISCARDED ────────
+    //
+    // The gate is READ-ONLY: it produces nothing, changes nothing, and judging the same
+    // artifact twice cannot corrupt anything. The phase below it, by contrast, has already
+    // run to completion and its output is durable. Throwing that away because the judge was
+    // skipped or hit an account limit is the same asymmetry as aborting an elaboration over
+    // a dead dependency mapper — the expensive error taken to avoid the cheap one. So a null
+    // verdict is re-asked once, against the identical artifact, before it is given up on.
+    // It does NOT spend a phase attempt: `attemptsSpent` counts re-running the PHASE, and
+    // nothing about the phase is re-run here.
+    if (!verdict) {
+      log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
+      verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    }
     if (!verdict) {
       recordGate(gate, phaseName, attempt, null, { terminal: 'no-verdict' })
-      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+      return {
+        ok: false,
+        reason: `gate ${gate} returned no verdict twice — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
+        artifact,
+        dispatchFailed: true,
+      }
+    }
+    // The gate itself reports a dead judge rather than a verdict. Same reading: the work was
+    // never judged, so it is reported under the environment stage and no retry is spent on a
+    // wall the re-dispatch would meet again.
+    if (verdict.dispatchFailed === true) {
+      recordGate(gate, phaseName, attempt, verdict, { terminal: 'gate-dispatch-failed', dispatchFailures: verdict.dispatchFailures || [] })
+      log(`Gate ${gate} (${phaseName}): the judge never ruled — ${verdict.feedback || 'no reason given'}`)
+      return {
+        ok: false,
+        dispatchFailed: true,
+        dispatchFailures: verdict.dispatchFailures || [],
+        reason: verdict.feedback || `gate ${gate}'s judge returned no verdict`,
+        artifact,
+        verdict,
+      }
     }
     recordGate(gate, phaseName, attempt, verdict)
     lastVerdict = verdict
@@ -1273,7 +1313,7 @@ if (!g1Loop.ok) {
   // infra-intent exits was taken, and the intent is the artifact a re-dispatch starts
   // from — the whole reason loop exhaustion carries it at all.
   return {
-    ...handback(false, 'infra-intent', gateHeadline('infra-intent', g1Loop), { g1Loop, intent: g1Loop.artifact }),
+    ...handback(false, gateStage('infra-intent', g1Loop), gateHeadline('infra-intent', g1Loop), { g1Loop, intent: g1Loop.artifact }),
     gate: 'G1',
     intent: g1Loop.artifact,
   }
@@ -1342,7 +1382,7 @@ red = await gateLoop({
 if (red.ok) await cpSave('red', red)
 }
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
-if (!red.ok) return handback(false, 'red', gateHeadline('red', red), red)
+if (!red.ok) return handback(false, gateStage('red', red), gateHeadline('red', red), red)
 // Red found the provisioning intent already asserted by PASSING checks: the infra
 // already expresses it. Green would be asked to make a failing assertion pass when
 // none fails, so the run ends here — successfully, with nothing changed.
@@ -1386,7 +1426,7 @@ green = await gateLoop({
 if (green.ok) await cpSave('green', green)
 }
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
-if (!green.ok) return handback(false, 'green', gateHeadline('green', green), green)
+if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
 
 // Documentation runs ALONGSIDE the rest of the tail (started after Green, awaited before deploy).
 const docTrack = workflow('agent-teams-workforce:documentation', { contract: tailContract, green: green.artifact })
@@ -1395,7 +1435,7 @@ const docTrack = workflow('agent-teams-workforce:documentation', { contract: tai
 // failed run never leaves docTrack as an unhandled rejection or orphaned work.
 async function failAfterDoc(stage, detail) {
   await Promise.allSettled([docTrack])
-  return handback(false, stage, gateHeadline(stage, detail), detail)
+  return handback(false, gateStage(stage, detail), gateHeadline(stage, detail), detail)
 }
 
 // ── Integration (Gate 3) — infra contract/drift checks across stacks ─────────────
@@ -1560,7 +1600,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const smokeFailedInDev = deployArtifact.deployedToDev === true && deployArtifact.smokePassed !== true
   if (!smokeFailedInDev) {
     return {
-      ...handback(false, 'deploy-to-dev', gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
+      ...handback(false, gateStage('deploy-to-dev', deployReady), gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
       ...deployEvidence(deployIterations),
     }
   }
@@ -1707,8 +1747,14 @@ return {
   // and the caller's `detailPath` is the path this returns. A journal that could not be
   // written yields detailPath:null — an honest "the detail is gone", never a path to a file
   // nobody wrote.
+  // Telemetry and landing each run on every exit path and each gets its own progress group,
+  // which `meta.phases` has always declared — but nothing ever entered either one, so both
+  // groups stayed empty for the whole run and the work appeared to happen inside whichever
+  // phase died.
+  enterPhase('Run Ledger')
   const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   if (result) result.detailPath = detailPath || null
+  enterPhase('Settle')
   const settle = await settleRun()
   if (result) applySettle(result, settle)
   // A COMPLETED run retires its checkpoint — resuming finished work replays it.

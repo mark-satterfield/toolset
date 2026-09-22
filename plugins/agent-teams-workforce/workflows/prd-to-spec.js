@@ -1186,12 +1186,45 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
-    const verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', {
-      gate, phaseName, criteria, checks, structural, artifact, escalateTargets,
-    })
+    const gateArgs = { gate, phaseName, criteria, checks, structural, artifact, escalateTargets }
+    let verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    // ── A DEAD JUDGE GETS A SECOND LOOK BEFORE FINISHED WORK IS DISCARDED ────────
+    //
+    // The gate is READ-ONLY: it produces nothing, changes nothing, and judging the same
+    // artifact twice cannot corrupt anything. The phase below it, by contrast, has already
+    // run to completion and its output is durable. Throwing that away because the judge was
+    // skipped or hit an account limit is the same asymmetry as aborting an elaboration over
+    // a dead dependency mapper — the expensive error taken to avoid the cheap one. So a null
+    // verdict is re-asked once, against the identical artifact, before it is given up on.
+    // It does NOT spend a phase attempt: `attemptsSpent` counts re-running the PHASE, and
+    // nothing about the phase is re-run here.
+    if (!verdict) {
+      log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
+      verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
-      return { ok: false, reason: `gate ${gate} returned no verdict`, artifact }
+      return {
+        ok: false,
+        reason: `gate ${gate} returned no verdict twice — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
+        artifact,
+        dispatchFailed: true,
+      }
+    }
+    // The gate itself reports a dead judge rather than a verdict. Same reading: the work was
+    // never judged, so it is reported under the environment stage and no retry is spent on a
+    // wall the re-dispatch would meet again.
+    if (verdict.dispatchFailed === true) {
+      recordGate(attempt, verdict, { terminal: 'gate-dispatch-failed', dispatchFailures: verdict.dispatchFailures || [] })
+      log(`Gate ${gate} (${phaseName}): the judge never ruled — ${verdict.feedback || 'no reason given'}`)
+      return {
+        ok: false,
+        dispatchFailed: true,
+        dispatchFailures: verdict.dispatchFailures || [],
+        reason: verdict.feedback || `gate ${gate}'s judge returned no verdict`,
+        artifact,
+        verdict,
+      }
     }
     recordGate(attempt, verdict)
     lastVerdict = verdict
@@ -2458,14 +2491,28 @@ if (!archNeeded) {
         // attached — cheaper and better aimed than failing the mini and re-running the
         // whole phase including triage.
         maxLoops: 2,
-        // The first pass's SAD extract, reused on a G2 rework pass — the same threading
-        // trd-authoring already gets below. The mini shards and extracts the whole SAD
-        // itself, and the SAD does not change inside this gate loop, so without this a
-        // rework re-reads ~1.7MB to rebuild an identical packet.
+        // The previous pass's SAD extract, reused on a G2 rework — the same threading
+        // trd-authoring gets below, but with one condition that does NOT apply there. The
+        // mini shards and extracts the whole SAD itself, so reusing the packet saves
+        // re-reading ~1.7MB; the packet is only safe to reuse while the SAD still says what
+        // it said. The architecture mini's SAD phase RUNS THE MAINTAINER and rewrites
+        // §2/§4/§8 on every pass that reaches it, so a pass that changed the SAD has
+        // invalidated its own extract, and a rework handed it back would rule against a
+        // document missing the entries the pass before it just wrote — worse than re-reading.
+        // So the extract is cached only when the pass reported no changed SAD file, and any
+        // pass that did change one drops it and the next pass extracts afresh.
         sadExtract: archSadExtract || undefined,
         feedback,
       }).then((r) => {
-        if (r && r.sadExtract && !archSadExtract) archSadExtract = r.sadExtract
+        const changed = (r && r.sadUpdate && Array.isArray(r.sadUpdate.changedFiles) ? r.sadUpdate.changedFiles : []).filter(
+          (f) => typeof f === 'string' && f.trim()
+        )
+        if (changed.length) {
+          if (archSadExtract) log(`Architecture rework: the SAD was rewritten (${changed.length} file(s)), so the cached extract is dropped and the next pass re-extracts`)
+          archSadExtract = null
+        } else if (r && r.sadExtract && !archSadExtract) {
+          archSadExtract = r.sadExtract
+        }
         return r
       }),
   })
@@ -4206,10 +4253,23 @@ if (removalNotEmitted.length || removalWeaklyPlaced.length || removalMalformed.l
 const stories = specPairs.map((p) => p.story)
 const decompositions = [] // one { repoPath, storyKey, artifact } per Story that passed G4
 const decompositionFailures = [] // Stories whose task set failed G4 — kept, never dropped
-// repoPath -> the spec documents the decomposer reported it could not open or found empty.
-// Read at the write below, so a Task that ends up with no spec reference is reported with
-// the reason it actually has rather than the one that used to be the only possibility.
+// repoPath -> { reported, paths }. `paths` are the spec documents the decomposer said it
+// could not open or found empty; `reported` is whether it said anything at all, which a
+// replay of an artifact predating the field does not. Read twice at the write below: once so
+// a Task with no spec reference is reported with the reason it actually has rather than the
+// one that used to be the only possibility, and once so the parent Story advertises the same
+// documents its Tasks do.
 const specDocsUnreadableByRepo = new Map()
+const specDocsStatus = (repo) => specDocsUnreadableByRepo.get(repo) || { reported: false, paths: [] }
+// Both spellings of a document that could not be read: the decomposer reports the absolute
+// path it tried to open, a bead records the project-root-relative ref.
+const specDocUnreadable = (repo, name) => {
+  const { paths } = specDocsStatus(repo)
+  if (!paths.length) return false
+  const abs = artPath(name)
+  const rel = ART_REL ? `${ART_REL}/${name}` : null
+  return paths.includes(name) || (!!abs && paths.includes(abs)) || (!!rel && paths.includes(rel))
+}
 const tasks = []
 // Decomposed CONCURRENTLY, for the same reason and under the same rules as the per-repo
 // spec fan-out above: Story *i* consumes nothing from Story *j* — each reads its own
@@ -4419,18 +4479,35 @@ for (const [pairIndex, pair] of specPairs.entries()) {
   // Task left with no ref at all is named in `emission.specReferenceMissing`, which already
   // holds the verdict short of `complete` — visibly short of its contract instead of falsely
   // complete.
+  //
+  // AN ABSENT REPORT IS UNKNOWN, NOT "ALL READABLE". The field is required of the maker, so
+  // a live run always states it — but a decomposition REPLAYED from an artifact saved before
+  // the field existed carries no report at all, and reading that silence as an empty list
+  // would quietly restore the exact behaviour this filter removes, with nothing to show for
+  // it. So the two cases are kept apart: reported means the refs below are verified against
+  // files someone opened, absent means they are the naming convention again and are marked
+  // unverified on every bead that carries them.
+  const reported = !!(decomposition.artifact && Array.isArray(decomposition.artifact.specDocsUnreadable))
   const unreadable = new Set(
-    ((decomposition.artifact && Array.isArray(decomposition.artifact.specDocsUnreadable)) ? decomposition.artifact.specDocsUnreadable : [])
+    (reported ? decomposition.artifact.specDocsUnreadable : [])
       .filter((p) => typeof p === 'string' && p.trim())
       .map((p) => p.trim())
   )
-  // Reported as absolute read paths; a Task records the root-relative ref. Both forms of
+  // Reported as absolute read paths; a bead records the root-relative ref. Both forms of
   // each unreadable document are refused, so neither spelling survives the filter.
   const readableDoc = (d) => !unreadable.has(d.path) && !(d.ref && unreadable.has(d.ref))
   const storyDocs = specDocsFor(pair)
   const storyRefs = storyDocs.filter(readableDoc).map((d) => d.ref).filter(Boolean)
+  // Read again when the Story's own artifact metadata is written, so the parent advertises
+  // the same documents its Tasks do. A build-lane agent runs `bd show` on either one.
+  specDocsUnreadableByRepo.set(pair.repoPath, { reported, paths: [...unreadable] })
+  if (!reported) {
+    log(
+      `Spec documents for ${pair.repoPath} are UNVERIFIED — the decomposition was replayed from an artifact that carries no readability report, ` +
+        'so its spec refs are the naming convention and are recorded as unverified.'
+    )
+  }
   if (unreadable.size) {
-    specDocsUnreadableByRepo.set(pair.repoPath, [...unreadable])
     log(
       `Spec documents NOT readable for ${pair.repoPath} (${unreadable.size}): ${[...unreadable].join(', ')} — ` +
         `their refs are dropped, leaving ${storyRefs.length} of ${storyDocs.length} document(s) citable.`
@@ -4934,10 +5011,25 @@ const emission = {
   reason: null,
 }
 
+// ── `results` IS NOT REQUIRED, BECAUSE THREE DISPATCHES ASK FOR NO BEADS ─────────
+//
+// One schema serves both halves of the writer's job: `results` for beads created, `links`
+// for dependency edges. The writer is instructed to return only the keys for the lists it
+// was given and omit the rest — and the link wave, the re-elaboration mutations and the
+// children survey all hand it `beads: []`. Requiring `results` therefore demanded a key the
+// agent was told not to send, and a runtime that enforces `required` on structured output
+// answers that by refusing the reply: settleAgent normalizes the refusal to null, every edge
+// lands in `emission.links.failed`, the verdict can never be `complete`, and `epicDone` is
+// never true — the exact failure the chunking fix above exists to remove, arriving by a
+// different door. The null survey is worse still: it disables re-elaboration matching, so
+// the NEXT run duplicates every Story and Task rather than updating them.
+//
+// The item-level `required` stays. What must hold is that an entry which IS returned is
+// complete, not that a list nobody asked for is present.
 const WRITE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['results'],
+  required: [],
   properties: {
     results: {
       type: 'array',
@@ -5172,11 +5264,16 @@ function taskContractMetadata(t) {
   if (c.specPaths.length) {
     m.spec_path = c.specPaths[0]
     m.spec_paths = JSON.stringify(c.specPaths)
+    // Whether those paths were checked against files someone actually opened. `unknown` is a
+    // replayed decomposition whose saved artifact predates the readability report: the refs
+    // are the naming convention again, and a build lane that trusts them may find nothing
+    // there. Written on every Task that carries a ref, so silence is never a quiet yes.
+    m.spec_paths_verified = specDocsStatus(t.repoPath).reported ? 'true' : 'unknown'
   } else {
     // Two different causes reach here and they are repaired differently: a document that was
     // never saved has to be re-authored, while one saved outside the project root only has to
     // be recorded. Naming the wrong one sends whoever reads this to the wrong place.
-    const unreadableHere = specDocsUnreadableByRepo.get(t.repoPath) || []
+    const unreadableHere = specDocsStatus(t.repoPath).paths
     emission.specReferenceMissing.push({
       key: t.key,
       reason: unreadableHere.length
@@ -5542,15 +5639,23 @@ if (!emitPathFault) {
           if (sd.length) m.decision_ids = JSON.stringify([...new Set(sd)])
           if (s.repoPath) {
             const slug = repoSlug(s.repoPath)
-            Object.assign(
-              m,
-              artifactMetadata([
-                ['spec', `spec-${slug}.md`],
-                ['spec_data_model', `spec-${slug}.data-model.md`],
-                ['spec_criteria', `spec-${slug}.criteria.md`],
-                ['story', `story-${slug}.json`],
-              ])
-            )
+            // THE STORY MUST NOT ADVERTISE A DOCUMENT ITS TASKS WERE DENIED. These entries
+            // were built from the naming convention alone, so a Story kept pointing at a
+            // spec that was never saved even after the same document had been stripped from
+            // every Task beneath it — the same wrong-file dispatch one level up, and a
+            // build-lane agent runs `bd show` on the Story as readily as on the Task. The
+            // `story-<slug>.json` entry is this run's own output and is not filtered: the
+            // decomposer is never handed it, so it is never in the report.
+            const specEntries = [
+              ['spec', `spec-${slug}.md`],
+              ['spec_data_model', `spec-${slug}.data-model.md`],
+              ['spec_criteria', `spec-${slug}.criteria.md`],
+            ].filter(([, name]) => !specDocUnreadable(s.repoPath, name))
+            Object.assign(m, artifactMetadata([...specEntries, ['story', `story-${slug}.json`]]))
+            // Says whether the refs above were checked against files someone opened, or are
+            // the naming convention unverified. Written on every Story that carries a spec
+            // ref so its absence is never read as a quiet yes.
+            if (specEntries.length) m.spec_paths_verified = specDocsStatus(s.repoPath).reported ? 'true' : 'unknown'
           }
           return Object.keys(m).length ? m : null
         })(),
@@ -6474,6 +6579,10 @@ return {
   // and the caller's `detailPath` is the path this returns. A journal that could not be
   // written yields detailPath:null — an honest "the detail is gone", never a path to a file
   // nobody wrote.
+  // Telemetry runs on every exit path and gets its own progress group, which `meta.phases`
+  // has always declared — but nothing ever entered it, so the group stayed empty for the
+  // whole run and the journal write appeared to happen inside whichever phase died.
+  enterPhase('Run Ledger')
   const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   // The artifact report travels on EVERY exit, because the host's next freshness plan needs
   // to know which phases passed their gate in this run — a failed or partial run most of all.

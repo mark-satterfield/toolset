@@ -3,6 +3,7 @@ export const meta = {
   description:
     'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. A CONSTITUTIVE rule, including the platform bans the constitutional gate asserts downstream, is honored instead of overridden: the decider rules on the options that respect it and returns a ruleChallenge if it thinks the rule is wrong. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
+    { title: 'Extract SAD', detail: 'one read-only inventory dispatch resolves the SAD layout, §8 is sharded into slices small enough to read IN FULL, the shards run concurrently and the SCRIPT merges the typed entries; a packet the caller already holds is reused rather than re-bought' },
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
     { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or any signal is ambiguous (a dead analyst, an unstated flag, no triage verdict) — ambiguity challenges by default. Skipping requires AFFIRMATIVE evidence: every lens explicitly contested=false and triage explicitly low-risk/low-stakes; the judgment is recorded either way' },
@@ -522,14 +523,29 @@ For every entry: assign a stable, content-anchored ID, capture the verbatim-grou
 
 // Greedy, size-ordered packing in the order the inventory gave it, so related concept
 // files stay together and a re-run shards identically.
+//
+// ── THE SHARD CAP TRUNCATES, IT DOES NOT OVERFILL ───────────────────────────────
+// The last shard is bounded like every other one. Letting the packer stop splitting at
+// the cap and pour the remainder into shard MAX_SHARDS would reintroduce precisely the
+// defect sharding exists to remove — one session handed more input than it can read —
+// and it would do it SILENTLY, because a shard that is too big still returns something.
+// So when the cap is reached the surplus comes back as `overflow`, and the caller routes
+// it down the same path a dead shard takes: unread, named, and the run does not rule.
 function shardFiles(entries) {
   const shards = []
+  const overflow = []
   let current = []
   let bytes = 0
   for (const e of entries) {
     const size = Number.isFinite(e.bytes) && e.bytes > 0 ? e.bytes : ASSUMED_BYTES
     const full = current.length >= SHARD_MAX_FILES || (current.length && bytes + size > SHARD_TARGET_BYTES)
-    if (full && shards.length < MAX_SHARDS - 1) {
+    if (full) {
+      if (shards.length >= MAX_SHARDS - 1) {
+        // `current` is the last shard this run may dispatch and it is already full.
+        // Everything from here on is surplus — it is NOT appended to it.
+        overflow.push(e.path)
+        continue
+      }
       shards.push(current)
       current = []
       bytes = 0
@@ -538,7 +554,7 @@ function shardFiles(entries) {
     bytes += size
   }
   if (current.length) shards.push(current)
-  return shards
+  return { shards, overflow }
 }
 
 const fileList = (x) =>
@@ -605,8 +621,23 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 
   const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  const crossShards = shardFiles(crossEntries)
+  const { shards: crossShards, overflow: crossOverflow } = shardFiles(crossEntries)
   log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+
+  // §8 outgrew the shard budget. Reported the way an unread file is always reported —
+  // before anything is dispatched, because spending the panel on a knowingly partial
+  // SAD buys a ruling nobody may act on. Raising MAX_SHARDS is the fix, and the message
+  // says so rather than leaving an operator to infer it from a file list.
+  if (crossOverflow.length) {
+    log(`SAD §8 exceeds the shard budget — ${crossOverflow.length} file(s) do not fit in ${MAX_SHARDS} shard(s); NOT dispatching a partial extraction`)
+    return {
+      ok: false,
+      stage: 'extract',
+      error: `SAD extraction is INCOMPLETE BEFORE IT STARTED: §8 holds ${crossEntries.length} file(s), which does not fit in ${MAX_SHARDS} shard(s) of ${SHARD_MAX_FILES} file(s) / ${SHARD_TARGET_BYTES} bytes, so ${crossOverflow.length} file(s) would go unread. NO architecture decision was made — a ruling derived from part of the architecture is wrong output, and it would be written back into §2/§4/§8 as effective. Raise MAX_SHARDS in workflows/architecture.js. Unread: ${crossOverflow.join(', ')}`,
+      unreadSadFiles: crossOverflow,
+      shardBudget: { maxShards: MAX_SHARDS, shardMaxFiles: SHARD_MAX_FILES, shardTargetBytes: SHARD_TARGET_BYTES, crosscuttingFiles: crossEntries.length },
+    }
+  }
 
   // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
   const jobs = []
