@@ -259,7 +259,6 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
           type: 'array',
           // One entry per criterion the caller supplied, and nothing else: the enforcer
           // judges the stated criteria, it does not invent more.
-          maxItems: 40,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -302,6 +301,16 @@ if (!verdict) {
     escalateTo: (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
   }
+}
+
+// An observation, never a gate. The enforcer is told to return exactly one entry per
+// criterion supplied; more than that means it judged something nobody asked about, which
+// is worth seeing in the journal and is not a reason to throw the verdict away.
+const judgedCriteria = Array.isArray(verdict.criteria) ? verdict.criteria : []
+if (criteria.length && judgedCriteria.length > criteria.length) {
+  log(
+    `Gate ${a.gate || '?'}: the enforcer returned ${judgedCriteria.length} criterion judgments for ${criteria.length} supplied criteria — the extras were not asked for`
+  )
 }
 
 // ── Precedent store ─────────────────────────────────────────────────────────────

@@ -646,7 +646,6 @@ Draw the smallest number of boundaries the design honestly needs. Every boundary
           properties: {
             workUnits: {
               type: 'array',
-              minItems: 1,
               items: {
                 type: 'object',
                 additionalProperties: false,

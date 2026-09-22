@@ -183,13 +183,12 @@ const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
 const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
 
 // A finding-list schema reused across the lenses that emit flat findings.
-// The caps are set against what this phase actually produces. Across eleven recorded
-// Epic runs the largest ambiguities list was 8 and the largest completenessGaps 11, so
-// these are blow-up guards rather than budgets: a lens returning more than this is
-// enumerating restatements of one finding, and every extra entry is re-read by the gate.
+// Across eleven recorded Epic runs the largest ambiguities list was 8 and the largest
+// completenessGaps 11. A lens returning far more than that is usually enumerating
+// restatements of one finding, and every extra entry is re-read by the gate — so the
+// count is OBSERVED in a log line below and the findings are kept either way.
 const findingItems = {
   type: 'array',
-  maxItems: 15,
   items: {
     type: 'object',
     additionalProperties: false,
@@ -221,20 +220,19 @@ const traceabilitySchema = {
     traceable: { type: 'boolean' },
     matrix: {
       type: 'array',
-      // Informational only — it binds nothing, so it never earns an unbounded budget.
-      maxItems: 60,
+      // Informational only — it binds nothing.
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['requirement', 'objectives'],
         properties: {
           requirement: { type: 'string' },
-          objectives: { type: 'array', maxItems: 10, items: { type: 'string' } },
+          objectives: { type: 'array', items: { type: 'string' } },
         },
       },
     },
-    orphanRequirements: { type: 'array', maxItems: 40, items: { type: 'string' } },
-    unimplementedObjectives: { type: 'array', maxItems: 40, items: { type: 'string' } },
+    orphanRequirements: { type: 'array', items: { type: 'string' } },
+    unimplementedObjectives: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -247,13 +245,12 @@ const analysisSchema = {
     completenessGaps: findingItems,
     conflicts: {
       type: 'array',
-      maxItems: 10,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['requirements', 'contradiction', 'severity'],
         properties: {
-          requirements: { type: 'array', maxItems: 6, items: { type: 'string' } },
+          requirements: { type: 'array', items: { type: 'string' } },
           contradiction: { type: 'string' },
           severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'info'] },
         },
@@ -261,8 +258,7 @@ const analysisSchema = {
     },
     constraints: {
       type: 'array',
-      // Largest observed: 21. A PRD does not impose more distinct constraints than this.
-      maxItems: 25,
+      // Largest observed: 21.
       items: {
         type: 'object',
         additionalProperties: false,
@@ -277,7 +273,6 @@ const analysisSchema = {
     },
     boundaryFindings: {
       type: 'array',
-      maxItems: 12,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -292,7 +287,6 @@ const analysisSchema = {
     },
     clarifications: {
       type: 'array',
-      maxItems: 15,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -388,6 +382,26 @@ const clarifications = analysis.clarifications || []
 const traceability = brd
   ? analysis.traceability || { traceable: false, matrix: [], orphanRequirements: [], unimplementedObjectives: [] }
   : { traceable: false, matrix: [], orphanRequirements: [], unimplementedObjectives: [] }
+
+// An observation, never a gate. Across eleven recorded Epic runs the largest ambiguities
+// list was 8 and the largest completenessGaps 11; far past that, a lens is usually
+// enumerating restatements of one finding, and the gate re-reads every entry. Every
+// finding is consolidated below either way — the count is worth knowing, not worth losing
+// the whole validation over.
+const TYPICAL_LENS_MAX = 15
+const oversized = [
+  ['ambiguities', ambiguities],
+  ['completenessGaps', completenessGaps],
+  ['conflicts', conflicts],
+  ['constraints', constraints],
+  ['boundaryFindings', boundaryFindings],
+  ['clarifications', clarifications],
+].filter(([, list]) => list.length > TYPICAL_LENS_MAX)
+if (oversized.length) {
+  log(
+    `Validate: ${oversized.map(([k, list]) => `${k}=${list.length}`).join(', ')} — above the ${TYPICAL_LENS_MAX} a lens typically returns; all findings are carried through`
+  )
+}
 
 // ── Deterministic consolidation ─────────────────────────────────────────────────
 // The flat findings list and the verdict are RULES over the typed lens outputs, so

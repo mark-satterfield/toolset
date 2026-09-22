@@ -134,8 +134,8 @@ async function settleAgent(prompt, opts) {
 // acceptanceCriteria, definitionOfDone, reviewFindings, decision, outOfRepoFindings,
 // coverageShortfalls, criteriaShortfall, note } where coverageShortfalls names every maker
 // that could not cover the repository within its reading budget (empty is the expected
-// case) and criteriaShortfall names the acceptance criteria the 80-item cap cut off (null
-// is the expected case)
+// case) and criteriaShortfall names the acceptance criteria the maker chose not to
+// enumerate (null is the expected case)
 // where story is the ONE Story bead specification this Spec pairs with (a Spec and its
 // Story are created together; nothing here writes to .beads — the caller writes it with bd):
 //   story: {
@@ -176,15 +176,15 @@ const SPEC_SCHEMA = {
   additionalProperties: false,
   required: ['artifactPaths', 'summary', 'content'],
   properties: {
-    artifactPaths: { type: 'array', maxItems: 10, items: { type: 'string' } },
+    artifactPaths: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     content: { type: 'string' },
-    openQuestions: { type: 'array', maxItems: 15, items: { type: 'string' } },
+    openQuestions: { type: 'array', items: { type: 'string' } },
     coverageShortfall: COVERAGE_SHORTFALL_SCHEMA,
     // The SAD entry ids this artifact was designed against, cited as the SAD tags them.
     // A spec that cites a decision can be found again when that decision changes; one
     // that cites a section number cannot, because a section number moves and a tag does not.
-    decisionIds: { type: 'array', maxItems: 30, items: { type: 'string' } },
+    decisionIds: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -195,19 +195,13 @@ const AC_SCHEMA = {
   properties: {
     acceptanceCriteria: {
       type: 'array',
-      // One repo's Spec. The old cap of 40 was asserted, not measured, and the measurement
-      // contradicts it: across the 147 PRDs in this project the given/when/then criteria the
-      // PRD ITSELF states run to a max of 68, median 33, mean 34.2, and 46 of them — 31% —
-      // already exceed 40 before this maker adds the error paths and boundary conditions the
-      // prompt demands of it. A criterion dropped here is a test tdd-red never writes and a
-      // behaviour Green never builds, and the schema drops it silently.
-      //
-      // 80 clears the worst single-repo case (68) with room for the error paths on top. The
-      // cap is PER REPO, so a multi-repo PRD splits this load across its Stories; a
-      // single-repo one does not, which is the case this is sized for. It is a guard against
-      // a runaway enumeration, not a budget — a maker that would exceed it reports
-      // `criteriaShortfall` rather than truncating.
-      maxItems: 80,
+      // One repo's Spec, and deliberately unbounded. Across the 147 PRDs in this project
+      // the given/when/then criteria the PRD ITSELF states run to a max of 68, median 33,
+      // mean 34.2 — before this maker adds the error paths and boundary conditions the
+      // prompt demands of it. A criterion lost here is a test tdd-red never writes and a
+      // behaviour Green never builds, and a schema bound loses the whole list rather than
+      // the last entry. A maker that judges the enumeration runaway reports
+      // `criteriaShortfall`; the count itself is observed in a log line after the fact.
       items: {
         type: 'object',
         additionalProperties: false,
@@ -228,7 +222,7 @@ const DOD_SCHEMA = {
   additionalProperties: false,
   required: ['definitionOfDone'],
   properties: {
-    definitionOfDone: { type: 'array', maxItems: 20, items: { type: 'string' } },
+    definitionOfDone: { type: 'array', items: { type: 'string' } },
     notes: { type: 'string' },
   },
 }
@@ -242,9 +236,9 @@ const REVIEW_SCHEMA = {
     findings: {
       type: 'array',
       // Per artifact, and this schema is used four times in one review result. The
-      // prompt already caps each finding at 40 words; this caps how many there are.
-      // Only ONE maker pass follows a rejection, so findings past this cannot be acted on.
-      maxItems: 15,
+      // prompt caps each finding at 40 words, and only ONE maker pass follows a
+      // rejection, so a long list is mostly unactionable — a reason to say so, not to
+      // discard the review.
       items: {
         type: 'object',
         additionalProperties: false,
@@ -281,7 +275,6 @@ const DECISION_SCHEMA = {
     rulings: {
       type: 'array',
       // Exactly one per deadlocked artifact, and there are four reviewable artifacts.
-      maxItems: 4,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -312,7 +305,7 @@ const STORY_SCHEMA = {
   properties: {
     title: { type: 'string' },
     description: { type: 'string' },
-    outOfRepoFindings: { type: 'array', maxItems: 20, items: { type: 'string' } },
+    outOfRepoFindings: { type: 'array', items: { type: 'string' } },
   },
 }
 
@@ -584,9 +577,8 @@ async function main(a) {
       // criteria and the Definition of Done are what Red and Green build against, so a
       // repository it could not cover must reach the caller as a stated finding.
       coverageShortfall: COVERAGE_SHORTFALL_SCHEMA,
-      // …and the same rule applied to the OTHER limit this maker works under. The 80-criteria
-      // cap is a guard against runaway enumeration; where it binds, what it cut off is named
-      // rather than dropped, because the schema's own truncation is invisible downstream.
+      // …and the same rule applied to the other judgment this maker makes. Where it decides
+      // an enumeration has run away, what it left out is NAMED rather than silently dropped.
       criteriaShortfall: {
         type: 'object',
         additionalProperties: false,
@@ -635,7 +627,7 @@ ${ctx}${contractsBrief}`,
       settleAgent(
         `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, keep each clause under 30 words, and stay within 80 criteria. If covering this repository's behaviour honestly needs more than 80, do not silently drop the remainder: return the 80 that matter most and report \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered.
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Return every criterion you write — nothing is truncated and no count is enforced. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words; around 80 criteria is the typical shape for one repository. If you judge that some behaviour is better left out, do not drop it silently: report \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered.
 2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most 20 items.
 
 ${ctx}${criteriaBrief}`,
@@ -676,9 +668,16 @@ ${ctx}${criteriaBrief}`,
       : null
   if (criteriaShortfall) {
     log(
-      `Acceptance-criteria shortfall: ${criteriaShortfall.omittedCount} criterion/criteria omitted at the 80 cap in ${repoPath} — ` +
+      `Acceptance-criteria shortfall: ${criteriaShortfall.omittedCount} criterion/criteria omitted in ${repoPath} — ` +
         `${String(criteriaShortfall.omitted || '').slice(0, 200)}. These behaviours have no test in tdd-red unless someone acts on this.`
     )
+  }
+  // An observation, never a gate. Across 147 PRDs the criteria a PRD itself states top out
+  // at 68 for one repository, so a list far past that is worth a look — and is carried
+  // through in full regardless, because every criterion here is a test tdd-red must write.
+  const criteriaCount = (criteriaDraft && Array.isArray(criteriaDraft.acceptanceCriteria) ? criteriaDraft.acceptanceCriteria : []).length
+  if (criteriaCount > 80) {
+    log(`Acceptance criteria: ${criteriaCount} for ${repoPath} — above the ~80 one repository typically states; all are carried through`)
   }
 
   // ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────

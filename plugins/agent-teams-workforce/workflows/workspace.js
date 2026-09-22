@@ -417,8 +417,8 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         // a run: `evidence` is echoed into the return value and the journal and NOTHING
         // in this script or downstream branches on it, which is precisely why it must not
         // be allowed to grow until it destroys the fields that ARE load-bearing.
-        evidence: { type: 'string', maxLength: 400 },
-        blocked: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 200 } },
+        evidence: { type: 'string' },
+        blocked: { type: 'array', items: { type: 'string' } },
       },
     },
   }
@@ -673,8 +673,8 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
         // the provisioner died first and it was never dispatched. Its observations are
         // the primary control this whole step rests on — losing them to an oversized
         // footnote would refuse a perfectly good worktree.
-        evidence: { type: 'string', maxLength: 300 },
-        notes: { type: 'array', maxItems: 4, items: { type: 'string', maxLength: 200 } },
+        evidence: { type: 'string' },
+        notes: { type: 'array', items: { type: 'string' } },
       },
     },
   }

@@ -230,8 +230,8 @@ const ASSESS_SCHEMA = {
     reasoningPath: { type: 'string' },
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
-    relatedRead: { type: 'array', maxItems: 40, items: { type: 'string' } },
-    unsure: { type: 'array', maxItems: 20, items: { type: 'string' } },
+    relatedRead: { type: 'array', items: { type: 'string' } },
+    unsure: { type: 'array', items: { type: 'string' } },
   },
 }
 const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, an event contract, a table, an IAM grant, a deployed resource. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`

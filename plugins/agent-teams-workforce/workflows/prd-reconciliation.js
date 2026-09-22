@@ -571,7 +571,7 @@ Such a requirement still appears in \`requirements\` with its honest status, and
           additionalProperties: false,
           required: ['unexaminedRequirementIds', 'budgetExhausted'],
           properties: {
-            unexaminedRequirementIds: { type: 'array', maxItems: 60, items: { type: 'string' } },
+            unexaminedRequirementIds: { type: 'array', items: { type: 'string' } },
             budgetExhausted: { type: 'boolean' },
             note: { type: 'string' },
           },
@@ -586,22 +586,21 @@ Such a requirement still appears in \`requirements\` with its honest status, and
               id: { type: 'string' },
               requirement: { type: 'string' },
               status: { type: 'string', enum: ['conforms', 'contradicts', 'absent'] },
-              // minItems is load-bearing: a status with no evidence behind it is the
-              // defect this mini exists to catch, so the schema refuses to express one.
-              // The reduction below enforces the same rule again, because a schema
-              // constrains what a model is ASKED for, not what it returns.
-              // maxItems is the counterpart to minItems: the brief says "prefer several
-              // pieces of evidence over one", and several is not twenty. Past this it is
-              // corroborating a settled status, which the search budget forbids.
-              evidence: { type: 'array', minItems: 1, maxItems: 8, items: { type: 'string' } },
+              // A status with no evidence behind it is the defect this mini exists to
+              // catch, and the reduction below catches it: an unevidenced claim is demoted
+              // to `absent` and recorded in `evidenceViolations`. That enforcement runs
+              // once the result is in hand, so one honest no-citation answer costs that
+              // requirement its status and nothing else. A schema bound here would instead
+              // destroy the whole inventory, including the N-1 requirements that WERE cited.
+              evidence: { type: 'array', items: { type: 'string' } },
               surface: { type: 'string', enum: ['ui', 'service', 'infra', 'data', 'unknown'] },
-              conformingMaterial: { type: 'array', maxItems: 20, items: { type: 'string' } },
-              removalTargets: { type: 'array', maxItems: 20, items: { type: 'string' } },
+              conformingMaterial: { type: 'array', items: { type: 'string' } },
+              removalTargets: { type: 'array', items: { type: 'string' } },
               missing: { type: 'string' },
               needsNewContract: { type: 'boolean' },
               // This mini runs once per repository in the span, so a requirement names
               // that repository and at most a few others its work reaches.
-              repos: { type: 'array', maxItems: 8, items: { type: 'string' } },
+              repos: { type: 'array', items: { type: 'string' } },
             },
           },
         },
@@ -612,9 +611,9 @@ Such a requirement still appears in \`requirements\` with its honest status, and
           properties: {
             bundlePath: { type: 'string' },
             mocksDir: { type: 'string' },
-            artifactsConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
-            shellsConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
-            pagesConsulted: { type: 'array', maxItems: 40, items: { type: 'string' } },
+            artifactsConsulted: { type: 'array', items: { type: 'string' } },
+            shellsConsulted: { type: 'array', items: { type: 'string' } },
+            pagesConsulted: { type: 'array', items: { type: 'string' } },
           },
         },
         dependencyChanges: {
@@ -625,7 +624,6 @@ Such a requirement still appears in \`requirements\` with its honest status, and
             current: { type: 'boolean' },
             changeFindings: {
               type: 'array',
-              maxItems: 20,
               items: {
                 type: 'object',
                 additionalProperties: false,

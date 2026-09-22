@@ -182,13 +182,13 @@ And the intake brief:
       ],
       properties: {
         scopeSummary: { type: 'string' },
-        inScope: { type: 'array', maxItems: 15, items: { type: 'string' } },
-        outOfScope: { type: 'array', maxItems: 15, items: { type: 'string' } },
+        inScope: { type: 'array', items: { type: 'string' } },
+        outOfScope: { type: 'array', items: { type: 'string' } },
         problem: { type: 'string' },
         audience: { type: 'string' },
         desiredOutcome: { type: 'string' },
-        constraints: { type: 'array', maxItems: 20, items: { type: 'string' } },
-        openQuestions: { type: 'array', maxItems: 15, items: { type: 'string' } },
+        constraints: { type: 'array', items: { type: 'string' } },
+        openQuestions: { type: 'array', items: { type: 'string' } },
       },
     },
   }
@@ -245,8 +245,8 @@ Deliver:
           properties: {
             name: { type: 'string' },
             summary: { type: 'string' },
-            goals: { type: 'array', maxItems: 8, items: { type: 'string' } },
-            frustrations: { type: 'array', maxItems: 8, items: { type: 'string' } },
+            goals: { type: 'array', items: { type: 'string' } },
+            frustrations: { type: 'array', items: { type: 'string' } },
             context: { type: 'string' },
           },
         },
@@ -275,8 +275,8 @@ Deliver:
             objective: { type: 'string' },
             keyResults: {
               type: 'array',
-              // An objective with more than a handful of key results has no objective.
-              maxItems: 6,
+              // An objective with more than a handful of key results has no objective, but that
+              // is a judgment about the OKRs, not a reason to discard the whole result.
               items: {
                 type: 'object',
                 additionalProperties: false,
@@ -359,13 +359,12 @@ Deliver:
         properties: {
           title: { type: 'string' },
           prd: { type: 'string' },
-          sections: { type: 'array', maxItems: 30, items: { type: 'string' } },
+          sections: { type: 'array', items: { type: 'string' } },
           epicScope: { type: 'string' },
           acceptanceCriteria: {
             type: 'array',
             // P0 only, as the brief says. Everything here is re-read by the alignment
             // checker, by PRD validation, by the TRD author and by every spec author.
-            maxItems: 40,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -420,7 +419,6 @@ For each dimension (intake, persona, okr, template), state whether it is satisfi
           dimensions: {
             type: 'array',
             // Exactly the four dimensions the enum names, one entry each.
-            maxItems: 4,
             items: {
               type: 'object',
               additionalProperties: false,

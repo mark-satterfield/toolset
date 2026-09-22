@@ -174,7 +174,6 @@ Deliver:
         rootCause: { type: 'string' },
         defects: {
           type: 'array',
-          minItems: 1,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -292,26 +291,27 @@ if (scope === 'needs-prd') {
 // 2) Expected-behavior contract — the "spec-lite" a bug lacks, as testable AC.
 //    A different agent than the diagnostician (no self-authoring of its own contract).
 //
-// BOUNDED BY CONSTRUCTION. This step used to receive a prose root cause with no cap, no
-// defect index, and no scope rule — and a four-defect bug produced eighteen-plus
+// SCOPED BY CONSTRUCTION. This step used to receive a prose root cause with no expected
+// range, no defect index, and no scope rule — and a four-defect bug produced eighteen-plus
 // criteria, several of them repo-wide greps. The downstream coverage reviewer then
 // blocked on partial coverage of criteria Red could never legitimately turn red, and the
 // Red gate exhausted without one line of production code being written.
 //
-// The cap is a SCHEMA bound, not a sentence in a prompt: the runtime enforces the first
-// and merely requests the second, which is the lesson from every prose control in this
-// pipeline that has already failed. Coverage then becomes an exact join — every defectId
-// resolves, every defect has at least one criterion — instead of a judgment call.
+// The defect index is what fixed that: coverage becomes an exact join — every defectId
+// resolves, every defect has at least one criterion — instead of a judgment call, and it
+// is computed below from the result. The range is stated to the writer and OBSERVED
+// afterwards; it is never a schema bound, because a bound does not trim an over-long
+// list, it destroys the whole contract and halts the bug fix at triage.
 const defects = (Array.isArray(analysis.defects) ? analysis.defects : []).filter((d) => d && d.id)
 const defectIds = defects.map((d) => String(d.id))
 const AC_MIN = Math.max(1, defectIds.length)
 const AC_MAX = Math.max(2, defectIds.length * 2)
-log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria bounded to ${AC_MIN}..${AC_MAX}`)
+log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria expected in the range ${AC_MIN}..${AC_MAX}`)
 
 const contract = await settleAgent(
   `${rulingsBlock}Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
-ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total — this is enforced by the schema, not requested.
+ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total.
 
 A CRITERION DESCRIBES AN EXECUTION, NOT THE REPOSITORY. Apply this test to everything you are about to write: **if it would still be checkable with the change reverted, it is not an acceptance criterion.** "No occurrence of \`redis://\` anywhere in the repo" passes that test trivially — it is checkable before, during and after the fix, against code nobody touched — which is exactly what makes it a LINT RULE wearing an acceptance-criterion costume. Return those in \`lintRules\` instead. They are real and they are worth enforcing; they are just not something a failing test can encode, and putting them here blocks the build on a grep no Red phase can legitimately make fail.
 
@@ -333,8 +333,6 @@ ${defects.length ? defects.map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${
       properties: {
         acceptanceCriteria: {
           type: 'array',
-          minItems: AC_MIN,
-          maxItems: AC_MAX,
           items: {
             type: 'object',
             additionalProperties: false,
@@ -375,6 +373,8 @@ const authoredAc = (contract && Array.isArray(contract.acceptanceCriteria) ? con
 const covered = new Set(authoredAc.map((x) => String(x.defectId || '')))
 const uncoveredDefects = defectIds.filter((id) => !covered.has(id))
 if (uncoveredDefects.length) log(`⚠ Triage: defect(s) with no acceptance criterion: ${uncoveredDefects.join(', ')}`)
+// The range is an expectation, not a gate: every criterion is carried through either way.
+if (authoredAc.length > AC_MAX) log(`Triage: ${authoredAc.length} acceptance criteria for ${defectIds.length || 'unenumerated'} defect(s) — above the ${AC_MAX} this bug's size suggests; all are carried through`)
 const lintRules = (contract && Array.isArray(contract.lintRules) ? contract.lintRules : []).filter(Boolean)
 if (lintRules.length) log(`Triage: ${lintRules.length} repo-wide invariant(s) routed to lint, not to the Red phase`)
 

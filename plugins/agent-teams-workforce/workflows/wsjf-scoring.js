@@ -219,7 +219,7 @@ const JUDGE_SCHEMA = {
     path: { type: 'string' },
     judged: { type: 'integer' },
     // An Epic session judges one item; a Task session judges one Epic's Tasks.
-    unscored: { type: 'array', maxItems: 60, items: { type: 'string' } },
+    unscored: { type: 'array', items: { type: 'string' } },
   },
 }
 const epicDir = file('judgments/epic')
