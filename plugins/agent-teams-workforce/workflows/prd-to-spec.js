@@ -2849,6 +2849,27 @@ if (architecture.ok) {
 }
 }
 produced.architecture = withoutSadExtract(architecture.artifact)
+// ── A MINI THAT REFUSED ITS INPUT BEFORE ANY AGENT RAN ───────────────────────────
+// architecture and trd-authoring refuse at stage `input` when the run was not given what they
+// need — the SAD path above all (ATW_SAD_PATH), or a readable PRD. The same arguments refuse
+// again, so every sweep would re-run the Epic into the same refusal: the Epic is held for a
+// person, and the handback names what is missing and how to hand the Epic back.
+const inputRefusal = (r) => !!(r && r.ok !== true && r.deterministicFailure === true && r.artifact && r.artifact.stage === 'input')
+async function holdOnInputRefusal(stage, r) {
+  const why = String(r.reason || r.artifact.reason || r.artifact.error || 'the phase refused its input').slice(0, 600)
+  const noSad = /sadPath|sad\.path|ATW_SAD_PATH/.test(why)
+  const actions = [
+    `${stage} refused before any agent ran: ${why}` +
+      (noSad ? ` Set ATW_SAD_PATH to the arc42 SAD directory for the pipeline host (it reaches this run as args.sadPath and args.sad.path).` : ''),
+  ]
+  await holdForPerson(epicBeadId)
+  return {
+    ...partial(stage, r),
+    stage: HUMAN_ACTION_STAGE,
+    requiredHumanActions: lifecycle.held ? [...actions, restoreStep(epicBeadId, noSad ? 'the SAD path is configured' : 'what the refusal names has been supplied')] : actions,
+  }
+}
+if (inputRefusal(architecture)) return await holdOnInputRefusal('architecture', architecture)
 // ── AN ARCHITECTURE ONLY A PERSON CAN UNBLOCK ────────────────────────────────────
 // Two G2 outcomes cannot come out differently on another run: the decider ruled NO option
 // admissible (the mini says so with `deterministicFailure` — a person must change the PRD or
@@ -3579,6 +3600,7 @@ if (trdSettled.mode === 'resumed') {
 }
 if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
 produced.trdAuthoring = withoutSadExtract(trdAuthoring.artifact)
+if (inputRefusal(trdAuthoring)) return await holdOnInputRefusal('trd-authoring', trdAuthoring)
 if (!trdAuthoring.ok) return partial('trd-authoring', trdAuthoring)
 const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
 // A summary is a navigation aid, and a resumed TRD or spec carries none. The whole PRD used to
