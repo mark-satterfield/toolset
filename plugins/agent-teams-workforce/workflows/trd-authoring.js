@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that returns nothing is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD, and no schema caps what a batch may return — a cap is for cost and must never fail the run; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; every limit on what a dispatch may return is stated in its brief and checked in the script afterwards rather than bound in a schema, because a schema bound cannot trim — it can only destroy the whole result; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -24,6 +24,11 @@ export const meta = {
 // caller receives null, which every call site already handles, and `dispatchFailures`
 // carries the identity of what died, for the `dispatchFailed` report this script owes
 // its caller: a phase whose producing agents died is NOT adjudicated.
+//
+// Each `dispatchFailures` entry ALSO carries the CAUSE — see failureCause below — because
+// a caller that can only see THAT a dispatch produced nothing cannot tell the one failure
+// worth sending again from the many that are not. `failureCauseFor(label)` is how a call
+// site reads it back.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
@@ -54,6 +59,66 @@ function settleTranscript(err, label) {
   if (id) return `agent-${id}.jsonl in this run's workflow transcript directory`
   return `the agent-<id>.jsonl in this run's workflow transcript directory whose agent-<id>.meta.json description is ${JSON.stringify(label)}`
 }
+// ── WHY A DISPATCH FAILED DECIDES WHETHER ANYTHING MAY BE SENT AGAIN ─────────────
+//
+// settleAgent used to collapse every failure into a single null, and that conflation is
+// the same defect that let a destroyed answer look like a dead agent: a call site could
+// see THAT a dispatch produced nothing and never WHY. Two causes need opposite answers,
+// and getting them the same way round is what makes this a classification and not a
+// retry loop wearing a hat.
+//
+// TRANSIENT — an Anthropic API overload (529), a rate limit (429), a quota or token
+// limit, a network timeout. The cause is EXTERNAL and TIME-VARYING, the input was never
+// the problem, and the call that failed produced nothing to pay for. Waiting and sending
+// the same dispatch again therefore has a real reason to come out differently, which is
+// the only thing that ever justifies a second attempt. This is the one case retried here,
+// and it is retried a BOUNDED number of times so a sustained outage cannot loop forever.
+// It is never answered by splitting the input: the input was fine, and splitting
+// multiplies calls against an endpoint that is already failing to serve the first one.
+//
+// DETERMINISTIC — a schema rejection, an agent that finished without producing output,
+// anything settled by arithmetic. Re-issuing the identical dispatch against the identical
+// input has NO reason to produce a different result; it is a hope with a token cost, and
+// this project removed exactly those blind retries after they burned tokens to exhaustion
+// on attempts that could not succeed. The only sanctioned re-dispatch is one with
+// materially CHANGED input — for the SAD batches below, the split.
+//
+// ANYTHING UNRECOGNISED IS DETERMINISTIC, and that direction is deliberate rather than
+// defensive. Guessing "transient" on an unknown error invents a retry that is forbidden
+// and pays for it on every unfamiliar failure; guessing "deterministic" at worst declines
+// a retry that might have worked, and the caller still has its split and its report. The
+// cheap mistake is the one to take.
+//
+// This block is identical in every workflow script that classifies, on purpose. Workflow
+// scripts have no import mechanism, so a shared helper is shared by being the same text.
+const DETERMINISTIC_ERROR_TEXT =
+  /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
+const TRANSIENT_ERROR_TEXT =
+  /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
+const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
+function failureCause(err) {
+  const e = err && typeof err === 'object' ? err : {}
+  const text = String((e && e.message) || err || '')
+  // Deterministic markers are matched FIRST, on purpose: a schema rejection whose text
+  // happens to quote a number that also reads as a status code is a schema rejection, and
+  // reading it as an overload would hand it the one retry it must never get.
+  if (DETERMINISTIC_ERROR_TEXT.test(text)) return 'deterministic'
+  const status = [e.status, e.statusCode, e.code, e.response && e.response.status]
+    .map((v) => Number(v))
+    .find((v) => Number.isFinite(v) && v >= 100 && v < 600)
+  if (Number.isFinite(status) && TRANSIENT_STATUS.has(status)) return 'transient'
+  if (TRANSIENT_ERROR_TEXT.test(text)) return 'transient'
+  return 'deterministic'
+}
+// The cause recorded for the most recent failure of THIS dispatch. Labels are unique per
+// dispatch — retireFailures already depends on that — so a lane can never read another
+// lane's cause. Null means this label has no recorded failure at all.
+function failureCauseFor(label) {
+  for (let i = dispatchFailures.length - 1; i >= 0; i--) {
+    if (dispatchFailures[i].label === label) return dispatchFailures[i].cause || 'deterministic'
+  }
+  return null
+}
 async function settleAgent(prompt, opts) {
   const o = opts && typeof opts === 'object' ? opts : {}
   const call = { ...o }
@@ -71,14 +136,16 @@ async function settleAgent(prompt, opts) {
     out = await agent(prompt, call)
   } catch (err) {
     const message = String((err && err.message) || err)
+    const cause = failureCause(err)
     dispatchFailures.push({
       ...who,
       outcome: 'threw',
+      cause,
       message: message.slice(0, 300),
       transcript: settleTranscript(err, name),
-      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''}: ${message.slice(0, 160)}`,
+      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''} (${cause}): ${message.slice(0, 160)}`,
     })
-    log(`${name}: session ended without a structured result — ${message.slice(0, 160)}`)
+    log(`${name}: session ended without a structured result (${cause}) — ${message.slice(0, 160)}`)
     // A caller that owns its own failure reporting asks for the throw back, so the real
     // reason reaches its catch instead of being flattened to "returned no result".
     if (o.rethrow) throw err
@@ -88,6 +155,11 @@ async function settleAgent(prompt, opts) {
   dispatchFailures.push({
     ...who,
     outcome: 'skipped',
+    // A null with no error text carries no evidence of anything, and an unrecognised cause
+    // is deterministic. It is also the right answer on the merits here: the runtime has
+    // ALREADY exhausted its own retries before it hands back a null, so sending the same
+    // dispatch again is the blind retry, not the recovery.
+    cause: 'deterministic',
     message: null,
     transcript: settleTranscript(null, name),
     note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
@@ -178,8 +250,23 @@ END STANDING RULINGS
 `
   : ''
 
+// ── A FAILURE DECIDED BEFORE ANY AGENT RAN IS NOT RE-RUN ────────────────────────
+//
+// This is settled by looking at the arguments, before a single dispatch. A re-run of this
+// phase performs the identical inspection of the identical arguments and reaches the
+// identical answer, so `deterministicFailure` tells the caller's gate to stop here rather
+// than spend its retry budget rediscovering a missing argument. `reason` is carried
+// alongside `error` deliberately: the gate loop reads `reason`, and without it the stop
+// logs "gave no reason" and the person loses the one sentence that says what to change.
+//
+// Only PRE-DISPATCH failures are marked. A death inside a phase is carried by the separate
+// `dispatchFailed` flag, and the incomplete-extraction abort is NOT marked at all — that
+// one resumes from the batches already saved, so a re-run genuinely starts with data this
+// one did not have. Marking a path that carries new information would silently kill
+// legitimate rework.
 if (!prd.id && !prd.path && !prd.content) {
-  return { ok: false, stage: 'input', error: 'no PRD supplied (id/path/content all empty) — refusing to run without a work item' }
+  const why = 'no PRD supplied (id/path/content all empty) — refusing to run without a work item. Re-running changes nothing: supply the PRD to the caller.'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 
 const prdRef = prd.path || prd.id || '(inline content)'
@@ -195,7 +282,8 @@ const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-
 // producing phases is reported AS a death: no gate dispatch, no retry spent.
 //
 // A death whose work got done anyway is not one of those. The SAD extract answers an empty
-// batch by splitting it, and when the halves return, the artifact exists — so
+// batch by re-sending it after a transient infrastructure error, or by splitting it
+// otherwise, and when the attempt or the halves return, the artifact exists — so
 // `retireFailures` takes the parent back out of `dispatchFailures` before it can tell the
 // caller to refuse to adjudicate a phase that succeeded. What stays is what nobody covered.
 const died = (...phases) => {
@@ -244,11 +332,13 @@ else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 // one-file-per-section layout — the same detection the extractor already does.
 //
 // EVERYTHING BELOW EXISTS SO THIS PHASE NEVER SIMPLY STOPS. The number of shards follows
-// from the file count instead of capping it; no schema caps what a batch may return; a
-// batch that comes back empty is split in half and its halves dispatched, down to one file,
-// with no dispatch ever repeated unchanged; and every batch that succeeds is written to
-// disk, so a run that does end here resumes at the failure rather than re-reading 787KB to
-// get back to it. What remains a
+// from the file count instead of capping it; every limit on what a batch returns is stated
+// in its brief and checked in the script afterwards, so no limit can ever destroy a result;
+// a batch that comes back empty on a TRANSIENT infrastructure error is sent again after a
+// wait, a bounded number of times, and one that comes back empty for any other reason is
+// split in half and its halves dispatched, down to one file, with no dispatch ever repeated
+// unchanged; and every batch that succeeds is written to disk, so a run that does end here
+// resumes at the failure rather than re-reading 787KB to get back to it. What remains a
 // hard stop is a file that could not be read at all — the TRD is not authored from part of
 // the architecture, because these documents drive the build and truncated detail is worse
 // than no output.
@@ -263,7 +353,7 @@ const ASSUMED_BYTES = 20000 // an inventory entry with no usable size is costed 
 
 const readingRule = `READING RULE (binding): read EVERY file assigned to you below, IN FULL — none of them is optional, and an index, README or table of contents is never read in place of the files it lists. Do NOT read any file outside the SAD, and do not survey this repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.`
 
-// ── A CAP ON THE ANSWER IS A CAP ON THE RUN ─────────────────────────────────────
+// ── A LIMIT IS STATED IN THE BRIEF AND CHECKED IN THE SCRIPT, NEVER IN A SCHEMA ──
 //
 // These feeds used to carry `maxItems`, on the reasoning that a feed longer than its cap
 // was the extractor reconstructing architecture from code. On 2026-09-21 that number cost
@@ -274,11 +364,68 @@ const readingRule = `READING RULE (binding): read EVERY file assigned to you bel
 // reported those sixteen files as UNREAD and ended the run. The files WERE read. We
 // destroyed the answer and then blamed the SAD for it.
 //
-// So no schema in this file caps an array any more. A cap exists to hold down cost, and a
-// cost measure that can fail the run costs infinitely more than it saves. The expectation
-// survives as an OBSERVATION the script logs after the fact — see TYPICAL_ENTRIES — and
-// nothing branches on it. The anti-reconstruction rule it was standing in for is carried
-// where it belongs: in `readingRule`, which the extractor is bound by.
+// THE LIMITS ARE NOT THE DEFECT. Unbounded output is a real cost — every entry here is
+// read again by the author, by the verifier and by every spec session downstream — and
+// these numbers exist to hold it down. What was wrong is WHERE they lived. A schema bound
+// has exactly one action available to it: reject the whole result. It cannot trim and it
+// cannot warn, and what it rejects is destroyed before this script ever sees it. So the
+// one thing a cost measure must never do — fail the run — was the only thing it could do.
+//
+// Every limit therefore moves to the two places that can act sensibly:
+//
+//   1. THE BRIEF states it up front, in the agent's own prompt, as a hard expectation
+//      ("Return at most N …; anything beyond N will not be read"). Telling the agent the
+//      number is what makes it self-limit, and it is the ONLY mechanism here that reduces
+//      cost at all — anything checked afterwards has already been paid for.
+//   2. THE SCRIPT checks the count once the result is safely in hand. Over the limit is
+//      one line in the log naming the dispatch, the actual count and the stated limit, and
+//      every item is KEPT. It never truncates, never drops, never changes what the caller
+//      receives and never becomes `ok: false`. A limit that can fail the run is the defect
+//      above, rebuilt.
+//
+// The anti-reconstruction rule the feed caps were standing in for is carried where it
+// belongs: in `readingRule`, which the extractor is bound by.
+//
+// The mechanism below — `atMost` and `checkLimit` — is the same text in trd-authoring.js
+// and in architecture.js. The TABLE differs: the two files dispatch different agents.
+const LIMITS = {
+  // Per BATCH of the SAD extract, not per document: §8 is read in slices.
+  constraints: 40,
+  solutionStrategy: 40,
+  // RAISED, from 60. Sixteen §8 files returned 61 concepts in ordinary operation, so 60
+  // was set below what a full batch of this SAD actually states — a limit a CORRECT answer
+  // trips is miscalibrated, not disciplined. 120 sits well clear of observed output and is
+  // still low enough that a runaway extract shows up in the log.
+  crosscuttingConcepts: 120,
+  // The SAD's own file list. Mechanical: only a glob that escaped the SAD reaches this.
+  inventoryFiles: 400,
+  // The TRD the author returns.
+  requirements: 40,
+  decisionIds: 60,
+  prdRefs: 10,
+  sadRefs: 10,
+  // The independent verifier's report.
+  findings: 25,
+  links: 200,
+  prdGaps: 40,
+  trdOrphans: 40,
+  // The decider's ruling.
+  requiredChanges: 15,
+}
+// The sentence a brief carries, so the number the agent is told and the number the script
+// checks are one value and cannot drift apart.
+const atMost = (n, what) => `Return at most ${n} ${what}; anything beyond ${n} will not be read.`
+// The check, run once the result is in hand. It LOGS and returns the count unchanged. It
+// is not a gate, it holds no veto, nothing branches on it, and no item is discarded —
+// keeping everything is the entire point of checking here instead of in the schema.
+function checkLimit(dispatch, what, count, limit) {
+  if (!Number.isFinite(count) || !Number.isFinite(limit) || count <= limit) return count
+  log(
+    `OVER THE STATED LIMIT — ${dispatch} returned ${count} ${what} against the ${limit} its brief stated. ` +
+      `Every one of them is KEPT: this line exists so an unusual result is visible, never so one is discarded.`
+  )
+  return count
+}
 const feedSchema = () => ({
   type: 'array',
   items: {
@@ -304,10 +451,6 @@ const extractSchema = {
     notes: { type: 'string' },
   },
 }
-// Roughly what a batch of this size has returned before. Purely an expectation the merge
-// prints against what actually arrived, so an unusual batch is visible in the log. It is
-// never compared in order to reject anything.
-const TYPICAL_ENTRIES = { constraints: 40, solutionStrategy: 40, crosscuttingConcepts: 60 }
 
 // ── EVERY BATCH'S RESULT IS PERSISTED, SO A RE-RUN RESUMES WHERE THIS ONE STOPPED ─
 //
@@ -360,7 +503,11 @@ ${readingRule}
 
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
 
-For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate. Return everything your files state: there is no limit on how many entries you may return, and nothing is dropped for being numerous.${
+For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
+
+HOW MUCH TO RETURN — read every assigned file IN FULL regardless of this, then report within these limits:
+${feeds.map((f) => `- ${f.title}: ${atMost(LIMITS[f.key], 'entries')}`).join('\n')}
+Consolidate closely-related statements into one entry rather than going over. Never drop a section's substance to fit, and never leave a file unread to stay inside a number.${
       savePath
         ? `
 
@@ -393,46 +540,85 @@ function retireFailures(labels) {
   }
 }
 
-// ── A BATCH THAT COMES BACK EMPTY IS SPLIT, AND IS NEVER RE-SENT AS IT WAS ──────
+// ── AN EMPTY BATCH IS ANSWERED BY ITS CAUSE, NEVER BY A BLIND SECOND TRY ────────
 //
 // One null from `extractShardAgent` used to end the whole run and report sixteen files
-// unread. Almost none of those nulls are the batch being impossible; they are an
-// assignment larger than the turns it had, or one session falling over on a payload this
-// size. So a null is answered — but NOT by sending the same dispatch again.
+// unread. Almost none of those nulls are the batch being impossible. But they are not all
+// the same thing either, and answering them all the same way is wrong in both directions —
+// which is exactly what the two shapes this code has already worn got wrong in turn. One
+// version re-sent EVERY null once before splitting: a blind retry, the pattern this
+// project removed after it burned tokens to exhaustion on attempts that could not succeed.
+// The version that replaced it retried NOTHING, which splits a batch that failed because
+// the API was overloaded — multiplying calls against an endpoint already failing to serve
+// one, over an input that was never the problem.
 //
-// NOTHING HERE IS RETRIED, and that is a rule of this project rather than a preference.
-// Re-issuing an identical batch — identical files, identical prompt, identical schema —
-// changes nothing that could make the second outcome differ from the first, so there is
-// no basis for expecting one; it is a hope with a token cost, and against a hard API
-// failure it doubles the spend of every batch to achieve nothing. An attempt is re-earned
-// by a VERIFIABLE CHANGE to the instruction, the code or the data, never by having failed,
-// which is the same rule that stops the supervisor re-dispatching a repair that published
-// no change.
+// So the cause decides, and `failureCauseFor` is where it comes from:
 //
-// The SPLIT is that change. Each half carries materially less input than the dispatch that
-// failed — an inspectable difference in the data, not an expectation — so each half is a
-// DIFFERENT dispatch, not a second try at this one. A batch that is already ONE file has
-// nothing left to change, so it is not dispatched again at all: that is the floor, and it
-// is reported unread. If you are reading the `if (!out)` below and reaching for an attempt
-// counter, a loop is precisely what this must not become.
+//   TRANSIENT (429, 529, rate limit, quota, network timeout) — SEND IT AGAIN, after a
+//   wait, a bounded number of times. The failure is external and time-varying, the input
+//   was fine, and the failed call produced nothing to pay for; a later attempt has a real
+//   reason to differ. It is NOT split: splitting a transient failure attacks the wrong
+//   thing and doubles the load that caused it.
+//
+//   DETERMINISTIC (a schema rejection, a session that produced no output, anything
+//   unrecognised) — NEVER re-sent as it was. Identical files, identical prompt, identical
+//   schema: nothing could make the second outcome differ from the first, so there is no
+//   basis for expecting one. An attempt is re-earned by a VERIFIABLE CHANGE to the
+//   instruction, the code or the data, never by having failed.
+//
+// The SPLIT is that change, and it belongs to the deterministic case alone. Each half
+// carries materially less input than the dispatch that failed — an inspectable difference
+// in the data, not an expectation — so each half is a DIFFERENT dispatch, not a second try
+// at this one. A batch that is already ONE file has nothing left to change, so it is not
+// dispatched again at all: that is the floor, and it is reported unread.
+//
+// If you are reading this and reaching for a general attempt counter, do not. The bound
+// below exists only so a sustained outage cannot loop forever; widening it to cover the
+// deterministic branch rebuilds the blind retry this comment exists to prevent.
 //
 // Returns one leaf outcome per batch that actually ran: { label, feeds, files, out }, with
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
 // escapes this and every death is recorded before it is answered.
+const TRANSIENT_ATTEMPTS = 2
+const TRANSIENT_BACKOFF_MS = [5000, 20000]
+// Sending the next attempt into the same overloaded endpoint at once is what turns a
+// retry into a second failure. Workflow scripts are a sandbox with no Node API, so the
+// wait uses `setTimeout` where the host provides one and otherwise degrades to yielding:
+// the attempts stay bounded and stay ordered after the failure either way, and only the
+// wall-clock gap is lost.
+const backoff = (ms) =>
+  typeof setTimeout === 'function' ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
 async function runBatch(label, feeds, files, saved) {
   const hit = saved.get(batchKey(files))
   if (hit) {
     log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
     return [{ label, feeds, files, out: hit, resumed: true }]
   }
-  const out = await extractShardAgent(label, feeds, files)
-  if (out) return [{ label, feeds, files, out }]
+  let out = await extractShardAgent(label, feeds, files)
+  for (let attempt = 1; !out && attempt <= TRANSIENT_ATTEMPTS && failureCauseFor(label) === 'transient'; attempt++) {
+    const wait = TRANSIENT_BACKOFF_MS[attempt - 1] || TRANSIENT_BACKOFF_MS[TRANSIENT_BACKOFF_MS.length - 1]
+    log(
+      `${label}: the dispatch failed on a TRANSIENT infrastructure error — waiting ${wait}ms and sending the same batch again ` +
+        `(attempt ${attempt} of ${TRANSIENT_ATTEMPTS}). The input was not the problem, so it is NOT split.`
+    )
+    await backoff(wait)
+    out = await extractShardAgent(label, feeds, files)
+  }
+  // A batch that only ever failed transiently and then returned is not a death its caller
+  // must honor: the artifact exists. Retiring it here is the same reasoning as the split's.
+  if (out) {
+    retireFailures([label])
+    return [{ label, feeds, files, out }]
+  }
   if (files.length === 1) {
-    log(`${label}: one file and nothing came back — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
+    log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
     return [{ label, feeds, files, out: null }]
   }
   const mid = Math.ceil(files.length / 2)
-  log(`${label}: nothing came back for ${files.length} file(s) — splitting into ${mid} + ${files.length - mid}; each half is a smaller dispatch, not a retry of this one`)
+  log(
+    `${label}: nothing came back for ${files.length} file(s) and the cause is ${failureCauseFor(label) || 'unrecognised, so deterministic'} — ` +
+      `splitting into ${mid} + ${files.length - mid}; each half is a smaller dispatch with different input, not a retry of this one`
+  )
   // Sequential on purpose: this is the recovery path inside a lane that is already running
   // concurrently with every other lane, and nesting `parallel` inside it buys little.
   const halves = [
@@ -561,7 +747,9 @@ Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY fi
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
 
-A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere in this repository or in another repository. If a section has no files at all, return it as an empty array.`,
+A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere in this repository or in another repository. If a section has no files at all, return it as an empty array.
+
+${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sections 2, 4 and 8 of one SAD do not run to that many files; a list that long means the listing has escaped the SAD, and the fix is to narrow it back to the SAD rather than to truncate it.`,
         {
           label: 'inventory:sad',
           phase: 'Extract SAD',
@@ -610,6 +798,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 
   const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
   const crossEntries = fileList(inventory.crosscuttingFiles)
+  checkLimit('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, LIMITS.inventoryFiles)
   const crossShards = shardFiles(crossEntries)
   log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
 
@@ -662,10 +851,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${batch.label}] ${out.notes.trim()}`)
     for (const feed of batch.feeds) {
       const entries = Array.isArray(out[feed.key]) ? out[feed.key] : []
-      const typical = TYPICAL_ENTRIES[feed.key]
-      if (typical && entries.length > typical) {
-        log(`${batch.label} returned ${entries.length} ${feed.key} entries, above the ${typical} typical for a batch this size — all of them are kept`)
-      }
+      checkLimit(batch.label, `${feed.key} entries`, entries.length, LIMITS[feed.key])
       entries.forEach((entry, entryIndex) => {
         if (!entry || typeof entry !== 'object') return
         // An entry the extractor left unidentified is still something the SAD states, so
@@ -796,11 +982,11 @@ path you actually wrote.
 // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
 // The author reads the shared `feedback`, so every pass carries whatever the checker,
 // the gate or the decider last asked for.
-function authorTrd(pass) {
+async function authorTrd(pass) {
   phase('Author TRD')
   log(`Authoring TRD (${pass}) at ${authorPath}`)
 
-  return settleAgent(
+  const authored = await settleAgent(
     `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
 
 ${writeBrief}
@@ -814,7 +1000,9 @@ ${feedback ? `\nFeedback on the previous version (checker, gate or decider) — 
 
 Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
 
-VOLUME IS THE COST OF THIS PHASE. Return AT MOST 40 technical requirements, each stated in under 60 words, and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than 40 requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+VOLUME IS THE COST OF THIS PHASE. ${atMost(LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+
+The same applies to the citations. ${atMost(LIMITS.decisionIds, 'entries in `decisionIds`')} Per requirement: ${atMost(LIMITS.prdRefs, 'entries in `prdRefs`')} ${atMost(LIMITS.sadRefs, 'entries in `sadRefs`')} A requirement resting on more SAD entries than that is several requirements written as one.
 
 CITE THE DECISIONS, IN THE DOCUMENT AS WELL AS IN YOUR RESULT.
 A \`sadRefs\` entry that reaches only your structured result is read by this run and by nothing after it. The TRD file itself carries the citation twice:
@@ -838,13 +1026,12 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
           decisionIds: { type: 'array', items: { type: 'string' } },
           requirements: {
             type: 'array',
-            // The 40-requirement ceiling lives in the brief above and NOT here. Output
-            // volume is what this phase costs in wall-clock, so the ceiling is real — but
-            // enforcing it in the schema means a TRD with 41 requirements is thrown away
-            // whole and the phase reports that nothing was authored. That is the failure
-            // mode that cost a whole batch of the SAD extract; see the feedSchema comment.
-            // A ceiling the author is told about is guidance; a ceiling the runtime checks
-            // is a hard stop we built for ourselves.
+            // The requirement ceiling is REAL — output volume is what this phase costs —
+            // and it lives in the brief above and in the check below, not here. Enforced
+            // as `maxItems`, a TRD with one requirement too many is thrown away whole and
+            // the phase reports that nothing was authored: the exact failure that cost a
+            // batch of the SAD extract. Stated up front the author self-limits; checked
+            // afterwards the overage is visible and every requirement survives.
             items: {
               type: 'object',
               additionalProperties: false,
@@ -864,6 +1051,19 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
       },
     }
   )
+  // The stated limits, checked with the result already in hand. Nothing here rejects,
+  // truncates or re-dispatches: an overage is a line in the log and the TRD is used whole.
+  if (authored) {
+    const reqs = Array.isArray(authored.requirements) ? authored.requirements : []
+    checkLimit('author:trd', 'technical requirements', reqs.length, LIMITS.requirements)
+    checkLimit('author:trd', 'decisionIds', (Array.isArray(authored.decisionIds) ? authored.decisionIds : []).length, LIMITS.decisionIds)
+    reqs.forEach((r, i) => {
+      const which = `author:trd requirement ${(r && typeof r.id === 'string' && r.id.trim()) || `#${i + 1}`}`
+      checkLimit(which, 'prdRefs', (r && Array.isArray(r.prdRefs) ? r.prdRefs : []).length, LIMITS.prdRefs)
+      checkLimit(which, 'sadRefs', (r && Array.isArray(r.sadRefs) ? r.sadRefs : []).length, LIMITS.sadRefs)
+    })
+  }
+  return authored
 }
 
 // ── Phase 3: Verify & Traceability — ONE independent checker session, both checks ─
@@ -871,12 +1071,12 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
 // read the same TRD. Both are independent CHECKS on the maker's artifact — neither
 // ever judged the other — so one session carrying both preserves segregation of
 // duties (the checker authored nothing) at half the cost.
-function verifyTrd() {
+async function verifyTrd() {
   const trdText = JSON.stringify(trd, null, 2)
   phase('Verify & Traceability')
 
-  return settleAgent(
-    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed — roughly 25 findings is as many as an author can act on in the single revision pass this loop allows.
+  const verified = await settleAgent(
+    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows. In the traceability report: ${atMost(LIMITS.links, 'rows in `links`')} ${atMost(LIMITS.prdGaps, 'entries in `prdGaps`')} ${atMost(LIMITS.trdOrphans, 'entries in `trdOrphans`')}
 
 CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
 
@@ -912,9 +1112,10 @@ ${extractText}`,
               verdict: { type: 'string', enum: ['pass', 'reject'] },
               findings: {
                 type: 'array',
-                // The "roughly 25" the brief asks for is not repeated as `maxItems`: a
+                // The finding limit the brief states is not repeated as `maxItems`: a
                 // verdict rejected for holding one finding too many is a verdict nobody
                 // ever sees, and the phase then reports that the TRD was never judged.
+                // It is checked after the verdict is in hand instead, and nothing is cut.
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -938,10 +1139,10 @@ ${extractText}`,
               links: {
                 type: 'array',
                 // The traceability matrix is the one place where completeness IS the
-                // check, which is exactly why it carries no cap: a matrix truncated by the
-                // runtime would be rejected whole, and a matrix that had been allowed
-                // through short would report perfect coverage of the rows that fit. The
-                // brief asks for one row per real link and says a cross-product is wrong.
+                // check, which is exactly why no limit is enforced here: a matrix rejected
+                // by the runtime is destroyed whole, and one allowed through short would
+                // report perfect coverage of the rows that fit. The brief states the row
+                // limit and says a cross-product is wrong; the script checks, and keeps.
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -952,8 +1153,9 @@ ${extractText}`,
                   },
                 },
               },
-              // A gap or an orphan is the finding this check exists to produce; capping
-              // either would discard the verdict precisely when it has the most to say.
+              // A gap or an orphan is the finding this check exists to produce; bounding
+              // either HERE would discard the verdict precisely when it has the most to
+              // say. The limits are stated in the brief and checked below.
               prdGaps: { type: 'array', items: { type: 'string' } },
               trdOrphans: { type: 'array', items: { type: 'string' } },
               feedback: { type: 'string' },
@@ -963,6 +1165,17 @@ ${extractText}`,
       },
     }
   )
+  // Checked with the verdict in hand. An overage is logged and the verdict is used whole —
+  // a verifier's report is at its most valuable exactly when it is longer than expected.
+  if (verified) {
+    const v = verified.validation
+    const t = verified.traceability
+    checkLimit('verify:trd', 'validation findings', (v && Array.isArray(v.findings) ? v.findings : []).length, LIMITS.findings)
+    checkLimit('verify:trd', 'traceability links', (t && Array.isArray(t.links) ? t.links : []).length, LIMITS.links)
+    checkLimit('verify:trd', 'prdGaps', (t && Array.isArray(t.prdGaps) ? t.prdGaps : []).length, LIMITS.prdGaps)
+    checkLimit('verify:trd', 'trdOrphans', (t && Array.isArray(t.trdOrphans) ? t.trdOrphans : []).length, LIMITS.trdOrphans)
+  }
+  return verified
 }
 
 for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
@@ -997,7 +1210,7 @@ for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   if (attempt === MAX_LOOPS) {
     log('Maker-checker loop exhausted — escalating to trd-decider for a binding ruling')
     const ruling = await settleAgent(
-      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything. Keep it targeted — about fifteen changes is the most a single pass can carry, and a longer list is a rewrite you have no mandate to order.
+      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything. Keep it targeted — ${atMost(LIMITS.requiredChanges, 'entries in `requiredChanges`')} That is the most a single pass can carry, and a longer list is a rewrite you have no mandate to order.
 
 TRD:
 ${JSON.stringify(trd, null, 2)}
@@ -1019,16 +1232,20 @@ Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 
           properties: {
             verdict: { type: 'string', enum: ['accept', 'reject', 'revise'] },
             rationale: { type: 'string' },
-            // A revise buys exactly ONE targeted author pass, and a change list of more
-            // than about fifteen items is not targeted — it is a rewrite the decider had
-            // no mandate to order. The brief says so; the schema does not enforce it,
-            // because a ruling rejected for listing one change too many is a ruling the
-            // run never receives, and the run then ends on "the decider returned nothing".
+            // A revise buys exactly ONE targeted author pass, and a change list longer
+            // than the stated limit is not targeted — it is a rewrite the decider had no
+            // mandate to order. The brief says so and the script checks it below; the
+            // schema does not, because a ruling rejected for listing one change too many
+            // is a ruling the run never receives, and the run then ends on "the decider
+            // returned nothing" — losing the ruling to enforce a number about the ruling.
             requiredChanges: { type: 'array', items: { type: 'string' } },
           },
         },
       }
     )
+    if (ruling) {
+      checkLimit('decide:trd', 'requiredChanges', (Array.isArray(ruling.requiredChanges) ? ruling.requiredChanges : []).length, LIMITS.requiredChanges)
+    }
     decision = ruling
       ? { verdict: ruling.verdict, ruledByDecider: true, rationale: ruling.rationale, requiredChanges: ruling.requiredChanges || [] }
       : { verdict: 'reject', ruledByDecider: true, rationale: 'trd-decider returned no ruling.' }
