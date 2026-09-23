@@ -74,7 +74,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet |
-| trd-author | execute | Authors the Technical Requirements Document — the blueprint for HOW a feature is built — from two sources: the PRD requirements needing technical elaboration, and the technical requirements the architecture and standing engineering policy impose that no PRD would state. NFR derivations and interface and data obligations bounded by the SAD extract. |
+| trd-author | execute | Authors the Technical Requirements Document — the CARRIER that takes the architecture's obligations (uptime, latency, maintainability, security, failover, DR, infrastructure/CDK, observability) into the build chain, alongside the PRD requirements needing technical elaboration. Cites the SAD rather than restating it, so a correct TRD is often very short. |
 | trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture. |
 | prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or a SAD entry, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. |
 | trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead |

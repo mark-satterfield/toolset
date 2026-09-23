@@ -50,7 +50,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 This lead is the face of the following team; each member and what it does:
 
-- **trd-author** — Authors the Technical Requirements Document, the blueprint for HOW the feature is built, from two sources: the PRD requirements needing technical elaboration, and the technical requirements the architecture and standing engineering policy impose that no PRD would state — with NFR derivations and interface and data obligations bounded by the SAD extract.
+- **trd-author** — Authors the Technical Requirements Document, the carrier that takes the architecture's obligations into the build chain, from two sources: the PRD requirements needing technical elaboration, and the obligations the architecture and standing engineering policy impose that no PRD would state. It cites the SAD rather than restating it, so a correct TRD is often very short.
 - **trd-validator** — Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture.
 - **prd-trd-traceability-verifier** — Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or a SAD entry, every PRD requirement needing elaboration answered, and genuine scope drift flagged. The relation is not 1:1.
 - **trd-decider** — Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead.
