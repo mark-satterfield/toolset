@@ -3151,21 +3151,12 @@ async function runTrdAuthoring() {
   if (cpTrd !== undefined) return { mode: 'checkpoint', trdAuthoring: cpTrd }
   const ruled = await gateLoop({
     gate: 'G2b', phaseName: 'TRD Authoring',
-    // Every criterion here is a completeness or traceability judgment about a document.
-    // Competitive: a partial TRD is flagged and carried forward, not looped over.
-    // Consumed by: spec-authoring (G3) takes the TRD as its input packet and elaborates the
-    // API, data model, event and error specs from it. The validator/verifier criterion is a
-    // control-boundary assertion (Rule 4): trd-authoring.js runs both checkers structurally
-    // and loops on reject, and this criterion is what makes that binding at the gate.
-    criteria: [
-      { class: 'competitive', text: 'Every TRD requirement is sourced — from a PRD requirement OR from a SAD crosscutting concept or architecture decision. A requirement the architecture imposes with no PRD parent (which events a service must emit, performance budgets, schema, encryption, retention, monitoring) is CORRECT and expected, not an invented requirement. Only a requirement serving neither the PRD nor any architecture concern, or one contradicting the SAD, is a defect. A requirement may CITE a SAD section instead of restating it — that is the preferred shape, so a TRD is often very short and brevity, a low requirement count or terse requirement text is NEVER incompleteness. A TRD carrying FEW architecture-sourced requirements or NONE is not a defect either: a change needing no new architecture yields a TRD that is legitimately just the technical version of its PRD.' },
-      { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration is answered — by a TRD entry, or by citing the SAD decision that already settles it. A requirement needing none is NOT a gap, one an existing SAD decision answers is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional, 1:1 or total coverage.' },
-      { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
-    ],
+    // No agent-judged criteria. The TRD is used by spec authoring, which is where a gap in
+    // it surfaces; judging it here as well cost a gate session per run and could not block,
+    // because every criterion it carried passed with a flag.
+    criteria: [],
     escalateTargets: ['architecture', 'prd-author'],
-    // Every criterion at this gate is competitive, so an unmet one passes with a flag. That
-    // is right for "the TRD is thin" and wrong for "there is no TRD": spec authoring below
-    // takes this document as its input packet.
+    // The one test here: there is a TRD. Spec authoring below takes it as its input packet.
     structural: { requireOk: true, required: ['trd'] },
     phaseFn: (feedback) =>
       workflow('agent-teams-workforce:trd-authoring', {
@@ -3221,7 +3212,6 @@ async function runTrdAuthoring() {
         trdPath: a.trdPath,
         artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
         repoPath,
-        maxLoops: 1,
         feedback,
       }).then((r) => {
         if (r && r.sadExtract && !trdSadExtract) trdSadExtract = r.sadExtract

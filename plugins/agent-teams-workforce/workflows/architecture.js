@@ -941,7 +941,9 @@ ${readingRule}
 
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
 
-For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
+For every entry: set its ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
+
+THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked tag such as \`C-apigw-construct\`, \`S-…\`, \`X-uniform-zero-egress\` or \`AD-…\`; that tag, character for character, is the entry's ID. Never add a prefix, change case, rename, or shorten it. Only an entry with no tag gets a made-up ID, and then it is \`<file name without .md>--<kebab-case of the nearest heading>\`, with \`-2\`, \`-3\` appended in document order when one heading holds several untagged entries — so the same file yields the same IDs on every run.
  Return everything your files state: there is NO limit on how many entries you may return, and nothing is dropped for being numerous. This is a READ — how many concepts §8 holds is a fact about the SAD, not a budget you are working to — so report what is there and never consolidate, trim or omit an entry to reach a smaller number.${
       savePath
         ? `

@@ -1,11 +1,10 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A TRD is the CARRIER: the single point at which the obligations the architecture imposes enter the build chain, because the Specs, Stories and Tasks are built from it and an obligation that does not reach it is built by nobody. Its requirements come from TWO sources — the PRD requirements that need technical elaboration, and the architecture-imposed obligations no PRD would ever state (uptime, latency, maintainability, security, failover, disaster recovery, infrastructure and CDK specifics, which events a service must emit), an open list on which the SAD is the authority. It CITES the SAD rather than restating it, so a requirement that names an obligation and points at the entry defining it is complete, and a correct TRD is often very short — brevity is never incompleteness, and the detailed HOW belongs to the Specs and the Tasks. The relation to the PRD is NOT 1:1, and traceability is RE-POINTED rather than abandoned: every TRD requirement still names a source, that source being EITHER a PRD requirement OR a SAD crosscutting concept or architecture decision, so a SAD-anchored requirement is fully traced and only a requirement with no source of either kind is an orphan. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + source traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A TRD is the CARRIER: the single point at which the obligations the architecture imposes enter the build chain, because the Specs, Stories and Tasks are built from it and an obligation that does not reach it is built by nobody. Its requirements come from TWO sources — the PRD requirements that need technical elaboration, and the architecture-imposed obligations no PRD would ever state (uptime, latency, maintainability, security, failover, disaster recovery, infrastructure and CDK specifics, which events a service must emit), an open list on which the SAD is the authority. It CITES the SAD rather than restating it, so a requirement that names an obligation and points at the entry defining it is complete, and a correct TRD is often very short — brevity is never incompleteness, and the detailed HOW belongs to the Specs and the Tasks. The relation to the PRD is NOT 1:1, and traceability is RE-POINTED rather than abandoned: every TRD requirement still names a source, that source being EITHER a PRD requirement OR a SAD crosscutting concept or architecture decision, so a SAD-anchored requirement is fully traced and only a requirement with no source of either kind is an orphan. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; extractor IDs are the tags the SAD itself carries, copied exactly, so a citation resolves on every run; the trd-author writes the TRD in ONE pass, with no checker, decider or re-check after it — the TRD is judged where it is used, by spec authoring. Gate feedback from a previous run of this phase seeds the author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
-    { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
-    { title: 'Verify & Traceability', detail: 'independent validation + source traceability (PRD or SAD anchor per requirement); decider on deadlock' },
+    { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract, one pass' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -289,7 +288,6 @@ async function settleAgent(prompt, opts) {
 //   sad: { path?, sectionLayout?: 'single-file' | 'one-file-per-section' }, // arc42 SAD location
 //   trdPath?: string,        // where the TRD should be written/lives
 //   repoPath?: string,       // working repo for file reads/writes
-//   maxLoops?: number,       // bounded maker-checker passes (default 2)
 //   feedback?: string,       // gate feedback from a previous run of this phase; seeds the first author pass
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
 //                            // the Epic working directory. When present the author writes the TRD to
@@ -337,17 +335,6 @@ const repo = a.repoPath || '(repo path not provided — ask before editing files
 // judgment to make — the project's filing clerk owns that, so when the caller names no
 // path we ask it rather than inventing one under .claude/. Its ruling is used verbatim.
 let trdPath = a.trdPath || null
-// Gate retry budget. One rework round, then proceed with the finding recorded.
-//
-// This was 3, and nested minis carried their own bound of 2 on top, so a single
-// phase could burn six expensive attempts before anyone saw a result — the
-// dominant cost in every run that stalled. A checker's objection is information;
-// it does not have to be a veto. One revision is where nearly all the value is:
-// if a maker cannot address a finding on the second try, a third rarely helps and
-// the finding is better carried forward than ground against.
-//
-// Callers who want the old behaviour pass args.maxLoops explicitly.
-const MAX_LOOPS = a.maxLoops || 2
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
@@ -541,12 +528,6 @@ const readingRule = `READING RULE (binding): read EVERY file assigned to you bel
 const STATED_LIMITS = {
   // The author decides how to carve one Epic's worth of HOW into requirements.
   requirements: 40,
-  // The verifier is asked to name what BLOCKS rather than everything it noticed, which is
-  // a selection it makes — and it is bounded by what one revision pass can absorb.
-  findings: 25,
-  // A revise buys exactly ONE targeted author pass; a longer list is a rewrite the decider
-  // had no mandate to order.
-  requiredChanges: 15,
 }
 // What a READ dispatch is EXPECTED to return. Stated to nobody, and not a limit: these are
 // facts about documents this phase did not write, so the number only decides when the log
@@ -566,13 +547,6 @@ const EXPECTED_VOLUME = {
   decisionIds: 60,
   prdRefs: 10,
   sadRefs: 10,
-  // The traceability report: one row per real link, and a gap or an orphan is the finding
-  // the check exists to produce. All of these are properties of the PRD/SAD/TRD set, not
-  // choices the verifier makes.
-  links: 200,
-  prdGaps: 40,
-  prdSadAnswered: 40,
-  trdOrphans: 40,
 }
 // A CREATE's stated limit, rendered for its brief. The agent is told this number and the
 // script checks the same constant, so the sentence and the log can never drift apart.
@@ -700,7 +674,9 @@ ${readingRule}
 
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
 
-For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
+For every entry: set its ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
+
+THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked tag such as \`C-apigw-construct\`, \`S-…\`, \`X-uniform-zero-egress\` or \`AD-…\`; that tag, character for character, is the entry's ID. Never add a prefix, change case, rename, or shorten it. Only an entry with no tag gets a made-up ID, and then it is \`<file name without .md>--<kebab-case of the nearest heading>\`, with \`-2\`, \`-3\` appended in document order when one heading holds several untagged entries — so the same file yields the same IDs on every run.
  Return everything your files state: there is NO limit on how many entries you may return, and nothing is dropped for being numerous. This is a READ — how many concepts §8 holds is a fact about the SAD, not a budget you are working to — so report what is there and never consolidate, trim or omit an entry to reach a smaller number.${
       savePath
         ? `
@@ -1119,14 +1095,8 @@ const prdText = prd.content
   ? prd.content
   : `PRD ${prd.id || ''}: ${prd.title || ''} (path: ${prd.path || 'n/a'})`
 
-// ── Phases 2 + 3: bounded maker-checker loop ──────────────────────────────────
-// The maker (trd-author) writes the TRD; two INDEPENDENT checkers judge it. Neither
-// checker ever authored the TRD. On rejection the maker re-runs with the combined
-// checker feedback. The script owns this loop in plain JS — no workflow() calls.
+// ── Phase 2: Author TRD ─────────────────────────────────────────────────────────
 let trd = null
-let trdValidation = null
-let traceabilityMatrix = null
-let decision = null
 let feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
 // ── WHERE THE TRD LIVES IS THE FILING CLERK'S RULING ─────────────────────────
@@ -1181,8 +1151,7 @@ path you actually wrote.
 `
 
 // ── Phase 2: Author TRD (maker) ──────────────────────────────────────────────
-// The author reads the shared `feedback`, so every pass carries whatever the checker,
-// the gate or the decider last asked for.
+// The author reads `feedback`, which carries the gate's findings from a previous run of this phase.
 async function authorTrd(pass) {
   phase('Author TRD')
   log(`Authoring TRD (${pass}) at ${authorPath}`)
@@ -1217,11 +1186,11 @@ ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPR
 
 SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; cite by stable ID):
 ${extractText}
-${feedback ? `\nFeedback on the previous version (checker, gate or decider) — address every point:\n${feedback}` : ''}
+${feedback ? `\nFeedback on the previous version from the gate — address every point:\n${feedback}` : ''}
 
 Each technical requirement must have a stable ID, NAME ITS SOURCE, and be verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR a SAD crosscutting concept or architecture decision (in \`sadRefs\`) — a requirement of the second kind carries an empty \`prdRefs\` and that is fully traced, not an orphan. What is forbidden is a requirement with NEITHER: a requirement serving neither the PRD nor any architecture concern is scope drift. A requirement that CONTRADICTS the SAD is a defect whatever it cites. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
 
-VOLUME IS THE COST OF THIS PHASE. ${atMost(STATED_LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${STATED_LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Consolidating is how you stay under it — never by dropping a sourced obligation, and never by leaving out the architecture-imposed requirements above, which are as much a part of this document as the PRD-derived ones. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+VOLUME IS THE COST OF THIS PHASE. ${atMost(STATED_LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${STATED_LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Consolidating is how you stay under it — never by dropping a sourced obligation, and never by leaving out the architecture-imposed requirements above, which are as much a part of this document as the PRD-derived ones. Every word here is read again by every spec author downstream, so length is paid for many times over.
 
 The citations are NOT bounded, and deliberately: \`decisionIds\`, \`prdRefs\` and \`sadRefs\` record what a requirement actually rests on, so a number to stay under would only make you drop a real dependency. Cite every one, and if a requirement genuinely rests on a great many SAD entries, that is a sign it is several requirements written as one — split it rather than trimming its citations.
 
@@ -1305,246 +1274,18 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
   return authored
 }
 
-// ── Phase 3: Verify & Traceability — ONE independent checker session, both checks ─
-// This used to be two parallel checker sessions, each paying a full session-start to
-// read the same TRD. Both are independent CHECKS on the maker's artifact — neither
-// ever judged the other — so one session carrying both preserves segregation of
-// duties (the checker authored nothing) at half the cost.
-async function verifyTrd() {
-  const trdText = JSON.stringify(trd, null, 2)
-  phase('Verify & Traceability')
-
-  const verified = await settleAgent(
-    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(STATED_LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows, and choosing which ones block is part of your judgment. The traceability report is NOT bounded: \`links\`, \`prdGaps\`, \`prdSadAnswered\` and \`trdOrphans\` describe what the PRD, the SAD and the TRD actually contain, so report every one and never shorten any of them to reach a number.
-
-CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. A TRD CITES the SAD rather than restating it, so a requirement that names an obligation and points at the SAD entry defining it — in substance "this service must emit the warning and failure events defined in <SAD entry>" — is COMPLETE and is the preferred shape; do not ask for the architecture to be reproduced here. A correct TRD is often very short: brevity, a low requirement count and terse requirement text are NEVER incompleteness, and the detailed HOW belongs to the Specs and the Tasks, not to this document. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
-
-CHECK 2 — SOURCE traceability (return under \`traceability\`). A TRD is the blueprint for HOW a feature is built, NOT a technical translation of the PRD: the relation is NOT 1:1, and a TRD legitimately contains technical requirements the PRD never mentions, arising from the architecture and standing engineering policy — which events a service must emit (this system uses events as its observability mechanism), performance budgets, schema design, API contracts, encryption, retention, auth, monitoring, refactoring carried as part of the work. Every TRD requirement still has a SOURCE; the source is EITHER a PRD requirement OR a SAD crosscutting concept or architecture decision. Judge it that way:
-
-- \`links\` — one row per real link, \`prdRef\` naming the PRD requirement or the SAD entry id the requirement rests on and \`trdRef\` the TRD requirement. One row per real link: a row for every PRD requirement against every TRD requirement is a cross-product, not a mapping.
-- \`trdOrphans\` — ONLY a TRD requirement that cites NO source of either kind, or whose cited source does not support it. A requirement anchored to a SAD entry with no PRD parent is FULLY TRACED and must NOT be listed here. Genuine scope drift — a requirement serving neither the PRD nor any architecture concern — belongs here. So does a requirement that CONTRADICTS the SAD, which is a defect whatever it cites.
-- \`prdGaps\` — ONLY a PRD requirement that needs technical elaboration and nothing answers. A PRD requirement fully answered by an existing SAD decision is NOT a gap: record it in \`prdSadAnswered\` with the decision cited. Writing a hollow TRD requirement that restates a settled SAD decision is the wrong outcome, so do not demand one.
-- \`prdSadAnswered\` — each PRD requirement answered by a cited SAD decision rather than by a TRD requirement, naming the decision id. This is a correct disposition, not a finding.
-
-verdict "pass" when every TRD requirement is sourced, no requirement contradicts the SAD, and every PRD requirement needing technical elaboration is either elaborated or answered by a cited SAD decision. Do NOT reject for the absence of a 1:1 mapping, for TRD requirements with no PRD parent, for a PRD requirement the SAD already settles, or for a requirement that cites a SAD section instead of restating its content. Do NOT reject because the TRD carries FEW architecture-sourced requirements or NONE: a change that needs no new architecture yields a TRD that is legitimately just the technical version of its PRD, and you cannot tell that case from a missed obligation by counting. Judge the requirements that are there.
-
-PRD (source requirements):
-${prdText}
-${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
-
-TRD under review:
-${trdText}
-
-SAD extract the TRD must stay consistent with:
-${extractText}`,
-    {
-      label: 'verify:trd-and-traceability',
-      phase: 'Verify & Traceability',
-      // A checker, and the trd-validator's own file already says `effort: low` — this
-      // override was RAISING it. Judging a document against stated criteria is the
-      // cheapest kind of judgment there is; the expensive one is the decider below.
-      effort: 'low',
-      agentType: 'agent-teams-workforce:trd-validator',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['validation', 'traceability'],
-        properties: {
-          validation: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['verdict', 'findings', 'feedback'],
-            properties: {
-              verdict: { type: 'string', enum: ['pass', 'reject'] },
-              findings: {
-                type: 'array',
-                // Findings are a CREATE — the verifier selects what blocks — so the brief
-                // states a number. It is not repeated as `maxItems`: a verdict rejected for
-                // holding one finding too many is a verdict nobody ever sees, and the phase
-                // then reports that the TRD was never judged. Checked afterwards, nothing cut.
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['issue', 'severity'],
-                  properties: {
-                    issue: { type: 'string' },
-                    severity: { type: 'string', enum: ['blocker', 'major', 'minor'] },
-                    location: { type: 'string' },
-                  },
-                },
-              },
-              feedback: { type: 'string' },
-            },
-          },
-          traceability: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['verdict', 'links', 'prdGaps', 'prdSadAnswered', 'trdOrphans', 'feedback'],
-            properties: {
-              verdict: { type: 'string', enum: ['pass', 'reject'] },
-              links: {
-                type: 'array',
-                // The traceability matrix is the one place where completeness IS the
-                // check, so it is bounded NOWHERE — not in this schema and not in the brief.
-                // A matrix rejected by the runtime is destroyed whole; one written short to
-                // reach a number reports perfect coverage of the rows that fit. The brief
-                // asks for one row per real link and says a cross-product is wrong, which
-                // constrains the SHAPE without capping the count. The script only observes.
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['prdRef', 'trdRef'],
-                  properties: {
-                    prdRef: { type: 'string' },
-                    trdRef: { type: 'string' },
-                  },
-                },
-              },
-              // A gap or an orphan is the finding this check exists to produce, and how many
-              // exist is a fact about the PRD and the TRD rather than the verifier's choice.
-              // Bounding either — here or in the brief — would suppress the verdict precisely
-              // when it has the most to say. Observed below, never limited.
-              //
-              // BOTH ARE NARROWER THAN THEIR NAMES SUGGEST, and the brief says so. A TRD
-              // requirement anchored to a SAD entry with no PRD parent is fully traced, so it
-              // is NOT a `trdOrphans` entry: only a requirement with no source of either kind,
-              // or one contradicting the SAD, is. And a PRD requirement an existing SAD
-              // decision already answers is NOT a `prdGaps` entry: that disposition is
-              // recorded below instead, because the alternative is a hollow TRD requirement
-              // restating a settled decision — filler manufactured to satisfy a count.
-              prdGaps: { type: 'array', items: { type: 'string' } },
-              // Where a PRD requirement's answer legitimately lives in the SAD rather than in
-              // the TRD. Recorded so the disposition survives the run instead of being either
-              // dropped or mis-filed as a gap; nothing branches on it.
-              prdSadAnswered: { type: 'array', items: { type: 'string' } },
-              trdOrphans: { type: 'array', items: { type: 'string' } },
-              feedback: { type: 'string' },
-            },
-          },
-        },
-      },
-    }
-  )
-  // Checked with the verdict in hand. An overage is logged and the verdict is used whole —
-  // a verifier's report is at its most valuable exactly when it is longer than expected.
-  if (verified) {
-    const v = verified.validation
-    const t = verified.traceability
-    checkLimit('verify:trd', 'validation findings', (v && Array.isArray(v.findings) ? v.findings : []).length, STATED_LIMITS.findings)
-    checkExpected('verify:trd', 'traceability links', (t && Array.isArray(t.links) ? t.links : []).length, EXPECTED_VOLUME.links)
-    checkExpected('verify:trd', 'prdGaps', (t && Array.isArray(t.prdGaps) ? t.prdGaps : []).length, EXPECTED_VOLUME.prdGaps)
-    checkExpected('verify:trd', 'prdSadAnswered', (t && Array.isArray(t.prdSadAnswered) ? t.prdSadAnswered : []).length, EXPECTED_VOLUME.prdSadAnswered)
-    checkExpected('verify:trd', 'trdOrphans', (t && Array.isArray(t.trdOrphans) ? t.trdOrphans : []).length, EXPECTED_VOLUME.trdOrphans)
-  }
-  return verified
-}
-
-for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-  trd = await authorTrd(`attempt ${attempt}/${MAX_LOOPS}`)
-  if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract, ...died('Author TRD') }
-
-  const verification = await verifyTrd()
-  const validation = verification && verification.validation
-  const traceability = verification && verification.traceability
-
-  trdValidation = validation
-  traceabilityMatrix = traceability
-
-  const validationPass = validation && validation.verdict === 'pass'
-  const traceabilityPass = traceability && traceability.verdict === 'pass'
-
-  if (validationPass && traceabilityPass) {
-    log(`TRD accepted on attempt ${attempt}: validation PASS, traceability PASS`)
-    decision = { verdict: 'pass', ruledByDecider: false, rationale: 'Both independent checkers passed.' }
-    break
-  }
-
-  // Combine the rejecting checkers' feedback for the next maker pass.
-  const parts = []
-  if (!validationPass) parts.push(`[Structure/quality] ${(validation && validation.feedback) || 'rejected (no feedback)'}`)
-  if (!traceabilityPass) parts.push(`[Traceability] ${(traceability && traceability.feedback) || 'rejected (no feedback)'}`)
-  feedback = parts.join('\n\n')
-  log(`TRD rejected on attempt ${attempt}/${MAX_LOOPS}: ${parts.join(' | ')}`)
-
-  // On deadlock (final pass exhausted while still rejected), the trd-decider rules.
-  // The decider only rules — it never authored or analyzed the TRD itself.
-  if (attempt === MAX_LOOPS) {
-    log('Maker-checker loop exhausted — escalating to trd-decider for a binding ruling')
-    const ruling = await settleAgent(
-      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything. Keep it targeted — ${atMost(STATED_LIMITS.requiredChanges, 'entries in `requiredChanges`')} That is the most a single pass can carry, and a longer list is a rewrite you have no mandate to order.
-
-TRD:
-${JSON.stringify(trd, null, 2)}
-
-Structure/quality verdict: ${(trdValidation && trdValidation.verdict) || 'n/a'}
-Structure/quality feedback: ${(trdValidation && trdValidation.feedback) || 'n/a'}
-
-Traceability verdict: ${(traceabilityMatrix && traceabilityMatrix.verdict) || 'n/a'}
-Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 'n/a'}`,
-      {
-        label: 'decide:trd',
-        phase: 'Verify & Traceability',
-        effort: 'high',
-        agentType: 'agent-teams-workforce:trd-decider',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['verdict', 'rationale'],
-          properties: {
-            verdict: { type: 'string', enum: ['accept', 'reject', 'revise'] },
-            rationale: { type: 'string' },
-            // A revise buys exactly ONE targeted author pass, and a change list longer
-            // than the stated limit is not targeted — it is a rewrite the decider had no
-            // mandate to order. The brief says so and the script checks it below; the
-            // schema does not, because a ruling rejected for listing one change too many
-            // is a ruling the run never receives, and the run then ends on "the decider
-            // returned nothing" — losing the ruling to enforce a number about the ruling.
-            requiredChanges: { type: 'array', items: { type: 'string' } },
-          },
-        },
-      }
-    )
-    if (ruling) {
-      checkLimit('decide:trd', 'requiredChanges', (Array.isArray(ruling.requiredChanges) ? ruling.requiredChanges : []).length, STATED_LIMITS.requiredChanges)
-    }
-    decision = ruling
-      ? { verdict: ruling.verdict, ruledByDecider: true, rationale: ruling.rationale, requiredChanges: ruling.requiredChanges || [] }
-      : { verdict: 'reject', ruledByDecider: true, rationale: 'trd-decider returned no ruling.' }
-  }
-}
-
-// ── A "revise" ruling is carried out, not reported ────────────────────────────
-// The decider is offered "return to the author for a final targeted change". Ending the
-// run on that ruling returned ok:false with the change never made, and the gate's re-run
-// of this mini did not hand the required changes to the author either, so the same
-// finding came back and the gate budget ran out on a TRD the decider had ruled fixable.
-// A revise gets exactly one targeted author pass and one independent re-check; a TRD the
-// checker still rejects after it ends the run with the ruling and the new findings.
-if (decision && decision.verdict === 'revise' && trd) {
-  const changes = decision.requiredChanges && decision.requiredChanges.length
-    ? decision.requiredChanges.map((c, i) => `${i + 1}. ${c}`).join('\n')
-    : '(none listed — apply the rationale)'
-  feedback = `BINDING RULING FROM THE TRD DECIDER — make these targeted changes and change nothing else:\n${changes}\n\nRationale: ${decision.rationale || 'n/a'}\n\nLatest checker feedback:\n${feedback}`
-  const revised = await authorTrd('final targeted revision per the decider ruling')
-  if (revised) {
-    trd = revised
-    const verification = await verifyTrd()
-    trdValidation = verification && verification.validation
-    traceabilityMatrix = verification && verification.traceability
-    const passed = !!(trdValidation && trdValidation.verdict === 'pass' && traceabilityMatrix && traceabilityMatrix.verdict === 'pass')
-    log(`TRD ${passed ? 'accepted' : 'still rejected'} after the decider's targeted revision`)
-    decision = passed
-      ? { ...decision, verdict: 'accept', revisedPerRuling: true, rationale: `${decision.rationale} Required changes applied; both independent checks passed on re-check.` }
-      : { ...decision, revisedPerRuling: true, recheckFeedback: [trdValidation && trdValidation.feedback, traceabilityMatrix && traceabilityMatrix.feedback].filter(Boolean).join('\n\n') }
-  } else {
-    decision = { ...decision, revisedPerRuling: false }
-  }
-}
-
-const accepted = decision && (decision.verdict === 'pass' || decision.verdict === 'accept')
+// ── ONE AUTHORING PASS, AND NO CHECKER AFTER IT ──────────────────────────────────
+// This phase used to send the TRD to a verifier, then on a reject to the trd-decider,
+// then back to the author, then to the verifier again, and the composite's G2b gate then
+// judged the same questions a fourth time. The verifier's traceability matrix was read by
+// nothing, and its citation check compared the TRD against extract ids that were minted
+// fresh on every run, so it rejected correct TRDs. None of it changed what was built.
+// The TRD is authored once and handed to spec authoring, which is where it is used.
+trd = await authorTrd('single pass')
+if (!trd) return { ok: false, stage: 'author', reason: 'TRD authoring produced nothing', sadExtract, ...died('Author TRD') }
 
 return {
-  ok: !!accepted,
+  ok: true,
   trdPath: ART ? authorPath : (trd && trd.trdPath) || trdPath,
   // The filing home ruled for this TRD, when one was ruled. Null means nobody ruled it.
   filingPath,
@@ -1556,7 +1297,4 @@ return {
     ...((trd && Array.isArray(trd.decisionIds) ? trd.decisionIds : [])),
     ...((trd && Array.isArray(trd.requirements) ? trd.requirements : []).flatMap((r) => (Array.isArray(r.sadRefs) ? r.sadRefs : []))),
   ].map((x) => String(x == null ? '' : x).trim()).filter(Boolean))],
-  trdValidation,
-  traceabilityMatrix,
-  decision,
 }
