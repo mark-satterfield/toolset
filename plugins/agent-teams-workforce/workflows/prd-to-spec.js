@@ -484,6 +484,9 @@ const withoutSadExtract = (r) => {
 // of those quarantine the bead for a wall nobody could have avoided. The phase name
 // stays in the headline and in the journal, so nothing is lost about WHERE it stopped.
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
+// The stage the host queues a person's action on (its pipeline.HUMAN_ACTION_STAGE): a run that
+// stopped, or finished short, on something only a person can do. Never charged to the bead.
+const HUMAN_ACTION_STAGE = 'requires-human-action'
 
 const partial = (stage, detail, extra) => {
   const salvage = { ...produced, ...(extra || {}) }
@@ -1434,6 +1437,13 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
         verdict,
       }
     }
+    // A judge that blocked twice with no reason never ruled. gate-constitutional has already
+    // re-asked it once with the defect named, so this is a judge failure, not a finding.
+    if (verdict.malformedVerdict === true) {
+      recordGate(attempt, verdict, { terminal: 'malformed-verdict' })
+      log(`Gate ${gate} (${phaseName}): the judge returned no reason for blocking — ${verdict.feedback || 'no feedback'}`)
+      return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback || `gate ${gate}'s judge gave no reason`, artifact, verdict }
+    }
     recordGate(attempt, verdict)
     lastVerdict = verdict
     attempts.push({
@@ -1582,19 +1592,21 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
   return out.output
 }
 // ── WORK ONLY A PERSON CAN UNBLOCK TAKES THE EPIC OUT OF THE SWEEP ──────────────
-// Part of the work lands in a repository that does not exist, and only a person may create
-// one. Left `in_progress` with its owner released, every sweep would elaborate it again at
-// full cost to the same result. So its `elaboration_state` is cleared — the state the sweep
+// Part of the work lands in a repository that does not exist, the ruled span could not place
+// all of the work, or the architecture has no admissible option or its gate sent it back to the
+// PRD author — and only a person can change a repository set, a PRD or a blocking rule. Left
+// `in_progress` with its owner released, every sweep would elaborate it again at full cost to
+// the same result. So its `elaboration_state` is cleared — the state the sweep
 // and `elaboration-start` both leave alone, and the one a person hands back from by setting
 // `ready` — with a cause naming why, and the need itself reaches the human queue through the
 // handback. The write goes through the beads-contract CLI, the channel depscore uses.
 const HOLD_CAUSE = 'awaiting-human-action'
 /** How a person hands a held Epic back, named exactly: the state to set and the command that sets it. */
-function restoreStep(epicId) {
+function restoreStep(epicId, after = 'the repositories exist') {
   const elabmark = typeof a.artifactScript === 'string' && /\/artifactio\.py$/.test(a.artifactScript)
     ? `python3 ${a.artifactScript.replace(/artifactio\.py$/, 'elabmark.py')}`
     : 'elabmark.py (in the SDLC automation directory)'
-  return `After the repositories exist, set ${epicId} back to elaboration_state=ready: ${elabmark} --set=ready --bead=${epicId} --apply — the next elaboration sweep then picks it up.`
+  return `After ${after}, set ${epicId} back to elaboration_state=ready: ${elabmark} --set=ready --bead=${epicId} --apply — the next elaboration sweep then picks it up.`
 }
 async function holdForPerson(epicId) {
   const out = await settleAgent(
@@ -2066,6 +2078,8 @@ if (a.runInputs && Array.isArray(a.runInputs.files)) {
   // publishes no lease, which is the handled case and not a failure.
   cpAdoptClock(a.runInputs.nowMs !== undefined ? a.runInputs.nowMs : a.nowMs, a.runInputs.nonce !== undefined ? a.runInputs.nonce : a.runNonce)
 } else if (cpLegacyRead || RULINGS_PATH) {
+  // A host that shed runInputs for size still sends its clock and run nonce at the top level.
+  cpAdoptClock(a.nowMs, a.runNonce)
   try {
     // ── THE CHECKPOINT IS A DIRECTORY NOW, SO THE READ IS A LISTING ─────────────
     // It used to be two named paths. A per-phase checkpoint has an envelope plus one file
@@ -2770,11 +2784,11 @@ if (!archNeeded) {
     escalateTargets: ['prd-author'],
     // The SAD extract is the SAD as it stood BEFORE this ruling, typically the largest field
     // in the result, and no criterion here judges it; the enforcer reads the SAD by path if
-    // it needs to. `tradeoffs` restates `proposals`. Everything the ruling produced is still
-    // shown.
+    // it needs to. `proposals` and `tradeoffs` are the options the ruling weighed; both criteria
+    // judge the chosen approach and the open findings, which are still shown.
     gateView: (r) => {
       if (!r || typeof r !== 'object') return r
-      const { sadExtract, tradeoffs, ...rest } = r
+      const { sadExtract, tradeoffs, proposals, ...rest } = r
       return rest
     },
     phaseFn: (feedback) =>
@@ -2835,6 +2849,34 @@ if (architecture.ok) {
 }
 }
 produced.architecture = withoutSadExtract(architecture.artifact)
+// ── AN ARCHITECTURE ONLY A PERSON CAN UNBLOCK ────────────────────────────────────
+// Two G2 outcomes cannot come out differently on another run: the decider ruled NO option
+// admissible (the mini says so with `deterministicFailure` — a person must change the PRD or
+// the blocking rule), and the gate ESCALATED, which at G2 means to the PRD author. Every sweep
+// would otherwise re-run the panel's ruling into the same wall, so the Epic is held for a
+// person and the handback names what they have to do.
+if (!architecture.ok && (architecture.escalate || (architecture.deterministicFailure === true && architecture.artifact && architecture.artifact.admissible === false))) {
+  const art = architecture.artifact || {}
+  const actions = !architecture.escalate && Array.isArray(art.requiredHumanActions) && art.requiredHumanActions.length
+    ? art.requiredHumanActions.slice()
+    : architecture.escalate
+    ? [
+        `Gate G2 sent the architecture of ${epicBeadId} back to the ${architecture.escalate}: ${String((architecture.verdict && architecture.verdict.feedback) || 'no reason given').slice(0, 600)}` +
+          ` Change the PRD so the architecture can be ruled.`,
+      ]
+    : [
+        `The architecture of ${epicBeadId} has no admissible option: ${String(art.reason || architecture.reason || '').slice(0, 600)}`,
+        ...(Array.isArray(art.ruleChallenges) ? art.ruleChallenges : [])
+          .slice(0, 5)
+          .map((c) => `Rule challenge for the owner: ${String(typeof c === 'string' ? c : JSON.stringify(c)).slice(0, 300)}`),
+      ]
+  await holdForPerson(epicBeadId)
+  return {
+    ...partial('architecture', architecture),
+    stage: HUMAN_ACTION_STAGE,
+    requiredHumanActions: lifecycle.held ? [...actions, restoreStep(epicBeadId, 'the PRD or the blocking rule has been changed')] : actions,
+  }
+}
 if (!architecture.ok) return partial('architecture', architecture)
 // NOTE: there is deliberately no `sadExtract` binding here. One used to be assigned
 // from `architecture.artifact.sadUpdate` and read by nothing in this file. It is not
@@ -3349,9 +3391,19 @@ if (impactSettled && impactSettled.ran) {
 }
 
 // ── Repo Scoping: the ruling, the span, and every exit ───────────────────────────
+// The TRD ran beside repo scoping and does not depend on the span, so a run that stops at repo
+// scoping still records a TRD that passed its gate; the next run reuses it instead of paying
+// for it again.
+const acceptTrdOnExit = () => {
+  const t = trdSettled && trdSettled.trdAuthoring
+  if (!t || !t.ok) return
+  if (trdSettled.mode === 'resumed') acceptPhase('trd', 'reused')
+  else if (trdSettled.mode === 'ran') acceptPhase('trd', 'passed', { gate: 'G2b' })
+}
 enterPhase('Repo Scoping')
 if (!scopeSettled) {
   // The thunk threw. A failed scoping is NOT a single-repo span — see below.
+  acceptTrdOnExit()
   return partial('repo-scoping', {
     reason: 'repo scoping returned nothing at all (it threw or was skipped) — which repositories this PRD lands in could not be established, and the run will not guess.',
   })
@@ -3367,6 +3419,7 @@ if (scopeSettled.pinned) {
     // A failed scoping is NOT a single-repo span. Falling back to the caller's starting
     // point would restore exactly the defect this phase removes, and would do it on the
     // one run where the span was least certain.
+    acceptTrdOnExit()
     return partial('repo-scoping', {
       reason:
         (scoping && scoping.reason) ||
@@ -3388,8 +3441,18 @@ if (scopeSettled.pinned) {
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
 }
-const repoActions = (scoping && scoping.requiredHumanActions) || []
+// The span's actions, and the rule challenges an admissible architecture ruling raised for
+// the owner — both are for a person, and both reach the host on every exit below.
+const repoActions = [
+  ...((architecture.artifact && Array.isArray(architecture.artifact.requiredHumanActions) && architecture.artifact.requiredHumanActions) || []),
+  ...((scoping && scoping.requiredHumanActions) || []),
+]
 const newRepos = (scoping && scoping.newRepos) || []
+// Work the span ruling could not place — a repository that does not exist, a placement it
+// dropped, a work unit it placed nowhere — is work specified nowhere in this run, and only a
+// person can settle it (repo-scoping has already re-ruled once, shown the faults). The Epic is
+// not done while any of it stands, and it is held for that person rather than re-elaborated.
+const spanNeedsPerson = newRepos.length > 0 || !!(scoping && scoping.spanVerified === false)
 // ── THE SPAN RULING NAMES DESTRUCTIVE WORK TOO ─────────────────────────────────
 //
 // repo-scoping asks the decider to name existing code the ruled design makes OBSOLETE AND
@@ -3463,6 +3526,7 @@ if (scoping) {
 // `action`, because it is a DEFINITE DECISION the caller acts on rather than a failure —
 // the work is fully understood and it is blocked on one thing a human has to do.
 if (!repos.length) {
+  acceptTrdOnExit()
   await holdForPerson(epicBeadId)
   return {
     ...handback(
@@ -3832,6 +3896,27 @@ for (const r of repos) repoSlug(r) // assigned in span order before the fan-out,
 const specResults = await parallel(
   repos.map((repo, repoIndex) => () => authorSpecForRepo(repo, repoIndex))
 )
+/** The prd-reconciliation arguments for one repository, with its saved comparison when fresh. */
+function reconArgs(repo, slug, reconReplay) {
+  return {
+    artifacts: artFor(`recon:${slug}`, PRD_INPUTS, { slug }),
+    ...(reconReplay ? { replay: reconReplay } : {}),
+    // The WHOLE PRD, always. Scoping the SEARCH to one repository is not the same thing
+    // as scoping the REQUIREMENTS to it: every requirement the PRD states comes back with
+    // a status for this repository, including `absent`, because "nothing here" is a
+    // finding this spec has to act on.
+    prd: { ...prd, repoPath: repo },
+    standingRulings,
+    // ONE repository. This is the whole point of the relocation: at the front of the run
+    // the reconciler was handed the seed span and had to guess which repositories the
+    // work touched, and its answers came back as free text nothing could match against a
+    // Story. Here the repository is a ruled, verified path out of repo-scoping, and every
+    // finding it returns is attributable to it by construction.
+    repos: [repo],
+    dependencies: a.dependencies,
+    uiRepo: uiRepoFor(repo),
+  }
+}
 async function authorSpecForRepo(repo, repoIndex) {
   const storyKey = `S${repoIndex + 1}`
   // ── STEP 1: WHAT IS ACTUALLY HERE ─────────────────────────────────────────────
@@ -3908,31 +3993,17 @@ async function authorSpecForRepo(repo, repoIndex) {
   const reconHit = resumeFresh(reconPhase)
   const reconReplay = reconHit && ART_ON && reconHit.artifacts[reconFile] ? { files: { recon: artPath(reconFile) } } : null
   if (reconHit && !reconReplay) log(`Phase '${reconPhase}' is fresh but ${reconFile} is not named — it runs`)
+  // The comparison is not run, nor even read back, when the spec and the task set it fed are
+  // both reused: reading it would pay a session per repository to feed nothing. If the task
+  // set then fails to replay, decomposition reads the comparison itself first (reconcileLate).
   const tasksPlan = specAuthoring && RESUME ? RESUME.phases[`tasks:${slug}`] : null
-  if (!reconReplay && specAuthoring && tasksPlan && tasksPlan.fresh && ART_ON && tasksPlan.artifacts[`tasks-${slug}.json`]) {
-    log(`Spec Authoring for ${repo}: the spec and its task set are both reused and no saved comparison exists, so the comparison they were made from is not run again`)
+  if (specAuthoring && tasksPlan && tasksPlan.fresh && ART_ON && tasksPlan.artifacts[`tasks-${slug}.json`]) {
+    log(`Spec Authoring for ${repo}: the spec and its task set are both reused, so the comparison they were made from is not run or read again`)
     return { repo, recon: null, reconReused: true, specAuthoring }
   }
   let recon = reconReplay ? undefined : cpGet(`recon:${repo}`)
   if (recon === undefined) {
-    recon = await workflow('agent-teams-workforce:prd-reconciliation', {
-      artifacts: artFor(reconPhase, PRD_INPUTS, { slug }),
-      ...(reconReplay ? { replay: reconReplay } : {}),
-      // The WHOLE PRD, always. Scoping the SEARCH to one repository is not the same thing
-      // as scoping the REQUIREMENTS to it: every requirement the PRD states comes back with
-      // a status for this repository, including `absent`, because "nothing here" is a
-      // finding this spec has to act on.
-      prd: { ...prd, repoPath: repo },
-      standingRulings,
-      // ONE repository. This is the whole point of the relocation: at the front of the run
-      // the reconciler was handed the seed span and had to guess which repositories the
-      // work touched, and its answers came back as free text nothing could match against a
-      // Story. Here the repository is a ruled, verified path out of repo-scoping, and every
-      // finding it returns is attributable to it by construction.
-      repos: [repo],
-      dependencies: a.dependencies,
-      uiRepo: uiRepoFor(repo),
-    })
+    recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
     if (recon && recon.ok !== false) {
       const replayed = !!(reconReplay && recon.resumed === true)
       if (replayed) reuseFrom(reconPhase, reconHit, 'the mini replayed the saved comparison through its reduction')
@@ -4536,6 +4607,14 @@ const removalWeaklyPlaced = weakPlacements.map((p) =>
 // `emittedMeans` travels WITH the number, because the number is weaker than its name and a
 // reader has no way to know that from the field alone. It is the last link of the proxy
 // chain holding — not a removal task anybody saw.
+/** The removal items per door; recounted when a late comparison adds some. */
+function removalByOrigin() {
+  return {
+    reconciliation: allRemovalWork.filter((w) => originsOf(w).length === 1 && originsOf(w)[0] === 'reconciliation').length,
+    repoScoping: allRemovalWork.filter((w) => originsOf(w).length === 1 && originsOf(w)[0] === 'repo-scoping').length,
+    both: allRemovalWork.filter((w) => originsOf(w).length > 1).length,
+  }
+}
 const removalAccounting = {
   total: allRemovalWork.length,
   // Which door each item came through, so a reader can see at a glance whether the
@@ -4546,11 +4625,7 @@ const removalAccounting = {
   // `originsOf` rather than `w.origins` directly: the fold above sets the array on every
   // item, and an accounting that CRASHES when an upstream invariant slips is worse than one
   // that degrades — this is the report that says destructive work went missing.
-  byOrigin: {
-    reconciliation: allRemovalWork.filter((w) => originsOf(w).length === 1 && originsOf(w)[0] === 'reconciliation').length,
-    repoScoping: allRemovalWork.filter((w) => originsOf(w).length === 1 && originsOf(w)[0] === 'repo-scoping').length,
-    both: allRemovalWork.filter((w) => originsOf(w).length > 1).length,
-  },
+  byOrigin: removalByOrigin(),
   malformed: removalMalformed,
   notEmitted: removalNotEmitted,
   weaklyPlaced: removalWeaklyPlaced,
@@ -4594,7 +4669,7 @@ const removalBrief = (repo) => {
 if (allRemovalWork.length) {
   log(
     `Task Decomposition carries ${removalPlacement.length - removalNotEmitted.length}/${allRemovalWork.length} ` +
-      'removal work item(s) from reconciliation into the per-Story briefs' +
+      'removal work item(s) into the per-Story briefs' +
       `${removalWeaklyPlaced.length ? `; ${removalWeaklyPlaced.length} of them on a WEAK repository match` : ''}` +
       `${removalMalformed.length ? `; ${removalMalformed.length} named no target and are written as removal Tasks of their own` : ''}.`
   )
@@ -4956,6 +5031,8 @@ function existingTasksFor(pair) {
     .filter((c) => c.type === 'task' && hasText(c.elabKey))
     .map((c) => ({ elabKey: c.elabKey, title: c.title, description: c.description }))
 }
+// The repositories whose skipped comparison was taken during decomposition (reconcileLate).
+const reconLate = []
 const decompResults = await parallel(specPairs.map((pair) => () => decomposeStory(pair)))
 /** The task-decomposition arguments for one Story, shared by a live run and a replay. */
 function decompArgs(pair, feedback) {
@@ -4990,6 +5067,60 @@ function decompArgs(pair, feedback) {
     artifacts: artFor(`tasks:${slug}`, [...specDocs, artPath(`story-${slug}.json`)], { slug }),
   }
 }
+// ── A SKIPPED COMPARISON IS TAKEN AFTER ALL WHEN ITS TASK SET DID NOT REPLAY ──────
+// Spec authoring skips a repository's current-state comparison when its spec and its task set
+// are both to be reused. When the task set then fails to replay, the Story is decomposed
+// afresh, and its decomposer is owed the removal work that comparison names: decomposing it
+// without would drop contradicting material from the brief with nothing reporting it. So the
+// comparison is read back (or run) first, and its removal items join the accounting exactly as
+// spec authoring's would have. A comparison that cannot be established fails this Story's
+// decomposition, as it fails a spec: nothing is specified blind. (`reconLate` is declared
+// before the decomposition batch starts.)
+async function reconcileLate(pair) {
+  const repo = pair.repoPath
+  const at = reconReused.indexOf(repo)
+  if (at === -1) return null
+  reconReused.splice(at, 1)
+  const slug = repoSlug(repo)
+  const reconHit = resumeFresh(`recon:${slug}`)
+  const reconReplay = reconHit && ART_ON && reconHit.artifacts[`recon-${slug}.json`] ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
+  const recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
+  if (recon && recon.ledger) runLedger.push(recon.ledger)
+  if (!recon || recon.ok === false) {
+    const why = (recon && recon.reason) || 'prd-reconciliation returned nothing — what already exists in this repository could not be established.'
+    const dispatchFailed = !recon || recon.dispatchFailed === true
+    reconFailures.push({ repoPath: repo, reason: why, dispatchFailed })
+    log(`Task Decomposition for ${repo}: its task set did not replay and the current-state comparison it needs FAILED — ${why} It is not decomposed blind.`)
+    return {
+      ok: false,
+      reason: `the current-state comparison this Story's decomposition needs failed: ${why}`,
+      ...(dispatchFailed ? { dispatchFailed: true, dispatchFailures: (recon && Array.isArray(recon.dispatchFailures) && recon.dispatchFailures) || [] } : {}),
+    }
+  }
+  acceptPhase(`recon:${slug}`, reconReplay && recon.resumed === true ? 'reused' : 'passed')
+  reconLate.push(repo)
+  let added = 0
+  for (const w of Array.isArray(recon.removalWork) ? recon.removalWork : []) {
+    const targets = w && Array.isArray(w.targets) ? w.targets.filter((t) => hasText(t)) : []
+    if (!targets.length) continue
+    const keys = new Set(targets.map(targetKey).filter(Boolean))
+    // The span ruling may already name the same material; one file is one item, both reasons kept.
+    const existing = allRemovalWork.find((x) => (x.targets || []).some((t) => keys.has(targetKey(t))))
+    if (existing) {
+      if (existing.origins.indexOf('reconciliation') === -1) existing.origins.push('reconciliation')
+      existing.requirement = `${w.requirement || w.requirementId || 'The PRD contradicts this material.'} ALSO: ${existing.requirement}`
+      continue
+    }
+    const item = { ...w, targets, repos: [repo], origins: ['reconciliation'] }
+    allRemovalWork.push(item)
+    removalPlacement.push({ work: item, targets, named: [repo], matched: [{ repo, strength: 'exact' }] })
+    added += 1
+  }
+  removalAccounting.total = allRemovalWork.length
+  removalAccounting.byOrigin = removalByOrigin()
+  log(`Task Decomposition for ${repo}: the current-state comparison was ${reconReplay && recon.resumed === true ? 'read back' : 'run'} before decomposing afresh; ${added} removal item(s) added to its brief.`)
+  return null
+}
 async function decomposeStory(pair) {
   const cpDecompKey = `decomposition:${pair.story.key || pair.repoPath}`
   const slug = repoSlug(pair.repoPath)
@@ -5010,7 +5141,9 @@ async function decomposeStory(pair) {
       ...decompArgs(pair, ''),
       replay: inlineTasks ? { maker: makerData } : { files: { maker: artPath(tasksFile) } },
     })
-    if (replayed && replayed.ok && replayed.resumed === true) {
+    // The same non-empty task set G4 demands of a live decomposition: a saved one that reduces
+    // to no Task decomposed nothing, and is decomposed again rather than carried as a pass.
+    if (replayed && replayed.ok && replayed.resumed === true && Array.isArray(replayed.beadSet) && replayed.beadSet.length) {
       reuseFrom(
         tasksPhase,
         tasksHit,
@@ -5024,12 +5157,16 @@ async function decomposeStory(pair) {
     } else {
       log(
         `Phase '${tasksPhase}' is fresh but its replay produced no valid task set (${(replayed && replayed.reason) || 'no result'}) — it runs` +
-          (reconReused.includes(pair.repoPath) ? ', without this repository\'s removal work, because no current-state comparison ran for it in this run' : '')
+          (reconReused.includes(pair.repoPath) ? ', after the current-state comparison it skipped on the strength of this replay' : '')
       )
     }
   } else {
     if (tasksHit) log(`Phase '${tasksPhase}' is fresh but ${tasksFile} is neither inlined nor named as a file this run can point at (${tasksNames.join(', ') || 'no artifact named'}) — it runs`)
     decomposition = cpGet(cpDecompKey)
+  }
+  if (decomposition === undefined && reconReused.includes(pair.repoPath)) {
+    const refused = await reconcileLate(pair)
+    if (refused) decomposition = refused
   }
   if (decomposition === undefined) {
   decomposition = await gateLoop({
@@ -5321,8 +5458,10 @@ if (taskStories.size < 2) {
   // ── A SAVED EDGE SET IS REUSED ONLY OVER THE TASK SET IT WAS DERIVED FROM ─────────
   // The edges name Task keys, and the keys come from each Story's decomposition. So the saved
   // `task-deps.json` is reused only when every Story's task set was itself reused in this
-  // run, and only when every saved edge still joins two Tasks of this run in different
-  // Stories. Anything less and the mapper runs.
+  // run: the keys are then the ones the mapper was shown. The file is the mapper's answer as
+  // it gave it, so it can hold an edge the reduction below rejected when it was first made;
+  // the same reduction rejects it again here, and anything less than every Story reused runs
+  // the mapper.
   const depsFile = 'task-deps.json'
   const depsHit = resumeFresh(TASK_DEPS_PHASE)
   const allTasksReused =
@@ -5332,13 +5471,11 @@ if (taskStories.size < 2) {
   let savedDeps = null
   if (depsHit && ART_ON && depsHit.artifacts[depsFile] && allTasksReused) {
     const read = artData(depsHit, depsFile) || (await readSavedTriage(artPath(depsFile), 'task-deps'))
-    const edgeOk = (e) =>
-      e && storyOfTask.has(e.from) && storyOfTask.has(e.to) && storyOfTask.get(e.from) !== storyOfTask.get(e.to)
-    if (read && Array.isArray(read.edges) && typeof read.acyclic === 'boolean' && read.edges.every(edgeOk)) {
+    if (read && Array.isArray(read.edges) && typeof read.acyclic === 'boolean') {
       savedDeps = read
-      reuseFrom(TASK_DEPS_PHASE, depsHit, 'the saved cross-Story edges join Tasks of this run and are applied as they stand')
+      reuseFrom(TASK_DEPS_PHASE, depsHit, 'the saved cross-Story edges were drawn over these same task sets and go through the same checks')
     } else {
-      log(`Phase '${TASK_DEPS_PHASE}' is fresh but its saved edges could not be read or no longer match this run's Tasks — the mapper runs`)
+      log(`Phase '${TASK_DEPS_PHASE}' is fresh but its saved edges could not be read — the mapper runs`)
     }
   } else if (depsHit) {
     log(`Phase '${TASK_DEPS_PHASE}' is fresh but ${allTasksReused ? `${depsFile} is not named` : 'not every Story reused its task set'} — the mapper runs`)
@@ -5598,8 +5735,21 @@ if (stories.length) {
     })
     return key
   }
+  // An item whose own repository is in the span, and whose Story is missing only because that
+  // repository's spec or decomposition failed in this run, is NOT given a Task under another
+  // Story: the Epic is not done while it is unemitted, and the next run's Story for that
+  // repository carries it. A Task minted now would sit under the wrong Story, open to the
+  // build lane, and be closed as "no longer specified" by that next run.
+  const failedRepos = [...specFailures, ...decompositionFailures].map((f) => f && f.repoPath).filter((r) => hasText(r))
+  const awaitsItsStory = (p) =>
+    [...p.matched.map((m) => m.repo), ...p.named].some((r) => failedRepos.some((f) => STRONG.indexOf(repoMatchStrength(r, f)) !== -1))
   for (const p of removalPlacement) {
     if (!lostPlacements.has(p)) continue
+    if (awaitsItsStory(p)) {
+      const waiting = lostEntryOf.get(p)
+      if (waiting) waiting.reason = `${waiting.reason} — its repository's Story failed in this run, so the next run's Story carries it`
+      continue
+    }
     const entry = lostEntryOf.get(p)
     const key = mintRemoval(p.work, p.matched.length ? p.matched.map((m) => m.repo) : p.named, p.targets, entry ? entry.reason : 'no decomposition carried it')
     removalTasks.push({ key, placement: p })
@@ -6271,18 +6421,30 @@ for (const { task: t, match } of reelabOpenTasks) {
 }
 const refreshedTaskIds = new Set()
 if (reelabMutations.length) {
-  let applied = null
-  try {
-    applied = await settleAgent(
-      `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'reelaborate', beads: [], links: [], surveys: [], mutations: reelabMutations })}`,
-      { label: 'beads:reelaborate', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
-    )
-  } catch (e) {
-    reelab.failed.push({ what: '(all)', reason: `the re-elaboration dispatch failed: ${(e && e.message) || e}` })
-  }
+  // One `bd` command per mutation is one turn, so the list is chunked like the create waves:
+  // a re-run that refreshes every Task of a large Epic in one session confirmed only the
+  // first handful and left the rest reported as failed updates.
   const ok = new Set()
-  for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
-    if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+  const mutationBatches = chunked(reelabMutations, WRITE_CHUNK)
+  for (let b = 0; b < mutationBatches.length; b++) {
+    let applied = null
+    try {
+      applied = await settleAgent(
+        `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'reelaborate', beads: [], links: [], surveys: [], mutations: mutationBatches[b] })}`,
+        {
+          label: mutationBatches.length > 1 ? `beads:reelaborate (${b + 1}/${mutationBatches.length})` : 'beads:reelaborate',
+          phase: 'Emit Beads',
+          effort: 'low',
+          agentType: 'agent-teams-workforce:bead-writer',
+          schema: WRITE_SCHEMA,
+        }
+      )
+    } catch (e) {
+      reelab.failed.push({ what: '(chunk)', reason: `the re-elaboration dispatch failed: ${(e && e.message) || e}` })
+    }
+    for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
+      if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+    }
   }
   for (const m of reelabMutations) {
     if (!ok.has(m.key)) reelab.failed.push({ what: m.id, reason: `the ${m.op} was not confirmed by the writer` })
@@ -6484,18 +6646,30 @@ else {
     plan.push({ wrapper: w.id, destinations, children: moves.map((m) => ({ id: m.child.id, to: m.dest.story.id, basis: m.dest.basis })) })
   }
   if (mutations.length) {
-    let applied = null
-    try {
-      applied = await settleAgent(
-        `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'heal', beads: [], links: [], surveys: [], mutations })}`,
-        { label: 'beads:heal', phase: 'Emit Beads', effort: 'low', agentType: 'agent-teams-workforce:bead-writer', schema: WRITE_SCHEMA }
-      )
-    } catch (e) {
-      emission.heal.failed.push({ wrapper: '(all)', reason: `the heal dispatch failed: ${(e && e.message) || e}` })
-    }
+    // Chunked for the writer's turn cap, as every other wave is. A stand-in's re-parents come
+    // before its close in the list, so a chunk boundary never closes a stand-in whose Tasks
+    // were not offered to the writer first.
     const ok = new Set()
-    for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
-      if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+    const healBatches = chunked(mutations, WRITE_CHUNK)
+    for (let b = 0; b < healBatches.length; b++) {
+      let applied = null
+      try {
+        applied = await settleAgent(
+          `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'heal', beads: [], links: [], surveys: [], mutations: healBatches[b] })}`,
+          {
+            label: healBatches.length > 1 ? `beads:heal (${b + 1}/${healBatches.length})` : 'beads:heal',
+            phase: 'Emit Beads',
+            effort: 'low',
+            agentType: 'agent-teams-workforce:bead-writer',
+            schema: WRITE_SCHEMA,
+          }
+        )
+      } catch (e) {
+        emission.heal.failed.push({ wrapper: '(chunk)', reason: `the heal dispatch failed: ${(e && e.message) || e}` })
+      }
+      for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
+        if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
+      }
     }
     for (const m of mutations) {
       if (ok.has(m.key)) {
@@ -6642,7 +6816,7 @@ const epicDone =
   specFailures.length === 0 &&
   decompositionFailures.length === 0 &&
   removalNotEmitted.length === 0 &&
-  newRepos.length === 0
+  !spanNeedsPerson
 // ── THE SAD ENTRIES THIS RUN VETTED BECOME `effective` HERE ────────────────────
 // A SAD entry settles an architecture decision only when its ruling came out of a COMPLETED
 // elaboration. Everything the architecture phase writes lands as `in-review`; this is the
@@ -6669,8 +6843,8 @@ const finishOut = emission.verdict === 'none' ? null : await runLifecycle(
   'Emit Beads'
 )
 lifecycle.finish = finishOut
-// Written, scored, and held out of the sweep until a person creates the missing repositories.
-if (newRepos.length && emission.verdict !== 'none') await holdForPerson(epicBeadId)
+// Written, scored, and held out of the sweep until a person settles the span's missing or dropped repositories.
+if (spanNeedsPerson && emission.verdict !== 'none') await holdForPerson(epicBeadId)
 const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
 const epicMarkedDone = finishOk && !!finishOut.lifecycle
 const scoringLine = !finishOut
@@ -6681,7 +6855,7 @@ const scoringLine = !finishOut
     (epicMarkedDone
       ? `Epic ${epicBeadId} is elaboration_state=done. `
       : lifecycle.held
-        ? `Epic ${epicBeadId} is NOT done: part of its work needs a repository that does not exist, so it is held for a person (${HOLD_CAUSE}). `
+        ? `Epic ${epicBeadId} is NOT done: part of its work was placed in no repository this run could specify, so it is held for a person (${HOLD_CAUSE}). `
         : `Epic ${epicBeadId} stays in_progress — ${taskIds.size ? 'part of it did not land' : 'no Task is durable'}, and the next run completes it. `)
   : `SCORING DID NOT RUN for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'} — its Tasks carry the scores their decomposition computed, and it stays in_progress. `
 if (scoringLine) log(scoringLine)
@@ -6794,7 +6968,7 @@ const degraded =
   removalNotEmitted.length > 0 ||
   removalWeaklyPlaced.length > 0 ||
   removalMalformed.some((m) => !m.taskKey) ||
-  newRepos.length > 0 ||
+  spanNeedsPerson ||
   emission.verdict !== 'complete'
 // Everything the run produced, for the journal. Both exit paths below share it: a run
 // that decomposed and could not persist any of it has produced exactly as much phase
@@ -6819,6 +6993,7 @@ const runJournal = {
   architectureImpact,
   specFailures,
   reconFailures,
+  reconLate,
   decompositionFailures,
   removal: removalAccounting,
   emission,
@@ -6879,13 +7054,12 @@ if (emission.verdict === 'none') {
 // run had just told it.
 // The rule this trim enforces is that STATE stops crossing the boundary; a deliverable
 // still does.
-// A run whose work partly needs a repository that does not exist reports the stage the host
-// queues a person's action on (its pipeline.HUMAN_ACTION_STAGE); everything else it wrote stands.
-const HUMAN_ACTION_STAGE = 'requires-human-action'
+// A run whose work partly needs a repository that does not exist reports HUMAN_ACTION_STAGE;
+// everything else it wrote stands.
 return {
   ...handback(
     true,
-    newRepos.length ? HUMAN_ACTION_STAGE : 'emit-beads',
+    spanNeedsPerson ? HUMAN_ACTION_STAGE : 'emit-beads',
     `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and WSJF-scored, against the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
       // The comparison is per repository now, so the counts are MERGED across the span by
       // requirement id and not summed — see the merge above. A span where nothing could be
@@ -6897,11 +7071,14 @@ return {
           (reconFailures.length
             ? `NOT COMPARED: ${reconFailures.length} repositor(ies) — ${reconFailures.map((f) => `${f.repoPath} (${f.reason})`).join(' | ')}. No spec was authored for them and any contradicting material there is unfound. `
             : '')
-        : reconReused.length === repos.length
-          ? 'Every repository\'s spec and task set were reused, so no current-state comparison ran in this run. '
+        : reconReused.length + reconLate.length === repos.length
+          ? 'Every repository\'s spec was reused, so no current-state comparison ran at spec time in this run. '
           : `NO repository could be compared against current state (${reconFailures.length} of ${repos.length} failed), so what already exists is UNKNOWN rather than absent. `) +
       (reconByRepo.size && reconReused.length
         ? `${reconReused.length} repositor(ies) reused their spec and task set and were not compared again: ${reconReused.join(', ')}. `
+        : '') +
+      (reconLate.length
+        ? `${reconLate.length} repositor(ies) had their task set decomposed afresh, so their comparison was taken at decomposition and its removal work carried: ${reconLate.join(', ')}. `
         : '') +
       (allRemovalWork.length
         ? `${removalEmitted} of ${allRemovalWork.length} removal work item(s) reached a Story whose tasks are durable in beads` +
@@ -6948,7 +7125,9 @@ return {
         : `The repo span was PINNED by the caller (${repos.join(', ')}). `) +
       (newRepos.length
         ? `REQUIRES A HUMAN: ${newRepos.length} repositor(ies) the work needs do not exist — ${newRepos.map((n) => n.proposedName).join(', ')}. Nothing was created; their work is specified nowhere in this run, so ${epicBeadId} is NOT marked done${lifecycle.held ? ' and is out of the sweep' : ''} — create them, then set elaboration_state=ready on it and re-run this PRD. `
-        : '') +
+        : spanNeedsPerson
+          ? `REQUIRES A HUMAN: the ruled span could not place all of the work — ${((scoping && scoping.requiredHumanActions) || []).join(' | ')}. That work is specified nowhere in this run, so ${epicBeadId} is NOT marked done${lifecycle.held ? ' and is out of the sweep' : ''}. `
+          : '') +
       (outOfSpanFindings.length
         ? `THE RULED SPAN MAY BE TOO NARROW: spec authoring found ${outOfSpanFindings.length} piece(s) of implied work OUTSIDE it (${outOfSpanFindings.map((f) => f.finding).join(' | ')}). No Story covers them. Widen the span and re-run, or confirm the work belongs to another PRD. `
         : '') +
@@ -6997,7 +7176,9 @@ return {
   // short strings. A required action nobody reads is a required action nobody takes.
   repoSpan: repos,
   ...(newRepos.length ? { newRepos } : {}),
-  ...(repoActions.length || lifecycle.held ? { requiredHumanActions: lifecycle.held ? [...repoActions, restoreStep(epicBeadId)] : repoActions } : {}),
+  ...(repoActions.length || lifecycle.held
+    ? { requiredHumanActions: lifecycle.held ? [...repoActions, restoreStep(epicBeadId, newRepos.length ? 'the repositories exist' : 'the span\u2019s dropped repositories are confirmed')] : repoActions }
+    : {}),
   // Removal that reached no Story. It is a DECISION the caller has to act on —
   // contradicting code the PRD requires gone, that this run specified nobody to remove —
   // and it is the one shortfall a reader would never go looking for, because a run that

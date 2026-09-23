@@ -383,6 +383,18 @@ function deterministicRoute() {
     )
   }
 
+  // 1b) HELD FOR A PERSON. A build run that stopped on something only a person can do —
+  //     a contract no test can encode, a spec its Red gate ruled stale, a contract already
+  //     satisfied — names the action, and the supervisor queues it and puts the `human`
+  //     label on the bead (`bd human list` reads it). Until the person acts and takes the
+  //     label off, every dispatch reaches the same stop and pays the same phases to reach
+  //     it, so the bead is not routed while it carries the label.
+  if (hasLabel('human')) {
+    return skip(
+      `held for a person: ${bead.id || 'this bead'} carries the \`human\` label — an earlier run stopped on an action only a person can take (\`bd human list\`). → SKIP until that action is taken and the label is removed (\`bd label remove ${bead.id || '<id>'} human\`)`,
+    )
+  }
+
   // 2) TASK — the unit of development work. Its parents never gate it.
   if (type === 'task' || byLabel('task')) {
     const composite = workComposite()

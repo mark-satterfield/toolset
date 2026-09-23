@@ -280,7 +280,10 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green, feedback?, smokeTestFiles?, leaseScope? }
+// args: { contract, green, satisfiedRed?, feedback?, smokeTestFiles?, leaseScope? }
+//   satisfiedRed?: the tdd-red result of an ALREADY-SATISFIED Task — existing tests already
+//     pass its criteria and no code changed — passed in place of `green`. Its executed test
+//     result is the evidence; the unchanged tree is deployed and smoke-tested.
 //   smokeTestFiles?: string[] — a smoke suite an earlier iteration authored and ran. A
 //     redeploy after a Green repair re-runs THIS suite, the one that proved the defect,
 //     rather than re-authoring it from a prompt saying it failed.
@@ -310,9 +313,8 @@ const feedback = a.feedback ? `\nPrior gate feedback to address:\n${a.feedback}`
 // neither, and prose needs both. REFUSE, never sanitize: a rewritten path names a
 // different tree and nobody would learn of the substitution.
 //
-// An ABSENT path is not a fault. It has always meant "no tree was established", the
-// placeholder below is not attacker-controlled, and turning that into a refusal would
-// change what this mini does rather than what it accepts.
+// An ABSENT path is not a SHAPE fault, so it is not refused here; it is refused below,
+// because a deploy with no tree has nothing to deploy from.
 const CONTRACT_PATH_SHAPE = /^\/[A-Za-z0-9._/-]+$/
 const suppliedRepoPath = String(c.repoPath || (c.bead && c.bead.repoPath) || '').trim()
 const contractPathFault = (() => {
@@ -357,7 +359,36 @@ if (contractPathFault) {
   }
 }
 
-const repo = suppliedRepoPath || '(repo path not provided)'
+// A phase refused on its INPUT would be refused identically on any re-dispatch, so it
+// reports `phaseBlocked` and the caller's gate is not run on it.
+const refuseInput = (why, extra) => ({
+  ok: false,
+  phaseBlocked: true,
+  blockedReason: why,
+  readiness: { ready: false, findings: [`BLOCKED: ${why}`] },
+  localGatesOk: false,
+  deployedToDev: false,
+  smokePassed: false,
+  cdkSynthOk: false,
+  smokeTestFiles: [],
+  deployedToProd: false,
+  blocked: [why],
+  ...(extra || {}),
+  ledger: { phase: 'deploy', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'refused', ok: false },
+})
+// No tree, nothing to deploy FROM. Every prompt below pins a tree, and a rollout with none
+// would deploy whatever directory the agent happens to be standing in. The composites always
+// hand the workspace step's worktree; only a direct dispatch can arrive without one.
+if (!suppliedRepoPath) {
+  return refuseInput('the contract names no repoPath, so there is no tree to deploy from — a rollout would deploy whatever directory the agent is standing in')
+}
+// A dev rollout is the only rollout this mini performs. Any other target is refused on its
+// input rather than computed as ready with nothing deployed.
+const targetEnv = String(a.env || c.env || 'dev').toLowerCase()
+if (targetEnv !== 'dev') {
+  return refuseInput(`the requested environment is "${targetEnv}"; this phase rolls out to dev only — a qa/prod rollout is human-gated and never happens here`, { env: targetEnv })
+}
+const repo = suppliedRepoPath
 // Agents start in the session's working directory, not in this repository, and many of the
 // agents this phase dispatches run in an isolation worktree of that other repository. So every
 // prompt pins the tree by absolute path rather than saying "work within" it.
@@ -370,15 +401,35 @@ ${repo}`
 // confirmed green, confirmed failing, and NOT RUN / NOT REPORTED. The third
 // state is a blocking gap, never "genuine uncertainty" — an unrun test suite
 // must never reach AWS.
-const greenEvidence = typeof green.evidence === 'string' ? green.evidence.trim() : ''
-const greenEvidenceOk = green.greenConfirmed === true && greenEvidence !== ''
-const greenStatusLine = greenEvidenceOk
+//
+// An ALREADY-SATISFIED Red is the one other confirmed passing run: tdd-red EXECUTED the
+// existing tests and observed them passing the Task's criteria, so nothing was built and
+// that run is the evidence. It counts only with the flag, its evidence and its test files.
+const sat = a.satisfiedRed && typeof a.satisfiedRed === 'object' ? a.satisfiedRed : null
+const satEvidence = sat && typeof sat.evidence === 'string' ? sat.evidence.trim() : ''
+// A confirmed Green wins when both arrive: after a repair the code HAS changed, and the
+// Green run over it is the evidence for what is being deployed.
+const greenConfirmedOk = green.greenConfirmed === true && typeof green.evidence === 'string' && green.evidence.trim() !== ''
+const satisfiedOk = !greenConfirmedOk && !!(sat && sat.alreadySatisfied === true && satEvidence && Array.isArray(sat.testFiles) && sat.testFiles.filter(Boolean).length)
+const evidenceSource = satisfiedOk ? 'already-satisfied' : 'green'
+const greenEvidence = satisfiedOk ? satEvidence : typeof green.evidence === 'string' ? green.evidence.trim() : ''
+const greenEvidenceOk = satisfiedOk || (green.greenConfirmed === true && greenEvidence !== '')
+const greenStatusLine = satisfiedOk
+  ? `Unit/integration tests ALREADY SATISFIED — the existing tests (${sat.testFiles.filter(Boolean).join(', ')}) were executed and pass the Task's criteria with no code change — evidence: ${greenEvidence}`
+  : greenEvidenceOk
   ? `Unit/integration tests CONFIRMED GREEN (machine-checked from the Green artifact) — evidence: ${greenEvidence}`
   : `Unit/integration tests UNCONFIRMED — ${
-      green.greenConfirmed === true
+      sat
+        ? 'the already-satisfied Red carries no alreadySatisfied flag, executed evidence or test files, so it is not confirmation'
+        : green.greenConfirmed === true
         ? 'the Green artifact claims green but carries no supporting evidence; a bare flag with no evidence string is not confirmation'
         : 'the Green artifact reports no confirmed passing run (tests not run / not reported)'
     }. This is a blocking gap, not uncertainty.`
+// Known from the arguments alone, so it is refused BEFORE the smoke author and the CDK
+// validator are paid for: readiness could only come out not-ready.
+if (!greenEvidenceOk) {
+  return refuseInput(greenStatusLine)
+}
 
 phase('Deploy-readiness')
 
@@ -407,7 +458,7 @@ const [smoke, cdk, pipeline] = await parallel([
 ${pinTree}
 
 Change: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}
-Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
+Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${satisfiedOk ? '\nNo code changed: the existing tests already satisfy this Task. The smoke tests verify the behavior its criteria describe against the deployed endpoint.' : ''}${feedback}`,
       {
         label: 'deploy:smoke-author',
         phase: 'Deploy-readiness',
@@ -486,7 +537,6 @@ const cdkDetails = cdk && typeof cdk.details === 'string' ? cdk.details.trim() :
 // Rollout target. This mini deploys exactly the one repository the contract names, and only
 // to dev; a qa/prod rollout is human-gated and never happens from here, so no rollout plan
 // is ruled for one. Dev is internal with no traffic to shift, so it has one legal plan.
-const targetEnv = (a.env || c.env || 'dev').toLowerCase()
 const rolloutAllowed = targetEnv === 'dev'
 const strategy = { rolloutStyle: 'single-stack, no canary', riskLevel: 'low (internal dev environment)' }
 
@@ -587,8 +637,7 @@ const LEASE_WAIT_MINUTES = 20
 const suppliedLeaseScope = String(a.leaseScope || '').trim()
 const leaseScope =
   (CONTRACT_PATH_SHAPE.test(suppliedLeaseScope) && !suppliedLeaseScope.includes('//') && !suppliedLeaseScope.split('/').includes('..') ? suppliedLeaseScope.replace(/\/+$/, '') : '') ||
-  suppliedRepoPath ||
-  '(unscoped)'
+  suppliedRepoPath
 const leaseKey = `${DEV_ACCOUNT}/${DEV_REGION}/${leaseScope}`
 
 const wantsRollout = readiness.ready && rolloutAllowed
@@ -925,10 +974,18 @@ const ledger = {
 // A PRODUCING dispatch that died leaves nothing to gate: the smoke author and the CDK
 // validator always, and the rollout when one was wanted and not refused by the lease. The
 // caller reports that under its environment stage instead of judging an absent artifact.
+// Only the producers' own deaths are reported: a lease step that died is answered above
+// (the rollout proceeds unserialized) and is not a missing artifact.
+const PRODUCER_LABELS = new Set(['deploy:smoke-author', 'deploy:cdk-validate', 'deploy:rollout-dev'])
 const producerDied = !smoke || !cdk || (wantsRollout && !leaseRefused && !rollout)
-const deaths = producerDied ? dispatchDeaths('Deploy-readiness') : []
+const deaths = producerDied ? dispatchDeaths('Deploy-readiness').filter((d) => PRODUCER_LABELS.has(d.label)) : []
 const dispatchFailure = deaths.length
   ? { dispatchFailed: true, dispatchFailures: deaths, reason: `${deaths.length} producing dispatch(es) in the deploy phase returned nothing: ${deaths.map((d) => d.label || d.agentType).join(', ')}` }
   : {}
+// ANOTHER TASK HOLDS DEV. Nothing about the change is wrong and the lease step has already
+// waited its bound, so there is nothing for Gate 5 to judge: its checks would record a
+// contention wait as a failed deploy. The composites read `leaseBlocked` and report the
+// environment stage.
+const leaseBlock = leaseBlockedReason ? { phaseBlocked: true, blockedReason: leaseBlockedReason } : {}
 
-return { ...dispatchFailure, smoke, cdk, pipeline, strategy, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }
+return { ...dispatchFailure, ...leaseBlock, evidenceSource, smoke, cdk, pipeline, strategy, readiness, rollout, env: targetEnv, localGatesOk, cdkSynthOk, cdkApplicable: !!(cdk && cdk.applicable === true), cdkDriftDetected, smokeTestFiles, deployedToDev, smokePassed, deployedToProd: false, lease, leaseKey, leaseHeld, leaseBlocked: leaseBlockedReason || null, leaseReleased: !!(leaseReleased && leaseReleased.released === true), ledger }

@@ -446,6 +446,15 @@ if (!allowAmbiguityAgent) {
   log(`route-elaboration ${bead.id || '(no id)'}: SKIP — ${reason}`)
   return skip(reason)
 }
+// Without a human initiation every kind the classifier can name ends in a skip below — an
+// Epic, Story or feature waits for a person, anything else belongs to route-build or to
+// triage — so its answer could change only the wording of the skip. The session is not paid
+// for that.
+if (!humanInitiated) {
+  const reason = `type="${type || 'n/a'}"${labelTail} matched no routing rule, and this run is not human-initiated: whatever kind the bead turns out to be, elaborating it is a human's call and anything else is not elaboration work → SKIP (invoke /agent-teams-workforce:work-bead ${id} to proceed)`
+  log(`route-elaboration ${bead.id || '(no id)'}: SKIP — ${reason}`)
+  return skip(reason)
+}
 
 const classification = await settleAgent(
   `You are a READ-ONLY classifier for the agentic SDLC elaboration router. A bead could not be classified by its type/labels alone. Read its title and description and decide WHAT KIND of work item it is. You are NOT choosing a pipeline and NOT running anything — you only name the kind.
@@ -514,9 +523,8 @@ if (!kind || kind === 'other' || !confident) {
 let final
 if (kind === 'epic' || kind === 'story' || kind === 'feature') {
   const what = kind === 'feature' ? 'feature-shaped work with no hierarchy yet' : kind === 'epic' ? 'an epic' : `a ${kind}`
-  final = humanInitiated
-    ? elaborate('prd-to-spec', `classified as ${what} and the run is human-initiated: ${agentReason} → prd-to-spec`)
-    : skip(`classified as ${what}: ${agentReason}. Elaborating its document is a decision to build, which is a human's call, not a sweep's → SKIP (invoke /agent-teams-workforce:work-bead ${id} to proceed)`)
+  // Only a human-initiated run reaches the classifier (see above).
+  final = elaborate('prd-to-spec', `classified as ${what} and the run is human-initiated: ${agentReason} → prd-to-spec`)
 } else if (kind === 'bug') {
   final = skip(
     `classified as a bug: ${agentReason}. A bug is a REPORTING MECHANISM and is never implemented directly — it is TRIAGED into an Epic, a Task, or a closure by a person. Neither elaboration nor development work → SKIP (no triage composite exists to dispatch)`,

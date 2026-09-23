@@ -155,8 +155,9 @@ test('bug-fix re-runs triage, then resumes red+green and refactor from a checkpo
         return { ok: true, repoPath: '/repos/.worktrees/ssbd-1xcs-chassis', branch: 'fix/ssbd-1xcs', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       // The run is allowed to die at Integration — the assertion is about what never
-      // re-ran BEFORE it, not about reaching deploy.
-      if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
+      // re-ran BEFORE it, not about reaching deploy. The escalation names `triage`: an
+      // escalation to Green is repaired through Green, which is not what this test counts.
+      if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'escalate', escalateTo: 'triage', criteria: [] }
       return { ok: true }
     },
   })

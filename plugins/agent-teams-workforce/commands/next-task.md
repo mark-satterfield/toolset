@@ -120,7 +120,7 @@ and does not belong to this command.
 
 Do not provision a tree here. **The composite establishes its own worktree.** Its first
 phase is `workspace` (`workflows/workspace.js`): it fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>`
+existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
 on a feature branch, verifies the result really is a linked worktree, and returns the path
 that becomes `contract.repoPath` for every writing phase. A run that cannot verify a
 worktree refuses to write.
@@ -168,7 +168,7 @@ pre-cut one.
 Do not substitute your own. (`bug-fix` is reachable only on demand, after a
 person has triaged a bug and decided it is a fix; the router never names it.)
 
-## 6. Report, in five lines
+## 6. Report, one line each
 
 - the bead claimed, its WSJF score, and how many candidates were considered
 - which composite ran, and the router's reason
@@ -177,6 +177,8 @@ person has triaged a bug and decided it is a fix; the router never names it.)
 - any gate that blocked it, with its feedback **verbatim**
 - the worktree and branch the work landed on
 - the PR URL, or the explicit reason there is none
+
+When the result carries `requiredHumanActions`, report each verbatim, run `bd label add <id> human`, and release the claim.
 
 If a gate blocks, report it and stop. Do not work around it, do not edit a
 workflow mid-run, and do not fall back to a subagent beside the pipeline. Leave

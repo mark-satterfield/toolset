@@ -701,7 +701,16 @@ const gapBlock = openGaps.length
     : ''
 
 // Each selected writer authors its tests and confirms Red — different test files, so
-// they run concurrently (unlike production-code writers).
+// they run concurrently (unlike production-code writers). "Different files" is only true if
+// each writer knows the others exist: every one is told to extend the existing suite, and two
+// writers extending the same file at once lose one set of edits. So each is told who else is
+// writing, and to keep to the files of its own kind of test.
+const concurrentBlock = (w) => {
+  const others = writersFinal.filter((x) => x !== w)
+  return others.length
+    ? `\n\nOTHER WRITERS ARE EDITING THIS TREE AT THE SAME TIME: ${others.join(', ')}. Create or edit only test files of your own kind of test (${w}); never edit a file one of them would own — the unit test files belong to tdd-unit-test-generator — or two concurrent edits to one file will lose one of them.`
+    : ''
+}
 const RED_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -756,7 +765,7 @@ FIND THE EXISTING SUITE BEFORE YOU WRITE. These tests are permanent: they are co
 
 ASSERT AGAINST WHAT THE CODE PRODUCES, NOT A COMMITTED ARTIFACT. Synthesize, build, or render the thing under test as part of the test run. A test that reads a checked-in build output — a committed cdk.out template, a generated client, a snapshot nobody regenerates — passes forever no matter what the code does, and it will not fail when the defect returns. If half a suite synthesizes in process and half reads a committed file, the two halves are testing different artifacts and the suite is lying about what it covers.
 
-A second file covering the same behavior is worse than no test at all — the suite gets slower, and a failure no longer tells anyone which expectation is the real one. If you find an existing test that is WRONG rather than missing, say so in your evidence and leave it alone; repairing it is not yours to do.
+A second file covering the same behavior is worse than no test at all — the suite gets slower, and a failure no longer tells anyone which expectation is the real one. If you find an existing test that is WRONG rather than missing, say so in your evidence and leave it alone; repairing it is not yours to do.${concurrentBlock(w)}
 
 ${taskBlock}
 

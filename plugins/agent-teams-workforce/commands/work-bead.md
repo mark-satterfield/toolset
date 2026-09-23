@@ -82,7 +82,7 @@ a skip's reason names what the bead needs, and a new label is never it.
 
 Skip any thought of provisioning a tree here. **The composite establishes its own
 worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
-existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>`
+existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
 on a feature branch, and verifies the result really is a linked worktree before any phase
 writes a line. Its return value is the sole source of `contract.repoPath`, and every
 writing phase inherits it. A run that cannot verify a worktree refuses to write.
@@ -171,7 +171,7 @@ existed, and a re-run after an adjustment would inherit it.
 
 ## 6. Report
 
-Five lines, no more:
+One line each, no more:
 
 - which composite ran, and why the router chose it
 - the phase it reached

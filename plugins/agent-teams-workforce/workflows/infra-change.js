@@ -646,6 +646,10 @@ function handback(ok, stage, headline, detail) {
     // `deployedToDev` is the same trap, so it is answered too.
     smokePassed: false,
     deployIteration: 0,
+    // A stop that needs a person names what the person must do (see HUMAN_ACTION_STAGE).
+    ...(stage === HUMAN_ACTION_STAGE
+      ? { requiredHumanActions: [`look at ${bead.id} and re-scope, re-route or clear what stopped it before it is dispatched again — a re-dispatch meets the same stop: ${String(headline || '').slice(0, 600)}`] }
+      : {}),
   }
 }
 
@@ -670,7 +674,19 @@ function deployEvidence(rows) {
 // would read as "the tests were bad" for what was an account limit. The two siblings
 // already carried this; this file filed every such failure against the bead.
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
-const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
+// ── THE STAGE A STOP THAT NEEDS A PERSON IS REPORTED UNDER ────────────────────
+// A phase that reports its input admits no artifact (`phaseBlocked` — a contract no failing
+// test can encode, a refused path), a gate that escalates to the Task's elaboration, and one
+// that escalates to the provisioning intent after the run has already re-authored it or built
+// on it, are neither a failure of the work nor of the harness. Reported under the phase name,
+// each read as a work failure: the supervisor opened an incident, re-dispatched it and charged it toward
+// quarantine, and every later run paid the same phases to reach the same stop. The
+// supervisor's `requires-human-action` stage charges nothing, parks the item and queues the
+// action named in `requiredHumanActions` — the stage task-to-deploy reports the same exits under.
+const HUMAN_ACTION_STAGE = 'requires-human-action'
+const SPEC_STALE_ESCALATION = /spec is stale|prd-to-spec/i
+const needsPerson = (r) => !!(r && !r.dispatchFailed && (r.phaseBlocked === true || (typeof r.escalate === 'string' && (/elaboration|infra-intent/.test(r.escalate) || SPEC_STALE_ESCALATION.test(r.escalate)))))
+const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : needsPerson(r) ? HUMAN_ACTION_STAGE : stage)
 
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
 // WHAT was unmet and on what evidence; a headline that says only "green failed" makes
@@ -854,12 +870,6 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
-    // A verdict that blocks while naming no reason is a defect in the judgment, not a finding
-    // (gate-enforce marks it `malformedVerdict`). It gets the same one re-ask as a dead judge.
-    if (verdict && verdict.malformedVerdict === true) {
-      log(`Gate ${gate} (${phaseName}): the judge blocked without naming a reason — re-asking once`)
-      verdict = (await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)) || verdict
-    }
     if (!verdict) {
       rec(attempt, null, { terminal: 'no-verdict' })
       return {
@@ -884,8 +894,9 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         verdict,
       }
     }
-    // Still reasonless after the re-ask: the work was never really judged, so it is reported
-    // under the environment stage rather than charged to the phase.
+    // A verdict that blocks while naming no reason (`malformedVerdict`) was already asked again
+    // inside the gate, with the defect named. Still reasonless, the work was never really
+    // judged, so it is reported under the environment stage rather than charged to the phase.
     if (verdict.malformedVerdict === true) {
       rec(attempt, verdict, { terminal: 'malformed-verdict' })
       return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
@@ -903,9 +914,19 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       return { ok: true, artifact, verdict }
     }
     if (verdict.verdict === 'escalate') {
-      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'}`)
+      // The judge names its target in free text, and what this composite does next depends on
+      // WHICH declared target it is, so a paraphrase is read back onto the list it was offered.
+      const named = String(verdict.escalateTo || '').trim()
+      const targets = Array.isArray(escalateTargets) ? escalateTargets : []
+      const escalateTo =
+        targets.find((t) => t.toLowerCase() === named.toLowerCase()) ||
+        (SPEC_STALE_ESCALATION.test(named) && targets.find((t) => SPEC_STALE_ESCALATION.test(t))) ||
+        targets[0] ||
+        named ||
+        'upstream'
+      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${escalateTo}${escalateTo !== named ? ` (the judge named ${JSON.stringify(named || 'nothing')})` : ''}`)
       // The judge's feedback is why it escalated; the headline carries it.
-      return { ok: false, escalate: verdict.escalateTo || 'upstream', reason: verdict.feedback ? `escalated to ${verdict.escalateTo || 'upstream'}: ${verdict.feedback}` : undefined, artifact, verdict }
+      return { ok: false, escalate: escalateTo, reason: verdict.feedback ? `escalated to ${escalateTo}: ${verdict.feedback}` : undefined, artifact, verdict }
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     gateFeedback = verdict.feedback || ''
@@ -999,7 +1020,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [], seq: 0 }
+const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [], repairFeedback: '', priorRulings: [], seq: 0 }
 // The phases that certify a Green result, in run order, and the fingerprint of that Green.
 const CP_BASIS_KEYS = ['integration', 'adversarial']
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
@@ -1195,6 +1216,9 @@ async function cpLoad() {
   // and are reused only over that same Green; a mismatch drops that phase and every phase
   // after it. A result with no `basis` predates the field and is accepted.
   const phases = { ...win.verdict.phases }
+  // The rulings the last Adversarial pass left standing, read before a basis mismatch can drop
+  // it: a re-run of Adversarial on resume is adjudicated against them, as the deploy loop's is.
+  const savedRulings = (phases.adversarial && Array.isArray(phases.adversarial.standingRulings) && phases.adversarial.standingRulings) || []
   for (const key of CP_BASIS_KEYS) {
     const saved = phases[key]
     if (saved && typeof saved.basis === 'string' && saved.basis !== cpBasis(phases.green)) {
@@ -1212,14 +1236,13 @@ async function cpLoad() {
   const pr = phases.pendingRepair
   delete phases.pendingRepair
   if (pr && typeof pr === 'object' && typeof pr.feedback === 'string' && pr.feedback && pr.basis === cpBasis(phases.green)) {
-    const priorRulings = (phases.adversarial && Array.isArray(phases.adversarial.standingRulings) && phases.adversarial.standingRulings) || []
     const dropped = ['integration', 'adversarial'].filter((k) => phases[k] !== undefined)
     for (const k of dropped) delete phases[k]
     cp.pendingRepair = {
       feedback: pr.feedback,
       smokeTestFiles: Array.isArray(pr.smokeTestFiles) ? pr.smokeTestFiles : [],
       iteration: Number.isFinite(pr.iteration) ? pr.iteration : 1,
-      priorRulings,
+      priorRulings: savedRulings,
     }
     runLedger.push({ phase: 'checkpoint', event: 'repair-pending', path: cp.path, iteration: cp.pendingRepair.iteration, dropped })
     log(`Checkpoint: a deploy repair (iteration ${cp.pendingRepair.iteration}) was in flight when the run stopped — it is re-run before Integration, and ${dropped.join(', ') || 'nothing'} is re-certified`)
@@ -1229,6 +1252,10 @@ async function cpLoad() {
     // the deploy loop a fresh budget.
     cp.deployIterationsDone = pr.iteration
     cp.doneSmokeSuite = Array.isArray(pr.smokeTestFiles) ? pr.smokeTestFiles : []
+    // The smoke failure that repair answered and the rulings that stood before it: the
+    // re-certification and the next rollout are seeded with them exactly as the loop seeds them.
+    cp.repairFeedback = typeof pr.feedback === 'string' ? pr.feedback : ''
+    cp.priorRulings = savedRulings
   }
   cp.loaded = phases
   cp.phases = { ...phases }
@@ -1370,6 +1397,7 @@ if (!String(bead.repoPath || '').trim()) {
       `${bead.id} carries no repoPath, so its build contract is incomplete. The repository a Task builds in is ruled during elaboration (prd-to-spec) and recorded on the Task as its repoPath; the build lane builds in that repository and rules none of its own. Re-elaborate the Task's Story, or record the ruled repository on the Task.`
     ),
     incompleteContract: ['repoPath'],
+    requiredHumanActions: [`re-elaborate the Story of ${bead.id}, or record the ruled repository on it as its repoPath — the build lane rules no repository of its own`],
   }
 }
 // Checkpoint identity: the REPOSITORY (not the worktree, which a later dispatch cuts
@@ -1463,9 +1491,9 @@ log(`Infra change ${bead.id || '(no id)'} — ${bead.title || ''}`)
 // detailed, reproducible feedback packet naming exactly what the maker has to change, and
 // ending the run there discards it. Route it through gateLoop so the maker re-authors against the
 // gate's own findings, bounded by MAX_LOOPS.
-let g1Loop = cpGet('intent')
-if (g1Loop === undefined) {
-g1Loop = await gateLoop({
+// `seed` carries a later gate's reason for sending the run back to the intent (see the Red
+// re-entry below); it rides beside the caller's prior findings on every G1 attempt.
+const runIntentGate = (seed) => gateLoop({
   gate: 'G1',
   phaseName: 'Infra Intent',
   // The intent must be concrete and CDK-expressible and carry no banned construct — a
@@ -1480,36 +1508,43 @@ g1Loop = await gateLoop({
   checks: [{ field: 'ready', equals: true, label: 'the security and cost reviewers raised no open blocking finding on the intent' }],
   // Upstream of the intent is the Task's build contract, written during elaboration.
   escalateTargets: ['elaboration'],
-  initialFeedback: a.priorFindings || '',
-  // A failed `ready` check names only the boolean, so the reviewers' blocking findings from
-  // the previous attempt ride along for the maker to act on.
+  initialFeedback: [a.priorFindings, seed].filter(Boolean).join('\n\n'),
   phaseFn: (feedback, loop) => {
     const prior = loop && loop.priorArtifact
-    const blocking = prior
-      ? [
-          prior.securityFindings && prior.securityFindings.blocking === true ? `Blocking security findings: ${JSON.stringify(prior.securityFindings.findings || [])}` : '',
-          prior.costFindings && prior.costFindings.blocking === true ? `Blocking cost finding: ${prior.costFindings.feedback || JSON.stringify(prior.costFindings.findings || [])}` : '',
-        ].filter(Boolean).join('\n')
-      : ''
+    // infra-intent already re-authors the intent against its reviewers' blocking findings for
+    // its whole pass budget. A `ready: false` is what is left after that loop, and running the
+    // mini again repeats the same loop on the same findings, so it is not retried here.
+    if (prior && prior.ready === false) {
+      return {
+        ...prior,
+        phaseBlocked: true,
+        blockedReason: `the security or cost reviewer still blocks the provisioning intent after infra-intent re-authored it for its full pass budget, so another attempt would repeat that loop on the same findings: ${[
+          prior.securityFindings && prior.securityFindings.blocking === true ? `security — ${JSON.stringify(prior.securityFindings.findings || [])}` : '',
+          prior.costFindings && prior.costFindings.blocking === true ? `cost — ${prior.costFindings.feedback || JSON.stringify(prior.costFindings.findings || [])}` : '',
+        ].filter(Boolean).join('; ')}`,
+      }
+    }
     return workflow('agent-teams-workforce:infra-intent', {
       change: { id: bead.id, title: bead.title, description: bead.description, repoPath: workRepoPath },
-      feedback: [feedback, blocking].filter(Boolean).join('\n\n'),
+      feedback,
     })
   },
 })
-if (g1Loop.ok) await cpSave('intent', g1Loop)
+// `gate` and `intent` survive the trim. The gate id says WHICH of this composite's two
+// infra-intent exits was taken, and the intent is the artifact a re-dispatch starts
+// from — the whole reason loop exhaustion carries it at all.
+const intentFailure = (g) => ({
+  ...handback(false, gateStage('infra-intent', g), gateHeadline('infra-intent', g), { g1Loop: g, intent: g.artifact }),
+  gate: 'G1',
+  intent: g.artifact,
+})
+let g1Loop = cpGet('intent')
+if (g1Loop === undefined) {
+  g1Loop = await runIntentGate('')
+  if (g1Loop.ok) await cpSave('intent', g1Loop)
 }
-if (!g1Loop.ok) {
-  // `gate` and `intent` survive the trim. The gate id says WHICH of this composite's two
-  // infra-intent exits was taken, and the intent is the artifact a re-dispatch starts
-  // from — the whole reason loop exhaustion carries it at all.
-  return {
-    ...handback(false, gateStage('infra-intent', g1Loop), gateHeadline('infra-intent', g1Loop), { g1Loop, intent: g1Loop.artifact }),
-    gate: 'G1',
-    intent: g1Loop.artifact,
-  }
-}
-const intent = g1Loop.artifact
+if (!g1Loop.ok) return intentFailure(g1Loop)
+let intent = g1Loop.artifact
 if (!intent) return handback(false, 'infra-intent', 'infra-intent produced nothing')
 
 // Tail-facing contract: carries the repo + a change descriptor the tail prompts
@@ -1541,6 +1576,13 @@ const tailContract = {
 // tailContract.repoPath IS the workspace step's return value; nothing downstream may
 // substitute the caller's path for it.
 settleRepoPath = tailContract.repoPath
+// The contract fields the intent decides, re-derived when a later gate sends the run back to it.
+function applyIntent(next) {
+  tailContract.affectedStacks = next.affectedStacks || []
+  tailContract.provisioningIntent = next.provisioningIntent || null
+  tailContract.acceptanceCriteria[tailContract.acceptanceCriteria.length - 1].given =
+    `the provisioning intent for ${bead.title || 'this infra change'} on stacks ${(next.affectedStacks || []).join(', ') || '(affected stacks)'}`
+}
 
 // ── Red (Gate 2a) — author the FAILING infra synth/policy assertion ──────────────
 enterPhase('Red')
@@ -1564,38 +1606,76 @@ const RED_CHECKS = [
   // fails correctly and can never go green.
   { field: 'greenReachable', equals: true, label: 'every authored assertion names the CDK file whose change makes it pass' },
 ]
-let red = cpGet('red')
-if (red === undefined) {
-red = await gateLoop({
-  gate: '2a', phaseName: 'TDD Red',
+// `staleRed` is the Red a re-authored intent replaces: its assertions are on disk and encode
+// the old intent, so the new Red repairs them rather than discovering and reusing them.
+const runRedGate = (phaseName, staleRed, seed) => gateLoop({
+  gate: '2a', phaseName,
   criteria: RED_CRITERIA,
   checks: RED_CHECKS,
   escalateTargets: ['infra-intent'],
+  initialFeedback: seed || '',
   // From attempt 2 the previous attempt's test is ON DISK. Discovery would re-find it,
   // report no gaps, and the confirm-existing branch would hand the gate back the very
   // test it just rejected — through a code path the gate's objection never reaches.
   // A re-run after a rejection authors; it does not shop for what it already wrote.
-  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback, skipDiscovery: !!(loop && loop.attempt > 1), ...(loop && loop.attempt > 1 && loop.priorArtifact ? { red: loop.priorArtifact } : {}) }),
+  phaseFn: (feedback, loop) => {
+    const prior = (loop && loop.attempt > 1 && loop.priorArtifact) || staleRed || null
+    return workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback, skipDiscovery: !!(loop && loop.attempt > 1) || !!staleRed, ...(prior ? { red: prior } : {}) })
+  },
 })
-if (red.ok) await cpSave('red', red)
+let red = cpGet('red')
+if (red === undefined) {
+  red = await runRedGate('TDD Red', null, '')
+  // ── AN ESCALATION TO THE INTENT IS CONTROL FLOW, ONCE ─────────────────────────
+  // The Red gate ruled that the provisioning intent itself cannot be encoded as asked. The
+  // intent is saved, so ending the run here would hand every later dispatch the same intent
+  // and the same escalation. The intent is re-authored against the gate's reason and Red runs
+  // again over it, once; a second escalation ends the run.
+  if (!red.ok && red.escalate === 'infra-intent') {
+    if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
+    const why = red.reason || 'the Red gate escalated to the provisioning intent'
+    log('Red escalated to the provisioning intent — re-authoring the intent against it, then running Red again')
+    enterPhase('Infra Intent')
+    const again = await runIntentGate(`The Red gate sent this change back to its provisioning intent: ${why}`)
+    if (!again.ok) return intentFailure(again)
+    if (!again.artifact) return handback(false, 'infra-intent', 'infra-intent produced nothing')
+    g1Loop = again
+    intent = again.artifact
+    applyIntent(intent)
+    await cpSave('intent', g1Loop)
+    enterPhase('Red')
+    red = await runRedGate('TDD Red (after the intent was re-authored)', red.artifact, `The provisioning intent was re-authored because: ${why}`)
+  }
+  if (red.ok) await cpSave('red', red)
 }
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return handback(false, gateStage('red', red), gateHeadline('red', red), red)
-// Red found the provisioning intent already asserted by PASSING checks: the infra
-// already expresses it. Green would be asked to make a failing assertion pass when
-// none fails, so the run ends here — successfully, with nothing changed.
-if (red.alreadySatisfied) {
+// ── AN INTENT ALREADY EXPRESSED STILL HAS TO BE PROVED LIVE ──────────────────
+// Red found the provisioning intent already asserted by PASSING checks: the CDK already
+// expresses it, and Green would be asked to make a failing assertion pass when none fails.
+// Whether it is deployed in AWS dev is a different fact. So nothing is built — no Green,
+// Integration or Adversarial, because nothing changes the tree — and the run goes straight to
+// Deploy, which takes Red's executed passing checks as `satisfiedRed` in place of Green's
+// evidence. A smoke failure takes the ordinary correction path. The stand-in Green is saved like
+// any Green, so a correction's in-flight record keys on it and a resume continues it.
+function satisfiedGreen(redResult) {
+  const art = (redResult && redResult.artifact) || {}
   return {
-    ...handback(
-      true,
-      'red',
-      'the provisioning intent is already expressed and asserted by passing checks — no Red is obtainable and nothing was authored or changed',
-      red.artifact
-    ),
+    ok: true,
     alreadySatisfied: true,
-    built: false,
+    artifact: {
+      alreadySatisfied: true,
+      greenConfirmed: true,
+      noRegressions: true,
+      evidence: String(art.evidence || '').trim() || `the checks asserting the provisioning intent pass: ${(art.testFiles || []).join(', ')}`,
+      changedFiles: [],
+      testFiles: Array.isArray(art.testFiles) ? art.testFiles : [],
+      ledger: { phase: 'green', beadId: bead.id || null, chosen: [], mode: 'already-satisfied', ok: true },
+    },
   }
 }
+// The phases a satisfied Red does not run, recorded as skipped rather than absent.
+const notRun = (what) => ({ ok: true, alreadySatisfied: true, artifact: { alreadySatisfied: true, skipped: `${what}: the intent was already expressed and nothing changed the tree` } })
 
 // ── Green (Gate 2b) — make synth/test pass via the CDK stack author ──────────────
 // The criteria are named once: the Deploy phase can send the run back through Green when
@@ -1648,11 +1728,12 @@ async function greenThroughRed(phaseName, extraFeedback) {
       runLedger.push({ phase: 'green:contradiction', beadId: bead.id || null, contradiction, ruling: contradictionRuling || null, ok: !!contradictionRuling })
       if (!contradictionRuling) {
         return {
+          // A null ruling means the decider was skipped or died: the harness failed, not the work.
           handback: handback(
             false,
-            'green',
+            DISPATCH_FAILED_STAGE,
             `two assertions demand opposite outcomes for the same input (${contradiction.testA || '?'} vs ${contradiction.testB || '?'}) and the test-strategy-decider returned no ruling — no stack can satisfy both, and re-authoring would regenerate one side of the contradiction`,
-            { green: g, contradiction }
+            { green: g, contradiction, dispatchFailed: true, dispatchFailures: dispatchDeaths(currentPhase || 'Green') }
           ),
         }
       }
@@ -1702,6 +1783,11 @@ async function greenThroughRed(phaseName, extraFeedback) {
 }
 
 let green = cpGet('green')
+if (green === undefined && red.alreadySatisfied) {
+  log('Red: the provisioning intent is ALREADY asserted by passing checks — nothing is built; the unchanged tree goes to dev to be smoke-tested')
+  green = satisfiedGreen(red)
+  await cpSave('green', green)
+}
 if (green === undefined) {
   const through = await greenThroughRed('TDD Green', '')
   if (through.handback) return through.handback
@@ -1733,7 +1819,9 @@ if (resumedRepair) {
 
 // Documentation runs ALONGSIDE the rest of the tail (started after Green, awaited before deploy).
 docContract = tailContract
-docTrack = startDocTrack(green.artifact)
+// A satisfied Red changed nothing, so there is nothing to document or certify.
+const satisfiedOnly = !!(green.artifact && green.artifact.alreadySatisfied === true)
+docTrack = satisfiedOnly ? Promise.resolve(null) : startDocTrack(green.artifact)
 
 // Settle the parallel documentation tracks before any early failure return, so a
 // failed run never leaves one as an unhandled rejection or orphaned work. A deploy
@@ -1754,6 +1842,8 @@ async function failAfterDoc(stage, detail) {
 // over the same stack reproduces a real failure, and an unmet SSM criterion is a CDK change.
 // certifyIntegration below repairs a failure through Green, or runs the checks again when the
 // test environment was not ready.
+const SSM_EVIDENCE_ASK =
+  'Also verify, and state in `evidence` with what you ran, that every cross-stack reference in the changed stacks resolves through SSM Parameter Store and that no synthesized template declares a CloudFormation Export or Fn::ImportValue.'
 const runIntegration = (phaseName, seed) => gateLoop({
   gate: 'G3', phaseName,
   maxLoops: 1,
@@ -1766,9 +1856,11 @@ const runIntegration = (phaseName, seed) => gateLoop({
   // absolutely needs integration verification — a provisioned stack has to be exercised.
   // Naming the suite explicitly stops the surface-derived selection from reading that
   // empty list as "no integration applies" and skipping the phase.
+  // The enforcer judges the SSM criterion from what the suite reports, so the suite is asked
+  // for that evidence; without it the one attempt fails on a criterion nobody measured.
   phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
     contract: tailContract, green: green.artifact, suites: ['aws-integration-test-runner'],
-    feedback: [seed, feedback].filter(Boolean).join('\n\n'),
+    feedback: [seed, feedback, SSM_EVIDENCE_ASK].filter(Boolean).join('\n\n'),
   }),
 })
 // Integration, and on a failure the one repair that can change the outcome. Returns
@@ -1818,9 +1910,9 @@ async function certifyIntegration(phaseName, seed) {
   return { integration: r }
 }
 enterPhase('Integration')
-let integration = cpGet('integration')
+let integration = satisfiedOnly ? notRun('Integration') : cpGet('integration')
 if (integration === undefined) {
-  const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : '')
+  const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : cp.repairFeedback)
   if (certified.handback) return certified.handback
   integration = certified.integration
   if (integration.ok) await cpSave('integration', { ...integration, basis: cpBasis(green) })
@@ -1876,9 +1968,9 @@ let adversarial = { skipped: true }
 let adv = null
 if (RUN_ADVERSARIAL) {
   enterPhase('Adversarial')
-  adv = cpGet('adversarial')
+  adv = satisfiedOnly ? notRun('Adversarial') : cpGet('adversarial')
   if (adv === undefined) {
-    adv = await runAdversarial('Adversarial Validation', resumedRepair ? resumedRepair.feedback : '', resumedRepair ? resumedRepair.priorRulings : [])
+    adv = await runAdversarial('Adversarial Validation', resumedRepair ? resumedRepair.feedback : cp.repairFeedback, resumedRepair ? resumedRepair.priorRulings : cp.priorRulings)
     if (adv.ok) await cpSave('adversarial', { ...adv, basis: cpBasis(green), standingRulings: standingRulings(adv) })
   }
   if (adv.artifact && adv.artifact.ledger) runLedger.push(adv.artifact.ledger)
@@ -1916,7 +2008,8 @@ if (repairDocTrack) {
 const deployIterations = []
 let deployReady = null
 let deployIteration = 0
-let smokeFeedback = ''
+// A resumed run's first rollout carries the smoke failure the recorded repair answered.
+let smokeFeedback = resumedRepair ? resumedRepair.feedback : cp.repairFeedback
 let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : cp.doneSmokeSuite
 // The repository the worktree belongs to, as git reports it: the dev deployment lease is
 // keyed on it, because every worktree path differs and two runs in one repository deploy
@@ -1965,7 +2058,10 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
     ],
     escalateTargets: ['integration', 'green'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract: tailContract, green: green.artifact,
+      contract: tailContract,
+      // A satisfied Red deploys on its executed passing checks (`satisfiedRed`); a repaired
+      // Green is deployed as a Green.
+      ...(green.artifact && green.artifact.alreadySatisfied === true ? { satisfiedRed: red.artifact } : { green: green.artifact }),
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
       smokeTestFiles: smokeSuite,
       leaseScope,
@@ -2002,7 +2098,7 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
     return {
       ...handback(
         false,
-        leaseBlocked ? 'agent-dispatch-failed' : gateStage('deploy-to-dev', deployReady),
+        leaseBlocked ? DISPATCH_FAILED_STAGE : gateStage('deploy-to-dev', deployReady),
         leaseBlocked ? `deploy-to-dev: ${leaseBlocked}` : gateHeadline('deploy-to-dev', deployReady),
         { ...deployReady, deployIterations }
       ),
@@ -2104,11 +2200,13 @@ const deployedToDev = finalDeploy.deployedToDev === true
 const smokePassed = finalDeploy.smokePassed === true
 const lastIteration = deployIterations.length ? deployIterations[deployIterations.length - 1].iteration : 0
 const iterationNote = lastIteration > 1 ? ` after ${lastIteration} deploy iterations` : ''
+// Read off the Green that was deployed: a correction replaces the stand-in with a real repair.
+const builtNothing = !!(green.artifact && green.artifact.alreadySatisfied === true)
 return {
   ...handback(
     true,
     'deployed-to-dev',
-    `${bead.id || 'infra change'} provisioned and ${
+    `${bead.id || 'infra change'} ${builtNothing ? 'was already expressed and asserted by passing checks (nothing built) and was' : 'provisioned and'} ${
       deployedToDev
         ? `DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests ${smokePassed ? 'PASSING against the deployed dev endpoints' : 'NOT confirmed passing against the deployed dev endpoints'}`
         : 'gated through deploy WITHOUT a confirmed dev deployment'
@@ -2116,14 +2214,9 @@ return {
       'reported under `settled` / `prUrl`, and outward-facing qa/prod rollout is a separate human-gated action that did not happen here. ' +
       `Refactor is omitted on the infra path; adversarial ${RUN_ADVERSARIAL ? 'ran (trimmed lane)' : 'was skipped'}.`,
     {
-      stagesComplete: [
-        'infra-intent',
-        'red',
-        'green',
-        'integration',
-        ...(RUN_ADVERSARIAL ? ['adversarial'] : []),
-        'deployed-to-dev',
-      ],
+      stagesComplete: builtNothing
+        ? ['infra-intent', 'red', 'deployed-to-dev']
+        : ['infra-intent', 'red', 'green', 'integration', ...(RUN_ADVERSARIAL ? ['adversarial'] : []), 'deployed-to-dev'],
       adversarialRun: RUN_ADVERSARIAL,
       deployedToDev,
       smokePassed,
@@ -2145,6 +2238,7 @@ return {
   deployedToDev,
   smokePassed,
   deployIteration: lastIteration,
+  ...(builtNothing ? { alreadySatisfied: true, built: false } : {}),
 }
   })()
 } catch (err) {

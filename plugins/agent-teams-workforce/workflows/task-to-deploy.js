@@ -645,7 +645,16 @@ function handback(ok, stage, headline, detail) {
     // `deployedToDev` is the same trap, so it is answered too.
     smokePassed: false,
     deployIteration: 0,
+    // A stop that needs a person names what the person must do (see HUMAN_ACTION_STAGE).
+    ...(stage === HUMAN_ACTION_STAGE ? { requiredHumanActions: [humanAction(headline, detail)] } : {}),
   }
+}
+function humanAction(headline, detail) {
+  const specStale = !!(detail && typeof detail.escalate === 'string' && SPEC_STALE_ESCALATION.test(detail.escalate))
+  const what = specStale
+    ? `re-elaborate the spec behind ${bead.id} — its Red gate ruled the spec stale, and re-authoring it is a prd-to-spec run over the Task's Epic that a person starts`
+    : `look at ${bead.id} and re-scope, re-route or clear what stopped it before it is dispatched again — a re-dispatch meets the same stop`
+  return `${what}: ${String(headline || '').slice(0, 600)}`
 }
 
 // ── WHAT THE DEPLOY LOOP HAS PROVEN, READ OFF ITS OWN ROWS ────────────────────
@@ -673,7 +682,23 @@ function deployEvidence(rows) {
 // work — so it is reported under its own stage rather than under the phase name,
 // which would read as "the tests were bad" for what was an account limit.
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
-const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
+// ── THE STAGE A STOP THAT NEEDS A PERSON IS REPORTED UNDER ────────────────────
+//
+// Some exits are not a failure of the work and not a failure of the harness: a phase that
+// reports its input admits no artifact (`phaseBlocked` — a contract no failing test can
+// encode, a refactor whose edits could not be restored), and a Red gate that rules the
+// spec itself stale, which only a re-elaboration a person starts can repair. Reported under
+// the phase name, each read as a work failure: the supervisor sent it to the repair tier,
+// re-dispatched it, charged it toward quarantine, and every later run paid the same phases
+// again to reach the same stop. The supervisor's own stage for this is
+// `requires-human-action` (its pipeline.HUMAN_ACTION_STAGE): it charges nothing, repairs
+// nothing, parks the item and queues the named action for a person. Every such exit names
+// the action in `requiredHumanActions`, because a need nobody can read by name is a need
+// nobody takes.
+const HUMAN_ACTION_STAGE = 'requires-human-action'
+const SPEC_STALE_ESCALATION = /spec is stale|prd-to-spec/i
+const needsPerson = (r) => !!(r && !r.dispatchFailed && (r.phaseBlocked === true || (typeof r.escalate === 'string' && SPEC_STALE_ESCALATION.test(r.escalate))))
+const gateStage = (stage, r) => (r && r.dispatchFailed ? DISPATCH_FAILED_STAGE : needsPerson(r) ? HUMAN_ACTION_STAGE : stage)
 
 // Turn a gate result into that one line. An exhausted or escalated gate already knows
 // WHAT was unmet and on what evidence; a headline that says only "green failed" makes
@@ -901,14 +926,6 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
-    // A verdict that blocks while naming no reason is a defect in the judgment, not a finding
-    // (gate-enforce marks it `malformedVerdict` and turns it into an escalate). It gets the same
-    // one re-ask as a dead judge, as in bug-fix.js; read as a real escalate it failed the run
-    // and charged the bead for a judge that said nothing.
-    if (verdict && verdict.malformedVerdict === true) {
-      log(`Gate ${gate} (${phaseName}): the judge blocked without naming a reason — re-asking once`)
-      verdict = (await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)) || verdict
-    }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
       return {
@@ -933,8 +950,10 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
         verdict,
       }
     }
-    // Still reasonless after the re-ask: the work was never really judged, so it is reported
-    // under the environment stage rather than charged to the phase.
+    // A verdict that blocks while naming no reason: the gate has already re-asked its judge
+    // once with the defect named, so a `malformedVerdict` reaching here was reasonless twice.
+    // The work was never really judged, so it is reported under the environment stage rather
+    // than charged to the phase.
     if (verdict.malformedVerdict === true) {
       recordGate(attempt, verdict, { terminal: 'malformed-verdict' })
       return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
@@ -952,8 +971,20 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       return { ok: true, artifact, verdict }
     }
     if (verdict.verdict === 'escalate') {
-      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'}`)
-      return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact, verdict }
+      // The judge names its target in free text. What this composite does next is decided by
+      // WHICH declared target it is, so a paraphrase is read back onto the list it was offered:
+      // an unrecognised name on Gate 2a, whose only target is a stale spec, otherwise read as
+      // an ordinary Red failure and was re-dispatched into the same verdict.
+      const named = String(verdict.escalateTo || '').trim()
+      const targets = Array.isArray(escalateTargets) ? escalateTargets : []
+      const escalateTo =
+        targets.find((t) => t.toLowerCase() === named.toLowerCase()) ||
+        (SPEC_STALE_ESCALATION.test(named) && targets.find((t) => SPEC_STALE_ESCALATION.test(t))) ||
+        targets[0] ||
+        named ||
+        'upstream'
+      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${escalateTo}${escalateTo !== named ? ` (the judge named ${JSON.stringify(named || 'nothing')})` : ''}`)
+      return { ok: false, escalate: escalateTo, artifact, verdict }
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
@@ -1101,7 +1132,7 @@ const CP_KEYS = ['red', 'green', 'refactor', 'integration', 'adversarial']
 // `basis` predates the field and is accepted.
 const CP_BASIS_KEYS = new Set(['integration', 'adversarial'])
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
-const cp = { active: false, dir: null, relDir: null, script: null, epic: null, inputHash: null, loaded: null, phases: {}, touched: false, recordInputs: [], retireDoneMarker: false, pendingRepair: null, resumedCorrection: null, loadedDocs: null }
+const cp = { active: false, dir: null, relDir: null, script: null, epic: null, inputHash: null, loaded: null, phases: {}, touched: false, recordInputs: [], retireDoneMarker: false, pendingRepair: null, resumedCorrection: null, loadedDocs: null, refactorPending: null }
 // ── A FINISHED DEPLOY CORRECTION TRAVELS WITH THE GREEN IT PRODUCED ─────────────
 // repair-pending.json covers a kill INSIDE the Green repair. Once the repaired Green is
 // saved it no longer matches that record's basis, so a kill during the re-certification or
@@ -1127,6 +1158,17 @@ const cpFile = (key) => `${cp.dir}/phase-${key}.json`
 // repair and re-certifies instead. A later saved Green hashes differently, which retires
 // the record without a delete.
 const cpRepairFile = () => `${cp.dir}/repair-pending.json`
+// ── A REFACTOR IN FLIGHT IS UNDONE BEFORE IT IS TRIED AGAIN ─────────────────────
+// Refactor edits the tree long before anything saves its result, and the snapshot it restores
+// from used to exist only inside the refactor phase. A run killed mid-refactor, or whose
+// restore dispatch died, resumed onto the saved Green with the partial edits still in the
+// worktree, and the next attempt snapshotted THAT tree as Green — unreviewed edits carried to
+// dev as the implementation. So tdd-refactor's snapshot step records the snapshot here, keyed on
+// the Green it captures (`basis`), before the phase edits anything; a resume that finds it for the
+// Green it loaded, with no saved Refactor, has the phase put the tree back at it first. A later
+// saved Refactor, or a different Green, retires the record without a delete.
+const cpRefactorFile = () => `${cp.dir}/refactor-pending.json`
+const CP_TREE_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/
 // Written on a COMPLETED run so the next dispatch of the same work item cold-starts rather
 // than resuming finished phases. It replaces the old two-file retirement: the phase files
 // are LEFT ALONE — they are the next run's evidence, and deleting evidence to signal
@@ -1232,7 +1274,7 @@ async function cpLoad() {
     read = await settleAgent(
       `Read each file below if it exists; return one entry per key with \`found\` and its full text verbatim in \`content\` (missing or empty: found=false, content ""). Read nothing else; write nothing.
 
-${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${cpDoneFile()}`, `- key "repair": ${cpRepairFile()}`, `- key "docs": ${cpFile('docs')}`].join('\n')}`,
+${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${cpDoneFile()}`, `- key "repair": ${cpRepairFile()}`, `- key "docs": ${cpFile('docs')}`, `- key "refactorPending": ${cpRefactorFile()}`].join('\n')}`,
       {
         label: 'checkpoint:load',
         phase: currentPhase || 'Workspace',
@@ -1348,6 +1390,22 @@ ${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${
       runLedger.push({ phase: 'checkpoint', event: 'invalidated', path: cpFile('docs'), reason: dv.ok ? 'documented a different Green than the one being resumed' : dv.why })
     }
   }
+  // A refactor snapshot recorded over the Green being resumed, with no Refactor saved after
+  // it: that attempt never finished, so the tree may hold its edits. A pending deploy
+  // correction proves the run got past Refactor (only its save failed), and restoring to the
+  // pre-correction snapshot would undo the repair the correction is about to redo, so the
+  // record is not honoured then.
+  const refactorText = !cp.pendingRepair && reused.includes('green') && !reused.includes('refactor') ? body('refactorPending') : null
+  if (refactorText) {
+    let rec = null
+    try { rec = JSON.parse(refactorText) } catch (e) { rec = null }
+    const tree = rec && String(rec.tree || '').trim()
+    if (rec && rec.composite === 'task-to-deploy' && rec.inputHash === cp.inputHash && rec.basis === cpBasis(cp.phases.green) && CP_TREE_ID.test(tree)) {
+      cp.refactorPending = { tree, basis: rec.basis }
+      runLedger.push({ phase: 'checkpoint', event: 'refactor-interrupted', path: cpRefactorFile(), tree })
+      log(`An earlier Refactor of this Green did not finish (${cpRefactorFile()}): the tree is put back at its snapshot ${tree} before Refactor runs again`)
+    }
+  }
   if (!cp.pendingRepair && reused.includes('green')) {
     cp.resumedCorrection = cpCorrection(cp.phases.green && cp.phases.green.deployCorrection)
     if (cp.resumedCorrection) {
@@ -1410,7 +1468,9 @@ const docsEntry = (greenResult, r) => ({
 })
 function offerDocs(greenResult, track) {
   return track.then(async (r) => {
-    if (r && !r.reused) await cpSaveAll([docsEntry(greenResult, r)])
+    // A pass whose auditor or writers died documented nothing; saved, it would be reused on
+    // every resume in place of the pass that never happened.
+    if (r && !r.reused && !r.dispatchFailed) await cpSaveAll([docsEntry(greenResult, r)])
     return r
   })
 }
@@ -1497,6 +1557,15 @@ ${JSON.stringify(rec)}`,
   )
   log(written && written.ok === true ? `Deploy correction recorded in ${cpRepairFile()}` : `Deploy correction NOT recorded (${(written && written.error) || 'no result'}) — a resume inside the repair would redeploy the unrepaired Green`)
 }
+// Where tdd-refactor records the Green snapshot it takes (see cpRefactorFile). Its own snapshot
+// session writes it, so recording costs no session of its own. Null with no artifact root.
+function cpRefactorRecord(greenResult) {
+  if (!cp.active) return null
+  return {
+    path: cpRefactorFile(),
+    payload: JSON.stringify({ composite: 'task-to-deploy', subject: bead.id || null, inputHash: cp.inputHash, basis: cpBasis(greenResult), tree: '<TREE>' }),
+  }
+}
 // Kept short on purpose: every token here is paid on every save. The agent definition
 // carries the full phase-record contract (a phase record is not a ledger line: no JSONL,
 // no added runId/ts/outcome fields).
@@ -1549,6 +1618,9 @@ if (!String(bead.repoPath || '').trim()) {
       `${bead.id} carries no repoPath, so its build contract is incomplete. The repository a Task builds in is ruled during elaboration (prd-to-spec) and recorded on the Task as its repoPath; the build lane builds in that repository and rules none of its own. Re-elaborate the Task's Story, or record the ruled repository on the Task.`
     ),
     incompleteContract: ['repoPath'],
+    // Ruling a repository is elaboration's, so nothing this lane dispatches can supply one: the
+    // action is named, and the Task is held for it rather than re-dispatched into the same refusal.
+    requiredHumanActions: [`re-elaborate the Story of ${bead.id}, or record the ruled repository on it as its repoPath — the build lane rules no repository of its own`],
   }
 }
 // Checkpoint identity: the REPOSITORY (not the worktree, which a later dispatch cuts
@@ -1795,22 +1867,37 @@ if (red.ok) await cpSave('red', red)
 }
 if (red.artifact && red.artifact.ledger) runLedger.push(red.artifact.ledger)
 if (!red.ok) return handback(false, gateStage('red', red), gateHeadline('red', red), red)
-// Red found the contract already encoded by PASSING tests: the behavior exists.
-// Green would be asked to make a failing test pass when none fails, so the run
-// ends here — successfully, with nothing built. Closing the work item is a human
-// call, not something this composite does on its own.
-if (red.alreadySatisfied) {
+// ── A CONTRACT ALREADY SATISFIED STILL HAS TO BE PROVED LIVE ─────────────────
+// Red found the contract already encoded by PASSING tests: the behavior exists in the code,
+// and Green would be asked to make a failing test pass when none fails. Whether it exists in
+// AWS dev is a different fact, and a build item is Done only on that evidence. So nothing is
+// built — no Green, Refactor, Integration or Adversarial, because nothing changes the tree —
+// and the run goes straight to Deploy: the unchanged tree is rolled out to dev and smoke-tested
+// there. The passing tests Red executed stand in for Green's evidence, which is exactly what
+// they are. A smoke failure then takes the ordinary correction path — Green repairs, and the
+// repair is certified in full before it redeploys.
+//
+// The stand-in Green is SAVED like any Green, so a deploy correction's in-flight record keys
+// on it and a resume continues that correction. A run saved before this existed (a Red marked
+// alreadySatisfied and no Green file) reaches the same branch and builds the same stand-in.
+function satisfiedGreen(redResult) {
+  const art = (redResult && redResult.artifact) || {}
   return {
-    ...handback(
-      true,
-      'red',
-      'the spec contract is already satisfied by passing tests — no Red is obtainable and nothing was authored or changed',
-      red.artifact
-    ),
+    ok: true,
     alreadySatisfied: true,
-    built: false,
+    artifact: {
+      alreadySatisfied: true,
+      greenConfirmed: true,
+      noRegressions: true,
+      evidence: String(art.evidence || '').trim() || `the tests encoding the contract pass: ${(art.testFiles || []).join(', ')}`,
+      changedFiles: [],
+      testFiles: Array.isArray(art.testFiles) ? art.testFiles : [],
+      ledger: { phase: 'green', beadId: bead.id || null, chosen: [], mode: 'already-satisfied', ok: true },
+    },
   }
 }
+// The phases a satisfied contract does not run, recorded as skipped rather than absent.
+const notRun = (what) => ({ ok: true, alreadySatisfied: true, artifact: { alreadySatisfied: true, skipped: `${what}: the contract was already satisfied and nothing changed the tree` } })
 
 // ── Green (Gate 2b) ───────────────────────────────────────────────────────────
 // `let`, not `const`: the Deploy phase below can send the run back through Green when the
@@ -1899,13 +1986,18 @@ async function greenThroughRed(phaseName, extraFeedback) {
       })
       // No ruling means no decision was reached, and re-authoring against an unresolved
       // contradiction is the thing that provably cannot work.
+      // A null ruling is a dead dispatch (settleAgent returns null only when the decider was
+      // skipped or died), not a ruling against the work, so it is reported under the
+      // environment stage: charged to 'green' it sent a dead session to the repair tier and
+      // toward quarantine.
       if (!contradictionRuling) {
+        const dispatchFailures = dispatchDeaths(currentPhase || 'Green')
         return {
           handback: handback(
             false,
-            'green',
-            `two tests assert opposite outcomes for the same input (${contradiction.testA || '?'} vs ${contradiction.testB || '?'}) and the test-strategy-decider returned no ruling — no implementation can satisfy both, and re-authoring would regenerate one side of the contradiction`,
-            { green: g, contradiction }
+            DISPATCH_FAILED_STAGE,
+            `green: two tests assert opposite outcomes for the same input (${contradiction.testA || '?'} vs ${contradiction.testB || '?'}) and the test-strategy-decider returned nothing — it was skipped or died, so nothing was ruled and re-authoring would regenerate one side of the contradiction`,
+            { green: g, contradiction, dispatchFailed: true, dispatchFailures }
           ),
         }
       }
@@ -1965,6 +2057,11 @@ async function greenThroughRed(phaseName, extraFeedback) {
 }
 enterPhase('Green')
 let green = cpGet('green')
+if (green === undefined && red.alreadySatisfied) {
+  log('Red: the contract is ALREADY SATISFIED by passing tests — nothing is built; the unchanged tree goes to dev to be smoke-tested')
+  green = satisfiedGreen(red)
+  await cpSave('green', green)
+}
 if (green === undefined) {
   const through = await greenThroughRed('TDD Green', '')
   if (through.handback) return through.handback
@@ -1997,8 +2094,10 @@ if (resumedRepair) {
 // Documentation runs ALONGSIDE the rest of the tail — started here (after Green),
 // awaited before deploy.
 docContract = contract
-const savedDocs = cpDocs(green)
-docTrack = savedDocs ? Promise.resolve(savedDocs) : offerDocs(green, startDocTrack(green.artifact))
+// A satisfied contract changed nothing, so there is nothing to document, refactor or certify.
+const satisfiedOnly = !!(green.artifact && green.artifact.alreadySatisfied === true)
+const savedDocs = satisfiedOnly ? null : cpDocs(green)
+docTrack = satisfiedOnly ? Promise.resolve(null) : savedDocs ? Promise.resolve(savedDocs) : offerDocs(green, startDocTrack(green.artifact))
 
 // Settle the parallel documentation track before any early failure return, so a failed run
 // never leaves its writers editing the tree it hands to Settle.
@@ -2010,8 +2109,13 @@ async function failAfterDoc(stage, detail) {
 
 // ── Refactor (Gate 2c) ────────────────────────────────────────────────────────
 enterPhase('Refactor')
-let refactor = cpGet('refactor')
+let refactor = satisfiedOnly ? notRun('Refactor') : cpGet('refactor')
 if (refactor === undefined) {
+// An earlier attempt at Refactor over this same Green that never finished: tdd-refactor puts
+// the tree back at the snapshot it recorded before refactoring again. Otherwise it records the
+// snapshot it takes, so a later dispatch can do the same for this attempt.
+const interruptedTree = cp.refactorPending && cp.refactorPending.basis === cpBasis(green) ? cp.refactorPending.tree : null
+const refactorRecord = interruptedTree ? null : cpRefactorRecord(green)
 refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
   // One attempt: a failed refactor is restored and the run carries on as Green left it, so a
@@ -2028,7 +2132,10 @@ refactor = await gateLoop({
   // already-green code, and the run has no path back into the implementation phase at this
   // point. The target says what it is rather than promising a re-entry.
   escalateTargets: ['failed: the Green implementation would have to be redone, which this gate cannot re-enter'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
+  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', {
+    contract, green: green.artifact, feedback,
+    ...(interruptedTree ? { snapshotTree: interruptedTree, restoreFirst: true } : refactorRecord ? { snapshotRecord: refactorRecord } : {}),
+  }),
 })
 if (!(refactor.artifact && refactor.artifact.restored === false)) await cpSave('refactor', refactor)
 }
@@ -2042,10 +2149,17 @@ if (refactor.artifact && refactor.artifact.ledger) runLedger.push(refactor.artif
 if (!refactor.ok) {
   const refactorArtifact = refactor.artifact || {}
   if (refactorArtifact.restored === false) {
+    // A restore that never RAN (its dispatch died) over a snapshot that is recorded on disk is
+    // the environment: the next dispatch puts the tree back at that snapshot before it
+    // refactors again. A restore that ran and could not put the tree back, or one with no
+    // recorded snapshot to retry from, leaves edits nobody verified, and a person must look.
+    const retryable = refactorArtifact.restoreDied === true && refactorArtifact.snapshotRecorded === true
     return await failAfterDoc('refactor', {
       ...refactor,
-      dispatchFailed: false,
-      reason: `the refactor failed and its edits could not be restored to the Green state — ${refactorArtifact.restoreReason || refactor.reason || 'no reason reported'}`,
+      phaseBlocked: !retryable,
+      dispatchFailed: retryable,
+      ...(retryable ? { dispatchFailures: refactorArtifact.dispatchFailures || [] } : {}),
+      reason: `the refactor failed and its edits could not be restored to the Green state — ${refactorArtifact.restoreReason || refactor.reason || 'no reason reported'}${retryable ? '; the Green snapshot is recorded, so the next dispatch restores the tree before refactoring again' : ''}`,
     })
   }
   log(`Refactor did not pass (${refactor.reason || 'gate failure'}) — the tree is back at the Green implementation; continuing. Cleanup is not a correctness gate.`)
@@ -2152,7 +2266,7 @@ async function certifyIntegration(phaseName, seed) {
   return { integration: r }
 }
 enterPhase('Integration')
-let integration = cpGet('integration')
+let integration = satisfiedOnly ? notRun('Integration') : cpGet('integration')
 if (integration !== undefined) rememberIntegrationSelection(integration.artifact)
 if (integration === undefined) {
   const certified = await certifyIntegration('Integration Testing', resumedCorrection ? resumedCorrection.feedback : '')
@@ -2219,7 +2333,7 @@ const standingRulings = (result) =>
   (result && result.artifact && result.artifact.adjudication && Array.isArray(result.artifact.adjudication.rulings) && result.artifact.adjudication.rulings) ||
   []
 enterPhase('Adversarial')
-let adversarial = cpGet('adversarial')
+let adversarial = satisfiedOnly ? notRun('Adversarial') : cpGet('adversarial')
 if (adversarial === undefined) {
 adversarial = await runAdversarial('Adversarial Validation', resumedCorrection ? resumedCorrection.feedback : '', resumedRepair ? resumedRepair.priorRulings : [])
 if (adversarial.ok) await cpSave('adversarial', adversarial, { basis: cpBasis(green), standingRulings: standingRulings(adversarial) })
@@ -2322,8 +2436,11 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
       'failed: the integration suites would have to be re-run, which this gate cannot re-enter',
       'failed: the Green implementation would have to be redone, which this gate cannot re-enter',
     ],
+    // A satisfied contract deploys on Red's executed passing tests, which deploy.js accepts as
+    // `satisfiedRed` in place of Green evidence; a repaired Green is deployed as a Green.
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract, green: green.artifact,
+      contract,
+      ...(green.artifact && green.artifact.alreadySatisfied === true ? { satisfiedRed: red.artifact } : { green: green.artifact }),
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
       smokeTestFiles: smokeSuite,
       leaseScope,
@@ -2486,18 +2603,20 @@ const finalDeploy = deployReady.artifact || {}
 const deployedToDev = finalDeploy.deployedToDev === true
 const smokePassed = finalDeploy.smokePassed === true
 const iterationNote = deployIteration > 1 ? ` after ${deployIteration} deploy iterations` : ''
+// Read off the Green that was deployed: a correction replaces the stand-in with a real repair.
+const builtNothing = !!(green.artifact && green.artifact.alreadySatisfied === true)
 return {
   ...handback(
   true,
   'deployed-to-dev',
-  `${bead.id || 'work item'} built and ${
+  `${bead.id || 'work item'} ${builtNothing ? 'was already satisfied by passing tests (nothing built) and was' : 'built and'} ${
     deployedToDev
       ? `DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests ${smokePassed ? 'PASSING against the deployed dev endpoints' : 'NOT confirmed passing against the deployed dev endpoints'}`
       : 'gated through deploy WITHOUT a confirmed dev deployment'
   }. Landing the work in git — commit, push, pull request — is the separate Settle step ` +
     'reported under `settled` / `prUrl`, and outward-facing qa/prod rollout is a separate human-gated action that did not happen here.',
   {
-    stagesComplete: ['red', 'green', 'refactor', 'integration', 'adversarial', 'deployed-to-dev'],
+    stagesComplete: builtNothing ? ['red', 'deployed-to-dev'] : ['red', 'green', 'refactor', 'integration', 'adversarial', 'deployed-to-dev'],
     deployedToDev,
     smokePassed,
     deployIterations,
@@ -2514,6 +2633,7 @@ return {
   deployedToDev,
   smokePassed,
   deployIteration,
+  ...(builtNothing ? { alreadySatisfied: true, built: false } : {}),
 }
   })()
 } catch (err) {

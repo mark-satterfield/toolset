@@ -724,10 +724,15 @@ const refuse = (reason) => ({
   ...(dispatchDeaths().length ? { dispatchFailed: true, dispatchFailures: dispatchDeaths() } : {}),
 })
 
+// The provisioner's own `blocked` entries follow the reason in `refuse`, so the reason
+// names which of the three it was rather than repeating the first of them.
 if (!provisioned || provisioned.ok !== true || !String(provisioned.repoPath || '').trim()) {
   return refuse(
-    ((provisioned && Array.isArray(provisioned.blocked) && provisioned.blocked[0]) ||
-      'the workspace step returned no verified worktree')
+    !provisioned
+      ? 'the provisioner returned nothing, so no worktree was established'
+      : provisioned.ok !== true
+        ? 'the provisioner reported it could not establish a verified worktree (ok=false)'
+        : 'the provisioner reported ok=true but named no worktree path'
   )
 }
 

@@ -53,12 +53,17 @@ def headings(description: str) -> list[str]:
     one, and the index is what narrows a search before a PRD is opened.
 
     Returns:
-        The text of every line that starts with `#`, with the `#` characters and the
-        surrounding space stripped, empty ones left out.
+        The text of every line that starts with `#` outside a fenced code block, with the
+        `#` characters and the surrounding space stripped, empty ones left out. A `#` line
+        inside a fence is a comment in the code, not a section.
     """
     found = []
+    fenced = False
     for line in description.splitlines():
-        if not line.startswith("#"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if fenced or not line.startswith("#"):
             continue
         text = line.lstrip("#").strip()
         if text:

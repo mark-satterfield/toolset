@@ -486,8 +486,14 @@ const declaredSurfaces = Array.isArray(c.surfaces) ? c.surfaces : null
 let attackers
 let laneMode
 if (requested.length) {
-  attackers = requested
+  // A caller's trim names which attack classes apply; the two baseline lanes within it still
+  // run only when the change holds the kind of file they read, by the same evidence rule.
+  const baselineLane = { 'dependency-cve-auditor': depsChanged, 'data-exposure-scanner': sourceChanged }
+  attackers = requested.filter((n) => baselineLane[n] !== false)
   laneMode = 'trimmed-by-caller'
+  if (attackers.length < requested.length) {
+    log(`Adversarial: caller's trim narrowed by the change itself → [${attackers.join(', ') || 'none'}]`)
+  }
 } else if (declaredSurfaces) {
   attackers = [
     ...new Set([...BASELINE_ATTACKERS, ...declaredSurfaces.flatMap((s) => SURFACE_ATTACKERS[s] || [])]),
@@ -495,7 +501,7 @@ if (requested.length) {
   laneMode = 'derived-from-surfaces'
   log(
     `Adversarial lanes derived from surfaces [${declaredSurfaces.join(', ') || 'none'}]: ${attackers.join(', ')} ` +
-      `(baseline ${BASELINE_ATTACKERS.join(' + ')} always runs)`
+      `(baseline from the change: ${BASELINE_ATTACKERS.join(' + ') || 'none'})`
   )
 } else {
   attackers = allAttackers
@@ -511,12 +517,12 @@ if (requested.length) {
 // this the phase still paid an adjudicator session and a gate session to rule on an
 // empty findings list.
 if (!attackers.length) {
-  log('Adversarial: no attackable surface and no source or dependency change — no lane applies; skipping')
+  log(`Adversarial: no lane applies (${laneMode}) — no attackable surface and no source or dependency change; skipping`)
   return {
     findings: [],
     adjudication: { rulings: [], constitutiveOpen: 0 },
     constitutiveOpen: 0,
-    packetIntegrity: { ok: true },
+    packetIntegrity: { contradictions: [], unjustifiedReversals: [], unadjudicated: [], constitutiveOpen: 0, priorRulingsSeen: 0 },
     selfContradictory: false,
     attackers: [],
     laneMode: 'no-applicable-lane',
@@ -836,5 +842,5 @@ return {
   attackers,
   laneMode,
   surfaces: declaredSurfaces,
-  ledger: { ...ledger, ok: true },
+  ledger: { ...ledger, ok: constitutiveOpen === 0 && contradictions.length === 0 },
 }

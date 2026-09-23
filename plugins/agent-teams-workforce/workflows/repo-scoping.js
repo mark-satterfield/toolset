@@ -1,7 +1,7 @@
 export const meta = {
   name: 'repo-scoping',
   description:
-    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its work lands in, including the repositories holding material that must be REMOVED because it contradicts the PRD. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the WHOLE PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist or what material is already in them. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. A deterministic reduction then drops any placement whose path is malformed or was not in the survey, rather than trusting the claim. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, and the decider never surveys.',
+    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its work lands in, including the repositories holding material that must be REMOVED because it contradicts the PRD. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the WHOLE PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist or what material is already in them. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. A deterministic reduction then drops any placement whose path is malformed or was not in the survey, rather than trusting the claim; a ruling that drops or strands work is ruled once more with its faults named, and one that names a missing repository over an inventory not taken in this run (cached, or replayed) is ruled again over a live survey. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, and the decider never surveys.',
   phases: [
     {
       title: 'Shape and survey',
@@ -868,8 +868,9 @@ const cachedSurveyBrief = () =>
 // save-before-you-return discipline persistBrief imposes, to a second, shared location.
 // The freshness stamp is written by the session that did the surveying, because it is the
 // only participant that knows when the estate was actually looked at.
+// Only a surveyor that runs reads this, so a cache hit never rewrites the entry it read.
 const surveyCacheBrief =
-  SURVEY_CACHE_PATH && !surveyCacheHit
+  SURVEY_CACHE_PATH
     ? `
 
 ALSO SAVE THIS INVENTORY TO THE SHARED SURVEY CACHE, so the PRDs that follow do not re-survey the estate. Write ${SURVEY_CACHE_PATH} with the Write tool, creating its directory if it does not exist and replacing the whole file if it does (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly two keys:
@@ -878,10 +879,72 @@ ALSO SAVE THIS INVENTORY TO THE SHARED SURVEY CACHE, so the PRDs that follow do 
 Write no other file for this. If it fails, say so in your result and still return your result.`
     : ''
 
+// ── THE SURVEY DISPATCH ─────────────────────────────────────────────────────────
+// Run in phase 1 when no saved or cached inventory is usable, and again, live, when a ruling
+// made over an inventory taken before this run names a repository as missing or places work
+// in one that inventory did not list — see "A MISSING REPOSITORY IS NEVER RULED FROM AN OLD
+// INVENTORY" below.
+function runSurvey(label) {
+  return settleAgent(
+    `Inventory the repositories this project HAS. You are READ-ONLY: describe, change nothing, and create nothing.
+
+Use the polyrepo-steward's own knowledge and the polyrepo-* skills to answer. Do not open the polyrepo manifest yourself — repository knowledge flows through the steward, so that one participant owns it and the answer stays consistent with every other consumer.
+
+This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: this inventory is cached and reused for other PRDs, so it describes the estate, not one PRD's view of it.
+
+For every repository the project has, return:
+- repoPath — its absolute local path, exactly as the steward records it.
+- name — its repository name.
+- role — what kind of repository it is (service, infrastructure, shared library, frontend, tooling, docs).
+- owns — the capability it owns, in one line. This is the field the placement turns on: a PRD lands in the repository that already owns the capability far more often than in a new one.
+- lifecycle — active, deprecated, or unknown.
+- notes — anything a placement decision needs: it is empty, it is being retired, its conventions differ.
+
+A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. Enumerate every repository the project has.
+
+SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
+
+Also return:
+- conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
+- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}${surveyCacheBrief}`,
+    {
+      label,
+      phase: 'Shape and survey',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:polyrepo-steward',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['repositories', 'surveySummary'],
+        properties: {
+          repositories: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['repoPath', 'name', 'owns'],
+              properties: {
+                repoPath: { type: 'string' },
+                name: { type: 'string' },
+                role: { type: 'string' },
+                owns: { type: 'string' },
+                lifecycle: { type: 'string' },
+                notes: { type: 'string' },
+              },
+            },
+          },
+          conventions: { type: 'string' },
+          surveySummary: { type: 'string' },
+        },
+      },
+    }
+  )
+}
+
 // ── Phase 1: Shape and survey — two INDEPENDENT agents, concurrently ────────────
 phase('Shape and survey')
 
-const [shape, survey] = await parallel([
+const [shape, firstSurvey] = await parallel([
   // 1) GREENFIELD SHAPE. Note what is NOT in this prompt: no repository list, no
   //    seedRepos, no existingRepos, no material inventory. That absence is the mechanism,
   //    not an oversight.
@@ -954,63 +1017,11 @@ Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a resul
   // 2) SURVEY. Read-only recognition of what the project actually has. Repository
   //    knowledge belongs to the polyrepo-steward and is reached THROUGH it — the manifest
   //    is never read directly, here or anywhere else, so that one participant owns it.
-  () =>
-    replaySurvey ? Promise.resolve(replaySurvey) : settleAgent(
-      `Inventory the repositories this project HAS. You are READ-ONLY: describe, change nothing, and create nothing.
-
-Use the polyrepo-steward's own knowledge and the polyrepo-* skills to answer. Do not open the polyrepo manifest yourself — repository knowledge flows through the steward, so that one participant owns it and the answer stays consistent with every other consumer.
-
-This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: this inventory is cached and reused for other PRDs, so it describes the estate, not one PRD's view of it.
-
-For every repository the project has, return:
-- repoPath — its absolute local path, exactly as the steward records it.
-- name — its repository name.
-- role — what kind of repository it is (service, infrastructure, shared library, frontend, tooling, docs).
-- owns — the capability it owns, in one line. This is the field the placement turns on: a PRD lands in the repository that already owns the capability far more often than in a new one.
-- lifecycle — active, deprecated, or unknown.
-- notes — anything a placement decision needs: it is empty, it is being retired, its conventions differ.
-
-A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. Enumerate every repository the project has.
-
-SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
-
-Also return:
-- conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
-- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}${surveyCacheBrief}`,
-      {
-        label: 'scope:repository-survey',
-        phase: 'Shape and survey',
-        effort: 'low',
-        agentType: 'agent-teams-workforce:polyrepo-steward',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['repositories', 'surveySummary'],
-          properties: {
-            repositories: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['repoPath', 'name', 'owns'],
-                properties: {
-                  repoPath: { type: 'string' },
-                  name: { type: 'string' },
-                  role: { type: 'string' },
-                  owns: { type: 'string' },
-                  lifecycle: { type: 'string' },
-                  notes: { type: 'string' },
-                },
-              },
-            },
-            conventions: { type: 'string' },
-            surveySummary: { type: 'string' },
-          },
-        },
-      }
-    ),
+  () => (replaySurvey ? Promise.resolve(replaySurvey) : runSurvey('scope:repository-survey')),
 ])
 
+// Reassigned only by the live re-survey below.
+let survey = firstSurvey
 if (shape) checkLimit('Shape and survey', 'workUnits', shape.workUnits, undefined, 1)
 if (!shape || !Array.isArray(shape.workUnits) || !shape.workUnits.length) {
   return failDispatch('the greenfield shaper returned no work units — there is nothing to place, and a span cannot be ruled from nothing.', 'Shape and survey')
@@ -1022,7 +1033,7 @@ if (!survey || !Array.isArray(survey.repositories)) {
   return failDispatch('the repository survey returned no inventory — the ruling cannot recognize what exists, and every placement would be an invention.', 'Shape and survey')
 }
 
-const inventory = survey.repositories.filter((r) => r && hasText(r.repoPath))
+let inventory = survey.repositories.filter((r) => r && hasText(r.repoPath))
 log(
   `Shape and survey: ${shape.workUnits.length} greenfield work unit(s) against ${inventory.length} existing repositor(ies)` +
     `${architectureSkipped ? ' (architecture was skipped — the design is the existing one)' : ''}.`
@@ -1068,8 +1079,10 @@ const evidenceBlock = [
   ...(materialInventory ? [materialInventory] : []),
 ].join('\n\n')
 
-const ruling = replayRuling || await settleAgent(
-  `${rulingsBlock}Rule which repository hosts each unit of this work. You are DECIDING only: you did not produce the design below and you did not produce the inventory below, and you must not re-do either.
+/** One span ruling over the current `inventory` and `survey`, with a correction when re-ruling. */
+function ruleSpan(correction, label) {
+  return settleAgent(
+    `${rulingsBlock}Rule which repository hosts each unit of this work. You are DECIDING only: you did not produce the design below and you did not produce the inventory below, and you must not re-do either.
 
 The ordering that produced your inputs is binding on how you use them. A greenfield design was produced FIRST, deliberately blind to what exists. The inventory was produced separately. Your job is the third step: decide how the repositories that exist serve that design. Architectural best practice drives what is built — existing code does not. Where an existing repository serves the design, use it, because a new repository is a real and permanent cost. Where it does not, say so, and do not bend the design to fit it.
 
@@ -1086,7 +1099,7 @@ ${evidenceBlock}
 
 === THE WORK ===
 ${prdBlock}
-
+${correction}
 Rule, and return:
 
 - placements — one entry per repository that will host work. Each: repoPath (the absolute path EXACTLY as the inventory records it), repoName, workUnitIds (which units land there), rationale (why this repository, in terms of what it already owns and the boundary the design draws), and obsoletes (existing code in that repository this design supersedes and that should be deleted — an array, empty when there is none).
@@ -1100,74 +1113,71 @@ Rule, and return:
 Every work unit in the design must appear in exactly one placement or one newRepos entry. A unit you place nowhere is work that gets specified nowhere.
 
 Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}${cachedSurveyBrief()}`,
-  {
-    label: 'scope:rule-span',
-    phase: 'Rule the span',
-    effort: 'high',
-    agentType: 'agent-teams-workforce:architecture-decider',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['placements', 'newRepos', 'spanRationale'],
-      properties: {
-        placements: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['repoPath', 'repoName', 'workUnitIds', 'rationale'],
-            properties: {
-              repoPath: { type: 'string' },
-              repoName: { type: 'string' },
-              workUnitIds: { type: 'array', items: { type: 'string' } },
-              rationale: { type: 'string' },
-              obsoletes: { type: 'array', items: { type: 'string' } },
+    {
+      label,
+      phase: 'Rule the span',
+      effort: 'high',
+      agentType: 'agent-teams-workforce:architecture-decider',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['placements', 'newRepos', 'spanRationale'],
+        properties: {
+          placements: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['repoPath', 'repoName', 'workUnitIds', 'rationale'],
+              properties: {
+                repoPath: { type: 'string' },
+                repoName: { type: 'string' },
+                workUnitIds: { type: 'array', items: { type: 'string' } },
+                rationale: { type: 'string' },
+                obsoletes: { type: 'array', items: { type: 'string' } },
+              },
             },
           },
-        },
-        newRepos: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['proposedName', 'purpose', 'whyNoExistingRepoFits'],
-            properties: {
-              proposedName: { type: 'string' },
-              purpose: { type: 'string' },
-              workUnitIds: { type: 'array', items: { type: 'string' } },
-              whyNoExistingRepoFits: { type: 'string' },
-              homeKind: { type: 'string' },
+          newRepos: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['proposedName', 'purpose', 'whyNoExistingRepoFits'],
+              properties: {
+                proposedName: { type: 'string' },
+                purpose: { type: 'string' },
+                workUnitIds: { type: 'array', items: { type: 'string' } },
+                whyNoExistingRepoFits: { type: 'string' },
+                homeKind: { type: 'string' },
+              },
             },
           },
-        },
-        reclassified: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['workUnitId', 'ruledRepo', 'rationale'],
-            properties: {
-              workUnitId: { type: 'string' },
-              evidenceRepo: { type: 'string' },
-              ruledRepo: { type: 'string' },
-              rationale: { type: 'string' },
+          reclassified: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['workUnitId', 'ruledRepo', 'rationale'],
+              properties: {
+                workUnitId: { type: 'string' },
+                evidenceRepo: { type: 'string' },
+                ruledRepo: { type: 'string' },
+                rationale: { type: 'string' },
+              },
             },
           },
+          spanRationale: { type: 'string' },
         },
-        spanRationale: { type: 'string' },
       },
-    },
-  }
-)
+    }
+  )
+}
+
+let ruling = replayRuling || (await ruleSpan('', 'scope:rule-span'))
 
 if (!ruling || !Array.isArray(ruling.placements)) {
   return failDispatch('the span ruling returned nothing — which repositories this PRD lands in was not established, and the run will not fall back to where it was launched from.', 'Rule the span')
-}
-
-const rawPlacements = ruling.placements.filter((p) => p && hasText(p.repoPath))
-const newRepos = (Array.isArray(ruling.newRepos) ? ruling.newRepos : []).filter((n) => n && hasText(n.proposedName))
-if (!rawPlacements.length && !newRepos.length) {
-  return fail('the span ruling placed no work anywhere and proposed no repository — the ruling is empty, which is not the same as a PRD that lands nowhere.')
 }
 
 // ── Reduction: deterministic, and it is where the enforcement lives ─────────────
@@ -1177,49 +1187,112 @@ if (!rawPlacements.length && !newRepos.length) {
 // well-formed and is one the survey listed; anything else is dropped into `blocked` and
 // reported, because a composed path routes a Story, a worktree and a branch into a directory
 // that may not be there.
-
-const inventoryPaths = new Set(inventory.map((r) => r.repoPath.trim()))
-const placements = []
-const blocked = []
-const repos = []
-const obsoleteCode = []
-
-for (const p of rawPlacements) {
-  const repoPath = String(p.repoPath).trim()
-  const fault = pathFault('a ruled repository path', repoPath)
-  if (fault) {
-    blocked.push({ repoPath, reason: fault })
-    continue
-  }
-  if (!inventoryPaths.has(repoPath)) {
-    // The decider was told to place work only in repositories the survey listed. One it
-    // composed itself is either a typo or an invention, and both are refused for the same
-    // reason: nothing downstream would notice the difference.
-    blocked.push({
+function reduceRuling(r) {
+  const rawPlacements = r.placements.filter((p) => p && hasText(p.repoPath))
+  const newRepos = (Array.isArray(r.newRepos) ? r.newRepos : []).filter((n) => n && hasText(n.proposedName))
+  const inventoryPaths = new Set(inventory.map((x) => x.repoPath.trim()))
+  const placements = []
+  const blocked = []
+  const repos = []
+  const obsoleteCode = []
+  for (const p of rawPlacements) {
+    const repoPath = String(p.repoPath).trim()
+    const fault = pathFault('a ruled repository path', repoPath)
+    if (fault) {
+      blocked.push({ repoPath, reason: fault })
+      continue
+    }
+    if (!inventoryPaths.has(repoPath)) {
+      // The decider was told to place work only in repositories the survey listed. One it
+      // composed itself is either a typo or an invention, and both are refused for the same
+      // reason: nothing downstream would notice the difference.
+      blocked.push({
+        repoPath,
+        reason: 'not in the repository inventory the survey produced — a placement may only name a repository that was surveyed, so this is a composed path rather than a ruled one',
+      })
+      continue
+    }
+    if (repos.indexOf(repoPath) === -1) repos.push(repoPath)
+    placements.push({
       repoPath,
-      reason: 'not in the repository inventory the survey produced — a placement may only name a repository that was surveyed, so this is a composed path rather than a ruled one',
+      repoName: hasText(p.repoName) ? p.repoName : repoPath,
+      workUnitIds: Array.isArray(p.workUnitIds) ? p.workUnitIds.filter((x) => hasText(x)) : [],
+      rationale: p.rationale || '',
     })
-    continue
+    for (const o of Array.isArray(p.obsoletes) ? p.obsoletes : []) {
+      if (hasText(o)) obsoleteCode.push({ repoPath, what: o })
+    }
   }
-  if (repos.indexOf(repoPath) === -1) repos.push(repoPath)
-  placements.push({
-    repoPath,
-    repoName: hasText(p.repoName) ? p.repoName : repoPath,
-    workUnitIds: Array.isArray(p.workUnitIds) ? p.workUnitIds.filter((x) => hasText(x)) : [],
-    rationale: p.rationale || '',
-  })
-  for (const o of Array.isArray(p.obsoletes) ? p.obsoletes : []) {
-    if (hasText(o)) obsoleteCode.push({ repoPath, what: o })
+  // Work units that ended up nowhere: the decider placed them in a repository the reduction
+  // dropped, or it placed them nowhere at all. Either way their work is specified nowhere,
+  // and that has to be stated rather than inferred from a count.
+  const placedUnits = new Set()
+  for (const p of placements) for (const id of p.workUnitIds) placedUnits.add(id)
+  for (const n of newRepos) for (const id of Array.isArray(n.workUnitIds) ? n.workUnitIds : []) placedUnits.add(id)
+  const strandedUnits = shape.workUnits.filter((u) => !placedUnits.has(u.id))
+  return { rawPlacements, newRepos, placements, blocked, repos, obsoleteCode, strandedUnits }
+}
+let reduced = reduceRuling(ruling)
+
+// ── A MISSING REPOSITORY IS NEVER RULED FROM AN OLD INVENTORY ──────────────────
+//
+// "This work needs a repository the project does not have", "this path is not in the
+// inventory" and "no repository serves this unit" are all claims made against the INVENTORY.
+// When that inventory was not taken in this run — read back from the shared cache, or replayed
+// with a saved ruling — the claim may be about an estate that has since changed, and it is
+// exactly the claim a person acts on: the held Epic comes back after they create or confirm the
+// repository, and a replay of the ruling that asked for it would ask again, forever. So such a
+// ruling is not trusted. The estate is surveyed live and the span is ruled again over it, once.
+const surveyTakenHere = !surveyCacheHit && !replaySurvey
+let resurveyed = false
+let reruled = false
+if (!surveyTakenHere && (reduced.newRepos.length || reduced.blocked.length || reduced.strandedUnits.length)) {
+  log(
+    `Repo scoping: the ruling names ${reduced.newRepos.length} missing repositor(ies), drops ${reduced.blocked.length} placement(s) and strands ${reduced.strandedUnits.length} work unit(s) ` +
+      `over an inventory ${surveyCacheHit ? 'read from the shared cache' : 'saved by an earlier run'} — the estate is surveyed live and the span ruled again`
+  )
+  const live = await runSurvey('scope:repository-survey-live')
+  if (live && Array.isArray(live.repositories)) {
+    survey = live
+    inventory = live.repositories.filter((r) => r && hasText(r.repoPath))
+    surveyCacheHit = false
+    replaySurvey = null
+    resurveyed = true
+  } else {
+    log('Repo scoping: the live survey returned nothing — the ruling over the earlier inventory stands, and its missing repositories are reported as they are')
   }
 }
 
-// Work units that ended up nowhere: the decider placed them in a repository the reduction
-// dropped, or it placed them nowhere at all. Either way their work is specified nowhere,
-// and that has to be stated rather than inferred from a count.
-const placedUnits = new Set()
-for (const p of placements) for (const id of p.workUnitIds) placedUnits.add(id)
-for (const n of newRepos) for (const id of Array.isArray(n.workUnitIds) ? n.workUnitIds : []) placedUnits.add(id)
-const strandedUnits = shape.workUnits.filter((u) => !placedUnits.has(u.id))
+// ── A RULING THAT DROPS OR STRANDS WORK GETS ONE CORRECTION ─────────────────────
+//
+// A placement the reduction dropped, or a work unit placed nowhere, is work specified nowhere.
+// Re-asking the same question has no reason to come out differently; asking it again WITH the
+// faults named does, so the decider is shown what failed and rules once more. A re-survey above
+// is a changed input in its own right, so the span is ruled again over it the same way.
+function correctionFor(prior) {
+  const lines = []
+  if (resurveyed) lines.push('The inventory above was taken JUST NOW. The previous ruling was made over an older one; rule afresh over this one.')
+  for (const b of prior.blocked) lines.push(`- Placement ${JSON.stringify(b.repoPath)} was DROPPED: ${b.reason}. Use a repoPath exactly as the inventory records it, or propose a new repository.`)
+  if (prior.strandedUnits.length) lines.push(`- Work unit(s) placed NOWHERE: ${prior.strandedUnits.map((u) => u.id).join(', ')}. Every unit must appear in exactly one placement or one newRepos entry.`)
+  return lines.length ? `\n=== YOUR PREVIOUS RULING COULD NOT BE USED AS IT STOOD ===\n${lines.join('\n')}\n` : ''
+}
+if (resurveyed || reduced.blocked.length || reduced.strandedUnits.length) {
+  const correction = correctionFor(reduced)
+  if (!resurveyed) log(`Repo scoping: the ruling dropped ${reduced.blocked.length} placement(s) and stranded ${reduced.strandedUnits.length} work unit(s) — the decider rules once more, shown what failed`)
+  const again = await ruleSpan(correction, 'scope:rule-span-corrected')
+  if (again && Array.isArray(again.placements)) {
+    ruling = again
+    reduced = reduceRuling(again)
+    reruled = true
+  } else {
+    log('Repo scoping: the corrected ruling returned nothing — the first ruling stands with its faults reported')
+  }
+}
+
+const { rawPlacements, newRepos, placements, blocked, repos, obsoleteCode, strandedUnits } = reduced
+if (!rawPlacements.length && !newRepos.length) {
+  return fail('the span ruling placed no work anywhere and proposed no repository — the ruling is empty, which is not the same as a PRD that lands nowhere.')
+}
 
 const requiredHumanActions = []
 for (const n of newRepos) {
@@ -1275,6 +1348,8 @@ const ledger = {
   blockedCount: blocked.length,
   reclassifiedCount: (Array.isArray(ruling.reclassified) ? ruling.reclassified : []).length,
   spanVerified,
+  resurveyed,
+  reruled,
   // A truncated input is recorded as a FACT of the run, next to the counts, rather than
   // left to be inferred later from a ruling that reads perfectly well because the agent
   // never knew what it was missing.
@@ -1287,9 +1362,9 @@ return {
   ok: true,
   // True only when the shape, the survey and the ruling were ALL read back from saved files,
   // so no shaper, surveyor or decider ran and the caller may record the phase as reused.
-  ...(replayShape && replaySurvey && replayRuling && !surveyCacheHit ? { resumed: true } : {}),
+  ...(replayShape && replaySurvey && replayRuling && !surveyCacheHit && !reruled ? { resumed: true } : {}),
   // The saved outputs actually read back and used in place of their sessions.
-  replayed: [replayShape && 'shape', replaySurvey && !surveyCacheHit && 'survey', replayRuling && 'ruling'].filter(Boolean),
+  replayed: [replayShape && 'shape', replaySurvey && !surveyCacheHit && 'survey', replayRuling && !reruled && 'ruling'].filter(Boolean),
   // The span. Everything downstream that fans out per repo reads this and only this.
   repos,
   placements,

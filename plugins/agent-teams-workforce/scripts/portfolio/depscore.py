@@ -22,6 +22,8 @@ elaboration (`--task`, `blocks` edges between Tasks). A Task elaboration wrote c
                       is applicable before anything is written: every edge joins two beads
                       of the level, touches the item and carries a reason, and every owned
                       edge standing on it is kept or withdrawn with a reason
+    withdraw-edge     withdraw one standing owned edge, recording why, so no later
+                      assessment sets it again without answering that reason
     apply-edges       apply one item's edge DIFF (`--edges` with `--epic` or `--task`)
                       through `bd dep` as the level's type, never touching a hand-made edge
                       or an edge that does not touch the item, converting any owned edge
@@ -726,7 +728,7 @@ def run(args: argparse.Namespace) -> dict:
             judged=split_ids(args.judged),
             owner=args.owner,
             done=args.done,
-            # Paths, not bead ids — `split_ids` validates an id shape these would fail.
+            # Paths, not bead ids, so they are split here rather than by `split_ids`.
             sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
             sad_root=args.sad_root,
         )

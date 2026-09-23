@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-intent',
   description:
-    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then review it in parallel (security scan + cost impact). On a blocking cost finding the maker re-runs with checker feedback (bounded 2 passes), and security is re-checked on the rewritten intent; a cost finding still blocking after that leaves the intent not ready. Returns a top-level `ready`. Read-only review — no agent judges its own artifact.',
+    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then review it in parallel (security scan + cost impact). On a blocking security or cost finding the maker re-runs with checker feedback (bounded 2 passes) and both checkers review the rewrite; a finding still blocking after that leaves the intent not ready. Returns a top-level `ready`. Read-only review — no agent judges its own artifact.',
   phases: [
     { title: 'Provisioning intent', detail: 'cdk-infrastructure-designer authors the intent' },
     { title: 'Review', detail: 'independent security scan + cost-impact review' },
@@ -286,7 +286,7 @@ async function settleAgent(prompt, opts) {
 // args: {
 //   change: { id?, title?, description?, repoPath? },  // the change driving provisioning
 //   feedback?: string,                                  // gate feedback from a composite re-run
-//   maxCostLoops?: number,                              // maker<->cost-reviewer passes (default 2)
+//   maxCostLoops?: number,                              // maker<->reviewer passes (default 2)
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const change = a.change || {}
@@ -300,13 +300,13 @@ Repository: ${repo}`
 // ── Phase 1: Provisioning intent (maker) ──────────────────────────────────────
 phase('Provisioning intent')
 
-// Maker prompt is a factory so the cost loop can re-run it with feedback.
+// Maker prompt is a factory so the review loop can re-run it with feedback.
 function intentPrompt(feedback) {
   return `Produce the concrete provisioning intent for the change below. You are the MAKER — author the intent only; you do not judge it. Work within the repository at: ${repo}
 
 ${changeHeader}
 ${a.feedback ? `\nUpstream gate feedback to address:\n${a.feedback}` : ''}
-${feedback ? `\nCost-review feedback from the previous pass — revise the intent to address it without violating the S3 standard:\n${feedback}` : ''}
+${feedback ? `\nReview feedback from the previous pass — revise the intent to address it without violating the S3 standard:\n${feedback}` : ''}
 
 Deliver CDK-expressible provisioning intent:
 - resources: each AWS resource to provision, with the CDK-expressible properties. Every s3.Bucket MUST set versioning enabled and SSE-S3 (S3_MANAGED) encryption — these are non-negotiable.
@@ -363,10 +363,10 @@ const dispatchFailedResult = (who) => ({
 })
 if (!intent) return dispatchFailedResult('the cdk-infrastructure-designer')
 
-// ── Phase 2: Review (independent checkers; cost can drive a bounded maker loop) ─
+// ── Phase 2: Review (independent checkers; either can drive a bounded maker loop) ─
 phase('Review')
 
-// Security scan is independent of the maker and does not change between cost passes.
+// Security scan: independent of the maker, re-run on every intent the maker produces.
 const scanSecurity = (currentIntent, label) =>
   settleAgent(
   `Independently scan this provisioning intent for security misconfiguration — public exposure, missing encryption, over-broad IAM, unencrypted/unversioned buckets, insecure defaults. You are an independent scanner — you did not author the intent and you do not modify it.
@@ -405,8 +405,8 @@ Report each finding with a severity. Encryption/versioning omissions on any S3 b
   }
 )
 
-// Cost review may reject; on a blocking finding re-run the MAKER (segregation of
-// duties: the cost reviewer never edits the intent) up to MAX_COST_LOOPS passes.
+// Cost review: independent of the maker (segregation of duties — a reviewer never edits the
+// intent). A blocking finding from either reviewer re-runs the MAKER, below.
 async function reviewCost(currentIntent, pass) {
   return await settleAgent(
     `Independently review the COST IMPACT of this provisioning intent. You are an independent reviewer — you did not author the intent and you do not modify it.
@@ -448,48 +448,47 @@ Estimate the recurring + one-time cost drivers at the load this change and the p
   )
 }
 
-// The two independent first-pass checkers, dispatched together. Each reads the intent as
-// `makeIntent` returned it and nothing else; the cost LOOP below is sequential because every
-// pass after the first reads an intent the maker has since rewritten.
+// The two independent checkers, dispatched together on every intent the maker produces. Each
+// reads the intent as `makeIntent` returned it and nothing else.
 //
 // There is no separate freshness check. The intent is authored in this same run by a maker
 // that reads the repository's CDK code and dependency versions, so a dependency-change check
 // on it had no time gap to find drift in; construct and property errors surface in the synth
 // that Red, Green and Deploy each run.
-let [securityFindings, costFindings] = await parallel([() => scanSecurity(intent), () => reviewCost(intent, 1)])
+const review = (currentIntent, pass) =>
+  parallel([
+    () => scanSecurity(currentIntent, pass > 1 ? `review:security:pass-${pass}` : 'review:security'),
+    () => reviewCost(currentIntent, pass),
+  ])
+let [securityFindings, costFindings] = await review(intent, 1)
 if (!securityFindings || !costFindings) {
   return dispatchFailedResult('an independent intent checker')
 }
 
-let costResolved = costFindings.blocking !== true
-let rewritten = false
-
-for (let pass = 2; pass <= MAX_COST_LOOPS && !costResolved; pass++) {
-  log(`Cost review blocking — re-running cdk-infrastructure-designer (pass ${pass}/${MAX_COST_LOOPS})`)
-  // A blocking security finding on the intent being rewritten is fixed in the same pass;
-  // otherwise the rewrite is re-scanned, blocks again, and the whole mini re-runs at G1.
-  const securityBlock =
+// A blocking finding from EITHER checker sends the intent back to the maker, bounded by
+// MAX_COST_LOOPS passes, and both checkers review the rewrite: a rewrite for cost can open a
+// security hole, and a rewrite for security can change the cost.
+const blockingNow = () => securityFindings.blocking === true || costFindings.blocking === true
+for (let pass = 2; pass <= MAX_COST_LOOPS && blockingNow(); pass++) {
+  log(`Intent review blocking (${[securityFindings.blocking === true ? 'security' : '', costFindings.blocking === true ? 'cost' : ''].filter(Boolean).join(' + ')}) — re-running cdk-infrastructure-designer (pass ${pass}/${MAX_COST_LOOPS})`)
+  const revisionFeedback = [
+    costFindings.blocking === true ? costFindings.feedback || JSON.stringify(costFindings.findings || []) : '',
     securityFindings.blocking === true
-      ? `\n\nThe security scan also blocked this intent — fix these in the same revision:\n${JSON.stringify(securityFindings.findings || [])}`
-      : ''
-  const revised = await makeIntent(`${costFindings.feedback || ''}${securityBlock}`, pass)
+      ? `The security scan blocked this intent — fix these in the same revision:\n${JSON.stringify(securityFindings.findings || [])}`
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  const revised = await makeIntent(revisionFeedback, pass)
   if (!revised) return dispatchFailedResult('the cdk-infrastructure-designer')
   intent = revised
-  rewritten = true
-  costFindings = await reviewCost(intent, pass)
-  if (!costFindings) return dispatchFailedResult('the cost-impact-reviewer')
-  costResolved = costFindings.blocking !== true
+  ;[securityFindings, costFindings] = await review(intent, pass)
+  if (!securityFindings || !costFindings) return dispatchFailedResult('an independent intent checker')
 }
 
-// The security verdict above was about the FIRST intent. When the cost loop rewrote it, the
-// scan is re-run on the intent that is actually returned.
-if (rewritten) {
-  securityFindings = await scanSecurity(intent, 'review:security:rescan')
-  if (!securityFindings) return dispatchFailedResult('the infrastructure-security-scanner')
-}
-
-// A cost finding still blocking after the bounded maker loop leaves the intent not ready.
-if (!costResolved) log(`Cost review still blocking after ${MAX_COST_LOOPS} maker pass(es) — the intent is not ready`)
+const costResolved = costFindings.blocking !== true
+// A finding still blocking after the bounded maker loop leaves the intent not ready.
+if (blockingNow()) log(`Intent review still blocking after ${MAX_COST_LOOPS} maker pass(es) — the intent is not ready`)
 
 // `ready` is at the top level: infra-change Gate 1 checks it directly.
 const ready = securityFindings.blocking !== true && costResolved

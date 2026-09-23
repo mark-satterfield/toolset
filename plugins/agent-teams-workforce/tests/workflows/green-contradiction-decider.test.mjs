@@ -120,7 +120,7 @@ test('the re-authored Red gate makes the ruling BINDING, not advisory', async ()
 test('no ruling means the run STOPS and says so — re-authoring an unresolved contradiction cannot converge', async () => {
   const { result, calls } = await runWithContradiction({ ruling: null })
   assert.equal(result.ok, false)
-  assert.equal(result.stage, 'green')
+  assert.equal(result.stage, 'agent-dispatch-failed', 'a dead decider is the harness failing, not the work')
   assert.match(result.headline, /assert opposite outcomes for the same input/, 'the headline must name the real blocker')
   assert.match(result.headline, /returned no ruling/, 'and that it was the decider that produced nothing')
   const reds = workflowCalls(calls, 'agent-teams-workforce:tdd-red')

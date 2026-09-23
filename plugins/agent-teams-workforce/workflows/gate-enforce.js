@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-enforce',
   description:
-    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — can never block, so it is recorded as a flag and never adjudicated. Only CONSTITUTIVE criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate; a gate with no constitutive criterion passes on its checks with no session at all. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. Enforces segregation of duties: the judge never produced the work it judges.',
+    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — can never block, so it is recorded as a flag and never adjudicated. Only CONSTITUTIVE criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate; a gate with no constitutive criterion passes on its checks with no session at all. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. A blocking verdict that names no reason is asked again once with the defect named, and a second reasonless one comes back as `malformedVerdict`, never as a finding against the work. Enforces segregation of duties: the judge never produced the work it judges.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -454,7 +454,18 @@ if (structural) {
 }
 // Structural first, so the feedback on a broken artifact names what is missing before it
 // names anything a caller's own check observed about it.
-const checks = [...structuralChecks, ...(Array.isArray(a.checks) ? a.checks : [])]
+// A check that is not an object with a field names nothing to measure; reading one used to
+// throw, which ended the run from inside a read-only gate.
+const checks = [...structuralChecks, ...(Array.isArray(a.checks) ? a.checks : []).filter((c) => c && typeof c === 'object' && typeof c.field === 'string' && c.field)]
+// Non-empty means something is THERE: a list of blank strings (`smokeTestFiles: [""]`) or an
+// empty object is not a smoke suite, a test file or a bead set, however many slots it has.
+function hasContent(value) {
+  if (value === undefined || value === null) return false
+  if (typeof value === 'string') return value.trim().length > 0
+  if (Array.isArray(value)) return value.some((v) => hasContent(v))
+  if (typeof value === 'object') return Object.keys(value).length > 0
+  return true
+}
 function asText(value) {
   if (value === undefined || value === null) return ''
   if (typeof value === 'string') return value
@@ -470,7 +481,7 @@ const checkResults = checks.map((chk) => {
   const observed = JSON.stringify(value)
   let evidence = `observed ${chk.field} = ${observed !== undefined && observed.length > 300 ? `${observed.slice(0, 300)}… (${observed.length} characters)` : observed}`
   if (Object.prototype.hasOwnProperty.call(chk, 'equals')) met = value === chk.equals
-  else if (chk.nonEmpty) met = Array.isArray(value) ? value.length > 0 : String(value ?? '').trim().length > 0
+  else if (chk.nonEmpty) met = hasContent(value)
   else if (chk.matches || chk.notMatches) {
     const source = chk.matches || chk.notMatches
     const text = asText(value)
@@ -564,8 +575,8 @@ const calibrationBlock = a.calibration
   ? `\nCALIBRATION FOR THIS GATE — read before ruling. It states what this specific gate must block on and what it must not:\n${a.calibration}\n`
   : ''
 
-const verdict = await settleAgent(
-  `You are the phase-gate-enforcer — an INDEPENDENT gate authority. You did not produce this work; you only judge it. Do NOT modify the artifact.
+const askEnforcer = (retryNote, label) => settleAgent(
+  `${retryNote}You are the phase-gate-enforcer — an INDEPENDENT gate authority. You did not produce this work; you only judge it. Do NOT modify the artifact.
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
 
@@ -586,7 +597,7 @@ READING BUDGET (binding): the artifact is quoted above in full and the determini
 
 For each criterion, state whether it is met with evidence, quoting the criterion text exactly.`,
   {
-    label: `gate:${a.gate || a.phaseName || 'phase'}`,
+    label,
     // The enforcer adjudicates a short structured artifact against a handful of stated
     // criteria, with the mechanical part already settled above and a binding reading
     // budget below. That is a medium-effort judgment, and at `high` it was ~9% of the
@@ -620,6 +631,8 @@ For each criterion, state whether it is met with evidence, quoting the criterion
     },
   }
 )
+const GATE_LABEL = `gate:${a.gate || a.phaseName || 'phase'}`
+const verdict = await askEnforcer('', GATE_LABEL)
 
 // ── The class is BINDING, not advisory ────────────────────────────────────────
 //
@@ -629,68 +642,87 @@ For each criterion, state whether it is met with evidence, quoting the criterion
 // paraphrased constitutive failure pass. Entries restating a settled deterministic check
 // are excluded: those were measured and held. Competitive criteria were never sent to the
 // judge, so they join the flags here.
-let ruled = verdict
-if (ruled && ruled.verdict) {
-  const settledLabels = new Set(checkResults.map((r) => r.criterion))
-  const unmet = (Array.isArray(ruled.criteria) ? ruled.criteria : []).filter((c) => c && c.met === false && !settledLabels.has(c.criterion))
-  const unmetConstitutive = unmet
-  if (competitiveFlags.length) {
-    ruled = { ...ruled, flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), ...competitiveFlags] }
-  }
+function ruleOn(verdict) {
+  let ruled = verdict
+  if (ruled && ruled.verdict) {
+    const settledLabels = new Set(checkResults.map((r) => r.criterion))
+    const unmet = (Array.isArray(ruled.criteria) ? ruled.criteria : []).filter((c) => c && c.met === false && !settledLabels.has(c.criterion))
+    const unmetConstitutive = unmet
+    if (competitiveFlags.length) {
+      ruled = { ...ruled, flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), ...competitiveFlags] }
+    }
 
-  if (ruled.verdict === 'pass' && unmetConstitutive.length) {
-    const detail = unmetConstitutive.map((c) => `${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`).join('; ')
-    log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the enforcer returned PASS with an unmet CONSTITUTIVE criterion — a constitutive failure is never a pass. Converting to LOOP: ${detail}`)
-    ruled = {
-      ...ruled,
-      verdict: 'loop',
-      feedback: `A constitutive criterion is unmet, which is a hard stop: ${detail}. ${ruled.feedback || ''}`.trim(),
-      classOverride: 'pass-converted-to-loop: unmet constitutive criterion',
+    if (ruled.verdict === 'pass' && unmetConstitutive.length) {
+      const detail = unmetConstitutive.map((c) => `${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`).join('; ')
+      log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the enforcer returned PASS with an unmet CONSTITUTIVE criterion — a constitutive failure is never a pass. Converting to LOOP: ${detail}`)
+      ruled = {
+        ...ruled,
+        verdict: 'loop',
+        feedback: `A constitutive criterion is unmet, which is a hard stop: ${detail}. ${ruled.feedback || ''}`.trim(),
+        classOverride: 'pass-converted-to-loop: unmet constitutive criterion',
+      }
+    }
+
+    // ── A VERDICT THAT RECORDS NO REASON IS A DEFECT, NOT A RULING ───────────────
+    //
+    // Across the recorded runs, seventeen gates exhausted their retries and killed the run.
+    // Six of those final verdicts named nothing at all — no unmet criterion, no flag, no
+    // feedback — and one exhaustion was ruled `constitutive` on empty findings AND an empty
+    // rationale. A retry against an empty answer has nothing to fix, so it meets the same
+    // wall, spends the loop budget, and every artifact the run had already paid for is
+    // discarded on the strength of a judgment that stated no reason.
+    //
+    // So a verdict that still BLOCKS after the class conversion above, while naming no
+    // unmet criterion, no flag and no feedback, is treated as a malformed verdict rather
+    // than a ruling on the work. It is surfaced the way this file already surfaces a broken
+    // gate rather than broken work — an `escalate` carrying the gate and the phase by name
+    // (see the empty-criteria refusal far above) — so the caller reports a defect in the
+    // judgment instead of silently ruling the work constitutive.
+    //
+    // A verdict that DOES state a reason is untouched, however briefly it states it. This
+    // weakens no gate: nothing here overturns an itemised finding, and a `pass` cannot
+    // reach it.
+    const statedReason =
+      unmet.length > 0 ||
+      // The judge's own flags, not the competitive ones merged in above: those name no reason
+      // the judge gave.
+      (Array.isArray(verdict.flags) && verdict.flags.some((f) => String(f == null ? '' : f).trim())) ||
+      (typeof ruled.feedback === 'string' && ruled.feedback.trim().length > 0)
+    if ((ruled.verdict === 'loop' || ruled.verdict === 'escalate') && !statedReason) {
+      const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
+      const why =
+        `${where}: MALFORMED VERDICT — the enforcer returned ${ruled.verdict.toUpperCase()} but named no unmet criterion, ` +
+        'no flag and no feedback. A retry has nothing to fix and a ruling has nothing to weigh, so this is a defect in the ' +
+        'adjudication rather than a finding about the work. It is NOT a constitutive failure and must not be recorded as one.'
+      log(why)
+      ruled = {
+        ...ruled,
+        verdict: 'escalate',
+        feedback: why,
+        // Not the caller's first escalate target: nothing upstream is at fault.
+        escalateTo: ruled.escalateTo || 'upstream',
+        flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), `gate-malformed-verdict: ${where} stated no reason`],
+        malformedVerdict: true,
+        classOverride: 'malformed-verdict: the gate blocked without naming a reason',
+      }
     }
   }
-
-  // ── A VERDICT THAT RECORDS NO REASON IS A DEFECT, NOT A RULING ───────────────
-  //
-  // Across the recorded runs, seventeen gates exhausted their retries and killed the run.
-  // Six of those final verdicts named nothing at all — no unmet criterion, no flag, no
-  // feedback — and one exhaustion was ruled `constitutive` on empty findings AND an empty
-  // rationale. A retry against an empty answer has nothing to fix, so it meets the same
-  // wall, spends the loop budget, and every artifact the run had already paid for is
-  // discarded on the strength of a judgment that stated no reason.
-  //
-  // So a verdict that still BLOCKS after the class conversion above, while naming no
-  // unmet criterion, no flag and no feedback, is treated as a malformed verdict rather
-  // than a ruling on the work. It is surfaced the way this file already surfaces a broken
-  // gate rather than broken work — an `escalate` carrying the gate and the phase by name
-  // (see the empty-criteria refusal far above) — so the caller reports a defect in the
-  // judgment instead of silently ruling the work constitutive.
-  //
-  // A verdict that DOES state a reason is untouched, however briefly it states it. This
-  // weakens no gate: nothing here overturns an itemised finding, and a `pass` cannot
-  // reach it.
-  const statedReason =
-    unmet.length > 0 ||
-    // The judge's own flags, not the competitive ones merged in above: those name no reason
-    // the judge gave.
-    (Array.isArray(verdict.flags) && verdict.flags.some((f) => String(f == null ? '' : f).trim())) ||
-    (typeof ruled.feedback === 'string' && ruled.feedback.trim().length > 0)
-  if ((ruled.verdict === 'loop' || ruled.verdict === 'escalate') && !statedReason) {
-    const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
-    const why =
-      `${where}: MALFORMED VERDICT — the enforcer returned ${ruled.verdict.toUpperCase()} but named no unmet criterion, ` +
-      'no flag and no feedback. A retry has nothing to fix and a ruling has nothing to weigh, so this is a defect in the ' +
-      'adjudication rather than a finding about the work. It is NOT a constitutive failure and must not be recorded as one.'
-    log(why)
-    ruled = {
-      ...ruled,
-      verdict: 'escalate',
-      feedback: why,
-      escalateTo: ruled.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
-      flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), `gate-malformed-verdict: ${where} stated no reason`],
-      malformedVerdict: true,
-      classOverride: 'malformed-verdict: the gate blocked without naming a reason',
-    }
-  }
+  return ruled
+}
+let ruled = ruleOn(verdict)
+// ── A REASONLESS BLOCK IS ASKED AGAIN ONCE, WITH THE DEFECT NAMED ────────────────
+// Not a blind retry: the second brief says what was wrong with the first answer, which is a
+// changed instruction. Every caller of this gate reached it the same way, so the one re-ask
+// lives here rather than in each of them. A second reasonless block, or a dead re-ask, leaves
+// the malformed verdict standing for the caller to report as a judge that never ruled.
+if (ruled && ruled.malformedVerdict === true) {
+  const again = ruleOn(
+    await askEnforcer(
+      `YOUR PREVIOUS VERDICT ON THIS GATE WAS UNUSABLE: it returned ${String(verdict.verdict).toUpperCase()} but named no unmet criterion, no flag and no feedback, so nobody can act on it. Rule again. If a criterion below is unmet, mark it met=false with evidence and say in \`feedback\` exactly what must change; if none is unmet, the verdict is "pass".\n\n`,
+      `${GATE_LABEL} (retry: reasonless verdict)`
+    )
+  )
+  if (again) ruled = again
 }
 
 // THE JUDGE DIED. Not "the work failed" — see failDispatch above. The deterministic checks

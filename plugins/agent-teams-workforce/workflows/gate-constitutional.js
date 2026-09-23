@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2; the Spec-to-Deploy Gate 4 only when the adversarial packet is self-contradictory). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again. A self-contradictory packet skips the enforcer: the constitutional-agent rules which reading of each contradicted finding stands, and the script recounts the open constitutive findings from that ruling — pass at zero, escalate otherwise, never loop.',
+    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2; the Spec-to-Deploy Gate 4 only when the adversarial packet is self-contradictory). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again. A self-contradictory packet skips the enforcer: the constitutional-agent rules which reading of each contradicted finding stands, and the script recounts the open constitutive findings from that ruling — pass at zero, escalate otherwise, never loop. A blocking verdict that names no unmet criterion, feedback or conflict is asked again once with the defect named, and a second reasonless one comes back as `malformedVerdict`, never as a finding against the work.',
   phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals, over a persistent precedent store' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -548,8 +548,8 @@ const CRITERIA_JUDGMENT_MAX = criteria.length || 60
 
 phase('Gate (constitutional)')
 
-const verdict = await settleAgent(
-  `You are the phase-gate-enforcer at a CONSTITUTIONAL gate. These criteria are constitutive — they define validity. There is NO pass-with-flag here: if a criterion fails, the verdict is "loop" or "escalate", never "pass". Producing agents (e.g. implementers) CANNOT downgrade a finding. You only judge; you do not modify.
+const askConstitutionalEnforcer = (retryNote, label) => settleAgent(
+  `${retryNote}You are the phase-gate-enforcer at a CONSTITUTIONAL gate. These criteria are constitutive — they define validity. There is NO pass-with-flag here: if a criterion fails, the verdict is "loop" or "escalate", never "pass". Producing agents (e.g. implementers) CANNOT downgrade a finding. You only judge; you do not modify.
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
 
@@ -567,7 +567,7 @@ Return exactly one entry in \`criteria\` per criterion listed above, in the same
 
 If you encounter a NOVEL conflict between constitutive objectives that you cannot resolve from the criteria alone, set needsConstitutionalRuling=true and describe the conflict.`,
   {
-    label: `gate-const:${a.gate || a.phaseName || 'phase'}`,
+    label,
     effort: 'high',
     phase: 'Gate (constitutional)',
     agentType: 'agent-teams-workforce:phase-gate-enforcer',
@@ -602,6 +602,48 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
     },
   }
 )
+const GATE_LABEL = `gate-const:${a.gate || a.phaseName || 'phase'}`
+
+// ── A VERDICT THAT RECORDS NO REASON IS A DEFECT, NOT A RULING ───────────────────
+// The same rule gate-enforce applies: a LOOP or ESCALATE naming no unmet criterion, no
+// feedback and no declared conflict gives a retry nothing to fix. At G2 a reasonless LOOP
+// re-ran the whole architecture panel on empty feedback. It is asked again ONCE with the
+// defect named, which is a changed instruction and not a blind retry; a second reasonless
+// block is returned as `malformedVerdict`, which every caller reports as a judge that never
+// ruled rather than as a finding against the work.
+const isReasonless = (v) =>
+  !!v &&
+  (v.verdict === 'loop' || v.verdict === 'escalate') &&
+  !(Array.isArray(v.criteria) && v.criteria.some((cc) => cc && cc.met === false)) &&
+  !(typeof v.feedback === 'string' && v.feedback.trim()) &&
+  !(v.needsConstitutionalRuling === true && typeof v.conflict === 'string' && v.conflict.trim())
+let verdict = await askConstitutionalEnforcer('', GATE_LABEL)
+if (isReasonless(verdict)) {
+  log(`Constitutional gate ${a.gate || '?'}: the enforcer returned ${String(verdict.verdict).toUpperCase()} naming no unmet criterion, no feedback and no conflict — asking once more with the defect named`)
+  const again = await askConstitutionalEnforcer(
+    `YOUR PREVIOUS VERDICT ON THIS GATE WAS UNUSABLE: it returned ${String(verdict.verdict).toUpperCase()} but named no unmet criterion, no feedback and no conflict, so nobody can act on it. Rule again. If a criterion below is unmet, mark it met=false with evidence and say in \`feedback\` exactly what must change; if none is unmet, the verdict is "pass".\n\n`,
+    `${GATE_LABEL} (retry: reasonless verdict)`
+  )
+  if (again) verdict = again
+}
+if (isReasonless(verdict)) {
+  const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
+  const why =
+    `${where}: MALFORMED VERDICT — the enforcer returned ${verdict.verdict.toUpperCase()} twice naming no unmet criterion, no feedback and no conflict. ` +
+    'This is a defect in the adjudication, not a finding about the work, and it is NOT a constitutive failure.'
+  log(why)
+  return {
+    ...verdict,
+    verdict: 'escalate',
+    feedback: why,
+    // Not the caller's first escalate target: nothing upstream is at fault, and naming one
+    // (at G2, the PRD author) would send a person to change a document for a judge's silence.
+    escalateTo: verdict.escalateTo || 'upstream',
+    flags: [`gate-malformed-verdict: ${where} stated no reason`],
+    malformedVerdict: true,
+    classOverride: 'malformed-verdict: the gate blocked without naming a reason',
+  }
+}
 
 // ── THE `dispatchFailed` CONTRACT THIS GATE OWES ITS CALLER ──────────────────────
 //

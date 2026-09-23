@@ -44,9 +44,9 @@ Report it. Four cases, and they lead to different places:
   one open PR exists for the branch. Resume freely.
 - **Clean but UNLANDED** — anything else: no upstream, commits ahead of upstream,
   or no open PR for the branch. The work exists and nothing downstream can see it.
-  Route it to the composite's settle step (commit, push, the configured PR command) before
-  anything else. Do **not** resume on top of it and do **not** report the run as
-  done.
+  Land it with the `settle` workflow (commit, push, the configured PR command) before
+  anything else — see "Landing an unlanded tree" below. Do **not** resume on top of it and
+  do **not** report the run as done.
 - **Uncommitted TEST files** — Red got partway. Do **not** delete them. The Red
   phase now surveys existing tests and reuses ones that still fail, so a resume
   will pick them up rather than re-author them.
@@ -54,6 +54,30 @@ Report it. Four cases, and they lead to different places:
   closely: a half-applied fix may leave the repo in a state where the tests pass
   for the wrong reason. Report exactly which files, and do not resume until the
   operator has seen the list.
+
+### Landing an unlanded tree
+
+`settle` is the same step every build composite runs on its way out. It is handed the facts
+it would otherwise receive from the composite's `workspace` step, so read them from git
+rather than assuming them. `$ROOT` is the plugin root (`${CLAUDE_PLUGIN_ROOT}`); if
+`ATW_PR_COMMAND` is unset, report `ATW_PR_COMMAND is unset` and stop.
+
+```bash
+git -C "<worktree>" rev-parse --path-format=absolute --git-dir --git-common-dir   # must differ: a linked worktree
+git -C "<worktree>" branch --show-current
+git -C "<worktree>" symbolic-ref --short refs/remotes/origin/HEAD                  # the default branch, after origin/
+```
+
+```
+Workflow({scriptPath: "$ROOT/workflows/settle.js",
+  args: {repoPath: "<worktree>", prCommand: "$ATW_PR_COMMAND", branch: "<its branch>",
+         isLinkedWorktree: <true only when the two dirs differ>, defaultBranch: "<default branch>"}})
+```
+
+It returns `{ status }`: `reported` with `treeClean`, `hasWork`, `branch` and `prUrl`;
+`blocked` with the `reason` it refused (a main working tree, a default or detached branch,
+no usable PR command); or `error`. Never land a MAIN working tree this way — `settle`
+refuses it, and so should you.
 
 ## 2. Decide resume versus restart
 
@@ -83,6 +107,8 @@ byte-identical and change only the script.
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js", resumeFromRunId: "<runId>"})
 ```
 
+`$ROOT` is the plugin root (`${CLAUDE_PLUGIN_ROOT}`).
+
 `scriptPath` must be the same script the run started from. If you cannot determine
 which composite it was, read the run journal:
 
@@ -100,8 +126,8 @@ Restart, and say why, when any of these holds:
 
 1. The plugin version changed, or the script was edited.
 2. The work already on disk is known to be **wrong** — a resumed Red will survey
-   those tests and may accept them. Pass `skipSurvey: true` to force fresh
-   authoring, or clean the tree first.
+   those tests and may accept them. Clean the tree first; no run argument makes Red
+   ignore tests that are already there.
 3. The run died in Green with production code half-applied and no one has looked
    at the diff.
 

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. ONE independent read-only checker session takes an INVENTORY of the material that already exists for a PRD, and detects upstream dependency changes, in a single pass. THE PRD IS CANONICAL: what already ships is material, not authority — where it conforms to the PRD it is reused, where it contradicts the PRD it is removed, and where nothing exists it is built. No requirement is ever filtered out, narrowed, deferred, or written off because code exists, and the inventory is context for the phases downstream, never a filter on their scope. EVERY requirement the PRD states comes back with a status; a conforms/contradicts claim with no file:line, URL, endpoint or arn:aws behind it is demoted to absent, because reusing material that may not match the PRD is the expensive error. UI requirements are resolved against the cds design system, which is the authority for layout, shells, navigation, components and interaction: the hand-off bundle first (a packaged artifact carries a build-spec the app repo builds to), then the loose composed mock, then the PRD prose, and what is deployed is never authoritative — a deployed UI that differs from the packaged artifact is material to bring into line, never an open question. THE SEARCH BUDGET IS MEASURED FROM THE PRD, not fixed: the ceiling is this PRD\'s own requirement count at the stated per-requirement rate plus overhead, so every requirement can actually be looked at. A requirement the run did NOT examine comes back NAMED in `coverage.unexaminedRequirementIds` and in `unexaminedRequirements` — never reported as `absent`, because "I did not look" and "it is not there" are different claims and only one of them is a finding. Read-only: it writes no document at all and returns structured output only.',
+    'Leaf mini — PRD Reconciliation. ONE independent read-only checker session takes an INVENTORY of the material that already exists for a PRD, and detects upstream dependency changes, in a single pass. THE PRD IS CANONICAL: what already ships is material, not authority — where it conforms to the PRD it is reused, where it contradicts the PRD it is removed, and where nothing exists it is built. No requirement is ever filtered out, narrowed, deferred, or written off because code exists, and the inventory is context for the phases downstream, never a filter on their scope. EVERY requirement the PRD states comes back with a status; a conforms/contradicts claim with no file:line, URL, endpoint or arn:aws behind it is demoted to absent, because reusing material that may not match the PRD is the expensive error. UI requirements are resolved against the cds design system, which is the authority for layout, shells, navigation, components and interaction: the hand-off bundle first (a packaged artifact carries a build-spec the app repo builds to), then the loose composed mock, then the PRD prose, and what is deployed is never authoritative — a deployed UI that differs from the packaged artifact is material to bring into line, never an open question. THE SEARCH BUDGET IS MEASURED FROM THE PRD, not fixed: the ceiling is this PRD\'s own requirement count at the stated per-requirement rate plus overhead, so every requirement can actually be looked at. A requirement the run did NOT examine comes back NAMED in `coverage.unexaminedRequirementIds` and in `unexaminedRequirements` — never reported as `absent`, because "I did not look" and "it is not there" are different claims and only one of them is a finding. Read-only over the codebase: it writes no document, only its own result file when the caller names an artifacts directory, which a later run replays through the same reduction.',
   phases: [
     { title: 'Reconciliation checks', detail: 'one independent read-only checker session inventories the material and checks upstream dependencies' },
   ],
@@ -599,6 +599,13 @@ const labelEstimate = new Set(prdBody.match(/\b[A-Z]{2,6}-\d{2,3}\b/g) || []).si
 // cap: the estimator is biased high, and a budget too small is the costly error.
 const requirementEstimate = prdPathOnly ? MAX_REQUIREMENTS : Math.min(MAX_REQUIREMENTS, Math.max(MIN_REQUIREMENTS, headingEstimate, labelEstimate))
 const CALL_CEILING = requirementEstimate * CALLS_PER_REQUIREMENT + BUDGET_OVERHEAD
+// With only the PRD's path, the cap above is an upper bound, not this PRD's budget: stated as
+// the budget, it licensed four times the calls a typical PRD needs, once per repository in the
+// span. So the session is given the RULE and counts the requirements itself once it has read
+// the PRD, with the cap as the ceiling.
+const budgetLine = prdPathOnly
+  ? `Your budget is ${CALLS_PER_REQUIREMENT} tool calls for each requirement the PRD states, plus ${BUDGET_OVERHEAD} for the work that is not per-requirement. This script was handed only the PRD's path and could not count them, so count them once you have read it: a PRD of N requirements gets N × ${CALLS_PER_REQUIREMENT} + ${BUDGET_OVERHEAD} calls, and never more than ${CALL_CEILING}. That is this PRD's own size at the stated rate, so it lets you look at EVERY requirement.`
+  : `You have roughly ${CALL_CEILING} tool calls — that figure is this PRD's own requirement count at ${CALLS_PER_REQUIREMENT} calls each, plus overhead, so it is sized to let you look at EVERY requirement.`
 
 // ── WHAT THIS INVENTORY IS EXPECTED TO RETURN, AND WHY NONE OF IT IS STATED ──────
 //
@@ -624,12 +631,10 @@ const CONSULTED_EXPECTED = 120
 const CHANGE_FINDINGS_EXPECTED = 40
 const UNEXAMINED_EXPECTED = Math.max(200, requirementEstimate)
 log(
-  `Search budget: ~${requirementEstimate} requirement(s) ` +
-    (prdPathOnly
-      ? `(the cap: only the PRD's path was supplied, so its structure could not be read) `
-      : `estimated from the PRD structure (${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) `) +
-    `× ${CALLS_PER_REQUIREMENT} call(s) each ` +
-    `+ ${BUDGET_OVERHEAD} overhead = ${CALL_CEILING} tool calls.`
+  prdPathOnly
+    ? `Search budget: ${CALLS_PER_REQUIREMENT} call(s) per requirement + ${BUDGET_OVERHEAD} overhead, counted by the session from the PRD it reads (only its path was supplied), ceiling ${CALL_CEILING} tool calls.`
+    : `Search budget: ~${requirementEstimate} requirement(s) estimated from the PRD structure (${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) ` +
+        `× ${CALLS_PER_REQUIREMENT} call(s) each + ${BUDGET_OVERHEAD} overhead = ${CALL_CEILING} tool calls.`
 )
 const scopeBlock = singleRepo
   ? `THE ONE REPOSITORY YOU SEARCH — this run is scoped to it, and only it:
@@ -728,7 +733,7 @@ Return found=true with the file's full text in \`content\`, or found=false with 
     log(`Replay: the saved comparison is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — the reconciler runs`)
     return null
   }
-  if (!body || typeof body !== 'object' || !Array.isArray(body.requirements)) {
+  if (!body || typeof body !== 'object' || !Array.isArray(body.requirements) || !body.requirements.length) {
     log('Replay: the saved comparison holds no requirement inventory — the reconciler runs')
     return null
   }
@@ -909,7 +914,7 @@ thing, and an unevidenced claim is dropped downstream regardless.
 Upstream dependencies the PRD relies on:
 ${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') : '(none declared in args — discover them from the PRD text and the repositories above)'}
 
-Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved. Return this check under \`dependencyChanges\`:
+Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved.${singleRepo ? ' Check the dependencies THIS repository consumes for the PRD, as its manifests, lockfiles and imports show them: every other repository in the span runs its own copy of this check, so the whole-PRD sweep is not yours to repeat.' : ''} Return this check under \`dependencyChanges\`:
 - current: true if no invalidating upstream change is found, false otherwise.
 - changeFindings: each invalidating change (dependency, change describing what changed, invalidates describing which PRD assumption it breaks).
 - evidence: how you verified the dependency state (one paragraph, under 60 words).
@@ -918,7 +923,7 @@ Determine whether any upstream contract, shared schema, event, library version, 
 
 Your structured output IS the deliverable. Nothing you read reaches anybody except through it, so an exhaustive investigation that ends without it is worth exactly as much as no investigation at all — and it is how this phase has failed in practice: the reconciler explored until it ran out of room and returned nothing, so the whole run aborted and the work was re-dispatched from zero.
 
-You have roughly ${CALL_CEILING} tool calls — that figure is this PRD's own requirement count at ${CALLS_PER_REQUIREMENT} calls each, plus overhead, so it is sized to let you look at EVERY requirement. Spend it breadth-first: cover every requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call ${CALL_CEILING}, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not.
+${budgetLine} Spend it breadth-first: cover every requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. When it is spent, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not.
 
 AN UNEXAMINED REQUIREMENT IS NAMED, NEVER REPORTED AS \`absent\`. \`absent\` is a FINDING: it means you searched for the material and it is not there. "I ran out of budget before reaching it" is not that finding, and reporting it as one is the single most expensive error this phase can make. So return \`coverage\` on every run:
 - \`unexaminedRequirementIds\` — the id of EVERY requirement you did not actually search for, exactly as you numbered it in \`requirements\`. Empty when you covered them all, which is the expected outcome.
@@ -1041,7 +1046,10 @@ if (!reality) {
     { dispatchFailed: true, dispatchFailures: deaths }
   )
 }
-if (!Array.isArray(reality.requirements)) {
+// An EMPTY inventory is refused as well. Every PRD states at least one requirement and every
+// one of them comes back with a status, so a list of none is a comparison that was not made —
+// and read as an inventory it tells the spec author "nothing exists here" about every one.
+if (!Array.isArray(reality.requirements) || !reality.requirements.length) {
   return fail('the reality reconciler returned no requirement inventory — reconciliation cannot be reduced to an inventory.')
 }
 

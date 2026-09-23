@@ -1184,6 +1184,8 @@ const fileList = (x) =>
 let sadExtract = suppliedExtract
 // The §8 files, which the analysts search rather than being handed §8 whole (see analystSadBlock).
 let crossFiles = []
+// The saved batch files holding THIS run's typed §8 entries, by id (see crosscuttingIndex).
+let crossBatchFiles = []
 
 if (!sadExtract) {
   // ── Step 1: inventory, and what a previous run already saved. Neither needs the other,
@@ -1282,11 +1284,8 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     })
   })
   if (!jobs.length) {
-    return {
-      ok: false,
-      stage: 'extract',
-      error: `SAD inventory listed no files for sections 2, 4 or 8 at ${sadPath} — there is nothing to rule against, so no architecture decision was made.`,
-    }
+    const why = `SAD inventory listed no files for sections 2, 4 or 8 at ${sadPath} — there is nothing to rule against, so no architecture decision was made.`
+    return { ok: false, stage: 'extract', error: why, reason: why }
   }
 
   // Each lane covers its own gaps by splitting, so what comes back is not one result per
@@ -1390,6 +1389,10 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadPath,
     notes: notes.join('\n'),
   }
+  crossBatchFiles = outcomes
+    .filter((b) => b.out && b.feeds.some((f) => f.key === 'crosscuttingConcepts'))
+    .map((b) => shardSavePath(batchKey(b.entries)))
+    .filter(Boolean)
   const resumed = outcomes.filter((b) => b.resumed).length
   log(
     `SAD extracted whole: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ` +
@@ -1405,30 +1408,70 @@ if (!sadExtract) return { ok: false, stage: 'extract', error: 'SAD extraction pr
 const renderFeed = (title, entries) =>
   `${title} (${entries.length}):\n` +
   (entries.length ? entries.map((e) => `- [${e.id}] ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
-const sadExtractText = [
-  renderFeed('§2 Constraints', sadExtract.constraints),
-  renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
-  renderFeed('§8 Crosscutting Concepts', sadExtract.crosscuttingConcepts),
-].join('\n\n')
+// ── §8 AS AN INDEX, READ BY WHAT THE QUESTION TOUCHES ────────────────────────────
+// §8 printed whole was 437k characters on this project (1,183 entries), so every decide round
+// cost about 165k tokens at high effort. §2 Constraints and §4 Solution Strategy stay inline:
+// they are the binding rules and the strategy every option is ruled against, and they are a
+// quarter of the size. §8 becomes an index — every entry's id and the opening of its
+// statement, grouped by the file that states it — with where the full typed entries are, and
+// the reader is told to read IN FULL every entry the question touches. Nothing is dropped:
+// every id is listed, so an entry that binds is always in front of the reader to open.
+// The same text is in architecture.js and trd-authoring.js.
+const INDEX_SNIPPET_CHARS = 40
+function crosscuttingIndex(entries, batchFiles, sadHome) {
+  const byFile = new Map()
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (!e || typeof e !== 'object') continue
+    const m = String(e.source || '').trim().match(/^\/[^\s:#]+/)
+    const f = m ? m[0] : ''
+    if (!byFile.has(f)) byFile.set(f, [])
+    byFile.get(f).push(e)
+  }
+  const snip = (t) => {
+    const x = String(t || '').replace(/\s+/g, ' ').trim()
+    return x.length > INDEX_SNIPPET_CHARS ? `${x.slice(0, INDEX_SNIPPET_CHARS)}…` : x
+  }
+  const groups = [...byFile.entries()].map(
+    ([f, es]) =>
+      `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`}\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
+  )
+  const where = batchFiles.length
+    ? `The full typed entries (id, statement, source — the extracted packet, as JSON under the key "extract") are saved in:\n${batchFiles.map((f) => `- ${f}`).join('\n')}\nGrep those for an id to read its whole statement; where one is absent, read the entry in the SAD file named above it.`
+    : 'Read an entry in full in the SAD file it is listed under — grep that file for the id.'
+  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it.
+READ IN FULL every entry this question touches — its subject, the services, stores, events, data and boundaries involved, and every obligation that would bind what is being decided — before you rely on it or rule past it. An entry you did not open is not evidence either way. ${where}
+${groups.join('\n') || '- (the SAD states none)'}`
+}
 
 // The block every SAD-consuming prompt in this file carries. It is the architecture that
 // EXISTS; the decision under consideration changes it, and cannot be made without it.
-const sadBlock = `THE ARCHITECTURE AS IT STANDS — the arc42 SAD source feed (§2, §4, §8), extracted whole for this run from ${sadExtract.sadLocation || sadPath}.
-This is the document your work is ruled against and written back into. Every entry below is current, normative state. Cite entries by the id in brackets.
+const sadBlock = `THE ARCHITECTURE AS IT STANDS — the arc42 SAD source feed, extracted whole for this run from ${sadExtract.sadLocation || sadPath}: §2 and §4 in full, §8 as an index.
+This is the document your work is ruled against and written back into. Every entry is current, normative state. Cite entries by the id in brackets.
 ${sadExtract.notes ? `Extractor notes: ${sadExtract.notes}\n` : ''}
-${sadExtractText}`
+${renderFeed('§2 Constraints', sadExtract.constraints)}
+
+${renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy)}
+
+${crosscuttingIndex(sadExtract.crosscuttingConcepts, crossBatchFiles, sadExtract.sadLocation || sadPath)}`
 
 // ── WHAT THE ANALYSTS ARE HANDED: §2 AND §4 WHOLE, §8 AS FILES TO SEARCH ─────────
 // §8 is most of the SAD (about 1,200 entries and 110k tokens on this project), and each
 // analyst proposes from ONE lens under a ten-call budget, so printing it into every analyst
 // and the advisor paid for it five or six times per round. The analysts get the two short
-// sections whole and search §8 for the concepts their lens bears on; the decider, which
-// rules against the whole architecture, still gets the full `sadBlock`.
-if (!crossFiles.length) {
+// sections whole and search §8 for the concepts their lens bears on; the decider gets
+// `sadBlock`, which adds the whole §8 index.
+// True when the list below is read back off entry sources rather than taken from the
+// inventory: an entry whose source names no file adds nothing, so the list can be short.
+const crossFilesFromSources = !crossFiles.length
+if (crossFilesFromSources) {
   const seenFile = new Set()
   for (const e of sadExtract.crosscuttingConcepts || []) {
-    const f = String((e && e.source) || '').split(/[:#]/)[0].trim()
-    if (f.startsWith('/') && !seenFile.has(f)) {
+    // The leading absolute path only. Extractors write `source` as `<file>:<anchor>`, and also
+    // as `<file> §8` — splitting on ':' alone kept ` §8` on the path, so every analyst was told
+    // to grep a file that does not exist.
+    const m = String((e && e.source) || '').trim().match(/^\/[^\s:#]+/)
+    const f = m ? m[0] : ''
+    if (f && !seenFile.has(f)) {
       seenFile.add(f)
       crossFiles.push(f)
     }
@@ -1440,7 +1483,7 @@ ${renderFeed('§2 Constraints', sadExtract.constraints)}
 ${renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy)}
 
 §8 Crosscutting Concepts holds ${sadExtract.crosscuttingConcepts.length} entries and is NOT printed here. Search it for the concepts your lens bears on — grep these files for the subjects of this decision, and read only the entries your searches hit — and cite each entry you rely on by the backticked tag that opens it:
-${crossFiles.length ? crossFiles.map((f) => `- ${f}`).join('\n') : `- the §8 Crosscutting Concepts section under ${sadPath}`}`
+${crossFiles.length ? crossFiles.map((f) => `- ${f}`).join('\n') : `- the §8 Crosscutting Concepts section under ${sadPath}`}${crossFiles.length && crossFilesFromSources ? `\n- and any other file in the §8 Crosscutting Concepts section under ${sadPath} — the list above is taken from the entries' sources and may not name every file` : ''}`
 
 // ── Phase 0: Triage ────────────────────────────────────────────────────────────
 // ONE read-only agent sizes the panel to the decision before anything is dispatched,
@@ -1964,7 +2007,7 @@ let analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
 // of duties — no proposer challenges its own proposal, and the challenger authored
 // nothing. The wave runs only over proposals that were actually produced, because a
 // settled decision (or an analysis-only panel) leaves nothing to challenge.
-const runChallengeWave = async () => {
+const runChallengeWave = async (label = 'challenge:all-lenses') => {
   const wave = await settleAgent(
     `You are the adversarial challenge panel for an architecture decision. You did NOT author any of the proposals below; you only stress them. Apply ALL FIVE lenses in one pass, returning each lens's findings under its own key. Do NOT author replacement options anywhere — only challenge. Keep every objection/risk/concern under 40 words.
 
@@ -1981,7 +2024,7 @@ ${proposalsText}
 
 READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.${persistBrief(ART, 'architecture-challenges.json', `your complete structured result (every key, exactly as you return it) plus the key "challengedOptions" holding exactly the string ${JSON.stringify(optionStamp(proposals))}, as ONE JSON object`)}`,
     {
-      label: 'challenge:all-lenses',
+      label,
       effort: 'medium',
       phase: 'Challenge',
       agentType: 'agent-teams-workforce:architecture-tradeoff-skeptic',
@@ -2116,6 +2159,25 @@ function challengeReason({ triggers, ambiguities }) {
   ].join(' | ')
 }
 
+// ── A WAVE THAT DIED IS NOT A WAVE THAT FOUND NOTHING ────────────────────────────
+// The wave runs because the decision is contested, and a dead challenger used to fold into
+// five empty lists that the decider read, under `ran: true`, as "the challengers found
+// nothing" — the clean bill a contested decision is the one kind that must not get by
+// default. Like a shrunken panel, this RECORDS and halts nothing: the decider is told the
+// scrutiny it was owed never happened, and `challengeWave.died` travels to the gate.
+function deadWave(ranReason, label) {
+  const detail = failureDetailFor(label)
+  const wave = {
+    ran: false,
+    died: true,
+    reason:
+      `challenge wave DIED — it was dispatched (${ranReason.replace(/^challenge ran: /, '')}) and returned nothing ` +
+      `(${(detail && detail.cause) || 'unrecorded'}${detail && detail.message ? `: ${detail.message.slice(0, 120)}` : ''}), so these options were never stressed`,
+  }
+  log(wave.reason)
+  return wave
+}
+
 let challengeResults = null
 let challengeWave = null
 const replayedWaveFits =
@@ -2146,6 +2208,7 @@ if (!settled && proposals.length && replayChallenges && allLensesReplayed && rep
     log(challengeWave.reason)
     phase('Challenge')
     challengeResults = await runChallengeWave()
+    if (!challengeResults) challengeWave = deadWave(challengeWave.reason, 'challenge:all-lenses')
   } else {
     // Recorded as a decision, not silence: the reason crosses back on the result so
     // the run journal shows the affirmative evidence this skip stands on.
@@ -2175,9 +2238,11 @@ let challenges = foldChallenges(challengeResults)
 // When the wave was SKIPPED, the decider must not read the empty set as "the
 // challengers found nothing" — the skip and its reason travel with the evidence.
 const challengesEvidence = () =>
-  challengeWave && challengeWave.ran === false
-    ? `(none — ${challengeWave.reason}. No challenger ran; an empty set here is a recorded skip, not a clean bill.)`
-    : challengesText
+  challengeWave && challengeWave.died === true
+    ? `(none — ${challengeWave.reason}. The challenger this contested decision was owed returned nothing: an empty set here is an ABSENT challenge, not a clean bill. Weigh the options' own cons and the analysts' contested reasons as the only adversarial evidence you have, and say in your rationale that no challenge wave reported.)`
+    : challengeWave && challengeWave.ran === false
+      ? `(none — ${challengeWave.reason}. No challenger ran; an empty set here is a recorded skip, not a clean bill.)`
+      : challengesText
 let challengesText = JSON.stringify(challenges, null, 2)
 // The same discipline as challengesEvidence, for the panel rather than the wave: an option set
 // missing a lens must not read to the decider as the whole panel's view. Empty on the normal
@@ -2284,7 +2349,7 @@ const DECISION_SCHEMA = {
 
 const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architecture given the evidence below. You do not analyze and you do not write the SAD.
 
-YOU HAVE THE SAD. Its source feed (§2, §4, §8) is printed below, extracted whole for this run — you are not ruling from the proposals alone. Your ruling is written back into those sections and becomes effective architecture, so rule AGAINST what they already state: an option that contradicts a standing entry is either wrong or is a deliberate supersession you must say you are making, naming the entry id. Do not go looking for the SAD on disk; it is in another repository and you have its content here.
+YOU HAVE THE SAD. Its source feed is below, extracted whole for this run — §2 and §4 in full, and §8 as an index of every entry with where to read it — so you are not ruling from the proposals alone. Your ruling is written back into those sections and becomes effective architecture, so rule AGAINST what they already state: an option that contradicts a standing entry is either wrong or is a deliberate supersession you must say you are making, naming the entry id. Open the §8 entries this ruling touches where the index says they are; do not survey the rest of the SAD.
 
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
@@ -2416,7 +2481,12 @@ Propose a NEW option set. Requirements for this round:
     phase('Challenge')
     challengeWave = { ran: true, reason: `challenge ran: re-proposal round ${round + 1} — ${challengeReason(r2)}` }
     log(challengeWave.reason)
-    challenges = foldChallenges(await runChallengeWave())
+    // Its own label: two dispatches sharing one label cannot be told apart in the journal or
+    // in `dispatchFailures`, which is read back by label.
+    const waveLabel = `challenge:all-lenses-r${round + 1}`
+    const wave = await runChallengeWave(waveLabel)
+    if (!wave) challengeWave = deadWave(challengeWave.reason, waveLabel)
+    challenges = foldChallenges(wave)
     challengesText = JSON.stringify(challenges, null, 2)
   } else {
     // The previous wave's findings were raised against options that no longer exist, so
@@ -2459,6 +2529,19 @@ const ruleChallenges = decision.ruleChallenges || []
 if (ruleChallenges.length) {
   log(`${ruleChallenges.length} rule challenge(s) raised — these are for the human owner, not applied by this run`)
 }
+// ── WHAT GOES TO THE OWNER, IN THE CHANNEL THE OWNER READS ───────────────────────
+// A rule challenge is addressed to the human owner, and so is an inadmissible verdict — only
+// a person can change the PRD or the rule that blocked every option. Both used to leave this
+// mini only as fields nothing downstream read, so they reached nobody. They are rendered here
+// as `requiredHumanActions`, the list a composite hands back and the host files in its human
+// queue.
+const decisionName = d.id || d.title
+const humanActions = ruleChallenges
+  .filter((rc) => rc && typeof rc === 'object')
+  .map(
+    (rc) =>
+      `RULE CHALLENGE from the architecture ruling on ${decisionName}: ${rc.rule} (${rc.source}) — recommended change: ${rc.recommendedChange}. Why: ${rc.rationale}`
+  )
 
 // A non-decision MUST NOT be written into the SAD. Recording "nothing was admissible"
 // as normative architecture is how a failed run becomes a permanent blocker.
@@ -2479,6 +2562,7 @@ if (!admissible) {
     admissible: false,
     deterministicFailure: true,
     reason: why,
+    requiredHumanActions: [`ARCHITECTURE BLOCKED for ${decisionName}: ${why}`, ...humanActions],
     error: 'no admissible option — the panel produced nothing the decider could rule on',
     blockingRules: decision.blockingRules || [],
     ruleChallenges,
@@ -2831,6 +2915,7 @@ return {
     : {}),
   admissible,
   ruleChallenges,
+  ...(humanActions.length ? { requiredHumanActions: humanActions } : {}),
   decideRounds,
   decisionRef: d.id || null,
   triage,

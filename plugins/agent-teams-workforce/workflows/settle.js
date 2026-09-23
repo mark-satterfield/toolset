@@ -404,12 +404,17 @@ async function settleRun() {
   const wt = settleRepoPath
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written through the contract' }
   if (!PR_COMMAND) {
-    // Absent, or refused by the allowlist: either way there is no command to run.
+    // Absent, or refused by the allowlist: either way there is no command to run, and the
+    // reason says which, because the two are fixed in different places.
+    const prFault = typeof a.prCommand === 'string' && a.prCommand ? pathFault('the PR command', a.prCommand) : null
     return {
       status: 'blocked',
       reason:
-        `settle has no PR command to land the work in ${wt} with: args.prCommand (the project's ATW_PR_COMMAND) ` +
-        'was not supplied as an absolute path to an executable. The work is left in the worktree.',
+        `settle has no PR command to land the work in ${wt} with: ` +
+        (prFault
+          ? `args.prCommand (the project's ATW_PR_COMMAND) was refused because ${prFault}`
+          : "args.prCommand (the project's ATW_PR_COMMAND) was not supplied as an absolute path to an executable") +
+        '. The work is left in the worktree.',
     }
   }
   // Before the path becomes command text in the prompt below. A path that could reshape
@@ -474,7 +479,7 @@ async function settleRun() {
         `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command, which runs inside the tree.\n` +
         `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
         `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to ${baseRef}, run \`git -C "${wt}" branch --unset-upstream\`. Never push to the default branch.\n` +
-        `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from ${baseRef}.\n` +
+        `3. \`git -C "${wt}" fetch origin ${baseRef.slice('origin/'.length)}\` so ${baseRef} is current — measured against a stale ref, work already merged reads as new work. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from ${baseRef}.\n` +
         `4. If hasWork, \`cd "${wt}" && ${PR_COMMAND} --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch and opens the pull request. NEVER open the PR any other way, and NEVER merge it. A PR that already exists for this head is success, not failure — report its URL.\n` +
         `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
       {

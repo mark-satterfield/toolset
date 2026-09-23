@@ -60,10 +60,11 @@ async function runInfra({ priorFindings, g1Verdicts, intentReturns } = {}) {
           g1Count += 1
           return v
         }
-        // Terminate the tail at the Red gate.
-        return { verdict: 'escalate', escalateTo: 'infra-intent' }
+        return { verdict: 'pass' }
       }
-      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t'], redConfirmed: true }
+      // Terminate the tail at Red, before its gate. A Red escalation would re-enter G1 once
+      // (it re-authors the intent), adding a G1 attempt this fixture does not count.
+      if (call.name === 'agent-teams-workforce:tdd-red') return { phaseBlocked: true, blockedReason: 'fixture stops here' }
       return {}
     },
   })

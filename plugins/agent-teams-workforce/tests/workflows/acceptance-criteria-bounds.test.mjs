@@ -79,7 +79,7 @@ test('the bound scales with the defects and never collapses to zero', async () =
   const ac0 = none.calls.find((c) => c.label === 'triage:expected-behavior')
   const arr0 = ac0.opts.schema.properties.acceptanceCriteria
   assert.match(ac0.prompt, /Between 1 and 2 criteria in total/)
-  assert.equal(arr0.items.properties.defectId.enum, undefined, 'an empty enum would make every criterion unsatisfiable')
+  assert.deepEqual(arr0.items.properties.defectId.enum, ['D1'], 'the root cause stands in as D1, so the enum is never empty and every criterion resolves to a defect')
 })
 
 test('the writer is given the REDIRECT TEST for repo-wide invariants', async () => {

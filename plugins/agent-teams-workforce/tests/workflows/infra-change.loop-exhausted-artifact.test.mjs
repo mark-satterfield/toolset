@@ -151,6 +151,7 @@ test('D4-AC4: the no-verdict and escalate exits still carry artifact === the att
   })
   const dEsc = escalated.detail
   assert.ok(dEsc, 'escalate run must journal its detail')
-  assert.equal(dEsc.escalate, 'infra-intent', "escalate exit must carry escalate === 'infra-intent'")
+  // G1 offers only `elaboration`, so a judge naming anything else is read back onto it.
+  assert.equal(dEsc.escalate, 'elaboration', "escalate exit must carry the declared target 'elaboration'")
   assert.deepEqual(dEsc.artifact, A2, 'escalate exit must carry artifact === attempt-1 phaseFn result')
 })

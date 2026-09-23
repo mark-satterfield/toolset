@@ -719,7 +719,9 @@ let prd = null
 let alignmentVerdict = null
 let feedback = ''
 let deadlocked = false
+let passesRun = 0
 for (let pass = 1; pass <= MAX_PASSES; pass++) {
+  passesRun = pass
   prd = await draftPRD(feedback)
   // Same guard, same reason: verifyAlignment reads `prd.title` and `prd.prd`.
   if (!prd) {
@@ -746,7 +748,12 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   // A misaligned verdict with empty feedback would re-run the maker on identical input.
   feedback = String(alignmentVerdict.feedback || '').trim() || unsatisfied.map((d) => `${d.dimension}: ${d.evidence}`).join('\n')
   log(`PRD draft: MISALIGNED pass ${pass}/${MAX_PASSES} — ${feedback || '(no feedback given)'}`)
-  if (pass === MAX_PASSES) deadlocked = true
+  // With nothing to act on, another draft is the same dispatch on the same input: a blind
+  // retry. The standoff goes to the decider now instead.
+  if (pass === MAX_PASSES || !feedback) {
+    deadlocked = true
+    break
+  }
 }
 
 // Deadlock: the maker and checker could not converge — the spec-decider rules.
@@ -754,7 +761,7 @@ let decision = null
 if (deadlocked) {
   log('PRD draft: maker-checker deadlock — escalating to spec-decider for a binding ruling')
   decision = await settleAgent(
-    `The prd-writer and the independent prd-alignment-verifier could not converge after ${MAX_PASSES} passes. Rule on the standoff. Your ruling is binding.
+    `The prd-writer and the independent prd-alignment-verifier could not converge after ${passesRun} pass(es)${feedback ? '' : ', and the checker named nothing the writer could act on'}. Rule on the standoff. Your ruling is binding.
 
 Latest checker feedback: ${feedback || '(none)'}
 
@@ -822,8 +829,8 @@ return {
     ? `PRD "${prd.title}" authored and ${aligned ? 'aligned' : 'accepted by ruling'}`
     : deciderDied
       ? 'the PRD did not align and the deadlock ruling returned nothing'
-      : `the PRD did not align within ${MAX_PASSES} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}`,
-  ...(ok ? {} : { error: deciderDied ? 'the PRD did not align and the deadlock ruling returned nothing' : `the PRD did not align within ${MAX_PASSES} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}` }),
+      : `the PRD did not align within ${passesRun} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}`,
+  ...(ok ? {} : { error: deciderDied ? 'the PRD did not align and the deadlock ruling returned nothing' : `the PRD did not align within ${passesRun} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}` }),
   ...(deciderDied ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') } : {}),
   request: request.id ? request.id : null,
   intakeBrief,

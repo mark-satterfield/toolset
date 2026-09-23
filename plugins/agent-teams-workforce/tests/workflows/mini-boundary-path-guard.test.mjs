@@ -77,6 +77,8 @@ const MINIS = [
     what: 'commits, opens a PR and deploys',
     args: (repoPath) => ({ contract: contract(repoPath), green: { greenConfirmed: true, evidence: 'e', changedFiles: ['a.py'] } }),
     dead: (r) => r.deployedToDev !== true && r.prOpened !== true,
+    // A deploy with no tree has nothing to deploy FROM: absence is refused on the input.
+    refusesAbsent: true,
   },
 ]
 
@@ -136,12 +138,17 @@ for (const mini of MINIS) {
     )
   })
 
-  test(`${mini.file}: an ABSENT repo path is not a fault — it has always meant "no tree established"`, async () => {
+  test(`${mini.file}: an ABSENT repo path is ${mini.refusesAbsent ? 'refused on the input' : 'not a fault — it has always meant "no tree established"'}`, async () => {
     const { result } = await runWorkflowScript(path.join(WF, mini.file), {
       args: mini.args(undefined),
       agentImpl: () => PERMISSIVE,
       workflowImpl: () => PERMISSIVE,
     })
-    assert.notEqual(result.ok, false, 'turning absence into a refusal would change what the mini DOES, not what it accepts')
+    if (mini.refusesAbsent) {
+      assert.equal(result.phaseBlocked, true, 'a deploy with no tree has nothing to deploy from')
+      assert.ok(mini.dead(result))
+    } else {
+      assert.notEqual(result.ok, false, 'turning absence into a refusal would change what the mini DOES, not what it accepts')
+    }
   })
 }

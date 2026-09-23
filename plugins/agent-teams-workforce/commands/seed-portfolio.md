@@ -69,9 +69,12 @@ Workflow({name: "agent-teams-workforce:seed-portfolio", args: {
 }})
 ```
 
-`ok` is false: stop and report. The seeding either stopped at an Epic (`stoppedAt`), and
-nothing was scored, or assessed every Epic and scoring failed (`scoring`); either way a
-resume with `--since <SINCE>` finishes it.
+`ok` is false: stop and report `stage` and `headline`. The seeding either refused its
+arguments (`stage: input` — correct the dispatch; nothing ran), stopped at an Epic
+(`stoppedAt`) and scored nothing, or assessed every Epic and scoring failed (`scoring`). In
+the last two a resume with `--since <SINCE>` finishes it; `stage: agent-dispatch-failed`
+means the sessions died rather than the work failing, and the same resume applies once the
+API is back.
 
 When `ok` is true, check what is left, from the tracker rather than the workflow's word:
 

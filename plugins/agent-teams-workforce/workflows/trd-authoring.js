@@ -383,6 +383,16 @@ if (!prdContent && !prdPath) {
 }
 
 const prdRef = prd.path || prd.id || '(inline content)'
+// The same refusal architecture.js makes, for the same reason: with neither a SAD path nor a
+// packet the caller already extracted, the inventory was sent to a placeholder string, found
+// nothing, and the phase failed as an extraction nobody could have made — then looped on it.
+const sadPathGiven = typeof sad.path === 'string' && sad.path.trim().startsWith('/')
+if (!sadPathGiven && !(a.sadExtract && typeof a.sadExtract === 'object' && ['constraints', 'solutionStrategy', 'crosscuttingConcepts'].every((k) => Array.isArray(a.sadExtract[k])))) {
+  const why =
+    `no SAD to author against — sad.path ${sad.path ? `${JSON.stringify(String(sad.path))} is not an absolute path` : 'is absent'} and no sadExtract was supplied. ` +
+    "A TRD's architecture obligations come from the SAD, so nothing was extracted or authored. Re-running changes nothing: set ATW_SAD_PATH for the run, or pass sad.path."
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
+}
 const sadRef = sad.path || '(SAD path not provided — ask before extracting)'
 const sadLayout = sad.sectionLayout || 'unknown (detect single-file vs one-file-per-section)'
 
@@ -925,6 +935,8 @@ const fileList = (x) =>
     .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0, mtime: Number(e.mtime) || 0 }))
 
 let sadExtract = suppliedExtract
+// The saved batch files holding THIS run's typed §8 entries, by id (see crosscuttingIndex).
+let crossBatchFiles = []
 
 if (!sadExtract) {
   // ── Step 1: inventory, and what a previous run already saved. Neither needs the other,
@@ -1132,6 +1144,10 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     sadLocation: (typeof inventory.sadLocation === 'string' && inventory.sadLocation) || sadRef,
     notes: notes.join('\n'),
   }
+  crossBatchFiles = outcomes
+    .filter((b) => b.out && b.feeds.some((f) => f.key === 'crosscuttingConcepts'))
+    .map((b) => shardSavePath(batchKey(b.entries)))
+    .filter(Boolean)
   const resumed = outcomes.filter((b) => b.resumed).length
   log(
     `SAD extracted whole: ${merged.constraints.length} constraint(s), ${merged.solutionStrategy.length} strategy statement(s), ` +
@@ -1146,12 +1162,47 @@ if (!sadExtract) return { ok: false, stage: 'extract', reason: 'SAD extraction p
 const renderFeed = (title, entries) =>
   `${title} (${entries.length}):\n` +
   (entries.length ? entries.map((e) => `- [${e.id}] ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
+// ── §8 AS AN INDEX, READ BY WHAT THE QUESTION TOUCHES ────────────────────────────
+// §8 printed whole was 437k characters on this project (1,183 entries), so every decide round
+// cost about 165k tokens at high effort. §2 Constraints and §4 Solution Strategy stay inline:
+// they are the binding rules and the strategy every option is ruled against, and they are a
+// quarter of the size. §8 becomes an index — every entry's id and the opening of its
+// statement, grouped by the file that states it — with where the full typed entries are, and
+// the reader is told to read IN FULL every entry the question touches. Nothing is dropped:
+// every id is listed, so an entry that binds is always in front of the reader to open.
+// The same text is in architecture.js and trd-authoring.js.
+const INDEX_SNIPPET_CHARS = 40
+function crosscuttingIndex(entries, batchFiles, sadHome) {
+  const byFile = new Map()
+  for (const e of Array.isArray(entries) ? entries : []) {
+    if (!e || typeof e !== 'object') continue
+    const m = String(e.source || '').trim().match(/^\/[^\s:#]+/)
+    const f = m ? m[0] : ''
+    if (!byFile.has(f)) byFile.set(f, [])
+    byFile.get(f).push(e)
+  }
+  const snip = (t) => {
+    const x = String(t || '').replace(/\s+/g, ' ').trim()
+    return x.length > INDEX_SNIPPET_CHARS ? `${x.slice(0, INDEX_SNIPPET_CHARS)}…` : x
+  }
+  const groups = [...byFile.entries()].map(
+    ([f, es]) =>
+      `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`}\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
+  )
+  const where = batchFiles.length
+    ? `The full typed entries (id, statement, source — the extracted packet, as JSON under the key "extract") are saved in:\n${batchFiles.map((f) => `- ${f}`).join('\n')}\nGrep those for an id to read its whole statement; where one is absent, read the entry in the SAD file named above it.`
+    : 'Read an entry in full in the SAD file it is listed under — grep that file for the id.'
+  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it.
+READ IN FULL every entry this question touches — its subject, the services, stores, events, data and boundaries involved, and every obligation that would bind what is being decided — before you rely on it or rule past it. An entry you did not open is not evidence either way. ${where}
+${groups.join('\n') || '- (the SAD states none)'}`
+}
+
 const extractText = [
   `SAD location: ${sadExtract.sadLocation || sadRef}`,
   ...(sadExtract.notes ? [`Extractor notes: ${sadExtract.notes}`] : []),
   renderFeed('§2 Constraints', sadExtract.constraints),
   renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
-  renderFeed('§8 Crosscutting Concepts', sadExtract.crosscuttingConcepts),
+  crosscuttingIndex(sadExtract.crosscuttingConcepts, crossBatchFiles, sadExtract.sadLocation || sadRef),
 ].join('\n\n')
 const prdText = prdContent
   ? prd.content
@@ -1231,7 +1282,7 @@ THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 
 2. THE OBLIGATIONS THE ARCHITECTURE IMPOSES, WHICH NO PRD WOULD EVER STATE. These have NO PRD parent and that is correct, not scope drift — and they are the reason this document exists. System uptime, low latency, code maintainability, security, failover, disaster recovery, specific infrastructure and CDK instructions, and observability: this system uses EVENTS as its observability mechanism — warnings and failures are emitted as events from services — so if this PRD results in a service being built, the TRD says WHICH EVENTS that service must emit, none of which is core feature functionality and none of which anyone would write in a PRD. The same class covers throughput and latency budgets, data modelling and schema design, API contracts, encryption, retention and auth protocols, technical debt and refactoring carried as part of this work, and monitoring and alerting. That list is OPEN, not closed — it illustrates the class, and THE SAD IS THE AUTHORITY on what actually belongs.
 
-WHERE THE SECOND KIND COMES FROM. Architecture runs BEFORE this phase, and its output is the SAD extract below — the crosscutting concepts section is where most of this class of obligation lives. Read it and ask what it demands of the thing this PRD builds, whether or not the PRD mentions it. You are not inventing these from general engineering knowledge; you are reading them out of the architecture that was just decided and turning them into requirements the build will honour. Nobody upstream supplies them and nothing downstream can discover them.
+WHERE THE SECOND KIND COMES FROM. Architecture runs BEFORE this phase, and its output is the SAD extract below — the crosscutting concepts section is where most of this class of obligation lives. It is given as an INDEX of every entry: go through it, and open in full every entry whose obligation could apply to anything this PRD builds — each service, store, bucket, API, event, data flow and boundary — whether or not the PRD mentions it, then ask what it demands. You are not inventing these from general engineering knowledge; you are reading them out of the architecture that was just decided and turning them into requirements the build will honour. Nobody upstream supplies them and nothing downstream can discover them.
 
 CITE THE SAD; DO NOT RESTATE IT. Turning an obligation into a requirement does NOT mean reproducing the architecture in requirement form. A requirement that names the obligation and cites where it is defined is complete and is the PREFERRED shape — in substance: "this service must emit the warning and failure events defined in <the SAD entry that defines them>". The obligation is stated, the authority is cited, nothing is copied. The SAD is the single home for the architecture, and a TRD that copies it creates a second copy that drifts. Never expand a crosscutting concept into prose here.
 

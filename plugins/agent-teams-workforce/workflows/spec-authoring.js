@@ -546,8 +546,9 @@ const DECISION_SCHEMA = {
     rulings: {
       type: 'array',
       // Exactly one per deadlocked artifact, and there are four reviewable artifacts.
-      // Stated in the brief and counted after the ruling: a fifth entry is dropped by the
-      // loop below, which is a far cheaper answer than discarding every ruling made.
+      // Stated in the brief and counted after the ruling: an entry naming an artifact that
+      // did not deadlock is dropped by the loop below, which is a far cheaper answer than
+      // discarding every ruling made.
       items: {
         type: 'object',
         additionalProperties: false,
@@ -789,7 +790,7 @@ function makerRules({ cites }) {
       (cites ? ', and record the specific gaps as open questions' : '') +
       '. A spec that states what it could not establish is usable; one that silently omits it is not.',
     cites
-      ? `REPORTING CEILINGS on what you WRITE, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\` and ${OPEN_QUESTIONS_MAX} in \`openQuestions\` — these carry your result to the next phase, not everything you saw. \`decisionIds\` has NO ceiling: it cites the SAD entries this artifact was designed against, and how many those are is the SAD's business. Cite every one.`
+      ? `REPORTING CEILINGS on what you WRITE: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\` and ${OPEN_QUESTIONS_MAX} in \`openQuestions\` — these carry your result to the next phase, not everything you saw. \`decisionIds\` has NO ceiling: it cites the SAD entries this artifact was designed against, and how many those are is the SAD's business. Cite every one.`
       : '',
     // WHY THE CITATION IS ON THE DOCUMENT AND NOT ONLY IN THE RESULT. When an architecture
     // decision changes, the impact pass has to FIND every item built on it. It finds them by
@@ -851,6 +852,26 @@ async function main(a) {
   const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
   const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document')
   const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each')
+  // With an artifact directory the documents on disk ARE the artifacts: a maker returns a
+  // pointer into its file as `content` rather than paying for the document twice, and every
+  // session that judges or corrects an artifact is told which file to read. Without one the
+  // `content` a maker returns is the only copy.
+  const docFor = ART
+    ? {
+        apiSpec: `${ART.dir}/spec-${artSlug}.md`,
+        eventContracts: `${ART.dir}/spec-${artSlug}.md`,
+        errorSpec: `${ART.dir}/spec-${artSlug}.md`,
+        dataModelSpec: `${ART.dir}/spec-${artSlug}.data-model.md`,
+        acceptance: `${ART.dir}/spec-${artSlug}.criteria.md`,
+      }
+    : null
+  const pointerNote = docFor
+    ? '\n\nThe document you save is what the reviewer reads, so `content` in your result need only be a one-line pointer to its section in that file.'
+    : ''
+  const savedDocsNote = (keys) =>
+    docFor
+      ? `\n\nTHE SAVED DOCUMENTS ARE THE ARTIFACTS: an artifact's \`content\` below may only point into its file. Read in full:${[...new Set(keys.map((k) => docFor[k]))].map((p) => `\n- ${p}`).join('')}`
+      : ''
 
   // A rerun whose spec artifacts are fresh needs this mini's OUTPUT, not its work. Checked
   // before the first maker is dispatched; a replay that yields nothing usable falls straight
@@ -922,7 +943,7 @@ async function main(a) {
 2. \`eventContracts\` — the event contracts/schemas. Dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema.
 3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
 
-${specMakerCtx}${contractsBrief}`,
+${specMakerCtx}${contractsBrief}${pointerNote}`,
         {
           label: 'author:contracts',
           phase: 'Author specs',
@@ -933,7 +954,7 @@ ${specMakerCtx}${contractsBrief}`,
       ),
     () =>
       settleAgent(
-        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${specMakerCtx}${dataModelBrief}`,
+        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${specMakerCtx}${dataModelBrief}${pointerNote}`,
         {
           label: 'author:data-model',
           phase: 'Author specs',
@@ -946,8 +967,8 @@ ${specMakerCtx}${contractsBrief}`,
       settleAgent(
         `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria for one repository — nothing past ${CRITERIA_MAX} is read, and a list heading past it is enumerating variants of behaviours you have already covered. NOTHING IS EVER DROPPED SILENTLY: if you deliberately leave a behaviour out — because the ceiling is close, or for any other reason — report it in \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered. An omission nobody knows about is a behaviour nobody builds.
-2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items; nothing past that is read.
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria for one repository: every one you return is kept, but a list heading past ${CRITERIA_MAX} is enumerating variants of behaviours you have already covered. NOTHING IS EVER DROPPED SILENTLY: if you deliberately leave a behaviour out — because the ceiling is close, or for any other reason — report it in \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered. An omission nobody knows about is a behaviour nobody builds.
+2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items.
 
 ${criteriaMakerCtx}${criteriaBrief}`,
         {
@@ -1056,10 +1077,10 @@ ${criteriaMakerCtx}${criteriaBrief}`,
 3. \`eventContracts\` — the event schemas: dot-form naming, standard envelope conformance, payload schema completeness and versioning, and that orchestration uses events (not Step Functions).
 4. \`acceptance\` — the acceptance criteria: each is unambiguous given/when/then; happy path, error paths, and boundaries are all covered; nothing is unverifiable.
 
-Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation. At most ${REVIEW_FINDINGS_MAX} findings per artifact, and nothing past that is read: a rejected artifact goes to a decider and then ONE correction by its maker, so a longer list is unactionable by construction.
+Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation. At most ${REVIEW_FINDINGS_MAX} findings per artifact: a rejected artifact goes to a decider and then ONE correction by its maker, so a longer list is unactionable by construction.
 
 Artifacts under review:
-${REVIEW_KEYS.map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}
+${REVIEW_KEYS.map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}${savedDocsNote(REVIEW_KEYS)}
 
 ${ctx}`,
     {
@@ -1119,7 +1140,7 @@ ${ctx}`,
     decision = await settleAgent(
       `The independent reviewer rejected one or more spec artifacts. You only RULE — you do not author or re-review.
 
-Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once — ${deadlocked.length} ruling(s), and nothing past that is read — and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
+Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once — ${deadlocked.length} ruling(s); a ruling naming any other artifact is discarded — and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
 
 For each, rule:
 - "accept-maker" — the draft stands as it is; the reviewer's objection does not hold.
@@ -1131,7 +1152,7 @@ For each, rule:
           (k) =>
             `── ${k} ──\nLatest verdict: ${reviewFindings[k].verdict}\nFindings:\n${findingsText(reviewFindings[k])}\nCurrent draft:\n${renderArtifact(finalArtifacts[k])}`
         )
-        .join('\n\n')}\n\n${ctx}`,
+        .join('\n\n')}${savedDocsNote(deadlocked)}\n\n${ctx}`,
       {
         label: 'decide:spec-decider',
         phase: 'Decide',
@@ -1156,8 +1177,23 @@ For each, rule:
       // A ruling naming something that did not deadlock is DROPPED, never guessed at.
       if (r && typeof r.artifact === 'string' && deadlocked.includes(r.artifact)) rulingFor[r.artifact] = r
     }
+    // A rejected artifact the decider returned no ruling for keeps the reviewer's rejection,
+    // and goes back to its maker with the reviewer's findings. Leaving it unresolved made the
+    // caller's gate re-run the whole mini — every maker, the reviewer and the decider — over
+    // one omitted ruling.
     for (const k of deadlocked) {
-      log(`spec-decider on ${k}: ${rulingFor[k] ? `${rulingFor[k].ruling} — ${String(rulingFor[k].rationale || '').slice(0, 200)}` : 'no ruling returned'}`)
+      if (rulingFor[k]) {
+        log(`spec-decider on ${k}: ${rulingFor[k].ruling} — ${String(rulingFor[k].rationale || '').slice(0, 200)}`)
+        continue
+      }
+      rulingFor[k] = {
+        artifact: k,
+        ruling: 'accept-reviewer',
+        rationale: 'The spec-decider returned no ruling for this artifact, so the reviewer\'s rejection stands.',
+        directive: 'Resolve every reviewer finding listed below.',
+        defaulted: true,
+      }
+      log(`spec-decider on ${k}: no ruling returned — the reviewer's rejection stands and ${k} goes back to its maker`)
     }
 
     // ── Enact the rulings that send an artifact BACK to its maker ─────────────────
@@ -1183,7 +1219,7 @@ For each, rule:
       const redone = await settleAgent(
         `Correct the interface contract artifacts to apply the spec-decider's ruling below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\n${contractSentBack
           .map((k) => `── ${k} ──\n${directiveFor(k)}`)
-          .join('\n\n')}\n\nCurrent drafts:\n${['apiSpec', 'eventContracts'].map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}\n\n── errorSpec ──\n${renderArtifact(authored.errorSpec)}\n\n${specMakerCtx}${contractsBrief}`,
+          .join('\n\n')}\n\nCurrent drafts:\n${['apiSpec', 'eventContracts'].map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}\n\n── errorSpec ──\n${renderArtifact(authored.errorSpec)}${savedDocsNote(['apiSpec'])}\n\n${specMakerCtx}${contractsBrief}${pointerNote}`,
         { label: 'correct:contracts', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
       )
       for (const k of contractSentBack) {
@@ -1199,7 +1235,7 @@ For each, rule:
     }
     if (sentBack.includes('dataModelSpec')) {
       const redone = await settleAgent(
-        `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\nCurrent draft:\n${renderArtifact(finalArtifacts.dataModelSpec)}\n\n${specMakerCtx}${dataModelBrief}`,
+        `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\nCurrent draft:\n${renderArtifact(finalArtifacts.dataModelSpec)}${savedDocsNote(['dataModelSpec'])}\n\n${specMakerCtx}${dataModelBrief}${pointerNote}`,
         { label: 'correct:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
       if (redone) {
@@ -1219,7 +1255,6 @@ For each, rule:
       }
     }
     for (const k of deadlocked) {
-      if (!rulingFor[k]) continue
       const settled = rulingFor[k].ruling === 'accept-maker' || corrected.has(k)
       if (!settled) log(`spec-authoring: the correction for ${k} returned nothing — it stays unresolved`)
       reviewFindings[k] = {
@@ -1231,9 +1266,9 @@ For each, rule:
     }
   }
 
-  // A rejected artifact is SETTLED when the decider ruled on it and the ruling was enacted
-  // above. One the decider never named, or whose correction never came back, is not — and
-  // then the caller's gate re-runs this mini, so a Story written now would be discarded.
+  // A rejected artifact is SETTLED when its ruling was enacted above. One whose correction
+  // never came back is not — and then the caller's gate re-runs this mini, so a Story written
+  // now would be discarded.
   // The reason carries the findings, because it is the feedback that re-run is given.
   const unresolvedArtifacts = REVIEW_KEYS.filter((k) => !reviewFindings[k].resolved)
   if (unresolvedArtifacts.length) {
@@ -1245,7 +1280,7 @@ For each, rule:
       reason:
         `spec artifact(s) still rejected after review and ruling: ${unresolvedArtifacts.join(', ')}. ` +
         unresolvedArtifacts
-          .map((k) => `${k}: ${reviewFindings[k].directive ? `directive — ${reviewFindings[k].directive}; ` : rulingFor[k] ? '' : 'the spec-decider returned no ruling for it; '}findings — ${findingsText(reviewFindings[k])}`)
+          .map((k) => `${k}: ${reviewFindings[k].directive ? `directive — ${reviewFindings[k].directive}; ` : ''}findings — ${findingsText(reviewFindings[k])}`)
           .join(' | '),
       ...(correctionDeaths.length ? { dispatchFailed: true, dispatchFailures: correctionDeaths } : {}),
     }
@@ -1266,7 +1301,7 @@ For each, rule:
 
   // The Story writer names and scope-checks the spec set; it does not re-read it in full.
   // It gets each artifact's summary and, when the makers saved them, the documents' paths.
-  const specDocPaths = ART ? [`spec-${artSlug}.md`, `spec-${artSlug}.data-model.md`, `spec-${artSlug}.criteria.md`].map((n) => `${ART.dir}/${n}`) : []
+  const specDocPaths = docFor ? [...new Set(Object.values(docFor))] : []
   const specDigest = [
     ...[['apiSpec', finalArtifacts.apiSpec], ['dataModelSpec', finalArtifacts.dataModelSpec], ['eventContracts', finalArtifacts.eventContracts], ['errorSpec', authored.errorSpec]]
       .map(([k, x]) => `- ${k}: ${(x && hasText(x.summary) && x.summary) || '(no summary)'}`),

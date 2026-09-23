@@ -326,7 +326,9 @@ phase('Documentation')
 // when it touches no doc — deciding whether it stales one is exactly the auditor's job,
 // and this must not become a heuristic that quietly stops documenting real work.
 // Unknown changed files mean unknown, not empty, and the auditor runs.
-const DOC_INERT_RE = /(^|\/)(tests?|spec|__tests__|__mocks__|fixtures)\//i
+// `spec/` is NOT on this list: in this fleet a `spec/` directory is a design package's build
+// spec (the hand-off an app repo builds its UI to), which a user guide can describe.
+const DOC_INERT_RE = /(^|\/)(tests?|__tests__|__mocks__|fixtures)\//i
 const changedList = (green.changedFiles || []).filter(Boolean)
 if (changedList.length && changedList.every((f) => DOC_INERT_RE.test(f))) {
   log(`Documentation: change is confined to tests and fixtures (${changedList.length} files) — nothing it could stale; skipping the audit`)
@@ -405,7 +407,16 @@ Changed files: ${changedFiles}`,
 )
 
 const staleDocs = (audit && Array.isArray(audit.staleDocs) ? audit.staleDocs : []).filter(Boolean)
-const needsWork = !!(audit && !audit.docsCurrent && staleDocs.length)
+// THE LIST IS THE OBSERVATION, THE FLAG IS ITS SUMMARY. `docsCurrent: true` beside a named
+// stale doc would leave that doc unwritten, and `docsCurrent: false` naming nothing would
+// report stale docs no writer can be sent to. Where the two disagree, the list wins.
+if (audit && (audit.docsCurrent === true) === staleDocs.length > 0) {
+  log(
+    `Documentation: the auditor said docsCurrent=${audit.docsCurrent} but named ${staleDocs.length} stale doc(s) — ` +
+      (staleDocs.length ? 'the named docs are written' : 'with nothing named, nothing is stale')
+  )
+}
+const needsWork = staleDocs.length > 0
 
 // Deterministic fallback mapping, used when the auditor assigned nothing usable. It is
 // a lookup over the doc PATH, not a guess about meaning: these four filename shapes are
@@ -500,8 +511,11 @@ for (const r of writerResults) {
 }
 const update = needsWork ? { updatedDocs: allUpdatedDocs, writers: writerResults } : null
 
-// Docs are current if the audit found them current, or every assigned writer returned.
-const docsCurrent = !!(audit && (audit.docsCurrent || (needsWork && writerResults.length === writersChosen.length)))
+// Docs are current if the audit named nothing stale, or every assigned writer returned.
+const docsCurrent = !!(audit && (!needsWork || writerResults.length === writersChosen.length))
+// A dead auditor judged nothing and a dead writer wrote nothing: neither is a verdict on the
+// docs. It is reported, so a caller does not save this pass as done and skip it on a resume.
+const docsUnjudged = !audit || writerResults.length < writersChosen.length
 
 // Decision ledger — what this phase actually did, for over-time mining.
 // chosen = [currency-auditor, ...selected writers].
@@ -517,4 +531,18 @@ const ledger = {
   ok: !!docsCurrent,
 }
 
-return { docsCurrent, audit, update, ledger }
+return {
+  docsCurrent,
+  audit,
+  update,
+  ledger,
+  ...(docsUnjudged
+    ? {
+        dispatchFailed: true,
+        dispatchFailures: dispatchDeaths('Documentation'),
+        reason: !audit
+          ? 'the documentation auditor returned nothing, so no doc was judged'
+          : `${writersChosen.length - writerResults.length} of ${writersChosen.length} documentation writer(s) returned nothing`,
+      }
+    : {}),
+}
