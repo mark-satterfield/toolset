@@ -359,7 +359,8 @@ const request = a.request || {}
 const MAX_PASSES = Math.max(1, Math.floor(Number(a.maxPasses)) || 2)
 const repo = request.repoPath || '(repo path not provided — this is a docs/vault artifact)'
 if (!request.title && !request.description) {
-  return { ok: false, stage: 'input', error: 'no request.title/description supplied — refusing to run without a work item' }
+  const error = 'no request.title/description supplied — refusing to run without a work item'
+  return { ok: false, stage: 'input', error, headline: error }
 }
 
 const requestText = [
@@ -423,7 +424,7 @@ And the intake brief:
 - constraints: known constraints or non-negotiables (array).
 - openQuestions: unresolved ambiguities to carry forward (array).
 
-Ceilings, and nothing past them is read: ${SCOPE_LIST_MAX} entries each in \`inScope\` and \`outOfScope\`, ${CONSTRAINTS_MAX} in \`constraints\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`. A framing that needs more than that is enumerating restatements of one concern.`,
+Ceilings: ${SCOPE_LIST_MAX} entries each in \`inScope\` and \`outOfScope\`, ${CONSTRAINTS_MAX} in \`constraints\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`. A framing that needs more than that is enumerating restatements of one concern.`,
   {
     label: 'intake:scope-and-brief',
     effort: 'medium',
@@ -502,7 +503,7 @@ Deliver:
 - frustrations: the pain points the feature must relieve (array).
 - context: their situation/environment relevant to this feature.
 
-At most ${PERSONA_LIST_MAX} entries each in \`goals\` and \`frustrations\`; nothing past that is read. A persona with more goals than that has no persona.`,
+At most ${PERSONA_LIST_MAX} entries each in \`goals\` and \`frustrations\`. A persona with more goals than that has no persona.`,
       {
         label: 'persona:author',
         effort: 'low',
@@ -531,7 +532,7 @@ ${briefBlock}
 
 Deliver:
 - objective: the single qualitative objective this feature serves.
-- keyResults: measurable results, each with a metric and a target (array) — at most ${KEY_RESULTS_MAX}, and nothing past that is read. An objective with more than a handful of key results has no objective.`,
+- keyResults: measurable results, each with a metric and a target (array) — at most ${KEY_RESULTS_MAX}. An objective with more than a handful of key results has no objective.`,
       {
         label: 'okr:author',
         effort: 'low',
@@ -617,7 +618,7 @@ Deliver:
 - title: the PRD title.
 - prd: the full PRD body in Markdown, template-conformant.
 - sections: the section headings present (array), to confirm template coverage — at most ${SECTIONS_MAX}.
-- acceptanceCriteria: P0 acceptance criteria as given/when/then (array) — P0 ONLY, at most ${P0_CRITERIA_MAX}, each clause under 30 words. Nothing past ${P0_CRITERIA_MAX} is read, and every one of them is re-read by the alignment checker, by PRD validation, by the TRD author and by every spec author.
+- acceptanceCriteria: P0 acceptance criteria as given/when/then (array) — P0 ONLY, at most ${P0_CRITERIA_MAX}, each clause under 30 words. Every one of them is re-read by the alignment checker, by PRD validation, by the TRD author and by every spec author.
 - epicScope: a one-paragraph scope statement for the Epic that pairs with this PRD — a container-level summary of the scope the PRD owns, with no acceptance criteria and no repository specifics (one Epic may span repos).${
       feedback
         ? `\n\nALIGNMENT FEEDBACK from the independent checker — address every point before resubmitting:\n${feedback}`

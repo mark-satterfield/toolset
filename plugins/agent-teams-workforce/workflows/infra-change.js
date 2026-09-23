@@ -999,7 +999,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, seq: 0 }
+const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [], seq: 0 }
 // The phases that certify a Green result, in run order, and the fingerprint of that Green.
 const CP_BASIS_KEYS = ['integration', 'adversarial']
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
@@ -1148,7 +1148,8 @@ async function cpLoad() {
     { label: 'the checkpoint', path: cp.path, read: pick('checkpoint') },
     { label: 'the write-ahead copy', path: cp.walPath, read: pick('checkpointWal') },
   ]
-  const present = candidates.filter((c) => c.read && c.read.found === true && typeof c.read.content === 'string' && c.read.content.trim().length > 0)
+  // `{}` is a file a completed run retired: absent, not a checkpoint to reject.
+  const present = candidates.filter((c) => c.read && c.read.found === true && typeof c.read.content === 'string' && c.read.content.trim().length > 0 && c.read.content.trim() !== '{}')
   if (!present.length) {
     log(`COLD START — no checkpoint at ${cp.path} (nor a write-ahead copy at ${cp.walPath}). Every phase will run.`)
     runLedger.push({ phase: 'checkpoint', event: 'absent', path: cp.path })
@@ -1222,6 +1223,12 @@ async function cpLoad() {
     }
     runLedger.push({ phase: 'checkpoint', event: 'repair-pending', path: cp.path, iteration: cp.pendingRepair.iteration, dropped })
     log(`Checkpoint: a deploy repair (iteration ${cp.pendingRepair.iteration}) was in flight when the run stopped — it is re-run before Integration, and ${dropped.join(', ') || 'nothing'} is re-certified`)
+  } else if (pr && typeof pr === 'object' && Number.isFinite(pr.iteration)) {
+    // The repair after deploy iteration N finished (its Green is the saved one), so the
+    // next rollout is N+1 with the smoke suite that proved the defect: a resume does not hand
+    // the deploy loop a fresh budget.
+    cp.deployIterationsDone = pr.iteration
+    cp.doneSmokeSuite = Array.isArray(pr.smokeTestFiles) ? pr.smokeTestFiles : []
   }
   cp.loaded = phases
   cp.phases = { ...phases }
@@ -1910,13 +1917,13 @@ const deployIterations = []
 let deployReady = null
 let deployIteration = 0
 let smokeFeedback = ''
-let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : []
+let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : cp.doneSmokeSuite
 // The repository the worktree belongs to, as git reports it: the dev deployment lease is
 // keyed on it, because every worktree path differs and two runs in one repository deploy
 // the same stacks.
 const leaseScope = (workspace.verification && workspace.verification.gitCommonDir) || null
-// A resumed deploy repair continues the iteration count it was interrupted in.
-const firstDeployIteration = resumedRepair ? Math.min(resumedRepair.iteration + 1, MAX_DEPLOY_ITERATIONS) : 1
+// A resumed run continues the iteration count of the deploy repair it recorded, finished or not.
+const firstDeployIteration = Math.min((resumedRepair ? resumedRepair.iteration : cp.deployIterationsDone || 0) + 1, MAX_DEPLOY_ITERATIONS)
 for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIteration++) {
   enterPhase('Deploy-to-dev')
   // Distinct per-iteration telemetry so a monitor can render "deploy #2".

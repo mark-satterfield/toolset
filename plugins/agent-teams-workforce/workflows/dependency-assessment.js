@@ -482,7 +482,11 @@ if (assessed) {
   checkLimit(`Assess (${target})`, 'relatedRead', assessed.relatedRead, RELATED_READ_EXPECTED)
   checkLimit(`Assess (${target})`, 'unsure', assessed.unsure, UNSURE_EXPECTED)
 }
-const summary = (assessed && assessed.applySummary) || {}
+// The session is asked for apply-edges' `summary` object. A session that hands back the
+// whole printed object instead carries a `validation` report on every run, passed or not,
+// which would read as a refusal; its `summary` is the object meant.
+const printed = (assessed && assessed.applySummary) || {}
+const summary = printed.command === 'apply-edges' && printed.summary && typeof printed.summary === 'object' ? printed.summary : printed
 const accepted = !!assessed && assessed.valid === true && assessed.applyExitCode === 0 && !summary.validation
 const settled = accepted && (applies ? summary.applied === true : summary.dryRun === true || summary.applied === false)
 // A context command that failed is not a proposal that did not validate.
@@ -543,6 +547,7 @@ if (scores) {
 // The supervisor reads `ok`, `stage` and `headline` off this return, so all three are set on
 // every path: the stage names where the run ended, and the headline says what happened.
 const scoredOk = !scores || (!!scoring && scoring.ok === true)
+const scoringDeaths = scoring && scoring.ok !== true && scoring.stage === 'agent-dispatch-failed' && Array.isArray(scoring.dispatchFailures) ? scoring.dispatchFailures : []
 const failure = stop
   ? stopMessage
   : !settled
@@ -566,6 +571,8 @@ return {
   stop,
   ...(limitFindings.length ? { limitFindings } : {}),
   ...(failure ? { error: failure } : {}),
-  dispatchFailed: dispatchDeaths().length > 0,
-  dispatchFailures: dispatchDeaths(),
+  // A scoring run whose own sessions died is reported under the dispatch stage above, so
+  // its dispatch failures travel with it rather than leaving that stage with none named.
+  dispatchFailed: dispatchDeaths().length + scoringDeaths.length > 0,
+  dispatchFailures: [...dispatchDeaths(), ...scoringDeaths],
 }

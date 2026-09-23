@@ -358,8 +358,9 @@ const hasEpicAncestor = () => ancestorTypes.includes('epic')
 //   reporting repair the caller makes on the side (and names when it cannot), not a
 //   reason to refuse. This router used to refuse such a Task on the theory that "no
 //   Story means no Spec means no contract" — but the composite it routes to builds
-//   its contract from the Task's own statement of work and rules the repository at
-//   run time, so the gate guarded nothing and held 50 of 51 live Tasks out of the run.
+//   against the build contract recorded on the Task itself, repository included, so the
+//   gate guarded nothing and held 50 of 51 live Tasks out of the run. A Task whose
+//   contract names no repository is refused by the composite at input, not here.
 //
 //   An Epic or a Story IS workable, but its work is elaboration, not development.
 //   That belongs to route-elaboration.
@@ -396,7 +397,7 @@ function deterministicRoute() {
       .join(' and ')
     return work(
       composite,
-      `task is missing its ${missing} — a roll-up parent for reporting, never a dispatch precondition; the composite builds against the Task's own statement of work and rules the repository at run time → ${composite} (the missing parent is a reporting repair, made on the side)`,
+      `task is missing its ${missing} — a roll-up parent for reporting, never a dispatch precondition; the composite builds against the build contract recorded on the Task itself (repository included) → ${composite} (the missing parent is a reporting repair, made on the side)`,
     )
   }
 

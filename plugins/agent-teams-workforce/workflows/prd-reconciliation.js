@@ -342,8 +342,9 @@ function checkLimit(where, what, value, expected, min) {
 //   prd: {                      // the PRD being reconciled against reality (required)
 //     id?: string,
 //     title?: string,
-//     body: string,             // the PRD text — required; a path alone cannot be read by a script
-//     path?: string,            // where the PRD document lives; an absolute path is sent in place of the body
+//     body?: string,            // the PRD text; measures the search budget, and wins over `path`
+//     path?: string,            // where the PRD document lives; an absolute path is sent in place of
+//                               // the body, and an absolute `.md` path stands in for a missing body
 //     repoPath?: string,        // the repo the PRD nominally targets
 //   },
 //   repos?: string[],           // every repo the PRD may span
@@ -518,19 +519,22 @@ const fail = (reason, extra) => ({
   ...(extra || {}),
 })
 
-if (!hasText(prdBody)) {
+// The PRD may arrive as a PATH with no body: a host that had to retype a ~43K-character PRD
+// into the arguments paid a whole session for it. A path alone is held to the allowlist
+// repo-scoping uses — absolute, a `.md` file, no `..` — and a body, when one is given, wins.
+const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
+const prdPathOnly = !hasText(prdBody) && /^\/[A-Za-z0-9._/-]+\.md$/.test(prdPath) && !prdPath.split('/').includes('..')
+if (!hasText(prdBody) && !prdPathOnly) {
   // Refuse rather than report an empty inventory. "Nothing was found" and "no PRD was
   // supplied" both reduce to zero requirements, and a caller reading the first as an
   // answer proceeds against a document nobody looked at.
-  return fail('prd-reconciliation invoked with an empty PRD body — there is nothing to reconcile against reality.')
+  return fail('prd-reconciliation invoked with an empty PRD body and no absolute .md PRD path — there is nothing to reconcile against reality.')
 }
 
 const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 // The PRD goes to the reconciler as its path when it has one on disk: the reconciler reads
-// it itself, and the dispatch does not carry the whole document once per repository. The
-// body is still required here, because the search budget below is measured from it.
-const prdPath = typeof prdInput === 'string' ? '' : prdInput.path
-const prdOnDisk = hasText(prdPath) && /^\/[A-Za-z0-9._/ -]+$/.test(prdPath) && !prdPath.split('/').includes('..')
+// it itself, and the dispatch does not carry the whole document once per repository.
+const prdOnDisk = prdPathOnly || (hasText(prdPath) && /^\/[A-Za-z0-9._/ -]+$/.test(prdPath) && !prdPath.split('/').includes('..'))
 const prdBlock = prdOnDisk
   ? `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read it in full before you start: every requirement it states is in scope.`
   : `${prdHeader}\n\n${prdBody}`
@@ -591,7 +595,9 @@ const headingEstimate = Math.max(
   countMatches(/^#{6}\s+\S/gm)
 )
 const labelEstimate = new Set(prdBody.match(/\b[A-Z]{2,6}-\d{2,3}\b/g) || []).size
-const requirementEstimate = Math.min(MAX_REQUIREMENTS, Math.max(MIN_REQUIREMENTS, headingEstimate, labelEstimate))
+// With no body in hand the document's structure cannot be read, so the estimate takes the
+// cap: the estimator is biased high, and a budget too small is the costly error.
+const requirementEstimate = prdPathOnly ? MAX_REQUIREMENTS : Math.min(MAX_REQUIREMENTS, Math.max(MIN_REQUIREMENTS, headingEstimate, labelEstimate))
 const CALL_CEILING = requirementEstimate * CALLS_PER_REQUIREMENT + BUDGET_OVERHEAD
 
 // ── WHAT THIS INVENTORY IS EXPECTED TO RETURN, AND WHY NONE OF IT IS STATED ──────
@@ -618,8 +624,11 @@ const CONSULTED_EXPECTED = 120
 const CHANGE_FINDINGS_EXPECTED = 40
 const UNEXAMINED_EXPECTED = Math.max(200, requirementEstimate)
 log(
-  `Search budget: ~${requirementEstimate} requirement(s) estimated from the PRD structure ` +
-    `(${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) × ${CALLS_PER_REQUIREMENT} call(s) each ` +
+  `Search budget: ~${requirementEstimate} requirement(s) ` +
+    (prdPathOnly
+      ? `(the cap: only the PRD's path was supplied, so its structure could not be read) `
+      : `estimated from the PRD structure (${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) `) +
+    `× ${CALLS_PER_REQUIREMENT} call(s) each ` +
     `+ ${BUDGET_OVERHEAD} overhead = ${CALL_CEILING} tool calls.`
 )
 const scopeBlock = singleRepo

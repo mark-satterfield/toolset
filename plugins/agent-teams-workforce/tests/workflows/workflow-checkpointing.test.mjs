@@ -125,7 +125,7 @@ test('the create-repos exit keeps the checkpoint — its purpose is a re-run aft
 
 // ── bug-fix ───────────────────────────────────────────────────────────────────
 
-test('bug-fix resumes triage, red+green, and refactor from a checkpoint', async () => {
+test('bug-fix re-runs triage, then resumes red+green and refactor from a checkpoint', async () => {
   const BEAD = { id: 'ssbd-1xcs', title: 's', description: 'd', repoPath: '/repos/chassis' }
   const file = JSON.stringify({
     composite: 'bug-fix',
@@ -160,7 +160,7 @@ test('bug-fix resumes triage, red+green, and refactor from a checkpoint', async 
       return { ok: true }
     },
   })
-  assert.equal(workflowCalls(calls, 'agent-teams-workforce:bug-triage').length, 0, 'triage was completed in a previous dispatch')
+  assert.equal(workflowCalls(calls, 'agent-teams-workforce:bug-triage').length, 1, 'a Bug never skips triage, a checkpoint notwithstanding')
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:tdd-red').length, 0, 'red was completed in a previous dispatch')
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:tdd-green').length, 0, 'green was completed in a previous dispatch')
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:tdd-refactor').length, 0, 'refactor was completed in a previous dispatch')

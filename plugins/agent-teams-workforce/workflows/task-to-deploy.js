@@ -901,6 +901,14 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
+    // A verdict that blocks while naming no reason is a defect in the judgment, not a finding
+    // (gate-enforce marks it `malformedVerdict` and turns it into an escalate). It gets the same
+    // one re-ask as a dead judge, as in bug-fix.js; read as a real escalate it failed the run
+    // and charged the bead for a judge that said nothing.
+    if (verdict && verdict.malformedVerdict === true) {
+      log(`Gate ${gate} (${phaseName}): the judge blocked without naming a reason — re-asking once`)
+      verdict = (await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)) || verdict
+    }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
       return {
@@ -924,6 +932,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
         artifact,
         verdict,
       }
+    }
+    // Still reasonless after the re-ask: the work was never really judged, so it is reported
+    // under the environment stage rather than charged to the phase.
+    if (verdict.malformedVerdict === true) {
+      recordGate(attempt, verdict, { terminal: 'malformed-verdict' })
+      return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
     }
     recordGate(attempt, verdict)
     lastVerdict = verdict
@@ -1087,7 +1101,21 @@ const CP_KEYS = ['red', 'green', 'refactor', 'integration', 'adversarial']
 // `basis` predates the field and is accepted.
 const CP_BASIS_KEYS = new Set(['integration', 'adversarial'])
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
-const cp = { active: false, dir: null, relDir: null, script: null, epic: null, inputHash: null, loaded: null, phases: {}, touched: false, recordInputs: [], retireDoneMarker: false, pendingRepair: null }
+const cp = { active: false, dir: null, relDir: null, script: null, epic: null, inputHash: null, loaded: null, phases: {}, touched: false, recordInputs: [], retireDoneMarker: false, pendingRepair: null, resumedCorrection: null, loadedDocs: null }
+// ── A FINISHED DEPLOY CORRECTION TRAVELS WITH THE GREEN IT PRODUCED ─────────────
+// repair-pending.json covers a kill INSIDE the Green repair. Once the repaired Green is
+// saved it no longer matches that record's basis, so a kill during the re-certification or
+// the redeploy that follows used to resume as a first deploy: iteration 1 again, and a
+// freshly authored smoke suite in place of the one that proved the defect. So a Green saved
+// by a correction carries the correction it answers (`deployCorrection`), and a resume that
+// reuses that Green continues from the next iteration with the same suite. A Green file
+// without the field — the first Green, or one saved before the field existed — is a first
+// deploy, as it always was.
+let activeCorrection = null
+const cpCorrection = (v) =>
+  v && typeof v === 'object' && Number.isInteger(v.iteration) && v.iteration > 0 && typeof v.feedback === 'string' && v.feedback.trim()
+    ? { iteration: v.iteration, feedback: v.feedback, smokeTestFiles: (Array.isArray(v.smokeTestFiles) ? v.smokeTestFiles : []).map((f) => String(f || '').trim()).filter(Boolean) }
+    : null
 const cpFile = (key) => `${cp.dir}/phase-${key}.json`
 // ── A DEPLOY CORRECTION IN FLIGHT IS SAVED BEFORE IT STARTS ─────────────────────
 // A smoke failure in dev sends the run back through Green, and that repair edits the tree
@@ -1204,7 +1232,7 @@ async function cpLoad() {
     read = await settleAgent(
       `Read each file below if it exists; return one entry per key with \`found\` and its full text verbatim in \`content\` (missing or empty: found=false, content ""). Read nothing else; write nothing.
 
-${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${cpDoneFile()}`, `- key "repair": ${cpRepairFile()}`].join('\n')}`,
+${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${cpDoneFile()}`, `- key "repair": ${cpRepairFile()}`, `- key "docs": ${cpFile('docs')}`].join('\n')}`,
       {
         label: 'checkpoint:load',
         phase: currentPhase || 'Workspace',
@@ -1308,6 +1336,25 @@ ${[...CP_KEYS.map((k) => `- key "${k}": ${cpFile(k)}`), `- key "runComplete": ${
       runLedger.push({ phase: 'checkpoint', event: 'repair-pending', path: cpRepairFile(), iteration: cp.pendingRepair.iteration })
     }
   }
+  // The documentation pass is not a link in the phase prefix — it runs beside the tail —
+  // so it is judged on its own: reusable only over the SAME Green it documented, and never
+  // while a repair is pending, because that repair's changes have not been documented yet.
+  const docsText = !cp.pendingRepair && reused.includes('green') ? body('docs') : null
+  if (docsText) {
+    const dv = cpJudge(docsText, 'phase-docs.json', 'docs')
+    if (dv.ok && dv.result.basis === cpBasis(cp.phases.green) && dv.result.artifact && typeof dv.result.artifact === 'object') {
+      cp.loadedDocs = { basis: dv.result.basis, artifact: dv.result.artifact }
+    } else {
+      runLedger.push({ phase: 'checkpoint', event: 'invalidated', path: cpFile('docs'), reason: dv.ok ? 'documented a different Green than the one being resumed' : dv.why })
+    }
+  }
+  if (!cp.pendingRepair && reused.includes('green')) {
+    cp.resumedCorrection = cpCorrection(cp.phases.green && cp.phases.green.deployCorrection)
+    if (cp.resumedCorrection) {
+      runLedger.push({ phase: 'checkpoint', event: 'correction-resumed', iteration: cp.resumedCorrection.iteration })
+      log(`The saved Green is the repair from deploy correction ${cp.resumedCorrection.iteration}: the deploy loop continues from iteration ${cp.resumedCorrection.iteration + 1} with the smoke suite that proved the defect`)
+    }
+  }
   if (!reused.length) {
     log(`COLD START — nothing reusable in ${cp.dir}. ${rejected[0] || 'no phase files exist yet'}. Every phase will run.`)
     runLedger.push({ phase: 'checkpoint', event: 'absent', path: cp.dir, reason: rejected[0] || null })
@@ -1344,6 +1391,33 @@ const CP_ARTIFACT_FIELDS = {
   refactor: ['testsGreen', 'behaviorPreserved', 'changedFiles', 'restored', 'restoreReason', 'alreadySatisfied', 'ledger'],
   integration: ['passed', 'alreadySatisfied', 'suites', 'provisionEnv', 'ledger'],
   adversarial: ['constitutiveOpen', 'selfContradictory', 'alreadySatisfied', 'attackers', 'laneMode', 'ledger'],
+  // Read back only for its currency verdict and the ledger rows it contributes.
+  docs: ['docsCurrent', 'ledgers'],
+}
+// ── THE DOCUMENTATION PASS IS SAVED WITH THE CERTIFICATION IT RAN BESIDE ────────
+// It used to be the one piece of paid work a resume always repeated: every re-dispatch sent a
+// fresh auditor over docs the previous dispatch had already brought current. A finished pass
+// is now saved the moment it finishes, inside the track itself, keyed by the Green it
+// documented. Saving it with the next phase instead left a window — pass finished, next save
+// not yet made — in which a kill threw the pass away. The track is awaited before the deploy
+// in any case, so the save costs no wall time. A run whose saved Green has no such file
+// documents it as before.
+const docLedgers = (...results) => results.flatMap((r) => (r ? (Array.isArray(r.ledgers) ? r.ledgers : r.ledger ? [r.ledger] : []) : [])).filter(Boolean)
+const docsEntry = (greenResult, r) => ({
+  key: 'docs',
+  gateResult: { ok: true, artifact: { docsCurrent: r.docsCurrent === true, ledgers: docLedgers(r) } },
+  extra: { basis: cpBasis(greenResult) },
+})
+function offerDocs(greenResult, track) {
+  return track.then(async (r) => {
+    if (r && !r.reused) await cpSaveAll([docsEntry(greenResult, r)])
+    return r
+  })
+}
+function cpDocs(greenResult) {
+  if (!cp.loadedDocs || cp.loadedDocs.basis !== cpBasis(greenResult)) return null
+  log("Documentation SKIPPED — the saved pass documented this exact Green; its result is reused from checkpoint")
+  return { ...cp.loadedDocs.artifact, reused: true }
 }
 // Red's evidence is every writer's captured failing output joined; after its gate passes the
 // only reader is Green's prompt, which takes the first 4,000 characters. Green is never trimmed:
@@ -1365,9 +1439,15 @@ async function cpSave(key, gateResult, extra) {
 // Saves written back to back share ONE writer session: each session's cost is mostly its
 // start, not its writes.
 async function cpSaveAll(entries) {
-  if (!cp.active) return
+  if (!cp.active || !entries.length) return
   const items = entries.map(({ key, gateResult, extra }) => {
-    const payload = { ok: gateResult.ok, artifact: cpTrim(key, gateResult.artifact), ...(gateResult.alreadySatisfied ? { alreadySatisfied: true } : {}), ...(extra || {}) }
+    const payload = {
+      ok: gateResult.ok,
+      artifact: cpTrim(key, gateResult.artifact),
+      ...(gateResult.alreadySatisfied ? { alreadySatisfied: true } : {}),
+      ...(key === 'green' && activeCorrection ? { deployCorrection: activeCorrection } : {}),
+      ...(extra || {}),
+    }
     cp.phases[key] = payload
     return { key, file: JSON.stringify({ composite: 'task-to-deploy', subject: bead.id || null, semanticsVersion: CHECKPOINT_SEMANTICS, inputHash: cp.inputHash, phase: key, result: payload }) }
   })
@@ -1767,13 +1847,18 @@ const GREEN_ESCALATE_TARGETS = [
 // The implementers an earlier Green of this run selected (or reused), so a later Green does not
 // pay the implementation-lead again. A 'default' selection was a fallback, not a choice, and is
 // not carried.
-function priorImplementers() {
-  const l = green && green.artifact && green.artifact.ledger
+function implementersOf(artifact) {
+  const l = artifact && artifact.ledger
   return l && (l.mode === 'selected' || l.mode === 'reused') && Array.isArray(l.chosen) && l.chosen.length ? l.chosen : undefined
 }
+const priorImplementers = () => implementersOf(green && green.artifact)
 async function greenThroughRed(phaseName, extraFeedback) {
   let rulingBlock = ''
   let reauthored = false
+  // The Green this call already ran. After a Red re-author the next Green starts a fresh gate
+  // loop with no prior attempt, and on the FIRST Green `green` is not assigned yet, so without
+  // this the implementation-lead was paid again to pick the implementers it had just picked.
+  let lastGreen = null
   const runGreen = (name) => {
     enterPhase('Green')
     return gateLoop({
@@ -1787,13 +1872,14 @@ async function greenThroughRed(phaseName, extraFeedback) {
       // explicit implementer still wins inside tdd-green.
       phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-green', {
         contract, red: red.artifact, implementer: a.implementer,
-        implementers: (loop && loop.priorArtifact && loop.priorArtifact.ledger && loop.priorArtifact.ledger.chosen) || priorImplementers(),
+        implementers: implementersOf(loop && loop.priorArtifact) || implementersOf(lastGreen) || priorImplementers(),
         feedback: [extraFeedback, rulingBlock, feedback].filter(Boolean).join('\n\n'),
       }),
     })
   }
   let g = await runGreen(phaseName)
   for (;;) {
+    lastGreen = g.artifact || lastGreen
     if (g.ok) return { green: g, reauthored }
     const contradiction = (g.artifact && g.artifact.contradiction) || null
     const testDefect = (g.artifact && g.artifact.testDefect) || null
@@ -1894,6 +1980,10 @@ if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('g
 // anything certifies or documents the tree; the deploy loop below then continues from the
 // iteration after the one whose smoke failure it corrects.
 const resumedRepair = cp.pendingRepair
+// Either kind of interrupted correction: one whose repair is still to run, or one whose
+// repair is saved and whose re-certification or redeploy was cut short.
+const resumedCorrection = resumedRepair || cp.resumedCorrection
+if (resumedCorrection) activeCorrection = { iteration: resumedCorrection.iteration, feedback: resumedCorrection.feedback, smokeTestFiles: resumedCorrection.smokeTestFiles }
 if (resumedRepair) {
   log(`Resuming the deploy correction after iteration ${resumedRepair.iteration}: re-entering Green with the recorded smoke failure`)
   const through = await greenThroughRed(`TDD Green (deploy correction after iteration ${resumedRepair.iteration}, resumed)`, resumedRepair.feedback)
@@ -1907,7 +1997,8 @@ if (resumedRepair) {
 // Documentation runs ALONGSIDE the rest of the tail — started here (after Green),
 // awaited before deploy.
 docContract = contract
-docTrack = startDocTrack(green.artifact)
+const savedDocs = cpDocs(green)
+docTrack = savedDocs ? Promise.resolve(savedDocs) : offerDocs(green, startDocTrack(green.artifact))
 
 // Settle the parallel documentation track before any early failure return, so a failed run
 // never leaves its writers editing the tree it hands to Settle.
@@ -2048,7 +2139,7 @@ async function certifyIntegration(phaseName, seed) {
       if (!green.ok) return { handback: await failAfterDoc('green', green) }
       await cpSaveAll([...(through.reauthored ? [{ key: 'red', gateResult: red }] : []), { key: 'green', gateResult: green }])
       await Promise.allSettled([repairDocTrack])
-      repairDocTrack = startDocTrack(green.artifact)
+      repairDocTrack = offerDocs(green, startDocTrack(green.artifact))
     } else {
       log('Integration: the test environment was not ready — running the suites again, which re-provisions it')
     }
@@ -2064,7 +2155,7 @@ enterPhase('Integration')
 let integration = cpGet('integration')
 if (integration !== undefined) rememberIntegrationSelection(integration.artifact)
 if (integration === undefined) {
-  const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : '')
+  const certified = await certifyIntegration('Integration Testing', resumedCorrection ? resumedCorrection.feedback : '')
   if (certified.handback) return certified.handback
   integration = certified.integration
 if (integration.ok) await cpSave('integration', integration, { basis: cpBasis(green) })
@@ -2130,7 +2221,7 @@ const standingRulings = (result) =>
 enterPhase('Adversarial')
 let adversarial = cpGet('adversarial')
 if (adversarial === undefined) {
-adversarial = await runAdversarial('Adversarial Validation', resumedRepair ? resumedRepair.feedback : '', resumedRepair ? resumedRepair.priorRulings : [])
+adversarial = await runAdversarial('Adversarial Validation', resumedCorrection ? resumedCorrection.feedback : '', resumedRepair ? resumedRepair.priorRulings : [])
 if (adversarial.ok) await cpSave('adversarial', adversarial, { basis: cpBasis(green), standingRulings: standingRulings(adversarial) })
 }
 if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
@@ -2140,12 +2231,9 @@ if (!adversarial.ok) return await failAfterDoc('adversarial', adversarial)
 // carries them. deploy.js reads nothing from it.
 // An integration repair's own documentation pass joins here too.
 const docCurrency = await docTrack
-if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
-if (repairDocTrack) {
-  const integrationRepairDocs = await repairDocTrack
-  repairDocTrack = null
-  if (integrationRepairDocs && integrationRepairDocs.ledger) runLedger.push(integrationRepairDocs.ledger)
-}
+const integrationRepairDocs = repairDocTrack ? await repairDocTrack : null
+repairDocTrack = null
+for (const l of docLedgers(docCurrency, integrationRepairDocs)) runLedger.push(l)
 
 // ── Deploy to dev (Gate 5) — dev IS deployed; only qa/prod is human-gated ─────
 // Deploying to dev is how code reaches AWS and is part of the development
@@ -2174,8 +2262,8 @@ let deployReady = null
 let deployIteration = 0
 let smokeFeedback = ''
 // A resumed correction continues the iteration count and re-runs the suite that failed.
-let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : []
-const firstDeployIteration = resumedRepair ? Math.min(resumedRepair.iteration + 1, MAX_DEPLOY_ITERATIONS) : 1
+let smokeSuite = resumedCorrection ? resumedCorrection.smokeTestFiles : []
+const firstDeployIteration = resumedCorrection ? Math.min(resumedCorrection.iteration + 1, MAX_DEPLOY_ITERATIONS) : 1
 // The repository the worktree belongs to, as git reports it: the dev deployment lease is
 // keyed on it, because every Task's worktree path differs and two Tasks of one repository
 // deploy the same stacks.
@@ -2330,11 +2418,13 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
   if (!green.ok) return { ...(await failAfterDoc('green', green)), ...deployEvidence(deployIterations) }
   // Saved before re-certification, so a resume lands on the repaired Green and the saved
   // Integration and Adversarial — which certified the old one — are rejected by their basis.
+  // It carries this correction, so that resume continues the iteration count and the suite.
+  activeCorrection = { iteration: deployIteration, feedback: smokeFeedback, smokeTestFiles: smokeSuite }
   await cpSaveAll([...(through.reauthored ? [{ key: 'red', gateResult: red }] : []), { key: 'green', gateResult: green }])
   // Documentation for the repair runs ALONGSIDE its re-certification, as the first-pass
   // track runs alongside Refactor → Adversarial, and is awaited before the redeploy.
   // `green.artifact` is the repair, so the auditor looks only at docs its files affect.
-  repairDocTrack = startDocTrack(green.artifact)
+  repairDocTrack = offerDocs(green, startDocTrack(green.artifact))
 
   // ── A REPAIR IS NEW CODE, AND NEW CODE IS UNCERTIFIED ────────────────────────
   //
@@ -2373,7 +2463,7 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
   await cpSave('adversarial', adversarial, { basis: cpBasis(green), standingRulings: standingRulings(adversarial) })
   const repairDocs = await repairDocTrack
   repairDocTrack = null
-  if (repairDocs && repairDocs.ledger) runLedger.push(repairDocs.ledger)
+  for (const l of docLedgers(repairDocs)) runLedger.push(l)
 }
 
 // The success return is where the bloat was worst: the whole contract plus eight complete

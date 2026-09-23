@@ -626,7 +626,11 @@ Constraints: preserve behavior; stay inside the contract above; do not modify te
       schema: OPTIMIZER_SCHEMA,
     }
   )
-  optimizerRuns.push({ optimizer: opt, ...(run || {}) })
+  // A dead optimizer is optional cleanup that did not happen. Whatever it may have edited
+  // before it died is still in the tree, and the independent review below runs the suite
+  // over exactly that tree, so the phase carries on — but the run says it happened.
+  if (!run) log(`⚠ Refactor: '${opt}' returned nothing — skipped, or died on a terminal API error; the review below judges the tree as it stands`)
+  optimizerRuns.push({ optimizer: opt, ...(run || { dispatchFailed: true }) })
   if (run && Array.isArray(run.changedFiles)) changedFiles.push(...run.changedFiles)
   if (run && run.testsGreen !== true) return await writerRed(`the ${opt}`, run)
 }

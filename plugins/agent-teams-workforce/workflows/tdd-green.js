@@ -437,9 +437,35 @@ const greenPathBlock = (() => {
     : ''
 })()
 
+// ── THE PROVISIONING INTENT AN INFRA CONTRACT CARRIES ─────────────────────────────
+// infra-change hands the tail the intent infra-intent ruled — the resources to provision,
+// with their CDK-expressible properties, and the cross-stack references — and the stacks it
+// affects. The synth assertion Red writes and Green satisfies is an assertion about exactly
+// those, so both render them; without this block the only trace of the intent in either
+// prompt was a stack list inside one acceptance criterion.
+const infraBlock = (() => {
+  const pi = c.provisioningIntent && typeof c.provisioningIntent === 'object' ? c.provisioningIntent : null
+  const text = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '')
+  const names = (v) => (Array.isArray(v) ? v.map((x) => text(x)).filter(Boolean) : [])
+  const stacks = [...new Set([...names(c.affectedStacks), ...names(pi && pi.affectedStacks)])]
+  const resources = pi && Array.isArray(pi.resources) ? pi.resources.filter((r) => r && typeof r === 'object') : []
+  const refs = pi ? names(pi.crossStackRefs) : []
+  const lines = [
+    stacks.length ? `Affected CDK stacks: ${stacks.join(', ')}` : '',
+    resources.length
+      ? `Provisioning intent — the resources to provision:\n${resources
+          .map((r) => `  - ${text(r.logicalId) || '(resource)'} ${text(r.type)}${text(r.stack) ? ` in ${text(r.stack)}` : ''}${text(r.properties) ? `: ${text(r.properties)}` : ''}`)
+          .join('\n')}`
+      : '',
+    refs.length ? `Cross-stack references (SSM Parameter Store, never CloudFormation exports):\n${refs.map((x) => `  - ${x}`).join('\n')}` : '',
+    pi && text(pi.rationale) ? `Intent rationale: ${text(pi.rationale)}` : '',
+  ].filter(Boolean)
+  return lines.length ? `\n\n${lines.join('\n')}` : ''
+})()
+
 const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}${
   beadDescription ? `\n\n${beadDescription}` : ''
-}${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}
+}${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}${infraBlock}
 
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 ${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).join('\n')}\n` : ''}
@@ -505,6 +531,7 @@ ${taskBlock}`,
     selection && Array.isArray(selection.implementers)
       ? selection.implementers.filter((i) => IMPLEMENTER_ROSTER.includes(i))
       : []
+  if (!selection) log("⚠ Green: the implementation-lead returned nothing — falling back to chassis-extension-implementer (ledger mode 'default')")
   implementers = picked.length ? picked : ['chassis-extension-implementer']
   selectionMode = picked.length ? 'selected' : 'default'
 }

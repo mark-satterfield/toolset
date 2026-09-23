@@ -92,6 +92,7 @@ test('the writer is given the REDIRECT TEST for repo-wide invariants', async () 
 
 test('lint rules ride on the contract and are NEVER acceptance criteria', async () => {
   const { result } = await runTriage({
+    defects: [FOUR_DEFECTS[0]],
     contract: {
       acceptanceCriteria: [{ defectId: 'D1', given: 'g', when: 'w', then: 't' }],
       lintRules: [{ pattern: 'redis://', rationale: 'every connection must be TLS', scope: 'repo' }],
@@ -112,11 +113,12 @@ test('the tail never sees the lint rules, so the coverage reviewer cannot block 
   assert.ok(!red.includes('lintRules'), 'routing them anywhere near the Red phase reinstates the exact blocking loop')
 })
 
-test('a defect with no criterion is reported, not silently dropped', async () => {
+test('a defect with no criterion stops triage as a dispatch death when the follow-up writer dies', async () => {
   const { result } = await runTriage({
     contract: { acceptanceCriteria: [{ defectId: 'D1', given: 'g', when: 'w', then: 't' }] },
   })
-  assert.deepEqual(result.uncoveredDefects, ['D2', 'D3', 'D4'], 'coverage is an exact join now, so a gap is a fact rather than an opinion')
+  assert.equal(result.dispatchFailed, true, 'defects with no criterion would ship with no test and no fix')
+  assert.match(result.reason, /uncovered defects/)
 })
 
 test('the defects survive onto the contract for everything downstream', async () => {

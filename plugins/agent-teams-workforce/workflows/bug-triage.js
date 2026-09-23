@@ -422,7 +422,9 @@ Deliver:
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['reproduction', 'rootCause', 'defects', 'affectedFiles', 'blastRadius', 'surfaces'],
+      // The repository is REQUIRED when it is not known: it is the finding the caller builds
+      // in, and an omitted field reads the same as an honest "could not locate" (empty string).
+      required: ['reproduction', 'rootCause', 'defects', 'affectedFiles', 'blastRadius', 'surfaces', ...(repoKnown ? [] : ['repoPath', 'repoResolution'])],
       properties: {
         reproduction: { type: 'string' },
         rootCause: { type: 'string' },
@@ -585,6 +587,44 @@ const AC_MIN = Math.max(1, defectIds.length)
 const AC_MAX = Math.max(2, defectIds.length * 2)
 log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria expected in the range ${AC_MIN}..${AC_MAX}`)
 
+const contractSchema = (ids) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['acceptanceCriteria'],
+  properties: {
+    acceptanceCriteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['defectId', 'given', 'when', 'then'],
+        properties: {
+          defectId: ids.length ? { type: 'string', enum: ids } : { type: 'string' },
+          given: { type: 'string' },
+          when: { type: 'string' },
+          then: { type: 'string' },
+        },
+      },
+    },
+    // Sibling output, deliberately NOT passed to tdd-red. A repo-wide invariant is a
+    // lint rule or a pre-commit hook, landed by the path that already commits — the
+    // coverage reviewer never sees it and therefore structurally cannot block the
+    // Red gate on a criterion Red can never turn red.
+    lintRules: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['pattern', 'rationale'],
+        properties: {
+          pattern: { type: 'string' },
+          rationale: { type: 'string' },
+          scope: { type: 'string' },
+        },
+      },
+    },
+  },
+})
 const contract = await settleAgent(
   `${rulingsBlock}Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
@@ -603,44 +643,7 @@ ${defects.length ? defects.map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${
     label: 'triage:expected-behavior',
     phase: 'Triage',
     agentType: 'agent-teams-workforce:acceptance-criteria-writer',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['acceptanceCriteria'],
-      properties: {
-        acceptanceCriteria: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['defectId', 'given', 'when', 'then'],
-            properties: {
-              defectId: defectIds.length ? { type: 'string', enum: defectIds } : { type: 'string' },
-              given: { type: 'string' },
-              when: { type: 'string' },
-              then: { type: 'string' },
-            },
-          },
-        },
-        // Sibling output, deliberately NOT passed to tdd-red. A repo-wide invariant is a
-        // lint rule or a pre-commit hook, landed by the path that already commits — the
-        // coverage reviewer never sees it and therefore structurally cannot block the
-        // Red gate on a criterion Red can never turn red.
-        lintRules: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['pattern', 'rationale'],
-            properties: {
-              pattern: { type: 'string' },
-              rationale: { type: 'string' },
-              scope: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
+    schema: contractSchema(defectIds),
   }
 )
 
@@ -650,8 +653,39 @@ if (!contract) return triageDied('expected-behavior writer')
 // Coverage is an exact join, not a judgment: every enumerated defect must have at least
 // one criterion pointing at it.
 const authoredAc = (contract && Array.isArray(contract.acceptanceCriteria) ? contract.acceptanceCriteria : []).filter(Boolean)
-const covered = new Set(authoredAc.map((x) => String(x.defectId || '')))
-const uncoveredDefects = defectIds.filter((id) => !covered.has(id))
+const coveredIds = () => new Set(authoredAc.map((x) => String(x.defectId || '')))
+// A defect with no criterion gets no test and no fix, so the writer is asked ONCE more, for
+// those defects only — a re-dispatch with materially different input, not a blind retry.
+const firstUncovered = defectIds.filter((id) => !coveredIds().has(id))
+if (firstUncovered.length) {
+  log(`Triage: defect(s) with no acceptance criterion: ${firstUncovered.join(', ')} — asking the writer to cover them`)
+  const gap = await settleAgent(
+    `${rulingsBlock}The expected-behavior contract for this bug fix covers every defect below EXCEPT the ones listed. Write one or two testable given/when/then acceptance criteria for EACH listed defect, and nothing else — no criterion for a defect not listed, no repo-wide grep (return one in \`lintRules\` if you find one). Do NOT write code.
+
+Bug ${bead.id || ''}: ${bead.title || ''}
+Reproduction: ${analysis.reproduction}
+Root cause: ${analysis.rootCause}
+
+Defects still uncovered (use these ids exactly):
+${defects.filter((d) => firstUncovered.includes(String(d.id))).map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${d.file}${d.line ? `:${d.line}` : ''}]` : ''}`).join('\n')}`,
+    {
+      label: 'triage:expected-behavior-uncovered',
+      phase: 'Triage',
+      agentType: 'agent-teams-workforce:acceptance-criteria-writer',
+      schema: contractSchema(firstUncovered),
+    }
+  )
+  // Defects with no criterion would ship with no test and no fix, so a dead follow-up is a
+  // dispatch death like any other triage step, not a contract to build on.
+  if (!gap) return triageDied('expected-behavior writer (uncovered defects)')
+  if (gap) {
+    authoredAc.push(...(Array.isArray(gap.acceptanceCriteria) ? gap.acceptanceCriteria : []).filter(Boolean))
+    if (Array.isArray(gap.lintRules) && contract && typeof contract === 'object') {
+      contract.lintRules = [...(Array.isArray(contract.lintRules) ? contract.lintRules : []), ...gap.lintRules]
+    }
+  }
+}
+const uncoveredDefects = defectIds.filter((id) => !coveredIds().has(id))
 if (uncoveredDefects.length) log(`⚠ Triage: defect(s) with no acceptance criterion: ${uncoveredDefects.join(', ')}`)
 // The range is an expectation, not a gate: every criterion is carried through either way.
 checkLimit('Triage', `acceptance criteria for ${defectIds.length || 'unenumerated'} defect(s)`, authoredAc, AC_MAX, AC_MIN)

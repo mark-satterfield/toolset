@@ -346,8 +346,9 @@ function checkLimit(where, what, value, expected, min) {
 // args: {
 //   prd: {                        // the PRD — required, and WHOLE. Not a subtracted version
 //     id?, title?,                // of it: a requirement whose deployed implementation
-//     body: string,               // contradicts the PRD still lands in a repository, because
-//   },                            // removing that implementation is part of this work.
+//     body?: string,              // contradicts the PRD still lands in a repository, because
+//     path?: string,              // removing that implementation is part of this work. Either
+//   },                            // body or an absolute .md path; body wins when both are given.
 //   architecture?: object|null,   // the ruled architecture artifact, or { skipped: true }
 //   reconciliation?: {            // NORMALLY ABSENT. prd-to-spec takes its material
 //                                 // inventory per repository at SPEC AUTHORING, which is
@@ -569,6 +570,13 @@ const prdInput = a.prd || {}
 const prdBody = typeof prdInput === 'string' ? prdInput : prdInput.body || ''
 const prdId = (typeof prdInput === 'string' ? '' : prdInput.id) || ''
 const prdTitle = (typeof prdInput === 'string' ? '' : prdInput.title) || ''
+// The PRD may arrive as a PATH instead of inlined text: a real PRD runs to ~43K characters, and a
+// host that had to paste it into the arguments hit its transcription budget. A path is held to the
+// same allowlist as every other path this file interpolates. An inlined body still wins when given.
+const prdPath =
+  typeof prdInput === 'object' && prdInput && /^\/[A-Za-z0-9._/-]+\.md$/.test(String(prdInput.path || '')) && !String(prdInput.path).split('/').includes('..')
+    ? prdInput.path
+    : ''
 const epic = a.epic || {}
 const seedRepos = (Array.isArray(a.seedRepos) ? a.seedRepos : []).filter((r) => hasText(r)).map((r) => r.trim())
 const reconciliation = a.reconciliation || {}
@@ -673,12 +681,12 @@ const failDispatch = (reason, ...phases) => {
   return fail(reason, deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {})
 }
 
-if (!hasText(prdBody)) {
+if (!hasText(prdBody) && !prdPath) {
   // Refuse rather than return an empty span. "No repository could be ruled" and "no PRD was
   // supplied" both reduce to `repos: []`, and the caller treats the first as a real ruling
   // that the work needs repositories nobody has. Conflating them invents a repository
   // requirement out of a missing argument.
-  return fail('repo-scoping invoked with an empty PRD body — there is nothing to scope, and an empty span would read as a ruling.')
+  return fail('repo-scoping invoked with neither a PRD body nor a readable PRD path (an absolute .md path) — there is nothing to scope, and an empty span would read as a ruling.')
 }
 
 // ── The path guard ──────────────────────────────────────────────────────────────
@@ -722,7 +730,9 @@ const pathFault = (label, p) => {
 }
 
 const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
-const prdBlock = `${prdHeader}\n\n${prdBody}`
+const prdBlock = hasText(prdBody)
+  ? `${prdHeader}\n\n${prdBody}`
+  : `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you answer; every requirement in it is work.`
 // The architecture ruling as text. It is the design the placement serves, so the shaper
 // gets it. The surveyor does not: its inventory is cached across Epics. A cut here is cut
 // through `capped()` and announces itself rather than simply ending.
@@ -738,6 +748,9 @@ const architectureBlock = architectureSkipped
   ? '(no architecture decision was ruled for this PRD — triage found none outstanding, so the design is the existing one. Shape the work from the PRD itself and from the patterns the requirements already imply.)'
   : capped('architecture ruling', JSON.stringify(architecture, null, 2), ARCHITECTURE_CAP) +
     (rulingFile ? `\n\nThe ruling itself is the document at ${rulingFile}. Read that one file before you answer.` : '')
+
+// The only files the shaper may open: the PRD when it came as a path, and a reused ruling.
+const shaperFiles = [prdPath && !hasText(prdBody) ? 'the PRD file named above' : '', rulingFile ? 'the ruling file named above' : ''].filter(Boolean)
 
 // ── THE SURVEY IS CACHED ACROSS EPICS; THE SPAN NEVER IS ────────────────────────
 //
@@ -897,7 +910,7 @@ For each work unit return:
 Also return:
 - designSummary — the shape of the whole, in a few sentences.
 
-READING BUDGET (binding): read NOTHING${rulingFile ? ' except the ruling file named above' : ''}. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
+READING BUDGET (binding): read NOTHING${shaperFiles.length ? ` except ${shaperFiles.join(' and ')}` : ''}. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
 
 Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a result this phase can use, and an empty list ends the run. Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
       {

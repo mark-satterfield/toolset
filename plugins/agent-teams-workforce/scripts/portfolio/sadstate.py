@@ -61,10 +61,12 @@ def _promote_one(path: Path) -> str:
         return "no-frontmatter"
     lines, start, close = split
     for idx in range(start, close):
-        stripped = lines[idx].lstrip()
-        if not stripped.startswith(f"{STATE_KEY}:"):
+        # Top-level keys only: an indented `lifecycle_state:` belongs to a nested mapping,
+        # and rewriting it unindented would break the frontmatter it sits in.
+        line = lines[idx]
+        if not line.startswith(f"{STATE_KEY}:"):
             continue
-        if stripped[len(STATE_KEY) + 1 :].strip() == EFFECTIVE:
+        if line[len(STATE_KEY) + 1 :].strip() == EFFECTIVE:
             return "unchanged"
         lines[idx] = f"{STATE_KEY}: {EFFECTIVE}"
         break

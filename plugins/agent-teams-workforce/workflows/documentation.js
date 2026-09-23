@@ -284,7 +284,26 @@ async function settleAgent(prompt, opts) {
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
-const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
+const suppliedRepoPath = String(c.repoPath || (c.bead && c.bead.repoPath) || '').trim()
+// The path is command text in every prompt below, and the writers EDIT files under it. This
+// mini is separately dispatchable, so it holds the path to the same allowlist deploy.js does
+// rather than trusting a workspace step it may never have been behind: absolute, plain
+// characters, no empty or `..` segments. REFUSED, never rewritten.
+if (
+  suppliedRepoPath &&
+  (!/^\/[A-Za-z0-9._/-]+$/.test(suppliedRepoPath) || suppliedRepoPath.includes('//') || suppliedRepoPath.endsWith('/') || suppliedRepoPath.split('/').includes('..'))
+) {
+  log(`Documentation: REFUSED — the contract repoPath ${JSON.stringify(suppliedRepoPath)} is not an absolute path of plain characters`)
+  return {
+    docsCurrent: false,
+    audit: null,
+    update: null,
+    phaseBlocked: true,
+    blockedReason: `the contract repoPath ${JSON.stringify(suppliedRepoPath)} is not an absolute path of plain characters, so no writer is dispatched against it`,
+    ledger: { phase: 'documentation', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'refused', ok: false },
+  }
+}
+const repo = suppliedRepoPath || '(repo path not provided)'
 // Agents start in the session's working directory, not in this repository, and many of the
 // agents this phase dispatches run in an isolation worktree of that other repository. So every
 // prompt pins the tree by absolute path rather than saying "work within" it.

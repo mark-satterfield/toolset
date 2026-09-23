@@ -316,9 +316,10 @@ Deliver CDK-expressible provisioning intent:
 - rationale: why this shape, tied to the change.`
 }
 
-async function makeIntent(feedback) {
+// Each dispatch carries its own label, so a death is attributable to the pass that died.
+async function makeIntent(feedback, pass) {
   return await settleAgent(intentPrompt(feedback), {
-    label: 'intent:author',
+    label: pass > 1 ? `intent:author:pass-${pass}` : 'intent:author',
     phase: 'Provisioning intent',
     agentType: 'agent-teams-workforce:cdk-infrastructure-designer',
     schema: {
@@ -349,7 +350,7 @@ async function makeIntent(feedback) {
   })
 }
 
-let intent = await makeIntent('')
+let intent = await makeIntent('', 1)
 
 // A dead dispatch has no artifact to review or gate, so it is reported as itself and the
 // composite's gate spends no retry on it.
@@ -366,7 +367,7 @@ if (!intent) return dispatchFailedResult('the cdk-infrastructure-designer')
 phase('Review')
 
 // Security scan is independent of the maker and does not change between cost passes.
-const scanSecurity = (currentIntent) =>
+const scanSecurity = (currentIntent, label) =>
   settleAgent(
   `Independently scan this provisioning intent for security misconfiguration — public exposure, missing encryption, over-broad IAM, unencrypted/unversioned buckets, insecure defaults. You are an independent scanner — you did not author the intent and you do not modify it.
 
@@ -377,7 +378,7 @@ ${JSON.stringify(currentIntent, null, 2)}
 
 Report each finding with a severity. Encryption/versioning omissions on any S3 bucket and any public-exposure or over-broad-IAM issue are blocking.`,
   {
-    label: 'review:security',
+    label: label || 'review:security',
     phase: 'Review',
     agentType: 'agent-teams-workforce:infrastructure-security-scanner',
     schema: {
@@ -471,7 +472,7 @@ for (let pass = 2; pass <= MAX_COST_LOOPS && !costResolved; pass++) {
     securityFindings.blocking === true
       ? `\n\nThe security scan also blocked this intent — fix these in the same revision:\n${JSON.stringify(securityFindings.findings || [])}`
       : ''
-  const revised = await makeIntent(`${costFindings.feedback || ''}${securityBlock}`)
+  const revised = await makeIntent(`${costFindings.feedback || ''}${securityBlock}`, pass)
   if (!revised) return dispatchFailedResult('the cdk-infrastructure-designer')
   intent = revised
   rewritten = true
@@ -483,7 +484,7 @@ for (let pass = 2; pass <= MAX_COST_LOOPS && !costResolved; pass++) {
 // The security verdict above was about the FIRST intent. When the cost loop rewrote it, the
 // scan is re-run on the intent that is actually returned.
 if (rewritten) {
-  securityFindings = await scanSecurity(intent)
+  securityFindings = await scanSecurity(intent, 'review:security:rescan')
   if (!securityFindings) return dispatchFailedResult('the infrastructure-security-scanner')
 }
 

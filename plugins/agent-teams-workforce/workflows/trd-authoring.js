@@ -284,7 +284,8 @@ async function settleAgent(prompt, opts) {
 }
 
 // args: {
-//   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },  // the source PRD
+//   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },  // the source PRD; `path`
+//                            // (absolute .md) is read by the author when `content` is absent
 //   sad: { path?, sectionLayout?: 'single-file' | 'one-file-per-section' }, // arc42 SAD location
 //   trdPath?: string,        // where the TRD should be written/lives
 //   repoPath?: string,       // working repo for file reads/writes
@@ -367,8 +368,17 @@ END STANDING RULINGS
 // one resumes from the batches already saved, so a re-run genuinely starts with data this
 // one did not have. Marking a path that carries new information would silently kill
 // legitimate rework.
-if (!prd.id && !prd.path && !prd.content) {
-  const why = 'no PRD supplied (id/path/content all empty) — refusing to run without a work item. Re-running changes nothing: supply the PRD to the caller.'
+// The PRD may arrive as a PATH with no inlined text, so the caller does not have to retype a
+// ~43K-character document into the arguments. The path is held to the allowlist every path in
+// these scripts passes: absolute, .md, no `..`. Inlined content wins when given. With neither,
+// the run refuses: a TRD authored from an id or a title alone is silently wrong.
+const prdContent = typeof prd.content === 'string' && prd.content.trim().length > 0
+const prdPath =
+  /^\/[A-Za-z0-9._/-]+\.md$/.test(String(prd.path || '')) && !String(prd.path).split('/').includes('..') ? prd.path : ''
+if (!prdContent && !prdPath) {
+  const why =
+    `no readable PRD supplied — prd.content is empty and prd.path ${prd.path ? `${JSON.stringify(String(prd.path))} is not an absolute .md path without ".."` : 'is absent'}. ` +
+    'A TRD authored without the PRD text is silently wrong, so nothing was extracted or authored. Re-running changes nothing: pass the PRD content or a valid path.'
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 
@@ -1143,9 +1153,9 @@ const extractText = [
   renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
   renderFeed('§8 Crosscutting Concepts', sadExtract.crosscuttingConcepts),
 ].join('\n\n')
-const prdText = prd.content
+const prdText = prdContent
   ? prd.content
-  : `PRD ${prd.id || ''}: ${prd.title || ''} (path: ${prd.path || 'n/a'})`
+  : `PRD ${prd.id || ''}${prd.title ? `: ${prd.title}` : ''}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you author anything; every requirement in it is in scope.`
 
 // ── Phase 2: Author TRD ─────────────────────────────────────────────────────────
 let trd = null

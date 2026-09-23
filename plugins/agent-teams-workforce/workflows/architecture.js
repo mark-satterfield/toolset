@@ -1245,6 +1245,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
       ok: false,
       stage: 'extract',
       error: `SAD inventory produced nothing — the files holding sections 2, 4 and 8 at ${sadPath} could not be listed, so no extraction was attempted. Nothing was triaged, proposed or ruled.`,
+      reason: `SAD inventory produced nothing — the files holding sections 2, 4 and 8 at ${sadPath} could not be listed, so no extraction was attempted. Nothing was triaged, proposed or ruled.`,
       ...dispatchFailedReport('Extract SAD'),
     }
   }
@@ -1377,6 +1378,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
       ok: false,
       stage: 'extract',
       error: `SAD extraction is INCOMPLETE: ${deadBatches.length} batch(es) returned nothing even after being split down to single files, so ${unread.length} SAD file(s) were never read. NO architecture decision was made — a ruling derived from part of the architecture is wrong output, not cheaper output, and it would be written back into §2/§4/§8 as effective. The ${done} batch(es) that DID complete are saved${SHARD_SAVE_DIR ? ` under ${SHARD_SAVE_DIR}` : ''}, so re-running this phase resumes at the failure and re-reads nothing else. Unread: ${unread.join(', ')}`,
+      reason: `SAD extraction is INCOMPLETE: ${unread.length} SAD file(s) were never read, so no architecture decision was made. The completed batches are saved; re-running resumes at the failure. Unread: ${unread.join(', ')}`,
       unreadSadFiles: unread,
       deadShards: deadBatches.map((b) => ({ label: b.label, files: b.entries.map((e) => e.path) })),
       ...dispatchFailedReport('Extract SAD'),
@@ -1930,6 +1932,25 @@ ${SURVEY_BOUND}${persistBrief(ART, 'architecture-analysis.json', PROPOSAL_WHAT)}
     if (wantsContextMap) contextMap = (advisors && advisors.contextMap) || null
     if (wantsFailureModes) failureModes = (advisors && advisors.failureModes) || []
   }
+  // A panel of which NOTHING came back is not a shortfall the decider can rule around: it
+  // would rule on no options at all, and that ruling is written into the SAD as effective.
+  // It is a dispatch death, reported as one so the gate spends no retry on it.
+  const nothingBack = activeMakers.length ? !proposals.length : advisorsDispatched && advisorsDied
+  if (nothingBack) {
+    const deaths = dispatchDeaths('Proposals')
+    const why = `every dispatched analyst in the proposal panel returned nothing (${activeDimensions.join(', ')}) — there are no options to rule on, so no ruling was made and the SAD is untouched.`
+    log(`Proposals: ${why}`)
+    return {
+      ok: false,
+      stage: 'proposals',
+      error: why,
+      reason: why,
+      ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+      triage,
+      panelShortfall,
+      sadExtract,
+    }
+  }
 }
 let proposalsText = JSON.stringify(proposals, null, 2)
 let analysisText = JSON.stringify({ contextMap, failureModes }, null, 2)
@@ -2358,8 +2379,27 @@ Propose a NEW option set. Requirements for this round:
   recordPanelShortfall(round + 1, activeMakers, reResults, (m) => `proposals:${m.lens}-r${round + 1}`, 0, false)
   const reProposed = reResults.filter(Boolean)
   if (!reProposed.length) {
-    log('Re-proposal round produced nothing — the inadmissible verdict stands')
-    break
+    // Every re-proposal lane died, so the round never produced the option set the blocking
+    // rules asked for. That is a dispatch death, not a second inadmissible ruling, and it
+    // must not reach the deterministicFailure return below.
+    const deaths = dispatchDeaths('Proposals').filter((f) => /-r\d+$/.test(String(f.label || '')))
+    const why = `the re-proposal round ${round + 1} returned nothing from any analyst — the round-${round} verdict (no admissible option) was never answered with a new option set.`
+    log(`Re-proposal round produced nothing — ${why}`)
+    return {
+      ok: false,
+      stage: 'proposals',
+      error: why,
+      reason: why,
+      ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+      admissible: false,
+      blockingRules: blocking,
+      ruleChallenges: decision.ruleChallenges || [],
+      decideRounds,
+      triage,
+      panelShortfall,
+      sadExtract,
+      decision,
+    }
   }
   proposals = reProposed
   checkProposalLimits(proposals)
@@ -2632,7 +2672,7 @@ MARK WHAT THIS RULING SUPERSEDES IN PROVENANCE, NOT ONLY IN PROSE.
 If a \`derived_from\` entry asserts a state this ruling overturns, append a supersession marker naming this decision to that entry. A reader or extractor reading provenance alone must not come away with two rulings asserting opposite states.
 
 Ruling: ${decision.ruling}
-Chosen approach: ${decision.chosenApproach}
+Chosen approach: ${decision.chosenApproach || '(not stated separately — see the ruling)'}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 Resolved challenges: ${(decision.resolvedChallenges || []).join('; ') || 'none'}
 
@@ -2711,7 +2751,7 @@ ${PRIOR_PASS_BRIEF}
 Check the entries the previous pass touched: an entry it rewrote WITHOUT a tag needs one before you return, and an entry whose tag it changed needs the original tag restored.
 
 Ruling: ${decision.ruling}
-Chosen approach: ${decision.chosenApproach}
+Chosen approach: ${decision.chosenApproach || '(not stated separately — see the ruling)'}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 

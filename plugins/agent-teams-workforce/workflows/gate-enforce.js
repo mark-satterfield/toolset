@@ -358,8 +358,29 @@ const criteria = (Array.isArray(a.criteria) ? a.criteria : [])
     return null
   })
   .filter(Boolean)
+// ── THE ARTIFACT AS THE JUDGE READS IT ────────────────────────────────────────
+// Captured test output rides on the artifact whole — a Red artifact's `evidence` is every
+// writer's run joined — and the enforcer's prompt used to inline all of it. The judge needs
+// the shape of a failure, not every line of a long traceback, and the deterministic checks
+// below still measure the UNCUT artifact. So only the prompt copy of a long string is cut,
+// keeping its head and its tail (where a test runner prints its summary), and it says so.
+const PROMPT_STRING_CAP = 6000
+const PROMPT_STRING_HEAD = 4000
+const PROMPT_STRING_TAIL = 2000
+function capForPrompt(value, depth) {
+  if (typeof value === 'string') {
+    if (value.length <= PROMPT_STRING_CAP) return value
+    const omitted = value.length - PROMPT_STRING_HEAD - PROMPT_STRING_TAIL
+    return `${value.slice(0, PROMPT_STRING_HEAD)}\n…[${omitted} characters omitted from this prompt — the deterministic checks read the full value]…\n${value.slice(-PROMPT_STRING_TAIL)}`
+  }
+  if (!value || typeof value !== 'object' || depth > 8) return value
+  if (Array.isArray(value)) return value.map((v) => capForPrompt(v, depth + 1))
+  const out = {}
+  for (const [k, v] of Object.entries(value)) out[k] = capForPrompt(v, depth + 1)
+  return out
+}
 const artifactText =
-  typeof a.artifact === 'string' ? a.artifact : JSON.stringify(a.artifact ?? {}, null, 2)
+  typeof a.artifact === 'string' ? capForPrompt(a.artifact, 0) : JSON.stringify(capForPrompt(a.artifact ?? {}, 0), null, 2)
 
 // ── Deterministic checks, evaluated BEFORE any model turn ─────────────────────
 //
@@ -443,7 +464,11 @@ function asText(value) {
 const checkResults = checks.map((chk) => {
   const value = a.artifact ? a.artifact[chk.field] : undefined
   let met
-  let evidence = `observed ${chk.field} = ${JSON.stringify(value)}`
+  // An excerpt, the way the pattern checks below quote one: a check on captured output used
+  // to copy the WHOLE output into its evidence, and from there into the enforcer's prompt,
+  // the verdict, the run ledger and the checkpoint.
+  const observed = JSON.stringify(value)
+  let evidence = `observed ${chk.field} = ${observed !== undefined && observed.length > 300 ? `${observed.slice(0, 300)}… (${observed.length} characters)` : observed}`
   if (Object.prototype.hasOwnProperty.call(chk, 'equals')) met = value === chk.equals
   else if (chk.nonEmpty) met = Array.isArray(value) ? value.length > 0 : String(value ?? '').trim().length > 0
   else if (chk.matches || chk.notMatches) {

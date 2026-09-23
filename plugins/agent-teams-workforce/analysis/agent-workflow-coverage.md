@@ -36,7 +36,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | appsync-client-subscription-implementer | tdd-green | Green *(implementer roster)* | AppSync client subscription implementation |
 | architecture-boundary-guardian | architecture | Challenge | Guards bounded-context boundaries |
 | architecture-decider | architecture | Decide + Update-SAD deadlock | Rules the unified architecture decision |
-| architecture-decider | infra-intent | deadlock escalation | Breaks maker-checker deadlock on infra intent |
 | architecture-decision-workflow-coordinator | architecture | Proposals | Frames/fans-out the proposal sub-team |
 | architecture-diagram-author | architecture | Update SAD | Mermaid architecture diagrams from ruling |
 | architecture-fitness-function-author | architecture | Update SAD | Testable fitness functions from ruling |
@@ -79,8 +78,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | data-model-specification-author | spec-authoring | authoring | DynamoDB table specs |
 | data-pipeline-test-writer | tdd-red | Red *(writer roster)* | Failing data-pipeline tests |
 | definition-of-done-enforcer | spec-authoring | authoring | Authors the Definition of Done |
-| dependency-change-detector | infra-intent | freshness check | Detects dependency contract changes |
-| dependency-change-detector | infra-intent | freshness checker | Detects dependency drift since spec authored |
+| dependency-change-detector | — (no workflow) | — | Dependency drift since spec authored |
 | dependency-cve-auditor | adversarial | Attack *(infra lane)* | CVE/supply-chain audit |
 | dependency-cve-auditor | infra-change | Adversarial *(trimmed lane)* | Infra-path CVE audit |
 | dependency-graph-extractor | prd-validation | fan-out analysts | Builds dependency manifest |
@@ -198,13 +196,13 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 ### Headline counts
 
 - **172** agents defined in `agents/` (excluding `README.md`, `agents-file.md`).
-- **157** are referenced by at least one workflow (static dispatch or dynamic-selection roster).
-- **15** are orphans (no workflow references them).
-- Of the 157 referenced: **142 appear in exactly one workflow (≈90%)**; only **15 appear in two or more**.
+- **156** are referenced by at least one workflow (static dispatch or dynamic-selection roster).
+- **16** are orphans (no workflow references them).
+- Of the 156 referenced: **142 appear in exactly one workflow (≈91%)**; only **14 appear in two or more**.
 
-**The user's suspicion is confirmed: the overwhelming majority of agents (90% of those used, 142/157) appear in exactly one workflow.** Reuse is the rare exception.
+**The user's suspicion is confirmed: the overwhelming majority of agents (91% of those used, 142/156) appear in exactly one workflow.** Reuse is the rare exception.
 
-### (i) ORPHANS — defined but referenced by no workflow (15)
+### (i) ORPHANS — defined but referenced by no workflow (16)
 
 | Orphan agent | Why it's likely orphaned |
 | --- | --- |
@@ -222,6 +220,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | `test-isolation-specialist` | No workflow node dispatches it |
 | `graphql-schema-reviewer` | GraphQL drafted in `architecture` but never reviewed downstream |
 | `c4-diagram-author` | Diagramming folded into `architecture-diagram-author` |
+| `dependency-change-detector` | `infra-intent`'s maker authors the intent in the same run, so there is no time gap for a freshness check |
 | `uml-diagram-author` | Diagramming folded into `architecture-diagram-author` |
 
 Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents** whose routing job was moved into the workflow scripts, and **(2) reviewer/author agents whose competence was consolidated into a sibling** (diagram authors, story writer/reviewer, graphql reviewer).
@@ -229,17 +228,15 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 ### (ii) SINGLETONS vs. reused
 
 - **Singletons (1 workflow): 142.**
-- **Reused (2+ workflows): 15**, listed with count:
+- **Reused (2+ workflows): 14**, listed with count:
 
 | Reused agent | # | Workflows |
 | --- | --- | --- |
 | run-ledger-writer | 4 | bug-fix, infra-change, prd-to-spec, task-to-deploy |
 | infrastructure-security-scanner | 3 | adversarial, infra-change, infra-intent |
 | spec-decider | 2 | prd-creation, spec-authoring |
-| architecture-decider | 2 | architecture, infra-intent |
 | cdk-infrastructure-designer | 2 | architecture, infra-intent |
 | cost-impact-reviewer | 2 | architecture, infra-intent |
-| dependency-change-detector | 1 | infra-intent |
 | dependency-cve-auditor | 2 | adversarial, infra-change |
 | data-exposure-scanner | 2 | adversarial, infra-change |
 | root-cause-analyst | 2 | bug-triage, integration |
@@ -248,7 +245,7 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 | ambiguity-detector | 3 | prd-validation, route-build, route-elaboration |
 | cdk-stack-author | 2 | tdd-green (roster) + infra-change (pins it as Green implementer) |
 
-Most reuse is genuine cross-cutting infrastructure: `run-ledger-writer` (telemetry), the gate enforcer, and the architecture/infra overlap (infra-intent deliberately reuses the architecture team's decider, designer, and cost reviewer). This is healthy reuse, not accidental duplication.
+Most reuse is genuine cross-cutting infrastructure: `run-ledger-writer` (telemetry), the gate enforcer, and the architecture/infra overlap (infra-intent deliberately reuses the architecture team's designer and cost reviewer). This is healthy reuse, not accidental duplication.
 
 ### (iii) REUSE GAPS
 

@@ -328,7 +328,9 @@ const PR_COMMAND =
   typeof a.prCommand === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(a.prCommand) && !a.prCommand.split('/').includes('..') && !a.prCommand.includes('//')
     ? a.prCommand
     : null
-const bead = a.bead || {}
+// A copy: the triage-first path records the repository it located on it, and the caller's
+// argument object is not this script's to change.
+const bead = { ...(a.bead || {}) }
 // Gate retry budget. One rework round, then proceed with the finding recorded.
 //
 // This was 3, and nested minis carried their own bound of 2 on top, so a single
@@ -476,8 +478,8 @@ let settleIsLinkedWorktree = false
 // guess.
 let settleDefaultBranch = null
 // The repository triage LOCATED when the caller supplied none. It rides out on the handback so
-// a re-dispatch of the same bead can supply it: without it, every resume of a triage-first run
-// pays the whole diagnosis again just to learn where its checkpoint is.
+// a re-dispatch of the same bead can name the repository its checkpoint and worktree live in.
+// Triage still runs on that re-dispatch: a Bug never skips it.
 let locatedRepoPath = null
 
 // ===== SHARED BLOCK path-guard — BEGIN (canonical: scripts/shared-path-guard.mjs) =====
@@ -1119,7 +1121,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null }
+const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [] }
 // The phases that certify a Green result, in run order, and the fingerprint of that Green.
 const CP_BASIS_KEYS = ['integration', 'adversarial']
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
@@ -1167,7 +1169,8 @@ ${cp.path}`,
   } catch (e) {
     log(`checkpoint load failed (non-fatal, starting fresh): ${(e && e.message) || e}`)
   }
-  if (!read || read.found !== true || !read.content) return
+  // `{}` is a checkpoint a completed run retired: there is nothing to resume, and nothing was invalidated.
+  if (!read || read.found !== true || !read.content || read.content.trim() === '{}') return
   let parsed = null
   try { parsed = JSON.parse(read.content) } catch (e) { parsed = null }
   const why = !parsed || typeof parsed !== 'object'
@@ -1223,6 +1226,12 @@ ${cp.path}`,
     }
     runLedger.push({ phase: 'checkpoint', event: 'repair-pending', path: cp.path, iteration: cp.pendingRepair.iteration, dropped })
     log(`Checkpoint: a deploy repair (iteration ${cp.pendingRepair.iteration}) was in flight when the run stopped — it is re-run before Integration, and ${dropped.join(', ') || 'nothing'} is re-certified`)
+  } else if (pr && typeof pr === 'object' && Number.isFinite(pr.iteration)) {
+    // The repair after deploy iteration N finished (its Green is the saved one), so the
+    // next rollout is N+1 with the smoke suite that proved the defect: a resume does not hand
+    // the deploy loop a fresh budget.
+    cp.deployIterationsDone = pr.iteration
+    cp.doneSmokeSuite = Array.isArray(pr.smokeTestFiles) ? pr.smokeTestFiles : []
   }
   cp.loaded = phases
   cp.phases = { ...phases }
@@ -1242,7 +1251,7 @@ function cpGet(key) {
 // kept whole. An older, untrimmed file still loads.
 const CP_ARTIFACT_FIELDS = {
   refactor: ['testsGreen', 'behaviorPreserved', 'changedFiles', 'alreadySatisfied', 'restored', 'restoreReason', 'ledger'],
-  integration: ['passed', 'alreadySatisfied', 'ledger'],
+  integration: ['passed', 'alreadySatisfied', 'suites', 'provisionEnv', 'ledger'],
   adversarial: ['constitutiveOpen', 'selfContradictory', 'alreadySatisfied', 'attackers', 'laneMode', 'ledger'],
 }
 function cpTrim(key, result) {
@@ -1348,16 +1357,23 @@ if (!repoSupplied) {
 // by here — supplied by the caller, or located by the triage-first branch above.
 cpInit(bead.repoPath, bead.id, cpHash(`${bead.title || ''}|${bead.description || ''}`))
 await cpLoad()
-// The triage-first path ran fresh (no repository was known when it dispatched). A
-// checkpointed triage for this repository wins over it, because every phase checkpointed
-// after it was built against THAT contract; otherwise the fresh contract is persisted for
-// the next dispatch to reuse.
-if (contract && cp.loaded && usableTriage(cp.loaded.triage)) {
-  log('Triage-first contract set aside — the checkpointed triage the resumed phases were built against is reused')
-  contract = cp.loaded.triage
-} else if (contract && cp.active) {
-  await cpSave('triage', { ...contract, repoPath: null, bead: contract.bead ? { ...contract.bead, repoPath: null } : null })
+// A Bug NEVER skips triage: it runs on every dispatch, a checkpoint or a supplied repository
+// notwithstanding, and its dispatch deaths and needs-prd sizing are honoured before this is
+// called. The one thing a checkpoint decides is which contract the RESUMED phases continue
+// with: phases saved after an earlier triage were built against that contract, so it is kept
+// for them; with nothing resumed past triage, the fresh contract is used and saved. The
+// repository fields are STRIPPED before persisting: the composite re-pins them to the live
+// worktree on every dispatch, and a path must never ride a checkpoint into a prompt un-refused.
+async function adoptTriage(fresh) {
+  const saved = cp.loaded && usableTriage(cp.loaded.triage) ? cp.loaded.triage : null
+  if (saved && Object.keys(cp.loaded).some((k) => k !== 'triage')) {
+    log('Triage ran; the resumed phases continue with the checkpointed contract they were built against')
+    return saved
+  }
+  if (cp.active) await cpSave('triage', { ...fresh, repoPath: null, bead: fresh.bead ? { ...fresh.bead, repoPath: null } : null })
+  return fresh
 }
+if (contract) contract = await adoptTriage(contract)
 
 // ── Workspace: establish the tree every writing phase then operates in ─────────
 // This is the structural mirror of the settle step above: settle LANDS the tree on
@@ -1430,10 +1446,6 @@ const workBead = { ...bead, repoPath: workRepoPath }
 
 if (!contract) {
   enterPhase('Triage')
-  const cpTriage = cpGet('triage')
-  if (usableTriage(cpTriage)) {
-    contract = cpTriage
-  } else {
   log(`Triaging ${bead.id || '(no id)'} — ${bead.title || ''}`)
   // Standing rulings from the project owner: resolved once from the repository this
   // run operates on (one cheap read agent — scripts have no filesystem) and threaded
@@ -1466,15 +1478,12 @@ If the file exists and contains text, return found=true and its FULL text verbat
   } catch (e) {
     log(`standing-rulings resolution failed (non-fatal, nothing injected): ${(e && e.message) || e}`)
   }
-  contract = await workflow('agent-teams-workforce:bug-triage', { bead: workBead, standingRulings })
-  const triageFault = triageFailure(contract)
+  const fresh = await workflow('agent-teams-workforce:bug-triage', { bead: workBead, standingRulings })
+  const triageFault = triageFailure(fresh)
   if (triageFault) return triageFault
-  // The repository fields are STRIPPED before persisting: the composite re-pins them to
-  // the live worktree on every dispatch (see `contract.repoPath = workRepoPath` below),
-  // and a workspace-supplied path must never ride a checkpoint into another agent's
-  // prompt un-refused.
-  await cpSave('triage', { ...contract, repoPath: null, bead: contract.bead ? { ...contract.bead, repoPath: null } : null })
-  }
+  const promotedFresh = needsPrdExit(fresh)
+  if (promotedFresh) return promotedFresh
+  contract = await adoptTriage(fresh)
 }
 // The composite owns the tree, not the mini. bug-triage echoes back whatever repoPath
 // it was handed — or, on the triage-first path, the REPOSITORY it located — and pinning
@@ -1647,8 +1656,17 @@ let contradictionRuling = null
 // across the whole run. The first Green and every Green re-entered from the deploy loop
 // go through here, so a defective test found after a smoke failure is repaired rather
 // than failing the run. Returns `{ green }` (ok or not) or `{ handback }` to return as is.
+// The implementers an earlier Green of this run selected (or reused), so a later Green does not
+// pay the implementation-lead again. A 'default' selection was a fallback, not a choice, and is
+// not carried.
+function priorImplementers(greenArtifact) {
+  const l = greenArtifact && greenArtifact.ledger
+  return l && (l.mode === 'selected' || l.mode === 'reused') && Array.isArray(l.chosen) && l.chosen.length ? l.chosen : undefined
+}
 async function greenThroughRed(phaseName, extraFeedback) {
   let rulingBlock = ''
+  // The Green this call last ran, so the Green after a Red re-author reuses its selection.
+  let lastGreen = null
   const runGreen = (name) => {
     enterPhase('Green')
     return gateLoop({
@@ -1658,14 +1676,17 @@ async function greenThroughRed(phaseName, extraFeedback) {
       escalateTargets: ['triage', 'red'],
       phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-green', {
         contract, red: redResult.artifact, implementer: a.implementer,
-        // A retry reuses the implementers the previous attempt selected; an explicit implementer still wins.
-        implementers: (loop && loop.priorArtifact && loop.priorArtifact.ledger && loop.priorArtifact.ledger.chosen) || undefined,
+        // A retry reuses the implementers the previous attempt selected, and so does every later
+        // Green of this run (a Red re-author, an integration repair, a deploy correction): the
+        // change is the same change. An explicit implementer still wins inside tdd-green.
+        implementers: (loop && loop.priorArtifact && loop.priorArtifact.ledger && loop.priorArtifact.ledger.chosen) || priorImplementers(lastGreen && lastGreen.artifact) || priorImplementers(green && green.artifact),
         feedback: [extraFeedback, rulingBlock, feedback].filter(Boolean).join('\n\n'),
       }),
     })
   }
   let g = await runGreen(phaseName)
   for (;;) {
+    lastGreen = g
     if (g.artifact && g.artifact.ledger) runLedger.push(g.artifact.ledger)
     if (g.ok) return { green: g }
 
@@ -1886,18 +1907,33 @@ if (!refactor.ok) {
 // over the same tree reproduces a real failure. A failure is repaired by certifyIntegration
 // below — through Green when the suites failed, or by running them again when the test
 // environment was not ready — and then the suites run once more.
-const runIntegration = (phaseName, seed) => gateLoop({
-  gate: '3', phaseName,
-  maxLoops: 1,
-  criteria: [],
-  checks: [{ field: 'passed', equals: true, label: 'the integration/contract/E2E suites passed' }],
-  escalateTargets: ['green', 'red', 'triage'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
-    contract,
-    green: green.artifact,
-    feedback: [seed, feedback].filter(Boolean).join('\n\n'),
-  }),
-})
+// The suites the integration-testing-lead chose on an earlier run, handed back as the caller's
+// choice so a re-run (after a repair, an unready environment, or a deploy correction) does not
+// pay the lead to answer the same question about the same change.
+let integrationSelection = null
+function rememberIntegrationSelection(art) {
+  const l = art && art.ledger
+  if (l && (l.mode === 'selected' || l.mode === 'caller-specified') && Array.isArray(art.suites) && art.suites.length) {
+    integrationSelection = { suites: art.suites, provisionEnv: art.provisionEnv === true }
+  }
+}
+const runIntegration = async (phaseName, seed) => {
+  const r = await gateLoop({
+    gate: '3', phaseName,
+    maxLoops: 1,
+    criteria: [],
+    checks: [{ field: 'passed', equals: true, label: 'the integration/contract/E2E suites passed' }],
+    escalateTargets: ['green', 'red', 'triage'],
+    phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
+      contract,
+      green: green.artifact,
+      feedback: [seed, feedback].filter(Boolean).join('\n\n'),
+      ...(integrationSelection || {}),
+    }),
+  })
+  rememberIntegrationSelection(r && r.artifact)
+  return r
+}
 // Integration, and on a failure the one repair that can change the outcome. Returns
 // `{ integration }` (ok or not) or `{ handback }` to return as is. A repair through Green
 // replaces `green` and saves it, so the saved Integration certifies the repaired Green.
@@ -1944,6 +1980,7 @@ async function certifyIntegration(phaseName, seed) {
 }
 enterPhase('Integration')
 let integration = cpGet('integration')
+if (integration !== undefined) rememberIntegrationSelection(integration.artifact)
 if (integration === undefined) {
   const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : '')
   if (certified.handback) return certified.handback
@@ -2033,13 +2070,13 @@ const deployIterations = []
 let deployReady = null
 let deployIteration = 0
 let smokeFeedback = ''
-let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : []
+let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : cp.doneSmokeSuite
 // The repository the worktree belongs to, as git reports it: the dev deployment lease is
 // keyed on it, because every worktree path differs and two runs in one repository deploy
 // the same stacks.
 const leaseScope = (workspace.verification && workspace.verification.gitCommonDir) || null
-// A resumed deploy repair continues the iteration count it was interrupted in.
-const firstDeployIteration = resumedRepair ? Math.min(resumedRepair.iteration + 1, MAX_DEPLOY_ITERATIONS) : 1
+// A resumed run continues the iteration count of the deploy repair it recorded, finished or not.
+const firstDeployIteration = Math.min((resumedRepair ? resumedRepair.iteration : cp.deployIterationsDone || 0) + 1, MAX_DEPLOY_ITERATIONS)
 for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIteration++) {
   enterPhase('Deploy-to-dev')
   // Distinct per-iteration telemetry so a monitor can render "deploy #2".

@@ -32,7 +32,8 @@ that item, each with a reason, and a `withdrawn` entry, with a reason, for every
 standing on that item that the proposal does not keep. An edge that does not touch the item
 is refused, an owned standing edge the proposal neither keeps nor withdraws is refused, and
 only edges touching the item are added, converted or withdrawn. Acyclicity is checked over
-the proposal together with every edge of the level that does not touch the item.
+the proposal together with every edge of the level that does not touch the item and every
+hand-made edge that does, because the diff leaves both standing.
 
 Both levels carry the same records. The reason for each owned edge is stored on its BLOCKED
 bead as `seq_edge_reasons`, with the item whose assessment set it, so a later assessment of
@@ -423,15 +424,20 @@ def find_cycle(edges: list[Edge]) -> list[str]:
     return []
 
 
-def _standing_level_edges(graph: Graph, item: str, level: str) -> list[Edge]:
-    """Every edge between two beads of a level that does not touch one item.
+def _standing_level_edges(graph: Graph, item: str | None, level: str) -> list[Edge]:
+    """Every edge between two beads of a level that stays standing whatever the proposal says.
+
+    That is every edge that does not touch the item, and every hand-made edge that does:
+    a proposal never lists a hand-made edge and the diff never removes one, so a cycle
+    through one is as real as a cycle through any other edge. With no item — the owned-edge
+    repair, whose proposal is every owned edge — it is every hand-made edge.
 
     Epic edges are read whether stored as `tracks` or `blocks`; Task edges are the
     `blocks` edges, the only type that orders a build.
 
     Args:
         graph: The tracker graph.
-        item: The item whose own edges are left out.
+        item: The item whose owned edges the proposal covers, or None.
         level: `epic` or `task`.
 
     Returns:
@@ -443,11 +449,15 @@ def _standing_level_edges(graph: Graph, item: str, level: str) -> list[Edge]:
             return set(bead.tracked) | set(bead.blockers)
         return set(bead.blockers)
 
+    def stands(upstream: str, bead: Bead) -> bool:
+        covered = item is None or item in (upstream, bead.id)
+        return not covered or upstream not in bead.owned_blockers
+
     return [
         Edge(blocker=upstream, blocked=bead.id)
         for bead in graph.of_kind(_level(level))
         for upstream in sorted(upstreams(bead))
-        if item not in (upstream, bead.id)
+        if stands(upstream, bead)
         and upstream in graph.beads
         and graph.beads[upstream].kind == level
     ]
@@ -526,7 +536,7 @@ def validate(
     kept_and_withdrawn: list[str] = []
     bad_scope = ""
     if item is None:
-        cycle = find_cycle(edges)
+        cycle = find_cycle(edges + _standing_level_edges(graph, None, level))
     else:
         bad_scope = scope_defect(graph, item, level)
         outside = sorted(

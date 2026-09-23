@@ -66,19 +66,20 @@ Workflow({name: "agent-teams-workforce:dependency-assessment", args: {
 
 From the workflow's result:
 
-- `edges` — added, converted, withdrawn and unchanged; every withdrawal in `edges.withdrawn`
-  as `blocker -> blocked` with its reason; the reasoning file (`reasoning`); the edges the
-  sequencer was unsure of. When `edges.applied` is false, its `reason`, or the validation
-  defects.
+- `edges` — the counts `added`, `converted`, `removed`, `withdrawn` and `unchanged`. The
+  edges themselves are in the file `edges.resultFile` names: every edge added, converted or
+  removed as `blocker -> blocked` from its `plan.add`, `plan.convert` and `plan.remove`, and
+  every withdrawal with its reason from its `withdrawn`. Then the reasoning file
+  (`reasoning`) and the edges the sequencer was unsure of (`unsure`). When `edges.applied` is
+  false, its `reason`, or the validation defects.
 - `assessment.relatedRead` — the Epics whose PRDs the session read in full.
 - `stop` — when the proposal did not validate: the Epic and every finding in
   `stop.findings`, with the `edgesFile` and `validationFile`, and what a person does: correct
   the PRD, or the hand-made edge a cycle runs through, then assess the Epic again. Under the
   ops triggers the Epic is assessed again once its content changes.
-- With `--propose`: `edges.proposed`, then every edge in `edges.added`, `edges.converted`
-  and `edges.removed` as `blocker -> blocked`, `edges.withdrawn` with reasons, the
-  `unchanged` count, and the files holding the full diff (`resultFile`), the proposed edge set with its reasons (`edgesFile`) and the reasoning
-  (`reasoning`).
+- With `--propose`: `edges.proposed`, then the counts and the edges read from
+  `edges.resultFile` as above — there they are the diff that would be written — the proposed
+  edge set with its reasons (`edgesFile`) and the reasoning (`reasoning`).
 - `scoring` — the `wsjf-scoring` result it triggered, reported as that command reports it.
 - `error` and `dispatchFailures`, verbatim, when present.
 
