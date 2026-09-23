@@ -75,7 +75,7 @@ from edgeset import (
     withdraw_edge,
 )
 from elaboration import LifecycleError, finish, release, start
-from scoring import ScoringError, judge_input, plan, record, score
+from scoring import ScoringError, judge_input, plan, record, rubric, score
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
 #: sequencer reads it.
@@ -303,25 +303,35 @@ def _entries(path: Path | None, key: str) -> list[dict]:
     return [e for e in entries if isinstance(e, dict)]
 
 
-def _dir_entries(directory: Path | None, key: str) -> list[dict]:
+def _dir_entries(
+    directory: Path | None, key: str, unreadable: list[dict]
+) -> list[dict]:
     """The per-item records from every output file in a directory.
+
+    Each file is one judging session's output. A file that is not JSON, or holds no
+    `key` list, costs only that session's items: it is listed in `unreadable` with the
+    reason, its items surface in `record`'s `missing`, and every other file is read.
 
     Args:
         directory: The directory of session output files, or None when there is none.
         key: The list's key in each file.
+        unreadable: Receives `{file, reason}` for each file that could not be read.
 
     Returns:
         The records, file by file in name order.
-
-    Raises:
-        ScoringError: `directory` is not a directory.
     """
     if directory is None:
         return []
     if not directory.is_dir():
-        msg = f"{directory} is not a directory"
-        raise ScoringError(msg)
-    return [e for path in sorted(directory.glob("*.json")) for e in _entries(path, key)]
+        unreadable.append({"file": str(directory), "reason": "not a directory"})
+        return []
+    records: list[dict] = []
+    for path in sorted(directory.glob("*.json")):
+        try:
+            records += _entries(path, key)
+        except (ScoringError, json.JSONDecodeError, OSError) as exc:
+            unreadable.append({"file": str(path), "reason": str(exc)})
+    return records
 
 
 def _dry_run_flag(parser: argparse.ArgumentParser) -> None:
@@ -695,11 +705,15 @@ def run(args: argparse.Namespace) -> dict:
             args.level,
         )
     if command == "record":
+        unreadable: list[dict] = []
         judgments = {
-            "epic": _dir_entries(args.epics_dir, "scores"),
-            "task": _dir_entries(args.tasks_dir, "scores"),
+            "epic": _dir_entries(args.epics_dir, "scores", unreadable),
+            "task": _dir_entries(args.tasks_dir, "scores", unreadable),
         }
-        return head | record(graph, _read_json(args.plan), judgments, writer)
+        result = record(graph, _read_json(args.plan), judgments, writer)
+        result["unreadable"] = unreadable
+        result["summary"]["unreadable"] = len(unreadable)
+        return head | result
     if command == "elaboration-start":
         return head | start(
             graph, writer, args.epic, owner=args.owner, reclaim=args.reclaim
@@ -740,6 +754,7 @@ def main(argv: list[str] | None = None) -> int:
         ScoringError,
         LifecycleError,
         GraphError,
+        rubric.WsjfError,
         json.JSONDecodeError,
         OSError,
     ) as exc:

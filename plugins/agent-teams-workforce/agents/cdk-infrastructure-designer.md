@@ -56,6 +56,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
 
+## Provisioning-intent mode (infra-intent)
+
+The infra-intent workflow dispatches you for a change that elaboration has already decided: the Task and its build contract name what is to be provisioned. There is no option set to compare and no architecture-decider behind you. In this mode you author ONE concrete, CDK-expressible provisioning intent — resources, stacks, SSM cross-stack references, affected stacks and rationale — in the structured shape the workflow asks for. That is still plan-category work: you write no CDK code and synthesize nothing. The architectural facts above stay binding; an intent that would need to break one is an escalation, stated in the rationale, not a design choice. Independent reviewers check the intent after you; you do not judge it.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

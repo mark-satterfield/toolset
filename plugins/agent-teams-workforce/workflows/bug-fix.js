@@ -989,6 +989,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
+    // A verdict that blocks while naming no reason is a defect in the judgment, not a finding
+    // (gate-enforce marks it `malformedVerdict`). It gets the same one re-ask as a dead judge.
+    if (verdict && verdict.malformedVerdict === true) {
+      log(`Gate ${gate} (${phaseName}): the judge blocked without naming a reason — re-asking once`)
+      verdict = (await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)) || verdict
+    }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
       return {
@@ -1013,6 +1019,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         verdict,
       }
     }
+    // Still reasonless after the re-ask: the work was never really judged, so it is reported
+    // under the environment stage rather than charged to the phase.
+    if (verdict.malformedVerdict === true) {
+      recordGate(attempt, verdict, { terminal: 'malformed-verdict' })
+      return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
+    }
     recordGate(attempt, verdict)
     lastVerdict = verdict
     attempts.push({
@@ -1027,7 +1039,8 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     }
     if (verdict.verdict === 'escalate') {
       log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'}`)
-      return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact, verdict }
+      // The judge's feedback is why it escalated; the headline carries it.
+      return { ok: false, escalate: verdict.escalateTo || 'upstream', reason: verdict.feedback ? `escalated to ${verdict.escalateTo || 'upstream'}: ${verdict.feedback}` : undefined, artifact, verdict }
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
@@ -1111,7 +1124,11 @@ function cpInit(repo, subject, inputHash) {
   const slug = String(subject == null ? '' : subject).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120)
   // Same allowlist argument as every other interpolated path in this workforce: the
   // value lands verbatim in prompts other agents act on, so it is REFUSED, not cleaned.
-  if (!/^\/[A-Za-z0-9._/-]+$/.test(r) || r.includes('//') || r.split('/').includes('..') || !slug) return
+  if (!/^\/[A-Za-z0-9._/-]+$/.test(r) || r.includes('//') || r.split('/').includes('..') || !slug) {
+    log(`CHECKPOINTING DISABLED — no usable checkpoint root (repo=${JSON.stringify(r)}): this run cannot resume, and cannot be resumed from.`)
+    runLedger.push({ phase: 'checkpoint', event: 'disabled', repo: r || null, subject: subject || null })
+    return
+  }
   cp.active = true
   cp.inputHash = inputHash
   cp.path = `${r}/.claude/workflow-runs/checkpoints/${slug}-bug-fix.json`

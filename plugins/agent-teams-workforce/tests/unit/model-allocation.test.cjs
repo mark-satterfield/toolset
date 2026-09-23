@@ -84,11 +84,10 @@ test('makers and their checkers do not share a model', () => {
   // Independent verifiers found four real defects in work whose own tests were
   // green. A checker running the same model as its maker shares its blind spots
   // and agrees for the same wrong reason.
+  // Only pairs a workflow still dispatches as maker and checker. The task set's Beads
+  // format, the WSJF sizes and the TRD are no longer reviewed by a checker session.
   const PAIRS = [
-    ['task-decomposer', 'beads-format-validator'],
-    ['trd-author', 'trd-validator'],
     ['code-refactoring-specialist', 'code-correctness-reviewer'],
-    ['wsjf-scorer', 'wsjf-scoring-reviewer'],
     ['prd-writer', 'prd-alignment-verifier'],
     // The workspace step: one agent CREATES the worktree, a second and separately
     // dispatched one reports what git says about it. On the same model the checker

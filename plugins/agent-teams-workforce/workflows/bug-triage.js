@@ -578,7 +578,9 @@ if (scope === 'needs-prd') {
 // afterwards; it is never a schema bound, because a bound does not trim an over-long
 // list, it destroys the whole contract and halts the bug fix at triage.
 const defects = (Array.isArray(analysis.defects) ? analysis.defects : []).filter((d) => d && d.id)
-const defectIds = defects.map((d) => String(d.id))
+// Unique, because they become a schema enum below and a repeated enum value is an invalid
+// schema: a diagnosis that reused an id would otherwise kill the contract writer's dispatch.
+const defectIds = [...new Set(defects.map((d) => String(d.id)))]
 const AC_MIN = Math.max(1, defectIds.length)
 const AC_MAX = Math.max(2, defectIds.length * 2)
 log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance criteria expected in the range ${AC_MIN}..${AC_MAX}`)

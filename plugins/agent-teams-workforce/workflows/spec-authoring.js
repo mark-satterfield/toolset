@@ -1187,10 +1187,13 @@ For each, rule:
         { label: 'correct:contracts', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
       )
       for (const k of contractSentBack) {
-        if (redone && redone[k]) {
-          finalArtifacts[k] = redone[k]
-          corrected.add(k)
-        }
+        if (redone && redone[k]) corrected.add(k)
+      }
+      // The correction rewrites spec-<slug>.md whole, and that file is what decomposition and
+      // the build read. So the returned contracts are the corrected session's, all three, and
+      // the result matches the document on disk rather than a draft the file no longer holds.
+      for (const k of ['apiSpec', 'eventContracts']) {
+        if (redone && redone[k]) finalArtifacts[k] = redone[k]
       }
       if (redone && redone.errorSpec) authored.errorSpec = redone.errorSpec
     }

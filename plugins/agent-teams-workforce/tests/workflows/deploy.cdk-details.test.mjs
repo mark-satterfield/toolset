@@ -1,12 +1,10 @@
 // ssbd-1xcs D5 — cdk.details collected then discarded (deploy.js).
 // Encodes acceptance criteria D5-AC1 .. D5-AC5 (numbered AC23-AC27 in the bead).
 //
-// Defect under test: deploy.js:98-102 collapses the four-field cdk result
-// (applicable, synthValid, driftDetected, details) into a single fixed sentence.
-// `details` is demanded by the prompt (deploy.js:77) and defined in the schema
-// (deploy.js:92) but has no reader, so Gate 5 receives "CDK: NOT APPLICABLE ...
-// MUST NOT count against readiness" with zero supporting evidence — an unaudited
-// claim that defeats the anti-spoofing guard at deploy.js:72-73.
+// Defect under test: the four-field cdk result (applicable, synthValid, driftDetected,
+// details) was collapsed into one sentence and `details` had no reader, so a
+// not-applicable claim counted with zero supporting evidence. Readiness is now computed
+// by deploy.js, and a not-applicable claim counts only with its details.
 //
 // All dispatches are in-process fakes; nothing reaches AWS.
 
@@ -32,16 +30,9 @@ const VALID_GREEN = { greenConfirmed: true, evidence: '12 passed, 0 failed (pyte
 
 function deployResponders(overrides = {}) {
   const base = {
-    'deploy:plan': { artifacts: [] },
     'deploy:smoke-author': { smokeTestFiles: ['smoke/test_site.py'] },
     'deploy:cdk-validate': { applicable: true, synthValid: true, driftDetected: false },
-    'deploy:strategy': { rolloutStyle: 'rolling', riskLevel: 'low' },
-    'deploy:readiness-packet': {
-      inventory: ['unit/integration tests GREEN', 'smoke tests AUTHORED AND SOUND', 'documentation PRESENT'],
-      concerns: [],
-    },
-    'deploy:gate5-verdict': { ready: true, findings: [] },
-    'deploy:rollout-dev': { deployed: true, stacks: [], smokePassed: true },
+    'deploy:rollout-dev': { deployed: true, stacks: [], smokePassed: true, smokeCases: [{ name: 'site', passed: true, output: 'ok' }] },
     ...overrides,
   }
   return (call) =>
@@ -54,58 +45,41 @@ function singlePrompt(calls, label) {
   return found[0].prompt
 }
 
-// ─── D5-AC1 (AC23) — details reaches Gate 5 ───────────────────────────────────
-test('D5-AC1: applicable=false with details — Gate 5 prompt carries the details verbatim, adjacent to the NOT APPLICABLE line', async () => {
+// ─── D5-AC1 (AC23) — a substantiated not-applicable counts as a valid synth ──
+// Gate 5 readiness is computed by deploy.js; the details are the evidence that makes
+// a not-applicable claim count.
+test('D5-AC1: applicable=false with details — cdkSynthOk holds, readiness carries no CDK finding', async () => {
   const DETAILS =
     'No cdk.json or CDK app; deploys via `npm run build` then `aws s3 sync` to bucket skillspoke-web-dev plus a CloudFront invalidation; infrastructure is owned by SkillSpoke-web-infra'
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
+  const { result } = await runWorkflowScript(DEPLOY_JS, {
     args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders({
       'deploy:cdk-validate': { applicable: false, synthValid: false, driftDetected: false, details: DETAILS },
     }),
   })
-  const prompt = singlePrompt(calls, 'deploy:gate5-verdict')
-
-  assert.ok(
-    prompt.includes(DETAILS),
-    'Gate 5 prompt must contain the cdk details string verbatim — it is currently collected then discarded'
-  )
-  const naIdx = prompt.indexOf('CDK: NOT APPLICABLE')
-  assert.ok(naIdx >= 0, "Gate 5 prompt must contain the 'CDK: NOT APPLICABLE' line")
-  const detIdx = prompt.indexOf(DETAILS)
-  assert.ok(
-    Math.abs(detIdx - naIdx) <= 800,
-    `details must sit adjacent to the NOT APPLICABLE line so the claim travels with its evidence (distance was ${Math.abs(detIdx - naIdx)} chars)`
-  )
+  assert.equal(result.cdkSynthOk, true)
+  assert.equal(result.readiness.ready, true)
+  assert.ok(!result.readiness.findings.some((f) => /CDK/.test(f)), 'no CDK finding for a substantiated not-applicable')
 })
 
-// ─── D5-AC2 (AC24) — unsubstantiated not-applicable is marked ─────────────────
-test('D5-AC2: applicable=false with empty/omitted details is marked UNSUBSTANTIATED and gets no absolution', async () => {
+// ─── D5-AC2 (AC24) — unsubstantiated not-applicable is not absolution ─────────
+test('D5-AC2: applicable=false with empty/omitted details blocks readiness with a finding naming the missing details', async () => {
   for (const cdkResult of [
     { applicable: false, synthValid: false, driftDetected: false, details: '' },
     { applicable: false, synthValid: false, driftDetected: false }, // details omitted
   ]) {
-    const { calls } = await runWorkflowScript(DEPLOY_JS, {
+    const { result, calls } = await runWorkflowScript(DEPLOY_JS, {
       args: { contract: CONTRACT, green: VALID_GREEN },
       agentImpl: deployResponders({ 'deploy:cdk-validate': cdkResult }),
     })
-    const prompt = singlePrompt(calls, 'deploy:gate5-verdict')
     const which = 'details' in cdkResult ? 'empty-string details' : 'omitted details'
-
-    assert.match(
-      prompt,
-      /UNSUBSTANTIATED/i,
-      `(${which}) the CDK line must state the not-applicable claim is UNSUBSTANTIATED when no details are supplied`
-    )
-    assert.match(
-      prompt,
-      /unverified/i,
-      `(${which}) the prompt must instruct the enforcer to treat the claim as unverified`
-    )
+    assert.equal(result.cdkSynthOk, false, `(${which}) an unsubstantiated not-applicable claim is not a valid synth`)
+    assert.equal(result.readiness.ready, false, `(${which})`)
     assert.ok(
-      !prompt.includes('MUST NOT count against readiness'),
-      `(${which}) the absolving phrase 'MUST NOT count against readiness' must not be emitted for an unsubstantiated claim`
+      result.readiness.findings.some((f) => /NOT APPLICABLE/.test(f) && /no supporting details/.test(f)),
+      `(${which}) the finding must name the missing details; got ${JSON.stringify(result.readiness.findings)}`
     )
+    assert.equal(agentCalls(calls, 'deploy:rollout-dev').length, 0, `(${which}) nothing rolls out`)
   }
 })
 
@@ -127,28 +101,21 @@ test('D5-AC3: the rollout prompt carries the cdk details verbatim so the deploye
   )
 })
 
-// ─── D5-AC4 (AC26) — applicable=true still reports synth, drift, and details ──
-test('D5-AC4: applicable=true reports synthValid/drift AND the details string, with no NOT APPLICABLE language', async () => {
+// ─── D5-AC4 (AC26) — applicable=true reports the broken synth and drift with details ──
+test('D5-AC4: applicable=true with a broken synth — the findings carry the details and the drift, and no NOT APPLICABLE language', async () => {
   const DETAILS = 'synth failed: missing context value vpc-id'
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
+  const { result } = await runWorkflowScript(DEPLOY_JS, {
     args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders({
       'deploy:cdk-validate': { applicable: true, synthValid: false, driftDetected: true, details: DETAILS },
-      'deploy:gate5-verdict': { ready: false, findings: ['broken synth'] }, // a broken synth legitimately blocks
     }),
   })
-  const prompt = singlePrompt(calls, 'deploy:gate5-verdict')
-
-  assert.ok(prompt.includes('synthValid=false'), "prompt must report 'synthValid=false'")
-  assert.ok(prompt.includes('drift=true'), "prompt must report 'drift=true'")
-  assert.ok(
-    prompt.includes(DETAILS),
-    'prompt must carry the details string for the applicable=true arm as well'
-  )
-  assert.ok(
-    !prompt.includes('CDK: NOT APPLICABLE'),
-    'no NOT APPLICABLE language may be emitted when applicable=true'
-  )
+  const findings = result.readiness.findings
+  assert.equal(result.readiness.ready, false, 'a broken synth legitimately blocks')
+  assert.ok(findings.some((f) => /CDK synth is not valid/.test(f) && f.includes(DETAILS)), 'the synth finding must carry the details')
+  assert.ok(findings.some((f) => /drift detected/.test(f)), 'drift must be reported')
+  assert.ok(!findings.some((f) => /NOT APPLICABLE/.test(f)), 'no NOT APPLICABLE language when applicable=true')
+  assert.equal(result.cdkDriftDetected, true)
 })
 
 // ─── cdkSynthOk / smokeTestFiles are HOISTED so the outer Gate 5 can MEASURE them ──
@@ -174,7 +141,6 @@ test('a broken synth is cdkSynthOk=false at the top level, and a not-applicable 
     args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders({
       'deploy:cdk-validate': { applicable: true, synthValid: false, driftDetected: false },
-      'deploy:gate5-verdict': { ready: false, findings: ['broken synth'] },
     }),
   })
   assert.equal(broken.result.cdkSynthOk, false, 'a repo that HAS a CDK app and cannot synth must fail the check')
@@ -194,45 +160,28 @@ test('a broken synth is cdkSynthOk=false at the top level, and a not-applicable 
   assert.equal(missing.result.cdkSynthOk, false, 'no cdk result at all is unknown, and unknown is never absolution')
 })
 
-// ─── The three removed pre-rollout sessions ──────────────────────────────────
+// ─── The removed pre-rollout sessions ────────────────────────────────────────
 
-test('no deployment-lead, no strategy decider on a single-repo dev deploy, and no readiness facilitator', async () => {
+test('no deployment-lead, no strategy decider, no readiness facilitator and no Gate 5 enforcer on a dev deploy', async () => {
   const { calls, result } = await runWorkflowScript(DEPLOY_JS, {
     args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders(),
   })
-  assert.equal(agentCalls(calls, 'deploy:plan').length, 0, 'artifact selection is derived from surfaces and changed paths')
-  assert.equal(
-    agentCalls(calls, 'deploy:strategy').length, 0,
-    'a deploy to dev has one legal rollout plan, so there is nothing for a decider to decide',
-  )
-  assert.equal(
-    agentCalls(calls, 'deploy:readiness-packet').length, 0,
-    'the facilitator restated fields the script holds and was charter-forbidden from ruling on any of them',
-  )
-  // The evidence it used to restate must still reach the only role permitted to rule.
-  const gate = singlePrompt(calls, 'deploy:gate5-verdict')
-  assert.match(gate, /Smoke tests AUTHORED: PRESENT/, 'smoke presence must still reach the enforcer')
-  assert.match(gate, /Unit\/integration tests: GREEN/, 'green evidence must still reach the enforcer')
-  assert.match(gate, /Documentation currency/, 'doc currency must still reach the enforcer')
+  for (const label of ['deploy:plan', 'deploy:strategy', 'deploy:readiness-packet', 'deploy:gate5-verdict']) {
+    assert.equal(agentCalls(calls, label).length, 0, `${label} must not be dispatched — readiness is computed by the script`)
+  }
+  assert.equal(result.readiness.ready, true)
   assert.equal(result.deployedToDev, true, 'and the deploy still happens')
 })
 
 // ─── D5-AC5 (AC27) — no cdk result at all (regression guard) ─────────────────
-test('D5-AC5: a null cdk result yields the CDK: not reported line and no NOT APPLICABLE absolution', async () => {
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
+test('D5-AC5: a null cdk result is reported as nothing, never as not-applicable absolution', async () => {
+  const { result } = await runWorkflowScript(DEPLOY_JS, {
     args: { contract: CONTRACT, green: VALID_GREEN },
     agentImpl: deployResponders({ 'deploy:cdk-validate': null }),
   })
-  const prompt = singlePrompt(calls, 'deploy:gate5-verdict')
-
-  assert.ok(prompt.includes('CDK: not reported'), "prompt must contain 'CDK: not reported'")
-  assert.ok(
-    !prompt.includes('CDK: NOT APPLICABLE'),
-    'no NOT APPLICABLE line for a missing cdk result'
-  )
-  assert.ok(
-    !prompt.includes('MUST NOT count against readiness'),
-    'no absolution for a missing cdk result'
-  )
+  const findings = result.readiness.findings
+  assert.equal(result.readiness.ready, false)
+  assert.ok(findings.some((f) => /CDK validation reported nothing/.test(f)), `got ${JSON.stringify(findings)}`)
+  assert.ok(!findings.some((f) => /NOT APPLICABLE/.test(f)), 'no NOT APPLICABLE line for a missing cdk result')
 })

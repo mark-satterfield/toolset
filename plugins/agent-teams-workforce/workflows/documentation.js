@@ -285,6 +285,11 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
+// Agents start in the session's working directory, not in this repository, and many of the
+// agents this phase dispatches run in an isolation worktree of that other repository. So every
+// prompt pins the tree by absolute path rather than saying "work within" it.
+const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
+${repo}`
 const changeLabel = c.bead ? `${c.bead.id || ''} ${c.bead.title || ''}`.trim() : 'feature'
 const changedFiles = (green.changedFiles || []).join(', ') || 'n/a'
 
@@ -338,7 +343,9 @@ const WRITERS = [
 // Segregation of duties is untouched: the auditor AUTHORS NO DOCUMENTATION, so naming
 // which writer owns a stale doc is not judging its own work.
 const audit = await settleAgent(
-  `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY — you write no documentation. List exactly which docs need updating and why. Work within: ${repo}
+  `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY — you write no documentation. List exactly which docs need updating and why.
+
+${pinTree}
 
 Then ASSIGN each stale doc to the writer that owns its kind, drawn ONLY from this roster:
 - api-documentation-writer — API reference / OpenAPI / GraphQL docs
@@ -449,7 +456,9 @@ if (needsWork) {
   writerResults = (await parallel(
     validAssignments.map((asg) => () =>
       settleAgent(
-        `Update the stale documentation assigned to you so it matches shipped behavior. Author only the docs in your assignment; other writers own the rest. Work within: ${repo}
+        `Update the stale documentation assigned to you so it matches shipped behavior. Author only the docs in your assignment; other writers own the rest.
+
+${pinTree}
 
 Change: ${changeLabel}
 Changed files: ${changedFiles}

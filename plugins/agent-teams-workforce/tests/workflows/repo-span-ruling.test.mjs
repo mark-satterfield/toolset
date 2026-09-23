@@ -31,8 +31,8 @@ const PRD_TO_SPEC = path.join(WF, 'prd-to-spec.js')
 
 const PRD = { id: 'PRD-1', title: 'PRD One', body: 'the delta requirements' }
 
-/** A shaper/surveyor/decider/verifier fixture that agrees on one repository. */
-function scopingAgents({ placements, newRepos = [], inventory, verified = true } = {}) {
+/** A shaper/surveyor/decider fixture that agrees on one repository. */
+function scopingAgents({ placements, newRepos = [], inventory } = {}) {
   const repos = placements || [{ repoPath: '/repos/alpha', repoName: 'alpha', workUnitIds: ['W1'], rationale: 'owns it' }]
   const inv = inventory || repos.map((p) => ({ repoPath: p.repoPath, name: p.repoName, owns: 'the capability' }))
   return (call) => {
@@ -44,9 +44,6 @@ function scopingAgents({ placements, newRepos = [], inventory, verified = true }
     }
     if (call.label === 'scope:repository-survey') return { repositories: inv, surveySummary: `${inv.length} repos` }
     if (call.label === 'scope:rule-span') return { placements: repos, newRepos, reclassified: [], spanRationale: 'ruled' }
-    if (call.label === 'scope:verify-span') {
-      return { results: repos.map((p) => ({ repoPath: p.repoPath, exists: verified, evidence: 'checked' })) }
-    }
     return null
   }
 }
@@ -97,41 +94,12 @@ test('the shaper and the surveyor run CONCURRENTLY, so neither can influence the
   const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
   assert.deepEqual(
     labels,
-    ['scope:greenfield-shape', 'scope:repository-survey', 'scope:rule-span', 'scope:verify-span'],
-    'shape and survey are one parallel pair, then the ruling, then an independent verification',
-  )
-})
-
-// ── Segregation of duties ──────────────────────────────────────────────────────
-
-test('whoever rules the span does not verify its own ruling', async () => {
-  const { calls } = await runWorkflowScript(SCOPING, { args: { prd: PRD }, agentImpl: scopingAgents() })
-  const [decider] = agentCalls(calls, 'scope:rule-span')
-  const [verifier] = agentCalls(calls, 'scope:verify-span')
-  assert.notEqual(
-    decider.opts.agentType,
-    verifier.opts.agentType,
-    'a decider that verifies its own placement confirms it every time',
-  )
-  assert.ok(
-    !verifier.prompt.includes('owns it'),
-    'the verifier is given paths and nothing else — told the rationale it grades the argument instead of ' +
-      'reporting the one thing that is actually checkable',
+    ['scope:greenfield-shape', 'scope:repository-survey', 'scope:rule-span'],
+    'shape and survey are one parallel pair, then the ruling; the placements are checked against the survey in code',
   )
 })
 
 // ── The reduction is where the enforcement lives ───────────────────────────────
-
-test('a repository the verifier could not confirm is DROPPED from the span, not argued with', async () => {
-  const { result } = await runWorkflowScript(SCOPING, {
-    args: { prd: PRD },
-    agentImpl: scopingAgents({ verified: false }),
-  })
-  assert.deepEqual(result.repos, [], 'an unconfirmed repository must never reach a Story, a spec pass, or a worktree')
-  assert.equal(result.blocked.length, 1)
-  assert.equal(result.spanVerified, false)
-  assert.equal(result.ok, false, 'nothing usable was ruled and nothing was proposed — that is a failed ruling, not a span')
-})
 
 test('a placement naming a repository the survey never listed is refused as composed, not ruled', async () => {
   const { result } = await runWorkflowScript(SCOPING, {

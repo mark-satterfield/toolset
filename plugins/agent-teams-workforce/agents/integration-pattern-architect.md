@@ -10,7 +10,7 @@ disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
 model: fable
 permissionMode: acceptEdits
 maxTurns: 40
-skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:step-functions, agent-teams-workforce:aws-solution-architect]
+skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:senior-architect, agent-teams-workforce:aws-serverless-eda, agent-teams-workforce:aws-solution-architect]
 effort: medium
 isolation: worktree
 color: cyan

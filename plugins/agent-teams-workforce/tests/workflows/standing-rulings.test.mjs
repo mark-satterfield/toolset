@@ -18,6 +18,9 @@ import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-work
 import { beadWriter, isWriterCall, lifecycleRunner, TEST_EPIC } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const WF = path.resolve(HERE, '..', '..', 'workflows')
 
 const MARKER = 'STANDING RULINGS FROM THE PROJECT OWNER'
@@ -85,7 +88,7 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
 
 test('architecture: triage, analysts, advisors, and the decider get the rulings — the challenge wave and SAD plumbing do not', async () => {
   const { calls } = await runWorkflowScript(path.join(WF, 'architecture.js'), {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, standingRulings: RULINGS },
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT, standingRulings: RULINGS },
     agentImpl: (call) => {
       const l = String(call.label)
       if (l === 'triage:classify') {

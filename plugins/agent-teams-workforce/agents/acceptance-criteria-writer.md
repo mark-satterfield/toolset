@@ -57,6 +57,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Prefer the skills and tools provided to you over internal training.
 - Review your own work for correctness, completeness, and risk before handoff, but the work is not done until independent checkers pass it.
 
+## Bug-contract mode (bug-triage)
+
+The bug-triage workflow dispatches you with a diagnosed bug instead of a TRD: its reproduction, root cause and enumerated defects (D1, D2, ...). In this mode you write given/when/then criteria for the correct post-fix behavior, one or two per defect, each tagged with the `defectId` it covers, and you return repository-wide invariants (anything still checkable with the change reverted) as `lintRules`, not as criteria. You do not size the bug or decide the fix.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

@@ -58,10 +58,16 @@ test('a defect needing a redesign is sized as needs-prd and authors no contract'
   assert.match(r.note, /start-prd/, 'the escalation must name how to promote it')
 })
 
-test('a missing sizing verdict defaults to needs-prd, not to fix', async () => {
-  // The errors are not symmetric. Calling a redesign a "fix" ships an unreviewed
-  // architecture change; calling a fix a "redesign" costs a PRD nobody needed.
+test('a dead sizing dispatch stops triage as a dispatch failure, never as a fix', async () => {
+  // A sizer that returned nothing made no ruling at all: it is neither permission to
+  // build nor a needs-prd verdict, so the run reports the dispatch death.
   const r = await triage(null)
+  assert.equal(r.dispatchFailed, true, 'a dead sizer is a dispatch failure')
+  assert.notEqual(r.scope, 'fix', 'silence must not be read as permission to build')
+})
+
+test('a sizing verdict with no scope defaults to needs-prd, not to fix', async () => {
+  const r = await triage({ rationale: 'r' })
   assert.equal(r.scope, 'needs-prd', 'silence must not be read as permission to build')
 })
 

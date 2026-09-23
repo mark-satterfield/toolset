@@ -134,9 +134,10 @@ test('D4-AC3: when the final phaseFn returned null, the loop-exhausted result ca
 
 // ─── D4-AC4 (AC22) — sibling exits unchanged (regression guard) ───────────────
 test('D4-AC4: the no-verdict and escalate exits still carry artifact === the attempt-1 phaseFn result', async () => {
-  // (a) gate returns no verdict on attempt 1
+  // (a) gate returns no verdict on attempt 1 — and again when re-asked, since a null verdict
+  // is re-asked once before the phase is given up on
   const A1 = { provisioningIntent: 'A1', affectedStacks: ['S1'] }
-  const noVerdict = await runInfra({ g1Verdicts: [null], intentReturns: [A1] })
+  const noVerdict = await runInfra({ g1Verdicts: [null, null], intentReturns: [A1] })
   const dNo = noVerdict.detail
   assert.ok(dNo, 'no-verdict run must journal its detail')
   assert.match(String(dNo.reason), /returned no verdict/, 'no-verdict reason must match /returned no verdict/')

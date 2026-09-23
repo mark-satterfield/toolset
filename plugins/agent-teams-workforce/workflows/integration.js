@@ -284,6 +284,11 @@ async function settleAgent(prompt, opts) {
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
+// Agents start in the session's working directory, not in this repository, and many of the
+// agents this phase dispatches run in an isolation worktree of that other repository. So every
+// prompt pins the tree by absolute path rather than saying "work within" it.
+const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
+${repo}`
 
 // The suites the lead may select from. Each is a Validator that reads/runs over a
 // provisioned env — never writes production code — so the selected set runs concurrently.
@@ -368,7 +373,7 @@ ${menu}
 
 A standard backend / event-driven change almost always needs aws-integration-test-runner. Add event-flow-tester when routing/retry/DLQ behavior changes, data-consistency-checker when writes span stores, and cross-service-contract-tester when an API or event contract crosses a service or repo boundary. Also decide whether the integration test environment must be provisioned or reset before the suites run (true for any change that needs fresh event-chain or data-store state).
 
-Work within the repository at: ${repo}
+${pinTree}
 
 ${surfaces}`,
     {
@@ -413,7 +418,9 @@ const SUITE_SCHEMA = {
 let envSetup = null
 if (provisionEnv) {
   envSetup = await settleAgent(
-    `Provision or reset the integration test environment for this change — event API, EventBridge, SQS, Lambda, and data stores — seed required fixtures, and confirm readiness. Work within: ${repo}
+    `Provision or reset the integration test environment for this change — event API, EventBridge, SQS, Lambda, and data stores — seed required fixtures, and confirm readiness.
+
+${pinTree}
 
 ${surfaces}`,
     {
@@ -457,6 +464,8 @@ if (provisionEnv && envSetup && envSetup.ready !== true) {
     failures: [`the integration test environment was not ready, so no suite ran: ${envSetup.evidence || 'no evidence given'}`],
     evidence: envSetup.evidence || '',
     envSetup,
+    suites,
+    provisionEnv,
     ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: ['test-environment-orchestrator'], mode: selectionMode, ok: false },
   }
 }
@@ -466,7 +475,9 @@ if (provisionEnv && envSetup && envSetup.ready !== true) {
 const suiteRuns = await parallel(
   suites.map((suite) => () =>
     settleAgent(
-      `Run the ${suite.replace(/-/g, ' ')} suite relevant to this change and report structured results. Verify contracts across service boundaries hold and required coverage is met. Work within: ${repo}
+      `Run the ${suite.replace(/-/g, ' ')} suite relevant to this change and report structured results. Verify contracts across service boundaries hold and required coverage is met.
+
+${pinTree}
 
 ${surfaces}
 ${a.feedback ? `\nPrior feedback to address:\n${a.feedback}` : ''}
@@ -525,4 +536,5 @@ const ledger = {
   ok: passed,
 }
 
-return { passed, coverageMet, flaky, failures, evidence, envSetup, ledger }
+// `suites` and `provisionEnv` let the caller hand this selection back on a re-run.
+return { passed, coverageMet, flaky, failures, evidence, envSetup, suites, provisionEnv, ledger }

@@ -317,7 +317,9 @@ async function settleAgent(prompt, opts) {
 //   replay.files?: { maker? },                                 // the same output named as an ABSOLUTE PATH rather
 //                                                              // than inlined. A script cannot open a file, so ONE
 //                                                              // read-only reader session returns it and the
-//                                                              // script parses it into the slot above
+//                                                              // script parses it into the slot above. A replay
+//                                                              // that yields no usable output returns ok:false
+//                                                              // (stage 'replay') and dispatches no maker
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -732,6 +734,16 @@ async function applyTaskWsjf(judged, taskSet, edges) {
     const judgedRationale = (j && typeof j.rationale === 'string' && j.rationale) || ''
     const s = byId.get(t.key)
     if (!s) {
+      // When the arithmetic never ran, the judged size is still carried under the keys the
+      // Epic's scoring reads, so the caller's rescore scores the Task instead of losing it.
+      const size = finite(j && j.jobSize)
+      const low = finite(j && j.sizeLow)
+      const high = finite(j && j.sizeHigh)
+      const conf = finite(j && j.sizeConfidence)
+      const sizeOnly =
+        result.error && size !== null && size > 0 && low !== null && high !== null && conf !== null
+          ? { wsjf_size_estimate: String(size), wsjf_size_low: String(low), wsjf_size_high: String(high), wsjf_size_confidence: String(conf) }
+          : null
       return {
         key: t.key,
         userBusinessValue: inheritedUbv,
@@ -746,7 +758,7 @@ async function applyTaskWsjf(judged, taskSet, edges) {
         sizeConfidence: finite(j && j.sizeConfidence),
         costOfDelay: null,
         wsjf: null,
-        metadata: null,
+        metadata: sizeOnly,
         confidence: epicConfidence,
         rationale: judgedRationale || result.error || unscoredWhy.get(t.key) || 'not scored',
       }
@@ -789,6 +801,11 @@ async function applyTaskWsjf(judged, taskSet, edges) {
 // The maker output the caller NAMED rather than inlined is read back here, in one session,
 // before anything is dispatched.
 if (!replayMaker) replayMaker = asMaker((await readReplayFiles(replay.files, ['maker'], 'Decompose')).maker)
+// A replay call wants the saved output, not a decomposition. When it cannot be read, the
+// caller decomposes through its own gate, so a maker run here would be paid for and discarded.
+if (!replayMaker && a.replay && typeof a.replay === 'object') {
+  return { ok: false, stage: 'replay', reason: 'the saved decomposition could not be read back from the replay files', spec: specRef }
+}
 
 if (replayMaker) log(`Decompose REPLAYED from the saved maker output (${replayMaker.tasks.length} task(s)) — no maker session`)
 const maker = replayMaker || await settleAgent(
@@ -1064,5 +1081,5 @@ return {
   decisionIds: [...new Set(beadSet.flatMap((b) => b.decisionIds))],
   beadSet,
   story: { id: story.id || null, key: story.key || null, ref: storyRef, title: story.title || null },
-  note: `Tasks only — every emitted bead is type "task" parented to Story ${storyRef}${repoPath ? ` and carrying repoPath ${repoPath}` : ' and carrying repoPath null (no repository was supplied), so each one has to be re-resolved before it can be dispatched'}. Sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and checked for the required Beads fields.${wsjfScores.error ? ` The WSJF arithmetic did not run (${wsjfScores.error}), so the tasks carry no score until wsjf-scoring rescores them.` : ''} These are bead SPECIFICATIONS: prd-to-spec writes them itself as part of its run, so a caller dispatching this mini on its own is the only one that emits them with bd, from the main repo path.`,
+  note: `Tasks only — every emitted bead is type "task" parented to Story ${storyRef}${repoPath ? ` and carrying repoPath ${repoPath}` : ' and carrying repoPath null (no repository was supplied), so each one has to be re-resolved before it can be dispatched'}. Sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and checked for the required Beads fields.${wsjfScores.error ? ` The WSJF arithmetic did not run (${wsjfScores.error}), so the tasks carry only their judged sizes until the Epic is rescored.` : ''} These are bead SPECIFICATIONS: prd-to-spec writes them itself as part of its run, so a caller dispatching this mini on its own is the only one that emits them with bd, from the main repo path.`,
 }

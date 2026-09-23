@@ -42,6 +42,12 @@ function runAdv({ adjudication, priorRulings, findings } = {}) {
   })
 }
 
+/** The id adversarial.js derives for the REPRO finding — taken from a run, not re-implemented. */
+async function reproId() {
+  const { result } = await runAdv({ adjudication: { rulings: [], constitutiveOpen: 0 } })
+  return result.findings[0].findingId
+}
+
 test('a finding gets a script-derived id — the model cannot rename its way out of a prior ruling', async () => {
   const { result: a } = await runAdv({ adjudication: { rulings: [], constitutiveOpen: 0 } })
   const { result: b } = await runAdv({
@@ -54,20 +60,21 @@ test('a finding gets a script-derived id — the model cannot rename its way out
   assert.match(a.findings[0].findingId, /^data-exposure-scanner#/, 'the lane that found it is part of its identity')
 })
 
-test('constitutiveOpen is COMPUTED from the rulings, and the claim is preserved for the record', async () => {
+test('constitutiveOpen is COMPUTED from the rulings, never taken from the model\'s claim', async () => {
+  const id = await reproId()
   const { result } = await runAdv({
     adjudication: {
-      rulings: [{ findingId: 'x', title: 't', severity: 'critical', classification: 'constitutive', real: true }],
+      rulings: [{ findingId: id, title: 't', severity: 'critical', classification: 'constitutive', real: true }],
       constitutiveOpen: 0, // the packet asserting 0 while its own contents say 1
     },
   })
   assert.equal(result.adjudication.constitutiveOpen, 1, 'the computed value stands')
-  assert.equal(result.adjudication.constitutiveOpenClaimed, 0, 'the model\'s number is kept, not silently erased')
-  assert.equal(result.packetIntegrity.countMismatch, true)
+  assert.equal(result.constitutiveOpen, 1)
+  assert.equal(result.packetIntegrity.constitutiveOpen, 1)
 })
 
 test('two opposite rulings for ONE finding are detected, and the MORE SEVERE one stands', async () => {
-  const id = `data-exposure-scanner#${'grep 123456789012 tests/test_stack.py'.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+  const id = await reproId()
   const { result } = await runAdv({
     adjudication: {
       rulings: [
@@ -86,7 +93,7 @@ test('two opposite rulings for ONE finding are detected, and the MORE SEVERE one
 })
 
 test('an UNCITED reversal of a prior ruling has no effect — the prior ruling is reinstated', async () => {
-  const id = 'data-exposure-scanner#grep-123456789012-tests-test-stack-py'
+  const id = await reproId()
   const prior = [{ findingId: id, title: 'live AWS account id', severity: 'critical', classification: 'constitutive', real: true }]
   const { result } = await runAdv({
     priorRulings: prior,
@@ -103,7 +110,7 @@ test('an UNCITED reversal of a prior ruling has no effect — the prior ruling i
 })
 
 test('a CITED reversal is honoured — adversarial re-runs against a changed tree, so a fixed finding really can flip', async () => {
-  const id = 'data-exposure-scanner#grep-123456789012-tests-test-stack-py'
+  const id = await reproId()
   const prior = [{ findingId: id, title: 'live AWS account id', severity: 'critical', classification: 'constitutive', real: true }]
   const { result } = await runAdv({
     priorRulings: prior,
@@ -151,20 +158,20 @@ const CONTRADICTORY = {
 }
 const LOOP_VERDICT = { verdict: 'loop', criteria: [], feedback: 'the packet disagrees with itself', needsConstitutionalRuling: false }
 
-test('a self-contradictory packet convenes the appeals court even when the enforcer says "loop"', async () => {
-  const { calls } = await runGate(CONTRADICTORY, { enforcerVerdict: LOOP_VERDICT, ruling: { verdict: 'escalate', rationale: 'the constitutive reading governs' } })
-  const labels = calls.map((c) => c.label)
-  assert.ok(labels.some((l) => String(l).startsWith('precedent:lookup')),
+test('a self-contradictory packet goes straight to the appeals court — the enforcer is never asked', async () => {
+  const { calls } = await runGate(CONTRADICTORY, { enforcerVerdict: LOOP_VERDICT, ruling: { resolutions: [], rationale: 'the constitutive reading governs' } })
+  const labels = calls.map((c) => String(c.label))
+  assert.ok(labels.some((l) => l.startsWith('constitutional:')),
     'nothing about the WORK changed between rounds, so a retry cannot repair it — it goes to a different authority')
-  assert.ok(labels.some((l) => String(l).startsWith('constitutional:')))
+  assert.ok(!labels.some((l) => l.startsWith('gate-const:')), 'the enforcer cannot resolve a contradiction and is not paid to try')
 })
 
 test('the conflict handed to the appeals court names the contradiction in script, not on the enforcer\'s say-so', async () => {
-  const { calls } = await runGate(CONTRADICTORY, { enforcerVerdict: LOOP_VERDICT, ruling: { verdict: 'escalate', rationale: 'r' } })
-  const lookup = calls.find((c) => String(c.label).startsWith('precedent:lookup'))
-  assert.match(lookup.prompt, /CONTRADICTS ITSELF/i)
-  assert.match(lookup.prompt, /lane#f/, 'the specific finding must be named')
-  assert.match(lookup.prompt, /MORE SEVERE ruling holds/, 'the tie-break while the appeal is pending must be stated')
+  const { calls } = await runGate(CONTRADICTORY, { enforcerVerdict: LOOP_VERDICT, ruling: { resolutions: [], rationale: 'r' } })
+  const appeal = calls.find((c) => String(c.label).startsWith('constitutional:'))
+  assert.match(appeal.prompt, /ruled the same finding two opposite ways/i)
+  assert.match(appeal.prompt, /lane#f/, 'the specific finding must be named')
+  assert.match(appeal.prompt, /the more severe one stands/, 'the tie-break must be stated')
 })
 
 test('a contradiction NEVER comes back as "loop", even when the appeals court produces nothing', async () => {
@@ -194,30 +201,25 @@ test('a packet with NO contradiction is left entirely alone', async () => {
 // These model the uncooperative authority: a precedent line and a constitutional ruling
 // that each say 'loop'.
 
-test('the PRECEDENT path can never settle a contradiction as "loop"', async () => {
-  const { result } = await runGate(CONTRADICTORY, {
-    enforcerVerdict: LOOP_VERDICT,
-    precedent: { matched: true, key: 'CR-007', verdict: 'loop', rationale: 'the stored line says loop', precedent: 'p' },
-  })
-  assert.equal(result.ruledFromPrecedent, true, 'the precedent was applied — this is that exit path')
-  assert.notEqual(result.verdict, 'loop', 'a recorded ruling cannot re-authorise the one verdict a contradiction cannot answer')
-  assert.equal(result.verdict, 'escalate')
-  assert.ok(result.escalateTo, 'an escalation with nowhere to go is not an escalation')
-  assert.match(result.feedback, /cannot be repaired by re-running the phase/, 'the conversion must be stated, not performed silently')
-  assert.equal(result.packetContradiction, true)
-})
-
 test('the APPEALS-COURT path can never rule a contradiction as "loop"', async () => {
-  const { result } = await runGate(CONTRADICTORY, {
+  const packet = {
+    ...CONTRADICTORY,
+    adjudication: { rulings: [{ findingId: 'lane#f', real: true, classification: 'constitutive', severity: 'critical' }] },
+  }
+  const { result } = await runGate(packet, {
     enforcerVerdict: LOOP_VERDICT,
-    ruling: { verdict: 'loop', rationale: 'the constitutional agent said loop' },
+    ruling: {
+      resolutions: [{ findingId: 'lane#f', real: true, classification: 'constitutive', rationale: 'real exposure' }],
+      rationale: 'the constitutional agent ruled it real',
+    },
   })
-  assert.equal(result.ruledFromPrecedent, false, 'the appeals court ruled — this is that exit path')
+  assert.equal(result.ruledByConstitutionalAgent, true, 'the appeals court ruled — this is that exit path')
+  assert.equal(result.ruledFromPrecedent, false)
   assert.notEqual(result.verdict, 'loop')
   assert.equal(result.verdict, 'escalate')
   assert.ok(result.escalateTo)
-  assert.match(result.feedback, /the constitutional agent said loop/, 'the ruling\'s own rationale is preserved, not replaced')
-  assert.match(result.feedback, /cannot be repaired by re-running the phase/)
+  assert.equal(result.constitutiveOpen, 1, 'the open count is recounted from the ruling')
+  assert.match(result.feedback, /the constitutional agent ruled it real/, 'the ruling\'s own rationale is preserved, not replaced')
 })
 
 test('every exit path agrees: NO verdict of "loop" survives a self-contradictory packet', async () => {

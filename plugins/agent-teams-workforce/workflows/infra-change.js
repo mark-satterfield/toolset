@@ -854,6 +854,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
+    // A verdict that blocks while naming no reason is a defect in the judgment, not a finding
+    // (gate-enforce marks it `malformedVerdict`). It gets the same one re-ask as a dead judge.
+    if (verdict && verdict.malformedVerdict === true) {
+      log(`Gate ${gate} (${phaseName}): the judge blocked without naming a reason — re-asking once`)
+      verdict = (await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)) || verdict
+    }
     if (!verdict) {
       rec(attempt, null, { terminal: 'no-verdict' })
       return {
@@ -878,6 +884,12 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         verdict,
       }
     }
+    // Still reasonless after the re-ask: the work was never really judged, so it is reported
+    // under the environment stage rather than charged to the phase.
+    if (verdict.malformedVerdict === true) {
+      rec(attempt, verdict, { terminal: 'malformed-verdict' })
+      return { ok: false, dispatchFailed: true, dispatchFailures: [], reason: verdict.feedback, artifact, verdict }
+    }
     rec(attempt, verdict)
     lastVerdict = verdict
     attempts.push({
@@ -892,7 +904,8 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     }
     if (verdict.verdict === 'escalate') {
       log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'}`)
-      return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact, verdict }
+      // The judge's feedback is why it escalated; the headline carries it.
+      return { ok: false, escalate: verdict.escalateTo || 'upstream', reason: verdict.feedback ? `escalated to ${verdict.escalateTo || 'upstream'}: ${verdict.feedback}` : undefined, artifact, verdict }
     }
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     gateFeedback = verdict.feedback || ''
@@ -1451,14 +1464,15 @@ g1Loop = await gateLoop({
   // The intent must be concrete and CDK-expressible and carry no banned construct — a
   // PLATFORM BAN, constitutive, never deleted. Consumed by: Red (G2a) encodes this intent as
   // the failing synth assertion and Green writes the CDK that satisfies it, so an intent
-  // that is not CDK-expressible has no reachable Green. Freshness, the security scan and the
-  // cost review are already folded into infra-intent's top-level `ready`, so they are one
+  // that is not CDK-expressible has no reachable Green. The security scan and the cost
+  // review are already folded into infra-intent's top-level `ready`, so they are one
   // deterministic check rather than criteria an enforcer re-judges.
   criteria: [
     { class: 'constitutive', text: 'Provisioning intent is concrete and CDK-expressible (S3 versioning+SSE-S3 where buckets exist, no banned constructs)' },
   ],
-  checks: [{ field: 'ready', equals: true, label: 'the intent is fresh and the security and cost reviewers raised no open blocking finding' }],
-  escalateTargets: ['infra-intent'],
+  checks: [{ field: 'ready', equals: true, label: 'the security and cost reviewers raised no open blocking finding on the intent' }],
+  // Upstream of the intent is the Task's build contract, written during elaboration.
+  escalateTargets: ['elaboration'],
   initialFeedback: a.priorFindings || '',
   // A failed `ready` check names only the boolean, so the reviewers' blocking findings from
   // the previous attempt ride along for the maker to act on.
@@ -1466,7 +1480,6 @@ g1Loop = await gateLoop({
     const prior = loop && loop.priorArtifact
     const blocking = prior
       ? [
-          prior.fresh === false ? `Dependency changes invalidate the intent: ${JSON.stringify((prior.dependencyChanges && prior.dependencyChanges.changes) || [])}` : '',
           prior.securityFindings && prior.securityFindings.blocking === true ? `Blocking security findings: ${JSON.stringify(prior.securityFindings.findings || [])}` : '',
           prior.costFindings && prior.costFindings.blocking === true ? `Blocking cost finding: ${prior.costFindings.feedback || JSON.stringify(prior.costFindings.findings || [])}` : '',
         ].filter(Boolean).join('\n')

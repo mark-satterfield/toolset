@@ -358,6 +358,11 @@ if (contractPathFault) {
 }
 
 const repo = suppliedRepoPath || '(repo path not provided)'
+// Agents start in the session's working directory, not in this repository, and many of the
+// agents this phase dispatches run in an isolation worktree of that other repository. So every
+// prompt pins the tree by absolute path rather than saying "work within" it.
+const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
+${repo}`
 
 // MACHINE-CHECKABLE GREEN EVIDENCE. tdd-green.js produces
 // { greenConfirmed, evidence } precisely so this stage does not depend on any
@@ -397,7 +402,9 @@ const [smoke, cdk, pipeline] = await parallel([
     priorSmokeFiles.length
       ? Promise.resolve({ smokeTestFiles: priorSmokeFiles, reused: true })
       : settleAgent(
-      `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy. Work within: ${repo}
+      `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy.
+
+${pinTree}
 
 Change: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}
 Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
@@ -420,7 +427,7 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
   () =>
     touchesPipeline
       ? settleAgent(
-          `Ensure the GitHub Actions deploy pipeline (OIDC auth, build, test, deploy stages) is present and current for this change; author or update it as needed. Do NOT trigger a deploy.\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\nWork within: ${repo}`,
+          `Ensure the GitHub Actions deploy pipeline (OIDC auth, build, test, deploy stages) is present and current for this change; author or update it as needed. Do NOT trigger a deploy.\n\nChange: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}\nChanged files: ${(green.changedFiles || []).join(', ') || 'n/a'}\n\n${pinTree}`,
           {
             label: 'deploy:pipeline',
             phase: 'Deploy-readiness',
@@ -449,7 +456,9 @@ Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
 // declaration binds before the body runs, so the call site reads above its definition.
 function cdkValidate() {
   return settleAgent(
-  `Validate the service's CDK: run synth and check for drift between the stacks and deployed infrastructure. READ-ONLY — do not deploy. Work within: ${repo}
+  `Validate the service's CDK: run synth and check for drift between the stacks and deployed infrastructure. READ-ONLY — do not deploy.
+
+${pinTree}
 
 FIRST, determine whether this repo has a CDK surface at all. If there is no cdk.json, no CDK app entrypoint, and no CloudFormation stack owned by this repo, then CDK validation DOES NOT APPLY: return applicable=false with synthValid=false and driftDetected=false, and name in \`details\` how the repo actually deploys (for example an S3 sync plus CloudFront invalidation) and which repo owns its infrastructure, if any. Do NOT report applicable=false merely because synth is inconvenient, the environment is unclear, or you lack credentials — that is a genuine failure and must be reported as applicable=true with synthValid=false.
 
@@ -699,7 +708,7 @@ if (wantsRollout && !leaseRefused) {
   rollout = await settleAgent(
     `Deploy this change to the DEV environment (AWS account ${DEV_ACCOUNT}, ${DEV_REGION}).
 
-Repo: ${c.repoPath || '(unspecified)'}
+${pinTree}
 Rollout strategy: style=${strategy.rolloutStyle}, risk=${strategy.riskLevel}
 Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOYS BY. Do not assume it is CDK: ${
         cdk && cdk.applicable === false
@@ -709,11 +718,11 @@ Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOY
           : 'this repo has a CDK app, so run `cdk deploy` for the affected stack(s) against dev.'
 } Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.
 
-Then RUN the smoke tests (${smokeTestFiles.join(', ')}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
+Then RUN the smoke tests (${smokeTestFiles.join(', ')} — paths relative to the tree above, so run them from inside it) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
 
 EVIDENCE IS REQUIRED, NOT OPTIONAL. \`deployed\` and \`smokePassed\` are your own booleans about your own work, so the schema demands the observations behind them and the dispatch FAILS without them. Report, for this rollout:
 - \`commands\`: every deploy and smoke command you ran, each with the exit code the shell returned. A command you did not run has no row; a row with no exit code is not a result.
-- \`commitSha\`: the full SHA of the commit you deployed, read from the tree you deployed FROM (\`git -C "${c.repoPath || '.'}" rev-parse HEAD\`). This is what binds the deployment to a revision; without it nothing can say WHICH bytes are live.
+- \`commitSha\`: the full SHA of the commit you deployed, read from the tree you deployed FROM (\`git -C "${repo}" rev-parse HEAD\`). This is what binds the deployment to a revision; without it nothing can say WHICH bytes are live.
 - \`stacks\`, \`account\`, \`region\`: the stack (or distribution/bucket) name you changed, and the AWS account id and region you changed it in. Say what you actually targeted, not what you were told to target.
 - \`smokeCases\`: one row per smoke case, with its name, whether it passed, and its literal output. A smoke suite you did not run is an empty list and \`smokePassed: false\` — never a pass by default.
 

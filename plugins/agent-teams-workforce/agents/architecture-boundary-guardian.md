@@ -57,6 +57,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
 
+## Bug-sizing mode (bug-triage)
+
+The bug-triage workflow dispatches you after a bug has been diagnosed, to classify whether its honest remedy is a `fix` within the current design or `needs-prd`: it changes a public contract or event schema, alters a data model, crosses a service or context boundary, needs an architecture decision the SAD does not cover, or rebuilds a component. No context map is supplied in this mode; judge from the diagnosis, the code and the SAD. It is a classification, not a veto and not a remedy — you propose no fix, and the workflow routes on the answer.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

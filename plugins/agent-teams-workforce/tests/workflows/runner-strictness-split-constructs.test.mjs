@@ -200,7 +200,7 @@ test('prose about an import error, in a comment and in a prompt, still passes', 
 
 test('the workflow set really does carry that prose — the false-positive test is not vacuous', () => {
   // If the prose ever disappears, this test says so rather than quietly guarding nothing.
-  // bug-fix.js alone carries 9 of these, in the Red gate's missing-capability carve-out.
+  // bug-fix.js alone carries 8 of these, in the Red gate's missing-capability carve-out.
   const word = new RegExp(`\\b${IMP}\\b`, 'gi')
   const phrase = new RegExp(`${IMP}\\s+error`, 'gi')
   let words = 0
@@ -213,7 +213,7 @@ test('the workflow set really does carry that prose — the false-positive test 
     phrases += (src.match(phrase) || []).length
     if (f === 'bug-fix.js') inBugFix = hits
   }
-  assert.ok(inBugFix >= 9, `bug-fix.js should still discuss the token at least 9 times, found ${inBugFix}`)
+  assert.ok(inBugFix >= 8, `bug-fix.js should still discuss the token at least 8 times, found ${inBugFix}`)
   assert.ok(words >= 15, `the workflow set should still discuss the token at least 15 times, found ${words}`)
-  assert.ok(phrases >= 5, `the literal "<token> error" phrase should still appear at least 5 times, found ${phrases}`)
+  assert.ok(phrases >= 4, `the literal "<token> error" phrase should still appear at least 4 times, found ${phrases}`)
 })

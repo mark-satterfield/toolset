@@ -42,10 +42,7 @@ function responders(overrides = {}) {
     'deploy:plan': { artifacts: [] },
     'deploy:smoke-author': { smokeTestFiles: ['smoke/test_x.py'] },
     'deploy:cdk-validate': { applicable: true, synthValid: true, driftDetected: false },
-    'deploy:strategy': { rolloutStyle: 'rolling', riskLevel: 'low' },
-    'deploy:readiness-packet': { inventory: ['smoke tests AUTHORED AND SOUND'], concerns: [] },
-    'deploy:gate5-verdict': { ready: true, findings: [] },
-    'deploy:rollout-dev': { deployed: true, stacks: ['DevStack'], smokePassed: true },
+    'deploy:rollout-dev': { deployed: true, stacks: ['DevStack'], smokePassed: true, smokeCases: [{ name: 'health', passed: true, output: 'ok' }] },
     ...overrides,
   }
   return (call) =>
@@ -108,16 +105,15 @@ test('unconfirmed tests block the rollout — the gate, not a PR, is the precond
   assert.equal(result.smokePassed, false)
 })
 
-test('a broken cdk synth blocks the rollout even if the enforcer rules ready', async () => {
+test('a broken cdk synth blocks the rollout', async () => {
   const { result, calls } = await runWorkflowScript(DEPLOY_JS, {
     args: { contract: CONTRACT, green: GREEN },
     agentImpl: responders({
       'deploy:cdk-validate': { applicable: true, synthValid: false, driftDetected: false },
-      'deploy:gate5-verdict': { ready: true, findings: [] },
     }),
   })
 
-  assert.equal(result.localGatesOk, false, 'a failing synth is a failing gate, whatever the prose verdict said')
+  assert.equal(result.localGatesOk, false, 'a failing synth is a failing gate')
   assert.equal(agentCalls(calls, 'deploy:rollout-dev').length, 0)
   assert.equal(result.deployedToDev, false)
 })
@@ -135,17 +131,6 @@ test('a repo with no CDK surface is not blocked by a synth it does not have', as
 
   assert.equal(result.localGatesOk, true, 'NOT APPLICABLE is not a failure')
   assert.equal(result.deployedToDev, true)
-})
-
-test('a failed readiness review blocks the rollout', async () => {
-  const { result, calls } = await runWorkflowScript(DEPLOY_JS, {
-    args: { contract: CONTRACT, green: GREEN },
-    agentImpl: responders({ 'deploy:gate5-verdict': { ready: false, findings: ['drift'] } }),
-  })
-
-  assert.equal(agentCalls(calls, 'deploy:rollout-dev').length, 0)
-  assert.equal(result.deployedToDev, false)
-  assert.equal(result.ledger.ok, false, 'a failed readiness review is still a failed run')
 })
 
 test('a non-dev target rolls out nothing, and still opens no PR', async () => {

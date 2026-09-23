@@ -410,6 +410,9 @@ END STANDING RULINGS
 if (!prdBody) {
   return {
     ok: false,
+    stage: 'input',
+    error: 'prd-validation invoked with an empty PRD body — nothing to validate.',
+    headline: 'prd-validation invoked with an empty PRD body — nothing to validate.',
     reason: 'prd-validation invoked with an empty PRD body — nothing to validate.',
     validatedPrd: null,
     findings: [],
@@ -631,6 +634,9 @@ READING BUDGET (binding): the PRD is quoted in full above and it is the entire o
 if (!analysis) {
   return {
     ok: false,
+    stage: 'agent-dispatch-failed',
+    error: 'the validation analyst session returned nothing; the PRD was not judged',
+    headline: 'the validation analyst session returned nothing; the PRD was not judged',
     dispatchFailed: true,
     dispatchFailures: dispatchDeaths('Validate'),
     reason:
@@ -704,8 +710,12 @@ const ledger = {
   ok: validationVerdict === 'pass',
 }
 
+const blockers = findings.filter((f) => f.severity === 'blocker').length
 return {
   ok: validationVerdict === 'pass',
+  stage: validationVerdict === 'pass' ? 'done' : 'Validate',
+  headline: validationVerdict === 'pass' ? `PRD validated: ${findings.length} finding(s), none blocking` : `PRD validation failed: ${blockers} blocker finding(s)`,
+  ...(validationVerdict === 'pass' ? {} : { error: `PRD validation failed: ${blockers} blocker finding(s)` }),
   validationVerdict,
   summary: analysis.summary,
   // The validated PRD package: the original PRD plus its consolidated findings.

@@ -478,6 +478,14 @@ Return one entry per file, echoing its slot exactly as given: found=true with th
 // rather than being ruled over.
 const isProposal = (v) => !!(v && typeof v === 'object' && typeof v.lens === 'string' && Array.isArray(v.options))
 const isChallengeSet = (v) => !!(v && typeof v === 'object' && Array.isArray(v.challenges))
+// The option set a challenge wave was run over, as lens and option names. The wave saves it
+// beside its findings, so a replay can tell a wave over THESE options from a wave over options
+// a re-proposal round has since replaced (a round-2 wave that was skipped leaves the round-1
+// file on disk). A file saved before the stamp existed carries none and is taken as before.
+const optionStamp = (list) =>
+  (Array.isArray(list) ? list : [])
+    .map((p) => `${(p && p.lens) || ''}:${(p && Array.isArray(p.options) ? p.options : []).map((o) => (o && o.name) || '').join('|')}`)
+    .join(';')
 const replayProposals = new Map()
 let replayAnalysis = null
 let replayChallenges = null
@@ -1824,7 +1832,19 @@ Propose from YOUR lens only. The other axes above are covered by the analysts di
       const v = recovered[`proposal-${m.dim}`]
       if (isProposal(v)) replayProposals.set(m.dim, v)
     }
-    if (recovered.analysis && typeof recovered.analysis === 'object') replayAnalysis = recovered.analysis
+    // A saved analysis is reused only when it holds every artifact THIS panel wants. One saved
+    // under a panel that wanted only the context map carries no failure modes, and reusing it
+    // would hand the decider an empty list that nobody produced.
+    const an = recovered.analysis
+    if (
+      an && typeof an === 'object' &&
+      (!wantsContextMap || (an.contextMap && typeof an.contextMap === 'object')) &&
+      (!wantsFailureModes || Array.isArray(an.failureModes))
+    ) {
+      replayAnalysis = an
+    } else if (an) {
+      log('Replay: the saved analysis does not hold every artifact this panel wants — the advisor runs')
+    }
     if (isChallengeSet(recovered.challenges)) replayChallenges = recovered.challenges
     allLensesReplayed = activeMakers.length > 0 && replayProposals.size === activeMakers.length
     if (replayProposals.size || replayAnalysis || replayChallenges) {
@@ -1938,7 +1958,7 @@ ${decisionHeader}
 Proposals under challenge:
 ${proposalsText}
 
-READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.${persistBrief(ART, 'architecture-challenges.json', PROPOSAL_WHAT)}`,
+READING BUDGET (binding): everything you are judging is in this prompt. The proposals are text, not code, so there is nothing in a repository that could confirm or refute one — reason from the decision header and the option set. Do not survey the repository or the polyrepo, and do not open files to build background. Roughly five tool calls is the expected shape, and zero is a perfectly good answer.${persistBrief(ART, 'architecture-challenges.json', `your complete structured result (every key, exactly as you return it) plus the key "challengedOptions" holding exactly the string ${JSON.stringify(optionStamp(proposals))}, as ONE JSON object`)}`,
     {
       label: 'challenge:all-lenses',
       effort: 'medium',
@@ -2077,7 +2097,13 @@ function challengeReason({ triggers, ambiguities }) {
 
 let challengeResults = null
 let challengeWave = null
-if (!settled && proposals.length && replayChallenges && allLensesReplayed) {
+const replayedWaveFits =
+  !!replayChallenges &&
+  (typeof replayChallenges.challengedOptions !== 'string' || replayChallenges.challengedOptions === optionStamp(proposals))
+if (replayChallenges && allLensesReplayed && !replayedWaveFits) {
+  log('Replay: the saved challenge set was run over a different option set than the one replayed — it is NOT reused')
+}
+if (!settled && proposals.length && replayChallenges && allLensesReplayed && replayedWaveFits) {
   // Every lens came off disk, so the saved wave was run over EXACTLY this option set. Reusing
   // it is the same evidence, not a weaker one — and re-running it would re-challenge text that
   // has not changed. A partially-replayed panel never reaches here: see allLensesReplayed.

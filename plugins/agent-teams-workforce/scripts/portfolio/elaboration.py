@@ -16,7 +16,8 @@ fails is the refusal:
   the requirements of the Epics it depends on first. Its
   dependencies are its `tracks` edges, and its `blocks` edges too, so an Epic edge stored
   as either type holds it; a `blocks` edge onto anything other than an Epic holds it until
-  that bead closes;
+  that bead closes. A run resuming the `in_progress` elaboration its own owner token holds
+  is not held by an edge set after it started;
 * its own `elaboration_state` is `ready`, or `in_progress` with no other owner. An absent
   state is a PRD still being authored and `done` is an Epic whose Tasks are the workable
   items.
@@ -168,8 +169,18 @@ def start(
             epic,
             missing=unscored,
         )
+    # A run resuming the elaboration it already owns passed this check when it started. An
+    # edge set since then (a later assessment or seeding) orders the next start, not a run
+    # already under way: refusing it here would discard every phase the run has saved.
+    resuming = (
+        epic.metadata.get(STATE_KEY) == IN_PROGRESS
+        and owner is not None
+        and epic.metadata.get(OWNER_KEY) == owner
+    )
     waiting = []
     for upstream in sorted(set(epic.tracked) | set(epic.blockers)):
+        if resuming:
+            break
         bead = graph.beads.get(upstream)
         state = bead.metadata.get(STATE_KEY) if bead else None
         if bead is None:
@@ -307,6 +318,10 @@ def finish(
         msg = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
     under = _task_ids_under(graph, epic)
+    # Refused before any write, so a refusal leaves the tracker as it found it.
+    if done and not under:
+        msg = f"{epic_id} has no Tasks beneath it, so its elaboration is not done"
+        raise LifecycleError(msg)
     stray = sorted(set(judged) - under)
     if stray:
         msg = f"not Tasks beneath {epic_id}: {', '.join(stray)}"
@@ -330,9 +345,6 @@ def finish(
     lifecycle = None
     sad = None
     if done:
-        if not under:
-            msg = f"{epic_id} has no Tasks beneath it, so its elaboration is not done"
-            raise LifecycleError(msg)
         lifecycle = {
             STATE_KEY: DONE,
             STATE_AT_KEY: now_iso(),

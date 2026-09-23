@@ -262,14 +262,15 @@ test('a run where no Story lands has written nothing and fails', async () => {
 
 test('a writer that answers with nothing is treated as a failed write, never as success', async () => {
   // Silence is the failure mode a prompt-driven emission could not distinguish from a
-  // completed one. Here it is closed by construction: no id, no bead.
+  // completed one. Here it is closed by construction: no id, no bead. A writer that returns
+  // nothing is an agent that never ran, so the run is charged to the dispatch, not the bead.
   const { result } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', epic: TEST_EPIC },
     workflowImpl: makeWorkflowImpl({ repos: ['/repo-a'] }),
     agentImpl: withLifecycle(() => null),
   })
   assert.equal(result.ok, false)
-  assert.equal(result.stage, 'emit-beads')
+  assert.equal(result.stage, 'agent-dispatch-failed')
   assert.equal(result.emissionOk, false)
   assert.equal(result.beadsEmitted, 0)
 })

@@ -116,7 +116,6 @@ test('material that contradicts the PRD becomes REMOVAL work, not a smaller PRD'
         status: 'contradicts',
         evidence: ['services/auth/sms_mfa.py:44'],
         removalTargets: ['services/auth/sms_mfa.py', 'infra/auth_stack.py:202 SMS config'],
-        repos: ['/repo/auth'],
         surface: 'service',
       },
     ],
@@ -128,7 +127,6 @@ test('material that contradicts the PRD becomes REMOVAL work, not a smaller PRD'
       requirementId: 'R1',
       requirement: 'enrol TOTP',
       targets: ['services/auth/sms_mfa.py', 'infra/auth_stack.py:202 SMS config'],
-      repos: ['/repo/auth'],
     },
   ])
 })
@@ -209,26 +207,16 @@ test('a schema that permitted an evidence-free status would defeat the whole che
   const schema = agentCalls(calls, 'reconcile:reality-and-dependencies')[0].opts.schema
   const item = schema.properties.requirements.items
   assert.ok(item.required.includes('evidence'), 'evidence is required of every requirement, whatever its status')
-  assert.equal(item.properties.evidence.minItems, 1, 'and an empty evidence array is not expressible')
+  assert.equal(
+    item.properties.evidence.minItems,
+    undefined,
+    'an empty evidence array is caught by the reduction, which demotes that one requirement — a schema bound would discard the whole inventory',
+  )
   assert.deepEqual(
     item.properties.status.enum,
     ['conforms', 'contradicts', 'absent'],
     'the three statuses describe the MATERIAL — there is no status that retires a PRD requirement',
   )
-})
-
-// ── the two repo lists ──────────────────────────────────────────────────────────
-
-test('`repos` unions every requirement; `existingRepos` only where material was actually found', async () => {
-  const { result } = await reconcile({
-    requirements: [
-      { id: 'R1', requirement: 'a', status: 'conforms', evidence: ['x.py:1'], repos: ['/repo/auth'], conformingMaterial: ['m'] },
-      { id: 'R2', requirement: 'b', status: 'absent', evidence: ['no hits'], repos: ['/repo/web'] },
-    ],
-  })
-  assert.deepEqual(result.repos, ['/repo/auth', '/repo/web'], 'the prediction sizes the span of the whole PRD')
-  assert.deepEqual(result.existingRepos, ['/repo/auth'], 'an absent requirement proves nothing about where anything lives')
-  assert.equal(result.spansMultipleRepos, true)
 })
 
 // RETIRED WITH CHECK 1c. Three tests here asserted `architectureNeeded`,

@@ -117,9 +117,19 @@ async function runWithDeploys(deployResults, args = {}) {
 const DEPLOYED_SMOKE_FAILED = {
   deployedToDev: true,
   smokePassed: false,
-  rollout: { deployed: true, smokePassed: false, evidence: 'smoke/test_health.py::test_health FAILED 502' },
+  smokeTestFiles: ['smoke/test_health.py'],
+  rollout: {
+    deployed: true,
+    smokePassed: false,
+    smokeCases: [{ name: 'test_health', passed: false, output: 'smoke/test_health.py::test_health FAILED 502' }],
+  },
 }
-const DEPLOYED_SMOKE_PASSED = { deployedToDev: true, smokePassed: true, rollout: { deployed: true, smokePassed: true } }
+const DEPLOYED_SMOKE_PASSED = {
+  deployedToDev: true,
+  smokePassed: true,
+  smokeTestFiles: ['smoke/test_health.py'],
+  rollout: { deployed: true, smokePassed: true, smokeCases: [{ name: 'test_health', passed: true, output: 'ok' }] },
+}
 const NEVER_DEPLOYED = { deployedToDev: false, smokePassed: false, readiness: { ready: false, findings: ['drift'] } }
 
 test('a smoke failure in the DEPLOYED dev environment re-enters Green and redeploys', async () => {
@@ -307,19 +317,9 @@ test('the field names the dashboard reads do not move', async () => {
 
 // ── A MEASURED FACT IS NOT OPEN TO A RULING ──────────────────────────────────
 //
-// gateLoop's exhaustion path asks the advantage-evaluator whether the remaining findings
-// invalidate the work, and a `competitive` ruling returns ok:true carrying the artifact
-// that failed. That is correct and deliberate for JUDGMENT criteria — halting a pipeline
-// for a non-invalidating finding is the failure mode the evaluator exists to prevent.
-//
-// It was NOT correct for deterministic checks. A deterministic check did not form an
-// opinion about the artifact; it measured it. The rule was stated only in the prompt sent
-// to the evaluator, and a rule stated only in a prompt is a request. Nothing checked WHICH
-// criteria were unmet, so a competitive ruling could emit ok:true with deployedToDev:false
-// — the exact claim the Gate 5 rewrite exists to make impossible.
-//
-// These two tests are a pair, and the pair is the point: the guard must block the measured
-// case WITHOUT disarming the judgment case.
+// Retry exhaustion is decided in code: no advantage-evaluator is consulted, and every
+// unmet criterion blocks. A measured check that failed is named as a measured failure, and
+// no ruling can turn it into ok:true.
 
 /** Exhaust Gate 5 of bug-fix and let `ruling` answer the advantage-evaluator. */
 async function runToGate5Exhaustion({ unmetCriterion, ruling, deterministicChecks }) {
@@ -392,20 +392,6 @@ test('the guard holds on the labels alone, even when the gate reports no determi
   assert.equal(agentCalls(calls, 'advantage:exhausted-5').length, 0)
 })
 
-test('a COMPETITIVE ruling on a JUDGMENT criterion still proceeds — the advantage path is narrowed, not removed', async () => {
-  // This is the case the evaluator exists for. Narrowing the guard must not disarm it:
-  // halting the pipeline for a non-invalidating finding is the failure mode it prevents.
-  const { result, calls } = await runToGate5Exhaustion({
-    unmetCriterion: 'the readiness packet inventories a rollback runbook',
-    ruling: COMPETITIVE_RULING,
-    deterministicChecks: [{ criterion: DEPLOYED_CHECK_LABEL, met: true, evidence: 'observed deployedToDev = true' }],
-  })
-
-  assert.equal(agentCalls(calls, 'advantage:exhausted-5').length, 1, 'a judgment criterion IS routed to the evaluator')
-  assert.equal(result.ok, true, 'and a non-invalidating finding proceeds under a flag')
-  assert.match(result.headline, /PROCEEDED UNDER 1 carried flag/)
-})
-
 test('ok:true from the deploy phase now IMPLIES a confirmed deployment', async () => {
   // The invariant the guard establishes. Before it, ok:true could carry deployedToDev:false
   // through a competitive ruling; now the only routes to ok:true are a passing verdict
@@ -425,12 +411,7 @@ test('every composite enforces the deterministic rule in CODE, not only in promp
   for (const name of COMPOSITES) {
     const src = readWorkflowSource(path.join(WF, `${name}.js`))
     assert.match(src, /const measuredFailures = \[/, `${name}: the measured-failure set must be computed`)
-    assert.match(
-      src,
-      /const ruling = measuredFailures\.length \? null : await ruleExhaustion\(/,
-      `${name}: no ruling may be requested while a deterministic check is failing`,
-    )
-    assert.match(src, /deterministicFailure: true/, `${name}: the failure must name itself as a measured one`)
+    assert.match(src, /deterministicFailure: measuredFailures\.length > 0/, `${name}: the failure must name itself as a measured one`)
   }
 })
 
@@ -463,8 +444,8 @@ test('the deterministic-failure log names the gate AND the phase', async () => {
     deterministicChecks: [{ criterion: DEPLOYED_CHECK_LABEL, met: false, evidence: 'observed deployedToDev = false' }],
   })
 
-  const line = (logs || []).find((l) => /DETERMINISTIC check\(s\) failed/.test(l))
-  assert.ok(line, 'the deterministic-failure path must log why no ruling was requested')
+  const line = (logs || []).find((l) => /Gate 5 .*budget spent/.test(l))
+  assert.ok(line, 'the exhaustion path must log the still-unmet checks')
   assert.doesNotMatch(line, /\{PHASE\}/, 'the placeholder must be interpolated, not printed')
   assert.match(line, /Gate 5 \(Deploy to dev \(iteration 1\/3\)\)/, 'the real phase name must appear')
   assert.match(line, new RegExp(DEPLOYED_CHECK_LABEL), 'and the measured criterion must be named')

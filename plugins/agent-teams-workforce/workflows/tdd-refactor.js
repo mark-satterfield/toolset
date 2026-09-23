@@ -285,6 +285,11 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
+// Agents start in the session's working directory, not in this repository, and many of the
+// agents this phase dispatches run in an isolation worktree of that other repository. So every
+// prompt pins the tree by absolute path rather than saying "work within" it.
+const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
+${repo}`
 const changedFromGreen = (green.changedFiles || []).join(', ') || 'n/a'
 const beadId = (c.bead && c.bead.id) || null
 
@@ -416,7 +421,9 @@ const OPTIMIZER_ROSTER = {
 // READ-ONLY: it makes no edits. Naming the optimizers here, from the same reading of the
 // code, replaces a separate routing session that re-read the change to answer it.
 const complexity = await settleAgent(
-  `Analyze the code changed by the fix for complexity, duplication, and refactor opportunities. You are READ-ONLY — make NO edits. Return a prioritized list of refactor recommendations the downstream refactorer will act on; return an EMPTY list when the change needs no cleanup — that ends the phase. Work within: ${repo}
+  `Analyze the code changed by the fix for complexity, duplication, and refactor opportunities. You are READ-ONLY — make NO edits. Return a prioritized list of refactor recommendations the downstream refactorer will act on; return an EMPTY list when the change needs no cleanup — that ends the phase.
+
+${pinTree}
 
 Changed files from the fix: ${changedFromGreen}
 
@@ -524,7 +531,9 @@ if (!snapshotTree) {
 // keeping every test green. This is the segregation invariant's writer half; it pairs with
 // the read-only correctness reviewer at the end.
 const refactor = await settleAgent(
-  `Refactor the code changed by the fix for clarity and to reduce complexity/duplication, WITHOUT changing behavior. Address the complexity analysis where it applies. Keep every test green — run the suite after your changes. Work within: ${repo}
+  `Refactor the code changed by the fix for clarity and to reduce complexity/duplication, WITHOUT changing behavior. Address the complexity analysis where it applies. Keep every test green — run the suite after your changes.
+
+${pinTree}
 
 Changed files from the fix: ${changedFromGreen}
 Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}${contractBlock}
@@ -601,7 +610,9 @@ const writerRed = (who, run) =>
 if (refactor.testsGreen !== true) return await writerRed('the code-refactoring-specialist', refactor)
 for (const opt of pickedOptimizers) {
   const run = await settleAgent(
-    `Apply your optimization to the refactored code WITHOUT changing behavior, then run the test suite and confirm every test is still green. Work within: ${repo}
+    `Apply your optimization to the refactored code WITHOUT changing behavior, then run the test suite and confirm every test is still green.
+
+${pinTree}
 
 You are '${opt}', running after the code-refactoring-specialist and any earlier optimizers — their changes are already applied. Make only the part matching your specialty.
 Files changed so far: ${changedFiles.join(', ') || 'n/a'}
@@ -624,7 +635,9 @@ Constraints: preserve behavior; stay inside the contract above; do not modify te
 // test suite is still green and behavior is preserved across the refactor + all optimizers.
 // No producer judges its own work.
 const review = await settleAgent(
-  `Review the refactor and optimizer changes below for correctness regressions and behavioral drift. You are READ-ONLY. Verify the test suite is still green and that behavior is preserved across ALL changes. Work within: ${repo}
+  `Review the refactor and optimizer changes below for correctness regressions and behavioral drift. You are READ-ONLY. Verify the test suite is still green and that behavior is preserved across ALL changes.
+
+${pinTree}
 
 Files changed (refactor + optimizers): ${changedFiles.join(', ') || 'n/a'}
 Refactorer's evidence: ${refactor.evidence || 'n/a'}

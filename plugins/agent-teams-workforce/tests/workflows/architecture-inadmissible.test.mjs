@@ -17,9 +17,12 @@ import { dirname, resolve } from 'node:path'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const SCRIPT = resolve(HERE, '../../workflows/architecture.js')
 
-const ARGS = { decision: { id: 'D1', title: 'how does the browser reach the resolution endpoint', context: 'c' } }
+const ARGS = { decision: { id: 'D1', title: 'how does the browser reach the resolution endpoint', context: 'c' }, sadExtract: SAD_EXTRACT }
 
 const CONVENTION_BLOCKER = {
   rule: 'only services on the curated fronted set may sit behind the application host',

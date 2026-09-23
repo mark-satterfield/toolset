@@ -16,6 +16,9 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, readWorkflowSource } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const architecture = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
 
@@ -53,7 +56,7 @@ function impl({ triage, contested = false, decision = goodDecision }) {
 
 async function run(opts, args = {}) {
   const { result, calls } = await runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, ...args },
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT, ...args },
     agentImpl: impl(opts),
     workflowImpl: () => null,
   })
@@ -157,34 +160,45 @@ test('a HALF-stated caller verdict is not a verdict — the wave runs', async ()
   assert.equal(partial.result.triage, null, 'a partial verdict must not be dressed up as a triage result')
 })
 
-test('a re-proposal round runs the wave regardless of the round-1 trigger', async () => {
-  // An inadmissible verdict IS a live conflict — the decider just eliminated every
-  // option — so the fresh option set always gets stressed.
-  let round = 0
-  const { calls } = await runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' } },
-    agentImpl: (call) => {
-      const l = String(call.label)
-      if (l === 'triage:classify') return benignTriage
-      if (l === 'proposals:frame') return { subDecisions: [], constraints: [], dispatch: 'd' }
-      if (l.startsWith('proposals:analysis-advisors')) return { contextMap: { contexts: [], relationships: [] }, failureModes: [] }
-      if (l.startsWith('proposals:')) return proposal(false)
-      if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
-      if (l.startsWith('decide:ruling')) {
-        round += 1
-        return round === 1
-          ? { ...goodDecision, admissible: false, chosenApproach: '', blockingRules: [{ rule: 'house rule', source: 'SAD', whyBlocking: 'w', classification: 'convention' }] }
-          : goodDecision
-      }
-      if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
-      if (l === 'sad:maintain') return { updatedSections: [], changedFiles: [], summary: 's' }
-      if (l === 'sad:conformance') return { verdict: 'pass', findings: [] }
-      return null
-    },
-    workflowImpl: () => null,
-  })
-  const waveRuns = calls.filter((c) => String(c.label).startsWith('challenge:')).length
-  assert.ok(waveRuns >= 1, 'the re-proposed option set must be stressed even though round 1 converged')
+test('a re-proposal round runs the wave under the same criteria as round 1', async () => {
+  // The re-proposed set was written to honor the rule the decider named, so it is
+  // challenged only when it carries a trigger of its own: here, a lens reports a live
+  // conflict in round 2 though round 1 converged — and a converged round 2 skips.
+  const reRun = async (reContested) => {
+    let round = 0
+    const { calls, result } = await runWorkflowScript(architecture, {
+      args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT },
+      agentImpl: (call) => {
+        const l = String(call.label)
+        if (l === 'triage:classify') return benignTriage
+        if (l === 'proposals:frame') return { subDecisions: [], constraints: [], dispatch: 'd' }
+        if (l.startsWith('proposals:analysis-advisors')) return { contextMap: { contexts: [], relationships: [] }, failureModes: [] }
+        if (/^proposals:.*-r2$/.test(l)) return proposal(reContested, reContested ? 'two live options' : undefined)
+        if (l.startsWith('proposals:')) return proposal(false)
+        if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
+        if (l.startsWith('decide:ruling')) {
+          round += 1
+          return round === 1
+            ? { ...goodDecision, admissible: false, chosenApproach: '', blockingRules: [{ rule: 'house rule', source: 'SAD', whyBlocking: 'w', classification: 'convention' }] }
+            : goodDecision
+        }
+        if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
+        if (l === 'sad:maintain') return { updatedSections: [], changedFiles: [], summary: 's' }
+        if (l === 'sad:conformance') return { verdict: 'pass', findings: [] }
+        return null
+      },
+      workflowImpl: () => null,
+    })
+    return { result, waveRuns: calls.filter((c) => String(c.label).startsWith('challenge:')).length }
+  }
+
+  const contested = await reRun(true)
+  assert.equal(contested.waveRuns, 1, 'a live conflict in the re-proposed set must be stressed even though round 1 converged')
+  assert.match(contested.result.challengeWave.reason, /re-proposal round 2/)
+
+  const converged = await reRun(false)
+  assert.equal(converged.waveRuns, 0, 'a converged re-proposed set under benign triage is not re-challenged')
+  assert.equal(converged.result.challengeWave.ran, false)
 })
 
 // ── Judicious tie-break: ambiguity challenges by default ──────────────────────
@@ -196,7 +210,7 @@ test('a re-proposal round runs the wave regardless of the round-1 trigger', asyn
 
 test('a lens that did not state contested either way is ambiguity — the wave runs', async () => {
   const { result, calls } = await runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' } },
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT },
     agentImpl: (call) => {
       const l = String(call.label)
       if (l === 'triage:classify') return benignTriage
@@ -221,7 +235,7 @@ test('a lens that did not state contested either way is ambiguity — the wave r
 
 test('a dispatched lens that returned nothing is ambiguity — the wave runs', async () => {
   const { result, calls } = await runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'q', context: 'c' } },
+    args: { decision: { id: 'AD-1', title: 'q', context: 'c' }, sadExtract: SAD_EXTRACT },
     agentImpl: (call) => {
       const l = String(call.label)
       if (l === 'triage:classify') return benignTriage

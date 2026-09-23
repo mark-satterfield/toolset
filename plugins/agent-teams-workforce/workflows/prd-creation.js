@@ -356,7 +356,7 @@ function checkLimit(where, what, value, expected, min) {
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const request = a.request || {}
-const MAX_PASSES = a.maxPasses || 2
+const MAX_PASSES = Math.max(1, Math.floor(Number(a.maxPasses)) || 2)
 const repo = request.repoPath || '(repo path not provided — this is a docs/vault artifact)'
 if (!request.title && !request.description) {
   return { ok: false, stage: 'input', error: 'no request.title/description supplied — refusing to run without a work item' }
@@ -456,7 +456,7 @@ Ceilings, and nothing past them is read: ${SCOPE_LIST_MAX} entries each in \`inS
   }
 )
 if (!intake) {
-  return { ok: false, stage: 'intake', error: 'intake produced nothing — no scope framing and no brief to author a PRD from', dispatchFailed: true, dispatchFailures: dispatchDeaths('Intake') }
+  return { ok: false, stage: 'agent-dispatch-failed', error: 'intake produced nothing — no scope framing and no brief to author a PRD from', dispatchFailed: true, dispatchFailures: dispatchDeaths('Intake') }
 }
 // The stated ceilings, measured. Observation only: every entry is carried forward.
 checkLimit('Intake', 'inScope', intake.inScope, SCOPE_LIST_MAX)
@@ -572,7 +572,7 @@ phase('PRD Draft')
 if (!persona || !okrs) {
   return {
     ok: false,
-    stage: 'persona-okr',
+    stage: 'agent-dispatch-failed',
     error: `${!persona ? 'the persona writer' : ''}${!persona && !okrs ? ' and ' : ''}${!okrs ? 'the OKR writer' : ''} returned nothing — the PRD has no persona or OKRs to be authored against`,
     intakeBrief,
     scope,
@@ -722,13 +722,13 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   prd = await draftPRD(feedback)
   // Same guard, same reason: verifyAlignment reads `prd.title` and `prd.prd`.
   if (!prd) {
-    return { ok: false, stage: 'prd-draft', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
+    return { ok: false, stage: 'agent-dispatch-failed', error: 'the prd-writer returned nothing — there is no PRD to check', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
   }
   checkLimit(`PRD Draft (pass ${pass})`, 'sections', prd.sections, SECTIONS_MAX)
   checkLimit(`PRD Draft (pass ${pass})`, 'P0 acceptance criteria', prd.acceptanceCriteria, P0_CRITERIA_MAX)
   alignmentVerdict = await verifyAlignment(prd)
   if (!alignmentVerdict) {
-    return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', intakeBrief, persona, okrs, scope, prd, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
+    return { ok: false, stage: 'agent-dispatch-failed', error: 'alignment check returned no verdict', reason: 'alignment check returned no verdict', intakeBrief, persona, okrs, scope, prd, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
   }
   checkLimit(`PRD Draft (pass ${pass})`, 'alignment dimensions', alignmentVerdict.dimensions, ALIGNMENT_DIMENSIONS.length)
   // The verdict is read off the checker's own dimensions: "aligned" beside a dimension it
@@ -816,7 +816,13 @@ const epic = prd
 
 return {
   ok,
-  ...(ok ? {} : { stage: 'prd-draft' }),
+  stage: ok ? 'done' : deciderDied ? 'agent-dispatch-failed' : 'prd-draft',
+  headline: ok
+    ? `PRD "${prd.title}" authored and ${aligned ? 'aligned' : 'accepted by ruling'}`
+    : deciderDied
+      ? 'the PRD did not align and the deadlock ruling returned nothing'
+      : `the PRD did not align within ${MAX_PASSES} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}`,
+  ...(ok ? {} : { error: deciderDied ? 'the PRD did not align and the deadlock ruling returned nothing' : `the PRD did not align within ${MAX_PASSES} pass(es)${decision ? `; ruled reject: ${decision.rationale}` : ''}` }),
   ...(deciderDied ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') } : {}),
   request: request.id ? request.id : null,
   intakeBrief,

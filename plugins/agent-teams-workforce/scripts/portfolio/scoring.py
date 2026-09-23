@@ -310,6 +310,23 @@ def plan(
     }
 
 
+def _size(value: Any) -> int | None:
+    """Parse a stored size, returning None when it is absent, unusable or not positive.
+
+    The rubric refuses a non-positive size by raising, which would abort the arithmetic
+    for the whole portfolio over one bead's metadata. Read as absent, it leaves that one
+    item unscored or its Epic incomplete, named in the report.
+
+    Args:
+        value: The raw metadata value.
+
+    Returns:
+        The positive integer, or None.
+    """
+    parsed = _int(value)
+    return parsed if parsed is not None and parsed > 0 else None
+
+
 def _size_of(bead: Bead) -> dict[str, int | None]:
     """A bead's judged size estimate with its range and confidence.
 
@@ -320,9 +337,9 @@ def _size_of(bead: Bead) -> dict[str, int | None]:
         `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, None where absent.
     """
     return {
-        "jobSize": _int(bead.metadata.get(ESTIMATE_KEY)),
-        "sizeLow": _int(bead.metadata.get("wsjf_size_low")),
-        "sizeHigh": _int(bead.metadata.get("wsjf_size_high")),
+        "jobSize": _size(bead.metadata.get(ESTIMATE_KEY)),
+        "sizeLow": _size(bead.metadata.get("wsjf_size_low")),
+        "sizeHigh": _size(bead.metadata.get("wsjf_size_high")),
         "sizeConfidence": _int(bead.metadata.get("wsjf_size_confidence")),
     }
 
@@ -343,7 +360,7 @@ def reference_jobs(graph: Graph) -> list[dict]:
     jobs = []
     for epic in graph.of_kind("epic"):
         tasks = _tasks_of(graph, epic)
-        sizes = [_int(t.metadata.get("wsjf_size")) for t in tasks]
+        sizes = [_size(t.metadata.get("wsjf_size")) for t in tasks]
         if not tasks or any(size is None for size in sizes):
             continue
         estimate = _size_of(epic)
@@ -558,11 +575,12 @@ def record(
     """Write judged values, each with the fingerprint of the content it was judged from.
 
     The plan's adopted values get their fingerprint recorded beside them. Only items the
-    plan named for judging are written. A judgment for an item the plan did not name, or
-    two judgments for one item, refuses the whole record, because the judgments no longer
-    say which value belongs to which item. Every judgment is validated before anything is
-    written; one with a value off the rubric's scale is not written and is listed under
-    `rejected` with its reason, and the others are written.
+    plan named for judging are written. A judgment for an item the plan did not name is
+    not written, and an item judged twice has no value that belongs to it, so neither
+    judgment is written; both are listed under `rejected`. Every judgment is validated
+    before anything is written; one with a value off the rubric's scale is not written and
+    is listed under `rejected` with its reason, and the others are written. One session's
+    defect never costs another session's judgments.
 
     Args:
         graph: The tracker graph.
@@ -574,9 +592,6 @@ def record(
         What was written, what was rejected and why, what the plan asked for and did not
         receive, a summary, and — in a dry run — every write in order.
 
-    Raises:
-        ScoringError: A judgment names an item outside the plan, or two judgments name
-            one item.
     """
     prints = the_plan["fingerprints"]
     missing: list[str] = []
@@ -591,16 +606,21 @@ def record(
             if bead_id in got:
                 twice.add(bead_id)
             got[bead_id] = one
-        if twice:
-            msg = f"{level} judged more than once: {', '.join(sorted(twice))}"
-            raise ScoringError(msg)
-        stray = sorted(set(got) - asked)
-        if stray:
-            msg = (
-                f"{level} judgments for items the plan did not name: {', '.join(stray)}"
+        for bead_id in sorted(twice):
+            del got[bead_id]
+            rejected.append(
+                {"id": bead_id, "level": level, "reason": "judged more than once"}
             )
-            raise ScoringError(msg)
-        missing += sorted(asked - set(got))
+        for bead_id in sorted(set(got) - asked):
+            del got[bead_id]
+            rejected.append(
+                {
+                    "id": bead_id,
+                    "level": level,
+                    "reason": "the plan did not name it for judging",
+                }
+            )
+        missing += sorted(asked - set(got) - twice)
         for bead_id in sorted(asked & set(got)):
             bead = graph.beads.get(bead_id)
             if bead is None:
@@ -685,7 +705,7 @@ def _scoring_size(bead: Bead, *, has_tasks: bool) -> dict[str, int]:
     """
     size = _size_of(bead)
     if size["jobSize"] is None and not has_tasks:
-        size["jobSize"] = _int(bead.metadata.get("wsjf_size"))
+        size["jobSize"] = _size(bead.metadata.get("wsjf_size"))
     return {key: value for key, value in size.items() if value is not None}
 
 
@@ -705,10 +725,10 @@ def _task_size(task: Bead) -> int | None:
     Returns:
         The size, or None when the Task carries neither a judged estimate nor a size.
     """
-    estimate = _int(task.metadata.get(ESTIMATE_KEY))
-    if estimate is not None and estimate > 0:
+    estimate = _size(task.metadata.get(ESTIMATE_KEY))
+    if estimate is not None:
         return rubric.snap_size(estimate)
-    return _int(task.metadata.get("wsjf_size"))
+    return _size(task.metadata.get("wsjf_size"))
 
 
 def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]]:

@@ -17,6 +17,9 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const architecture = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
 
 const ALWAYS = [
@@ -28,7 +31,7 @@ const ALWAYS = [
 /** Runs the mini, scripting the triage verdict and approving everything else. */
 async function run({ args = {}, triage }) {
   return runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'chassis or not', context: 'c' }, ...args },
+    args: { decision: { id: 'AD-1', title: 'chassis or not', context: 'c' }, sadExtract: SAD_EXTRACT, ...args },
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
     agentImpl: (call) => {
       if (call.label === 'triage:classify') return triage
@@ -155,7 +158,7 @@ test('forceFullPanel skips triage and runs everything', async () => {
 /** Runs with a scripted triage verdict AND a scripted citation verification. */
 async function runVerified({ triage, verification, args = {} }) {
   return runWorkflowScript(architecture, {
-    args: { decision: { id: 'AD-1', title: 'chassis or not', context: 'c' }, ...args },
+    args: { decision: { id: 'AD-1', title: 'chassis or not', context: 'c' }, sadExtract: SAD_EXTRACT, ...args },
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
     agentImpl: (call) => {
       if (call.label === 'triage:classify') return triage

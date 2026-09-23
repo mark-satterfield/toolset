@@ -7,8 +7,8 @@
 // falls into the "When genuinely uncertain, RULE READY" default and the change
 // deploys to AWS dev account 616930583457.
 //
-// The fake Gate 5 agent in these tests deliberately returns ready:true — the
-// miscalibrated-uncertainty case — so blocking must come from deploy.js itself.
+// Gate 5 readiness is computed by deploy.js from facts it holds; no agent rules on it,
+// so blocking must come from deploy.js itself.
 // No test here can reach any AWS control plane: every dispatch is an in-process fake.
 
 import { test } from 'node:test'
@@ -35,72 +35,39 @@ const CONTRACT = {
 /** Scripted responses keyed by dispatch label; unknown labels get a generic artifact. */
 function deployResponders(overrides = {}) {
   const base = {
-    'deploy:plan': { artifacts: [] },
     'deploy:smoke-author': { smokeTestFiles: ['smoke/test_fixed_behavior.py'] },
     'deploy:cdk-validate': { applicable: true, synthValid: true, driftDetected: false },
-    'deploy:strategy': { rolloutStyle: 'rolling', riskLevel: 'low' },
-    'deploy:readiness-packet': {
-      inventory: ['smoke tests AUTHORED AND SOUND', 'documentation PRESENT'],
-      concerns: [],
+    'deploy:rollout-dev': {
+      deployed: true, stacks: ['DevStack'], smokePassed: true,
+      smokeCases: [{ name: 'fixed behavior', passed: true, output: 'ok' }],
     },
-    // Simulates the enforcer resolving "no test evidence" via the uncertainty default.
-    'deploy:gate5-verdict': { ready: true, findings: [] },
-    'deploy:rollout-dev': { deployed: true, stacks: ['DevStack'], smokePassed: true },
     ...overrides,
   }
   return (call) =>
     Object.prototype.hasOwnProperty.call(base, call.label) ? base[call.label] : { summary: 'ok' }
 }
 
-function gate5Prompt(calls) {
-  const g5 = agentCalls(calls, 'deploy:gate5-verdict')
-  assert.equal(g5.length, 1, 'expected exactly one deploy:gate5-verdict dispatch')
-  return g5[0].prompt
-}
-
 // ─── D1-AC1 — evidence is read ────────────────────────────────────────────────
-test('D1-AC1: Gate 5 prompt carries green.evidence verbatim and a CONFIRMED GREEN statement sourced from the green artifact', async () => {
-  const EVIDENCE = '12 passed, 0 failed (pytest -q)'
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
+// Readiness is computed by deploy.js from the Green artifact; no agent rules on it.
+test('D1-AC1: deploy.js reads green.greenConfirmed and green.evidence, and confirmed Green evidence lets the rollout proceed', async () => {
+  const { result, calls } = await runWorkflowScript(DEPLOY_JS, {
     args: {
       contract: CONTRACT,
-      green: { greenConfirmed: true, evidence: EVIDENCE, changedFiles: ['svc/handler.py'] },
+      green: { greenConfirmed: true, evidence: '12 passed, 0 failed (pytest -q)', changedFiles: ['svc/handler.py'] },
     },
     agentImpl: deployResponders({
       'deploy:cdk-validate': {
         applicable: false, synthValid: false, driftDetected: false,
         details: 'deploys via s3 sync; infrastructure owned by web-infra',
       },
-      // Inventory deliberately says NOTHING about unit/integration tests, so any
-      // CONFIRMED GREEN statement in the prompt can only come from the green artifact.
-      'deploy:readiness-packet': {
-        inventory: ['smoke tests AUTHORED AND SOUND', 'documentation PRESENT'],
-        concerns: [],
-      },
     }),
   })
+  assert.equal(result.readiness.ready, true, 'confirmed Green evidence plus a substantiated not-applicable CDK is ready')
+  assert.equal(agentCalls(calls, 'deploy:rollout-dev').length, 1)
 
-  const prompt = gate5Prompt(calls)
-  assert.ok(
-    prompt.includes(EVIDENCE),
-    `Gate 5 prompt must contain the literal green.evidence string '${EVIDENCE}' — the enforcer is currently starved of test evidence`
-  )
-  assert.match(
-    prompt,
-    /CONFIRMED GREEN/i,
-    'Gate 5 prompt must state that unit/integration tests are CONFIRMED GREEN, sourced from the green artifact (the fixture inventory mentions no tests)'
-  )
-
-  // Source-text clause of D1-AC1: deploy.js must actually read the machine-checkable fields.
   const src = readWorkflowSource(DEPLOY_JS)
-  assert.ok(
-    src.includes('green.greenConfirmed'),
-    'deploy.js must read green.greenConfirmed (grep currently returns zero occurrences)'
-  )
-  assert.ok(
-    src.includes('green.evidence'),
-    'deploy.js must read green.evidence (grep currently returns zero occurrences)'
-  )
+  assert.ok(src.includes('green.greenConfirmed'), 'deploy.js must read green.greenConfirmed')
+  assert.ok(src.includes('green.evidence'), 'deploy.js must read green.evidence')
 })
 
 // ─── D1-AC2 — unconfirmed green blocks the ROLLOUT ────────────────────────────
@@ -163,10 +130,6 @@ test('D1-AC4: omitting the green key entirely blocks the rollout — absent test
     },
     agentImpl: deployResponders({
       'deploy:cdk-validate': { applicable: true, synthValid: true, driftDetected: false },
-      'deploy:readiness-packet': {
-        inventory: ['smoke tests PRESENT', 'documentation PRESENT'],
-        concerns: [],
-      },
     }),
   })
 
@@ -175,47 +138,6 @@ test('D1-AC4: omitting the green key entirely blocks the rollout — absent test
     'no deploy:rollout-dev dispatch when the green artifact is entirely absent'
   )
   assert.equal(result.deployedToDev, false, 'deployedToDev must be false')
-})
-
-// ─── D1-AC5 — the third state is named in the prompt ──────────────────────────
-test('D1-AC5: the BLOCK clause names not-run/not-reported tests, and the RULE READY default is scoped away from test evidence', async () => {
-  const { calls } = await runWorkflowScript(DEPLOY_JS, {
-    args: {
-      contract: CONTRACT,
-      green: { greenConfirmed: true, evidence: '12 passed, 0 failed (pytest -q)', changedFiles: ['svc/handler.py'] },
-    },
-    agentImpl: deployResponders(),
-  })
-  const prompt = gate5Prompt(calls)
-
-  const blockIdx = prompt.search(/BLOCK on/i)
-  assert.ok(blockIdx >= 0, 'Gate 5 prompt must contain a BLOCK enumeration')
-  const doNotIdx = prompt.indexOf('DO NOT BLOCK', blockIdx)
-  const blockClause = prompt.slice(blockIdx, doNotIdx > blockIdx ? doNotIdx : blockIdx + 500)
-  assert.match(
-    blockClause,
-    /not run|not reported|unreported|unconfirmed/i,
-    `the BLOCK clause must explicitly name the not-run/not-reported third state; BLOCK clause was: ${JSON.stringify(blockClause)}`
-  )
-
-  const idx = prompt.indexOf('When genuinely uncertain, RULE READY')
-  assert.ok(idx >= 0, "the calibration sentence 'When genuinely uncertain, RULE READY' must be present (its scoping is under test, not its existence)")
-  const window = prompt.slice(Math.max(0, idx - 400), idx + 400)
-  assert.match(
-    window,
-    /(does not|do not|doesn't|never|not)\s+(apply|extend|cover)|except/i,
-    'an adjacent clause must scope the uncertainty default (e.g. "does not apply ...")'
-  )
-  assert.match(
-    window,
-    /unit|integration|test/i,
-    'the scoping clause must reference unit/integration test evidence'
-  )
-  assert.match(
-    window,
-    /missing|unconfirmed|unreported|not run|absent/i,
-    'the scoping clause must exclude missing/unconfirmed test evidence from the uncertainty default'
-  )
 })
 
 // ─── D1-AC6 — uncertainty default preserved for process artifacts (regression guard) ──
@@ -227,7 +149,6 @@ test('D1-AC6: valid green + zero process artifacts still rolls out — the light
       green: { greenConfirmed: true, evidence: '48 passed', changedFiles: ['svc/handler.py'] },
     },
     agentImpl: deployResponders({
-      'deploy:plan': { artifacts: [] }, // no FinOps, SLO, runbook, or pipeline authored
       'deploy:cdk-validate': { applicable: true, synthValid: true, driftDetected: false },
     }),
   })

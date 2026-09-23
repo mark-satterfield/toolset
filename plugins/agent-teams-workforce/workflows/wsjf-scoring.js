@@ -1,7 +1,7 @@
 export const meta = {
   name: 'wsjf-scoring',
   description:
-    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing. Each Epic's value, time criticality and — for an Epic without Tasks — size are judged from its full PRD, one Epic per session, against the rubric's rungs and the reference jobs, with no other Epic's PRD or values as an input; each Epic's Tasks are sized together, in a session per Epic. Every size is on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. A judgment off the rubric's scale is rejected and reported, and the rest are written. A judging session that returns nothing fails the run and names the items it left unjudged; the judgments that did return are still recorded and the arithmetic still runs. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over every open item, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again; `only` restricts the judging to named items; `dryRun` writes nothing.",
+    "Scores every open Epic and Task with WSJF, and never sets a dependency: it reads the edges from beads. Edges decide ELIGIBILITY, WSJF decides PRIORITY among what is eligible. A model judges only where the source content changed or a value is missing. Each Epic's value, time criticality and — for an Epic without Tasks — size are judged from its full PRD, one Epic per session, against the rubric's rungs and the reference jobs, with no other Epic's PRD or values as an input; each Epic's Tasks are sized together, in a session per Epic. Every size is on one Fibonacci scale with a plausible range and a size confidence, kept apart from the value confidence. A judgment off the rubric's scale, outside the plan or unreadable is rejected and reported, and the rest are written. A judging session that returns nothing, or an item that was not recorded, fails the run and names the items left unjudged; the judgments that did return are still recorded and the arithmetic still runs. Then the arithmetic — Epic RR-OE, the Architectural Enabler measure, from reachability over the Epic architecture-dependency edges, Epic size as the plain sum of its Tasks' sizes, Task RR-OE, the value a Task inherits, every WSJF — runs over every open item, and only values that changed are written. `all` includes items that already have a value; `rejudge` judges the existing values of the items included again; `only` restricts the judging to named items; `dryRun` writes nothing.",
   whenToUse: "Scoring after Epics or Tasks are added or changed, or after dependency assessment applies edges; with all and rejudge, re-judging every Epic and Task.",
   phases: [
     { title: "Plan", detail: "fingerprints decide what is judged" },
@@ -499,9 +499,8 @@ if (inputs.task && groupedTasks !== plan.tasksToJudge) {
 // ── Judge ────────────────────────────────────────────────────────────────────────
 //
 // A session per Epic, and a session per Epic's Tasks. Each writes its own file and none
-// writes to the tracker, so they run concurrently, JUDGE_CONCURRENCY at a time.
+// writes to the tracker, so they all run concurrently under the runtime's cap.
 enter('Judge')
-const JUDGE_CONCURRENCY = 6
 const JUDGE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -576,8 +575,11 @@ const judging = {
   epic: { sessions: 0, judged: 0, failed: [], failedSessions: 0 },
   task: { sessions: 0, judged: 0, failed: [], failedGroups: [], failedSessions: 0 },
 }
-for (let i = 0; i < jobs.length; i += JUDGE_CONCURRENCY) {
-  const batch = jobs.slice(i, i + JUDGE_CONCURRENCY)
+// ONE parallel() over every job: the runtime's own concurrency cap meters them, and a slot
+// frees the moment a session returns. Fixed batches made every batch wait on its slowest
+// session. The jobs are issued in the same order every run, so a resume replays them.
+{
+  const batch = jobs
   const results = await parallel(batch.map((job) => () => job.run()))
   batch.forEach((job, n) => {
     const out = results[n]
@@ -612,9 +614,18 @@ const applied = await runSteps('apply', [
   { name: 'score', command: cmd('score', `--out ${shq(file('score.json'))}${dry}`) },
 ])
 let recorded = null
+// Items a session returned for but that were not recorded: a judgment off the rubric's scale
+// or outside the plan (`rejected`), an item the session's file did not carry (`missing`), a
+// session file that could not be read (`unreadable`). Each is an item left unjudged, exactly
+// as a dead session leaves one, so it fails the run the same way; the rest are recorded.
+let notRecorded = ''
 if (records) {
   recorded = applied.record ? applied.record.summary || {} : null
-  if (recorded && recorded.rejected) log(`Record: ${recorded.rejected} judgment(s) rejected — detail in ${file('record.json')}`)
+  const lost = recorded ? ['rejected', 'missing', 'unreadable'].filter((k) => recorded[k] > 0) : []
+  if (lost.length) {
+    notRecorded = `record left item(s) unjudged — ${lost.map((k) => `${recorded[k]} ${k}`).join(', ')}; detail in ${file('record.json')}`
+    log(`Record: ${notRecorded}`)
+  }
 }
 
 const score = applied.score ? applied.score.summary || {} : null
@@ -630,14 +641,15 @@ if (score) {
 const errors = [
   judgingFailed.length ? `judging failed for ${judgingFailed.length} item(s): ${judgingFailed.join(', ')}; their values were not recorded and they stay to judge` : '',
   failures.length ? `step(s) failed: ${failures.map((f) => `${f.step} (${f.reason})`).join('; ')}` : '',
+  notRecorded,
 ].filter(Boolean)
 const runError = errors.length ? { error: errors.join('; ') } : {}
 
-const scoredOk = !!score && failures.length === 0 && judgingFailed.length === 0
+const scoredOk = !!score && failures.length === 0 && judgingFailed.length === 0 && !notRecorded
 // `stage` and `headline` are what the supervisor reads off this return.
 return {
   ok: scoredOk,
-  stage: scoredOk ? 'done' : failedStage(judgingFailed.length ? 'Judge' : 'Apply'),
+  stage: scoredOk ? 'done' : failedStage(judgingFailed.length || (notRecorded && !failures.length) ? 'Judge' : 'Apply'),
   headline: runError.error || (score ? `scored ${score.epicsScored} Epic(s) and ${score.tasksScored} Task(s); ${score.epicsWritten + score.tasksWritten} value(s) written${dryRun ? ' (dry run)' : ''}` : 'the arithmetic did not run'),
   workDir: work,
   dryRun,

@@ -1342,10 +1342,17 @@ function cpGet(key) {
 // only for their ledger and the fields below. A file written untrimmed still loads.
 const CP_ARTIFACT_FIELDS = {
   refactor: ['testsGreen', 'behaviorPreserved', 'changedFiles', 'restored', 'restoreReason', 'alreadySatisfied', 'ledger'],
-  integration: ['passed', 'alreadySatisfied', 'ledger'],
+  integration: ['passed', 'alreadySatisfied', 'suites', 'provisionEnv', 'ledger'],
   adversarial: ['constitutiveOpen', 'selfContradictory', 'alreadySatisfied', 'attackers', 'laneMode', 'ledger'],
 }
+// Red's evidence is every writer's captured failing output joined; after its gate passes the
+// only reader is Green's prompt, which takes the first 4,000 characters. Green is never trimmed:
+// its saved artifact is hashed as the `basis` of the phases that certify it.
+const CP_RED_EVIDENCE_CHARS = 4000
 function cpTrim(key, artifact) {
+  if (key === 'red' && artifact && typeof artifact === 'object' && typeof artifact.evidence === 'string' && artifact.evidence.length > CP_RED_EVIDENCE_CHARS) {
+    return { ...artifact, evidence: artifact.evidence.slice(0, CP_RED_EVIDENCE_CHARS) }
+  }
   const fields = CP_ARTIFACT_FIELDS[key]
   if (!fields || !artifact || typeof artifact !== 'object') return artifact
   const out = {}
@@ -1757,6 +1764,13 @@ const GREEN_ESCALATE_TARGETS = [
 // here, bounded by MAX_ESCALATIONS across the whole run, so a defective test found after a
 // smoke failure is repaired rather than failing the run.
 // Returns `{ green, reauthored }` (ok or not) or `{ handback }` to return as is.
+// The implementers an earlier Green of this run selected (or reused), so a later Green does not
+// pay the implementation-lead again. A 'default' selection was a fallback, not a choice, and is
+// not carried.
+function priorImplementers() {
+  const l = green && green.artifact && green.artifact.ledger
+  return l && (l.mode === 'selected' || l.mode === 'reused') && Array.isArray(l.chosen) && l.chosen.length ? l.chosen : undefined
+}
 async function greenThroughRed(phaseName, extraFeedback) {
   let rulingBlock = ''
   let reauthored = false
@@ -1768,10 +1782,12 @@ async function greenThroughRed(phaseName, extraFeedback) {
       checks: GREEN_CHECKS,
       escalateTargets: GREEN_ESCALATE_TARGETS,
       // A retry reuses the implementers the previous attempt selected instead of paying the
-      // implementation-lead again; an explicit implementer still wins inside tdd-green.
+      // implementation-lead again, and so does every later Green of this run (a Red re-author,
+      // an integration repair, a deploy correction): the change is the same change. An
+      // explicit implementer still wins inside tdd-green.
       phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-green', {
         contract, red: red.artifact, implementer: a.implementer,
-        implementers: (loop && loop.priorArtifact && loop.priorArtifact.ledger && loop.priorArtifact.ledger.chosen) || undefined,
+        implementers: (loop && loop.priorArtifact && loop.priorArtifact.ledger && loop.priorArtifact.ledger.chosen) || priorImplementers(),
         feedback: [extraFeedback, rulingBlock, feedback].filter(Boolean).join('\n\n'),
       }),
     })
@@ -1973,16 +1989,31 @@ const INTEGRATION_ESCALATE_TARGETS = [
 // over the same tree reproduces a real failure. certifyIntegration below repairs a failure
 // through Green when the suites failed, or runs them again when the test environment was not
 // ready, and then the suites run once more.
-const runIntegration = (phaseName, seed) => gateLoop({
-  gate: '3', phaseName,
-  maxLoops: 1,
-  criteria: [],
-  checks: INTEGRATION_CHECKS,
-  escalateTargets: INTEGRATION_ESCALATE_TARGETS,
-  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
-    contract, green: green.artifact, feedback: [seed, feedback].filter(Boolean).join('\n\n'),
-  }),
-})
+// The suites the integration-testing-lead chose on an earlier run, handed back as the caller's
+// choice so a re-run (after a repair, an unready environment, or a deploy correction) does not
+// pay the lead to answer the same question about the same change.
+let integrationSelection = null
+function rememberIntegrationSelection(art) {
+  const l = art && art.ledger
+  if (l && (l.mode === 'selected' || l.mode === 'caller-specified') && Array.isArray(art.suites) && art.suites.length) {
+    integrationSelection = { suites: art.suites, provisionEnv: art.provisionEnv === true }
+  }
+}
+const runIntegration = async (phaseName, seed) => {
+  const r = await gateLoop({
+    gate: '3', phaseName,
+    maxLoops: 1,
+    criteria: [],
+    checks: INTEGRATION_CHECKS,
+    escalateTargets: INTEGRATION_ESCALATE_TARGETS,
+    phaseFn: (feedback) => workflow('agent-teams-workforce:integration', {
+      contract, green: green.artifact, feedback: [seed, feedback].filter(Boolean).join('\n\n'),
+      ...(integrationSelection || {}),
+    }),
+  })
+  rememberIntegrationSelection(r && r.artifact)
+  return r
+}
 // Integration, and on a failure the one repair that can change the outcome. Returns
 // `{ integration }` (ok or not) or `{ handback }` to return as is. A repair through Green
 // replaces `green` and saves it, so the Integration saved afterwards certifies the repaired
@@ -2031,6 +2062,7 @@ async function certifyIntegration(phaseName, seed) {
 }
 enterPhase('Integration')
 let integration = cpGet('integration')
+if (integration !== undefined) rememberIntegrationSelection(integration.artifact)
 if (integration === undefined) {
   const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : '')
   if (certified.handback) return certified.handback

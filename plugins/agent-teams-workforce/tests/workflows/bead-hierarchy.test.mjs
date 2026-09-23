@@ -61,7 +61,9 @@ test('a Bug is NEVER routed to a composite — it is a report awaiting triage', 
   // A bug is a reporting mechanism. It is triaged by a person into an Epic, a Task, or a
   // closure. This router used to dispatch it straight to bug-fix as work, which is the
   // ruling's opposite; 2,534 such dispatches are in the run ledger.
-  for (const bead of [{ type: 'bug' }, { type: 'task', labels: ['regression'] }]) {
+  // A declared type outranks labels, so the label case carries no type: a Task labelled
+  // `regression` is a triaged bug and stays workable.
+  for (const bead of [{ type: 'bug' }, { type: '', labels: ['regression'] }]) {
     const r = await route(bead)
     assert.equal(r.action, 'skip')
     assert.equal(r.composite, null)
@@ -166,22 +168,13 @@ for (const kind of ['chore', 'docs', 'research', 'spike']) {
   })
 }
 
-// The decompose/sequence/score maker is ONE session (ssbd-qrpf0). The checkers are TWO,
-// because their charters differ: the scoring reviewer judges the WSJF scores and the
-// format validator judges Beads format and the hierarchy rule. This stub answers the
-// merged maker label and both checker labels, plus the standalone re-scoring dispatch.
+// The decompose/sequence/score maker is ONE session (ssbd-qrpf0), and no checker session
+// follows it: the Beads format and the build order are checked in code.
 const score = (key) => ({ key, userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' })
-function decompStub({ tasks, buildOrder, review, validation }) {
+function decompStub({ tasks, buildOrder }) {
   return (call) => {
     if (call.label === 'decompose:sequence-and-score') {
       return { tasks, rationale: 'r', edges: [], buildOrder, acyclic: true, scores: buildOrder.map(score) }
-    }
-    if (call.label === 'wsjf:score') return { scores: buildOrder.map(score) }
-    if (String(call.label).startsWith('review:scores')) {
-      return { scoringReview: review || { accepted: true, feedback: '', issues: [] } }
-    }
-    if (call.label === 'review:format') {
-      return { beadsValidation: validation || { valid: true, violations: [] } }
     }
     return null
   }
@@ -205,7 +198,7 @@ test('task-decomposition can only ever emit type "task"', () => {
 })
 
 test('task-decomposition emits tasks parented to the Story it was given', async () => {
-  const decomposed = [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }]
+  const decomposed = [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }]
   const { result } = await runWorkflowScript(taskDecomposition, {
     args: {
       ...SCORED,
@@ -237,7 +230,7 @@ test('a Story identified only by `key` still parents its tasks', async () => {
       spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
       story: { key: 'S2', title: 'keyed but not yet written to bd' },
     },
-    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
+    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }], buildOrder: ['T1'] }),
   })
 
   assert.equal(result.ok, true)
@@ -268,8 +261,8 @@ test('every emitted task carries the repository, copied from the Spec it decompo
     },
     agentImpl: decompStub({
       tasks: [
-        { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] },
-        { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'] },
+        { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] },
+        { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'], definitionOfDone: ['d2'] },
       ],
       buildOrder: ['T1', 'T2'],
     }),
@@ -295,7 +288,7 @@ test('the repository may also arrive as args.repoPath', async () => {
       story: { key: 'S1' },
       repoPath: '/repos/service-b',
     },
-    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
+    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }], buildOrder: ['T1'] }),
   })
 
   assert.equal(result.ok, true)
@@ -309,42 +302,6 @@ test('task-decomposition tells the decomposer it may not mint a container', () =
     /do not emit an epic, a story, or a loose feature/i,
     'the decomposer prompt must forbid minting containers — the schema alone leaves the rule unexplained',
   )
-})
-
-// ── A scoring dispute must not destroy the decomposition ──────────────────────
-
-test('an unresolved WSJF review emits the tasks anyway, with the dispute recorded', async () => {
-  // Priority arithmetic is advisory; the task structure is the deliverable. This
-  // used to return ok:false and discard the tasks, the DAG, and the whole run.
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: {
-      ...SCORED,
-      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
-      story: { key: 'S1', title: 'the story' },
-      maxScoringPasses: 2,
-    },
-    // The reviewer never accepts.
-    agentImpl: decompStub({
-      tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }],
-      buildOrder: ['T1'],
-      review: { accepted: false, feedback: 'jobSize looks optimistic', issues: [{ key: 'T1', problem: 'jobSize disputed' }] },
-    }),
-  })
-
-  assert.equal(result.ok, true, 'a scoring disagreement must not discard correct structural work')
-  assert.equal(result.beadSet.length, 1, 'the tasks are still emitted')
-  assert.equal(result.beadSet[0].parentStoryId, 'S1')
-  assert.equal(result.scoringDisputed, true, 'the dispute must be visible to the caller')
-  assert.deepEqual(result.scoringFindings, ['T1: jobSize disputed'])
-})
-
-test('an accepted review reports no dispute', async () => {
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: { ...SCORED, spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' }, story: { key: 'S1' } },
-    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], buildOrder: ['T1'] }),
-  })
-  assert.equal(result.scoringDisputed, false)
-  assert.deepEqual(result.scoringFindings, [])
 })
 
 // ── Promotion to a PRD is a human decision ────────────────────────────────────

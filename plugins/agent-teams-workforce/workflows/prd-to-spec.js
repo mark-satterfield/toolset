@@ -2302,7 +2302,6 @@ const ARCH_INPUTS = PRD_INPUTS
 //
 // Any other reason — a changed input, a damaged or missing file — offers nothing, and the
 // panel runs cold.
-const ARCH_REPLAY_SLOTS = ['analysis', 'challenges']
 function archDraftIntact() {
   if (!RESUME || !ART_ON) return false
   const own = RESUME.phases.architecture
@@ -2311,10 +2310,12 @@ function archDraftIntact() {
 function archReplayFiles(dims) {
   if (!archDraftIntact()) return null
   const files = {}
-  for (const d of Array.isArray(dims) ? dims : []) files[`proposal-${d}`] = artPath(`architecture-proposal-${d}.json`)
+  // An unsized panel runs every axis the mini's own triage picks, and the mini reads only the
+  // slots of the lenses it dispatches, so every axis is named rather than none.
+  for (const d of Array.isArray(dims) && dims.length ? dims : ARCH_DIMENSIONS) files[`proposal-${d}`] = artPath(`architecture-proposal-${d}.json`)
   files.analysis = artPath('architecture-analysis.json')
   files.challenges = artPath('architecture-challenges.json')
-  return Object.keys(files).length > ARCH_REPLAY_SLOTS.length ? files : null
+  return files
 }
 /**
  * Read ONE saved triage file back and parse it, or null when it is absent or not JSON.
@@ -3003,11 +3004,15 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
 // adjudication of a list rather than of a document, at the price of one more attempt
 // against the run budget before a single spec is authored.
 let scoping = null
-/** The parts of an architecture result that state the ruling, for repo scoping. */
+/**
+ * The parts of an architecture result that state the ruling, for repo scoping. The SAD entry
+ * tags are bookkeeping for the impact pass, place no work, and would crowd the ruling out of
+ * repo-scoping's capped rendering.
+ */
 function architectureRulingFor(art) {
   if (!art || typeof art !== 'object') return null
   const out = {}
-  for (const k of ['decision', 'decisionPath', 'note', 'panelDimensions', 'entryTags']) if (art[k] !== undefined) out[k] = art[k]
+  for (const k of ['decision', 'decisionPath', 'note', 'panelDimensions']) if (art[k] !== undefined) out[k] = art[k]
   if (art.sadUpdate && typeof art.sadUpdate === 'object') {
     out.sadUpdate = { updatedSections: art.sadUpdate.updatedSections, summary: art.sadUpdate.summary }
   }
@@ -3108,7 +3113,9 @@ async function runTrdAuthoring() {
         resumed: true,
         artifact: {
           trdPath: artPath('trd.md'),
-          filingPath: null,
+          // The caller's filing home, as trd-authoring would report it; a home the filing
+          // clerk ruled in the earlier run is not known here, and the host falls back to its own.
+          filingPath: hasText(a.trdPath) && a.trdPath.startsWith('/') ? a.trdPath : null,
           trd: { trdPath: artPath('trd.md'), summary: '' },
         },
       },
@@ -3420,9 +3427,9 @@ if (trdSettled.mode === 'resumed') {
   await cpSave('trd-authoring', trdAuthoring, reusedDecision('trd'))
 } else if (trdSettled.mode === 'ran' && trdAuthoring.ok) {
   acceptPhase('trd', 'passed', { gate: 'G2b' })
-  if (trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
   await cpSave('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
 }
+if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
 produced.trdAuthoring = withoutSadExtract(trdAuthoring.artifact)
 if (!trdAuthoring.ok) return partial('trd-authoring', trdAuthoring)
 const trd = trdAuthoring.artifact && trdAuthoring.artifact.trd
@@ -3874,6 +3881,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       reconFailed: true,
       reconReason: why,
       reconDispatchFailed: !recon || recon.dispatchFailed === true,
+      reconDispatchFailures: (recon && Array.isArray(recon.dispatchFailures) && recon.dispatchFailures) || [],
       specAuthoring: null,
     }
   }
@@ -3944,6 +3952,7 @@ for (const [repoIndex, repo] of repos.entries()) {
         `no spec was authored: the current-state comparison for this repository failed — ${settled.reconReason || 'it returned nothing'} ` +
         'Specifying blind would re-specify working material and leave contradicting material standing.',
       dispatchFailed: settled.reconDispatchFailed === true,
+      dispatchFailures: settled.reconDispatchFailures || [],
     })
     continue
   }
@@ -3958,7 +3967,7 @@ for (const [repoIndex, repo] of repos.entries()) {
   }
   if (!specAuthoring.ok) {
     log(`Spec Authoring FAILED for repo ${repo} — recorded, not dropped`)
-    specFailures.push({ repoPath: repo, detail: specAuthoring, dispatchFailed: specAuthoring.dispatchFailed === true })
+    specFailures.push({ repoPath: repo, detail: specAuthoring, dispatchFailed: specAuthoring.dispatchFailed === true, dispatchFailures: specAuthoring.dispatchFailures || [] })
     continue
   }
   // The (spec, story) pairing IS the contract: a spec that arrives without its
@@ -4209,7 +4218,10 @@ if (!specPairs.length) {
         .join('; ') || 'no per-repo failure was recorded'),
     specFailures,
     // Every repository lost to an agent that never ran is a wall, not a verdict on the PRD.
-    ...(specFailures.length && specFailures.every((x) => x.dispatchFailed === true) ? { dispatchFailed: true, dispatchFailures: dispatchDeaths() } : {}),
+    // The deaths happened inside the minis, so they are read off each failure, not this file's own list.
+    ...(specFailures.length && specFailures.every((x) => x.dispatchFailed === true)
+      ? { dispatchFailed: true, dispatchFailures: specFailures.flatMap((x) => x.dispatchFailures || []) }
+      : {}),
   })
 }
 
@@ -4973,7 +4985,7 @@ for (const [pairIndex, pair] of specPairs.entries()) {
   }
   if (!decomposition.ok) {
     log(`Task Decomposition FAILED for story ${pair.story.key || '(no key)'} (${pair.repoPath}) — recorded, not dropped`)
-    decompositionFailures.push({ repoPath: pair.repoPath, storyKey: pair.story.key || null, detail: decomposition, dispatchFailed: decomposition.dispatchFailed === true })
+    decompositionFailures.push({ repoPath: pair.repoPath, storyKey: pair.story.key || null, detail: decomposition, dispatchFailed: decomposition.dispatchFailed === true, dispatchFailures: decomposition.dispatchFailures || [] })
     continue
   }
   decompositions.push({ repoPath: pair.repoPath, storyKey: pair.story.key || null, artifact: decomposition.artifact })
@@ -5136,7 +5148,7 @@ if (!decompositions.length) {
         .join('; ') || 'no per-Story failure was recorded'),
     decompositionFailures,
     ...(decompositionFailures.length && decompositionFailures.every((x) => x.dispatchFailed === true)
-      ? { dispatchFailed: true, dispatchFailures: dispatchDeaths() }
+      ? { dispatchFailed: true, dispatchFailures: decompositionFailures.flatMap((x) => x.dispatchFailures || []) }
       : {}),
   })
 }

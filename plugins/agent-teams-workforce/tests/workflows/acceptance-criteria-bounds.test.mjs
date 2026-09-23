@@ -10,7 +10,8 @@
 // Nothing bounded N: the writer received a prose root-cause blob with no cap, no defect
 // index, and no scope rule. Four defects arrived as one paragraph, so there was nothing
 // countable to bound against. Making the defects countable is the enabling change; the
-// cap is then a SCHEMA bound the runtime enforces, not a sentence the prompt requests.
+// cap is then STATED to the writer and COUNTED on the result — never a JSON-Schema bound,
+// which would reject the whole answer on one item over.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -52,16 +53,18 @@ test('the diagnosis must ENUMERATE the defects, not just describe them', async (
   const { calls } = await runTriage()
   const diag = calls.find((c) => c.label === 'triage:diagnosis')
   assert.ok(diag.opts.schema.required.includes('defects'), 'four defects as one paragraph leave nothing downstream can count')
-  assert.equal(diag.opts.schema.properties.defects.minItems, 1)
+  assert.equal(diag.opts.schema.properties.defects.minItems, undefined, 'a limit is stated and counted, never bound in a schema')
   assert.match(diag.prompt, /ENUMERATED/)
+  assert.match(diag.prompt, /AT LEAST ONE entry, always/)
 })
 
-test('the criteria count is bounded BY SCHEMA to the number of defects', async () => {
+test('the criteria count is bounded to the number of defects — stated to the writer, not bound in the schema', async () => {
   const { calls } = await runTriage()
   const ac = calls.find((c) => c.label === 'triage:expected-behavior')
   const arr = ac.opts.schema.properties.acceptanceCriteria
-  assert.equal(arr.minItems, 4, 'every defect needs at least one criterion')
-  assert.equal(arr.maxItems, 8, 'a four-defect bug can produce between four and eight — eighteen is structurally impossible')
+  assert.match(ac.prompt, /Between 4 and 8 criteria in total/, 'a four-defect bug gets between four and eight')
+  assert.equal(arr.minItems, undefined, 'a schema bound rejects the whole answer on one item over')
+  assert.equal(arr.maxItems, undefined)
   assert.ok(arr.items.required.includes('defectId'), 'without an index, coverage is a judgment call rather than a join')
   assert.deepEqual(arr.items.properties.defectId.enum, ['D1', 'D2', 'D3', 'D4'],
     'a criterion cannot point at a defect the diagnosis never found')
@@ -69,15 +72,13 @@ test('the criteria count is bounded BY SCHEMA to the number of defects', async (
 
 test('the bound scales with the defects and never collapses to zero', async () => {
   const one = await runTriage({ defects: [{ id: 'D1', mechanism: 'm' }], contract: { acceptanceCriteria: [{ defectId: 'D1', given: 'g', when: 'w', then: 't' }] } })
-  const arr1 = one.calls.find((c) => c.label === 'triage:expected-behavior').opts.schema.properties.acceptanceCriteria
-  assert.equal(arr1.minItems, 1)
-  assert.equal(arr1.maxItems, 2)
+  assert.match(one.calls.find((c) => c.label === 'triage:expected-behavior').prompt, /Between 1 and 2 criteria in total/)
 
   // A diagnosis that enumerated nothing must still produce a contract, not an empty one.
   const none = await runTriage({ defects: [], contract: { acceptanceCriteria: [{ defectId: 'D1', given: 'g', when: 'w', then: 't' }] } })
-  const arr0 = none.calls.find((c) => c.label === 'triage:expected-behavior').opts.schema.properties.acceptanceCriteria
-  assert.equal(arr0.minItems, 1)
-  assert.ok(arr0.maxItems >= 2)
+  const ac0 = none.calls.find((c) => c.label === 'triage:expected-behavior')
+  const arr0 = ac0.opts.schema.properties.acceptanceCriteria
+  assert.match(ac0.prompt, /Between 1 and 2 criteria in total/)
   assert.equal(arr0.items.properties.defectId.enum, undefined, 'an empty enum would make every criterion unsatisfiable')
 })
 

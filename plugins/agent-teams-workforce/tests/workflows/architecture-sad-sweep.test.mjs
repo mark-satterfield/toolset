@@ -21,12 +21,15 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const SCRIPT = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
 
 /** Run to completion with a decider that admits, and capture the maintainer's prompt. */
 async function maintainerPrompt() {
   const { calls } = await runWorkflowScript(SCRIPT, {
-    args: { decision: { id: 'D1', title: 'pick a store', context: 'c' } },
+    args: { decision: { id: 'D1', title: 'pick a store', context: 'c' }, sadExtract: SAD_EXTRACT },
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
     agentImpl: (call) => {
       if (call.label === 'sad:conformance') return { verdict: 'pass', conformant: true, findings: [] }
@@ -42,16 +45,20 @@ async function maintainerPrompt() {
   return c.prompt
 }
 
-test('the maintainer is ordered to sweep the whole SAD for every claim it changes', async () => {
+test('the maintainer is ordered to sweep every claim it changes, and their backlinks', async () => {
   const p = await maintainerPrompt()
   assert.match(p, /SWEEP EVERY CLAIM YOU CHANGE/, 'the sweep instruction must be present and unmissable')
-  assert.match(p, /grep the WHOLE SAD tree/, 'the sweep must cover the whole tree, not the edited section')
   assert.match(
     p,
-    /index\/summary rows, which are claims too/,
+    /plus their BACKLINKS/,
+    'the sweep must reach every other statement of a changed claim, not only the edited section',
+  )
+  assert.match(
+    p,
+    /including index\/summary rows/,
     'an index row asserting a stale value is the exact defect that rejected wf_8eaba4f0-500',
   )
-  assert.match(p, /re-grep for the old value/, 'the maintainer must verify its own sweep, not just intend one')
+  assert.match(p, /re-grep ONLY those claims/, 'the maintainer must verify its own sweep, not just intend one')
 })
 
 test('a decided question may not be recorded as unresolved', async () => {

@@ -338,7 +338,11 @@ function checkLimit(where, what, value, expected, min) {
 
 // args: { gate, phaseName, criteria: string[], artifact, escalateTargets?: string[] }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-const criteria = Array.isArray(a.criteria) ? a.criteria : []
+// Every criterion here is constitutive, so a caller's `{ text, class }` entry (the
+// gate-enforce shape) is read as its text rather than rendered as [object Object].
+const criteria = (Array.isArray(a.criteria) ? a.criteria : [])
+  .map((c) => (typeof c === 'string' ? c : c && typeof c.text === 'string' ? c.text : ''))
+  .filter((c) => c.trim())
 const artifactText =
   typeof a.artifact === 'string' ? a.artifact : JSON.stringify(a.artifact ?? {}, null, 2)
 
@@ -677,6 +681,9 @@ A stored ruling MATCHES only when it is about the SAME PAIR OF CONFLICTING CONST
 When you match, return the stored ruling's verdict, rationale and precedent VERBATIM. Do not re-reason it, do not improve it, and do not soften it.`,
     {
       label: `precedent:lookup:${a.gate || 'gate'}`,
+      // No agentType, so without a pinned model it runs on the run's own. Matching a stored
+      // conflict pair is a small judgment over one file.
+      model: 'sonnet',
       effort: 'low',
       phase: 'Gate (constitutional)',
       schema: {
@@ -763,6 +770,8 @@ ${JSON.stringify({
 Set \`key\` yourself before writing, to a short stable identifier for THE PAIR OF CONFLICTING CONSTRAINTS this ruling settles — not for this run, this gate, or this phase, because the whole point is that a different run hitting the same pair finds this line. Use the form CR-NNN, continuing the highest CR number already in the file (CR-001 if the file is new or has none).`,
       {
         label: `precedent:persist:${a.gate || 'gate'}`,
+        // An append of a line the prompt already spells out.
+        model: 'haiku',
         effort: 'low',
         phase: 'Gate (constitutional)',
         schema: {

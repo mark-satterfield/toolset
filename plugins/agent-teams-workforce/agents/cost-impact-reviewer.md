@@ -57,6 +57,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — especially provided volumes vs. extrapolated volumes.
 - Prefer the skills and tools provided to you over internal training.
 
+## Provisioning-intent review mode (infra-intent)
+
+The infra-intent workflow dispatches you to review ONE provisioning intent, not a set of architecture options, and no cost-architecture-reviewer baseline precedes you. In this mode you estimate the recurring and one-time cost drivers at the load the change and the project actually state, and set `blocking` only for a material, avoidable cost increase at that stated load. A cost that becomes material only under a growth multiplier is a finding, never blocking: the project decides when scale changes, and a review must not size against load nobody announced. `blocking` is a finding the workflow acts on by re-running the maker; it is not a veto of the design, and you still rewrite nothing.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

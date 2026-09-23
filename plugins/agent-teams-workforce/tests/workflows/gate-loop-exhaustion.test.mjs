@@ -100,23 +100,13 @@ test('all four gateLoop copies return the same exhaustion shape', async () => {
   const { readFileSync } = await import('node:fs')
   for (const f of ['bug-fix.js', 'task-to-deploy.js', 'infra-change.js', 'prd-to-spec.js']) {
     const src = readFileSync(path.join(WF, f), 'utf8')
-    // `unmetCriteria` is now computed ONCE into `exhaustedUnmet` — the exhausted gate hands
-    // it to the advantage-evaluator as well as returning it, and deriving it twice is how
-    // two of the copies diverged in the first place.
+    // `unmetCriteria` is computed ONCE into `exhaustedUnmet`; deriving it twice is how two
+    // of the copies diverged in the first place.
     for (const key of ['loopExhausted: true', 'verdict: lastVerdict', 'unmetCriteria: exhaustedUnmet', 'attempts,']) {
       assert.ok(src.includes(key), `${f} is missing "${key}" from its loop-exhausted return`)
     }
-    // The ruling is the point: exhaustion is adjudicated, not assumed fatal, and it must
-    // fail closed when no ruling comes back.
-    assert.ok(src.includes('await ruleExhaustion('), `${f} calls no decider on loop exhaustion — the budget running out is not a ruling`)
-    assert.ok(
-      src.includes("ruling.ruling === 'competitive'"),
-      `${f} must proceed ONLY on an explicit competitive ruling — anything else, including no ruling at all, fails closed`,
-    )
-    assert.ok(
-      src.includes("agentType: 'agent-teams-workforce:advantage-evaluator'"),
-      `${f} must route the exhaustion ruling to the EXISTING advantage-evaluator, not a new authority`,
-    )
+    // Exhaustion is decided in code: no agent is asked to rule on the remainder.
+    assert.ok(!src.includes('await ruleExhaustion('), `${f} still dispatches a ruling on loop exhaustion`)
     assert.ok(
       // TWO SPELLINGS, ONE PROPERTY. All three deploying composites — bug-fix,
       // task-to-deploy and infra-change — take a PER-GATE budget at their deploy gate

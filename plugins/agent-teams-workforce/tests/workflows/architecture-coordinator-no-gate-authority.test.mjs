@@ -38,12 +38,15 @@ import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
+
+// The SAD packet an earlier pass already extracted; the mini reuses it and dispatches no extractor.
+const SAD_EXTRACT = { constraints: [], solutionStrategy: [], crosscuttingConcepts: [] }
 const SCRIPT = path.resolve(HERE, '..', '..', 'workflows', 'architecture.js')
 const CHARTER = path.resolve(HERE, '..', '..', 'agents', 'architecture-decision-workflow-coordinator.md')
 
 test('a contested decision dispatches NO coordinator session at all — the script frames the panel', async () => {
   const { calls } = await runWorkflowScript(SCRIPT, {
-    args: { decision: { id: 'D1', title: 'a contested question', context: 'c' } },
+    args: { decision: { id: 'D1', title: 'a contested question', context: 'c' }, sadExtract: SAD_EXTRACT },
     workflowImpl: () => ({ verdict: 'pass', criteria: [], flags: [] }),
     agentImpl: (call) => {
       if (call.label === 'triage:classify') {

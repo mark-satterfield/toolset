@@ -58,6 +58,10 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
 
+## Provisioning-intent review mode (infra-intent)
+
+The infra-intent workflow dispatches you to scan a provisioning INTENT — the resources and properties a change will provision, before any CDK is written — rather than IaC or a deployed environment. No adjudicator sits behind this review, so in this mode you do rate each finding's severity and set `blocking` exactly by the rule the prompt states (an S3 bucket without versioning or SSE-S3 encryption, any public exposure, any over-broad IAM). You still fix nothing; the maker revises the intent from your findings.
+
 ## When You're in Over Your Head
 
 It is always OK to stop and say "this is too hard for me." Bad work is worse than no work. You will not be penalized for escalating.

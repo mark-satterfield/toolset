@@ -432,9 +432,11 @@ test('a single Story needs no cross-Story mapper run', async () => {
   assert.equal(mapperRuns.length, 0, 'one Story has no Task in another Story to depend on — do not spend an agent on it')
 })
 
-test('a cyclic Task graph across Stories fails the run rather than inventing an order', async () => {
+test('a cyclic Task graph across Stories applies no cross-Story edge and holds the Epic short of done', async () => {
+  // A cycle is loud and not fatal: the Stories and Tasks are written with their intra-Story
+  // edges, none of the cross-Story edges is applied, and the emission is partial.
   const repos = ['/repo-a', '/repo-b']
-  const { result } = await runWorkflowScript(prdToSpec, {
+  const { result, calls } = await runWorkflowScript(prdToSpec, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repo-a', repos, epic: TEST_EPIC },
     workflowImpl: makeWorkflowImpl({ repos, withEpic: true }),
     agentImpl: withLifecycleEdges([
@@ -443,9 +445,13 @@ test('a cyclic Task graph across Stories fails the run rather than inventing an 
     ]),
   })
 
-  assert.equal(result.ok, false)
-  assert.equal(result.stage, 'task-dependencies')
-  assert.match(result.headline, /cycle/)
+  assert.equal(result.ok, true, `composite failed at ${result.stage}`)
+  assert.equal(result.emission.verdict, 'partial', 'a degraded cross-Story graph cannot be a complete emission')
+  assert.equal(result.emissionOk, false)
+  const links = calls
+    .filter((c) => c.label === 'beads:link')
+    .flatMap((c) => JSON.parse(c.prompt.slice(c.prompt.indexOf('JSON payload:\n') + 'JSON payload:\n'.length)).links)
+  assert.deepEqual(links, [], 'no edge of a cyclic cross-Story set is written')
 })
 
 test('the TRD is authored once per PRD, not once per repo', async () => {

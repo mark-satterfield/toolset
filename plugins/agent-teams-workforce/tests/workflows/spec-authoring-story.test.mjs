@@ -105,9 +105,10 @@ test('the six spec artifacts are actually authored, not silently empty', async (
   assert.ok(result.apiSpec, 'apiSpec must survive to the return')
   assert.ok(result.dataModelSpec, 'dataModelSpec must survive to the return')
   assert.ok(result.eventContracts, 'eventContracts must survive to the return')
-  assert.ok(result.acceptanceCriteria, 'acceptanceCriteria must survive to the return')
   assert.ok(result.errorSpec, 'errorSpec must survive to the return')
-  assert.ok(result.definitionOfDone, 'definitionOfDone must survive to the return')
+  // The acceptance criteria and the Definition of Done are not in the return: the criteria
+  // maker saves them to spec-<slug>.criteria.md, and the Tasks cite that document.
+  assert.ok(authorCalls.some((c) => c.label === 'author:criteria'), 'the criteria maker must run')
 })
 
 test('a Story is never emitted without a repo', async () => {
