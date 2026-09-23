@@ -553,13 +553,50 @@ let runDetail = null
 // line and the host writes `.claude/workflow-runs/<composite>-<ts>.jsonl` from it
 // with its run-journal writer, deterministically, with no model call. The path is
 // the host's to report, so this returns null and the host fills `detailPath` in.
+// ── THE JOURNAL LINE TRAVELS IN PIECES: THE HARNESS TRUNCATES A LONG log() ────
+// The harness caps one log line at 10,000 characters: it keeps the first 5,000
+// and the last 5,000 and replaces the middle with `... [N characters
+// truncated] ...`. On 2026-09-22 a prd-to-spec run logged a 356,139-character
+// payload (a StructuredOutput failure retried five times, its full error text
+// in `detail`); 346,110 characters were cut out of the middle and the journal
+// for that run was lost entirely.
+//
+// That is a SIZE limit, not an escaping fault. JSON.stringify escapes control
+// characters correctly, and the `Invalid control character at ... char 4988`
+// the host reported was the newline in the harness's own truncation marker,
+// landing where the cut was made. Escaping nothing would have changed it.
+//
+// A workflow script has no filesystem, so the payload cannot travel by any
+// other channel; it travels in PIECES instead. Nothing is summarized, dropped
+// or shortened — the host concatenates the pieces back into the exact original
+// string and parses that. Payloads that already fit keep the single-line form.
+const JOURNAL_CHUNK = 4000
+function emitRunJournal(payload) {
+  const body = JSON.stringify(payload)
+  if (body.length <= JOURNAL_CHUNK) {
+    log(`RUN-JOURNAL ${body}`)
+    return
+  }
+  const parts = []
+  for (let i = 0; i < body.length; ) {
+    let end = Math.min(i + JOURNAL_CHUNK, body.length)
+    // Never cut between the halves of a surrogate pair: a lone surrogate would
+    // not survive the harness writing the log line back out as JSON.
+    const last = body.charCodeAt(end - 1)
+    if (end < body.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+    parts.push(body.slice(i, end))
+    i = end
+  }
+  parts.forEach((part, i) => log(`RUN-JOURNAL-PART ${i + 1}/${parts.length} ${part}`))
+}
+
 function persistRun(outcome) {
   if (!runLedger.length && !runDetail) return null
   try {
     // `bead` was hardcoded null, so every ledger row for a failed run lost the work item
     // it belonged to — the one field the board needs to show the failure against anything.
     // `subjectId` is what every other ledger row in this file already reports as `beadId`.
-    log(`RUN-JOURNAL ${JSON.stringify({ composite: 'prd-to-spec', bead: subjectId, subject: (a.prd && a.prd.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })}`)
+    emitRunJournal({ composite: 'prd-to-spec', bead: subjectId, subject: (a.prd && a.prd.id) || null, outcome, carriedFlags, run: runRecord, runLedger, detail: runDetail })
   } catch (e) {
     log(`run journal could not be serialized (non-fatal): ${e && e.message ? e.message : e}`)
   }

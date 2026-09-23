@@ -19,7 +19,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runWorkflowScript, journalDetail, agentCalls } from './helpers/run-workflow.mjs'
+import { runWorkflowScript, journalDetail, journalPayload, agentCalls } from './helpers/run-workflow.mjs'
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const BUG_FIX = path.join(WF, 'bug-fix.js')
@@ -139,8 +139,9 @@ test('the caller receives a headline and a journal path, never the phase artifac
   // The detail is journaled by a RUN-JOURNAL log line the HOST persists (no model call), so
   // the script itself reports no path and the host fills detailPath in.
   assert.equal(result.detailPath, null, 'the script names no journal path; the host writes the journal and reports it')
-  const journal = logs.find((l) => l.startsWith('RUN-JOURNAL '))
-  assert.ok(journal && JSON.parse(journal.slice('RUN-JOURNAL '.length)).detail, 'the detail must be reachable, in the journal line')
+  // A payload over the chunk size travels as `RUN-JOURNAL-PART i/n` lines, which the
+  // host rejoins; `journalPayload` reads either form, as the host does.
+  assert.ok(journalPayload({ logs }).detail, 'the detail must be reachable, in the journal line(s)')
   for (const gone of ['detail', 'results', 'contract']) {
     assert.equal(result[gone], undefined, `\`${gone}\` must not cross back to the caller — it is what filled the context window`)
   }

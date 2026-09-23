@@ -171,9 +171,20 @@ export function workflowCalls(calls, name) {
  */
 export function journalPayload(calls) {
   const marker = 'RUN-JOURNAL '
-  const line = (calls.logs || []).find((l) => l.startsWith(marker))
-  if (!line) return null
-  return JSON.parse(line.slice(marker.length))
+  const logs = calls.logs || []
+  const line = logs.find((l) => l.startsWith(marker))
+  if (line) return JSON.parse(line.slice(marker.length))
+  // A payload over the emitter's chunk size travels as `RUN-JOURNAL-PART i/n`
+  // lines, because the harness truncates a log line over 10,000 characters.
+  // The host concatenates them back into the original string; so does this.
+  const part = /^RUN-JOURNAL-PART (\d+)\/(\d+) /
+  const parts = []
+  for (const l of logs) {
+    const m = part.exec(l)
+    if (m && Number(m[1]) === parts.length + 1) parts.push(l.slice(m[0].length))
+  }
+  if (!parts.length) return null
+  return JSON.parse(parts.join(''))
 }
 
 /** Just the `detail` a composite journalled — what `result.detail` used to hold. */
