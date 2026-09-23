@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-enforce',
   description:
-    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Remaining JUDGMENT criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — passes with a flag rather than looping. On a pass that carries competitive flags, the advantage-evaluator applies the advantage principle — proceed-under-flag or revert — without ever halting the pipeline. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. Enforces segregation of duties: the judge never produced the work it judges.',
+    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — can never block, so it is recorded as a flag and never adjudicated. Only CONSTITUTIVE criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate; a gate with no constitutive criterion passes on its checks with no session at all. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. Enforces segregation of duties: the judge never produced the work it judges.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -336,16 +336,16 @@ const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // "constitutive criteria are hard stops" — while `criteria` arrived as a flat list of
 // strings with nothing marking WHICH ones were constitutive. A judge told hard stops
 // exist, given no way to identify them, and asked for a verdict defaults to strict, so
-// every criterion behaved as a hard stop. That defeated the machinery built to prevent
-// exactly this: the advantage-evaluator (proceed-under-flag vs revert) only runs on a
-// verdict of `pass` WITH flags, so an over-strict enforcer that loops instead means the
-// passive path never executes at all.
+// every criterion behaved as a hard stop.
 //
 // So a criterion now carries its class, and an UNMARKED criterion is COMPETITIVE. The
-// asymmetry is deliberate and it is the whole point: the cost of a wrongly-passed
-// competitive flag is a revert, and the cost of a wrongly-failed gate is a burned loop
-// budget and a dead run. An over-passive gate can be tightened one criterion at a time;
-// an over-strict one silently kills correct work.
+// asymmetry is deliberate: a wrongly-passed competitive concern costs a flag, and a
+// wrongly-failed gate costs a burned loop budget and a dead run. An over-passive gate can
+// be tightened one criterion at a time; an over-strict one silently kills correct work.
+//
+// A competitive criterion can never change the verdict, so it is never sent to a judge:
+// it rides out as a flag. Only constitutive criteria are adjudicated, and a gate that
+// declares none passes on its deterministic checks without a session.
 const CRITERION_CLASSES = ['constitutive', 'competitive']
 const criteria = (Array.isArray(a.criteria) ? a.criteria : [])
   .map((c) => {
@@ -385,8 +385,7 @@ const artifactText =
 //
 // CHECKS STAY HARD, AND THAT IS WHAT MAKES THE PASSIVE DEFAULT ABOVE SAFE. A check is
 // MEASURED against the artifact, not argued about: it has no class, it is always
-// blocking, it short-circuits before any model turn, and the uncertainty default the
-// enforcer is given below does NOT reach it. Real facts stay enforced mechanically
+// blocking, and it short-circuits before any model turn. Real facts stay enforced mechanically
 // precisely so prose judgments can safely become flags. A gate that needs something to
 // be genuinely non-negotiable should express it here as a check wherever the artifact
 // can carry the field, and only fall back to a `constitutive` criterion when it cannot.
@@ -399,16 +398,13 @@ const artifactText =
 // to have about.
 //
 // Getting this wrong is not a near-miss, because of where the competitive path sits. A
-// gate whose criteria are all competitive converts a `loop` into a `pass` with flags (see
-// the conversion far below), which is correct for a reviewer's opinion and catastrophic
-// for an absent artifact: the run proceeds, flags "the spec set is incomplete", and the
-// phases downstream build on nothing. So a failed structural check must never reach that
-// conversion.
+// gate whose criteria are all competitive passes without a judge, which is correct for a
+// reviewer's opinion and catastrophic for an absent artifact: the run proceeds and the
+// phases downstream build on nothing.
 //
-// It cannot, and the reason is structural rather than a second guard: these are ordinary
-// DETERMINISTIC checks — the concept this file already has — so they short-circuit to a
-// loop verdict above the model turn and far above the conversion, carrying the observed
-// value as feedback. They are simply derived from a declaration rather than hand-written
+// These are ordinary DETERMINISTIC checks — the concept this file already has — so they
+// short-circuit to a loop verdict before any pass is possible, carrying the observed value
+// as feedback. They are simply derived from a declaration rather than hand-written
 // per call site, because every gate needs the same three questions asked and spelling them
 // out at each one is exactly how they came to be asked at none.
 const structural = a.structural && typeof a.structural === 'object' ? a.structural : null
@@ -505,14 +501,23 @@ if (failedChecks.length) {
   }
 }
 
-// Every criterion was mechanical and every one held — nothing is left to judge.
-if (!criteria.length) {
-  log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): PASS on deterministic checks alone, no adjudication needed`)
+// Every check held. A competitive criterion cannot block, so paying a judge to rule on it
+// buys nothing: it is recorded as a flag. When no constitutive criterion remains there is
+// nothing left that could change the verdict, and the gate passes without a session.
+const constitutiveCriteria = criteria.filter((c) => c.class === 'constitutive')
+const competitiveFlags = criteria
+  .filter((c) => c.class === 'competitive')
+  .map((c) => `competitive criterion, not adjudicated: ${c.text}`)
+if (!constitutiveCriteria.length) {
+  log(
+    `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): PASS on deterministic checks alone, no adjudication needed` +
+      `${competitiveFlags.length ? ` — ${competitiveFlags.length} competitive criterion(s) recorded as flags` : ''}`
+  )
   return {
     verdict: 'pass',
     criteria: checkResults,
-    feedback: 'All criteria for this gate were mechanically verified against the artifact and hold.',
-    flags: [],
+    feedback: 'Every deterministic check for this gate holds, and the gate declares no constitutive criterion that could block.',
+    flags: competitiveFlags,
     deterministic: true,
     deterministicChecks: checkResults,
   }
@@ -522,7 +527,6 @@ const settledBlock = checkResults.length
   ? `\nAlready SETTLED by direct inspection of the artifact — treat these as met and do NOT re-open them:\n${checkResults.map((r) => `- ${r.criterion} (${r.evidence})`).join('\n')}\n`
   : ''
 
-const constitutiveCount = criteria.filter((c) => c.class === 'constitutive').length
 const calibrationBlock = a.calibration
   ? `\nCALIBRATION FOR THIS GATE — read before ruling. It states what this specific gate must block on and what it must not:\n${a.calibration}\n`
   : ''
@@ -532,27 +536,22 @@ const verdict = await settleAgent(
 
 Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
 
-Criteria — each is marked CONSTITUTIVE or COMPETITIVE, and the mark decides what an unmet one costs:
-${criteria.length ? criteria.map((c, i) => `${i + 1}. [${c.class.toUpperCase()}] ${c.text}`).join('\n') : '(none supplied — treat as a structural sanity check)'}
+Criteria — every one is CONSTITUTIVE: it defines whether the work is valid at all:
+${constitutiveCriteria.map((c, i) => `${i + 1}. ${c.text}`).join('\n')}
 ${calibrationBlock}${settledBlock}
 Artifact under review:
 ${artifactText}
 
 Decide exactly one verdict:
-- "pass": no CONSTITUTIVE criterion is unmet. Record every unmet COMPETITIVE criterion, and every non-blocking quality concern, in \`flags\` — and still pass.
-- "loop": a CONSTITUTIVE criterion is unmet AND the root cause is INSIDE this phase. Return feedback specific enough that the phase can retry without interpretation.
-- "escalate": a CONSTITUTIVE criterion is unmet and the failure originates UPSTREAM (the phase received bad inputs). Name where it goes back to${a.escalateTargets && a.escalateTargets.length ? ` (options: ${a.escalateTargets.join(', ')})` : ''}.
+- "pass": every criterion above is met. Put any non-blocking quality concern in \`flags\` — it does not change the verdict.
+- "loop": a criterion is unmet AND the root cause is INSIDE this phase. Return feedback specific enough that the phase can retry without interpretation.
+- "escalate": a criterion is unmet and the failure originates UPSTREAM (the phase received bad inputs). Name where it goes back to${a.escalateTargets && a.escalateTargets.length ? ` (options: ${a.escalateTargets.join(', ')})` : ''}.
 
-THE DECISION RULE, in full:
-- A CONSTITUTIVE criterion that is unmet is a HARD STOP. The verdict is "loop" or "escalate" and is NEVER "pass". These are non-negotiable: they define whether the work is valid at all.${constitutiveCount ? '' : ' (This gate declares none, so nothing here can be a hard stop by criterion — only the settled checks above can block.)'}
-- A COMPETITIVE criterion that is unmet still yields "pass", recorded in \`flags\`. It is routed onward to the advantage-evaluator, which rules proceed-under-flag or revert. LOOPING ON A COMPETITIVE CRITERION IS WRONG — it takes the decision away from the role that owns it and stops work that should have proceeded under a flag.
-- UNCERTAINTY DEFAULT: when you cannot establish whether a criterion is met, treat it as MET and flag the uncertainty. Do NOT loop for want of evidence about a competitive criterion. This default does NOT extend to constitutive criteria, and it does NOT extend to the deterministic checks above — those were measured, not argued, and are already settled.
+An unmet criterion is a HARD STOP: the verdict is "loop" or "escalate" and is NEVER "pass". Loop or escalate only on a criterion listed above — a concern that is not one of them is a flag. The deterministic checks above were measured, not argued, and are already settled.
 
-WHY IT IS SHAPED THIS WAY. The two errors are not symmetric. A wrongly-PASSED competitive flag costs a revert, which the advantage-evaluator exists to order. A wrongly-FAILED gate costs the phase's whole loop budget and then kills the run, and the correct work in it is lost. So a gate that blocks on a competitive concern is not being careful — it is destroying work that should have proceeded under a flag. When the class is marked competitive, honour it.
+READING BUDGET (binding): the artifact is quoted above in full and the deterministic checks already measured everything mechanical about it. Judge what is in front of you. Do not re-derive the artifact from the codebase, do not survey the repository or the polyrepo, and do not go looking for evidence a criterion does not name. Roughly five tool calls is the expected shape; zero is normal for this role.
 
-READING BUDGET (binding): the artifact is quoted above in full and the deterministic checks already measured everything mechanical about it. Judge what is in front of you. Do not re-derive the artifact from the codebase, do not survey the repository or the polyrepo, and do not go looking for evidence a criterion does not name — the uncertainty default above already tells you what to do when evidence is thin. Roughly five tool calls is the expected shape; zero is normal for this role.
-
-For each criterion, state whether it is met with evidence.`,
+For each criterion, state whether it is met with evidence, quoting the criterion text exactly.`,
   {
     label: `gate:${a.gate || a.phaseName || 'phase'}`,
     // The enforcer adjudicates a short structured artifact against a handful of stated
@@ -591,38 +590,19 @@ For each criterion, state whether it is met with evidence.`,
 
 // ── The class is BINDING, not advisory ────────────────────────────────────────
 //
-// A prompt that says "do not loop on a competitive criterion" is only as good as the
-// judge's compliance with it, and the failure mode being fixed here IS a judge defaulting
-// to strict under ambiguity. So the two directions of the rule are enforced mechanically,
-// both narrowly enough to have no false positives:
-//
-//   1. Nothing at this gate can be a hard stop by criterion when the gate declares NO
-//      constitutive criterion at all. Every deterministic check already held (a failed one
-//      short-circuited far above), so a `loop` here is by construction a block on a
-//      competitive concern. It becomes a pass and the unmet criteria become flags, which
-//      is what routes them to the advantage-evaluator — the role that owns proceed-or-
-//      revert. `escalate` is left alone: it is a routing verdict about bad UPSTREAM input,
-//      and composites depend on it (Green escalating an unpassable test back to Red).
-//
-//   2. A `pass` cannot stand while a criterion the caller marked CONSTITUTIVE is reported
-//      unmet. Matched by exact text so a paraphrase can never trip it.
+// A `pass` cannot stand while a criterion the caller marked CONSTITUTIVE is reported
+// unmet. Matched by exact text so a paraphrase can never trip it. Competitive criteria
+// were never sent to the judge, so they join the flags here.
 let ruled = verdict
 if (ruled && ruled.verdict) {
   const unmet = (Array.isArray(ruled.criteria) ? ruled.criteria : []).filter((c) => c && c.met === false)
-  const constitutiveTexts = new Set(criteria.filter((c) => c.class === 'constitutive').map((c) => c.text))
+  const constitutiveTexts = new Set(constitutiveCriteria.map((c) => c.text))
   const unmetConstitutive = unmet.filter((c) => constitutiveTexts.has(c.criterion))
+  if (competitiveFlags.length) {
+    ruled = { ...ruled, flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), ...competitiveFlags] }
+  }
 
-  if (ruled.verdict === 'loop' && constitutiveTexts.size === 0) {
-    const carried = unmet.map((c) => `competitive criterion unmet: ${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`)
-    const detail = carried.length ? carried.join('; ') : (ruled.feedback || 'no unmet criterion was itemised')
-    log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the enforcer returned LOOP, but this gate declares no constitutive criterion and every deterministic check held — converting to PASS with flags. ${detail}`)
-    ruled = {
-      ...ruled,
-      verdict: 'pass',
-      flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), ...carried],
-      classOverride: 'loop-converted-to-pass: no constitutive criterion at this gate',
-    }
-  } else if (ruled.verdict === 'pass' && unmetConstitutive.length) {
+  if (ruled.verdict === 'pass' && unmetConstitutive.length) {
     const detail = unmetConstitutive.map((c) => `${c.criterion}${c.evidence ? ` — ${c.evidence}` : ''}`).join('; ')
     log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the enforcer returned PASS with an unmet CONSTITUTIVE criterion — a constitutive failure is never a pass. Converting to LOOP: ${detail}`)
     ruled = {
@@ -642,7 +622,7 @@ if (ruled && ruled.verdict) {
   // wall, spends the loop budget, and every artifact the run had already paid for is
   // discarded on the strength of a judgment that stated no reason.
   //
-  // So a verdict that still BLOCKS after the class conversions above, while naming no
+  // So a verdict that still BLOCKS after the class conversion above, while naming no
   // unmet criterion, no flag and no feedback, is treated as a malformed verdict rather
   // than a ruling on the work. It is surfaced the way this file already surfaces a broken
   // gate rather than broken work — an `escalate` carrying the gate and the phase by name
@@ -654,7 +634,9 @@ if (ruled && ruled.verdict) {
   // reach it.
   const statedReason =
     unmet.length > 0 ||
-    (Array.isArray(ruled.flags) && ruled.flags.some((f) => String(f == null ? '' : f).trim())) ||
+    // The judge's own flags, not the competitive ones merged in above: those name no reason
+    // the judge gave.
+    (Array.isArray(verdict.flags) && verdict.flags.some((f) => String(f == null ? '' : f).trim())) ||
     (typeof ruled.feedback === 'string' && ruled.feedback.trim().length > 0)
   if ((ruled.verdict === 'loop' || ruled.verdict === 'escalate') && !statedReason) {
     const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
@@ -675,47 +657,6 @@ if (ruled && ruled.verdict) {
   }
 }
 
-// Advantage principle: a PASS that carries competitive (non-constitutive) flags is routed
-// to the advantage-evaluator, which decides proceed-under-flag (speculative — commit now,
-// observe, revert later) or revert per flag. It NEVER turns a pass into a failure;
-// constitutive failures never reach a pass and are out of its scope.
-if (ruled && ruled.verdict === 'pass' && Array.isArray(ruled.flags) && ruled.flags.length) {
-  const advantage = await settleAgent(
-    `You are the advantage-evaluator. These competitive (non-constitutive) concerns surfaced at a PASSING gate. Apply the advantage principle: for each, decide whether to PROCEED under a flag (speculative execution — commit now, observe the outcome, revert later if it proves out badly) or REVERT now. You NEVER halt the pipeline for a non-invalidating finding; constitutive failures are out of your scope.
-
-Gate ${a.gate || '?'} — ${a.phaseName || 'phase'}
-Competitive flags:
-${ruled.flags.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
-    {
-      label: `advantage:${a.gate || a.phaseName || 'phase'}`,
-      effort: 'medium',
-      phase: 'Gate',
-      agentType: 'agent-teams-workforce:advantage-evaluator',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['dispositions'],
-        properties: {
-          dispositions: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['flag', 'disposition'],
-              properties: {
-                flag: { type: 'string' },
-                disposition: { type: 'string', enum: ['proceed-under-flag', 'revert'] },
-                rationale: { type: 'string' },
-              },
-            },
-          },
-        },
-      },
-    }
-  )
-  return { ...ruled, advantage: advantage || null, deterministicChecks: checkResults }
-}
-
 // THE JUDGE DIED. Not "the work failed" — see failDispatch above. The deterministic checks
 // all HELD to reach this line, so what is being reported is an environment failure over work
 // that passed everything mechanical, and the caller must not spend a retry re-asking a judge
@@ -730,7 +671,6 @@ if (!ruled) {
 // short-circuits on. On the judgment path they reach the enforcer only as prose in
 // `settledBlock` and never appeared in the returned verdict at all — so the caller
 // holding a `loop` verdict could not tell a criterion that was MEASURED against the
-// artifact from one that was argued about. That distinction is the whole basis on which
-// an exhausted gate is ruled competitive or constitutive upstream: a mechanically-settled
-// failure is not a matter of opinion and must never be waived as one.
+// artifact from one that was argued about. A mechanically-settled failure is not a
+// matter of opinion and must never be waived as one.
 return { ...ruled, deterministicChecks: checkResults }

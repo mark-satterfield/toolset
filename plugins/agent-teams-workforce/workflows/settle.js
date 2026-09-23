@@ -462,14 +462,19 @@ async function settleRun() {
   // also a legal directory name, so the block is what stops it reading as prose addressed
   // to the agent that is about to COMMIT AND PUSH.
   const settlePathBlock = dataFence('PATH', PATH_DATA_NOTICE, `Worktree: ${wt}`)
+  // The remote default branch the work is measured against. It is this repository's own
+  // default when the workspace step read one, and it is command text, so it passes a
+  // branch-name allowlist first.
+  const baseName = String(settleDefaultBranch || '').trim().replace(/^refs\/heads\//, '').replace(/^origin\//, '')
+  const baseRef = `origin/${/^[A-Za-z0-9._/-]+$/.test(baseName) ? baseName : 'main'}`
   try {
     const reported = await settleAgent(
       `Land every change in this worktree, or say exactly why it could not be landed.\n\n` +
         `${settlePathBlock}\n\n` +
         `Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR command, which runs inside the tree.\n` +
         `1. \`git -C "${wt}" status --porcelain\`. Commit anything uncommitted as \`type(scope): description\` with NO Co-Authored-By header. Run the repo's gates first. \`--no-verify\` is forbidden in every form; if a hook finding cannot be fixed, abort with NO commit and name it in \`blocked\` — that is the only sanctioned way work stays local.\n` +
-        `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to origin/main, run \`git -C "${wt}" branch --unset-upstream\`. Never push to main.\n` +
-        `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from origin/main.\n` +
+        `2. If \`git -C "${wt}" rev-parse --abbrev-ref --symbolic-full-name @{u}\` resolves to ${baseRef}, run \`git -C "${wt}" branch --unset-upstream\`. Never push to the default branch.\n` +
+        `3. Report \`hasWork\`: true if the tree was dirty or the branch has commits not reachable from ${baseRef}.\n` +
         `4. If hasWork, \`cd "${wt}" && ${PR_COMMAND} --title "<type(scope): description>" --body "<what changed and why>"\`. It pushes the branch and opens the pull request. NEVER open the PR any other way, and NEVER merge it. A PR that already exists for this head is success, not failure — report its URL.\n` +
         `5. Report the literal PR URL, the branch, and whether the tree is clean.`,
       {

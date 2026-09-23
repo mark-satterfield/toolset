@@ -344,38 +344,61 @@ function checkLimit(where, what, value, expected, min) {
 // ── Deterministic steps ──────────────────────────────────────────────────────────
 //
 // Every tracker read and write is a `depscore.py` command. A workflow has no shell, so a
-// runner session executes exactly one command and hands back what it printed; the command
-// writes its full result to a file in the run directory and prints only a summary, so no
-// data a later step depends on passes through a model.
+// runner session executes the commands of one step, in order, and hands back what each
+// printed; each command writes its full result to a file in the run directory and prints
+// only a summary, so no data a later step depends on passes through a model. Commands
+// that run back to back with no judgment between them share one runner session.
 const RUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['exitCode', 'output'],
+  required: ['results'],
   properties: {
-    exitCode: { type: 'integer' },
-    output: { type: 'object' },
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'exitCode', 'output'],
+        properties: {
+          name: { type: 'string' },
+          exitCode: { type: 'integer' },
+          output: { type: 'object' },
+        },
+      },
+    },
   },
 }
 const failures = []
 let currentPhase = null
-async function runStep(label, command) {
+/**
+ * Run `steps` ([{ name, command }]) in one runner session, in order. Returns a name ->
+ * printed-JSON map; a command that failed or was not reported maps to null and is
+ * recorded in `failures`.
+ */
+async function runSteps(label, steps) {
   const out = await settleAgent(
-    `Run exactly this one shell command, once, from any directory, and change nothing else:
+    `Run these shell commands, in this order, each exactly once, from any directory, and change nothing else. Run every one of them even when an earlier one fails.
 
-${command}
+${steps.map((s, i) => `${i + 1}. name "${s.name}":\n   ${s.command}`).join('\n')}
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+Each prints one JSON object on stdout. Return one entry per command in \`results\`: its name exactly as given, its process exit code as \`exitCode\`, and that JSON object, parsed and unaltered, as \`output\`. If a command's stdout is not JSON, its \`output\` is {"error": "<stdout and stderr, verbatim>"}. Do not retry, do not repair, do not run any other command.`,
     { label, phase: currentPhase, effort: 'low', schema: RUN_SCHEMA }
   )
-  if (!out) {
-    failures.push({ step: label, reason: 'the runner returned no result' })
-    return null
+  const byName = new Map((out && Array.isArray(out.results) ? out.results : []).map((r) => [r && r.name, r]))
+  const outputs = {}
+  for (const s of steps) {
+    const r = byName.get(s.name)
+    if (!r) {
+      failures.push({ step: s.name, reason: out ? 'the runner did not report this command' : 'the runner returned no result' })
+      outputs[s.name] = null
+    } else if (r.exitCode !== 0 || (r.output && r.output.error)) {
+      failures.push({ step: s.name, reason: (r.output && r.output.error) || `exit ${r.exitCode}` })
+      outputs[s.name] = null
+    } else {
+      outputs[s.name] = r.output || {}
+    }
   }
-  if (out.exitCode !== 0 || (out.output && out.output.error)) {
-    failures.push({ step: label, reason: (out.output && out.output.error) || `exit ${out.exitCode}` })
-    return null
-  }
-  return out.output || {}
+  return outputs
 }
 function enter(title) {
   currentPhase = title
@@ -427,18 +450,31 @@ const stop = (error, extra) => ({ ok: false, workDir: work, dryRun, error, ...ex
 // ── Plan ─────────────────────────────────────────────────────────────────────────
 enter('Plan')
 const planFile = file('score-plan.json')
-const planned = await runStep('score-plan', cmd('score-plan', `${flags}--out ${shq(planFile)}`))
-if (!planned) return stop('the plan could not be computed; nothing was judged or written')
-const plan = planned.summary || {}
+const prdDir = file('prd')
+const inputPath = (level) => file(`judge-input-${level}.json`)
+// The plan and both levels' judge input in one runner session. judge-input over a level
+// with nothing to judge writes an empty input, which is read only when the plan names
+// items at that level.
+const planned = await runSteps('plan', [
+  { name: 'score-plan', command: cmd('score-plan', `${flags}--out ${shq(planFile)}`) },
+  ...['epic', 'task'].map((level) => ({
+    name: `judge-input:${level}`,
+    command: cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(inputPath(level))}`),
+  })),
+])
+if (!planned['score-plan']) return stop('the plan could not be computed; nothing was judged or written')
+const plan = planned['score-plan'].summary || {}
 log(`Plan: ${plan.epicsToJudge || 0} Epic(s) and ${plan.tasksToJudge || 0} Task(s) to judge, ${plan.toAdopt || 0} stored value(s) to adopt`)
 
-const prdDir = file('prd')
 const inputs = {}
 for (const level of ['epic', 'task']) {
-  if (!((level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)) continue
-  const path = file(`judge-input-${level}.json`)
-  const out = await runStep(`judge-input:${level}`, cmd('judge-input', `--plan ${shq(planFile)} --level ${level}${level === 'epic' ? ` --prd-dir ${shq(prdDir)}` : ''} --out ${shq(path)}`))
-  if (out) inputs[level] = { path, summary: out.summary || {} }
+  if (!((level === 'epic' ? plan.epicsToJudge : plan.tasksToJudge) > 0)) {
+    // Nothing to judge at this level, so its input is never read and cannot fail the run.
+    for (let i = failures.length - 1; i >= 0; i--) if (failures[i].step === `judge-input:${level}`) failures.splice(i, 1)
+    continue
+  }
+  const out = planned[`judge-input:${level}`]
+  if (out) inputs[level] = { path: inputPath(level), summary: out.summary || {} }
 }
 const epicInput = inputs.epic
 const epicIds = epicInput && Array.isArray(epicInput.summary.ids) ? epicInput.summary.ids.filter((id) => typeof id === 'string' && ID.test(id)) : []
@@ -558,15 +594,19 @@ enter('Apply')
 const recordArgs = [`--plan ${shq(planFile)}`]
 if (judging.epic.sessions > judging.epic.failedSessions) recordArgs.push(`--epics-dir ${shq(epicDir)}`)
 if (judging.task.sessions > judging.task.failedSessions) recordArgs.push(`--tasks-dir ${shq(taskDir)}`)
+// record, when there is anything to record, then the arithmetic, in one runner session.
+const records = (plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0
+const applied = await runSteps('apply', [
+  ...(records ? [{ name: 'record', command: cmd('record', `${recordArgs.join(' ')}${dry} --out ${shq(file('record.json'))}`) }] : []),
+  { name: 'score', command: cmd('score', `--out ${shq(file('score.json'))}${dry}`) },
+])
 let recorded = null
-if ((plan.epicsToJudge || 0) + (plan.tasksToJudge || 0) + (plan.toAdopt || 0) > 0) {
-  const out = await runStep('record', cmd('record', `${recordArgs.join(' ')}${dry} --out ${shq(file('record.json'))}`))
-  recorded = out ? out.summary || {} : null
+if (records) {
+  recorded = applied.record ? applied.record.summary || {} : null
   if (recorded && recorded.rejected) log(`Record: ${recorded.rejected} judgment(s) rejected — detail in ${file('record.json')}`)
 }
 
-const scored = await runStep('score', cmd('score', `--out ${shq(file('score.json'))}${dry}`))
-const score = scored ? scored.summary || {} : null
+const score = applied.score ? applied.score.summary || {} : null
 if (score) {
   log(
     `Scored ${score.epicsScored} Epic(s) (${score.epicsWritten} written) and ${score.tasksScored} Task(s) (${score.tasksWritten} written); ` +
@@ -574,9 +614,13 @@ if (score) {
   )
 }
 
-const judgingError = judgingFailed.length
-  ? { error: `judging failed for ${judgingFailed.length} item(s): ${judgingFailed.join(', ')}; their values were not recorded and they stay to judge` }
-  : {}
+// Every way `ok` can be false is named in `error`, so a caller never reports a failed run
+// as one that returned nothing.
+const errors = [
+  judgingFailed.length ? `judging failed for ${judgingFailed.length} item(s): ${judgingFailed.join(', ')}; their values were not recorded and they stay to judge` : '',
+  failures.length ? `step(s) failed: ${failures.map((f) => `${f.step} (${f.reason})`).join('; ')}` : '',
+].filter(Boolean)
+const runError = errors.length ? { error: errors.join('; ') } : {}
 
 return {
   ok: !!score && failures.length === 0 && judgingFailed.length === 0,
@@ -585,7 +629,7 @@ return {
   plan,
   judging,
   judgingFailed,
-  ...judgingError,
+  ...runError,
   record: recorded,
   score,
   failures,

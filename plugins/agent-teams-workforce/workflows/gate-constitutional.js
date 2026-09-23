@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2, Spec-to-Deploy pipeline Gate 4). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again. On a self-contradictory packet NO exit path can return "loop" — the precedent path, the appeals-court path, and the no-ruling path all route through one conversion, because looping cannot repair a contradiction the same judge regenerates.',
+    'Constitutional phase gate (PRD-to-Spec pipeline Gate 2; the Spec-to-Deploy Gate 4 only when the adversarial packet is self-contradictory). The phase-gate-enforcer judges with constitutive criteria as HARD stops — security/validity findings cannot be downgraded or flagged-past. Novel conflicts the enforcer cannot resolve are escalated to the constitutional-agent for a binding ruling, and that ruling is WRITTEN DOWN: every ruling is persisted as precedent keyed on the conflicting-constraint pair, and a conflict matching a stored precedent is settled from it without convening the appeals court again. A self-contradictory packet skips the enforcer: the constitutional-agent rules which reading of each contradicted finding stands, and the script recounts the open constitutive findings from that ruling — pass at zero, escalate otherwise, never loop.',
   phases: [{ title: 'Gate (constitutional)', detail: 'hard-stop adjudication + appeals, over a persistent precedent store' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -342,46 +342,28 @@ const criteria = Array.isArray(a.criteria) ? a.criteria : []
 const artifactText =
   typeof a.artifact === 'string' ? a.artifact : JSON.stringify(a.artifact ?? {}, null, 2)
 
-// Fail closed: constitutive criteria MUST be present. An empty set cannot pass —
-// that would be a silent constitutional bypass.
-if (!criteria.length) {
-  return {
-    verdict: 'escalate',
-    criteria: [],
-    feedback: `Constitutional gate ${a.gate || '?'} (${a.phaseName || 'phase'}) was invoked with no constitutive criteria — refusing to adjudicate. Constitutive criteria must be present and non-empty.`,
-    escalateTo: (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
-    needsConstitutionalRuling: false,
-  }
-}
-
 // ── A self-contradictory adjudication is a JUDGE failure, not a phase failure ──
 //
 // When the packet under review rules one fact two opposite ways, "loop" is the wrong
-// verdict by the gate's own definition: loop means a criterion is unmet AND the root
-// cause is INSIDE this phase. Nothing about the WORK changed between rounds, so no
-// retry of the phase can repair it, and re-running the same adjudicator regenerates
-// the contradiction. Escalating upstream is equally wrong — the escalate targets are
-// producing phases, and none of them caused the adjudicator to contradict itself.
+// verdict: nothing about the WORK changed between rounds, so no retry of the phase can
+// repair it, and re-running the same adjudicator regenerates the contradiction. Escalating
+// upstream is equally wrong — none of the producing phases caused the adjudicator to
+// contradict itself.
 //
-// So it goes to a DIFFERENT AUTHORITY: the appeals court below, which consults recorded
-// precedent first and writes its ruling down, so the next occurrence settles for free.
-// Detected in script, not volunteered by the enforcer, because an enforcer that misses
-// it costs the entire loop budget to discover.
+// So it goes to a DIFFERENT AUTHORITY, the constitutional-agent, and nothing else runs:
+// the enforcer is not dispatched, because the packet already carries the computed
+// `constitutiveOpen` and every ruling, and the only open question is which of the two
+// contradictory readings stands. The agent answers exactly that, per finding, and the
+// verdict is computed here from its answer — so no session re-judges what the script
+// already counted. No precedent is consulted or written on this path: a packet
+// contradiction is a question about one finding in one run, and no other run's ruling
+// is about the same finding.
 //
-// DETECTION, not just the exits. The three exit paths above are correctly guarded — no
-// path can return "loop" on a contradiction. But a guard on the exits is worth nothing
-// if the contradiction is never DETECTED, and this read was exact: `artifact` had to be
-// an object with `packetIntegrity` at its own top level. It missed a packet handed over
-// as a JSON string, and it missed one nested a level down — both of which arise from
-// ordinary plumbing, not from anything exotic. A missed contradiction falls through to
-// the normal verdict, which is the "loop" this whole mechanism exists to prevent.
-//
-// So the packet is now LOCATED before it is read: JSON strings are parsed, and the
-// object is searched to a bounded depth for a `packetIntegrity` carrying contradictions.
-// Bounded because an unbounded walk over an agent-supplied object is a denial-of-service
-// waiting to happen; a cycle-safe seen-set for the same reason. Widening detection can
-// only route MORE contradictions to the appeals court — never fewer, and never a
-// coherent packet.
+// The packet is LOCATED before it is read: JSON strings are parsed, and the object is
+// searched to a bounded depth for a `packetIntegrity` carrying contradictions, because it
+// can arrive as a JSON string or nested a level down. Bounded, with a cycle-safe seen-set,
+// because an unbounded walk over an agent-supplied object is a denial-of-service waiting
+// to happen.
 
 /** Parse a JSON-string packet; return objects unchanged; null for anything else. */
 function asPacketObject(value) {
@@ -398,11 +380,10 @@ function asPacketObject(value) {
 }
 
 /**
- * The contradictions in `artifact`, wherever the packet actually sits.
- * Searches to MAX_DEPTH, parsing JSON strings on the way, and stops at the first
- * packetIntegrity that carries a non-empty contradictions array.
+ * The packet in `artifact` that carries contradictions, wherever it actually sits:
+ * { node, contradictions }, or null. Searches to MAX_DEPTH, parsing JSON strings on the way.
  */
-function findContradictions(artifact) {
+function findContradictedPacket(artifact) {
   const MAX_DEPTH = 4
   const MAX_NODES = 500
   const seen = new Set()
@@ -415,58 +396,140 @@ function findContradictions(artifact) {
     seen.add(node)
 
     const pi = asPacketObject(node.packetIntegrity)
-    if (pi && Array.isArray(pi.contradictions) && pi.contradictions.length) return pi.contradictions
+    if (pi && Array.isArray(pi.contradictions) && pi.contradictions.length) {
+      return { node, contradictions: pi.contradictions }
+    }
 
     for (const value of Array.isArray(node) ? node : Object.values(node)) {
       const child = asPacketObject(value)
       if (child) queue.push([child, depth + 1])
     }
   }
-  return []
+  return null
 }
 
-function describePacketContradiction(artifact) {
-  const contradictions = findContradictions(artifact)
-  if (!contradictions.length) return null
-  const detail = contradictions
-    .map((cx) => {
-      const c = (cx && typeof cx === 'object' && cx) || {}
-      const pair = (Array.isArray(c.rulings) ? c.rulings : [])
-        .map((r) => `real=${r && r.real}/${r && r.classification}/${r && r.severity}`)
-        .join(' vs ')
-      return `${c.findingId || '(unnamed finding)'}: ${pair || '(rulings not itemised)'}`
-    })
-    .join('; ')
-  return (
-    'THE ADJUDICATION CONTRADICTS ITSELF. The same finding carries opposite reality or ' +
-    `classification rulings within one packet, with no new evidence between them: ${detail}. ` +
-    'This is a defect in the ADJUDICATION, not in the work under review, so it cannot be ' +
-    'repaired by re-running the phase and it did not originate in an upstream producing ' +
-    'phase. Rule which reading stands. While this appeal is pending the MORE SEVERE ruling ' +
-    'holds — a real constitutive finding outranks a not-real or competitive one about the ' +
-    'same fact, because believing the softer round is how a genuine exposure gets waved through.'
+const contradicted = findContradictedPacket(a.artifact)
+const escalateTarget = (a.escalateTargets && a.escalateTargets[0]) || 'upstream'
+
+if (contradicted) {
+  phase('Gate (constitutional)')
+  const { node, contradictions } = contradicted
+  const ids = contradictions.map((cx) => cx && cx.findingId).filter(Boolean)
+  const idSet = new Set(ids)
+  const findings = (Array.isArray(node.findings) ? node.findings : []).filter((f) => f && idSet.has(f.findingId))
+  const adjudication = asPacketObject(node.adjudication)
+  const rulings = adjudication && Array.isArray(adjudication.rulings) ? adjudication.rulings : null
+  log(`Constitutional gate ${a.gate || '?'}: self-contradictory adjudication on ${ids.length} finding(s) — asking the constitutional-agent which reading stands`)
+
+  const ruling = await settleAgent(
+    `The adversarial adjudication for gate ${a.gate || '?'} (${a.phaseName || 'phase'}) ruled the same finding two opposite ways, with no new evidence between the two rulings. Rule, for EACH finding below, which reading stands: is the finding real, and is it constitutive (a security/validity hard stop) or competitive? Judge from the finding's reproduction. Where you cannot establish the softer reading, the more severe one stands — believing the softer round is how a genuine exposure gets waved through.
+
+Contradictions:
+${JSON.stringify(contradictions, null, 2)}
+
+The findings they are about:
+${findings.length ? JSON.stringify(findings, null, 2) : '(the packet carries no finding records for these ids — rule from the rulings above)'}
+
+Return exactly one resolution per findingId: ${ids.join(', ')}.`,
+    {
+      label: `constitutional:${a.gate || 'gate'}`,
+      effort: 'high',
+      phase: 'Gate (constitutional)',
+      agentType: 'agent-teams-workforce:constitutional-agent',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['resolutions', 'rationale'],
+        properties: {
+          resolutions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['findingId', 'real', 'classification', 'rationale'],
+              properties: {
+                findingId: ids.length ? { type: 'string', enum: ids } : { type: 'string' },
+                real: { type: 'boolean' },
+                classification: { type: 'string', enum: ['constitutive', 'competitive'] },
+                rationale: { type: 'string' },
+              },
+            },
+          },
+          rationale: { type: 'string' },
+        },
+      },
+    }
   )
-}
-const packetConflict = describePacketContradiction(a.artifact)
-if (packetConflict) {
-  log(`Constitutional gate ${a.gate || '?'}: self-contradictory adjudication detected in script — routing to a constitutional ruling instead of looping the same judge`)
+
+  if (!ruling) {
+    const deaths = dispatchDeaths('Gate (constitutional)')
+    const why =
+      `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the adjudication contradicts itself and the constitutional-agent produced no ruling ` +
+      '(it was skipped, or it died). The contradiction stands unresolved, and an unresolved contradiction at a constitutional gate is never a pass.'
+    log(why)
+    return {
+      verdict: 'escalate',
+      criteria: [],
+      feedback: why,
+      escalateTo: escalateTarget,
+      unresolvedConstitutionalConflict: JSON.stringify(contradictions),
+      ruledByConstitutionalAgent: false,
+      packetContradiction: true,
+      ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+    }
+  }
+
+  // Apply the resolutions to the packet's rulings and count what is still open. A
+  // contradicted finding the agent did not resolve keeps the packet's own reading, which
+  // adversarial.js already set to the more severe of the two.
+  const resolved = {}
+  for (const r of Array.isArray(ruling.resolutions) ? ruling.resolutions : []) {
+    if (r && idSet.has(r.findingId)) resolved[r.findingId] = r
+  }
+  const unresolvedIds = ids.filter((id) => !resolved[id])
+  if (!rulings) {
+    const why = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): the contradicted packet carries no adjudication.rulings, so the open constitutive findings cannot be counted after the ruling — escalating rather than guessing.`
+    log(why)
+    return { verdict: 'escalate', criteria: [], feedback: why, escalateTo: escalateTarget, ruledByConstitutionalAgent: true, packetContradiction: true }
+  }
+  const finalRulings = rulings.map((r) => (r && resolved[r.findingId] ? { ...r, real: resolved[r.findingId].real, classification: resolved[r.findingId].classification } : r))
+  const open = finalRulings.filter((r) => r && r.real === true && r.classification === 'constitutive')
+  const detail = ids
+    .map((id) => (resolved[id] ? `${id}: real=${resolved[id].real}/${resolved[id].classification} — ${resolved[id].rationale}` : `${id}: not resolved, the more severe reading stands`))
+    .join('; ')
+  log(`Constitutional gate ${a.gate || '?'}: contradiction ruled — ${open.length} constitutive finding(s) open. ${detail}`)
+  // An open constitutive finding escalates rather than loops: a loop re-runs the attack over
+  // the same tree, which cannot close a finding that is real.
+  return {
+    verdict: open.length ? 'escalate' : 'pass',
+    criteria: finalRulings.map((r) => ({
+      criterion: `finding ${r && r.findingId}`,
+      met: !(r && r.real === true && r.classification === 'constitutive'),
+      evidence: `real=${r && r.real}, classification=${r && r.classification}`,
+    })),
+    feedback: open.length
+      ? `${open.length} constitutive finding(s) remain open after the constitutional ruling: ${open.map((r) => r.findingId).join(', ')}. ${ruling.rationale}`
+      : `No constitutive finding remains open after the constitutional ruling. ${ruling.rationale}`,
+    ...(open.length ? { escalateTo: escalateTarget } : {}),
+    constitutiveOpen: open.length,
+    unresolvedFindings: unresolvedIds,
+    ruledByConstitutionalAgent: true,
+    ruledFromPrecedent: false,
+    packetContradiction: true,
+  }
 }
 
-// "A contradiction never comes back as loop" was true of ONE of this gate's three exit
-// paths — the one where the appeals court produced nothing. The other two returned an
-// agent's verdict straight through, and both schemas permit the enum
-// ['pass','loop','escalate']: a precedent line recording verdict:'loop', or an appeals
-// ruling of 'loop', went back to the caller unaltered and spent the loop budget
-// re-asking the question the same judge keeps answering inconsistently.
-//
-// So the rule is applied at the exit, once, and every path routes through it.
-const LOOP_ON_CONTRADICTION_NOTE =
-  'A self-contradictory adjudication cannot be repaired by re-running the phase — nothing about ' +
-  'the WORK changed between the contradictory rounds — so this exits as an escalation rather ' +
-  'than spending the loop budget on a contradiction the same judge regenerates.'
-const noLoopOnContradiction = (v) => (packetConflict && v === 'loop' ? 'escalate' : v)
-const withContradictionNote = (verdictIn, feedback) =>
-  packetConflict && verdictIn === 'loop' ? `${feedback || ''}\n\n${LOOP_ON_CONTRADICTION_NOTE}` : feedback
+// Fail closed: constitutive criteria MUST be present. An empty set cannot pass —
+// that would be a silent constitutional bypass.
+if (!criteria.length) {
+  return {
+    verdict: 'escalate',
+    criteria: [],
+    feedback: `Constitutional gate ${a.gate || '?'} (${a.phaseName || 'phase'}) was invoked with no constitutive criteria — refusing to adjudicate. Constitutive criteria must be present and non-empty.`,
+    escalateTo: escalateTarget,
+    needsConstitutionalRuling: false,
+  }
+}
 
 // One judgment per criterion supplied, which is the honest limit; 60 when the caller
 // supplied none to count. Raised from the flat 40 this used to be, and stated to the
@@ -564,6 +627,17 @@ checkLimit(`Gate ${a.gate || '?'}`, 'criterion judgments', judgedCriteria, CRITE
 // verdict and changes none of it: no path reads it, and no path branches on it.
 if (limitFindings.length) verdict.limitFindings = limitFindings
 
+// Every criterion here is constitutive, so a `pass` cannot stand while the enforcer itself
+// itemises one as unmet.
+const unmetJudged = judgedCriteria.filter((cc) => cc && cc.met === false)
+if (verdict.verdict === 'pass' && unmetJudged.length) {
+  const detail = unmetJudged.map((cc) => `${cc.criterion}${cc.evidence ? ` — ${cc.evidence}` : ''}`).join('; ')
+  log(`Constitutional gate ${a.gate || '?'}: the enforcer returned PASS with an unmet constitutive criterion — converting to LOOP: ${detail}`)
+  verdict.verdict = 'loop'
+  verdict.feedback = `A constitutive criterion is unmet, which is a hard stop: ${detail}. ${verdict.feedback || ''}`.trim()
+  verdict.classOverride = 'pass-converted-to-loop: unmet constitutive criterion'
+}
+
 // ── Precedent store ─────────────────────────────────────────────────────────────
 // The constitutional-agent is told its ruling "becomes reusable precedent", and its
 // schema returns a `precedent` field — and nothing wrote that field anywhere, and
@@ -577,17 +651,9 @@ if (limitFindings.length) verdict.limitFindings = limitFindings
 // already exists and is already gitignored.
 const PRECEDENT_STORE = '.claude/workflow-runs/constitutional-precedents.jsonl'
 
-// A contradiction the script found is not the enforcer's to decline. Setting the flag
-// here — rather than waiting for the enforcer to volunteer it — is what makes the
-// escalation deterministic.
-if (packetConflict && verdict) {
-  verdict.needsConstitutionalRuling = true
-  verdict.conflict = [packetConflict, verdict.conflict].filter(Boolean).join('\n\n')
-}
-
 // Appeals court: only on a novel unresolved constitutive conflict, and only when no
 // precedent already settles it.
-if (verdict && verdict.needsConstitutionalRuling) {
+if (verdict.needsConstitutionalRuling) {
   const conflict = verdict.conflict || '(unspecified)'
 
   // Look first. A precedent that answers this conflict IS the ruling — re-arguing a
@@ -627,24 +693,16 @@ When you match, return the stored ruling's verdict, rationale and precedent VERB
 
   if (found && found.matched === true && found.verdict) {
     log(`Constitutional gate ${a.gate}: conflict SETTLED BY PRECEDENT ${found.key || '(unkeyed)'} — appeals court not convened`)
-    // A stored precedent is applied VERBATIM in substance — but a recorded 'loop' is not
-    // a substantive ruling on a contradiction, it is the one verdict this gate has
-    // already established cannot answer one. It is converted here, and the conversion is
-    // stated in the feedback rather than performed silently.
     return {
-      verdict: noLoopOnContradiction(found.verdict),
+      verdict: found.verdict,
       criteria: verdict.criteria,
-      feedback: withContradictionNote(
-        found.verdict,
-        found.rationale || found.precedent || 'settled by recorded precedent'
-      ),
+      feedback: found.rationale || found.precedent || 'settled by recorded precedent',
       escalateTo:
         found.escalateTo || verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
       ruledByConstitutionalAgent: true,
       ruledFromPrecedent: true,
       precedentKey: found.key || null,
       precedent: found.precedent,
-      packetContradiction: !!packetConflict,
     }
   }
 
@@ -724,9 +782,9 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
       )
     }
     return {
-      verdict: noLoopOnContradiction(ruling.verdict),
+      verdict: ruling.verdict,
       criteria: verdict.criteria,
-      feedback: withContradictionNote(ruling.verdict, ruling.rationale),
+      feedback: ruling.rationale,
       escalateTo:
         ruling.escalateTo || verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
       ruledByConstitutionalAgent: true,
@@ -734,7 +792,6 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
       precedentKey: (written && written.key) || null,
       precedentRecorded: !!(written && written.written === true),
       precedent: ruling.precedent,
-      packetContradiction: !!packetConflict,
     }
   }
 }
@@ -745,14 +802,14 @@ Set \`key\` yourself before writing, to a short stable identifier for THE PAIR O
 // returns `pass` WITH `needsConstitutionalRuling: true` — a real combination: no criterion is
 // itemised as unmet, but the judge has declared that two constitutive constraints conflict
 // and it cannot settle which binds. If the precedent lookup found nothing and the
-// constitutional-agent dispatch then returned null, control fell past the appeals block, past
-// the contradiction guard below (which only fires on `loop`), to `return verdict` — a clean
+// constitutional-agent dispatch then returned null, control fell past the appeals block to
+// `return verdict` — a clean
 // PASS on a security or validity conflict that NOBODY RULED ON.
 //
 // A flag that says "this needs a ruling" and no ruling is not a pass. The conflict is
 // unresolved, and unresolved at a CONSTITUTIONAL gate means the work is not established as
 // valid — so it escalates, naming the conflict, whatever the enforcer's own verdict was.
-if (verdict && verdict.needsConstitutionalRuling && !verdict.ruledByConstitutionalAgent) {
+if (verdict.needsConstitutionalRuling) {
   const conflict = verdict.conflict || '(unspecified)'
   const why =
     `Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): a constitutive conflict was DECLARED and no ruling was obtained — ` +
@@ -771,22 +828,6 @@ if (verdict && verdict.needsConstitutionalRuling && !verdict.ruledByConstitution
     ...(dispatchDeaths('Gate (constitutional)').length
       ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('Gate (constitutional)') }
       : {}),
-    packetContradiction: !!packetConflict,
-  }
-}
-
-// The appeals court produced nothing. A contradiction must still never come back as
-// "loop": that would spend the loop budget re-asking the question the same agent keeps
-// answering inconsistently, which is the exact failure this detection exists to stop.
-if (packetConflict && verdict && verdict.verdict === 'loop') {
-  return {
-    ...verdict,
-    verdict: noLoopOnContradiction(verdict.verdict),
-    escalateTo: verdict.escalateTo || (a.escalateTargets && a.escalateTargets[0]) || 'upstream',
-    feedback:
-      `${verdict.feedback || ''}\n\nThe adjudication for this gate contradicts itself and no constitutional ruling was obtained. ` +
-      LOOP_ON_CONTRADICTION_NOTE,
-    packetContradiction: true,
   }
 }
 

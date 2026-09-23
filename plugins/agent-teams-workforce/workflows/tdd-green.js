@@ -366,8 +366,11 @@ const contractPathFault = (() => {
   return null
 })()
 if (contractPathFault) {
+  // A refused path is refused again on every retry, so the gate is not run on it.
   return {
     ok: false,
+    phaseBlocked: true,
+    blockedReason: `${contractPathFault}.`,
     greenConfirmed: false,
     changedFiles: [],
     blocked: [
@@ -483,11 +486,18 @@ ${taskBlock}`,
 const GREEN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['changedFiles', 'greenConfirmed', 'evidence'],
+  required: ['changedFiles', 'greenConfirmed', 'noRegressions', 'evidence'],
   properties: {
     changedFiles: { type: 'array', items: { type: 'string' } },
     greenConfirmed: { type: 'boolean' },
+    // The full suite was run and no test that passed before this change now fails. Gate
+    // 2b checks it directly, so no judge re-reads the evidence to answer it.
+    noRegressions: { type: 'boolean' },
     evidence: { type: 'string' },
+    // A failing test that cannot pass AS AUTHORED — pinned to a pre-fix import path,
+    // patching a symbol at a module path the fix does not use, or defeated by its own
+    // source. The implementer may not edit a test, so the caller sends this back to Red.
+    testDefect: { type: 'string' },
     // ── THE CONTRADICTION CHANNEL ────────────────────────────────────────────
     // An implementer can be blocked by something no amount of implementation fixes:
     // the failing test asserts one outcome for an input, and ANOTHER test — already
@@ -526,6 +536,8 @@ const changedFiles = []
 // earlier one in the sequence would otherwise be dropped — and it is the one finding in
 // this phase that nothing downstream can rediscover.
 let contradiction = null
+let testDefect = null
+const deadImplementers = []
 for (const impl of implementers) {
   green = await settleAgent(
     `Make the failing test pass with the MINIMUM production change. Then run the test suite and confirm the target test passes (Green) and nothing else regressed. Work within the repository at: ${repo}
@@ -536,9 +548,11 @@ ${repo}
 ${taskBlock}${implementers.length > 1 ? `\n\nYou are '${impl}', one of ${implementers.length} implementers on this task — make only the part matching your specialty; prior implementers' changes are already applied.` : ''}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
+IF THE FAILING TEST CANNOT PASS AS AUTHORED, REPORT IT in \`testDefect\` — the test is pinned to a pre-fix import path, patches a symbol at a module path the fix does not use, or its own source defeats its assertion. Name the test and the defect. Do not weaken the test and do not keep trying; test authoring repairs it.
+
 IF TWO TESTS CONTRADICT EACH OTHER, REPORT IT — do not pick a side and do not keep trying. There is one blocker you cannot fix and must not attempt to: the failing test requires one outcome for an input, and another test that ALREADY PASSES requires the opposite outcome for that identical input. No implementation satisfies both, so every further attempt re-proves the same impossibility. You may not modify a test, and neither may the gate, so the only correct move is to say so: fill in \`contradiction\` with both test identifiers, the precondition they share, what each one expects, and the executed output showing they cannot both hold. Which contract is right is not yours to decide — it is ruled by an agent with that authority, and your report is what reaches it. Report a contradiction ONLY for genuinely opposite expectations over the same input; a test that is merely wrong on its own terms is a defective test, which you report in your evidence as usual.
 
-Constraints: minimum change to pass; build to the contract above; do not modify the test to make it pass. Deliver the changed files, whether Green is confirmed, and the captured passing output.`,
+Constraints: minimum change to pass; build to the contract above; do not modify the test to make it pass. Deliver the changed files, whether Green is confirmed (the target test passes), whether the FULL suite shows no regression (\`noRegressions\`: no test that passed before your change now fails), and the captured output of both runs.`,
     {
       label: `green:${impl}`,
       phase: 'Green',
@@ -546,7 +560,12 @@ Constraints: minimum change to pass; build to the contract above; do not modify 
       schema: GREEN_SCHEMA,
     }
   )
+  if (!green) deadImplementers.push(impl)
   if (green && Array.isArray(green.changedFiles)) changedFiles.push(...green.changedFiles)
+  if (!testDefect && green && String(green.testDefect || '').trim()) {
+    testDefect = String(green.testDefect).trim()
+    log(`Green: '${impl}' reports a defective test — ${testDefect}`)
+  }
   if (!contradiction && green && green.contradiction && green.contradiction.testA && green.contradiction.testB) {
     contradiction = green.contradiction
     log(`Green: '${impl}' reports a test contradiction — ${contradiction.testA} and ${contradiction.testB} assert opposite outcomes for the same input`)
@@ -565,4 +584,19 @@ const ledger = {
   contradiction: !!contradiction,
 }
 
-return { ...(green || {}), changedFiles, contradiction, ledger }
+// An implementer that returned nothing never ran, so the tree holds partial work and
+// no verdict. Reported as a dispatch failure so the gate spends no retry on it.
+if (deadImplementers.length) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Green'),
+    reason: `implementer(s) ${deadImplementers.join(', ')} returned nothing — skipped, or died on a terminal API error`,
+    changedFiles,
+    contradiction,
+    testDefect,
+    ledger: { ...ledger, ok: false },
+  }
+}
+
+return { ...(green || {}), changedFiles, contradiction, testDefect, ledger }

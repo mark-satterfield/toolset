@@ -1,11 +1,11 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. A Spec and its Story are created together, so this mini also emits exactly ONE Story bead specification paired with the Spec — a container scoped to the single repo in args.repoPath, with no task breakdown and no WSJF score; work the spec set implies in any other repo is returned as a finding, never a second Story (the caller runs this mini once per repo and writes the bead with bd). Three maker sessions author the six artifacts in parallel (interface contracts, data model, criteria); ONE INDEPENDENT reviewer session judges the reviewable artifacts through every review lens (segregation of duties — no author reviews its own work, and merging checks into one checker session never merges a maker with its checker); a bounded maker/checker loop re-runs only the owning maker on rejection and the spec-decider breaks any deadlock. Read-and-author only — no nested workflow(); the downstream gate owns final acceptance.',
+    'Leaf mini — Spec authoring. Turns an approved requirements/TRD packet into the implementation-ready specification set: the API/OpenAPI contract, the per-service data model, the event contracts, the error-handling spec, the acceptance criteria, and the Definition of Done. A Spec and its Story are created together, so this mini also emits exactly ONE Story bead specification paired with the Spec — a container scoped to the single repo in args.repoPath, with no task breakdown and no WSJF score; work the spec set implies in any other repo is returned as a finding, never a second Story (the caller runs this mini once per repo and writes the bead with bd). Three maker sessions author the six artifacts in parallel (interface contracts, data model, criteria); ONE INDEPENDENT reviewer session judges the reviewable artifacts through every review lens (segregation of duties — no author reviews its own work, and merging checks into one checker session never merges a maker with its checker); the reviewer judges once, the spec-decider rules on every artifact it rejected, and the owning maker enacts a ruling that sends its artifact back. Read-and-author only — no nested workflow(). The caller\'s gate checks only that this mini returned ok with a Story; the reviewer and the spec-decider are the only judgment of the spec set.',
   phases: [
     { title: 'Author specs', detail: 'three maker sessions author the six spec artifacts in parallel' },
     { title: 'Review specs', detail: 'one independent reviewer session judges the reviewable artifacts' },
-    { title: 'Decide', detail: 'spec-decider breaks any maker/checker deadlock' },
+    { title: 'Decide', detail: 'spec-decider rules on every rejected artifact; the owning maker enacts it' },
     { title: 'Emit story', detail: 'author the ONE Story bead this Spec pairs with — container only, single repo' },
   ],
 }
@@ -356,7 +356,6 @@ function checkLimit(where, what, value, expected, min) {
 //   storyKey?: string,            // key for the emitted Story (default 'S1'). The caller runs this
 //                                 // mini once per repo and must give each Story a distinct key.
 //   epic: { key?, id?, title? },  // the parent Epic the Story hangs under; missing -> Story emitted unparented
-//   maxLoops?: number,            // bounded maker/checker retries per reviewable artifact (default 2)
 //   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //                                 // Epic working directory: each maker saves its own document —
 //                                 // spec-<slug>.md (API + events + errors), spec-<slug>.data-model.md,
@@ -374,8 +373,8 @@ function checkLimit(where, what, value, expected, min) {
 //                                 // pair built from it: no maker, no reviewer, no decider, and
 //                                 // the spec documents themselves are handed on as paths.
 //
-// returns { ok, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
-// acceptanceCriteria, definitionOfDone, reviewFindings, decision, outOfRepoFindings,
+// returns { ok, unresolvedArtifacts, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
+// acceptanceCriteria, definitionOfDone, reviewFindings, decision, decisionIds, outOfRepoFindings,
 // coverageShortfalls, criteriaShortfall, note } where coverageShortfalls names every maker
 // that could not cover the repository within its reading budget (empty is the expected
 // case) and criteriaShortfall names the acceptance criteria the maker chose not to
@@ -734,7 +733,11 @@ async function replayStory(a, repoPath, epic) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────────
 
+// The context every session here reads: the spec header, the binding constraints and the
+// TRD. When the TRD is on disk only its path and summary are sent, because the structured
+// TRD inlined into each of the seven dispatches was the largest payload in this mini.
 function ctxBlock(s, trd, constraints) {
+  const trdOnDisk = trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
   return [
     `Spec ${s.id || ''}: ${s.title || ''}`,
     s.service
@@ -742,6 +745,28 @@ function ctxBlock(s, trd, constraints) {
       : '',
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
+    constraints && constraints.length
+      ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
+      : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
+    trdOnDisk
+      ? `The TRD is the document at ${trd.trdPath}. Read it: it is the authoritative source for the technical requirements.${hasText(trd.summary) ? `\nTRD summary: ${trd.summary}` : ''}`
+      : trd
+        ? `Upstream TRD / requirements packet:\n${JSON.stringify(trd)}`
+        : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function hasText(x) {
+  return typeof x === 'string' && x.trim().length > 0
+}
+
+// The rules for the sessions that AUTHOR a SPEC_SCHEMA artifact. They are kept out of the
+// reviewer, decider and story briefs, whose schemas carry no `decisionIds`, `artifactPaths`
+// or `coverageShortfall` field to answer them with.
+function makerRules({ cites }) {
+  return [
     // EXPLORATION BUDGET. The packet above is the input; the repository is reference.
     // Without a stated bound, a session at inherited effort surveys a ~60-repository
     // polyrepo looking for context it was already handed, and that unbounded survey —
@@ -759,23 +784,31 @@ function ctxBlock(s, trd, constraints) {
     // So the cap is now above the corpus, and reaching it is a REPORTED event rather than a
     // silent truncation: a maker that cannot cover the repository says so in
     // `coverageShortfall`, which travels out of this mini with the spec set.
-    'READING BUDGET (binding on SCOPE, not on thoroughness): the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories, ever. Within it, read what the spec actually requires: prefer one targeted search over a directory walk, never re-open a file you have already read, and stop reading a file once it has told you what you needed. Read at most 80 files. If you reach that cap with the repository still not adequately covered for the artifact you are authoring, DO NOT quietly author a partial contract: return `coverageShortfall` with the number of files you read and one sentence naming what you could not cover, and record the specific gaps as open questions. A spec that states what it could not establish is usable; one that silently omits it is not.',
-    `REPORTING CEILINGS on what you WRITE, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\` and ${OPEN_QUESTIONS_MAX} in \`openQuestions\` — these carry your result to the next phase, not everything you saw. \`decisionIds\` has NO ceiling: it cites the SAD entries this artifact was designed against, and how many those are is the SAD's business. Cite every one.`,
-    constraints && constraints.length
-      ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
-      : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
-    trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
-      ? `The full TRD is the document at ${trd.trdPath}. Read it: it is the authoritative source for the technical requirements, and the packet below may carry only part of it.`
+    'READING BUDGET (binding on SCOPE, not on thoroughness): the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories, ever. Within it, read what the spec actually requires: prefer one targeted search over a directory walk, never re-open a file you have already read, and stop reading a file once it has told you what you needed. Read at most 80 files. If you reach that cap with the repository still not adequately covered for the artifact you are authoring, DO NOT quietly author a partial contract: return `coverageShortfall` with the number of files you read and one sentence naming what you could not cover' +
+      (cites ? ', and record the specific gaps as open questions' : '') +
+      '. A spec that states what it could not establish is usable; one that silently omits it is not.',
+    cites
+      ? `REPORTING CEILINGS on what you WRITE, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\` and ${OPEN_QUESTIONS_MAX} in \`openQuestions\` — these carry your result to the next phase, not everything you saw. \`decisionIds\` has NO ceiling: it cites the SAD entries this artifact was designed against, and how many those are is the SAD's business. Cite every one.`
       : '',
-    trd ? `Upstream TRD / requirements packet:\n${JSON.stringify(trd, null, 2)}` : '',
     // WHY THE CITATION IS ON THE DOCUMENT AND NOT ONLY IN THE RESULT. When an architecture
     // decision changes, the impact pass has to FIND every item built on it. It finds them by
     // the decision id, so an artifact that names the architecture only in prose is invisible
     // to it — and invisible means "I finished my task, but feature XYZ no longer works".
-    'CITE THE DECISIONS YOU DESIGNED AGAINST. Return `decisionIds` on every artifact you author: the SAD entry ids it depends on, written exactly as the TRD and the SAD tag them (`C-…`, `S-…`, `X-…`, `AD-…`), and carry the same list in YAML frontmatter as `decisionIds:` at the top of the markdown document you save. Never invent an id, never paraphrase one, and never cite a section number in place of one — a section number moves, a tag does not. An empty list means you checked and this artifact rests on no recorded decision.',
+    cites
+      ? 'CITE THE DECISIONS YOU DESIGNED AGAINST. Return `decisionIds` on every artifact you author: the SAD entry ids it depends on, written exactly as the TRD and the SAD tag them (`C-…`, `S-…`, `X-…`, `AD-…`), and carry the same list in YAML frontmatter as `decisionIds:` at the top of the markdown document you save. Never invent an id, never paraphrase one, and never cite a section number in place of one — a section number moves, a tag does not. An empty list means you checked and this artifact rests on no recorded decision.'
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+// One artifact as a reviewer or decider reads it: the document itself as text rather than
+// as an escaped JSON string, then any other field the maker returned.
+function renderArtifact(x) {
+  if (!x || typeof x !== 'object') return '(absent)'
+  const rest = { ...x }
+  delete rest.content
+  return `${hasText(x.content) ? `${x.content}\n\n` : ''}${JSON.stringify(rest)}`
 }
 
 function findingsText(review) {
@@ -809,8 +842,9 @@ async function main(a) {
         'no repoPath supplied — a Story is scoped to a single repo and cannot be emitted without one. Run this mini once per repo, passing args.repoPath each time.',
     }
   }
-  const MAX_LOOPS = (a && a.maxLoops) || 1
   const ctx = ctxBlock(s, trd, constraints)
+  const specMakerCtx = `${ctx}\n\n${makerRules({ cites: true })}`
+  const criteriaMakerCtx = `${ctx}\n\n${makerRules({ cites: false })}`
   const ART = artifactsFrom(a && a.artifacts)
   const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(ART.slug) ? ART.slug : 'repo'
   const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
@@ -882,7 +916,7 @@ async function main(a) {
 2. \`eventContracts\` — the event contracts/schemas. Dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema.
 3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
 
-${ctx}${contractsBrief}`,
+${specMakerCtx}${contractsBrief}`,
         {
           label: 'author:contracts',
           phase: 'Author specs',
@@ -893,7 +927,7 @@ ${ctx}${contractsBrief}`,
       ),
     () =>
       settleAgent(
-        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${ctx}${dataModelBrief}`,
+        `Author the data-model specification for this feature. Per-service DynamoDB design (no tables shared across services). Define tables, keys, indexes, and item shapes that satisfy every access pattern below. Author only — do not review your own work.\n\nKnown access patterns:\n${accessPatterns.length ? accessPatterns.map((p, i) => `${i + 1}. ${p}`).join('\n') : '(derive the access patterns from the spec context)'}\n\n${specMakerCtx}${dataModelBrief}`,
         {
           label: 'author:data-model',
           phase: 'Author specs',
@@ -909,7 +943,7 @@ ${ctx}${contractsBrief}`,
 1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria for one repository — nothing past ${CRITERIA_MAX} is read, and a list heading past it is enumerating variants of behaviours you have already covered. NOTHING IS EVER DROPPED SILENTLY: if you deliberately leave a behaviour out — because the ceiling is close, or for any other reason — report it in \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered. An omission nobody knows about is a behaviour nobody builds.
 2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items; nothing past that is read.
 
-${ctx}${criteriaBrief}`,
+${criteriaMakerCtx}${criteriaBrief}`,
         {
           label: 'author:criteria',
           phase: 'Author specs',
@@ -973,40 +1007,41 @@ ${ctx}${criteriaBrief}`,
   // never ran. Reported as an ordinary failure, the caller adjudicates nothing at its
   // gate, every deterministic check fails against artifacts that do not exist, the gate
   // loops, the re-dispatch meets the same wall and the budget is spent. So a phase whose
-  // producers died is reported AS that: no gate dispatch, no retry spent.
-  if (!contractsDraft && !dataModelSpecDraft && !criteriaDraft) {
+  // producers died is reported AS that: no gate dispatch, no retry spent. One dead maker is
+  // enough — a spec set missing a document cannot be reviewed as a spec set.
+  const deadMakers = [
+    ['contracts', contractsDraft],
+    ['data-model', dataModelSpecDraft],
+    ['criteria', criteriaDraft],
+  ].filter(([, d]) => !d).map(([k]) => k)
+  if (deadMakers.length) {
     const deaths = dispatchDeaths('Author specs')
     return {
       ok: false,
       stage: 'author',
-      reason:
-        'every spec maker returned nothing — there is no spec set to review, and reviewing an absent artifact only spends the gate.',
+      reason: `the spec maker(s) ${deadMakers.join(', ')} returned nothing — the spec set is incomplete, and reviewing an absent artifact only spends the gate.`,
       ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
     }
   }
 
-  // ── Phase 2 & 3: ONE independent reviewer session + bounded maker re-runs ──────
-  // The four reviewable artifacts used to get four separate reviewer sessions per
-  // attempt — four session-starts to judge one spec set. All four reviews are CHECKS
-  // on maker output, and the reviewer authored none of it, so one session applying
-  // all four review lenses preserves segregation of duties (never a maker checking
-  // itself) at a quarter of the cost. On rejection only the owning MAKER re-runs
-  // (never the reviewer), and only the rejected artifacts are replaced.
+  // ── Phase 2: ONE independent reviewer session, ONE pass ────────────────────────
+  // All four reviews are CHECKS on maker output, and the reviewer authored none of it, so
+  // one session applying all four lenses preserves segregation of duties. There is no
+  // re-review: an artifact the reviewer rejects goes to the spec-decider, whose ruling is
+  // enacted by the owning maker below.
   phase('Review specs')
 
   const REVIEW_KEYS = ['apiSpec', 'dataModelSpec', 'eventContracts', 'acceptance']
-  const drafts = {
+  const finalArtifacts = {
     apiSpec: authored.apiSpec,
     dataModelSpec: authored.dataModelSpec,
     eventContracts: authored.eventContracts,
     acceptance: authored.acceptance,
   }
   const reviewFindings = {}
-  let lastReviews = {}
 
-  for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
-    const review = await settleAgent(
-      `You are an INDEPENDENT spec reviewer. You did NOT author any artifact below; you only judge them. Review all four in one pass, returning a verdict per artifact under its own key. Keep every finding under 40 words — findings, not essays.
+  const review = await settleAgent(
+    `You are an INDEPENDENT spec reviewer. You did NOT author any artifact below; you only judge them. Review all four in one pass, returning a verdict per artifact under its own key. Keep every finding under 40 words — findings, not essays.
 
 1. \`apiSpec\` — the API/OpenAPI contract: correctness and design rules (REST v1 only, resource/method/schema/status-code/auth completeness, spec-first conformance).
 2. \`dataModelSpec\` — the data model against its access patterns: does every key/index/item shape serve a stated pattern with no hot keys, no cross-service table sharing, and no unsupported pattern?
@@ -1014,76 +1049,45 @@ ${ctx}${criteriaBrief}`,
 3. \`eventContracts\` — the event schemas: dot-form naming, standard envelope conformance, payload schema completeness and versioning, and that orchestration uses events (not Step Functions).
 4. \`acceptance\` — the acceptance criteria: each is unambiguous given/when/then; happy path, error paths, and boundaries are all covered; nothing is unverifiable.
 
-Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation. At most ${REVIEW_FINDINGS_MAX} findings per artifact, and nothing past that is read: only ONE maker pass follows a rejection, so a longer list is unactionable by construction.
+Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation. At most ${REVIEW_FINDINGS_MAX} findings per artifact, and nothing past that is read: a rejected artifact goes to a decider and then ONE correction by its maker, so a longer list is unactionable by construction.
 
 Artifacts under review:
-${JSON.stringify(drafts, null, 2)}
+${REVIEW_KEYS.map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}
 
 ${ctx}`,
-      {
-        label: `review:all-specs${attempt > 1 ? `:${attempt}` : ''}`,
-        phase: 'Review specs',
-        // A checker, and the openapi-contract-reviewer's own file already says
-        // `effort: low` — this override was RAISING it. The expensive judgment in this
-        // mini is the decider below, which is the only ruling that is costly to reverse.
-        effort: 'low',
-        agentType: 'agent-teams-workforce:openapi-contract-reviewer',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: REVIEW_KEYS,
-          properties: {
-            apiSpec: REVIEW_SCHEMA,
-            dataModelSpec: REVIEW_SCHEMA,
-            eventContracts: REVIEW_SCHEMA,
-            acceptance: REVIEW_SCHEMA,
-          },
+    {
+      label: 'review:all-specs',
+      phase: 'Review specs',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:openapi-contract-reviewer',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: REVIEW_KEYS,
+        properties: {
+          apiSpec: REVIEW_SCHEMA,
+          dataModelSpec: REVIEW_SCHEMA,
+          eventContracts: REVIEW_SCHEMA,
+          acceptance: REVIEW_SCHEMA,
         },
-      }
-    )
-    lastReviews = review || {}
-    for (const k of REVIEW_KEYS) {
-      checkLimit(`Review specs (${k}, attempt ${attempt})`, 'findings', review && review[k] && review[k].findings, REVIEW_FINDINGS_MAX)
+      },
     }
-    const rejected = REVIEW_KEYS.filter((k) => !(review && review[k] && review[k].verdict === 'approve'))
-    if (!rejected.length) break
-    log(`Review: REJECT ${rejected.join(', ')} (attempt ${attempt}/${MAX_LOOPS})`)
-
-    // Last attempt: do not re-run the makers; fall through to the decider.
-    if (attempt === MAX_LOOPS) break
-
-    // Re-run only the OWNING makers, and replace only the rejected artifacts.
-    const contractRejects = rejected.filter((k) => k === 'apiSpec' || k === 'eventContracts')
-    if (contractRejects.length) {
-      const fb = contractRejects.map((k) => `${k}:\n${findingsText(lastReviews[k])}`).join('\n\n')
-      const redone = await settleAgent(
-        `Revise the interface contract artifacts to resolve the reviewer's findings below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\nReviewer findings to address:\n${fb}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: drafts.apiSpec, eventContracts: drafts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}${contractsBrief}`,
-        { label: 'author:contracts', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
-      )
-      for (const k of contractRejects) if (redone && redone[k]) drafts[k] = redone[k]
-    }
-    if (rejected.includes('dataModelSpec')) {
-      drafts.dataModelSpec = await settleAgent(
-        `Revise the data-model spec to resolve the reviewer's findings. Per-service isolation; serve every access pattern. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.dataModelSpec)}\n\n${ctx}${dataModelBrief}`,
-        { label: 'author:data-model', phase: 'Author specs', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
-      )
-    }
-    if (rejected.includes('acceptance')) {
-      const redone = await settleAgent(
-        `Revise the acceptance criteria and Definition of Done to resolve the reviewer's findings. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\nReviewer findings to address:\n${findingsText(lastReviews.acceptance)}\n\n${ctx}${criteriaBrief}`,
-        { label: 'author:criteria', phase: 'Author specs', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
-      )
-      if (redone) {
-        drafts.acceptance = { acceptanceCriteria: redone.acceptanceCriteria, notes: redone.notes }
-        authored.dod = { definitionOfDone: redone.definitionOfDone, notes: redone.notes }
-      }
+  )
+  // A dead reviewer is not a rejection of all four artifacts. Handing the decider four
+  // "rejections" with no findings buys a high-effort ruling on nothing, so the phase is
+  // reported as never judged.
+  if (!review) {
+    const deaths = dispatchDeaths('Review specs')
+    return {
+      ok: false,
+      stage: 'review',
+      reason: 'the spec reviewer returned nothing — the spec set was never reviewed.',
+      ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
     }
   }
-
-  const finalArtifacts = {}
   for (const k of REVIEW_KEYS) {
-    const r = lastReviews[k]
-    finalArtifacts[k] = drafts[k]
+    checkLimit(`Review specs (${k})`, 'findings', review[k] && review[k].findings, REVIEW_FINDINGS_MAX)
+    const r = review[k]
     reviewFindings[k] = {
       resolved: !!(r && r.verdict === 'approve'),
       verdict: r ? r.verdict : 'reject',
@@ -1091,12 +1095,11 @@ ${ctx}`,
       feedback: r ? r.feedback : '',
     }
   }
-  const reviewables = REVIEW_KEYS.map((key) => ({ key }))
 
-  // ── Phase 3: Decide — break any deadlock the bounded loop could not resolve ─────
+  // ── Phase 3: Decide — rule on every artifact the reviewer rejected ─────────────
   phase('Decide')
 
-  const deadlocked = reviewables.map((r) => r.key).filter((k) => !reviewFindings[k].resolved)
+  const deadlocked = REVIEW_KEYS.filter((k) => !reviewFindings[k].resolved)
 
   let decision = null
   // Which artifacts the decider ruled on, and how — keyed by artifact, so a ruling is
@@ -1104,10 +1107,10 @@ ${ctx}`,
   const rulingFor = {}
   if (deadlocked.length) {
     log(
-      `spec-authoring: ${deadlocked.length} artifact(s) deadlocked after ${MAX_LOOPS} passes — escalating to spec-decider`
+      `spec-authoring: the reviewer rejected ${deadlocked.length} artifact(s) (${deadlocked.join(', ')}) — escalating to spec-decider`
     )
     decision = await settleAgent(
-      `A maker/checker loop reached its retry limit without agreement on one or more spec artifacts. You only RULE — you do not author or re-review.
+      `The independent reviewer rejected one or more spec artifacts. You only RULE — you do not author or re-review.
 
 Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once — ${deadlocked.length} ruling(s), and nothing past that is read — and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
 
@@ -1119,7 +1122,7 @@ For each, rule:
 "accept-reviewer" and "revise" both send the artifact back to the maker that owns it, so in both cases the directive must be precise enough to apply without re-deciding anything.\n\nDeadlocked artifacts and their latest review:\n${deadlocked
         .map(
           (k) =>
-            `── ${k} ──\nLatest verdict: ${reviewFindings[k].verdict}\nFindings:\n${findingsText(reviewFindings[k])}\nCurrent draft:\n${JSON.stringify(finalArtifacts[k], null, 2)}`
+            `── ${k} ──\nLatest verdict: ${reviewFindings[k].verdict}\nFindings:\n${findingsText(reviewFindings[k])}\nCurrent draft:\n${renderArtifact(finalArtifacts[k])}`
         )
         .join('\n\n')}\n\n${ctx}`,
       {
@@ -1130,8 +1133,19 @@ For each, rule:
         schema: DECISION_SCHEMA,
       }
     )
-    checkLimit('Decide', 'rulings', decision && decision.rulings, deadlocked.length)
-    for (const r of decision && Array.isArray(decision.rulings) ? decision.rulings : []) {
+    // A dead decider leaves every rejected artifact unruled. That is a phase that never
+    // reached a verdict, so it is reported as a dispatch failure and no gate retry is spent.
+    if (!decision) {
+      const deaths = dispatchDeaths('Decide')
+      return {
+        ok: false,
+        stage: 'decide',
+        reason: `the spec-decider returned nothing — ${deadlocked.join(', ')} stay rejected and unruled.`,
+        ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
+      }
+    }
+    checkLimit('Decide', 'rulings', decision.rulings, deadlocked.length)
+    for (const r of Array.isArray(decision.rulings) ? decision.rulings : []) {
       // A ruling naming something that did not deadlock is DROPPED, never guessed at.
       if (r && typeof r.artifact === 'string' && deadlocked.includes(r.artifact)) rulingFor[r.artifact] = r
     }
@@ -1142,9 +1156,10 @@ For each, rule:
     // the DRAFT is wrong and somebody has to correct it. Recorded and not acted on, that
     // read as acceptance of the very draft the decider had just rejected, and the spec set
     // went downstream carrying it. The decider does not author and the reviewer may not,
-    // so the correction goes to the maker that owns the artifact: the same makers the
-    // bounded loop above re-runs, given the decider's directive instead of the reviewer's
-    // findings. "revise" routes identically — it is the same statement about the draft.
+    // so the correction goes to the maker that owns the artifact, given the decider's
+    // directive. "revise" routes identically — it is the same statement about the draft.
+    // An artifact is settled only when its correction actually came back.
+    const corrected = new Set()
     const sentBack = deadlocked.filter((k) => rulingFor[k] && rulingFor[k].ruling !== 'accept-maker')
     const directiveFor = (k) =>
       `${
@@ -1158,34 +1173,45 @@ For each, rule:
       const redone = await settleAgent(
         `Correct the interface contract artifacts to apply the spec-decider's ruling below, returning all three under their keys (apiSpec, eventContracts, errorSpec). REST API v1 only; dot-form event naming; events over Step Functions. Author only — do not review your own work.\n\n${contractSentBack
           .map((k) => `── ${k} ──\n${directiveFor(k)}`)
-          .join('\n\n')}\n\nCurrent drafts:\n${JSON.stringify({ apiSpec: finalArtifacts.apiSpec, eventContracts: finalArtifacts.eventContracts, errorSpec: authored.errorSpec }, null, 2)}\n\n${ctx}${contractsBrief}`,
-        { label: 'author:contracts', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
+          .join('\n\n')}\n\nCurrent drafts:\n${['apiSpec', 'eventContracts'].map((k) => `── ${k} ──\n${renderArtifact(finalArtifacts[k])}`).join('\n\n')}\n\n── errorSpec ──\n${renderArtifact(authored.errorSpec)}\n\n${specMakerCtx}${contractsBrief}`,
+        { label: 'correct:contracts', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:api-specification-author', schema: CONTRACTS_SCHEMA }
       )
-      for (const k of contractSentBack) if (redone && redone[k]) finalArtifacts[k] = redone[k]
+      for (const k of contractSentBack) {
+        if (redone && redone[k]) {
+          finalArtifacts[k] = redone[k]
+          corrected.add(k)
+        }
+      }
       if (redone && redone.errorSpec) authored.errorSpec = redone.errorSpec
     }
     if (sentBack.includes('dataModelSpec')) {
       const redone = await settleAgent(
-        `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\n${ctx}${dataModelBrief}`,
-        { label: 'author:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
+        `Correct the data-model spec to apply the spec-decider's ruling below. Per-service isolation; serve every access pattern. Author only.\n\n${directiveFor('dataModelSpec')}\n\nCurrent draft:\n${renderArtifact(finalArtifacts.dataModelSpec)}\n\n${specMakerCtx}${dataModelBrief}`,
+        { label: 'correct:data-model', phase: 'Decide', effort: 'medium', agentType: 'agent-teams-workforce:data-model-specification-author', schema: SPEC_SCHEMA }
       )
-      if (redone) finalArtifacts.dataModelSpec = redone
+      if (redone) {
+        finalArtifacts.dataModelSpec = redone
+        corrected.add('dataModelSpec')
+      }
     }
     if (sentBack.includes('acceptance')) {
       const redone = await settleAgent(
-        `Correct the acceptance criteria and Definition of Done to apply the spec-decider's ruling below. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\n${directiveFor('acceptance')}\n\n${ctx}${criteriaBrief}`,
-        { label: 'author:criteria', phase: 'Decide', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
+        `Correct the acceptance criteria and Definition of Done to apply the spec-decider's ruling below. Testable given/when/then; cover happy path, errors, boundaries. Author only.\n\n${directiveFor('acceptance')}\n\nCurrent draft:\n${JSON.stringify({ ...finalArtifacts.acceptance, definitionOfDone: authored.dod && authored.dod.definitionOfDone })}\n\n${criteriaMakerCtx}${criteriaBrief}`,
+        { label: 'correct:criteria', phase: 'Decide', effort: 'low', agentType: 'agent-teams-workforce:acceptance-criteria-writer', schema: CRITERIA_SCHEMA }
       )
       if (redone) {
         finalArtifacts.acceptance = { acceptanceCriteria: redone.acceptanceCriteria, notes: redone.notes }
         authored.dod = { definitionOfDone: redone.definitionOfDone, notes: redone.notes }
+        corrected.add('acceptance')
       }
     }
     for (const k of deadlocked) {
       if (!rulingFor[k]) continue
+      const settled = rulingFor[k].ruling === 'accept-maker' || corrected.has(k)
+      if (!settled) log(`spec-authoring: the correction for ${k} returned nothing — it stays unresolved`)
       reviewFindings[k] = {
         ...reviewFindings[k],
-        resolved: true,
+        resolved: settled,
         ruling: rulingFor[k].ruling,
         directive: rulingFor[k].directive || null,
       }
@@ -1194,12 +1220,6 @@ For each, rule:
 
   // ── Phase 4: Emit story — a Spec and its Story are created together ────────────
   phase('Emit story')
-
-  if (!repoPath) {
-    log(
-      'spec-authoring: no repoPath supplied — a Story is scoped to a single repo, so the emitted Story carries repoPath null and downstream decomposition cannot scope its tasks'
-    )
-  }
 
   // Parent links are by key. An Epic is created with its PRD upstream of here; when
   // none was passed in we still emit the Story (unparented) so the Spec/Story pairing
@@ -1211,17 +1231,20 @@ For each, rule:
     )
   }
 
-  const specSet = {
-    apiSpec: finalArtifacts.apiSpec,
-    dataModelSpec: finalArtifacts.dataModelSpec,
-    eventContracts: finalArtifacts.eventContracts,
-    errorSpec: authored.errorSpec,
-    acceptanceCriteria: finalArtifacts.acceptance,
-    definitionOfDone: authored.dod,
-  }
+  // The Story writer names and scope-checks the spec set; it does not re-read it in full.
+  // It gets each artifact's summary and, when the makers saved them, the documents' paths.
+  const specDocPaths = ART ? [`spec-${artSlug}.md`, `spec-${artSlug}.data-model.md`, `spec-${artSlug}.criteria.md`].map((n) => `${ART.dir}/${n}`) : []
+  const specDigest = [
+    ...[['apiSpec', finalArtifacts.apiSpec], ['dataModelSpec', finalArtifacts.dataModelSpec], ['eventContracts', finalArtifacts.eventContracts], ['errorSpec', authored.errorSpec]]
+      .map(([k, x]) => `- ${k}: ${(x && hasText(x.summary) && x.summary) || '(no summary)'}`),
+    `- acceptanceCriteria: ${(finalArtifacts.acceptance && Array.isArray(finalArtifacts.acceptance.acceptanceCriteria) ? finalArtifacts.acceptance.acceptanceCriteria.length : 0)} criteria`,
+  ].join('\n')
+  const storyCtx = [`Spec ${s.id || ''}: ${s.title || ''}`, s.service ? `Owning service: ${s.service}` : '', s.summary ? `What this spec covers:\n${s.summary}` : '']
+    .filter(Boolean)
+    .join('\n\n')
 
   const storyDraft = await settleAgent(
-    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo) Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${specDigest}${specDocPaths.length ? `\n\nThe spec documents — read them for the scope check:\n${specDocPaths.map((p) => `- ${p}`).join('\n')}` : ''}\n\n${storyCtx}${storyBrief}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
@@ -1262,21 +1285,20 @@ For each, rule:
   }
 
   // ── Return: one object threading every phase output ───────────────────────────
-  // A deadlock is SETTLED when the decider ruled on every artifact that deadlocked and the
-  // rulings were enacted above. An artifact it never named is still unsettled, and the old
-  // test — one ruling, "not revise" — reported a whole spec set as agreed on the strength
-  // of a single verdict that may not even have been about it.
-  const allResolved = deadlocked.length === 0
-  const unruledArtifacts = deadlocked.filter((k) => !rulingFor[k])
+  // A rejected artifact is SETTLED when the decider ruled on it and the ruling was enacted
+  // above. One the decider never named, or whose correction never came back, is not.
+  const unresolvedArtifacts = REVIEW_KEYS.filter((k) => !reviewFindings[k].resolved)
+  const correctionDeaths = dispatchDeaths('Decide')
   return {
-    ok: allResolved || unruledArtifacts.length === 0,
-    unruledArtifacts,
+    ok: unresolvedArtifacts.length === 0,
+    unresolvedArtifacts,
+    ...(unresolvedArtifacts.length && correctionDeaths.length ? { dispatchFailed: true, dispatchFailures: correctionDeaths } : {}),
     story,
     spec: {
       id: s.id || null,
       title: s.title || null,
       service: s.service || null,
-      repoPath: s.repoPath || null,
+      repoPath,
     },
     apiSpec: finalArtifacts.apiSpec,
     dataModelSpec: finalArtifacts.dataModelSpec,
@@ -1314,7 +1336,7 @@ For each, rule:
     // used in full; this is what it cost.
     ...(limitFindings.length ? { limitFindings } : {}),
     note:
-      'errorSpec, definitionOfDone, and the story bead have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
+      'errorSpec, definitionOfDone, and the story bead are not reviewed anywhere: this mini has no reviewer for them, and the caller\'s gate only checks that ok is true and a Story exists. No maker judged its own work; the spec-decider only ruled on artifacts the reviewer rejected. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
   }
 }
 

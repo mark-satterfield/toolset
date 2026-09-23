@@ -395,7 +395,7 @@ const died = (...phases) => {
 }
 
 // ── Phase 1: Extract SAD ──────────────────────────────────────────────────────
-// Read-only extraction of the four arc42 source sections into a stably-identified
+// Read-only extraction of the three arc42 source sections into a stably-identified
 // packet. The extractor authors no TRD content — it only normalizes what the SAD
 // states. Invents nothing the SAD does not contain.
 phase('Extract SAD')
@@ -542,11 +542,6 @@ const EXPECTED_VOLUME = {
   crosscuttingConcepts: 80,
   // The SAD's own file list. Mechanical: only a listing that escaped the SAD reaches this.
   inventoryFiles: 400,
-  // Citations. Read-side by rule 1 even though the author emits them — a stated cap here
-  // would push the author to drop a dependency its requirement genuinely has.
-  decisionIds: 60,
-  prdRefs: 10,
-  sadRefs: 10,
 }
 // A CREATE's stated limit, rendered for its brief. The agent is told this number and the
 // script checks the same constant, so the sentence and the log can never drift apart.
@@ -605,10 +600,14 @@ const extractSchema = {
 // Reading the SAD whole is the most expensive thing this mini does, and a run that ended
 // in this phase used to throw away every batch that HAD succeeded — the next run re-read
 // all 787KB to get back to the same file. The session that produced a batch now writes it
-// beside the Epic's other artifacts before it returns, keyed by a digest of the exact file
-// list it was assigned. Keying on the FILE LIST rather than on a shard number is what makes
-// the split below resumable: a batch that was halved comes back as its halves, each with
-// its own key, and a plan that changed because the SAD changed simply misses and re-reads.
+// beside the Epic's other artifacts before it returns, keyed by a digest of the exact files
+// it was assigned AND each file's size and modification time as the inventory reported them.
+// Keying on the file list rather than on a shard number is what makes the split below
+// resumable: a batch that was halved comes back as its halves, each with its own key. Keying
+// on size and mtime as well is what keeps a saved batch from outliving the files it read: the
+// sad-maintainer edits the SAD after architecture extracts it, and other Epics edit it too, so
+// an edited file changes the key and its batch is read again. A batch whose inventory entries
+// lack a size or an mtime has no trustworthy key, so it is neither saved nor resumed.
 //
 // The directory is named by the EPIC, not by the mini, and that is deliberate: this
 // extraction is the same text in architecture.js and in trd-authoring.js, both run against
@@ -618,18 +617,21 @@ const extractSchema = {
 // Without an Epic working directory there is nowhere durable to write, and the phase
 // behaves exactly as it did before.
 const SHARD_SAVE_DIR = ART ? `${ART.dir}/sad-shards` : null
-// FNV-1a over the assigned file list. A workflow script has no crypto and needs none: the
-// digest only has to be stable across runs and distinct between batches of one SAD.
-function batchKey(files) {
-  const s = files.join('\n')
+// FNV-1a over each assigned file's path, size and mtime. A workflow script has no crypto and
+// needs none: the digest only has to be stable across runs and change when a file changes.
+// Null when any entry lacks a size or an mtime — see above.
+const BATCH_KEY_SHAPE = /^[0-9]+-[0-9a-f]{8}$/
+function batchKey(entries) {
+  if (!entries.length || !entries.every((e) => e.bytes > 0 && e.mtime > 0)) return null
+  const s = entries.map((e) => `${e.path}\t${e.bytes}\t${e.mtime}`).join('\n')
   let h = 0x811c9dc5
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i)
     h = Math.imul(h, 0x01000193) >>> 0
   }
-  return `${files.length}-${h.toString(16).padStart(8, '0')}`
+  return `${entries.length}-${h.toString(16).padStart(8, '0')}`
 }
-const shardSavePath = (files) => (SHARD_SAVE_DIR ? `${SHARD_SAVE_DIR}/${batchKey(files)}.json` : null)
+const shardSavePath = (key) => (SHARD_SAVE_DIR && key ? `${SHARD_SAVE_DIR}/${key}.json` : null)
 
 // ── THE RESUME INDEX IS A PLAIN OBJECT, AND THAT IS A BOUNDARY REQUIREMENT ──────
 // It is built by `readSavedShards` and read by `runBatch`, and between those two it crosses
@@ -648,16 +650,18 @@ const shardSavePath = (files) => (SHARD_SAVE_DIR ? `${SHARD_SAVE_DIR}/${batchKey
 //
 // Lookup is by own key only. `batchKey` always begins with a digit, so it can never name an
 // inherited property, but the guard states that rather than relying on it.
-function savedFor(saved, files) {
+function savedFor(saved, entries) {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null
-  const key = batchKey(files)
-  return Object.prototype.hasOwnProperty.call(saved, key) ? saved[key] : null
+  const key = batchKey(entries)
+  return key && Object.prototype.hasOwnProperty.call(saved, key) ? saved[key] : null
 }
 
 // One batch dispatch. `feeds` names the sections this session owns; every other feed in
 // its result is discarded by the merge, so a batch can never widen its own assignment.
-function extractShardAgent(label, feeds, files) {
-  const savePath = shardSavePath(files)
+function extractShardAgent(label, feeds, entries) {
+  const files = entries.map((e) => e.path)
+  const key = batchKey(entries)
+  const savePath = shardSavePath(key)
   return settleAgent(
     `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for the TRD author. Do NOT author requirements, do NOT change any file, and invent NOTHING the SAD does not state. Work within the repository at: ${repo}
 
@@ -681,7 +685,8 @@ THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked
       savePath
         ? `
 
-SAVE YOUR RESULT BEFORE YOU RETURN. This file is what a later run of this Epic resumes from instead of reading these files again, and no other session will write it for you. Write ${savePath} with the Write tool, creating its directory if it does not exist and replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly two keys:
+SAVE YOUR RESULT BEFORE YOU RETURN. This file is what a later run of this Epic resumes from instead of reading these files again, and no other session will write it for you. Write ${savePath} with the Write tool, creating its directory if it does not exist and replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly three keys:
+- "key" — exactly the string ${JSON.stringify(key)}.
 - "files" — the list of files assigned to you above, verbatim and in the order given.
 - "extract" — your complete structured result, exactly as you return it.
 Write no other file for this. If it fails, say so in your result and still return your result.`
@@ -749,33 +754,33 @@ function retireFailures(labels) {
 // other cause is still being waited out upstream. An attempt counter here would re-send an
 // input that cannot succeed, which is the blind retry this comment exists to prevent.
 //
-// Returns one leaf outcome per batch that actually ran: { label, feeds, files, out }, with
+// Returns one leaf outcome per batch that actually ran: { label, feeds, entries, out }, with
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
 // escapes this and every death is recorded before it is answered.
-async function runBatch(label, feeds, files, saved) {
-  const hit = savedFor(saved, files)
+async function runBatch(label, feeds, entries, saved) {
+  const hit = savedFor(saved, entries)
   if (hit) {
-    log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
-    return [{ label, feeds, files, out: hit, resumed: true }]
+    log(`${label}: resumed from the saved result for these ${entries.length} unchanged file(s) — not dispatched, and not re-read`)
+    return [{ label, feeds, entries, out: hit, resumed: true }]
   }
   // settleAgent has already sat out any transient failure and retired its own record of
   // it, so a batch that returns leaves nothing in `dispatchFailures` for this label.
-  const out = await extractShardAgent(label, feeds, files)
-  if (out) return [{ label, feeds, files, out }]
-  if (files.length === 1) {
-    log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
-    return [{ label, feeds, files, out: null }]
+  const out = await extractShardAgent(label, feeds, entries)
+  if (out) return [{ label, feeds, entries, out }]
+  if (entries.length === 1) {
+    log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${entries[0].path}`)
+    return [{ label, feeds, entries, out: null }]
   }
-  const mid = Math.ceil(files.length / 2)
+  const mid = Math.ceil(entries.length / 2)
   log(
-    `${label}: nothing came back for ${files.length} file(s) and the cause is ${failureCauseFor(label) || 'unrecognised, so deterministic'} — ` +
-      `splitting into ${mid} + ${files.length - mid}; each half is a smaller dispatch with different input, not a retry of this one`
+    `${label}: nothing came back for ${entries.length} file(s) and the cause is ${failureCauseFor(label) || 'unrecognised, so deterministic'} — ` +
+      `splitting into ${mid} + ${entries.length - mid}; each half is a smaller dispatch with different input, not a retry of this one`
   )
   // Sequential on purpose: this is the recovery path inside a lane that is already running
   // concurrently with every other lane, and nesting `parallel` inside it buys little.
   const halves = [
-    ...(await runBatch(`${label}-a`, feeds, files.slice(0, mid), saved)),
-    ...(await runBatch(`${label}-b`, feeds, files.slice(mid), saved)),
+    ...(await runBatch(`${label}-a`, feeds, entries.slice(0, mid), saved)),
+    ...(await runBatch(`${label}-b`, feeds, entries.slice(mid), saved)),
   ]
   if (halves.every((h) => h.out)) retireFailures([label])
   return halves
@@ -783,7 +788,7 @@ async function runBatch(label, feeds, files, saved) {
 
 // ── WHAT A PREVIOUS RUN ALREADY PAID FOR ────────────────────────────────────────
 // One read-only session returns every saved batch in this Epic's shard directory, and the
-// script keys them by the file list each one records. An absent directory is the normal
+// script keys them by the key each one records. An absent directory is the normal
 // answer on a first run, not a failure. A file that is missing, unreadable or not the shape
 // this phase writes is simply not resumed — its batch is dispatched, which is the safe
 // direction: re-reading files costs sessions, while resuming from half a file would put
@@ -820,6 +825,7 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
     }
   )
   // A plain object, keyed by batchKey — see the note on savedFor for why nothing else works.
+  // A file saved before the key carried sizes and mtimes has no `key` and is not resumed.
   const saved = {}
   for (const e of (read && Array.isArray(read.entries) ? read.entries : [])) {
     if (!e || typeof e.content !== 'string') continue
@@ -830,12 +836,12 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
       log(`Resume: ${e.path} is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — its batch is dispatched`)
       continue
     }
-    const files = body && Array.isArray(body.files) ? body.files.filter((p) => typeof p === 'string' && p.trim()) : []
-    if (!files.length || !isExtract(body && body.extract)) {
-      log(`Resume: ${e.path} does not hold a saved batch — its batch is dispatched`)
+    const key = body && typeof body.key === 'string' ? body.key.trim() : ''
+    if (!BATCH_KEY_SHAPE.test(key) || !isExtract(body && body.extract)) {
+      log(`Resume: ${e.path} does not hold a keyed saved batch — its batch is dispatched`)
       continue
     }
-    saved[batchKey(files)] = body.extract
+    saved[key] = body.extract
   }
   const count = Object.keys(saved).length
   if (count) log(`Resume: ${count} SAD batch(es) already saved for this Epic — those files are not read again`)
@@ -867,7 +873,7 @@ function shardFiles(entries) {
       current = []
       bytes = 0
     }
-    current.push(e.path)
+    current.push(e)
     bytes += size
   }
   if (current.length) shards.push(current)
@@ -876,12 +882,11 @@ function shardFiles(entries) {
 
 const fileList = (x) =>
   (Array.isArray(x) ? x : [])
-    .map((e) => (typeof e === 'string' ? { path: e, bytes: 0 } : e))
+    .map((e) => (typeof e === 'string' ? { path: e } : e))
     .filter((e) => e && typeof e.path === 'string' && e.path.trim())
-    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
+    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0, mtime: Number(e.mtime) || 0 }))
 
 let sadExtract = suppliedExtract
-let sadUnread = []
 
 if (!sadExtract) {
   // ── Step 1: inventory, and what a previous run already saved. Neither needs the other,
@@ -896,7 +901,7 @@ if (!sadExtract) {
 SAD location: ${sadRef}
 SAD layout: ${sadLayout}
 
-Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes:
+Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes and its modification time in Unix epoch seconds, both read with \`stat\` (\`stat -f '%z %m' <file>\` on macOS, \`stat -c '%s %Y' <file>\` on Linux) — never estimated:
 - Section 2 — Constraints
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
@@ -930,7 +935,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
                   type: 'object',
                   additionalProperties: false,
                   required: ['path'],
-                  properties: { path: { type: 'string' }, bytes: { type: 'number' } },
+                  properties: { path: { type: 'string' }, bytes: { type: 'number' }, mtime: { type: 'number' } },
                 },
               },
             },
@@ -948,26 +953,34 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     }
   }
 
-  const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
+  // A file listed under both §2 and §4 is read once.
+  const coreEntries = []
+  for (const e of [...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)]) {
+    if (!coreEntries.some((c) => c.path === e.path)) coreEntries.push(e)
+  }
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  checkExpected('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
+  checkExpected('inventory:sad', 'SAD files', coreEntries.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
   const crossShards = shardFiles(crossEntries)
-  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+  log(`SAD inventory: §2+§4 = ${coreEntries.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+  const unstamped = [...coreEntries, ...crossEntries].filter((e) => !(e.bytes > 0 && e.mtime > 0)).length
+  if (SHARD_SAVE_DIR && unstamped) {
+    log(`Resume: ${unstamped} inventoried file(s) came back without a size or mtime — a batch holding one is neither resumed nor saved, so an edited file can never be served from a stale batch`)
+  }
 
   // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
   const jobs = []
-  if (coreFiles.length) {
+  if (coreEntries.length) {
     jobs.push({
       label: 'extract:sad-core',
       feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
-      files: coreFiles,
+      entries: coreEntries,
     })
   }
-  crossShards.forEach((files, i) => {
+  crossShards.forEach((entries, i) => {
     jobs.push({
       label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
       feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
-      files,
+      entries,
     })
   })
   if (!jobs.length) {
@@ -995,7 +1008,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     )
   }
 
-  const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.files, savedBatches)))
+  const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.entries, savedBatches)))
   // A LANE THAT RETURNED NOTHING IS NOT A LANE THAT READ NOTHING. `parallel` answers null for a
   // thunk that threw, and `runBatch` lets no throw of its own escape — so a null here is a
   // defect in this script, and that lane's files were never read. Folding those away is what
@@ -1004,9 +1017,9 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   // from 0 batch(es)" and authored a TRD against an architecture nobody had read. A broken lane
   // is carried as a dead batch so the INCOMPLETE stop below sees it and names its files.
   lanes.forEach((r, i) => {
-    if (!Array.isArray(r)) log(`${jobs[i].label}: the lane failed before any batch completed — its ${jobs[i].files.length} file(s) are counted as UNREAD`)
+    if (!Array.isArray(r)) log(`${jobs[i].label}: the lane failed before any batch completed — its ${jobs[i].entries.length} file(s) are counted as UNREAD`)
   })
-  const outcomes = lanes.flatMap((r, i) => (Array.isArray(r) ? r : [{ label: jobs[i].label, feeds: jobs[i].feeds, files: jobs[i].files, out: null }]))
+  const outcomes = lanes.flatMap((r, i) => (Array.isArray(r) ? r : [{ label: jobs[i].label, feeds: jobs[i].feeds, entries: jobs[i].entries, out: null }]))
 
   // ── Step 3: the SCRIPT merges. Each batch contributes only the feeds it was assigned,
   // in batch order, de-duplicated by stable id. No model sees another model's batch.
@@ -1063,7 +1076,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   // copy is the resume path; the phase used to return the partial packet to its caller
   // instead, which no caller ever read — resilience promised rather than delivered.
   if (deadBatches.length) {
-    sadUnread = deadBatches.flatMap((b) => b.files)
+    const sadUnread = deadBatches.flatMap((b) => b.entries.map((e) => e.path))
     const done = outcomes.length - deadBatches.length
     log(`SAD extraction INCOMPLETE — ${deadBatches.length} batch(es) still empty after splitting; ${sadUnread.length} file(s) went unread`)
     return {
@@ -1071,7 +1084,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
       stage: 'extract',
       reason: `SAD extraction is INCOMPLETE: ${deadBatches.length} batch(es) returned nothing even after being split down to single files, so ${sadUnread.length} SAD file(s) were never read. No TRD was authored — a TRD derived from part of the architecture is wrong output, not cheaper output. The ${done} batch(es) that DID complete are saved${SHARD_SAVE_DIR ? ` under ${SHARD_SAVE_DIR}` : ''}, so re-running this phase resumes at the failure and re-reads nothing else. Unread: ${sadUnread.join(', ')}`,
       unreadSadFiles: sadUnread,
-      deadShards: deadBatches.map((b) => ({ label: b.label, files: b.files })),
+      deadShards: deadBatches.map((b) => ({ label: b.label, files: b.entries.map((e) => e.path) })),
       ...died('Extract SAD'),
     }
   }
@@ -1090,7 +1103,18 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 }
 if (!sadExtract) return { ok: false, stage: 'extract', reason: 'SAD extraction produced nothing', ...died('Extract SAD') }
 
-const extractText = JSON.stringify(sadExtract, null, 2)
+// Rendered as lines rather than indented JSON: the same entries in materially fewer bytes,
+// and the id each requirement cites leads the line.
+const renderFeed = (title, entries) =>
+  `${title} (${entries.length}):\n` +
+  (entries.length ? entries.map((e) => `- [${e.id}] ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
+const extractText = [
+  `SAD location: ${sadExtract.sadLocation || sadRef}`,
+  ...(sadExtract.notes ? [`Extractor notes: ${sadExtract.notes}`] : []),
+  renderFeed('§2 Constraints', sadExtract.constraints),
+  renderFeed('§4 Solution Strategy', sadExtract.solutionStrategy),
+  renderFeed('§8 Crosscutting Concepts', sadExtract.crosscuttingConcepts),
+].join('\n\n')
 const prdText = prd.content
   ? prd.content
   : `PRD ${prd.id || ''}: ${prd.title || ''} (path: ${prd.path || 'n/a'})`
@@ -1184,7 +1208,7 @@ PRD (source of product requirements):
 ${prdText}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
-SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; cite by stable ID):
+SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; cite each entry by the id in brackets):
 ${extractText}
 ${feedback ? `\nFeedback on the previous version from the gate — address every point:\n${feedback}` : ''}
 
@@ -1246,30 +1270,6 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
   if (authored) {
     const reqs = Array.isArray(authored.requirements) ? authored.requirements : []
     checkLimit('author:trd', 'technical requirements', reqs.length, STATED_LIMITS.requirements)
-    checkExpected('author:trd', 'decisionIds', (Array.isArray(authored.decisionIds) ? authored.decisionIds : []).length, EXPECTED_VOLUME.decisionIds)
-    // ── THE COMPOSITION IS RECORDED AS FACT, AND NOTHING READS IT ─────────────
-    // How many requirements cite the PRD and how many cite the SAD. It is tempting
-    // to warn when the SAD count is zero — a greenfield TRD with no architecture-
-    // sourced requirement probably did skip half its job. But that is a property of
-    // this moment, not of TRDs: a PRD that changes the text on a button needs no new
-    // architecture, and its TRD is legitimately all-PRD and complete. The count alone
-    // cannot tell those apart, because telling them apart requires knowing what the
-    // change demands. A signal that fires on every small PRD forever is noise in
-    // exactly the runs that are going fine, so this is a plain count with no
-    // threshold, no wording and no branch. Once several TRDs exist there will be real
-    // data on what normal looks like, which is the honest way to arrive at a number.
-    let citesPrd = 0
-    let citesSad = 0
-    reqs.forEach((r, i) => {
-      const which = `author:trd requirement ${(r && typeof r.id === 'string' && r.id.trim()) || `#${i + 1}`}`
-      const prdRefs = r && Array.isArray(r.prdRefs) ? r.prdRefs : []
-      const sadRefs = r && Array.isArray(r.sadRefs) ? r.sadRefs : []
-      if (prdRefs.length) citesPrd++
-      if (sadRefs.length) citesSad++
-      checkExpected(which, 'prdRefs', prdRefs.length, EXPECTED_VOLUME.prdRefs)
-      checkExpected(which, 'sadRefs', sadRefs.length, EXPECTED_VOLUME.sadRefs)
-    })
-    log(`TRD composition: ${reqs.length} requirement(s) — ${citesPrd} cite a PRD source, ${citesSad} cite a SAD source (a requirement may cite both). Recorded as fact; nothing is inferred from it.`)
   }
   return authored
 }

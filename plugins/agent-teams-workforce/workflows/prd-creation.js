@@ -456,7 +456,7 @@ Ceilings, and nothing past them is read: ${SCOPE_LIST_MAX} entries each in \`inS
   }
 )
 if (!intake) {
-  return { ok: false, stage: 'intake', error: 'intake produced nothing — no scope framing and no brief to author a PRD from' }
+  return { ok: false, stage: 'intake', error: 'intake produced nothing — no scope framing and no brief to author a PRD from', dispatchFailed: true, dispatchFailures: dispatchDeaths('Intake') }
 }
 // The stated ceilings, measured. Observation only: every entry is carried forward.
 checkLimit('Intake', 'inScope', intake.inScope, SCOPE_LIST_MAX)
@@ -578,6 +578,8 @@ if (!persona || !okrs) {
     scope,
     persona: persona || null,
     okrs: okrs || null,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Persona & OKR'),
   }
 }
 
@@ -720,13 +722,13 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   prd = await draftPRD(feedback)
   // Same guard, same reason: verifyAlignment reads `prd.title` and `prd.prd`.
   if (!prd) {
-    return { ok: false, stage: 'prd-draft', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope }
+    return { ok: false, stage: 'prd-draft', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
   }
   checkLimit(`PRD Draft (pass ${pass})`, 'sections', prd.sections, SECTIONS_MAX)
   checkLimit(`PRD Draft (pass ${pass})`, 'P0 acceptance criteria', prd.acceptanceCriteria, P0_CRITERIA_MAX)
   alignmentVerdict = await verifyAlignment(prd)
   if (!alignmentVerdict) {
-    return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', prd }
+    return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', prd, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
   }
   checkLimit(`PRD Draft (pass ${pass})`, 'alignment dimensions', alignmentVerdict.dimensions, ALIGNMENT_DIMENSIONS.length)
   if (alignmentVerdict.verdict === 'aligned') {
@@ -752,7 +754,7 @@ ${prd.prd}
 
 Decide exactly one verdict:
 - "accept": the PRD is acceptable as-is despite the checker's objection — explain why the objection does not block.
-- "reject": the PRD must not proceed — state the blocking gap the next attempt must close.`,
+- "reject": the PRD must not proceed — state the blocking gap its author must close.`,
     {
       label: 'prd:deadlock-ruling',
       effort: 'high',

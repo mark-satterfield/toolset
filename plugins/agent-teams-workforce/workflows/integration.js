@@ -1,8 +1,8 @@
 export const meta = {
   name: 'integration',
   description:
-    'Shared-tail mini — Integration Testing. Suites are DERIVED from the surfaces the contract declares — each suite exists to exercise a boundary, so a contract declaring no cross-service, event-chain, or data-pipeline surface reports that no suite applies and the phase is skipped; an UNDECLARED surface list means unknown, not empty, and falls back to a read-only integration-testing-lead that selects them (provisioning the test environment first when one is needed). A caller may name suites outright and wins over both. The script runs the selected suites in parallel across the event chain, and on failure an independent root-cause-analyst classifies where it must escalate (code / test / environment / architecture) after the flaky-test-detector confirms intermittent failures.',
-  phases: [{ title: 'Integration', detail: 'select + run suites; classify failures' }],
+    'Shared-tail mini — Integration Testing. Suites are DERIVED from the surfaces the contract declares — each suite exists to exercise a boundary, so a contract declaring no cross-service, event-chain, or data-pipeline surface reports that no suite applies and the phase is skipped; an UNDECLARED surface list means unknown, not empty, and falls back to a read-only integration-testing-lead that selects them (provisioning the test environment first when one is needed). A caller may name suites outright and wins over both. The script runs the selected suites in parallel across the event chain and returns a top-level `passed` that Gate 3 checks directly; a suite that died is reported as a dispatch failure, never folded into `passed`.',
+  phases: [{ title: 'Integration', detail: 'select + run suites' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
 //
@@ -326,7 +326,9 @@ const declaredSurfaces = Array.isArray(c.surfaces) ? c.surfaces : null
 let suites
 let provisionEnv = a.provisionEnv === true
 let selectionMode
-if (Array.isArray(a.suites) && a.suites.length) {
+// A caller list naming no known suite falls through, rather than running nothing and
+// reporting passed:false.
+if (Array.isArray(a.suites) && a.suites.some((s) => SUITE_AGENTS[s])) {
   suites = a.suites.filter((s) => SUITE_AGENTS[s])
   selectionMode = 'caller-specified'
 } else if (declaredSurfaces) {
@@ -448,7 +450,23 @@ Deliver pass/fail, coverage, any flaky tests, and concrete failure details.`,
   )
 )
 
-// Aggregate the parallel suite results into one integration verdict.
+// A suite that returned nothing never ran. `passed` over the survivors would be a
+// verdict on part of the selected set, so any dead suite (or a dead environment setup the
+// suites depended on) is reported as a dispatch failure and the gate spends no retry on it.
+const deadSuites = suites.filter((_s, i) => !(suiteRuns || [])[i])
+if (deadSuites.length || (provisionEnv && !envSetup)) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Integration'),
+    reason: `${deadSuites.length ? `integration suite(s) ${deadSuites.join(', ')}` : 'the test-environment-orchestrator'} returned nothing — skipped, or died on a terminal API error`,
+    passed: false,
+    ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: suites, mode: selectionMode, ok: false },
+  }
+}
+
+// Aggregate the parallel suite results into one integration verdict. `passed` is the
+// top-level boolean Gate 3 checks.
 const results = (suiteRuns || []).filter(Boolean)
 const flaky = []
 const failures = []
@@ -462,81 +480,17 @@ const evidence = results
   .map((r) => r.evidence)
   .filter(Boolean)
   .join('\n')
-const run = { passed, coverageMet, flaky, failures, evidence }
-
-// Before escalating, confirm intermittent failures are genuinely flaky via reruns. The
-// flaky-test-detector is READ-ONLY — it reports verified-flaky tests, it never edits them.
-let flakyVerdict = null
-if (flaky.length > 0) {
-  flakyVerdict = await settleAgent(
-    `These tests failed intermittently during the integration runs. You are READ-ONLY — do NOT edit or disable any test. Verify via repeated controlled reruns which are genuinely flaky versus consistently failing, and report. Work within: ${repo}
-
-Suspected-flaky tests:
-${flaky.join('\n')}`,
-    {
-      label: 'integration:flaky-detect',
-      phase: 'Integration',
-      agentType: 'agent-teams-workforce:flaky-test-detector',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['verifiedFlaky', 'consistentFailures'],
-        properties: {
-          verifiedFlaky: { type: 'array', items: { type: 'string' } },
-          consistentFailures: { type: 'array', items: { type: 'string' } },
-          evidence: { type: 'string' },
-        },
-      },
-    }
-  )
-}
-
-// On failure, classify root cause to drive the gate's escalate target. Verified-flaky
-// tests are not real failures — only consistent failures should drive escalation.
-const consistentFailures = flakyVerdict ? flakyVerdict.consistentFailures || [] : []
-const hasRealFailure = !run.passed || !run.coverageMet || failures.length > 0 || consistentFailures.length > 0
-let classification = null
-if (hasRealFailure) {
-  const failureText = failures.concat(consistentFailures).join('\n') || run.evidence || 'n/a'
-  classification = await settleAgent(
-    `Integration failures occurred. You are READ-ONLY. Classify the dominant root cause as exactly one of: code, test, environment, architecture — and name the phase it should escalate to. Work within: ${repo}
-
-Failures:
-${failureText}`,
-    {
-      label: 'integration:root-cause',
-      phase: 'Integration',
-      agentType: 'agent-teams-workforce:root-cause-analyst',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['class', 'escalateTo', 'rationale'],
-        properties: {
-          class: { type: 'string', enum: ['code', 'test', 'environment', 'architecture'] },
-          escalateTo: { type: 'string' },
-          rationale: { type: 'string' },
-        },
-      },
-    }
-  )
-}
 
 // Decision ledger — what this phase actually did, for over-time mining.
-// chosen = selected suite runners (+ test-environment-orchestrator if provisioned)
-//          (+ flaky-test-detector if intermittent failures) (+ root-cause-analyst on failure).
+// chosen = selected suite runners (+ test-environment-orchestrator if provisioned).
 // mode 'selected' = the integration-testing-lead (or caller) chose the suites;
 // mode 'default'  = selection produced nothing and the mini fell back to the runner default.
-const chosen = (provisionEnv ? ['test-environment-orchestrator'] : [])
-  .concat(suites)
-  .concat(flakyVerdict ? ['flaky-test-detector'] : [])
-  .concat(classification ? ['root-cause-analyst'] : [])
 const ledger = {
   phase: 'integration',
   beadId: (c.bead && c.bead.id) || null,
-  chosen,
+  chosen: (provisionEnv ? ['test-environment-orchestrator'] : []).concat(suites),
   mode: selectionMode,
-  ok: !!(run.passed && run.coverageMet && !hasRealFailure),
-  escalateTo: classification ? classification.escalateTo : null,
+  ok: passed,
 }
 
-return { ...run, envSetup, flakyVerdict, classification, ledger }
+return { passed, coverageMet, flaky, failures, evidence, envSetup, ledger }

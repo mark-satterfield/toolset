@@ -314,6 +314,11 @@ const type = norm(bead.type)
 const labels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm).filter(Boolean)
 const labelSet = new Set(labels)
 const hasLabel = (...names) => names.some((n) => labelSet.has(n))
+// A declared type outranks labels. A Task carrying a `bug` label (a triaged bug) is still a
+// Task, and a Story labelled `infra` is still a Story, so labels only classify a bead whose
+// type is missing or unrecognised.
+const KNOWN_TYPES = new Set(['task', 'bug', 'infra', 'infrastructure', 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
+const byLabel = (...names) => !KNOWN_TYPES.has(type) && hasLabel(...names)
 
 const parentType = norm(bead.parentType)
 const ancestorTypes = (Array.isArray(bead.ancestorTypes) ? bead.ancestorTypes : []).map(norm)
@@ -371,14 +376,14 @@ function deterministicRoute() {
   //    neither mints the Epic/Task a triaged bug becomes nor closes a non-defect.
   //    So this rule STOPS the wrong routing and names triage as the destination; it
   //    does not build the road, and it decides nothing about the bug's outcome.
-  if (type === 'bug' || hasLabel('bug', 'defect', 'regression', 'hotfix')) {
+  if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(
       `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}) — it is TRIAGED into an Epic, a Task, or a closure, and that is a person's judgment call, not a routing rule. No triage composite exists to dispatch (\`bug-triage\` is a read-only mini inside \`bug-fix\` that neither mints nor closes anything) → SKIP (reported by name, not force-fit into bug-fix)`,
     )
   }
 
   // 2) TASK — the unit of development work. Its parents never gate it.
-  if (type === 'task' || hasLabel('task')) {
+  if (type === 'task' || byLabel('task')) {
     const composite = workComposite()
     if (hasStoryParent() && hasEpicAncestor()) {
       return work(
@@ -396,18 +401,18 @@ function deterministicRoute() {
   }
 
   // 3) INFRA declared as its own type, outside a Story hierarchy.
-  if (type === 'infra' || type === 'infrastructure' || hasLabel('infra', 'infrastructure', 'cdk', 'iac', 'provisioning')) {
+  if (type === 'infra' || type === 'infrastructure' || byLabel('infra', 'infrastructure', 'cdk', 'iac', 'provisioning')) {
     return work('infra-change', `infrastructure change (type="${type || 'n/a'}"${labelTail}) → infra-change`)
   }
 
   // 4) ELABORATION-SIDE kinds — real work, but not development work.
-  if (type === 'epic' || type === 'story' || hasLabel('epic', 'story')) {
+  if (type === 'epic' || type === 'story' || byLabel('epic', 'story')) {
     return skip(
       `${type || 'container'} carries no DEVELOPMENT work — its work is elaboration (an Epic: reconcile its PRD, author the TRD, produce the Specs and Stories; a Story: keep it in sync with its Spec and its Tasks covering it). → SKIP here. Route it through route-elaboration.js instead.`,
     )
   }
 
-  if (type === 'feature' || hasLabel('feature', 'prd', 'requirement')) {
+  if (type === 'feature' || byLabel('feature', 'prd', 'requirement')) {
     return skip(
       `feature is a REQUEST, not development work (type="${type || 'n/a'}"${labelTail}). It becomes implementable by being promoted to a PRD and an Epic, which is a human decision. → SKIP here. Route it through route-elaboration.js, or /agent-teams-workforce:start-prd.`,
     )

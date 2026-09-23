@@ -321,6 +321,11 @@ const type = norm(bead.type)
 const labels = (Array.isArray(bead.labels) ? bead.labels : []).map(norm).filter(Boolean)
 const labelSet = new Set(labels)
 const hasLabel = (...names) => names.some((n) => labelSet.has(n))
+// A declared type outranks labels. A Task carrying a `bug` label (a triaged bug) is still a
+// Task, and a Story labelled `infra` is still a Story, so labels only classify a bead whose
+// type is missing or unrecognised.
+const KNOWN_TYPES = new Set(['task', 'bug', 'infra', 'infrastructure', 'epic', 'story', 'feature', 'chore', 'docs', 'research', 'spike'])
+const byLabel = (...names) => !KNOWN_TYPES.has(type) && hasLabel(...names)
 
 const parentType = norm(bead.parentType)
 const ancestorTypes = (Array.isArray(bead.ancestorTypes) ? bead.ancestorTypes : []).map(norm)
@@ -356,7 +361,7 @@ const id = bead.id || '<bead-id>'
 //   children" as "done" is what let drift accumulate silently.
 function deterministicRoute() {
   // 1) EPIC — the bead face of a PRD.
-  if (type === 'epic' || hasLabel('epic')) {
+  if (type === 'epic' || byLabel('epic')) {
     if (!humanInitiated) {
       return skip(
         `epic elaboration — reconciling its PRD, authoring the TRD, producing the Specs and Stories — is a decision about whether to build this, and now. That is a human's call, not a sweep's. → SKIP. To work it: /agent-teams-workforce:work-bead ${id}, or /agent-teams-workforce:start-prd`,
@@ -369,7 +374,7 @@ function deterministicRoute() {
   }
 
   // 2) STORY — the bead face of a Spec.
-  if (type === 'story' || hasLabel('story')) {
+  if (type === 'story' || byLabel('story')) {
     if (!humanInitiated) {
       return skip(
         `story elaboration — keeping the Story and its Spec in sync and its Tasks current and covering it — starts build work. That is a human's call, not a sweep's. → SKIP. To work it: /agent-teams-workforce:work-bead ${id}`,
@@ -385,7 +390,7 @@ function deterministicRoute() {
   //    product decision: whether this is worth building at all, and now. An
   //    automated loop that promotes every feature bead it finds has decided the
   //    roadmap, which is not a call any agent here has the standing to make.
-  if (type === 'feature' || hasLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
+  if (type === 'feature' || byLabel('feature', 'prd', 'requirement', 'prd-to-spec')) {
     if (!humanInitiated) {
       return skip(
         `feature is a REQUEST, not work (type="${type || 'n/a'}"${labelTail}). It becomes implementable by being promoted to a PRD and an Epic, which is a human decision about whether to build it. → SKIP. When you want it built: /agent-teams-workforce:start-prd`,
@@ -400,7 +405,7 @@ function deterministicRoute() {
   // 4) BUG — neither elaboration work nor development work. A bug is a REPORTING
   //    MECHANISM: it is TRIAGED by a person into an Epic, a Task, or a closure.
   //    Pointing it at route-build would be wrong — that router skips it too.
-  if (type === 'bug' || hasLabel('bug', 'defect', 'regression', 'hotfix')) {
+  if (type === 'bug' || byLabel('bug', 'defect', 'regression', 'hotfix')) {
     return skip(
       `bug is a REPORTING MECHANISM and is never implemented directly (type="${type || 'n/a'}"${labelTail}) — it is TRIAGED into an Epic, a Task, or a closure, and that is a person's judgment call. Not elaboration work, and not development work either → SKIP (route-build skips it for the same reason; no triage composite exists to dispatch)`,
     )
@@ -408,7 +413,7 @@ function deterministicRoute() {
 
   // 5) DEVELOPMENT-SIDE kinds — real work, but not elaboration work.
   if (type === 'task' || type === 'infra' || type === 'infrastructure' ||
-      hasLabel('task', 'infra', 'infrastructure')) {
+      byLabel('task', 'infra', 'infrastructure')) {
     return skip(
       `${type || 'this bead'} carries DEVELOPMENT work — code, tests, infrastructure, deployment to dev. → SKIP here. Route it through route-build.js instead.`,
     )

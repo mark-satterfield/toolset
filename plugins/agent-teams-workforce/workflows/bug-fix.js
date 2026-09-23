@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bug-fix',
   description:
-    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-deploy tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget does NOT halt: the advantage-evaluator rules the remaining findings competitive (proceed, flags recorded) or constitutive (fail), and no ruling fails closed. Two tests that assert opposite outcomes for the same input are a CONTRADICTION, not a defective test — the test-strategy-decider rules which contract binds and the Red re-author corrects the losing test. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the fix in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
+    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-deploy tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails when a deterministic check or a constitutive criterion is still unmet, and proceeds with the flags recorded when only competitive criteria remain — decided in code, with no agent. Two tests that assert opposite outcomes for the same input are a CONTRADICTION, not a defective test — the test-strategy-decider rules which contract binds and the Red re-author corrects the losing test. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the fix in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Triage', detail: 'runs FIRST, before Workspace, when the caller supplied no repository — the diagnosis locates the repository the defect lives in' },
@@ -371,9 +371,8 @@ const REPO_RESOLUTION_STAGE = 'repo-resolution'
 // (a project agent — scripts can't write files). Persisted in a finally so it runs
 // on success, early-return, and throw alike.
 const runLedger = []
-// Findings a gate could not get resolved inside its retry budget and that the
-// advantage-evaluator then ruled COMPETITIVE — carried forward rather than fatal. See
-// the exhaustion ruling below.
+// Competitive findings a gate could not get resolved inside its retry budget — carried
+// forward rather than fatal. See the exhaustion handling at the end of gateLoop.
 const carriedFlags = []
 // ── The full detail, and where it goes ────────────────────────────────────────
 // Everything a phase produced used to travel back to the CALLER: the whole triage
@@ -740,96 +739,13 @@ function gateHeadline(stage, r) {
   return `${stage}: ${why}${first}${more}`
 }
 
-// ── Loop exhaustion is a RULING, not a halt ───────────────────────────────────
+// ── Loop exhaustion is decided in code ────────────────────────────────────────
 //
-// Spending the retry budget says nothing about whether the objection that REMAINS
-// invalidates the work. MAX_LOOPS' own comment above states the intent — "One rework
-// round, then proceed with the finding recorded" — and the code did the opposite:
-// exhaustion returned ok:false, every caller treats ok:false as terminal, and the run
-// died. It died identically whether the unmet criterion was a security violation or a
-// reviewer's opinion that coverage was incomplete, which erases the distinction this
-// framework is built on — constitutive findings are hard stops, competitive ones proceed
-// under a flag.
-//
-// The case that proves the cost: a P0 live outage reached the Red gate with
-// redConfirmed=true, 7 test files authored, 11 correctly-failing tests captured, ruff
-// clean, and not one production file touched. The blocking objection was "AC5 partially
-// covered — two of three clauses unassessed". The budget ran out and nothing shipped.
-//
-// So an exhausted gate now asks the agent whose entire purpose is that ruling. The
-// advantage-evaluator already applies the advantage principle at a PASSING gate inside
-// gate-enforce and "never halts the pipeline for non-invalidating findings"; this is the
-// same question arriving from the other end of the loop, and it is dispatched the same
-// way. It is given the unmet criteria, the artifact the phase produced, and the gate's
-// DETERMINISTIC-check results — those last matter most, because a check the gate measured
-// directly against the artifact is not a matter of opinion and must not be waived as one.
-//
-// It FAILS CLOSED. An evaluator that throws, returns nothing, or names no ruling has not
-// ruled anything competitive; reading silence as permission would turn every dispatch
-// failure into a waived gate.
-async function ruleExhaustion(ctx) {
-  const unmet = ctx.unmetCriteria || []
-  const dchecks = (ctx.verdict && ctx.verdict.deterministicChecks) || []
-  // THE BUDGET THE GATE ACTUALLY RAN, not the run-wide default. Gates take a per-gate
-  // `loopBudget`, and a gate pinned to a single attempt was still told the budget was 2 —
-  // which misdescribes the exact thing the evaluator is being asked to rule on: how much
-  // rework the finding has already survived. Falls back to MAX_LOOPS for a caller that
-  // names no budget, which is what every caller did before this value was threaded through.
-  const budget = Number.isFinite(ctx.budget) && ctx.budget > 0 ? ctx.budget : MAX_LOOPS
-  try {
-    return await settleAgent(
-      `You are the advantage-evaluator. Gate ${ctx.gate} (${ctx.phaseName}) has spent its entire rework budget of ${budget} attempt(s) and the criteria below are still unmet.
-
-This is NOT a request to re-judge the work, and it is NOT a request to halt. Rule on ONE question: does what remains INVALIDATE the artifact, or does it merely make it less than ideal?
-
-- "constitutive": the finding invalidates the work. A security violation, a broken contract, an assertion that cannot hold, a claim the evidence does not support, or work that was never actually produced. Only these stop a run.
-- "competitive": the finding is a quality or completeness opinion the work survives. Partial coverage of an acceptance criterion, an unassessed edge case, a style preference, a reviewer wanting more than was asked for. These are recorded as flags and the pipeline PROCEEDS — you never halt for a non-invalidating finding.
-
-A criterion a DETERMINISTIC check settled against the phase is constitutive by construction: it was measured against the artifact, not argued about, so there is nothing left for you to weigh. You will not in fact be handed one — the caller now ENFORCES this rather than asking for it, and skips this dispatch entirely when a deterministic check failed. Every criterion below is a judgment criterion.
-
-Unmet criteria after ${budget} attempt(s):
-${unmet.length ? unmet.map((c, i) => `${i + 1}. ${c.criterion}\n   evidence: ${c.evidence || '(none given)'}`).join('\n') : '(the gate named none)'}
-
-Deterministic checks this gate evaluated directly against the artifact:
-${dchecks.length ? dchecks.map((c) => `- ${c.criterion}: ${c.met ? 'MET' : 'NOT MET'} — ${c.evidence}`).join('\n') : '(this gate declared none)'}
-
-The artifact the phase produced:
-${JSON.stringify(ctx.artifact === undefined ? null : ctx.artifact, null, 2)}
-
-Rule "constitutive" if ANY remaining finding invalidates the work; otherwise rule "competitive" and classify each finding.`,
-      {
-        label: `advantage:exhausted-${ctx.gate}`,
-        phase: currentPhase || 'Triage',
-        agentType: 'agent-teams-workforce:advantage-evaluator',
-        schema: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['ruling', 'findings', 'rationale'],
-          properties: {
-            ruling: { type: 'string', enum: ['competitive', 'constitutive'] },
-            findings: {
-              type: 'array',
-              items: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['criterion', 'classification', 'rationale'],
-                properties: {
-                  criterion: { type: 'string' },
-                  classification: { type: 'string', enum: ['competitive', 'constitutive'] },
-                  rationale: { type: 'string' },
-                },
-              },
-            },
-            rationale: { type: 'string' },
-          },
-        },
-      }
-    )
-  } catch (e) {
-    log(`advantage-evaluator failed to rule on gate ${ctx.gate} exhaustion: ${e && e.message ? e.message : e}`)
-    return null
-  }
-}
+// Spending the retry budget says nothing by itself about whether what REMAINS invalidates
+// the work. A failed deterministic check or an unmet constitutive criterion does, so the
+// gate fails. When only competitive criteria remain, the run proceeds with each one
+// recorded as a carried flag. A final verdict that itemises no unmet criterion proves
+// nothing competitive, so it fails.
 
 // ── Two tests that contradict each other need a DECIDER, not another author ───
 //
@@ -902,12 +818,16 @@ Name the BINDING test (the one whose expectation is correct), the LOSING test (t
 // since the previous one. A gate whose checks are ALL deterministic gains nothing from a
 // retry anyway: re-dispatching the same phase over the same tree re-measures the same
 // values. Callers that do not pass it keep MAX_LOOPS.
-async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow, maxLoops }) {
+//
+// `routeGate(artifact)` lets a gate pick its judge from what the phase produced: it returns
+// `{ gateWorkflow, criteria, checks }` overriding the defaults for that attempt. Gate 4 uses
+// it to send only a self-contradictory adjudication to gate-constitutional.
+async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, phaseFn, gateWorkflow, maxLoops, routeGate }) {
   const loopBudget = maxLoops || MAX_LOOPS
   let feedback = ''
-  // The advantage-evaluator's `revert` is enacted at most ONCE per gate — see the pass
-  // branch below.
-  let revertSpent = false
+  // What the most recent attempt was judged against, so exhaustion classifies the unmet
+  // criteria by the same gate that reported them.
+  let lastRoute = { gateWorkflow, criteria, checks }
   // Carried across attempts so loop exhaustion can say WHAT was unmet and on what
   // evidence, instead of a bare count. Both are computed at every attempt already;
   // the exhaustion path simply never saw them.
@@ -1011,8 +931,24 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
-    const gateArgs = { gate, phaseName, criteria, checks, artifact, escalateTargets }
-    let verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+    // A CONTRADICTION or a DEFECTIVE TEST reported by Green cannot be repaired by another
+    // Green attempt: the implementer may not edit a test. It leaves the loop at once as an
+    // escalation to Red, where the caller has a contradiction ruled and the test re-authored.
+    if (artifact && (artifact.contradiction || artifact.testDefect) && artifact.greenConfirmed !== true) {
+      const what = artifact.contradiction ? 'contradiction' : 'test-defect'
+      log(`${phaseName}: ${what.toUpperCase()} reported — gate ${gate} is NOT run and no retry is spent; escalating to red`)
+      recordGate(attempt, null, { terminal: what })
+      return {
+        ok: false,
+        escalate: 'red',
+        reason: artifact.contradiction ? 'two tests assert opposite outcomes for the same input' : `the failing test cannot pass as authored: ${artifact.testDefect}`,
+        artifact,
+      }
+    }
+    const route = { gateWorkflow, criteria, checks, ...((routeGate && routeGate(artifact)) || {}) }
+    lastRoute = route
+    const gateArgs = { gate, phaseName, criteria: route.criteria, checks: route.checks, artifact, escalateTargets }
+    let verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     // ── A DEAD JUDGE GETS A SECOND LOOK BEFORE FINISHED WORK IS DISCARDED ────────
     //
     // The gate is READ-ONLY: it produces nothing, changes nothing, and judging the same
@@ -1025,7 +961,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     // nothing about the phase is re-run here.
     if (!verdict) {
       log(`Gate ${gate} (${phaseName}): the gate returned no verdict — re-asking once before discarding a phase that completed`)
-      verdict = await workflow(gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
+      verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
     if (!verdict) {
       recordGate(attempt, null, { terminal: 'no-verdict' })
@@ -1060,32 +996,6 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       unmetCriteria: (verdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })),
     })
     if (verdict.verdict === 'pass') {
-      // ── `revert` IS A DISPOSITION, NOT A NOTE ───────────────────────────────
-      //
-      // gate-enforce routes a PASSING gate's competitive flags to the advantage-evaluator,
-      // which rules proceed-under-flag or REVERT on each. Both rulings arrived here and
-      // neither was acted on, so the one disposition that asks for work to be redone was
-      // indistinguishable from the one that asks for it to be kept, and the evaluator was
-      // being asked a question nobody read.
-      //
-      // A revert re-runs the phase once with the reverted findings as its feedback. Bounded
-      // to a single revert per gate, and never past the loop budget: the evaluator's
-      // standing rule is that it NEVER halts the pipeline for a non-invalidating finding,
-      // so a second revert proceeds under flag rather than spending the run.
-      const reverts = ((verdict.advantage && verdict.advantage.dispositions) || []).filter(
-        (d) => d && d.disposition === 'revert'
-      )
-      if (reverts.length && !revertSpent && attempt < loopBudget) {
-        revertSpent = true
-        const detail = reverts.map((d) => `${d.flag}${d.rationale ? ` — ${d.rationale}` : ''}`).join('; ')
-        log(`Gate ${gate} (${phaseName}): PASS, but the advantage-evaluator ruled REVERT on ${reverts.length} flag(s) — re-running the phase once with them as feedback: ${detail}`)
-        recordGate(attempt, verdict, { terminal: 'advantage-revert', reverted: reverts.map((d) => d.flag) })
-        feedback = `The gate PASSED, but the advantage-evaluator ruled REVERT rather than proceed-under-flag on the following competitive finding(s). Address them: ${detail}`
-        continue
-      }
-      if (reverts.length) {
-        log(`Gate ${gate} (${phaseName}): PASS with ${reverts.length} REVERT ruling(s) that the revert budget cannot enact — proceeding under flag, which never halts the pipeline`)
-      }
       log(`Gate ${gate} (${phaseName}): PASS${verdict.flags && verdict.flags.length ? ` — flags: ${verdict.flags.join('; ')}` : ''}`)
       return { ok: true, artifact, verdict }
     }
@@ -1096,120 +1006,54 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     feedback = verdict.feedback || ''
   }
-  // The budget is spent. Before this is called a failure, the ONE agent with authority to
-  // say whether the remaining findings invalidate the work is asked — see ruleExhaustion.
+  // The budget is spent. What remains is classified from the gate's own declarations: a
+  // deterministic check, and every criterion of gate-constitutional, is a hard stop; so is a
+  // criterion the caller marked constitutive. Anything else is competitive.
   const exhaustedUnmet = lastVerdict
     ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))
     : []
-  // ── A MEASURED FACT IS NOT OPEN TO A RULING ──────────────────────────────────
-  //
-  // The advantage-evaluator exists to rule on JUDGMENT criteria — a reviewer's opinion
-  // that coverage is thin, an unassessed edge case — and ruling those competitive is
-  // correct and deliberate. It has no business ruling on a DETERMINISTIC check, because a
-  // deterministic check did not form an opinion about the artifact: it MEASURED the
-  // artifact and reported what it observed.
-  //
-  // That rule was stated only in the prompt sent to the evaluator ("a criterion a
-  // DETERMINISTIC check settled against the phase is constitutive by construction"), and a
-  // rule stated only in a prompt is a request, not a guard. Nothing here checked WHICH
-  // criteria were unmet, so any `competitive` ruling produced ok:true carrying the artifact
-  // that failed the checks — which after the Gate 5 rewrite meant a run could report success
-  // with deployedToDev:false, the exact claim that rewrite existed to make impossible.
-  //
-  // gate-enforce.js already refuses to adjudicate a failed deterministic check at all — "do
-  // not argue the observation" — and rides `deterministicChecks` out on every verdict for
-  // precisely this decision. This applies the same refusal at the exhaustion site: when a
-  // measured check failed, NO ruling is requested. There is nothing to weigh, so the
-  // dispatch is skipped rather than made and then overridden, which is both cheaper and
-  // impossible to bypass.
-  //
-  // TWO SOURCES, deliberately. `deterministicChecks` is what a well-behaved gate reports —
-  // but gate-constitutional does not report it, so a guard resting on that field alone would
-  // silently do nothing the day someone adds `checks` to a constitutional gate. The labels
-  // are therefore ALSO derived locally from this gate's own `checks`, spelled exactly as
-  // gate-enforce spells them, so the guard holds whatever the gate workflow chooses to
-  // report about itself.
-  const deterministicLabels = new Set(
-    (Array.isArray(checks) ? checks : []).map((chk) => chk.label || `${chk.field} satisfies its required shape`)
-  )
+  const routeChecks = Array.isArray(lastRoute.checks) ? lastRoute.checks : []
+  // Spelled exactly as gate-enforce spells a check's criterion.
+  const deterministicLabels = new Set(routeChecks.map((chk) => chk.label || `${chk.field} satisfies its required shape`))
   const measuredFailures = [
     ...new Set([
       ...((lastVerdict && lastVerdict.deterministicChecks) || []).filter((c) => !c.met).map((c) => c.criterion),
       ...exhaustedUnmet.filter((cc) => deterministicLabels.has(cc.criterion)).map((cc) => cc.criterion),
     ]),
   ]
-  const ruling = measuredFailures.length ? null : await ruleExhaustion({ gate, phaseName, budget: loopBudget, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet })
-  // TRUTHINESS IS NOT A RULING. A result object that came back without a `ruling` field
-  // has not ruled anything, and reading it as one made a malformed reply indistinguishable
-  // from a considered "constitutive" — which is the reporting half of the same fail-closed
-  // mistake the verdict half already avoids.
-  const ruled = !!(ruling && (ruling.ruling === 'competitive' || ruling.ruling === 'constitutive'))
-  const competitive = !!(ruling && ruling.ruling === 'competitive')
-  // Record the REAL final verdict, not null, and the ruling made on it. A terminal ledger
-  // row with `criteria: []` cannot distinguish a genuine defect from an over-strict
-  // criterion — which is the one question anyone asks about an exhausted gate.
+  const allConstitutive = lastRoute.gateWorkflow === 'agent-teams-workforce:gate-constitutional'
+  // gate-enforce reads a plain-string criterion as competitive.
+  const constitutiveTexts = new Set(
+    (Array.isArray(lastRoute.criteria) ? lastRoute.criteria : [])
+      .filter((c) => c && typeof c === 'object' && c.class === 'constitutive')
+      .map((c) => c.text)
+  )
+  const constitutiveUnmet = exhaustedUnmet
+    .filter((cc) => allConstitutive || constitutiveTexts.has(cc.criterion))
+    .map((cc) => cc.criterion)
+  const competitive = !measuredFailures.length && !constitutiveUnmet.length && exhaustedUnmet.length > 0
   recordGate(loopBudget, lastVerdict, {
     verdict: competitive ? 'loop-exhausted-competitive' : 'loop-exhausted',
-    terminal: competitive
-      ? 'proceeded-under-flag'
-      : measuredFailures.length
-        ? 'deterministic-failure'
-        : 'loop-exhausted',
-    // Which criteria were MEASURED and failed, so a reader can tell a gate that lost an
-    // argument from one that lost a measurement.
+    terminal: competitive ? 'proceeded-under-flag' : measuredFailures.length ? 'deterministic-failure' : 'loop-exhausted',
     measuredFailures,
-    advantageRuling: ruling || null,
+    constitutiveUnmet,
   })
   if (competitive) {
     const flags = exhaustedUnmet.map((cc) => `gate ${gate} (${phaseName}) proceeded with an unmet criterion: ${cc.criterion}${cc.evidence ? ` — ${cc.evidence}` : ''}`)
     for (const f of flags) carriedFlags.push(f)
-    log(`Gate ${gate} (${phaseName}): budget spent — advantage-evaluator ruled the remaining finding(s) COMPETITIVE; proceeding with ${flags.length} flag(s) recorded`)
-    return {
-      ok: true,
-      loopExhausted: true,
-      ruledCompetitive: true,
-      carriedFlags: flags,
-      advantageRuling: ruling,
-      artifact: lastArtifact,
-      verdict: lastVerdict,
-      unmetCriteria: exhaustedUnmet,
-      attempts,
-    }
+    log(`Gate ${gate} (${phaseName}): budget spent — only competitive criteria remain unmet; proceeding with ${flags.length} flag(s) recorded`)
+    return { ok: true, loopExhausted: true, carriedFlags: flags, artifact: lastArtifact, verdict: lastVerdict, unmetCriteria: exhaustedUnmet, attempts }
   }
-  // A deterministic check failed and no ruling was sought, so say exactly that rather than
-  // reporting it as a constitutive ruling nobody made.
-  if (measuredFailures.length) {
-    log(
-      `Gate ${gate} (${phaseName}): budget spent — ${measuredFailures.length} DETERMINISTIC check(s) failed, so no advantage ruling was requested: ` +
-        measuredFailures.join('; ')
-    )
-    return {
-      ok: false,
-      reason:
-        `gate ${gate} exceeded ${loopBudget} loop(s) with ${measuredFailures.length} deterministic check(s) still failing ` +
-        `(${measuredFailures.join('; ')}). A deterministic check measured the artifact rather than forming a judgment about ` +
-        'it, so it is constitutive by construction and no advantage ruling was requested.',
-      loopExhausted: true,
-      ruledCompetitive: false,
-      deterministicFailure: true,
-      measuredFailures,
-      advantageRuling: null,
-      artifact: lastArtifact,
-      verdict: lastVerdict,
-      unmetCriteria: exhaustedUnmet,
-      attempts,
-    }
-  }
-  log(
-    `Gate ${gate} (${phaseName}): budget spent — ` +
-      (ruled ? 'advantage-evaluator ruled the remaining finding(s) CONSTITUTIVE' : 'no ruling came back, so the findings are treated as constitutive (fail closed)')
-  )
+  const blocking = [...measuredFailures, ...constitutiveUnmet]
+  log(`Gate ${gate} (${phaseName}): budget spent — ${blocking.length ? `still unmet: ${blocking.join('; ')}` : 'the final verdict itemised no unmet criterion'}`)
   return {
     ok: false,
-    reason: `gate ${gate} exceeded ${loopBudget} loop(s) and the remaining finding(s) were ruled constitutive${ruled ? '' : ' by default — the advantage-evaluator returned no ruling'}`,
+    reason: blocking.length
+      ? `gate ${gate} exceeded ${loopBudget} loop(s) with ${blocking.length} blocking criterion/check(s) still unmet (${blocking.join('; ')})`
+      : `gate ${gate} exceeded ${loopBudget} loop(s) and its final verdict named no unmet criterion, so nothing shows the remainder is competitive`,
     loopExhausted: true,
-    ruledCompetitive: false,
-    advantageRuling: ruling || null,
+    deterministicFailure: measuredFailures.length > 0,
+    measuredFailures,
     artifact: lastArtifact,
     verdict: lastVerdict,
     unmetCriteria: exhaustedUnmet,
@@ -1582,8 +1426,8 @@ const red = cpGreen !== undefined
   ? { ok: true, artifact: cpGreen.redArtifact }
   : await gateLoop({
   gate: '2a', phaseName: 'TDD Red',
-  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag and
-  // is routed to the advantage-evaluator. An unmarked criterion would default to
+  // CRITERION CLASSES. `constitutive` is a hard stop; `competitive` passes with a flag.
+  // An unmarked criterion would default to
   // competitive — every entry here is marked so the intent is on the page. Only what
   // genuinely invalidates a Red is constitutive: the evidence itself, and the ban on
   // manufacturing the failure by editing production code.
@@ -1669,20 +1513,17 @@ const MAX_ESCALATIONS = a.maxEscalations || 2
 // The Green gate's criteria and deterministic checks, named once. The Deploy phase can
 // send the run back through Green when the DEPLOYED dev environment fails its smoke tests,
 // and a second copy of these would be free to drift away from the first.
-// The first two are the Green EVIDENCE and are constitutive; the third is a quality
-// judgment about the shape of the change, and a quality judgment that blocks is exactly
-// the over-strict failure this classification exists to stop. It flags instead.
+// Every Green condition is a fact tdd-green reports from running the suite, so the gate
+// runs on deterministic checks alone, with no enforcer session. A contradiction or a
+// defective test leaves gateLoop as an escalation to Red before the gate runs.
 // Consumed by: deploy.js gates its rollout on `greenEvidenceOk` — the executed passing
 // output captured here IS that evidence, and no deploy happens without it. Integration
 // (Gate 3) then runs the wider suites over the same tree.
-const GREEN_CRITERIA = [
-  { class: 'constitutive', text: 'The previously-failing test now passes' },
-  { class: 'constitutive', text: 'No other tests regressed' },
-  { class: 'competitive', text: 'The change is minimal and the test was not weakened' },
-]
+const GREEN_CRITERIA = []
 const GREEN_CHECKS = [
   { field: 'greenConfirmed', equals: true, label: 'the phase reports Green confirmed' },
   { field: 'evidence', nonEmpty: true, label: 'executed passing output was captured as evidence' },
+  { field: 'noRegressions', equals: true, label: 'the full suite shows no test that passed before now fails' },
 ]
 let redResult = red
 let green = cpGreen !== undefined ? cpGreen.green : null
@@ -1720,18 +1561,7 @@ for (;;) {
   enterPhase('Green')
   green = await gateLoop({
     gate: '2b', phaseName: 'TDD Green',
-    criteria: [
-      ...GREEN_CRITERIA,
-      // Names the un-passable case so it reliably produces escalate:"red" instead of a
-      // loop. The implementer may not modify a test and the gate is right to fail a test
-      // that does not pass, so neither role can break the deadlock — only Red can.
-      { class: 'competitive', text: 'If a test cannot be made to pass AS AUTHORED — it is pinned to a pre-fix import path, patches a symbol at a module path the fix does not use, or its own source defeats its assertion — that is a TEST defect, not an implementation failure. Escalate to red; do NOT loop Green over it and do NOT weaken the test to pass it.' },
-      // A CONTRADICTION is not a defective test and must not be looped as one. Both tests
-      // are internally coherent; they disagree about what the system should do, so no
-      // implementation satisfies both and every Green attempt spends the budget proving
-      // the same impossibility. It routes out of Green to a decider — see ruleContradiction.
-      { class: 'competitive', text: 'If the phase reports a CONTRADICTION — the failing test asserts one outcome for an input and another ALREADY-PASSING test asserts the opposite outcome for the identical input — that is neither an implementation failure nor a defective test. No implementation can satisfy both. Escalate to red; do NOT loop Green over it and do NOT pick a side yourself.' },
-    ],
+    criteria: GREEN_CRITERIA,
     checks: GREEN_CHECKS,
     escalateTargets: ['triage', 'red'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-green', { contract, red: redResult.artifact, implementer: a.implementer, feedback }),
@@ -1739,12 +1569,10 @@ for (;;) {
   if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
   if (green.ok) break
 
-  // A reported contradiction is grounds to return to test authoring in its own right,
-  // whether or not the gate happened to phrase its verdict as escalate:"red". The
-  // implementer observed two tests that cannot both hold, and Red is the only phase
-  // permitted to change either of them.
+  // A reported contradiction or defective test returns the run to test authoring: Red is
+  // the only phase permitted to change a test. gateLoop reports both as escalate:"red".
   const contradiction = (green.artifact && green.artifact.contradiction) || null
-  const canRetryRed = (green.escalate === 'red' || !!contradiction) && escalations < MAX_ESCALATIONS
+  const canRetryRed = (green.escalate === 'red' || !!contradiction || !!(green.artifact && green.artifact.testDefect)) && escalations < MAX_ESCALATIONS
   if (!canRetryRed) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
 
   // Rule WHICH CONTRACT BINDS before re-authoring. Without this the re-author simply
@@ -1775,7 +1603,11 @@ for (;;) {
   }
 
   escalations += 1
-  const why = (green.verdict && (green.verdict.feedback || (green.verdict.criteria || []).filter((c) => !c.met).map((c) => `${c.criterion}: ${c.evidence}`).join('\n'))) || 'Green gate escalated to Red without stated feedback.'
+  const why =
+    (green.artifact && green.artifact.testDefect ? `The implementer reports a defective test: ${green.artifact.testDefect}` : '') ||
+    (green.verdict && (green.verdict.feedback || (green.verdict.criteria || []).filter((c) => !c.met).map((c) => `${c.criterion}: ${c.evidence}`).join('\n'))) ||
+    green.reason ||
+    'Green gate escalated to Red without stated feedback.'
   // The ruling is the instruction the re-author acts on, so it is stated as one: which
   // test is correct, which must change, and what it must assert instead.
   const rulingBlock = contradictionRuling
@@ -1798,13 +1630,13 @@ for (;;) {
       { class: 'constitutive', text: 'The test fails for the intended reason. A failure caused by the absence of the very API the fix will introduce IS a valid intended reason for a missing-capability defect — do NOT reject it as an import error. Reject only a genuine harness fault: the test module itself failing to import, a broken fixture, a typo, a missing test dependency, or a failure in code unrelated to the defect.' },
       { class: 'competitive', text: 'The test asserts the real post-fix behavior, not merely that a symbol is absent.' },
       { class: 'constitutive', text: 'No production code was changed to manufacture the failure' },
-      { class: 'competitive', text: 'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.' },
+      { class: 'constitutive', text: 'Any test the Green gate identified as UNPASSABLE BY CONSTRUCTION is repaired — a test whose own source defeats its assertion (for example a literal-search test whose variable name contains the literal it searches for, or an assertion that can never hold regardless of production code) is a test defect and MUST be fixed here. Repairing such a test is not weakening it.' },
       // Only present when a contradiction was actually ruled. The criterion is what makes
-      // the ruling binding on the re-author: without it the phase may hand back the same
+      // the ruling binding on the re-author, which is why it is constitutive: without it the phase may hand back the same
       // pair of contradictory tests and the gate has no ground to reject them.
       ...(contradictionRuling
         ? [
-            { class: 'competitive', text: `A test contradiction was ruled by the test-strategy-decider: "${contradictionRuling.bindingTest}" states the binding contract and "${contradictionRuling.losingTest}" must now assert ${contradictionRuling.correctedExpectation}. The losing test IS corrected accordingly and the binding test is left as it stands. A phase that hands back both original expectations has not applied the ruling.` },
+            { class: 'constitutive', text: `A test contradiction was ruled by the test-strategy-decider: "${contradictionRuling.bindingTest}" states the binding contract and "${contradictionRuling.losingTest}" must now assert ${contradictionRuling.correctedExpectation}. The losing test IS corrected accordingly and the binding test is left as it stands. A phase that hands back both original expectations has not applied the ruling.` },
           ]
         : []),
     ],
@@ -1849,23 +1681,22 @@ let refactor = cpGet('refactor')
 if (refactor === undefined) {
 refactor = await gateLoop({
   gate: '2c', phaseName: 'TDD Refactor',
-  // Refactor is behavior-preserving CLEANUP on already-green code. Only the green
-  // evidence is constitutive here; the other two are quality judgments, and a failed
-  // refactor already degrades rather than failing the run.
-  // Consumed by: "Tests still green" — Integration (Gate 3) runs the suites over this
-  // tree and deploy.js gates its rollout on greenEvidenceOk. "Behavior preserved" is
-  // the code-correctness-reviewer's finding, measured by the criterion above it.
-  //
-  // "Complexity/duplication reduced" was a THIRD criterion here and is deleted, for the
-  // same reason as the identical one in task-to-deploy.js: the refactor artifact reaches
-  // only the run journal, and tdd-refactor is designed to return `alreadySatisfied: true`
-  // with nothing reduced whenever the complexity-analyzer finds nothing to do. See Rule 12.
-  criteria: [
-    { class: 'constitutive', text: 'Tests still green' },
-    { class: 'competitive', text: 'Behavior preserved (no regression)' },
+  // Refactor is behavior-preserving CLEANUP on already-green code. Both conditions are
+  // booleans the independent code-correctness-reviewer returns, which tdd-refactor lifts to
+  // its top level, so the gate runs on checks alone. A failed refactor degrades rather than
+  // failing the run.
+  criteria: [],
+  checks: [
+    { field: 'testsGreen', equals: true, label: 'the test suite is still green after the refactor' },
+    { field: 'behaviorPreserved', equals: true, label: 'the correctness reviewer found behavior preserved' },
   ],
   escalateTargets: ['green'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback }),
+  // A check's feedback names only the failed boolean, so the reviewer's findings ride along.
+  phaseFn: (feedback, loop) => {
+    const prior = loop && loop.priorArtifact && loop.priorArtifact.review
+    const findings = prior && Array.isArray(prior.findings) && prior.findings.length ? `\n\nCorrectness reviewer findings:\n${prior.findings.join('\n')}` : ''
+    return workflow('agent-teams-workforce:tdd-refactor', { contract, green: green.artifact, feedback: feedback ? `${feedback}${findings}` : '' })
+  },
 })
 // Saved on EITHER outcome: a failed refactor degrades and continues, and re-running
 // cleanup on resume would risk the completed Green it must never be able to destroy.
@@ -1890,43 +1721,48 @@ integration = await gateLoop({
   gate: '3', phaseName: 'Integration Testing',
   // Consumed by: Deploy (Gate 5) rolls out to AWS dev only past this gate, and its smoke
   // run exercises the same boundaries against the deployed endpoints; a smoke failure
-  // re-enters Green. "No flaky tests" is consumed by the flaky-test-detector's verdict,
-  // which decides whether a failure escalates to code, test, or environment.
-  criteria: [
-    { class: 'constitutive', text: 'Integration/contract/E2E suites pass' },
-    { class: 'competitive', text: 'Contracts valid across boundaries' },
-    // "Coverage met" is unsatisfiable for two legitimate change classes:
-    //   1. A DELETION. Its correct test asserts ABSENCE — repo-wide greps, path checks,
-    //      SHA freezes. It never imports the deleted code, because the code is gone.
-    //      Coverage is necessarily 0% and "no data was collected" is the RIGHT result.
-    //   2. A repo with NO integration suite at all. Demanding coverage of a suite that
-    //      does not exist fails the change for a pre-existing gap it did not cause.
-    // Judge coverage against what the change could possibly cover, not an absolute.
-    { class: 'competitive', text: 'Coverage is adequate FOR THIS CHANGE CLASS. A deletion whose tests assert absence (greps, path checks, hash freezes) cannot produce code coverage and MUST NOT be failed for 0% — verify instead that the absence assertions are real and complete. A repo with no integration suite is a pre-existing gap: report it, do not fail the change for it. Demand real coverage only where the change ADDS or MODIFIES executable paths.' },
-    { class: 'competitive', text: 'No flaky tests' },
-  ],
+  // re-enters Green. "Suites pass" is integration.js's top-level `passed`; the contract,
+  // coverage and flakiness criteria were competitive and could not block, so the gate runs
+  // on the check alone.
+  criteria: [],
+  checks: [{ field: 'passed', equals: true, label: 'the integration/contract/E2E suites passed' }],
   escalateTargets: ['green', 'red', 'triage'],
-  phaseFn: (feedback) => workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback }),
+  // A check's feedback names only the failed boolean, so the suites' failures ride along.
+  phaseFn: (feedback, loop) => {
+    const prior = loop && loop.priorArtifact
+    const failures = prior && Array.isArray(prior.failures) && prior.failures.length ? `\n\nFailures from the previous run:\n${prior.failures.join('\n')}` : ''
+    return workflow('agent-teams-workforce:integration', { contract, green: green.artifact, feedback: feedback ? `${feedback}${failures}` : '' })
+  },
 })
 if (integration.ok) await cpSave('integration', integration)
 }
 if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
 if (!integration.ok) return await failAfterDoc('integration', integration)
 
-// ── Adversarial (Gate 4 — constitutional) ─────────────────────────────────────
+// ── Adversarial (Gate 4) ──────────────────────────────────────────────────────
+// adversarial.js computes `constitutiveOpen` from the adjudicator's rulings in code, so the
+// security stop is a deterministic check with no enforcer session. It is the last thing
+// standing between the fix and a live AWS dev rollout at Gate 5 — never deleted. Only a
+// SELF-CONTRADICTORY adjudication goes to gate-constitutional, whose criteria are plain
+// strings because it renders them as strings.
 enterPhase('Adversarial')
 let adversarial = cpGet('adversarial')
 if (adversarial === undefined) {
 adversarial = await gateLoop({
-  gate: '4', phaseName: 'Adversarial Validation', gateWorkflow: 'agent-teams-workforce:gate-constitutional',
-  // PLAIN STRINGS, deliberately. This gate routes to gate-constitutional, where every
-  // criterion is constitutive by construction and the class marker has no meaning — it
-  // renders criteria as strings, so a {text, class} entry would print as [object Object].
-  // Security properties — never deleted. Consumed by: this gate routes through
-  // gate-constitutional, where a security finding is a HARD stop no advantage ruling can
-  // downgrade, and it is the last thing standing between the fix and a live AWS dev
-  // rollout at Gate 5.
-  criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
+  gate: '4', phaseName: 'Adversarial Validation',
+  // One attempt: a retry re-runs the attacks over an unchanged tree, so it cannot close
+  // a real finding.
+  maxLoops: 1,
+  criteria: [],
+  checks: [{ field: 'constitutiveOpen', equals: 0, label: 'no confirmed constitutive (security) finding is open' }],
+  routeGate: (artifact) =>
+    artifact && artifact.selfContradictory === true
+      ? {
+          gateWorkflow: 'agent-teams-workforce:gate-constitutional',
+          criteria: ['No open constitutive findings (no vulns, injection, auth bypass, or data exposure)', 'All confirmed findings adjudicated'],
+          checks: [],
+        }
+      : null,
   escalateTargets: ['green', 'triage'],
   // priorRulings is what makes a re-run adjudication accountable to the one before it.
   // Without it the adjudicator is a fresh instance every round with no knowledge that it
@@ -2009,7 +1845,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     ],
     escalateTargets: ['integration', 'green'],
     phaseFn: (feedback) => workflow('agent-teams-workforce:deploy', {
-      contract, green: green.artifact, docCurrency,
+      contract, green: green.artifact,
       feedback: [iterationFeedback, feedback].filter(Boolean).join('\n\n'),
     }),
   })

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial',
   description:
-    'Shared-tail mini — Adversarial Validation (feeds constitutional Gate 4). Attackers run concurrently in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adjudicator referees severity. Lanes are DERIVED from the surfaces the contract declares, over a baseline of data-exposure and dependency-CVE scanning conditioned on the change itself — data-exposure when source changed, dependency-CVE when a dependency manifest changed. Undeclared surfaces or unknown changed files mean unknown, not empty, and run every lane; a caller-supplied trimmedScope wins. When no lane applies the phase reports alreadySatisfied and the gate is skipped. Security findings are constitutive and cannot be downgraded by implementers.',
+    'Shared-tail mini — Adversarial Validation (feeds Gate 4). Attackers run concurrently in DESIGNATED TEST ENVIRONMENTS ONLY; an independent adjudicator referees severity, and the script counts the open constitutive findings into a top-level `constitutiveOpen` (a finding left unruled counts as open) and flags a self-contradictory packet as `selfContradictory`. A lane or adjudicator that returns nothing reports dispatchFailed rather than a clean result; no confirmed finding skips the adjudicator. Lanes are DERIVED from the surfaces the contract declares, over a baseline of data-exposure and dependency-CVE scanning conditioned on the change itself — data-exposure when source changed, dependency-CVE when a dependency manifest changed. Undeclared surfaces or unknown changed files mean unknown, not empty, and run every lane; a caller-supplied trimmedScope wins. When no lane applies the phase reports alreadySatisfied and the gate is skipped. Security findings are constitutive and cannot be downgraded by implementers.',
   phases: [
     { title: 'Attack', detail: 'access-control + data-integrity and infra + exposure lanes (concurrent)' },
     { title: 'Adjudicate', detail: 'referee severity; classify constitutive vs competitive' },
@@ -310,12 +310,20 @@ const target = `Change under attack: ${c.bead ? `${c.bead.id} ${c.bead.title}` :
 // reproduction. Deriving it in script rather than asking for it means the model cannot
 // mint a fresh id for a fact it already reported, and cannot rename its way out of a
 // prior ruling.
+//
+// The fingerprint covers the WHOLE normalized reproduction: a readable prefix plus an
+// FNV-1a hash of all of it. A prefix alone collided — two different findings whose
+// reproductions share the same first 80 characters (the same curl preamble) got one id,
+// and two honest rulings on two different findings then read as a self-contradiction.
 function fingerprint(text) {
-  return String(text || '')
+  const norm = String(text || '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'unspecified'
+  if (!norm) return 'unspecified'
+  let h = 2166136261
+  for (let i = 0; i < norm.length; i++) h = Math.imul(h ^ norm.charCodeAt(i), 16777619)
+  return `${norm.slice(0, 40)}-${(h >>> 0).toString(16).padStart(8, '0')}`
 }
 function findingIdFor(lane, finding) {
   return `${lane}#${fingerprint(finding && finding.reproduction)}`
@@ -449,6 +457,7 @@ if (!attackers.length) {
   return {
     findings: [],
     adjudication: { rulings: [], constitutiveOpen: 0 },
+    constitutiveOpen: 0,
     packetIntegrity: { ok: true },
     selfContradictory: false,
     attackers: [],
@@ -473,34 +482,83 @@ const results = await parallel(
     })
   )
 )
+const ledger = { phase: 'adversarial', beadId: (c.bead && c.bead.id) || null, chosen: attackers, mode: laneMode }
+
+// A lane that returned nothing did not attack anything. Its silence is not a clean result,
+// and counting it as one would pass Gate 4 on an attack class that never ran — so the phase
+// reports the dead lanes and is not adjudicated (the gateLoop `dispatchFailed` contract).
+const deadLanes = attackers.filter((_, i) => !results[i])
+if (deadLanes.length) {
+  const reason = `attack lane(s) returned nothing: ${deadLanes.join(', ')} — those attack classes did not run, so no clean result can be claimed`
+  log(`Adversarial: ${reason}`)
+  return {
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Attack'),
+    reason,
+    attackers,
+    laneMode,
+    surfaces: declaredSurfaces,
+    ledger: { ...ledger, ok: false },
+  }
+}
+
 // Attach the derived id and the lane that produced it. Both are script-owned facts
-// about where a finding came from, not claims the attacker gets to make.
-const findings = results.flatMap((r, i) =>
-  ((r && r.findings) || []).map((f) => ({ ...f, lane: attackers[i], findingId: findingIdFor(attackers[i], f) }))
-)
-const knownFindingIds = [...new Set(findings.map((f) => f.findingId))]
+// about where a finding came from, not claims the attacker gets to make. A lane that
+// reports the same reproduction twice has reported one finding, so it is kept once.
+const findings = []
+const seenIds = new Set()
+results.forEach((r, i) => {
+  for (const f of (r && r.findings) || []) {
+    const findingId = findingIdFor(attackers[i], f)
+    if (seenIds.has(findingId)) continue
+    seenIds.add(findingId)
+    findings.push({ ...f, lane: attackers[i], findingId })
+  }
+})
+const knownFindingIds = findings.map((f) => f.findingId)
+
+// No confirmed finding means nothing to adjudicate: zero constitutive findings are open,
+// and the adjudicator session would rule on an empty list.
+if (!findings.length) {
+  log(`Adversarial: ${attackers.length} lane(s) ran and confirmed no finding — nothing to adjudicate`)
+  return {
+    findings: [],
+    adjudication: { rulings: [], constitutiveOpen: 0 },
+    constitutiveOpen: 0,
+    packetIntegrity: { contradictions: [], unjustifiedReversals: [], unadjudicated: [], constitutiveOpen: 0, priorRulingsSeen: 0 },
+    selfContradictory: false,
+    attackers,
+    laneMode,
+    surfaces: declaredSurfaces,
+    ledger: { ...ledger, ok: true },
+  }
+}
 
 // The previous attempt's rulings. Rendered to the adjudicator so a reversal is a
 // reversal of something it can see, and checked script-side afterwards so an uncited
 // reversal has no EFFECT rather than merely being disapproved of.
+//
+// Attackers re-run from scratch every round and re-word their reproductions, so a finding
+// rarely keeps its derived id across rounds. The adjudicator therefore names, in
+// `priorFindingId`, the prior ruling a current finding is the same fact as; without that
+// link the cross-round check compares ids that almost never match.
 const priorRulings = (Array.isArray(a.priorRulings) ? a.priorRulings : []).filter((r) => r && r.findingId)
 const priorById = {}
 for (const r of priorRulings) priorById[r.findingId] = r
+const priorIds = Object.keys(priorById)
 
 phase('Adjudicate')
 const adjudication = await settleAgent(
   `You are the adversarial-critique-adjudicator (Referee). Rule on each finding's real severity and whether it is CONSTITUTIVE (a security/validity hard stop — implementers cannot downgrade it) or COMPETITIVE (a tradeable quality concern). Discard false positives with reasoning.
 
-Return EXACTLY ONE ruling per findingId. Two rulings for the same findingId that disagree about \`real\` or \`classification\` is a self-contradictory packet; it is detected mechanically, it cannot be argued past, and it costs a constitutional appeal.
+Return EXACTLY ONE ruling per findingId. Two rulings for the same findingId that disagree about \`real\` or \`classification\` is a self-contradictory packet; it is detected mechanically, it cannot be argued past, and it costs a constitutional appeal. A finding you return no ruling for is counted as an open constitutive finding.
 
-\`constitutiveOpen\` must equal the number of rulings with real=true AND classification="constitutive". It is recomputed from your own rulings after you answer, so a number that disagrees with your list is simply overwritten and recorded as a packet-integrity defect.
-
-${priorRulings.length ? `PRIOR RULINGS — you (in an earlier round of this same gate) already ruled on these. You MAY reverse a prior ruling, but ONLY by citing the artifact change that justifies it: a changed file, a re-run command and its captured output, or an explicit false-positive demonstration. Put that citation in reversalOf.evidence. A reversal with no citation is not a reversal — the prior ruling is reinstated automatically and your reversal is discarded.
+${priorRulings.length ? `PRIOR RULINGS — you (in an earlier round of this same gate) already ruled on these. When a current finding is the same fact as a prior one, set \`priorFindingId\` to that prior findingId. You MAY reverse a prior ruling, but ONLY by citing the artifact change that justifies it: a changed file, a re-run command and its captured output, or an explicit false-positive demonstration. Put that citation in reversalOf.evidence. A reversal with no citation is not a reversal — the prior ruling is reinstated automatically and your reversal is discarded.
 
 ${JSON.stringify(priorRulings, null, 2)}
 ` : ''}
 Findings (${findings.length}):
-${findings.length ? JSON.stringify(findings, null, 2) : '(none reported)'}`,
+${JSON.stringify(findings, null, 2)}`,
   {
     label: 'adversarial:adjudicate',
     phase: 'Adjudicate',
@@ -508,7 +566,7 @@ ${findings.length ? JSON.stringify(findings, null, 2) : '(none reported)'}`,
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['rulings', 'constitutiveOpen'],
+      required: ['rulings'],
       properties: {
         rulings: {
           type: 'array',
@@ -519,9 +577,8 @@ ${findings.length ? JSON.stringify(findings, null, 2) : '(none reported)'}`,
             properties: {
               // Constrained to the ids the script derived, so a ruling cannot be attached
               // to a finding nobody reported and cannot be renamed out of its own history.
-              findingId: knownFindingIds.length
-                ? { type: 'string', enum: knownFindingIds }
-                : { type: 'string' },
+              findingId: { type: 'string', enum: knownFindingIds },
+              ...(priorIds.length ? { priorFindingId: { type: 'string', enum: priorIds } } : {}),
               title: { type: 'string' },
               severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
               classification: { type: 'string', enum: ['constitutive', 'competitive'] },
@@ -543,13 +600,29 @@ ${findings.length ? JSON.stringify(findings, null, 2) : '(none reported)'}`,
             },
           },
         },
-        constitutiveOpen: { type: 'integer' },
       },
     },
   }
 )
 
-// ── Packet integrity: arithmetic and contradiction, settled in script ──────────
+// A dead adjudicator ruled on nothing. Reading its silence as zero open findings would
+// pass Gate 4 over confirmed findings nobody classified.
+if (!adjudication) {
+  const reason = `the adversarial-critique-adjudicator returned nothing — ${findings.length} confirmed finding(s) were never adjudicated`
+  log(`Adversarial: ${reason}`)
+  return {
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Adjudicate'),
+    reason,
+    findings,
+    attackers,
+    laneMode,
+    surfaces: declaredSurfaces,
+    ledger: { ...ledger, ok: false },
+  }
+}
+
+// ── Packet integrity: contradiction and completeness, settled in script ────────
 //
 // A packet that contradicts itself is a MALFORMED ARTIFACT, not a verdict, and it must
 // never reach the gate as one. Looping on it cannot help: nothing about the WORK changed
@@ -569,14 +642,13 @@ function disagrees(x, y) {
   return !!x && !!y && (x.real !== y.real || x.classification !== y.classification)
 }
 
-const rawRulings = (adjudication && Array.isArray(adjudication.rulings) ? adjudication.rulings : []).filter(Boolean)
-const constitutiveOpenClaimed = adjudication && typeof adjudication.constitutiveOpen === 'number' ? adjudication.constitutiveOpen : null
+const rawRulings = (Array.isArray(adjudication.rulings) ? adjudication.rulings : []).filter((r) => r && r.findingId)
 
 // 1. INTRA-PACKET: two rulings for one findingId that disagree.
 const contradictions = []
 const byId = {}
 for (const r of rawRulings) {
-  const id = r.findingId || `untracked#${fingerprint(r.title)}`
+  const id = r.findingId
   const held = byId[id]
   if (!held) {
     byId[id] = r
@@ -602,38 +674,40 @@ for (const r of rawRulings) {
 //    a blanket ban would deadlock every repaired finding forever.
 const unjustifiedReversals = []
 for (const id of Object.keys(byId)) {
-  const prior = priorById[id]
   const now = byId[id]
+  const prior = priorById[now.priorFindingId || id]
   if (!disagrees(prior, now)) continue
   const cited = !!(now.reversalOf && String(now.reversalOf.evidence || '').trim())
   if (cited) continue
   unjustifiedReversals.push({
     findingId: id,
+    priorFindingId: prior.findingId,
     prior: { real: prior.real, classification: prior.classification, severity: prior.severity },
     attempted: { real: now.real, classification: now.classification, severity: now.severity },
     reason: 'a reversal must cite the artifact change that justifies it — a changed file, a re-run command and its output, or an explicit false-positive demonstration. Uncited, the prior ruling stands.',
   })
-  byId[id] = { ...prior, reinstated: true }
+  byId[id] = { ...now, real: prior.real, classification: prior.classification, severity: prior.severity, reinstated: true }
+}
+
+// 3. COMPLETENESS: a confirmed finding with no ruling was never classified. It counts as
+//    open and constitutive — the more severe reading, the same tie-break as above.
+const unadjudicated = findings.filter((f) => !byId[f.findingId]).map((f) => f.findingId)
+for (const f of findings) {
+  if (byId[f.findingId]) continue
+  byId[f.findingId] = { findingId: f.findingId, title: f.title, severity: f.severity, classification: 'constitutive', real: true, unadjudicated: true }
 }
 
 const rulings = Object.keys(byId).map((k) => byId[k])
-// 3. ARITHMETIC: constitutiveOpen is COMPUTED, never taken on the model's word. The
-//    invariant is always computable from the rulings list the same packet carries, and
-//    nothing anywhere computed it — so a packet could assert constitutiveOpen:0 while its
-//    own contents said otherwise, and the gate could only re-derive it by reading.
+// 4. ARITHMETIC: constitutiveOpen is COMPUTED from the rulings, never taken on the model's
+//    word, and it is the one number Gate 4 checks.
 const constitutiveOpen = rulings.filter((r) => r.real === true && r.classification === 'constitutive').length
-const countMismatch = constitutiveOpenClaimed !== null && constitutiveOpenClaimed !== constitutiveOpen
 
 const packetIntegrity = {
   contradictions,
   unjustifiedReversals,
-  constitutiveOpenClaimed,
+  unadjudicated,
   constitutiveOpen,
-  countMismatch,
   priorRulingsSeen: priorRulings.length,
-}
-if (countMismatch) {
-  log(`⚠ adjudication asserted constitutiveOpen=${constitutiveOpenClaimed} but its own rulings contain ${constitutiveOpen} — the computed value stands`)
 }
 if (contradictions.length) {
   log(`⚠ adjudication is SELF-CONTRADICTORY on ${contradictions.length} finding(s) — the gate escalates to a constitutional ruling rather than looping the same judge`)
@@ -641,15 +715,18 @@ if (contradictions.length) {
 if (unjustifiedReversals.length) {
   log(`⚠ ${unjustifiedReversals.length} uncited reversal(s) discarded; the prior ruling stands in each case`)
 }
+if (unadjudicated.length) {
+  log(`⚠ ${unadjudicated.length} finding(s) received no ruling and are counted as open constitutive findings: ${unadjudicated.join(', ')}`)
+}
 
 return {
   findings,
-  adjudication: { ...(adjudication || {}), rulings, constitutiveOpen, constitutiveOpenClaimed },
+  adjudication: { rulings, constitutiveOpen },
+  // Top level so Gate 4 checks it deterministically (`constitutiveOpen === 0`).
+  constitutiveOpen,
   packetIntegrity,
-  // The single flag the constitutional gate keys on. A contradiction the same agent
-  // regenerates is a JUDGE failure: looping cannot repair it, and escalating to the
-  // producing phases is wrong too — neither Green nor triage caused the adjudicator to
-  // contradict itself. It goes to a DIFFERENT authority.
+  // The flag the composites route on: a contradiction the same agent regenerates is a
+  // JUDGE failure, so Gate 4 goes to gate-constitutional instead of a deterministic check.
   selfContradictory: contradictions.length > 0,
   // Which lanes actually ran, and why. Without this a run that narrowed its attack
   // set is indistinguishable from one that ran everything, and "we tested for that"
@@ -657,4 +734,5 @@ return {
   attackers,
   laneMode,
   surfaces: declaredSurfaces,
+  ledger: { ...ledger, ok: true },
 }

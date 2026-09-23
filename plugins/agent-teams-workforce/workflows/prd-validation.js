@@ -634,7 +634,7 @@ if (!analysis) {
   return {
     ok: false,
     dispatchFailed: true,
-    dispatchFailures: ['validate:all-lenses (validation analyst)'],
+    dispatchFailures: dispatchDeaths('Validate'),
     reason:
       'the validation analyst session returned nothing — it was skipped or died on a terminal API error, so the PRD ' +
       'was not judged. This is a DISPATCH failure, not a finding against the PRD.',

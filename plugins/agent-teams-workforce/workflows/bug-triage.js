@@ -471,6 +471,15 @@ Deliver:
   }
 )
 
+// A dead dispatch is not a diagnosis, a sizing or a contract. The caller treats a null
+// result as "triage produced nothing" and stops, so each death returns null with its
+// cause logged — reading `.rootCause` off a null analysis used to throw out of the run.
+const triageDied = (what) => {
+  log(`Triage: the ${what} returned nothing — ${dispatchDeaths('Triage').map((f) => f.note).join('; ') || 'no dispatch was recorded'}`)
+  return null
+}
+if (!analysis) return triageDied('diagnosis')
+
 // 1b) SIZING — is this a fix, or a redesign wearing a bug ticket?
 //
 // The repository the fix is built in. A supplied one is the answer; otherwise it is what
@@ -478,7 +487,7 @@ Deliver:
 // here: an empty string is carried as null and the caller refuses to write without one.
 // Measured here so the count is observed on the needs-prd path too. An observation only:
 // every defect is carried forward, and the `at least one` is the only thing asked for.
-if (analysis) checkLimit('Triage', 'defects', Array.isArray(analysis.defects) ? analysis.defects : [], DEFECTS_EXPECTED, 1)
+checkLimit('Triage', 'defects', Array.isArray(analysis.defects) ? analysis.defects : [], DEFECTS_EXPECTED, 1)
 const resolvedRepoPath = repoKnown ? bead.repoPath : String((analysis && analysis.repoPath) || '').trim() || null
 if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resolvedRepoPath}` : 'NOT located'} — ${(analysis && analysis.repoResolution) || 'no resolution reported'}`)
 
@@ -523,9 +532,11 @@ Blast radius: ${analysis.blastRadius}`,
   }
 )
 
-// A missing verdict must not silently become "fix" — that is the expensive error.
-const scope = (sizing && sizing.scope) || 'needs-prd'
-const scopeRationale = (sizing && sizing.rationale) || 'sizing returned no verdict — defaulting to needs-prd rather than assuming a fix is safe'
+// A missing verdict must not silently become "fix" — that is the expensive error — and it
+// is not a "needs-prd" ruling either, so a dead sizing stops the run as a dispatch death.
+if (!sizing) return triageDied('sizing')
+const scope = sizing.scope || 'needs-prd'
+const scopeRationale = sizing.rationale || 'sizing returned no rationale'
 if (scope === 'needs-prd') {
   log(`Bug ${bead.id || ''} sized as NEEDS-PRD: ${scopeRationale}`)
   return {
@@ -534,7 +545,7 @@ if (scope === 'needs-prd') {
     repoResolution: (analysis && analysis.repoResolution) || null,
     scope,
     scopeRationale,
-    contractsTouched: (sizing && sizing.contractsTouched) || [],
+    contractsTouched: sizing.contractsTouched || [],
     reproduction: analysis.reproduction,
     rootCause: analysis.rootCause,
     defects: (Array.isArray(analysis.defects) ? analysis.defects : []).filter((d) => d && d.id),
@@ -628,6 +639,9 @@ ${defects.length ? defects.map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${
     },
   }
 )
+
+// A contract with no criteria gives Red nothing to encode, so a dead writer stops here.
+if (!contract) return triageDied('expected-behavior writer')
 
 // Coverage is an exact join, not a judgment: every enumerated defect must have at least
 // one criterion pointing at it.

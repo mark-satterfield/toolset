@@ -988,6 +988,9 @@ if (!verified || verified.ok !== true) {
 
 const obsCallerCommonDir = seen(verified.callerCommonDir)
 const obsDefaultBranch = normalizeBranch(verified.callerDefaultBranch)
+// The same branch with its case kept: settle names it in a git ref, and a branch name is
+// case-sensitive there even though the comparisons in this file are not.
+const obsDefaultBranchName = seen(verified.callerDefaultBranch).replace(/^refs\/heads\//, '').replace(/^origin\//, '')
 const verifierNotes = Array.isArray(verified.notes) ? verified.notes : []
 const notesSuffix = verifierNotes.length ? ` Reported: ${verifierNotes.join('; ')}` : ''
 
@@ -1135,7 +1138,7 @@ return {
   // The real default branch, so the settle guards test against THIS repository's default
   // rather than a hardcoded pair. Null means unobtainable, which narrows those guards
   // back to their floor.
-  defaultBranch: obsDefaultBranch || null,
+  defaultBranch: obsDefaultBranchName || null,
   verification: {
     gitDir: chosen.gitDir,
     gitCommonDir: chosen.commonDir,

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-intent',
   description:
-    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then validate freshness (dependency changes) and review it (security scan + cost impact). On a blocking cost finding the maker re-runs with checker feedback (bounded 2 passes); deadlock escalates to the architecture-decider. Read-only review — no agent judges its own artifact.',
+    'Leaf mini — Infrastructure provisioning intent. A maker (cdk-infrastructure-designer) produces concrete, CDK-expressible provisioning intent; independent checkers then validate freshness (dependency changes) and review it (security scan + cost impact). On a blocking cost finding the maker re-runs with checker feedback (bounded 2 passes), and freshness and security are re-checked on the rewritten intent; a cost finding still blocking after that leaves the intent not ready. Returns a top-level `ready`. Read-only review — no agent judges its own artifact.',
   phases: [
     { title: 'Provisioning intent', detail: 'cdk-infrastructure-designer authors the intent' },
     { title: 'Freshness', detail: 'dependency-change checks' },
@@ -352,24 +352,33 @@ async function makeIntent(feedback) {
 
 let intent = await makeIntent('')
 
+// A dead dispatch has no artifact to review or gate, so it is reported as itself and the
+// composite's gate spends no retry on it.
+const dispatchFailedResult = (who) => ({
+  ok: false,
+  dispatchFailed: true,
+  dispatchFailures: dispatchDeaths(),
+  reason: `${who} returned nothing — skipped, or died on a terminal API error`,
+  ready: false,
+})
+if (!intent) return dispatchFailedResult('the cdk-infrastructure-designer')
+
 // ── Phase 2: Freshness (independent checkers, in parallel) ─────────────────────
 phase('Freshness')
-
-const intentText = JSON.stringify(intent, null, 2)
 
 // THE HEADER SAID "IN PARALLEL" AND THE CODE RAN THEM ONE AFTER ANOTHER. The freshness
 // check, the security scan and the first cost pass all read the SAME intent text and none
 // of them reads another's output — three independent checkers on one artifact, serialized
 // for no reason on the phase's longest stretch. They are dispatched together below, once
 // `reviewCost` is in scope.
-const checkFreshness = () =>
+const checkFreshness = (currentIntent) =>
   settleAgent(
   `Detect dependency changes that would INVALIDATE this provisioning intent — CDK/construct-library version drift, removed or renamed constructs, deprecated properties, or upstream service changes. You are an independent checker — you did not author the intent and you do not modify it.
 
 ${changeHeader}
 
 Provisioning intent under review:
-${intentText}
+${JSON.stringify(currentIntent, null, 2)}
 
 Report each dependency change that affects the intent and whether it invalidates the intent as written.`,
   {
@@ -404,14 +413,14 @@ Report each dependency change that affects the intent and whether it invalidates
 phase('Review')
 
 // Security scan is independent of the maker and does not change between cost passes.
-const scanSecurity = () =>
+const scanSecurity = (currentIntent) =>
   settleAgent(
   `Independently scan this provisioning intent for security misconfiguration — public exposure, missing encryption, over-broad IAM, unencrypted/unversioned buckets, insecure defaults. You are an independent scanner — you did not author the intent and you do not modify it.
 
 ${changeHeader}
 
 Provisioning intent under review:
-${intentText}
+${JSON.stringify(currentIntent, null, 2)}
 
 Report each finding with a severity. Encryption/versioning omissions on any S3 bucket and any public-exposure or over-broad-IAM issue are blocking.`,
   {
@@ -488,65 +497,45 @@ Estimate the recurring + one-time cost drivers and flag anything materially over
 // The three independent first-pass checkers, dispatched together. Each reads the intent
 // as `makeIntent` returned it and nothing else; the cost LOOP below is sequential because
 // every pass after the first reads an intent the maker has since rewritten.
-const [dependencyChanges, securityFindings, firstCostPass] = await parallel([
-  checkFreshness,
-  scanSecurity,
+let [dependencyChanges, securityFindings, costFindings] = await parallel([
+  () => checkFreshness(intent),
+  () => scanSecurity(intent),
   () => reviewCost(intent, 1),
 ])
+if (!dependencyChanges || !securityFindings || !costFindings) {
+  return dispatchFailedResult('an independent intent checker')
+}
 
-const fresh = dependencyChanges.invalidated !== true
-
-let costFindings = firstCostPass
 let costResolved = costFindings.blocking !== true
-let costDecision = null
+let rewritten = false
 
 for (let pass = 2; pass <= MAX_COST_LOOPS && !costResolved; pass++) {
   log(`Cost review blocking — re-running cdk-infrastructure-designer (pass ${pass}/${MAX_COST_LOOPS})`)
-  intent = await makeIntent(costFindings.feedback || '')
+  const revised = await makeIntent(costFindings.feedback || '')
+  if (!revised) return dispatchFailedResult('the cdk-infrastructure-designer')
+  intent = revised
+  rewritten = true
   costFindings = await reviewCost(intent, pass)
+  if (!costFindings) return dispatchFailedResult('the cost-impact-reviewer')
   costResolved = costFindings.blocking !== true
 }
 
-// Deadlock after the bounded loop -> architecture-decider rules (decider only rules).
-if (!costResolved) {
-  log('Cost review still blocking after bounded passes — escalating to architecture-decider')
-  costDecision = await settleAgent(
-    `The cost-impact reviewer and the cdk-infrastructure-designer are deadlocked on this provisioning intent after ${MAX_COST_LOOPS} maker passes. Rule on it. You only rule — you do not author or re-analyze the intent.
-
-${changeHeader}
-
-Final provisioning intent:
-${JSON.stringify(intent, null, 2)}
-
-Latest blocking cost feedback:
-${costFindings.feedback || '(none captured)'}
-
-Rule: "accept" the intent as-is (cost justified), "revise" with a binding directive the maker must follow, or "reject" the intent. The S3 versioning/encryption standard may not be waived.`,
-    {
-      label: 'review:cost-deadlock',
-      phase: 'Review',
-      agentType: 'agent-teams-workforce:architecture-decider',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['ruling', 'rationale'],
-        properties: {
-          ruling: { type: 'string', enum: ['accept', 'revise', 'reject'] },
-          rationale: { type: 'string' },
-          directive: { type: 'string' },
-        },
-      },
-    }
-  )
-  costResolved = !!costDecision && costDecision.ruling === 'accept'
+// The freshness and security verdicts above were about the FIRST intent. When the cost loop
+// rewrote it, they are re-run on the intent that is actually returned.
+if (rewritten) {
+  ;[dependencyChanges, securityFindings] = await parallel([() => checkFreshness(intent), () => scanSecurity(intent)])
+  if (!dependencyChanges || !securityFindings) return dispatchFailedResult('an independent intent checker')
 }
+const fresh = dependencyChanges.invalidated !== true
+
+// A cost finding still blocking after the bounded maker loop leaves the intent not ready.
+if (!costResolved) log(`Cost review still blocking after ${MAX_COST_LOOPS} maker pass(es) — the intent is not ready`)
 
 // ── Contract: one object threading every phase output ──────────────────────────
+// `ready` is at the top level too: infra-change Gate 1 checks it directly.
+const ready = fresh && securityFindings.blocking !== true && costResolved
 const contract = {
-  ready:
-    fresh &&
-    securityFindings.blocking !== true &&
-    costResolved,
+  ready,
   change: change.id || null,
   repoPath: change.repoPath || null,
   affectedStacks: intent.affectedStacks,
@@ -554,12 +543,12 @@ const contract = {
 }
 
 return {
+  ready,
   provisioningIntent: intent,
   affectedStacks: intent.affectedStacks,
   dependencyChanges,
   securityFindings,
   costFindings,
-  costDecision,
   fresh,
   contract,
 }

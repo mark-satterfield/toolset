@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-red',
   description:
-    'Shared-tail mini — TDD Red. Discovery is a LOOKUP that runs nothing: it reports which acceptance criteria already have a covering test, and writers are DERIVED from the contract\'s declared surfaces (unit always) rather than routed by an agent, with the test strategy inherited from the spec rather than re-ruled per task. Execution happens at Red confirmation only — the writers run what they author, and existing tests are executed just once, under a three-way verdict: red (reuse), already-satisfied (the behavior exists, nothing is authored and the phase reports up), or not-encoded (author against them). An independent coverage reviewer then checks the result against the acceptance criteria. Writes tests only — no production code.',
+    'Shared-tail mini — TDD Red. Discovery is a LOOKUP that runs nothing: it reports which acceptance criteria already have a covering test, and writers are DERIVED from the contract\'s declared surfaces (unit always) rather than routed by an agent, with the test strategy inherited from the spec rather than re-ruled per task. Execution happens at Red confirmation only — the writers run what they author, and existing tests are executed just once, under a three-way verdict: red (reuse), already-satisfied (the behavior exists, nothing is authored and the phase reports up), or not-encoded (author against them). Whether the tests encode the acceptance criteria is judged once, at Gate 2a. Writes tests only — no production code.',
   phases: [{ title: 'Red', detail: 'author + confirm a failing test' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -334,8 +334,11 @@ const contractPathFault = (() => {
   return null
 })()
 if (contractPathFault) {
+  // A refused path is refused again on every retry, so the gate is not run on it.
   return {
     ok: false,
+    phaseBlocked: true,
+    blockedReason: `${contractPathFault}.`,
     testFiles: [],
     redConfirmed: false,
     evidence: '',
@@ -344,7 +347,6 @@ if (contractPathFault) {
     greenPathFindings: [],
     writers: [],
     surfaces: [],
-    coverageGaps: [],
     blocked: [
       `${contractPathFault}. This phase refuses the contract rather than dispatching it: the path would ` +
         'already be inside the prompt by the time anyone could object.',
@@ -392,8 +394,8 @@ phase('Red')
 //
 // ONLY A DEAD WRITER FAILS THE PHASE, and the asymmetry is deliberate. `redConfirmed`
 // is computed FROM the writers, so a writer that never ran makes the verdict a verdict
-// on work that is partly absent. The three auxiliary dispatches — discovery, the
-// existing-test confirmation, the coverage review — each degrade CONSERVATIVELY when
+// on work that is partly absent. The two auxiliary dispatches — discovery and the
+// existing-test confirmation — each degrade CONSERVATIVELY when
 // they die: the phase authors more and claims less. Failing the run on one of those
 // would throw away a Red the writers genuinely obtained, which is the same class of
 // false rejection this change exists to remove. They are recorded and reported; they
@@ -630,8 +632,7 @@ ${taskBlock}`,
       greenPath: [],
       greenPathChecked: false,
       strategy,
-      coverage: { gaps: [], reviewed: 'discovery+confirmation' },
-      ledger: { phase: 'red', chosen: writersFinal, mode: 'reused', ok: true },
+      ledger: { phase: 'red', beadId: (c.bead && c.bead.id) || null, chosen: writersFinal, mode: 'reused', ok: true },
     }
   }
 
@@ -647,8 +648,7 @@ ${taskBlock}`,
       evidence: confirmation.evidence,
       reusedExistingTests: true,
       strategy,
-      coverage: { gaps: [], reviewed: 'discovery+confirmation' },
-      ledger: { phase: 'red', chosen: writersFinal, mode: 'already-satisfied', ok: true },
+      ledger: { phase: 'red', beadId: (c.bead && c.bead.id) || null, chosen: writersFinal, mode: 'already-satisfied', ok: true },
     }
   }
 
@@ -812,7 +812,6 @@ if (
     writers: writersFinal,
     surfaces,
     strategy,
-    coverageGaps: [],
     ledger: {
       phase: 'red',
       beadId: (c.bead && c.bead.id) || null,
@@ -866,39 +865,13 @@ if (greenPathFindings.length) {
   log(`⚠ Red: ${greenPathFindings.length} test(s) declare no reachable path to green — ${greenPathFindings.join(' | ')}`)
 }
 
-// Independent coverage check — every acceptance criterion has a covering test. The
-// reviewer authors no tests; it only judges.
-const coverage = await settleAgent(
-  `You are the test-coverage-gap-reviewer — INDEPENDENT of the test writers. Check the authored tests against the acceptance criteria; flag any criterion with no covering test. Do NOT write tests.
-
-Acceptance criteria:
-${acList('(none)')}
-
-Authored test files: ${testFiles.join(', ') || 'none'}`,
-  {
-    label: 'red:coverage',
-    phase: 'Red',
-    agentType: 'agent-teams-workforce:test-coverage-gap-reviewer',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['gaps'],
-      properties: { gaps: { type: 'array', items: { type: 'string' } } },
-    },
-  }
-)
-
-// The coverage reviewer is a CHECK on what the writers produced. A dead reviewer means
-// nothing was checked — reported, but it never turns coverageGaps into a false "none".
-if (!coverage) noteDead('red:coverage (test-coverage-gap-reviewer)')
-
 // test-design-lead and test-strategy-decider no longer run here: writers are
 // derived from the contract's declared surfaces and the strategy is inherited
 // from the spec, so neither is a choice this phase makes.
 const ledger = {
   phase: 'red',
   beadId: (c.bead && c.bead.id) || null,
-  chosen: [...writersFinal, 'test-coverage-gap-reviewer'],
+  chosen: writersFinal,
   mode: selectionMode,
   ok: redConfirmed && !deadWriters.length,
   ...(deadAgents.length ? { dispatchFailures: deadAgents } : {}),
@@ -927,7 +900,6 @@ if (deadWriters.length) {
     writers: writersFinal,
     surfaces,
     strategy,
-    coverageGaps: (coverage && coverage.gaps) || [],
     ledger,
   }
 }
@@ -947,6 +919,5 @@ return {
   writers: writersFinal,
   surfaces,
   strategy,
-  coverageGaps: (coverage && coverage.gaps) || [],
   ledger,
 }

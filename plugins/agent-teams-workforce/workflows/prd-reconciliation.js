@@ -343,7 +343,7 @@ function checkLimit(where, what, value, expected, min) {
 //     id?: string,
 //     title?: string,
 //     body: string,             // the PRD text — required; a path alone cannot be read by a script
-//     path?: string,            // where the PRD document lives
+//     path?: string,            // where the PRD document lives; an absolute path is sent in place of the body
 //     repoPath?: string,        // the repo the PRD nominally targets
 //   },
 //   repos?: string[],           // every repo the PRD may span
@@ -502,9 +502,6 @@ const fail = (reason, extra) => ({
   // way on every path. `complete: false` is the honest reading of a run that never ran.
   coverage: { requirementCount: 0, examinedCount: 0, unexaminedRequirementIds: [], budgetExhausted: false, complete: false },
   unexaminedRequirements: [],
-  repos: [],
-  existingRepos: [],
-  spansMultipleRepos: false,
   uiAuthority: {
     bundlePath: null,
     mocksDir: mocksDir || null,
@@ -523,7 +520,14 @@ if (!hasText(prdBody)) {
 }
 
 const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
-const prdBlock = `${prdHeader}\n\n${prdBody}`
+// The PRD goes to the reconciler as its path when it has one on disk: the reconciler reads
+// it itself, and the dispatch does not carry the whole document once per repository. The
+// body is still required here, because the search budget below is measured from it.
+const prdPath = typeof prdInput === 'string' ? '' : prdInput.path
+const prdOnDisk = hasText(prdPath) && /^\/[A-Za-z0-9._/ -]+$/.test(prdPath) && !prdPath.split('/').includes('..')
+const prdBlock = prdOnDisk
+  ? `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read it in full before you start: every requirement it states is in scope.`
+  : `${prdHeader}\n\n${prdBody}`
 const repoBlock = repos.length
   ? repos.map((r, i) => `${i + 1}. ${r}`).join('\n')
   : '(no repo paths supplied — discover the repositories this PRD touches from the PRD text)'
@@ -604,7 +608,6 @@ const CALL_CEILING = requirementEstimate * CALLS_PER_REQUIREMENT + BUDGET_OVERHE
 // UI pass legitimately opens more than forty artifacts.
 const EVIDENCE_EXPECTED = 15
 const MATERIAL_EXPECTED = 60
-const REPOS_EXPECTED = 25
 const CONSULTED_EXPECTED = 120
 const CHANGE_FINDINGS_EXPECTED = 40
 const UNEXAMINED_EXPECTED = Math.max(200, requirementEstimate)
@@ -702,12 +705,6 @@ Look specifically for the material that is easy to miss:
 - a route table, handler list, or CDK stack that already serves what the PRD asks for;
 - code that serves a SUPERSEDED version of this behaviour — that is \`contradicts\`, and its
   removal is work somebody has to do.
-
-Per requirement, also return:
-- needsNewContract — true if satisfying it requires a NEW OR CHANGED contract: an HTTP
-  route, an event, a schema, a public interface. False if the contract already exists and
-  only its behaviour must change.
-- repos — the repositories this requirement's work (build, reuse or removal) touches.
 
 ═══ CHECK 1b — UI REQUIREMENTS ARE RESOLVED AGAINST THE cds DESIGN SYSTEM ═══
 
@@ -872,10 +869,6 @@ Such a requirement still appears in \`requirements\` with its honest status, and
               conformingMaterial: { type: 'array', items: { type: 'string' } },
               removalTargets: { type: 'array', items: { type: 'string' } },
               missing: { type: 'string' },
-              needsNewContract: { type: 'boolean' },
-              // This mini runs once per repository in the span, so a requirement names
-              // that repository and at most a few others its work reaches.
-              repos: { type: 'array', items: { type: 'string' } },
             },
           },
         },
@@ -1062,7 +1055,6 @@ const requirements = reality.requirements.map((r, i) => {
   checkLimit(`Reconcile (${id})`, 'evidence', evidence, EVIDENCE_EXPECTED)
   checkLimit(`Reconcile (${id})`, 'conformingMaterial', list(r && r.conformingMaterial), MATERIAL_EXPECTED)
   checkLimit(`Reconcile (${id})`, 'removalTargets', list(r && r.removalTargets), MATERIAL_EXPECTED)
-  checkLimit(`Reconcile (${id})`, 'repos', list(r && r.repos), REPOS_EXPECTED)
   return {
     id,
     requirement: (r && r.requirement) || '',
@@ -1077,8 +1069,6 @@ const requirements = reality.requirements.map((r, i) => {
     conformingMaterial: status === 'conforms' ? list(r && r.conformingMaterial) : [],
     removalTargets: status === 'contradicts' ? list(r && r.removalTargets) : [],
     missing: status === 'absent' ? (r && r.missing) || null : null,
-    needsNewContract: !!(r && r.needsNewContract),
-    repos: list(r && r.repos),
     surface: SURFACES.indexOf(r && r.surface) !== -1 ? r.surface : 'unknown',
     claimedStatus: claimed,
   }
@@ -1097,7 +1087,14 @@ checkLimit('Reconcile', 'unexaminedRequirementIds', cov.unexaminedRequirementIds
 const unexaminedIds = new Set(
   (Array.isArray(cov.unexaminedRequirementIds) ? cov.unexaminedRequirementIds : []).filter((x) => hasText(x)).map((x) => x.trim())
 )
-for (const r of requirements) r.examined = !unexaminedIds.has(r.id)
+// The caller renders `missing` beside an `absent` status, so an unexamined requirement says
+// so there, where the spec author reads it, instead of reading as a searched-for absence.
+for (const r of requirements) {
+  r.examined = !unexaminedIds.has(r.id)
+  if (!r.examined && r.status === 'absent') {
+    r.missing = 'UNEXAMINED — the reconciler did not search this repository for it, so its material here is unestablished. Search before specifying it as new.'
+  }
+}
 const unexaminedRequirements = requirements
   .filter((r) => !r.examined)
   .map((r) => ({ id: r.id, requirement: r.requirement, reportedStatus: r.status }))
@@ -1139,37 +1136,13 @@ const absentCount = requirements.filter((r) => r.status === 'absent').length
 // product keeps shipping the thing the PRD was written to replace.
 const removalWork = requirements
   .filter((r) => r.status === 'contradicts' && r.removalTargets.length)
-  .map((r) => ({ requirementId: r.id, requirement: r.requirement, targets: r.removalTargets, repos: r.repos }))
+  .map((r) => ({ requirementId: r.id, requirement: r.requirement, targets: r.removalTargets }))
 
 // Reuse is the other half: named material the downstream phases build ON rather than
 // re-derive. It is context for them, never a subtraction from what the PRD asks.
 const reuseWork = requirements
   .filter((r) => r.status === 'conforms' && r.conformingMaterial.length)
-  .map((r) => ({ requirementId: r.id, requirement: r.requirement, material: r.conformingMaterial, repos: r.repos }))
-
-// TWO REPO LISTS, ONE WORD APART — read this before picking one.
-//
-//   `repos`         — every repo any requirement touches, including the repos an `absent`
-//                     requirement PREDICTS its work will land in. A prediction, useful for
-//                     sizing the span of the whole PRD.
-//   `existingRepos` — only the repos where material was actually FOUND: the union across
-//                     `conforms` and `contradicts`, both of which are backed by cited
-//                     evidence that survived enforcement.
-//
-// The distinction is the whole point of the narrower list. It is handed to the repo
-// surveyor as EVIDENCE — "material exists here" — and a predicted repo in it would be a
-// guess wearing evidence's clothes. An `absent` requirement proves nothing about where
-// anything lives.
-const allRepos = []
-const existingRepos = []
-for (const r of requirements) {
-  const material = r.status === 'conforms' || r.status === 'contradicts'
-  for (const x of r.repos) {
-    if (allRepos.indexOf(x) === -1) allRepos.push(x)
-    if (material && existingRepos.indexOf(x) === -1) existingRepos.push(x)
-  }
-}
-const spansMultipleRepos = allRepos.length > 1
+  .map((r) => ({ requirementId: r.id, requirement: r.requirement, material: r.conformingMaterial }))
 
 // `bundlePath` is the batch the reconciler actually selected — spec authoring reads the
 // bundle's build-specs rather than re-deriving UI from PRD prose, so the resolved path
@@ -1228,15 +1201,9 @@ return {
   conformsCount,
   contradictsCount,
   absentCount,
+  // The caller stamps the repository it dispatched this run for onto each work item.
   removalWork,
   reuseWork,
-  repos: allRepos,
-  existingRepos,
-  // Descriptive only — NOTHING in the plugin reads this today. It also changed meaning in
-  // this rewrite: it used to span the delta's repos and now spans the whole PRD's, so a
-  // future consumer must read it as "this PRD touches more than one repo", never as "the
-  // remaining work does".
-  spansMultipleRepos,
   uiAuthority,
   dependencyChanges,
   evidenceViolations,

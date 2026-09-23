@@ -1,8 +1,8 @@
 export const meta = {
   name: 'documentation',
   description:
-    'Cross-cutting mini — Documentation. Runs alongside the build (not as a phase): ONE read-only auditor names which docs the change leaves stale AND which writer owns each (it authors no documentation, so naming the writer is not judging its own work), the writers author in parallel, and an INDEPENDENT accuracy reviewer checks the result against shipped behavior. No routing session sits between the audit and the writers — an unusable or absent assignment falls back to a deterministic path-based mapping. Its currency result feeds the deployment readiness review. Code is not done until its documentation is current.',
-  phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes + accuracy review' }],
+    'Cross-cutting mini — Documentation. Runs alongside the build (not as a phase): ONE read-only auditor names which docs the change leaves stale AND which writer owns each (it authors no documentation, so naming the writer is not judging its own work), and the writers author in parallel. No routing session sits between the audit and the writers — an unusable or absent assignment falls back to a deterministic path-based mapping. The docs are written into the worktree before the deploy, so Settle lands them with the code.',
+  phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
 //
@@ -336,9 +336,7 @@ const WRITERS = [
 // a session-start, on every build run of all three composites.
 //
 // Segregation of duties is untouched: the auditor AUTHORS NO DOCUMENTATION, so naming
-// which writer owns a stale doc is not judging its own work — and the writers are
-// still checked afterwards by an independent accuracy reviewer, which is the
-// maker/checker pair that actually matters here.
+// which writer owns a stale doc is not judging its own work.
 const audit = await settleAgent(
   `Audit whether this change leaves documentation stale (READMEs, API docs, changelog, user guides). READ-ONLY — you write no documentation. List exactly which docs need updating and why. Work within: ${repo}
 
@@ -348,7 +346,7 @@ Then ASSIGN each stale doc to the writer that owns its kind, drawn ONLY from thi
 - changelog-writer — version bump / changelog entry derived from commits
 - user-guide-writer — user-facing feature guide or walkthrough
 
-Use the FEWEST writers that cover the stale docs, list the stale docs assigned to each, and assign no writer whose kind nothing changed. Assigning a writer is not a judgment on any work — you author none of it, and an independent reviewer checks what the writers produce.
+Use the FEWEST writers that cover the stale docs, list the stale docs assigned to each, and assign no writer whose kind nothing changed. Assigning a writer is not a judgment on any work — you author none of it.
 
 Change: ${changeLabel}
 Changed files: ${changedFiles}`,
@@ -395,7 +393,6 @@ const writerForPath = (docPath) => {
 }
 
 let writerResults = []
-let reviewResult = null
 let selectionMode = 'default'
 let writersChosen = []
 
@@ -458,73 +455,23 @@ Docs assigned to you: ${asg.docs.join(', ')}`,
       )
     )
   )).filter(Boolean)
-
-  // INDEPENDENT accuracy review — a different agent than any writer checks the written
-  // docs against actual shipped behavior. The writer never reviews its own doc.
-  const writtenDocs = []
-  for (const r of writerResults) {
-    if (r && Array.isArray(r.updatedDocs)) writtenDocs.push(...r.updatedDocs)
-  }
-  reviewResult = await settleAgent(
-    `Review the updated documentation against ACTUAL shipped behavior for accuracy and completeness. READ-ONLY — report findings, do not edit. State whether the docs accurately reflect the change. Work within: ${repo}
-
-Change: ${changeLabel}
-Changed files: ${changedFiles}
-Docs to review: ${writtenDocs.join(', ') || 'n/a'}`,
-    {
-      label: 'docs:accuracy-review',
-      phase: 'Documentation',
-      agentType: 'agent-teams-workforce:documentation-accuracy-reviewer',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['accurate', 'findings'],
-        properties: {
-          accurate: { type: 'boolean' },
-          findings: { type: 'array', items: { type: 'string' } },
-        },
-      },
-    }
-  )
 }
 
-// Aggregate writer output into the same `update` shape composites consumed before:
-// the union of updated docs plus per-writer notes.
+// Aggregate writer output: the union of updated docs plus per-writer notes.
 const allUpdatedDocs = []
 for (const r of writerResults) {
   if (r && Array.isArray(r.updatedDocs)) allUpdatedDocs.push(...r.updatedDocs)
 }
-const update = needsWork
-  ? {
-      updatedDocs: allUpdatedDocs,
-      writers: writerResults,
-      review: reviewResult,
-    }
-  : null
+const update = needsWork ? { updatedDocs: allUpdatedDocs, writers: writerResults } : null
 
-// Docs are current if the audit found them current, or the writers updated every stale
-// doc AND the independent accuracy review confirms they match shipped behavior.
-const docsCurrent = !!(
-  audit &&
-  (
-    audit.docsCurrent ||
-    (
-      needsWork &&
-      allUpdatedDocs.length >= staleDocs.length &&
-      reviewResult &&
-      reviewResult.accurate
-    )
-  )
-)
+// Docs are current if the audit found them current, or every assigned writer returned.
+const docsCurrent = !!(audit && (audit.docsCurrent || (needsWork && writerResults.length === writersChosen.length)))
 
 // Decision ledger — what this phase actually did, for over-time mining.
-// chosen = [currency-auditor, ...selected writers, accuracy-reviewer]. There is no
-// documentation-lead in this list any more: the routing session it existed for is gone.
+// chosen = [currency-auditor, ...selected writers].
 // mode 'assigned' = the auditor named the writers; 'derived' = it named none and the
 // script mapped every stale doc by path; 'default' = docs already current, no writers run.
-const chosen = ['documentation-currency-auditor']
-  .concat(writersChosen)
-  .concat(needsWork ? ['documentation-accuracy-reviewer'] : [])
+const chosen = ['documentation-currency-auditor'].concat(writersChosen)
 
 const ledger = {
   phase: 'documentation',

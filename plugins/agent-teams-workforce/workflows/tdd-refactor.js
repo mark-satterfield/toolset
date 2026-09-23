@@ -450,6 +450,18 @@ Deliver the files you touched, whether tests are still green, and the captured t
   }
 )
 
+// A refactorer that returned nothing never ran, so there is nothing to review or judge.
+// Reported as a dispatch failure: the composite spends no gate retry on it.
+if (!refactor) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Refactor'),
+    reason: 'the code-refactoring-specialist returned nothing — skipped, or died on a terminal API error',
+    ledger: { phase: 'refactor', beadId: (c.bead && c.bead.id) || null, chosen: ['code-refactoring-specialist'], mode: selectionMode, ok: false },
+  }
+}
+
 const OPTIMIZER_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -524,4 +536,27 @@ const ledger = {
   ok: !!(review && review.testsGreen && review.behaviorPreserved),
 }
 
-return { refactor, optimizers: optimizerRuns, complexityAnalysis: complexity, review, changedFiles, ledger }
+if (!review) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Refactor'),
+    reason: 'the code-correctness-reviewer returned nothing — skipped, or died on a terminal API error',
+    refactor,
+    optimizers: optimizerRuns,
+    changedFiles,
+    ledger,
+  }
+}
+
+// Gate 2c checks these two booleans directly, so they sit at the top level.
+return {
+  refactor,
+  optimizers: optimizerRuns,
+  complexityAnalysis: complexity,
+  review,
+  changedFiles,
+  testsGreen: review.testsGreen === true,
+  behaviorPreserved: review.behaviorPreserved === true,
+  ledger,
+}

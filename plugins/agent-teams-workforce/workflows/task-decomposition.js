@@ -1,10 +1,10 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, sequences the acyclic dependency DAG with a build order, and sizes every task; the WSJF score itself (the sole prioritization metric — no P0-P4) is ARITHMETIC over that size under the task-wsjf rubric — value and time criticality are inherited from the parent Epic, risk reduction is computed from how many tasks each one unblocks in the DAG, and no agent assigns either. TWO independent checker sessions then judge the result, and they judge different things because their charters differ: the wsjf-scoring-reviewer rules on the sizes, the beads-format-validator rules on the Beads format and the hierarchy rule and is forbidden from judging a score. They run concurrently, and only the scoring side loops — a scoring rejection re-runs the scorer and the scoring reviewer, never the format validation. The maker never judges its own work.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with. Emits nothing but tasks: an Epic is created with its PRD and a Story with its Spec, both upstream of here, so no Epic, Story, or loose feature is ever minted by decomposition. Each task is scoped to one agent\'s work within the Story\'s single repo. ONE maker session decomposes, names the dependency edges between the tasks, and sizes every task; the WSJF score itself (the sole prioritization metric — no P0-P4) is ARITHMETIC over that size under the task-wsjf rubric — value and time criticality are inherited from the parent Epic, risk reduction is computed from how many tasks each one unblocks in the DAG, and no agent assigns either. The script then checks the result in code: every edge joins two known tasks, the graph is acyclic (the build order is derived from it here, not taken from the maker), and every task carries a key, title, description, acceptance criteria and a Definition of Done. A task set that fails the check is not emitted.',
   phases: [
-    { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + acyclic DAG + job sizes; WSJF computed from them' },
-    { title: 'Validate & emit', detail: 'two independent checkers, concurrent: job-size review + Beads-format validation -> emit bead set' },
+    { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + dependency edges + job sizes' },
+    { title: 'Validate & emit', detail: 'code checks the DAG and the Beads fields, WSJF is computed from the sizes, the bead set is emitted' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -305,24 +305,19 @@ async function settleAgent(prompt, opts) {
 //   pluginRoot: string,                                        // absolute path of this plugin's root; the
 //                                                              // WSJF arithmetic runs the rubric's wsjf.py
 //                                                              // under it, so a run without it is refused
-//   maxScoringPasses?: number,                                 // WSJF review retries (default 2)
 //   artifacts?: { dir, relDir?, epicId, script, phase, slug, inputs? },
-//                                                              // Epic working directory: the maker, the
-//                                                              // re-scorer and the two checkers each save
-//                                                              // their own output as tasks-<slug>.json,
-//                                                              // tasks-<slug>.wsjf.json,
-//                                                              // tasks-<slug>.review.json (format) and
-//                                                              // tasks-<slug>.wsjf-review.json (scores)
-//   replay?: { maker, rescore?, review?, wsjfReview? },        // those saved outputs, read back from fresh
-//                                                              // artifacts: a supplied one replaces its session
-//                                                              // and the deterministic emission below still runs
-//   replay.files?: { maker?, rescore?, review?, wsjfReview? }, // the same outputs named as ABSOLUTE PATHS rather
-//                                                              // than inlined. Documents pass between agents as
-//                                                              // paths, and a dispatch payload could not carry a
-//                                                              // parsed task set anyway. A script cannot open a
-//                                                              // file, so ONE read-only reader session returns the
-//                                                              // named files and the script parses them into the
-//                                                              // slots above — replacing four sessions and a gate
+//                                                              // Epic working directory: the maker saves its
+//                                                              // output there as tasks-<slug>.json
+//   existingTasks?: [{ elabKey, title, description }],         // the open Tasks already under this Story; a
+//                                                              // task covering the same work returns its
+//                                                              // elabKey as `reuses`
+//   replay?: { maker },                                     // that saved output, read back from fresh
+//                                                              // artifacts: it replaces the maker session and
+//                                                              // the deterministic checks and emission still run
+//   replay.files?: { maker? },                                 // the same output named as an ABSOLUTE PATH rather
+//                                                              // than inlined. A script cannot open a file, so ONE
+//                                                              // read-only reader session returns it and the
+//                                                              // script parses it into the slot above
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -360,16 +355,7 @@ const ART = artifactsFrom(a.artifacts)
 const artSlug = ART && typeof ART.slug === 'string' && /^[A-Za-z0-9._-]+$/.test(ART.slug) ? ART.slug : 'repo'
 const replay = a.replay && typeof a.replay === 'object' ? a.replay : {}
 const asMaker = (v) => (v && typeof v === 'object' && Array.isArray(v.tasks) && v.tasks.length ? v : null)
-const asRescore = (v) => (v && typeof v === 'object' && Array.isArray(v.scores) ? v : null)
-const asReview = (v) => (v && typeof v === 'object' && v.beadsValidation ? v : null)
-const asWsjfReview = (v) => (v && typeof v === 'object' && v.scoringReview ? v.scoringReview : null)
 let replayMaker = asMaker(replay.maker)
-let replayRescore = asRescore(replay.rescore)
-// The two verdicts replay independently, because they are now two sessions. A
-// tasks-<slug>.review.json written before the split carries BOTH keys; its scoring half is
-// still honored, so an Epic saved under the old shape resumes rather than re-running.
-let replayReview = asReview(replay.review)
-let replayScoring = asWsjfReview(replay.wsjfReview) || (replayReview && replayReview.scoringReview) || null
 
 // ── READING A NAMED ARTIFACT BACK ────────────────────────────────────────────────
 // Same allowlist every path in this file passes through: the value is interpolated into a
@@ -441,7 +427,7 @@ const story = a.story || {}
 // criticality from. See the Task WSJF block below for why a Task's own text cannot carry
 // them.
 const epic = a.epic && typeof a.epic === 'object' ? a.epic : {}
-const MAX_SCORING_PASSES = a.maxScoringPasses || 1 // ONE pass: an unresolved scoring review does not block emission — the disputed scores are recorded and still order the work — so a second pass buys an adjustment to numbers nobody is waiting on, at the price of a scorer session and a reviewer session
+const strList = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
 
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Injected into JUDGMENT prompts only (never mechanical plumbing). The composite
@@ -470,9 +456,11 @@ if (!spec.title && !spec.description && !spec.id) {
 // The Story has no bd id until the caller writes it, so before emission it is
 // identified by the local key the composite assigned. Reading `story.id` alone left
 // every task with parentStoryId: null — unroutable, and silently so.
+// Refused here, before any session is paid for: a parentless task set can never be worked,
+// and no re-run of the maker can supply the Story.
 const storyRef = story.id || story.key || null
 if (!storyRef) {
-  log('⚠ no story.id or story.key supplied — emitted tasks will be parentless and will not route as workable')
+  return { ok: false, stage: 'input', error: 'no story.id or story.key supplied — every task is parented to the Story its Spec pairs with, so a task set without one cannot be emitted' }
 }
 
 // The REPOSITORY every emitted task is worked in, DENORMALIZED onto the task itself.
@@ -518,11 +506,27 @@ const docsBlock = specDocs.length
       .join('\n')}`
   : '\n\nSPEC DOCUMENTS: none were supplied, so the text above is all there is. Say so in your rationale.'
 
+// The open Tasks already under this Story. A task that covers the same work names one in
+// `reuses`, which is the identity the caller matches on; titles are rewritten every run.
+const existingTasks = (Array.isArray(a.existingTasks) ? a.existingTasks : [])
+  .filter((t) => t && typeof t.elabKey === 'string' && t.elabKey.trim())
+  .map((t) => ({
+    elabKey: t.elabKey.trim(),
+    title: typeof t.title === 'string' ? t.title : '',
+    description: typeof t.description === 'string' ? t.description : '',
+  }))
+const existingKeys = new Set(existingTasks.map((t) => t.elabKey))
+const existingBlock = existingTasks.length
+  ? `\n\nEXISTING TASKS under this Story. When a task you write covers the same work as one of these, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.\n${existingTasks
+      .map((t) => `- ${t.elabKey}: ${t.title}${t.description ? ` — ${t.description.slice(0, 300)}` : ''}`)
+      .join('\n')}`
+  : '\n\nEXISTING TASKS: none. Set every task\'s `reuses` to null.'
+
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
 ${spec.source ? `Source: ${spec.source}` : ''}
-Repository: ${spec.repoPath || '(repo path not provided)'}
-Parent Story: ${storyRef || '(none supplied)'}${story.title ? ` — ${story.title}` : ''}${docsBlock}`
+Repository: ${repoPath || '(repo path not provided)'}
+Parent Story: ${storyRef}${story.title ? ` — ${story.title}` : ''}${docsBlock}${existingBlock}`
 
 // The surface vocabulary the build tail looks surfaces up in (tdd-red SURFACE_WRITERS,
 // integration SURFACE_SUITES). A value outside it selects nothing downstream.
@@ -544,7 +548,7 @@ const SURFACES = ['api-contract', 'event-chain', 'auth', 'performance', 'web-ui'
 const taskSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria', 'definitionOfDone', 'specPaths', 'specSections', 'requirementIds', 'surfaces'],
+  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria', 'definitionOfDone', 'specPaths', 'specSections', 'requirementIds', 'surfaces', 'reuses'],
   properties: {
     key: { type: 'string' },
     title: { type: 'string' },
@@ -559,6 +563,8 @@ const taskSchema = {
     // changed architecture decision finds the Tasks resting on it — the Task bead is the
     // last place the architecture is visible before somebody starts writing code.
     decisionIds: { type: 'array', items: { type: 'string' } },
+    // The elabKey of the existing Task this one continues, or null for new work.
+    reuses: { type: ['string', 'null'] },
     surfaces: { type: ['array', 'null'], items: { type: 'string', enum: SURFACES } },
   },
 }
@@ -579,9 +585,8 @@ const testStrategySchema = {
 // ── Decompose + Sequence + Score: ONE maker session ───────────────────────────
 // Decomposing, DAG-mapping, and WSJF-scoring all read the same Spec and the same task
 // list, so one session does all three rather than paying a session-start for each. All
-// three are MAKER work — none of them judges anything — so one session carrying all
-// three preserves segregation of duties exactly: the independent checker below still judges everything the maker
-// produced, and the maker still never judges its own work.
+// three are MAKER work; what can be checked about them — the graph and the required
+// fields — is checked in code below.
 phase('Decompose')
 log(`Decomposing, sequencing, and scoring ${specRef}`)
 
@@ -619,15 +624,6 @@ const wsjfTaskSchema = {
     sizeHigh: { type: 'number' },
     sizeConfidence: { type: 'integer' },
     rationale: { type: 'string' },
-  },
-}
-const wsjfSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['scores'],
-  properties: {
-    scores: { type: 'array', items: wsjfTaskSchema },
-    notes: { type: 'string' },
   },
 }
 
@@ -792,21 +788,13 @@ async function applyTaskWsjf(judged, taskSet, edges) {
   return { scores, notes, rubric: 'task-wsjf', valueFrom, sizeFaults, ...(result.error ? { error: result.error } : {}) }
 }
 
-// The outputs the caller NAMED rather than inlined are read back here, in one session,
-// before anything is dispatched. A slot already inlined is not re-read.
-const replayRead = await readReplayFiles(
-  replay.files,
-  [replayMaker ? '' : 'maker', replayRescore ? '' : 'rescore', replayReview ? '' : 'review', replayScoring ? '' : 'wsjfReview'].filter(Boolean),
-  'Decompose'
-)
-if (!replayMaker) replayMaker = asMaker(replayRead.maker)
-if (!replayRescore) replayRescore = asRescore(replayRead.rescore)
-if (!replayReview) replayReview = asReview(replayRead.review)
-if (!replayScoring) replayScoring = asWsjfReview(replayRead.wsjfReview) || (replayReview && replayReview.scoringReview) || null
+// The maker output the caller NAMED rather than inlined is read back here, in one session,
+// before anything is dispatched.
+if (!replayMaker) replayMaker = asMaker((await readReplayFiles(replay.files, ['maker'], 'Decompose')).maker)
 
 if (replayMaker) log(`Decompose REPLAYED from the saved maker output (${replayMaker.tasks.length} task(s)) — no maker session`)
 const maker = replayMaker || await settleAgent(
-  `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code, and do NOT judge your own output — an independent checker does that after you.
+  `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code. The script checks your task set and dependency graph in code after you return.
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into ATOMIC TASKS. Each task must be scoped to ONE agent's work within the single repository named below, be small enough to implement and ship on its own, have a single clear outcome, and carry testable acceptance criteria. Assign each a stable, human-readable local "key" (e.g. T1, T2). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature under any circumstance: the Epic was created with its PRD and the Story with this Spec, both already exist upstream, and every task you emit is a child of the Story named below. If the Spec looks too large for one Story, report that in your rationale (under 80 words) and still decompose only what this Spec covers.
 
@@ -819,13 +807,13 @@ Every task also carries its CONTRACT, taken from the spec documents listed below
 - \`surfaces\`: the boundaries the task touches, from the enum only (${SURFACES.join(', ')}). An empty list means you checked and it touches none of them (internal-only work). null means the spec does not settle it — unknown, never guessed.
 And once for the whole set, \`testStrategy\`: the test strategy the spec states (pyramid, coverageThreshold, envMatrix, and the section it came from as \`source\`), or null when the spec states none. Do not invent one.
 
-JOB 2 — SEQUENCE (return in \`edges\`, \`buildOrder\`, \`acyclic\`, \`cycle\`): map the dependencies between the tasks you just decomposed into a DIRECTED ACYCLIC graph and derive a valid topological build order. An edge "from -> to" means "from must be built before to". If the only honest reading implies a cycle, do not invent an order: set acyclic=false, list the cycle, and leave buildOrder empty.
+JOB 2 — SEQUENCE (return in \`edges\`): map the dependencies between the tasks you just decomposed into a DIRECTED ACYCLIC graph. An edge "from -> to" means "from must be built before to", and both ends are keys of tasks you returned. The script derives the build order from these edges and refuses a cycle, so never add or drop an edge to shape the order: if the only honest reading implies a cycle, return those edges and say so in your rationale.
 
 JOB 3 — SIZE EVERY TASK (return in \`scores\`): WSJF is the SOLE prioritization metric — no P0-P4 or any other scheme — and it is computed from your sizes, not assigned by you. ${JOB_SIZE_BRIEF} Return one entry per task: its \`key\`, its \`jobSize\`, \`sizeLow\`, \`sizeHigh\`, \`sizeConfidence\`, and a one-line \`rationale\` naming what the size was compared with. Every key exactly once.
 
 ALSO REPORT WHICH SPEC DOCUMENTS YOU COULD NOT READ (return in \`specDocsUnreadable\`): you are the first and only session that actually OPENS these files, so you are the only one that learns whether they are really there. A path was built from a naming convention or from what the spec maker said it wrote, and neither is a confirmation. List, as the absolute paths you were given, every spec document that was absent, unreadable, or empty. Absent or unreadable or empty — not merely short, not merely thinner than you expected: a document that opens and has content is readable, whatever you think of it. Return an EMPTY list when every one of them opened, which is a positive statement that you checked, not a field you left blank.
 
-${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, buildOrder, acyclic, cycle, scores, specDocsUnreadable, notes — exactly as you return them) as ONE JSON object')}`,
+${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structured result (tasks, testStrategy, rationale, edges, scores, specDocsUnreadable, notes — exactly as you return them) as ONE JSON object')}`,
   {
     label: 'decompose:sequence-and-score',
     effort: 'medium',
@@ -834,7 +822,7 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['tasks', 'testStrategy', 'rationale', 'edges', 'buildOrder', 'acyclic', 'scores', 'specDocsUnreadable'],
+      required: ['tasks', 'testStrategy', 'rationale', 'edges', 'scores', 'specDocsUnreadable'],
       properties: {
         tasks: { type: 'array', items: taskSchema },
         testStrategy: testStrategySchema,
@@ -851,9 +839,6 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
             },
           },
         },
-        buildOrder: { type: 'array', items: { type: 'string' } },
-        acyclic: { type: 'boolean' },
-        cycle: { type: 'array', items: { type: 'string' } },
         scores: { type: 'array', items: wsjfTaskSchema },
         // Required, so that an empty list is a STATEMENT that every document opened rather
         // than a field the maker never filled in. The two cases are indistinguishable when
@@ -878,256 +863,127 @@ const died = (...phases) => {
 if (!maker || !Array.isArray(maker.tasks) || !maker.tasks.length) {
   return { ok: false, stage: 'decompose', reason: 'decomposition produced no tasks', spec: specRef, ...died('Decompose') }
 }
-const tasks = maker.tasks
-const taskList = tasks
-  .map((t) => `- ${t.key}: ${t.title} [${t.type}] — ${t.description}`)
-  .join('\n')
-const dag = { edges: maker.edges || [], buildOrder: maker.buildOrder || [], acyclic: maker.acyclic, cycle: maker.cycle || [] }
-if (dag.acyclic === false) {
+// `reuses` is kept only when it names a supplied existing Task, and only on the first task
+// that names it; anything else becomes null, so a model-invented or doubled key never
+// reaches the caller's match.
+const reused = new Set()
+const tasks = maker.tasks.map((t) => {
+  const r = t && typeof t.reuses === 'string' ? t.reuses.trim() : ''
+  const keep = r && existingKeys.has(r) && !reused.has(r)
+  if (keep) reused.add(r)
+  else if (r) log(`Task ${t.key}: reuses '${r}' dropped — ${existingKeys.has(r) ? 'already claimed by an earlier task' : 'not an existing Task under this Story'}`)
+  return { ...t, reuses: keep ? r : null }
+})
+
+// ── Validate & emit ─────────────────────────────────────────────────────────
+// Everything a checker session used to judge here is checkable in code: the type is fixed
+// by the schema, the spec link is filtered against the supplied documents at emission, and
+// the graph and the required fields are checked below. The build order is DERIVED from the
+// edges rather than taken from the maker, so an order that contradicts the edges, or a
+// cycle the maker did not report, cannot reach the tracker.
+phase('Validate & emit')
+
+/**
+ * Check the edges against the task keys and derive a topological build order. Ties are
+ * broken by the maker's stated order when a saved output carries one, else by task order,
+ * so the same input always yields the same order.
+ */
+function sequence(taskSet, rawEdges, preferred) {
+  const keys = taskSet.map((t) => t.key)
+  const known = new Set(keys)
+  const violations = []
+  const edges = []
+  const seen = new Set()
+  for (const e of Array.isArray(rawEdges) ? rawEdges : []) {
+    const from = e && typeof e.from === 'string' ? e.from : ''
+    const to = e && typeof e.to === 'string' ? e.to : ''
+    if (!known.has(from) || !known.has(to)) {
+      violations.push({ key: known.has(from) ? to || '(none)' : from || '(none)', field: 'edges', problem: `edge ${from || '?'} -> ${to || '?'} names a task that is not in the set` })
+      continue
+    }
+    if (from === to) {
+      violations.push({ key: from, field: 'edges', problem: `edge ${from} -> ${to} is a self-edge` })
+      continue
+    }
+    const id = `${from}\u0000${to}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    edges.push({ from, to })
+  }
+  const rank = new Map()
+  for (const k of Array.isArray(preferred) ? preferred : []) if (known.has(k) && !rank.has(k)) rank.set(k, rank.size)
+  for (const k of keys) if (!rank.has(k)) rank.set(k, rank.size)
+  const indegree = new Map(keys.map((k) => [k, 0]))
+  const out = new Map(keys.map((k) => [k, []]))
+  for (const e of edges) {
+    indegree.set(e.to, indegree.get(e.to) + 1)
+    out.get(e.from).push(e.to)
+  }
+  const buildOrder = []
+  let ready = keys.filter((k) => indegree.get(k) === 0)
+  while (ready.length) {
+    ready.sort((x, y) => rank.get(x) - rank.get(y))
+    const k = ready.shift()
+    buildOrder.push(k)
+    for (const next of out.get(k)) {
+      indegree.set(next, indegree.get(next) - 1)
+      if (indegree.get(next) === 0) ready.push(next)
+    }
+  }
+  const placed = new Set(buildOrder)
+  const cycle = keys.filter((k) => !placed.has(k))
+  return { edges, buildOrder: cycle.length ? [] : buildOrder, acyclic: cycle.length === 0, cycle, violations }
+}
+
+/** The Beads fields every task must carry, checked per task. */
+function formatViolations(taskSet) {
+  const violations = []
+  const seen = new Set()
+  for (const t of taskSet) {
+    const key = t && typeof t.key === 'string' && t.key.trim() ? t.key : null
+    if (!key) {
+      violations.push({ key: '(none)', field: 'key', problem: 'task has no key' })
+      continue
+    }
+    if (seen.has(key)) violations.push({ key, field: 'key', problem: 'duplicate key' })
+    seen.add(key)
+    if (!(typeof t.title === 'string' && t.title.trim())) violations.push({ key, field: 'title', problem: 'empty' })
+    if (!(typeof t.description === 'string' && t.description.trim())) violations.push({ key, field: 'description', problem: 'empty' })
+    if (!strList(t.acceptanceCriteria).length) violations.push({ key, field: 'acceptanceCriteria', problem: 'empty' })
+    if (!strList(t.definitionOfDone).length) violations.push({ key, field: 'definitionOfDone', problem: 'empty' })
+  }
+  return violations
+}
+
+const dag = sequence(tasks, maker.edges, maker.buildOrder)
+if (!dag.acyclic) {
   return {
     ok: false,
     stage: 'sequence',
-    reason: 'dependency graph is not acyclic',
+    reason: `dependency graph is not acyclic — tasks on or behind a cycle: ${dag.cycle.join(', ')}`,
     spec: specRef,
     tasks,
     cycle: dag.cycle,
   }
 }
-
-// Kept as a standalone dispatch for the RE-SIZING path only: when the checker rejects
-// the sizes, only the sizing is redone — never the decomposition or the DAG, which the
-// checker validates structurally rather than argues with. Nothing else in the score can
-// be redone by an agent, because nothing else in it was judged by one.
-async function scoreWsjf(feedback) {
-  return await settleAgent(
-    `Re-size the tasks below under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. ${JOB_SIZE_BRIEF}
-
-WSJF is the SOLE prioritization metric — do NOT assign P0-P4 or any other priority scheme, and do NOT assign value, time criticality or risk reduction: those are inherited from the parent Epic and computed from the dependency graph below, and the composite score is arithmetic over the sizes you return. Reference tasks by their "key", size every key exactly once with its range and confidence, and give a one-line rationale per task.
-
-Tasks:
-${taskList}
-
-Build order (lower index builds first):
-${(dag.buildOrder || []).join(' -> ') || '(none)'}${feedback ? `\n\nReviewer feedback from the previous pass — address it:\n${feedback}` : ''}${persistBrief(ART, `tasks-${artSlug}.wsjf.json`, 'your complete structured result (scores and notes, exactly as you return them) as ONE JSON object')}`,
-    {
-      label: 'wsjf:score',
-      effort: 'low',
-      phase: 'Validate & emit',
-      agentType: 'agent-teams-workforce:wsjf-scorer',
-      schema: wsjfSchema,
-    }
-  )
-}
-
-// The rubric is applied HERE, to whatever the agent judged — a fresh maker pass, a
-// replayed one, or a re-size. A replayed score set from before the rubric changed carries
-// full component scores; they are recomputed rather than trusted, so an Epic resumed from
-// an old artifact lands on the same numbers a fresh run would.
-let wsjfScores = await applyTaskWsjf(replayRescore || { scores: maker.scores || [], notes: maker.notes }, tasks, dag.edges)
-let scoringReview = replayScoring
-let scoringAccepted = !!(scoringReview && scoringReview.accepted === true)
-let beadsValidation = replayReview ? replayReview.beadsValidation : null
-if (replayReview) {
-  log(`Beads format REPLAYED from the saved verdict (${beadsValidation && beadsValidation.valid === true ? 'valid' : 'invalid'}) — no format session`)
-}
-if (replayScoring) {
-  log(`WSJF review REPLAYED from the saved verdict (${scoringAccepted ? 'accepted' : 'disputed'}) — no scoring session`)
-}
-
-// ── TWO INDEPENDENT checker sessions ──────────────────────────────────────────
-// They judge different things, and the split is what makes both charters true.
-// beads-format-validator is explicitly forbidden from judging whether a score is
-// defensible — that is wsjf-scoring-reviewer's job — so asking one session to do both
-// meant the dispatch contradicted the charter of the agent it dispatched.
-//
-// Neither checker authored any of what it judges, so segregation of duties holds on both
-// sides. They have no dependency on each other and run CONCURRENTLY, so two sessions cost
-// one session's wall clock. Only the scoring side loops: a rejected score re-runs the
-// scorer and then the scoring reviewer, while the structural verdict — which is about the
-// tasks and the DAG, not the scores — stands from its single pass.
-const CHECKER_PREAMBLE =
-  'You are an INDEPENDENT checker. You did NOT produce any of the artifacts below; you only judge them. Keep every problem/feedback item under 40 words.'
-const taskEvidence = `Parent Story for this task set: ${storyRef || '(NONE SUPPLIED — report this as a violation on the "parentStoryId" field of every task, since a Task without a parent Story has no Spec and cannot be worked)'}
-
-Tasks:
-${JSON.stringify(tasks, null, 2)}
-
-Dependency edges:
-${JSON.stringify(dag.edges, null, 2)}
-
-Build order (lower index builds first):
-${(dag.buildOrder || []).join(' -> ') || '(none)'}`
-
-/** Judge the WSJF scores, and nothing else. */
-async function reviewScores(pass) {
-  return await settleAgent(
-    `${CHECKER_PREAMBLE}
-
-Judge the WSJF SIZES ONLY (return under \`scoringReview\`), under the \`agent-teams-workforce:wsjf\` rubric at Task level, which is loaded for you. Value, time criticality and risk reduction were NOT judged by the scorer — they are inherited from the parent Epic and computed from the dependency graph — so a finding about them is out of charter. What you judge: every task sized exactly once; jobSize a Fibonacci rung, meaning relative work against the agent pipeline rather than calendar time or human effort; sizeLow <= jobSize <= sizeHigh and sizeConfidence an integer percent, with a wider range and lower confidence where the task carries more uncertainty; sizes internally consistent across tasks (similar work sized comparably, dissimilar work not sized identically); each size rationale supported by the task's own contract; and no P0-P4 / non-WSJF priority leaked in. A rung above 13 is a decomposition fault, not a sizing error: accept the size when it is otherwise sound, and report the task as a decomposition fault in your feedback; never reject a size for being above 13 or ask for it to be reduced. accepted=true only if all hold; otherwise accepted=false with specific, actionable feedback the scorer can apply without interpretation. Do NOT judge Beads format, task structure, or the dependency graph — another checker owns those.
-
-${taskEvidence}
-
-WSJF scores under review:
-${JSON.stringify(wsjfScores && wsjfScores.scores, null, 2)}${persistBrief(ART, `tasks-${artSlug}.wsjf-review.json`, 'your complete verdict (scoringReview, exactly as you return it) as ONE JSON object')}`,
-    {
-      label: `review:scores:${pass}`,
-      effort: 'medium',
-      phase: 'Validate & emit',
-      agentType: 'agent-teams-workforce:wsjf-scoring-reviewer',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['scoringReview'],
-        properties: {
-          scoringReview: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['accepted', 'feedback', 'issues'],
-            properties: {
-              accepted: { type: 'boolean' },
-              feedback: { type: 'string' },
-              issues: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['key', 'problem'],
-                  properties: {
-                    key: { type: 'string' },
-                    problem: { type: 'string' },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    }
-  )
-}
-
-/** Judge the Beads format and the hierarchy rule, and nothing else. */
-async function validateFormat() {
-  return await settleAgent(
-    `${CHECKER_PREAMBLE}
-
-Judge the BEADS FORMAT ONLY (return under \`beadsValidation\`): every item's type is exactly "task" — an Epic, a Story, a feature, or a chore appearing here is a HIERARCHY VIOLATION, not a format nit (an Epic is created with its PRD and a Story with its Spec; decomposing a Story yields tasks and nothing else; report any such item as a violation on the "type" field). Each task is scoped to ONE agent's work within the single repository the Spec names. A valid id/key; once emitted, an id carrying the tracker's own issue prefix (\`bd config get issue_prefix\` names it). All required Beads fields present: title, type, description, acceptance criteria, Definition of Done (\`definitionOfDone\`, non-empty), and the SPEC LINK — \`specPaths\` non-empty${citableRefs.length ? ` and every entry one of: ${citableRefs.join(', ')}` : ''}, plus \`specSections\` naming where in those documents the task is defined. \`surfaces\` is a list or null; null means unknown and is legal, a missing field is not. The dependency DAG is internally consistent: every edge references a known task, no edge references a missing key, the graph remains acyclic. valid=true only if all items pass; otherwise valid=false with per-item violations. Do NOT modify the tasks — judge only. Do NOT judge whether a WSJF score is defensible: scoring review belongs to another checker and is outside your charter.
-
-${taskEvidence}${persistBrief(ART, `tasks-${artSlug}.review.json`, 'your complete verdict (beadsValidation, exactly as you return it) as ONE JSON object')}`,
-    {
-      label: 'review:format',
-      effort: 'medium',
-      phase: 'Validate & emit',
-      agentType: 'agent-teams-workforce:beads-format-validator',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['beadsValidation'],
-        properties: {
-          beadsValidation: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['valid', 'violations'],
-            properties: {
-              valid: { type: 'boolean' },
-              violations: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['key', 'field', 'problem'],
-                  properties: {
-                    key: { type: 'string' },
-                    field: { type: 'string' },
-                    problem: { type: 'string' },
-                  },
-                },
-              },
-              notes: { type: 'string' },
-            },
-          },
-        },
-      },
-    }
-  )
-}
-
-// First wave: whichever verdicts this run still needs, concurrently.
-const firstWave = []
-if (!replayReview) firstWave.push(() => validateFormat())
-if (!replayScoring) firstWave.push(() => reviewScores(1))
-if (firstWave.length) {
-  const results = await parallel(firstWave)
-  let i = 0
-  if (!replayReview) {
-    const fmt = results[i++]
-    beadsValidation = fmt && fmt.beadsValidation
-  }
-  if (!replayScoring) {
-    const sc = results[i++]
-    scoringReview = sc && sc.scoringReview
-    scoringAccepted = !!(scoringReview && scoringReview.accepted)
-    log(
-      scoringAccepted
-        ? `WSJF review: ACCEPTED on pass 1/${MAX_SCORING_PASSES}`
-        : `WSJF review: REJECTED pass 1/${MAX_SCORING_PASSES} — ${(scoringReview && scoringReview.feedback) || 'no feedback'}`
-    )
-  }
-}
-
-// Re-scoring loop: the scorer and the scoring reviewer only. The structural verdict is
-// about the tasks and the DAG, which a re-score does not touch, so it is not re-bought.
-for (let pass = 2; !scoringAccepted && !replayScoring && pass <= MAX_SCORING_PASSES; pass++) {
-  wsjfScores = await applyTaskWsjf(await scoreWsjf((scoringReview && scoringReview.feedback) || ''), tasks, dag.edges)
-  const sc = await reviewScores(pass)
-  scoringReview = sc && sc.scoringReview
-  scoringAccepted = !!(scoringReview && scoringReview.accepted)
-  log(
-    scoringAccepted
-      ? `WSJF review: ACCEPTED on pass ${pass}/${MAX_SCORING_PASSES}`
-      : `WSJF review: REJECTED pass ${pass}/${MAX_SCORING_PASSES} — ${(scoringReview && scoringReview.feedback) || 'no feedback'}`
-  )
-}
-
-// A scoring disagreement is NOT a reason to discard the decomposition: the tasks, the
-// DAG and the whole structural result stand. The tasks are the deliverable; a disputed
-// score still orders the work until a rescore replaces it, and a discarded decomposition
-// would have to be redone from the spec.
-//
-// So an unresolved review is recorded as a finding on the emitted set and the run
-// continues. The caller sees exactly which scores are disputed and why.
-const scoringDisputed = !scoringAccepted
-if (scoringDisputed) {
-  log(
-    `WSJF review unresolved after ${MAX_SCORING_PASSES} pass${MAX_SCORING_PASSES === 1 ? '' : 'es'} — emitting tasks with the ` +
-      `latest scores and recording the dispute. Tasks are the deliverable; disputed scores still order the work until rescored.`
-  )
-}
-
-// ── Validate & emit ─────────────────────────────────────────────────────────
-// Format validation ran in its own checker session above; here the script only applies
-// its verdict.
-phase('Validate & emit')
-
-if (!beadsValidation || beadsValidation.valid !== true) {
-  // A validator that never returned did not find the task set invalid. Reported as an
-  // invalid task set it costs the caller a gate and a retry over a verdict nobody gave.
+const violations = [...formatViolations(tasks), ...dag.violations]
+if (violations.length) {
+  log(`Task set failed the Beads-format check (${violations.length}): ${violations.slice(0, 10).map((v) => `${v.key}.${v.field}: ${v.problem}`).join('; ')}`)
   return {
     ok: false,
     stage: 'validate',
-    reason: beadsValidation
-      ? 'task set failed Beads-format validation'
-      : 'the Beads-format validator returned nothing — the task set was never judged',
-    ...(beadsValidation ? {} : died('Validate & emit')),
+    reason: `task set failed the Beads-format check: ${violations.map((v) => `${v.key}.${v.field}: ${v.problem}`).join('; ')}`,
     spec: specRef,
     tasks,
-    dependencyDag: { edges: dag.edges, acyclic: dag.acyclic },
-    buildOrder: dag.buildOrder,
-    wsjfScores,
-    scoringReview,
-    beadsValidation,
+    violations,
   }
 }
+
+// The rubric is applied HERE, to whatever the maker judged, fresh or replayed. A replayed
+// score set from before the rubric changed carries full component scores; they are
+// recomputed rather than trusted, so an Epic resumed from an old artifact lands on the same
+// numbers a fresh run would.
+const wsjfScores = await applyTaskWsjf({ scores: maker.scores || [], notes: maker.notes }, tasks, dag.edges)
 
 // Emit: stitch task + its WSJF score into the bead set, in build order.
 const wsjfByKey = {}
@@ -1144,7 +1000,6 @@ const orderIndex = {}
 // document this run supplied, so no Task records a path that was not handed to it; a task
 // that cited nothing usable is linked to every supplied document rather than to none. A
 // saved maker output from before these fields existed replays the same way.
-const strList = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
 // The Spec's own decision citations, supplied by the caller from the spec set it authored.
 const specDecisionIds = strList(a.decisionIds)
 const refByPath = new Map(specDocs.filter((d) => d.ref).map((d) => [d.path, d.ref]))
@@ -1158,6 +1013,7 @@ const testStrategy = maker.testStrategy && typeof maker.testStrategy === 'object
 const beadSet = tasks
   .map((t) => ({
     key: t.key,
+    reuses: t.reuses,
     title: t.title,
     description: t.description,
     type: 'task',
@@ -1201,18 +1057,12 @@ return {
   // The one confirmation anybody gets that the spec documents the Tasks cite are really
   // there. The decomposer opened them; the caller drops the refs it names and records each
   // as a missing spec reference, which holds the emission verdict short of complete. A
-  // replayed maker output authored before this field existed yields [] — the same as a
-  // clean read, and the safe direction: an old artifact was already emitted on those terms.
-  specDocsUnreadable: strList(maker && maker.specDocsUnreadable),
+  // replayed maker output authored before this field existed yields null — no report — so
+  // the caller marks those refs unverified rather than reading silence as "all readable".
+  specDocsUnreadable: maker && Array.isArray(maker.specDocsUnreadable) ? strList(maker.specDocsUnreadable) : null,
   wsjfScores,
   decisionIds: [...new Set(beadSet.flatMap((b) => b.decisionIds))],
-  scoringReview,
-  scoringDisputed,
-  scoringFindings: scoringDisputed
-    ? ((scoringReview && scoringReview.issues) || []).map((i) => `${i.key}: ${i.problem}`)
-    : [],
-  beadsValidation,
   beadSet,
   story: { id: story.id || null, key: story.key || null, ref: storyRef, title: story.title || null },
-  note: `Tasks only — every emitted bead is type "task"${storyRef ? ` parented to Story ${storyRef}` : ', UNPARENTED (no story.id or story.key was supplied) and therefore not workable'}${repoPath ? ` and carrying repoPath ${repoPath}` : ' and carrying repoPath null (no repository was supplied), so each one has to be re-resolved before it can be dispatched'}. Atomic, sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and Beads-format valid.${scoringDisputed ? ' WSJF review did NOT converge — scores are the scorer\'s latest and are recorded as disputed; the task structure is unaffected.' : ' Scoring passed independent review.'} These are bead SPECIFICATIONS: prd-to-spec writes them itself as part of its run, so a caller dispatching this mini on its own is the only one that emits them with bd, from the main repo path.`,
+  note: `Tasks only — every emitted bead is type "task" parented to Story ${storyRef}${repoPath ? ` and carrying repoPath ${repoPath}` : ' and carrying repoPath null (no repository was supplied), so each one has to be re-resolved before it can be dispatched'}. Sequenced into an acyclic DAG, WSJF-scored (sole prioritization metric), and checked for the required Beads fields.${wsjfScores.error ? ` The WSJF arithmetic did not run (${wsjfScores.error}), so the tasks carry no score until wsjf-scoring rescores them.` : ''} These are bead SPECIFICATIONS: prd-to-spec writes them itself as part of its run, so a caller dispatching this mini on its own is the only one that emits them with bd, from the main repo path.`,
 }

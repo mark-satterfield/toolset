@@ -1,14 +1,14 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. A CONSTITUTIVE rule, including the platform bans the constitutional gate asserts downstream, is honored instead of overridden: the decider rules on the options that respect it and returns a ruleChallenge if it thinks the rule is wrong. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
+    'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8), an independent reviewer checks the edit once, and a reject gets one maintainer fix pass that is then accepted. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. A CONSTITUTIVE rule, including the platform bans the constitutional gate asserts downstream, is honored instead of overridden: the decider rules on the options that respect it and returns a ruleChallenge if it thinks the rule is wrong. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
     { title: 'Extract SAD', detail: 'one read-only inventory dispatch resolves the SAD layout, §8 is sharded into as many slices small enough to read IN FULL as the file count needs, the shards run concurrently and the SCRIPT merges the typed entries; a batch that fails on a transient infrastructure error is sent again after a bounded backoff and one that comes back empty for any other reason is split rather than re-sent, every batch that returns is persisted so a re-run resumes at the failure, and the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; a packet the caller already holds is reused rather than re-bought' },
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
     { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or any signal is ambiguous (a dead analyst, an unstated flag, no triage verdict) — ambiguity challenges by default. Skipping requires AFFIRMATIVE evidence: every lens explicitly contested=false and triage explicitly low-risk/low-stakes; the judgment is recorded either way' },
     { title: 'Decide', detail: 'architecture-decider rules on proposals + challenges, or by citing prior decisions when triage ruled the question settled; when NO option is admissible it says so, classifies what blocked them, and the blocking constraints go back to the panel for a fresh option set (bounded)' },
-    { title: 'Update SAD', detail: 'author fitness/diagrams + selected design drafts from the ruling, then consolidate into arc42 §2/§4/§8, conformance-checked' },
+    { title: 'Update SAD', detail: 'consolidate the ruling into arc42 §2/§4/§8; one conformance review, at most one maintainer fix pass, then accept' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -327,7 +327,6 @@ function failureDetailFor(label) {
 //                            // Supplied -> the inventory and shard sessions are skipped.
 //                            // The mini returns its packet under the same key for that purpose.
 //   feedback?: string,       // optional upstream gate feedback to fold in
-//   maxLoops?: number,       // SAD maker-checker passes before decider deadlock (default 2)
 //   maxDecideLoops?: number, // re-proposal rounds after an inadmissible ruling (default 2)
 //   dimensions?: string[],   // override: force the analyst panel to exactly these axes (triage is skipped)
 //   triageVerdict?: { highStakes: boolean, reversalRisk: boolean, rationale?: string },
@@ -337,11 +336,10 @@ function failureDetailFor(label) {
 //   forceFullPanel?: boolean,// override: skip triage and run the full panel + challenge wave as today
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? },
 //                            // Epic working directory: each analyst, the challenger, the decider, the
-//                            // decision-artifact and design-draft authors and the sad-maintainer save
-//                            // their own output there (architecture-proposal-<dim>.json,
-//                            // architecture-analysis.json, architecture-challenges.json,
-//                            // architecture-decision.md, architecture-fitness.json,
-//                            // architecture-design-drafts.json, sad-update.json)
+//                            // sad-maintainer and the conformance reviewer save their own output there
+//                            // (architecture-proposal-<dim>.json, architecture-analysis.json,
+//                            // architecture-challenges.json, architecture-decision.md, sad-update.json,
+//                            // sad-conformance.json)
 //   replay?: { files?: { 'proposal-<dim>'?, analysis?, challenges? } },
 //                            // A RESTART INSIDE THIS PHASE. The named files are the
 //                            // intermediates a previous attempt at this same phase already
@@ -350,10 +348,10 @@ function failureDetailFor(label) {
 //                            // session parses them; every lens recovered is a lens NOT
 //                            // dispatched, and the ruling is re-run over them. The caller
 //                            // may only name these when the phase's INPUTS are unchanged —
-//                            // see prd-to-spec, which gates this on prd-validation being
-//                            // fresh, because that is the hash-backed proof that the PRD and
-//                            // the validated PRD this phase was made from still hash as
-//                            // recorded. A file that is absent, unreadable or not valid JSON
+//                            // see prd-to-spec's archReplayFiles, which names them only when
+//                            // the host ruled this phase stale solely for a missing gate
+//                            // acceptance, the hash-backed proof that the PRD and the saved
+//                            // files are unchanged. A file that is absent, unreadable or not valid JSON
 //                            // leaves its slot empty and its session runs, which is the safe
 //                            // direction: re-proposing costs sessions, while ruling over a
 //                            // half-read proposal rules on something nobody can point at.
@@ -495,12 +493,6 @@ const replaySummary = () => ({
 const d = a.decision || {}
 const sadPath = typeof a.sadPath === 'string' ? a.sadPath.trim() : ''
 const repo = d.repoPath || '(repo path not provided — ask before editing files)'
-// TWO passes is the floor, not a caller preference. At 1, a single conformance reject —
-// ordinarily a wording or a missing-clause fix the maintainer can make in one targeted
-// edit — goes straight to the architecture-decider deadlock ruling, which is a
-// higher-effort session than the re-author it replaced. The cheap re-author is tried
-// first; the decider still carries the case that survives it.
-const MAX_SAD_LOOPS = Math.max(a.maxLoops || 2, 2)
 const upstream = a.feedback ? `\nUpstream gate feedback to fold in:\n${a.feedback}` : ''
 // ── A FAILURE DECIDED BEFORE ANY AGENT RAN IS NOT RE-RUN ────────────────────────
 //
@@ -789,9 +781,6 @@ const STATED_LIMITS = {
   // Three options is the job, and the analyst INVENTS them: a fourth is not a richer panel,
   // it is more text for the decider to read and for the challenge wave to stress.
   options: 3,
-  // Fitness functions the ruling creates or changes. The author derives them from the
-  // ruling and chooses how many to write, so the number is its judgment.
-  fitnessFunctions: 12,
 }
 // What a READ dispatch is EXPECTED to return. Stated to nobody, and not a limit: these are
 // facts about a document this phase did not write, so the number only decides when the log
@@ -873,10 +862,14 @@ const extractSchema = {
 // Reading the SAD whole is the most expensive thing this mini does, and a run that ended
 // in this phase used to throw away every batch that HAD succeeded — the next run re-read
 // all 787KB to get back to the same file. The session that produced a batch now writes it
-// beside the Epic's other artifacts before it returns, keyed by a digest of the exact file
-// list it was assigned. Keying on the FILE LIST rather than on a shard number is what makes
-// the split below resumable: a batch that was halved comes back as its halves, each with
-// its own key, and a plan that changed because the SAD changed simply misses and re-reads.
+// beside the Epic's other artifacts before it returns, keyed by a digest of the exact files
+// it was assigned AND each file's size and modification time as the inventory reported them.
+// Keying on the file list rather than on a shard number is what makes the split below
+// resumable: a batch that was halved comes back as its halves, each with its own key. Keying
+// on size and mtime as well is what keeps a saved batch from outliving the files it read: the
+// sad-maintainer edits the SAD after architecture extracts it, and other Epics edit it too, so
+// an edited file changes the key and its batch is read again. A batch whose inventory entries
+// lack a size or an mtime has no trustworthy key, so it is neither saved nor resumed.
 //
 // The directory is named by the EPIC, not by the mini, and that is deliberate: this
 // extraction is the same text in architecture.js and in trd-authoring.js, both run against
@@ -886,18 +879,21 @@ const extractSchema = {
 // Without an Epic working directory there is nowhere durable to write, and the phase
 // behaves exactly as it did before.
 const SHARD_SAVE_DIR = ART ? `${ART.dir}/sad-shards` : null
-// FNV-1a over the assigned file list. A workflow script has no crypto and needs none: the
-// digest only has to be stable across runs and distinct between batches of one SAD.
-function batchKey(files) {
-  const s = files.join('\n')
+// FNV-1a over each assigned file's path, size and mtime. A workflow script has no crypto and
+// needs none: the digest only has to be stable across runs and change when a file changes.
+// Null when any entry lacks a size or an mtime — see above.
+const BATCH_KEY_SHAPE = /^[0-9]+-[0-9a-f]{8}$/
+function batchKey(entries) {
+  if (!entries.length || !entries.every((e) => e.bytes > 0 && e.mtime > 0)) return null
+  const s = entries.map((e) => `${e.path}\t${e.bytes}\t${e.mtime}`).join('\n')
   let h = 0x811c9dc5
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i)
     h = Math.imul(h, 0x01000193) >>> 0
   }
-  return `${files.length}-${h.toString(16).padStart(8, '0')}`
+  return `${entries.length}-${h.toString(16).padStart(8, '0')}`
 }
-const shardSavePath = (files) => (SHARD_SAVE_DIR ? `${SHARD_SAVE_DIR}/${batchKey(files)}.json` : null)
+const shardSavePath = (key) => (SHARD_SAVE_DIR && key ? `${SHARD_SAVE_DIR}/${key}.json` : null)
 
 // ── THE RESUME INDEX IS A PLAIN OBJECT, AND THAT IS A BOUNDARY REQUIREMENT ──────
 // It is built by `readSavedShards` and read by `runBatch`, and between those two it crosses
@@ -916,16 +912,18 @@ const shardSavePath = (files) => (SHARD_SAVE_DIR ? `${SHARD_SAVE_DIR}/${batchKey
 //
 // Lookup is by own key only. `batchKey` always begins with a digit, so it can never name an
 // inherited property, but the guard states that rather than relying on it.
-function savedFor(saved, files) {
+function savedFor(saved, entries) {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null
-  const key = batchKey(files)
-  return Object.prototype.hasOwnProperty.call(saved, key) ? saved[key] : null
+  const key = batchKey(entries)
+  return key && Object.prototype.hasOwnProperty.call(saved, key) ? saved[key] : null
 }
 
 // One batch dispatch. `feeds` names the sections this session owns; every other feed in
 // its result is discarded by the merge, so a shard can never widen its own assignment.
-function extractShardAgent(label, feeds, files) {
-  const savePath = shardSavePath(files)
+function extractShardAgent(label, feeds, entries) {
+  const files = entries.map((e) => e.path)
+  const key = batchKey(entries)
+  const savePath = shardSavePath(key)
   return settleAgent(
     `You are READ-ONLY. Extract the decision-bearing sections of the arc42 Software Architecture Document into one typed packet for an architecture decision. Do NOT author anything, do NOT change any file, and invent NOTHING the SAD does not state.
 
@@ -948,7 +946,8 @@ THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked
       savePath
         ? `
 
-SAVE YOUR RESULT BEFORE YOU RETURN. This file is what a later run of this Epic resumes from instead of reading these files again, and no other session will write it for you. Write ${savePath} with the Write tool, creating its directory if it does not exist and replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly two keys:
+SAVE YOUR RESULT BEFORE YOU RETURN. This file is what a later run of this Epic resumes from instead of reading these files again, and no other session will write it for you. Write ${savePath} with the Write tool, creating its directory if it does not exist and replacing the whole file if it exists (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly three keys:
+- "key" — exactly the string ${JSON.stringify(key)}.
 - "files" — the list of files assigned to you above, verbatim and in the order given.
 - "extract" — your complete structured result, exactly as you return it.
 Write no other file for this. If it fails, say so in your result and still return your result.`
@@ -1016,33 +1015,33 @@ function retireFailures(labels) {
 // other cause is still being waited out upstream. An attempt counter here would re-send an
 // input that cannot succeed, which is the blind retry this comment exists to prevent.
 //
-// Returns one leaf outcome per batch that actually ran: { label, feeds, files, out }, with
+// Returns one leaf outcome per batch that actually ran: { label, feeds, entries, out }, with
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
 // escapes this and every death is recorded before it is answered.
-async function runBatch(label, feeds, files, saved) {
-  const hit = savedFor(saved, files)
+async function runBatch(label, feeds, entries, saved) {
+  const hit = savedFor(saved, entries)
   if (hit) {
-    log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
-    return [{ label, feeds, files, out: hit, resumed: true }]
+    log(`${label}: resumed from the saved result for these ${entries.length} unchanged file(s) — not dispatched, and not re-read`)
+    return [{ label, feeds, entries, out: hit, resumed: true }]
   }
   // settleAgent has already sat out any transient failure and retired its own record of
   // it, so a batch that returns leaves nothing in `dispatchFailures` for this label.
-  const out = await extractShardAgent(label, feeds, files)
-  if (out) return [{ label, feeds, files, out }]
-  if (files.length === 1) {
-    log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
-    return [{ label, feeds, files, out: null }]
+  const out = await extractShardAgent(label, feeds, entries)
+  if (out) return [{ label, feeds, entries, out }]
+  if (entries.length === 1) {
+    log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${entries[0].path}`)
+    return [{ label, feeds, entries, out: null }]
   }
-  const mid = Math.ceil(files.length / 2)
+  const mid = Math.ceil(entries.length / 2)
   log(
-    `${label}: nothing came back for ${files.length} file(s) and the cause is ${failureCauseFor(label) || 'unrecognised, so deterministic'} — ` +
-      `splitting into ${mid} + ${files.length - mid}; each half is a smaller dispatch with different input, not a retry of this one`
+    `${label}: nothing came back for ${entries.length} file(s) and the cause is ${failureCauseFor(label) || 'unrecognised, so deterministic'} — ` +
+      `splitting into ${mid} + ${entries.length - mid}; each half is a smaller dispatch with different input, not a retry of this one`
   )
   // Sequential on purpose: this is the recovery path inside a lane that is already running
   // concurrently with every other lane, and nesting `parallel` inside it buys little.
   const halves = [
-    ...(await runBatch(`${label}-a`, feeds, files.slice(0, mid), saved)),
-    ...(await runBatch(`${label}-b`, feeds, files.slice(mid), saved)),
+    ...(await runBatch(`${label}-a`, feeds, entries.slice(0, mid), saved)),
+    ...(await runBatch(`${label}-b`, feeds, entries.slice(mid), saved)),
   ]
   if (halves.every((h) => h.out)) retireFailures([label])
   return halves
@@ -1050,7 +1049,7 @@ async function runBatch(label, feeds, files, saved) {
 
 // ── WHAT A PREVIOUS RUN ALREADY PAID FOR ────────────────────────────────────────
 // One read-only session returns every saved batch in this Epic's shard directory, and the
-// script keys them by the file list each one records. An absent directory is the normal
+// script keys them by the key each one records. An absent directory is the normal
 // answer on a first run, not a failure. A file that is missing, unreadable or not the shape
 // this phase writes is simply not resumed — its batch is dispatched, which is the safe
 // direction: re-reading files costs sessions, while resuming from half a file would put
@@ -1087,6 +1086,7 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
     }
   )
   // A plain object, keyed by batchKey — see the note on savedFor for why nothing else works.
+  // A file saved before the key carried sizes and mtimes has no `key` and is not resumed.
   const saved = {}
   for (const e of (read && Array.isArray(read.entries) ? read.entries : [])) {
     if (!e || typeof e.content !== 'string') continue
@@ -1097,12 +1097,12 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
       log(`Resume: ${e.path} is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — its batch is dispatched`)
       continue
     }
-    const files = body && Array.isArray(body.files) ? body.files.filter((p) => typeof p === 'string' && p.trim()) : []
-    if (!files.length || !isExtract(body && body.extract)) {
-      log(`Resume: ${e.path} does not hold a saved batch — its batch is dispatched`)
+    const key = body && typeof body.key === 'string' ? body.key.trim() : ''
+    if (!BATCH_KEY_SHAPE.test(key) || !isExtract(body && body.extract)) {
+      log(`Resume: ${e.path} does not hold a keyed saved batch — its batch is dispatched`)
       continue
     }
-    saved[batchKey(files)] = body.extract
+    saved[key] = body.extract
   }
   const count = Object.keys(saved).length
   if (count) log(`Resume: ${count} SAD batch(es) already saved for this Epic — those files are not read again`)
@@ -1132,7 +1132,7 @@ function shardFiles(entries) {
       current = []
       bytes = 0
     }
-    current.push(e.path)
+    current.push(e)
     bytes += size
   }
   if (current.length) shards.push(current)
@@ -1141,9 +1141,9 @@ function shardFiles(entries) {
 
 const fileList = (x) =>
   (Array.isArray(x) ? x : [])
-    .map((e) => (typeof e === 'string' ? { path: e, bytes: 0 } : e))
+    .map((e) => (typeof e === 'string' ? { path: e } : e))
     .filter((e) => e && typeof e.path === 'string' && e.path.trim())
-    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0 }))
+    .map((e) => ({ path: e.path.trim(), bytes: Number(e.bytes) || 0, mtime: Number(e.mtime) || 0 }))
 
 let sadExtract = suppliedExtract
 
@@ -1159,7 +1159,7 @@ if (!sadExtract) {
 
 ${sadWhere}
 
-Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes:
+Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY file that holds the content of these sections, with its size in bytes and its modification time in Unix epoch seconds, both read with \`stat\` (\`stat -f '%z %m' <file>\` on macOS, \`stat -c '%s %Y' <file>\` on Linux) — never estimated:
 - Section 2 — Constraints
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
@@ -1193,7 +1193,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
                   type: 'object',
                   additionalProperties: false,
                   required: ['path'],
-                  properties: { path: { type: 'string' }, bytes: { type: 'number' } },
+                  properties: { path: { type: 'string' }, bytes: { type: 'number' }, mtime: { type: 'number' } },
                 },
               },
             },
@@ -1211,26 +1211,34 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     }
   }
 
-  const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
+  // A file listed under both §2 and §4 is read once.
+  const coreEntries = []
+  for (const e of [...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)]) {
+    if (!coreEntries.some((c) => c.path === e.path)) coreEntries.push(e)
+  }
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  checkExpected('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
+  checkExpected('inventory:sad', 'SAD files', coreEntries.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
   const crossShards = shardFiles(crossEntries)
-  log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+  log(`SAD inventory: §2+§4 = ${coreEntries.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
+  const unstamped = [...coreEntries, ...crossEntries].filter((e) => !(e.bytes > 0 && e.mtime > 0)).length
+  if (SHARD_SAVE_DIR && unstamped) {
+    log(`Resume: ${unstamped} inventoried file(s) came back without a size or mtime — a batch holding one is neither resumed nor saved, so an edited file can never be served from a stale batch`)
+  }
 
   // ── Step 2: every shard runs CONCURRENTLY and reads its slice in full.
   const jobs = []
-  if (coreFiles.length) {
+  if (coreEntries.length) {
     jobs.push({
       label: 'extract:sad-core',
       feeds: [{ key: 'constraints', title: 'Section 2 — Constraints' }, { key: 'solutionStrategy', title: 'Section 4 — Solution Strategy' }],
-      files: coreFiles,
+      entries: coreEntries,
     })
   }
-  crossShards.forEach((files, i) => {
+  crossShards.forEach((entries, i) => {
     jobs.push({
       label: `extract:sad-crosscutting-${i + 1}of${crossShards.length}`,
       feeds: [{ key: 'crosscuttingConcepts', title: 'Section 8 — Crosscutting Concepts' }],
-      files,
+      entries,
     })
   })
   if (!jobs.length) {
@@ -1258,7 +1266,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
     )
   }
 
-  const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.files, savedBatches)))
+  const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.entries, savedBatches)))
   // A LANE THAT RETURNED NOTHING IS NOT A LANE THAT READ NOTHING. `parallel` answers null for a
   // thunk that threw, and `runBatch` lets no throw of its own escape — so a null here is a
   // defect in this script, and that lane's files were never read. Folding those away is what
@@ -1267,9 +1275,9 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   // from 0 batch(es)" and authored a TRD against an architecture nobody had read. A broken lane
   // is carried as a dead batch so the INCOMPLETE stop below sees it and names its files.
   lanes.forEach((r, i) => {
-    if (!Array.isArray(r)) log(`${jobs[i].label}: the lane failed before any batch completed — its ${jobs[i].files.length} file(s) are counted as UNREAD`)
+    if (!Array.isArray(r)) log(`${jobs[i].label}: the lane failed before any batch completed — its ${jobs[i].entries.length} file(s) are counted as UNREAD`)
   })
-  const outcomes = lanes.flatMap((r, i) => (Array.isArray(r) ? r : [{ label: jobs[i].label, feeds: jobs[i].feeds, files: jobs[i].files, out: null }]))
+  const outcomes = lanes.flatMap((r, i) => (Array.isArray(r) ? r : [{ label: jobs[i].label, feeds: jobs[i].feeds, entries: jobs[i].entries, out: null }]))
 
   // ── Step 3: the SCRIPT merges, in batch order, de-duplicated by stable id.
   //
@@ -1323,7 +1331,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   // durable copy is the resume path; the phase used to return the partial packet to its
   // caller instead, which no caller ever read — resilience promised rather than delivered.
   if (deadBatches.length) {
-    const unread = deadBatches.flatMap((b) => b.files)
+    const unread = deadBatches.flatMap((b) => b.entries.map((e) => e.path))
     const done = outcomes.length - deadBatches.length
     log(`SAD extraction INCOMPLETE — ${deadBatches.length} batch(es) still empty after splitting; ${unread.length} file(s) went unread`)
     return {
@@ -1331,7 +1339,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
       stage: 'extract',
       error: `SAD extraction is INCOMPLETE: ${deadBatches.length} batch(es) returned nothing even after being split down to single files, so ${unread.length} SAD file(s) were never read. NO architecture decision was made — a ruling derived from part of the architecture is wrong output, not cheaper output, and it would be written back into §2/§4/§8 as effective. The ${done} batch(es) that DID complete are saved${SHARD_SAVE_DIR ? ` under ${SHARD_SAVE_DIR}` : ''}, so re-running this phase resumes at the failure and re-reads nothing else. Unread: ${unread.join(', ')}`,
       unreadSadFiles: unread,
-      deadShards: deadBatches.map((b) => ({ label: b.label, files: b.files })),
+      deadShards: deadBatches.map((b) => ({ label: b.label, files: b.entries.map((e) => e.path) })),
       ...dispatchFailedReport('Extract SAD'),
     }
   }
@@ -2121,7 +2129,7 @@ Blocking challenges must be resolved by the ruling or the ruling is invalid.${pa
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'surfaces', 'blockingRules', 'ruleChallenges'],
+  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'blockingRules', 'ruleChallenges'],
   properties: {
     // admissible=false means NO option in front of the decider can be ruled on.
     // It is a real, reportable outcome — never a ruling, never written to the SAD.
@@ -2130,7 +2138,6 @@ const DECISION_SCHEMA = {
     chosenApproach: { type: 'string' },
     imposedConstraints: { type: 'array', items: { type: 'string' } },
     resolvedChallenges: { type: 'array', items: { type: 'string' } },
-    surfaces: { type: 'array', items: { type: 'string', enum: ['events', 'restApi', 'graphql', 'newDomain'] } },
     // Why nothing was admissible, so the next round can be aimed rather than repeated.
     blockingRules: {
       type: 'array',
@@ -2193,9 +2200,7 @@ NEVER REFER A QUESTION ONWARD. A ruling that says a point is "referred to" anoth
 - RULED — you decide it, here, and state the decision.
 - OUT OF SCOPE — it is not this ruling's to make. Say so plainly and say which requirement owns it. That is a statement of scope, not a referral, and nothing downstream waits on it.
 - BLOCKING — no option can be ruled on, so admissible=false with the rules that eliminated them.
-"Referred", "to be determined", "pending", "the coordinator will decide" and "open question" are none of the three. Do not write them.
-
-Also report \`surfaces\` — which design surfaces the ruling creates: events, restApi, graphql, newDomain (any subset, empty if none).`
+"Referred", "to be determined", "pending", "the coordinator will decide" and "open question" are none of the three. Do not write them.`
 
 const MAX_DECIDE_LOOPS = a.maxDecideLoops || 2
 let decision = null
@@ -2366,99 +2371,10 @@ if (!admissible) {
 }
 
 // ── Phase 4: Update SAD ──────────────────────────────────────────────────────────
-// Maker-checker bounded loop: sad-maintainer authors the SAD edit, an INDEPENDENT
-// sad-conformance-reviewer judges it. On reject, re-run the maker with feedback
-// (bounded MAX_SAD_LOOPS passes). On deadlock, the architecture-decider rules.
+// The sad-maintainer authors the SAD edit and an INDEPENDENT sad-conformance-reviewer judges
+// it once. A reject with a blocking finding gets ONE maintainer fix pass carrying the
+// findings, and the fixed edit is accepted without a second review.
 phase('Update SAD')
-
-// Author the decision artifacts FROM the ruling — fitness functions, diagrams —
-// concurrently and before SAD consolidation, so the maintainer references rather than
-// recreates them. The decider authored none of these.
-const decisionContext = `Ruling: ${decision.ruling}
-Chosen approach: ${decision.chosenApproach}
-Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}`
-
-// Fitness functions and diagrams used to be two separate maker sessions reading the
-// same ruling; both are makers writing FROM the ruling with no judging anywhere, so
-// one session authors both. Same argument for the design drafts below.
-//
-// ── AND THE TWO SURVIVING MAKER SESSIONS RUN CONCURRENTLY ───────────────────
-//
-// `author:decision-artifacts` and `design:drafts` were sequential, and neither reads
-// the other: both are makers writing FROM `decisionContext`, which is fixed before
-// either starts. These are ANALYST-CLASS sessions — minutes each, not the seconds a
-// router costs — so overlapping them removes a multi-minute step from the critical
-// path of every admissible architecture run, which is every run that gets this far.
-// Session count is unchanged; wall-clock is not.
-//
-// No segregation of duties is touched: no judging relationship exists between two
-// makers, and the independent conformance review below still judges the SAD edit.
-const surfaces = Array.isArray(decision.surfaces) ? decision.surfaces : []
-const designSpecs = []
-if (surfaces.includes('events')) {
-  designSpecs.push(['eventSchema', 'Design the event schema(s) within the event API envelope format for the decided events.'])
-  designSpecs.push(['domainEvents', 'Model the domain events, flows, and contracts the ruling introduces.'])
-}
-if (surfaces.includes('restApi')) designSpecs.push(['apiContract', 'Produce the OpenAPI contract proposal for the decided REST surface.'])
-if (surfaces.includes('graphql')) designSpecs.push(['graphql', 'Design the GraphQL schema proposal for the decided AppSync surface.'])
-if (surfaces.includes('newDomain')) designSpecs.push(['ubiquitousLanguage', 'Capture the ubiquitous language — terms, definitions, usage rules — for the new or affected bounded context.'])
-
-const [authored, draftsResult] = await parallel([
-  () => authorDecisionArtifacts(),
-  () => (designSpecs.length ? authorDesignDrafts() : null),
-])
-
-function authorDecisionArtifacts() {
-  return settleAgent(
-  `Author the decision artifacts FROM the ruling below — do NOT re-decide anything. Two artifacts, each under its own key:
-
-1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis". ${atMost(STATED_LIMITS.fitnessFunctions, 'fitness functions')} Only the ones THIS ruling creates or changes. Do not restate standing platform constraints (the bans, service isolation, Powertools-only, REST v1) — they hold already and a fitness function repeating one buys nothing. Keep each \`assertion\` and each \`check\` under 30 words.
-2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
-
-${decisionContext}${persistBrief(ART, 'architecture-fitness.json', PROPOSAL_WHAT)}`,
-  { label: 'author:decision-artifacts', phase: 'Update SAD', effort: 'medium', agentType: 'agent-teams-workforce:architecture-fitness-function-author',
-    schema: { type: 'object', additionalProperties: false, required: ['fitnessFunctions', 'diagrams'], properties: {
-      // The limit is stated in the brief above and checked once the result is in hand, not
-      // bound here: a result discarded for one assertion too many loses the ones that were
-      // wanted, and the phase then reports it authored none.
-      fitnessFunctions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['assertion', 'check'], properties: { assertion: { type: 'string' }, check: { type: 'string' } } } },
-      diagrams: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'summary'], properties: { kind: { type: 'string' }, summary: { type: 'string' }, path: { type: 'string' } } } },
-    } } }
-  )
-}
-
-// SELECTED design drafts — only the surfaces the ruling actually creates, all
-// authored in ONE maker session (one draft per selected design, each under its key).
-function authorDesignDrafts() {
-  return settleAgent(
-    `Author the design draft(s) the ruling below creates — one per key, drawn FROM the ruling; do NOT re-decide anything.
-
-${designSpecs.map(([key, ask]) => `- \`${key}\`: ${ask}`).join('\n')}
-
-${decisionContext}${persistBrief(ART, 'architecture-design-drafts.json', PROPOSAL_WHAT)}`,
-    {
-      label: 'design:drafts',
-      phase: 'Update SAD',
-      effort: 'medium',
-      agentType: 'agent-teams-workforce:api-contract-designer',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: designSpecs.map(([key]) => key),
-        properties: Object.fromEntries(designSpecs.map(([key]) => [key, { type: 'object', additionalProperties: false, required: ['summary'], properties: { summary: { type: 'string' }, path: { type: 'string' } } }])),
-      },
-    }
-  )
-}
-
-const authoredArtifacts = {
-  fitnessFunctions: (authored && authored.fitnessFunctions) || [],
-  diagrams: (authored && authored.diagrams) || [],
-}
-checkLimit('author:decision-artifacts', 'fitness functions', authoredArtifacts.fitnessFunctions.length, STATED_LIMITS.fitnessFunctions)
-const designDrafts = draftsResult
-  ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
-  : []
 
 // ── THE TAGS ARE THE PRODUCT, NOT DECORATION ─────────────────────────────────────
 //
@@ -2547,14 +2463,13 @@ const CONFORMANCE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['rule', 'where', 'finding', 'blocking', 'why', 'needsRuling'],
+        required: ['rule', 'where', 'finding', 'blocking', 'why'],
         properties: {
           rule: { type: 'string' },
           where: { type: 'string' },
           finding: { type: 'string' },
           blocking: { type: 'boolean' },
           why: { type: 'string' },
-          needsRuling: { type: 'boolean' },
         },
       },
     },
@@ -2575,14 +2490,7 @@ function anyBlocking(findings) {
   return (Array.isArray(findings) ? findings : []).some((f) => f && typeof f === 'object' && f.blocking === true)
 }
 
-/** Report whether a blocking finding needs a decision the maintainer has no authority to make. */
-function needsRuling(findings) {
-  return (Array.isArray(findings) ? findings : []).some(
-    (f) => f && typeof f === 'object' && f.blocking === true && f.needsRuling === true
-  )
-}
-
-async function authorSad(reviewerFeedback) {
+async function authorSad(reviewerFeedback, label) {
   return await settleAgent(
     `You are the sad-maintainer. Consolidate the ruling below into the living arc42 SAD, editing ONLY the source-feed sections it touches: §2 Constraints, §4 Solution Strategy, §8 Crosscutting Concepts. Keep those sections mutually consistent. Edit the living document in place — no changelog narrative, no rewriting history. SAD location: ${sadPath}.
 
@@ -2612,13 +2520,11 @@ Chosen approach: ${decision.chosenApproach}
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 Resolved challenges: ${(decision.resolvedChallenges || []).join('; ') || 'none'}
 
-Decision artifacts already authored (consolidate references into the SAD; do NOT recreate them):
-${JSON.stringify({ fitnessFunctions: authoredArtifacts.fitnessFunctions, diagrams: authoredArtifacts.diagrams, designDrafts }, null, 2)}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
 Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
     {
-      label: 'sad:maintain',
+      label,
       effort: 'medium',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-maintainer',
@@ -2627,7 +2533,7 @@ Deliver: which §2/§4/§8 sections you changed, the file paths edited, every en
   )
 }
 
-async function reviewSad(sadUpdate, pass) {
+async function reviewSad(sadUpdate) {
   return await settleAgent(
     `You are the sad-conformance-reviewer — INDEPENDENT of the sad-maintainer. Judge THIS EDIT, against THIS RULING. You only judge — do not edit the SAD.
 
@@ -2646,7 +2552,8 @@ EVERY FINDING EXPLAINS ITSELF OR IT DOES NOT COUNT. For each one give:
 - \`finding\`: what is actually wrong there.
 - \`blocking\`: true only when THIS RULING is not faithfully recorded — part of it is missing from the document, what was written says something the ruling does not, or a decision it settles is still recorded as an open question or a referral. Style, wording and polish are never blocking, and neither is anything this ruling does not own, however wrong it is.
 - \`why\`: why it blocks, or why it does not.
-- \`needsRuling\`: true when fixing it takes a DECISION nobody has made — two rules that contradict each other, a question of which mechanism wins. The sad-maintainer consolidates a ruling and has no authority to choose one, so a finding marked this way goes straight to the architecture-decider instead of costing another maintainer pass that cannot succeed. False when the maintainer can fix it by editing, which is the ordinary case.
+
+This is the only review of this edit. A reject sends your blocking findings to ONE sad-maintainer fix pass, which is accepted without being reviewed again, so write each blocking finding as an edit the maintainer can make: which file, what it must say.
 
 Verdict "reject" ONLY when at least one finding is blocking; otherwise "pass", findings and all. A reject carrying no blocking finding is not honored — the edit is treated as passed — so do not use it to register preferences.
 
@@ -2655,11 +2562,11 @@ Ruling consolidated: ${decision.ruling}
 SAD edit under review:
 ${JSON.stringify(sadUpdate, null, 2)}${persistBrief(
       ART,
-      `sad-conformance-pass${pass}.json`,
-      'ONE JSON object holding this pass number, your verdict, your findings exactly as you return them, and under `sadUpdateReviewed` the SAD edit you were given above verbatim — so a rejected edit and the reason for rejecting it both survive this run'
+      'sad-conformance.json',
+      'ONE JSON object holding your verdict, your findings exactly as you return them, and under `sadUpdateReviewed` the SAD edit you were given above verbatim — so a rejected edit and the reason for rejecting it both survive this run'
     )}`,
     {
-      label: `sad:conformance#${pass}`,
+      label: 'sad:conformance',
       effort: 'low',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-conformance-reviewer',
@@ -2677,12 +2584,8 @@ ${JSON.stringify(sadUpdate, null, 2)}${persistBrief(
 // fresh maintainer that reads the working-tree diff, finishes what is left, and reports.
 // If that also returns nothing, the step reports a rejected SAD update (ok:false) rather
 // than crashing — the caller still receives the decision.
-//
-// This block's own settle() helper is gone: settleAgent() above does the same job for
-// EVERY dispatch in this file, not just the four inside the SAD block, and it records
-// which agent died instead of truncating the message to a log line.
 
-function resumeSad(reviewerFeedback) {
+function resumeSad(reviewerFeedback, label) {
   return settleAgent(
     `You are the sad-maintainer, RESUMING an interrupted pass. A previous sad-maintainer session consolidated the ruling below into the living arc42 SAD at ${sadPath} but ended before it returned its result. Its edits are already in the working tree.
 
@@ -2697,7 +2600,7 @@ ${reviewerFeedback ? `\nConformance findings from the previous pass — address 
 
 Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
     {
-      label: 'sad:maintain-resume',
+      label,
       effort: 'medium',
       phase: 'Update SAD',
       agentType: 'agent-teams-workforce:sad-maintainer',
@@ -2706,136 +2609,48 @@ Deliver: which §2/§4/§8 sections were changed (by either pass), the file path
   )
 }
 
-let sadUpdate = null
-let conformanceVerdict = null
-let reviewerFeedback = ''
-let sadUpdateFailed = false
-for (let pass = 1; pass <= MAX_SAD_LOOPS; pass++) {
-  sadUpdate = await authorSad(reviewerFeedback)
-  if (!sadUpdate) sadUpdate = await resumeSad(reviewerFeedback)
-  if (!sadUpdate) {
-    log(`SAD update pass ${pass}: the maintainer returned no result, including the resume pass — SAD update rejected`)
-    sadUpdateFailed = true
-    conformanceVerdict = {
-      verdict: 'reject',
-      findings: ['The sad-maintainer ended without a structured result twice (initial and resume pass); the SAD working tree may hold partial edits that no reviewer has checked.'],
-    }
-    break
-  }
-  conformanceVerdict = await reviewSad(sadUpdate, pass)
-  if (!conformanceVerdict) {
-    log(`SAD conformance pass ${pass}: reviewer returned no verdict`)
-    break
-  }
-  if (conformanceVerdict.verdict === 'pass') {
-    log(`SAD conformance: PASS on pass ${pass}/${MAX_SAD_LOOPS}`)
-    break
-  }
-  // A reject with nothing blocking behind it is a preference, not a defect, and it
-  // does not get to cost a second maintainer pass and a re-run of this whole phase.
-  if (!anyBlocking(conformanceVerdict.findings)) {
-    log(
-      `SAD conformance: reject on pass ${pass}/${MAX_SAD_LOOPS} carried NO blocking finding — treated as PASS. ` +
-        `Findings recorded: ${findingLines(conformanceVerdict.findings).join('; ') || '(none)'}`
-    )
-    conformanceVerdict = { ...conformanceVerdict, verdict: 'pass', rejectWithoutBlockingFinding: true }
-    break
-  }
-  log(`SAD conformance: REJECT pass ${pass}/${MAX_SAD_LOOPS} — ${findingLines(conformanceVerdict.findings).join('; ')}`)
-  // A FINDING THE MAKER CANNOT FIX DOES NOT GET ANOTHER MAKER PASS. When the
-  // reviewer says the fix takes a ruling — two rules contradict each other and
-  // which one wins is undecided — handing it back to the sad-maintainer buys a
-  // second identical rejection: it consolidates rulings and makes none. This is
-  // what the ssbd-smoos run spent its second pass on. Go to the decider now.
-  if (needsRuling(conformanceVerdict.findings)) {
-    log('SAD conformance: a blocking finding needs a RULING, not an edit — going to the architecture-decider now')
-    break
-  }
-  reviewerFeedback = findingLines(conformanceVerdict.findings).join('\n')
+// One maintainer pass, and the resume pass when it dies mid-sweep. A death the resume
+// covered is retired, so it does not tell the caller the phase produced nothing.
+async function maintainSad(reviewerFeedback, label) {
+  const first = await authorSad(reviewerFeedback, label)
+  if (first) return first
+  const resumed = await resumeSad(reviewerFeedback, `${label}-resume`)
+  if (resumed) retireFailures([label])
+  return resumed
 }
 
-// Deadlock: maker-checker exhausted without a pass → the decider rules (never the maker).
-if (!sadUpdateFailed && (!conformanceVerdict || conformanceVerdict.verdict !== 'pass')) {
-  log('SAD maker-checker deadlock — escalating to architecture-decider for a binding ruling')
-  const deadlockRuling = await settleAgent(
-    `You are the architecture-decider acting as the deadlock authority. The sad-maintainer and sad-conformance-reviewer could not converge within ${MAX_SAD_LOOPS} passes. Rule on how the SAD must read so the source feed (§2/§4/§8) is valid. You ONLY rule — do not author or re-review.
-
-YOUR DIRECTIVE IS CARRIED OUT BY A MAINTAINER PASS, so write it as instructions that can be followed: which file, which line, what it must say. NEVER refer a point onward — "referred to", "pending", "to be determined" and "open question" are not rulings, and a referral written into the SAD is what the review blocks on. Rule it, or say plainly that it is out of this ruling's scope and which requirement owns it.
-
-Ruling being consolidated: ${decision.ruling}
-Last SAD edit attempted:
-${JSON.stringify(sadUpdate, null, 2)}
-Unresolved conformance findings:
-${findingLines(conformanceVerdict && conformanceVerdict.findings).join('\n') || '(none captured)'}${persistBrief(
-      ART,
-      'sad-deadlock-ruling.json',
-      'ONE JSON object holding your verdict and your directive exactly as you return them, plus under `unresolvedFindings` the findings you ruled on — this is the durable record of why the SAD edit was blocked and how it must read'
-    )}`,
-    {
-      label: 'sad:deadlock-ruling',
-      effort: 'high',
-      phase: 'Update SAD',
-      agentType: 'agent-teams-workforce:architecture-decider',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['verdict', 'directive'],
-        properties: {
-          verdict: { type: 'string', enum: ['accept', 'reject'] },
-          directive: { type: 'string' },
-        },
-      },
-    }
-  )
-  // ── THE RULING IS CARRIED OUT, NOT FILED ───────────────────────────────────
-  //
-  // A decider that rules `reject` has just said HOW the SAD must read. Recording
-  // that and stopping is how a run ends with seven numbered directives and a SAD
-  // nobody edited: the gate above then fails the phase, the caller loops it, and
-  // the whole panel — triage, proposals, challenge, decider — is paid for again
-  // to arrive back at this same step. One maintainer pass carries the directive
-  // out, and one independent review judges the result.
-  if (deadlockRuling && deadlockRuling.verdict !== 'accept' && deadlockRuling.directive) {
-    log('SAD deadlock ruling: applying the directive in one maintainer pass, then one independent review')
-    const applied = await authorSad(
-      `The architecture-decider has ruled as the deadlock authority. Carry this directive out EXACTLY, in this pass, and report what you changed:\n${deadlockRuling.directive}`
-    )
-    if (applied) {
-      sadUpdate = applied
-      const reviewed = await reviewSad(applied, MAX_SAD_LOOPS + 1)
-      if (reviewed && (reviewed.verdict === 'pass' || !anyBlocking(reviewed.findings))) {
-        log('SAD conformance: PASS after the deadlock directive was applied')
-        conformanceVerdict = { ...reviewed, verdict: 'pass', ruledByDecider: true, directiveApplied: true }
-      } else {
-        conformanceVerdict = {
-          verdict: 'reject',
-          findings: (reviewed && reviewed.findings) || [],
-          ruledByDecider: true,
-          directiveApplied: true,
-          directive: deadlockRuling.directive,
-        }
-        log(
-          `SAD conformance: REJECT after the deadlock directive was applied — ${
-            findingLines(conformanceVerdict.findings).join('; ') || '(no findings returned)'
-          }`
-        )
-      }
+let sadUpdate = await maintainSad('', 'sad:maintain')
+let conformanceVerdict = null
+let sadUpdateFailed = false
+if (!sadUpdate) {
+  log('SAD update: the maintainer returned no result, including the resume pass — SAD update rejected')
+  sadUpdateFailed = true
+  conformanceVerdict = {
+    verdict: 'reject',
+    findings: ['The sad-maintainer ended without a structured result twice (initial and resume pass); the SAD working tree may hold partial edits that no reviewer has checked.'],
+  }
+} else {
+  const review = await reviewSad(sadUpdate)
+  if (!review) {
+    log('SAD conformance: the reviewer returned no verdict — the SAD edit is unreviewed and the phase reports it')
+  } else if (review.verdict === 'pass' || !anyBlocking(review.findings)) {
+    // A reject with nothing blocking behind it is a preference, not a defect.
+    conformanceVerdict = { ...review, verdict: 'pass', ...(review.verdict === 'pass' ? {} : { rejectWithoutBlockingFinding: true }) }
+    log(`SAD conformance: PASS${review.verdict === 'pass' ? '' : ` (a reject carried no blocking finding: ${findingLines(review.findings).join('; ') || '(none)'})`}`)
+  } else {
+    const findings = findingLines(review.findings)
+    log(`SAD conformance: REJECT — ${findings.join('; ')} — one maintainer fix pass, then accepted`)
+    const fixed = await maintainSad(findings.join('\n'), 'sad:maintain-fix')
+    if (fixed) {
+      sadUpdate = fixed
+      conformanceVerdict = { verdict: 'pass', findings: review.findings, acceptedAfterFix: true }
     } else {
+      log('SAD update: the fix pass returned no result, including its resume pass — SAD update rejected')
+      sadUpdateFailed = true
       conformanceVerdict = {
         verdict: 'reject',
-        findings: [`The deadlock directive was not applied: the sad-maintainer returned no result. Directive: ${deadlockRuling.directive}`],
-        ruledByDecider: true,
-        directiveApplied: false,
-        directive: deadlockRuling.directive,
+        findings: [...findings, 'The sad-maintainer fix pass ended without a structured result twice; the SAD working tree may hold partial edits.'],
       }
-      log('SAD deadlock ruling: the maintainer returned no result, so the directive is recorded unapplied')
-    }
-  } else {
-    conformanceVerdict = {
-      verdict: deadlockRuling && deadlockRuling.verdict === 'accept' ? 'pass' : 'reject',
-      findings: deadlockRuling ? [deadlockRuling.directive] : (conformanceVerdict && conformanceVerdict.findings) || [],
-      ruledByDecider: true,
-      ...(deadlockRuling ? { directive: deadlockRuling.directive } : {}),
     }
   }
 }
@@ -2845,9 +2660,9 @@ ${findingLines(conformanceVerdict && conformanceVerdict.findings).join('\n') || 
 // decided nothing returns ok:false even if every document it touched is tidy.
 //
 // A SAD update that failed because the maintainer DIED — twice, counting the resume
-// pass — is a dispatch failure, not a SAD the reviewer judged and rejected, and it
-// carries the same contract as the dead decider above.
-const sadDeaths = sadUpdateFailed ? dispatchDeaths('Update SAD') : []
+// pass — or whose reviewer died, is a dispatch failure, not a SAD the reviewer judged and
+// rejected, and it carries the same contract as the dead decider above.
+const sadDeaths = sadUpdateFailed || !conformanceVerdict ? dispatchDeaths('Update SAD') : []
 return {
   ok: admissible && !!conformanceVerdict && conformanceVerdict.verdict === 'pass',
   ...(sadDeaths.length
@@ -2874,8 +2689,6 @@ return {
   failureModes,
   challenges,
   decision,
-  authoredArtifacts,
-  designDrafts,
   sadUpdate,
   conformanceVerdict,
   // The durable SAD entry tags the ruling minted, preserved or superseded. They are

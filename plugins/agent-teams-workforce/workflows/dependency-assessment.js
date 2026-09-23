@@ -482,7 +482,8 @@ if (assessed) {
 const summary = (assessed && assessed.applySummary) || {}
 const accepted = !!assessed && assessed.valid === true && assessed.applyExitCode === 0 && !summary.validation
 const settled = accepted && (applies ? summary.applied === true : summary.dryRun === true || summary.applied === false)
-const stop = assessed && assessed.valid === false
+// A context command that failed is not a proposal that did not validate.
+const stop = assessed && assessed.valid === false && !assessed.error
   ? { epic: target, findings: assessed.findings || {}, edgesFile, validationFile, reasoning: reasoningFile }
   : null
 const stopMessage = stop
@@ -535,7 +536,13 @@ return {
   scoring,
   stop,
   ...(limitFindings.length ? { limitFindings } : {}),
-  ...(stop ? { error: stopMessage, headline: stopMessage } : !settled ? { error: `${target}: ${edges.reason}` } : {}),
+  ...(stop
+    ? { error: stopMessage, headline: stopMessage }
+    : !settled
+      ? { error: `${target}: ${edges.reason}` }
+      : scores && !(scoring && scoring.ok === true)
+        ? { error: `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}` }
+        : {}),
   dispatchFailed: dispatchDeaths().length > 0,
   dispatchFailures: dispatchDeaths(),
 }

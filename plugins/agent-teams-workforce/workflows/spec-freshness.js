@@ -1,10 +1,9 @@
 export const meta = {
   name: 'spec-freshness',
   description:
-    'Leaf mini — Spec Freshness. Fans two independent freshness checkers out in parallel (spec-vs-reality drift, upstream dependency changes), then a read-only lead aggregates the two verdicts into one fresh/stale ruling with reasons. Read-only — judges currency, changes no artifacts. Makers (the two checkers) and the aggregating router are distinct agents; the lead routes and aggregates, it never authors content.',
+    'Leaf mini — Spec Freshness. Fans two independent freshness checkers out in parallel (spec-vs-reality drift, upstream dependency changes); the script computes one fresh/stale verdict from their two booleans and lists their findings as the reasons. Read-only — judges currency, changes no artifacts. A checker that returns nothing is reported as dispatchFailed, never as a stale spec.',
   phases: [
     { title: 'Freshness checks', detail: 'two independent currency checkers fan out in parallel' },
-    { title: 'Aggregate', detail: 'read-only router rolls the two verdicts into one fresh/stale verdict' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -306,9 +305,8 @@ Spec document: ${specPath}
 Governing repository: ${repo}`
 
 // ── Phase 1: Freshness checks — two INDEPENDENT checkers in parallel ───────────
-// Segregation of duties: each checker is a distinct maker/checker agent; none of
-// them judges another's output, and the read-only lead (phase 2) judges none of
-// the content — it only aggregates the two verdicts.
+// Segregation of duties: each checker is a distinct agent and neither judges the
+// other's output.
 phase('Freshness checks')
 
 const [specCurrency, dependencyChanges] = await parallel([
@@ -402,70 +400,38 @@ Deliver:
     ),
 ])
 
-// ── Phase 2: Aggregate — read-only router rolls the three verdicts into one ─────
-// The lead is a read-only router: it does not re-judge the underlying code/spec,
-// it only synthesizes the three checker verdicts into a single fresh/stale ruling.
-phase('Aggregate')
-
-const aggregate = await settleAgent(
-  `You are the spec-freshness lead — a READ-ONLY router. You do NOT inspect the spec or code yourself and you do NOT author content. Synthesize the two independent freshness verdicts below into ONE fresh/stale ruling. The spec is FRESH only if both checkers report current=true; if either reports current=false, the spec is STALE.
-
-${specHeader}
-
-Spec-vs-reality currency verdict:
-${JSON.stringify(specCurrency ?? {}, null, 2)}
-
-Upstream dependency-change verdict:
-${JSON.stringify(dependencyChanges ?? {}, null, 2)}
-
-Deliver:
-- fresh: true only if both checkers are current; false if either is not.
-- staleReasons: a flat list of the concrete reasons the spec is stale (empty if fresh), each attributed to its source check (spec-currency / dependency-change).`,
-  {
-    label: 'aggregate:freshness-verdict',
-    phase: 'Aggregate',
-    agentType: 'agent-teams-workforce:spec-freshness-lead',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['fresh', 'staleReasons'],
-      properties: {
-        fresh: { type: 'boolean' },
-        staleReasons: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['source', 'reason'],
-            properties: {
-              source: {
-                type: 'string',
-                enum: ['spec-currency', 'dependency-change'],
-              },
-              reason: { type: 'string' },
-            },
-          },
-        },
-        summary: { type: 'string' },
-      },
-    },
-  }
-)
+// ── Aggregate — computed, not ruled ─────────────────────────────────────────────
+// The spec is FRESH only if both checkers report current=true. That is an AND of two
+// booleans, so the script computes it and lists each checker's findings as the reasons.
+const staleReasons = [
+  ...(specCurrency && specCurrency.current === false
+    ? (specCurrency.driftFindings || []).map((f) => ({ source: 'spec-currency', reason: `${f.specClaim} — observed: ${f.observedReality} (${f.location})` }))
+    : []),
+  ...(dependencyChanges && dependencyChanges.current === false
+    ? (dependencyChanges.changeFindings || []).map((f) => ({ source: 'dependency-change', reason: `${f.dependency}: ${f.change} — invalidates ${f.invalidates}` }))
+    : []),
+]
+const fresh = !!(specCurrency && specCurrency.current === true && dependencyChanges && dependencyChanges.current === true)
+// A checker that returned nothing did not find the spec stale; it never looked.
+const deaths = !specCurrency || !dependencyChanges ? dispatchDeaths('Freshness checks') : []
 
 const ledger = {
   phase: 'spec-freshness',
   beadId: null,
   subject: specId,
-  chosen: ['spec-currency-validator', 'dependency-change-detector', 'spec-freshness-lead'],
+  chosen: ['spec-currency-validator', 'dependency-change-detector'],
   mode: 'fixed', // design-mandated full fan-out — correct, not a gap
-  ok: aggregate ? !!aggregate.fresh : false,
+  ok: fresh,
 }
 
 return {
-  fresh: aggregate ? aggregate.fresh : false,
+  ...(deaths.length
+    ? { dispatchFailed: true, dispatchFailures: deaths, reason: `${deaths.length} freshness checker dispatch(es) returned nothing` }
+    : {}),
+  fresh,
   specCurrency,
   dependencyChanges,
-  staleReasons: (aggregate && aggregate.staleReasons) || [],
+  staleReasons,
   contract: a.contract || null,
   ledger,
 }
