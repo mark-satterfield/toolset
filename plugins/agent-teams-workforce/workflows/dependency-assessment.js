@@ -96,6 +96,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 function enter(title) {
   phase(title)
 }
@@ -175,6 +205,9 @@ const ASSESS_SCHEMA = {
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
     findings: { type: 'object' },
+    // RELATED_READ_MAX and UNSURE_MAX are stated in the prompt and checked after the
+    // result is in hand. Never bounds here: a list one entry long would take the whole
+    // assessment down with it, edges and apply result included.
     relatedRead: { type: 'array', items: { type: 'string' } },
     unsure: { type: 'array', items: { type: 'string' } },
     applyExitCode: { type: 'integer' },
@@ -182,6 +215,11 @@ const ASSESS_SCHEMA = {
     error: { type: 'string' },
   },
 }
+// The reading budget this assessment is expected to stay inside. Raised from the 40 and
+// 20 they used to be: the corpus is every open Epic's PRD, and an Epic that touches a
+// broad architecture decision legitimately reads more than 40 of them.
+const RELATED_READ_MAX = 80
+const UNSURE_MAX = 40
 const THE_TEST = `THE TEST. An Epic is a PRD, a WHAT; its architecture does not exist yet. An edge from A to B says: an architecture decision B rests on should be designed from A's requirements first, because A's requirements are the fuller statement of what that decision must serve — sign-up and sign-in requirements drive the identity architecture, so password reset waits, or identity gets designed from a recovery flow's requirements alone. A reason that says something must exist, be built, be deployed or be testable first, that B presumes a user or a record exists, or that B reads data from or calls a capability of A, is a build dependency between Tasks and is never an Epic edge. ${a.sadPath ? `The SAD is ${a.sadPath}: a` : 'A'} decision the SAD already settles needs no edge; check it before drawing one. A SAD entry settles a decision ONLY when its frontmatter reads \`lifecycle_state: effective\` — read that field, never infer it from the wording. A dated ruling, a MUST and a table of values are properties of the prose, and an unvetted entry has more of them than a vetted one. An entry in any other state settles NOTHING and the test proceeds as though it were absent.`
 const applyCmd = `set -o pipefail; ${cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)} ${scope}${applies ? '' : ' --dry-run'}`)} | tee ${shq(applyFile)}`
 const assessPrompt = `Assess the architecture dependencies of ONE Epic, ${target}, following \`agent-teams-workforce:epic-sequencing\` for the edge test and its worked example. ${target} is new or has changed.
@@ -203,7 +241,7 @@ Work in this order:
 9. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(edgesFile)} ${scope}`)} | tee ${shq(validationFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator. It refuses an edge that does not touch ${target}, a missing reason, an edge with no \`sadCheck\`, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Epic edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: set \`valid\` false, put the validator's findings in \`findings\`, name the cycle in \`unsure\`, and do not run step 10 (\`applyExitCode\` -1, \`applySummary\` {}).
 10. Only once validation passes, run exactly this, once: \`${applyCmd}\`. Return its exit code as \`applyExitCode\` and the \`summary\` object it printed, unaltered, as \`applySummary\`. Do not retry it or repair anything it refuses.
 
-Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Epic whose PRD you read in full, other than ${target} — each edge you were unsure of with what would settle it, and the apply-edges result.`
+Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Epic whose PRD you read in full, other than ${target} — each edge you were unsure of with what would settle it, and the apply-edges result. Return at most ${RELATED_READ_MAX} ids in \`relatedRead\` and at most ${UNSURE_MAX} entries in \`unsure\`; nothing past those counts will be read, so if you are heading past either one you are reading or enumerating more than this assessment needs.`
 
 const assessed = await settleAgent(assessPrompt, {
   label: `epic-sequencer:${target}`,
@@ -214,6 +252,10 @@ const assessed = await settleAgent(assessPrompt, {
   agentType: 'agent-teams-workforce:epic-sequencer',
   schema: ASSESS_SCHEMA,
 })
+if (assessed) {
+  checkLimit(`Assess (${target})`, 'relatedRead', assessed.relatedRead, RELATED_READ_MAX)
+  checkLimit(`Assess (${target})`, 'unsure', assessed.unsure, UNSURE_MAX)
+}
 const summary = (assessed && assessed.applySummary) || {}
 const accepted = !!assessed && assessed.valid === true && assessed.applyExitCode === 0 && !summary.validation
 const settled = accepted && (applies ? summary.applied === true : summary.dryRun === true || summary.applied === false)
@@ -269,6 +311,7 @@ return {
   edges,
   scoring,
   stop,
+  ...(limitFindings.length ? { limitFindings } : {}),
   ...(stop ? { error: stopMessage, headline: stopMessage } : !settled ? { error: `${target}: ${edges.reason}` } : {}),
   dispatchFailed: dispatchDeaths().length > 0,
   dispatchFailures: dispatchDeaths(),

@@ -97,6 +97,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: {
 //   spec: {                       // the spec context being authored against
 //     id?: string,                // spec/feature identifier
@@ -161,6 +191,28 @@ async function settleAgent(prompt, opts) {
 // says so HERE, in a typed field the script collects and hands to its caller, instead of
 // emitting a partial contract that reads exactly like a complete one. Absent means the
 // maker covered what it needed, which is the expected case.
+// ── THE LIST LIMITS EVERY SESSION HERE WORKS UNDER ───────────────────────────────
+//
+// Each one is stated in the brief that asks for the list and counted once the result is
+// in hand. None of them is a schema bound, and the acceptance criteria are why: a bound
+// does not return the first N criteria, it returns nothing at all, and the criteria are
+// the tests tdd-red writes and the behaviour Green builds. Losing one silently is bad;
+// losing the whole spec set to a count is worse.
+//
+// The numbers are the ones this mini has always worked to, raised where the old value sat
+// close to measured output. CRITERIA_MAX is the one with real data behind it: across the
+// 147 PRDs in this project the given/when/then criteria a PRD ITSELF states run to a max
+// of 68, median 33 — and this maker then adds the error paths and boundary conditions the
+// brief demands of it, so 80 was not clear of normal output, it was just above the median
+// case. It is a guard against runaway enumeration, not a budget on honest coverage.
+const ARTIFACT_PATHS_MAX = 25
+const OPEN_QUESTIONS_MAX = 30
+const DECISION_IDS_MAX = 60
+const CRITERIA_MAX = 120
+const DOD_MAX = 30
+const REVIEW_FINDINGS_MAX = 30
+const OUT_OF_REPO_FINDINGS_MAX = 40
+
 const COVERAGE_SHORTFALL_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -176,6 +228,8 @@ const SPEC_SCHEMA = {
   additionalProperties: false,
   required: ['artifactPaths', 'summary', 'content'],
   properties: {
+    // ARTIFACT_PATHS_MAX / OPEN_QUESTIONS_MAX / DECISION_IDS_MAX are stated in the
+    // reporting-ceilings line of the shared context block and counted after the fact.
     artifactPaths: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     content: { type: 'string' },
@@ -275,6 +329,8 @@ const DECISION_SCHEMA = {
     rulings: {
       type: 'array',
       // Exactly one per deadlocked artifact, and there are four reviewable artifacts.
+      // Stated in the brief and counted after the ruling: a fifth entry is dropped by the
+      // loop below, which is a far cheaper answer than discarding every ruling made.
       items: {
         type: 'object',
         additionalProperties: false,
@@ -305,6 +361,7 @@ const STORY_SCHEMA = {
   properties: {
     title: { type: 'string' },
     description: { type: 'string' },
+    // OUT_OF_REPO_FINDINGS_MAX, stated in the story brief and counted after the fact.
     outOfRepoFindings: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -482,6 +539,7 @@ function ctxBlock(s, trd, constraints) {
     // silent truncation: a maker that cannot cover the repository says so in
     // `coverageShortfall`, which travels out of this mini with the spec set.
     'READING BUDGET (binding on SCOPE, not on thoroughness): the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories, ever. Within it, read what the spec actually requires: prefer one targeted search over a directory walk, never re-open a file you have already read, and stop reading a file once it has told you what you needed. Read at most 80 files. If you reach that cap with the repository still not adequately covered for the artifact you are authoring, DO NOT quietly author a partial contract: return `coverageShortfall` with the number of files you read and one sentence naming what you could not cover, and record the specific gaps as open questions. A spec that states what it could not establish is usable; one that silently omits it is not.',
+    `REPORTING CEILINGS, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`, ${DECISION_IDS_MAX} in \`decisionIds\`. These are the fields that carry your result to the next phase, not the place to enumerate everything you saw.`,
     constraints && constraints.length
       ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
@@ -627,8 +685,8 @@ ${ctx}${contractsBrief}`,
       settleAgent(
         `Author two small artifacts for this spec, each under its own key. Author only — do not review your own work.
 
-1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Return every criterion you write — nothing is truncated and no count is enforced. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words; around 80 criteria is the typical shape for one repository. If you judge that some behaviour is better left out, do not drop it silently: report \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered.
-2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most 20 items.
+1. \`acceptanceCriteria\` — testable given/when/then statements covering the happy path, error paths, and boundary conditions. COVERAGE COMES FIRST: every behaviour the spec set states gets a criterion, because a criterion missing here is a test nobody writes and a behaviour nobody builds. Cover every behaviour ONCE rather than enumerating variants of the same one, and keep each clause under 30 words. At most ${CRITERIA_MAX} criteria for one repository — nothing past ${CRITERIA_MAX} is read, and a list heading past it is enumerating variants of behaviours you have already covered. NOTHING IS EVER DROPPED SILENTLY: if you deliberately leave a behaviour out — because the ceiling is close, or for any other reason — report it in \`criteriaShortfall\` with how many you omitted and one sentence naming which behaviours they covered. An omission nobody knows about is a behaviour nobody builds.
+2. \`definitionOfDone\` — a concrete, verifiable checklist (spec-first OpenAPI present, schemas typed at boundaries, tests defined, docs current, etc.). At most ${DOD_MAX} items; nothing past that is read.
 
 ${ctx}${criteriaBrief}`,
         {
@@ -640,6 +698,21 @@ ${ctx}${criteriaBrief}`,
         }
       ),
   ])
+  // The stated ceilings, measured. Observation only — every artifact is used as returned.
+  for (const [what, draft] of [
+    ['apiSpec', contractsDraft && contractsDraft.apiSpec],
+    ['eventContracts', contractsDraft && contractsDraft.eventContracts],
+    ['errorSpec', contractsDraft && contractsDraft.errorSpec],
+    ['dataModelSpec', dataModelSpecDraft],
+  ]) {
+    if (!draft || typeof draft !== 'object') continue
+    checkLimit(`Author specs (${what})`, 'artifactPaths', draft.artifactPaths, ARTIFACT_PATHS_MAX)
+    checkLimit(`Author specs (${what})`, 'openQuestions', draft.openQuestions, OPEN_QUESTIONS_MAX)
+    checkLimit(`Author specs (${what})`, 'decisionIds', draft.decisionIds, DECISION_IDS_MAX)
+  }
+  checkLimit('Author specs (criteria)', 'acceptanceCriteria', criteriaDraft && criteriaDraft.acceptanceCriteria, CRITERIA_MAX)
+  checkLimit('Author specs (criteria)', 'definitionOfDone', criteriaDraft && criteriaDraft.definitionOfDone, DOD_MAX)
+
   const authored = {
     apiSpec: contractsDraft && contractsDraft.apiSpec,
     dataModelSpec: dataModelSpecDraft,
@@ -671,13 +744,6 @@ ${ctx}${criteriaBrief}`,
       `Acceptance-criteria shortfall: ${criteriaShortfall.omittedCount} criterion/criteria omitted in ${repoPath} — ` +
         `${String(criteriaShortfall.omitted || '').slice(0, 200)}. These behaviours have no test in tdd-red unless someone acts on this.`
     )
-  }
-  // An observation, never a gate. Across 147 PRDs the criteria a PRD itself states top out
-  // at 68 for one repository, so a list far past that is worth a look — and is carried
-  // through in full regardless, because every criterion here is a test tdd-red must write.
-  const criteriaCount = (criteriaDraft && Array.isArray(criteriaDraft.acceptanceCriteria) ? criteriaDraft.acceptanceCriteria : []).length
-  if (criteriaCount > 80) {
-    log(`Acceptance criteria: ${criteriaCount} for ${repoPath} — above the ~80 one repository typically states; all are carried through`)
   }
 
   // ── THE `dispatchFailed` CONTRACT THIS MINI OWES ITS CALLER ──────────────────
@@ -727,7 +793,7 @@ ${ctx}${criteriaBrief}`,
 3. \`eventContracts\` — the event schemas: dot-form naming, standard envelope conformance, payload schema completeness and versioning, and that orchestration uses events (not Step Functions).
 4. \`acceptance\` — the acceptance criteria: each is unambiguous given/when/then; happy path, error paths, and boundaries are all covered; nothing is unverifiable.
 
-Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation.
+Verdict approve or reject per artifact, with specific findings a maker can act on without interpretation. At most ${REVIEW_FINDINGS_MAX} findings per artifact, and nothing past that is read: only ONE maker pass follows a rejection, so a longer list is unactionable by construction.
 
 Artifacts under review:
 ${JSON.stringify(drafts, null, 2)}
@@ -755,6 +821,9 @@ ${ctx}`,
       }
     )
     lastReviews = review || {}
+    for (const k of REVIEW_KEYS) {
+      checkLimit(`Review specs (${k}, attempt ${attempt})`, 'findings', review && review[k] && review[k].findings, REVIEW_FINDINGS_MAX)
+    }
     const rejected = REVIEW_KEYS.filter((k) => !(review && review[k] && review[k].verdict === 'approve'))
     if (!rejected.length) break
     log(`Review: REJECT ${rejected.join(', ')} (attempt ${attempt}/${MAX_LOOPS})`)
@@ -819,7 +888,7 @@ ${ctx}`,
     decision = await settleAgent(
       `A maker/checker loop reached its retry limit without agreement on one or more spec artifacts. You only RULE — you do not author or re-review.
 
-Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once, and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
+Return ONE ruling per deadlocked artifact in \`rulings\`, each naming its artifact in \`artifact\`. Every artifact listed below must appear exactly once — ${deadlocked.length} ruling(s), and nothing past that is read — and they are ruled INDEPENDENTLY: they deadlocked for different reasons and one verdict cannot speak for all of them.
 
 For each, rule:
 - "accept-maker" — the draft stands as it is; the reviewer's objection does not hold.
@@ -840,6 +909,7 @@ For each, rule:
         schema: DECISION_SCHEMA,
       }
     )
+    checkLimit('Decide', 'rulings', decision && decision.rulings, deadlocked.length)
     for (const r of decision && Array.isArray(decision.rulings) ? decision.rulings : []) {
       // A ruling naming something that did not deadlock is DROPPED, never guessed at.
       if (r && typeof r.artifact === 'string' && deadlocked.includes(r.artifact)) rulingFor[r.artifact] = r
@@ -930,7 +1000,7 @@ For each, rule:
   }
 
   const storyDraft = await settleAgent(
-    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo) — at most ${OUT_OF_REPO_FINDINGS_MAX} of them, and nothing past that is read. Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
@@ -1004,7 +1074,7 @@ For each, rule:
         .map((x) => String(x == null ? '' : x).trim())
         .filter(Boolean)
     )],
-    outOfRepoFindings: storyDraft.outOfRepoFindings || [],
+    outOfRepoFindings: checkLimit('Story', 'outOfRepoFindings', storyDraft.outOfRepoFindings || [], OUT_OF_REPO_FINDINGS_MAX),
     // Every maker that could not cover the repository, named. Empty is the expected case and
     // means the makers covered what the spec required — never that nobody checked.
     coverageShortfalls: [
@@ -1017,8 +1087,11 @@ For each, rule:
       .filter(([, x]) => x && x.coverageShortfall && typeof x.coverageShortfall === 'object')
       .map(([artifact, x]) => ({ artifact, repoPath, ...x.coverageShortfall })),
     // Null is the expected case: the criteria maker covered this repository's behaviour
-    // within the cap. Non-null names behaviours that will otherwise reach no test.
+    // and left nothing out. Non-null names behaviours that will otherwise reach no test.
     criteriaShortfall,
+    // Every list that came back longer than the brief stated, with its count. Each one was
+    // used in full; this is what it cost.
+    ...(limitFindings.length ? { limitFindings } : {}),
     note:
       'errorSpec, definitionOfDone, and the story bead have no dedicated peer reviewer in this mini; they are carried to the downstream phase gate for acceptance. No maker judged its own work; the spec-decider only ruled on deadlocks. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
   }

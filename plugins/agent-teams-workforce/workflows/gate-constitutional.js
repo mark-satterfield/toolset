@@ -92,6 +92,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: { gate, phaseName, criteria: string[], artifact, escalateTargets?: string[] }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const criteria = Array.isArray(a.criteria) ? a.criteria : []
@@ -224,6 +254,12 @@ const noLoopOnContradiction = (v) => (packetConflict && v === 'loop' ? 'escalate
 const withContradictionNote = (verdictIn, feedback) =>
   packetConflict && verdictIn === 'loop' ? `${feedback || ''}\n\n${LOOP_ON_CONTRADICTION_NOTE}` : feedback
 
+// One judgment per criterion supplied, which is the honest limit; 60 when the caller
+// supplied none to count. Raised from the flat 40 this used to be, and stated to the
+// enforcer rather than bound in its schema — a gate that supplies 41 criteria should get
+// 41 judgments back, not a destroyed verdict and a loop spent on a phase that passed.
+const CRITERIA_JUDGMENT_MAX = criteria.length || 60
+
 phase('Gate (constitutional)')
 
 const verdict = await settleAgent(
@@ -241,7 +277,7 @@ Verdicts:
 - "pass": every constitutive criterion is met, with evidence.
 - "loop": a criterion fails and is fixable within the phase — give precise feedback.
 - "escalate": failure originates upstream${a.escalateTargets && a.escalateTargets.length ? ` (options: ${a.escalateTargets.join(', ')})` : ''}.
-Return exactly one entry in \`criteria\` per criterion listed above, in the same order, and keep each \`evidence\` under 40 words and \`feedback\` under 200. Judgments, not essays — a loop's whole value is the precision of the feedback, never its length.
+Return exactly one entry in \`criteria\` per criterion listed above, in the same order — at most ${CRITERIA_JUDGMENT_MAX} entries, and nothing past that will be read. Keep each \`evidence\` under 40 words and \`feedback\` under 200. Judgments, not essays — a loop's whole value is the precision of the feedback, never its length.
 
 If you encounter a NOVEL conflict between constitutive objectives that you cannot resolve from the criteria alone, set needsConstitutionalRuling=true and describe the conflict.`,
   {
@@ -258,7 +294,9 @@ If you encounter a NOVEL conflict between constitutive objectives that you canno
         criteria: {
           type: 'array',
           // One entry per criterion the caller supplied, and nothing else: the enforcer
-          // judges the stated criteria, it does not invent more.
+          // judges the stated criteria, it does not invent more. That expectation is
+          // stated in the prompt and counted below — never bound here, where an extra
+          // entry would destroy the verdict along with it.
           items: {
             type: 'object',
             additionalProperties: false,
@@ -307,11 +345,10 @@ if (!verdict) {
 // criterion supplied; more than that means it judged something nobody asked about, which
 // is worth seeing in the journal and is not a reason to throw the verdict away.
 const judgedCriteria = Array.isArray(verdict.criteria) ? verdict.criteria : []
-if (criteria.length && judgedCriteria.length > criteria.length) {
-  log(
-    `Gate ${a.gate || '?'}: the enforcer returned ${judgedCriteria.length} criterion judgments for ${criteria.length} supplied criteria — the extras were not asked for`
-  )
-}
+checkLimit(`Gate ${a.gate || '?'}`, 'criterion judgments', judgedCriteria, CRITERIA_JUDGMENT_MAX)
+// Recorded on the verdict the caller receives, as well as logged. It rides along with the
+// verdict and changes none of it: no path reads it, and no path branches on it.
+if (limitFindings.length) verdict.limitFindings = limitFindings
 
 // ── Precedent store ─────────────────────────────────────────────────────────────
 // The constitutional-agent is told its ruling "becomes reusable precedent", and its

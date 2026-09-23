@@ -92,6 +92,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? } }
 //
 // `repoPath` is the repository when the caller knows it. It is NOT required: a Bug is
@@ -134,6 +164,12 @@ THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate th
 
 phase('Triage')
 
+// The enumeration this diagnosis is expected to stay inside. A bug carrying more distinct
+// defects than this is not a bug any more, and the `needs-prd` escape below is the honest
+// answer to it — but that is a judgment for the analyst to make, and being one over it is
+// never a reason to lose the whole diagnosis.
+const DEFECTS_MAX = 20
+
 // 1) Diagnosis — read-only analyst. Separation of duties: this agent does not fix.
 const analysis = await settleAgent(
   `${rulingsBlock}Diagnose this bug. You are READ-ONLY — do not change code. Work within the repository at: ${repo}
@@ -144,7 +180,7 @@ ${bead.description || ''}
 Deliver:
 - reproduction: the minimal, concrete steps/conditions that trigger the defect.
 - rootCause: the precise mechanism and code location (file:line where possible), as prose.
-- defects: the SAME root cause, ENUMERATED — one entry per distinct defect, each with a short stable id (D1, D2, ...), its mechanism, and the file and line where it lives. One bead frequently contains several distinct defects, and returning them only as one paragraph of prose leaves everything downstream with nothing countable: the acceptance criteria are then written against a blob and cannot be bounded, indexed, or checked for coverage. Return exactly one entry per defect you would fix separately — not one per file, not one per symptom.
+- defects: the SAME root cause, ENUMERATED — one entry per distinct defect, each with a short stable id (D1, D2, ...), its mechanism, and the file and line where it lives. One bead frequently contains several distinct defects, and returning them only as one paragraph of prose leaves everything downstream with nothing countable: the acceptance criteria are then written against a blob and cannot be bounded, indexed, or checked for coverage. Return exactly one entry per defect you would fix separately — not one per file, not one per symptom. AT LEAST ONE entry, always: a bug with no enumerated defect leaves the contract below with nothing to cover. At most ${DEFECTS_MAX}; nothing past that is read, and a bug that honestly has more than ${DEFECTS_MAX} distinct defects is a redesign, which you report as \`needs-prd\` rather than enumerating.
 - affectedFiles: the files that must change to fix it (paths).
 - blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.
 - surfaces: which surfaces from the CLOSED SET below the fix actually touches. This decides which specialist test writers run downstream, so it is a real decision, not a label:
@@ -172,6 +208,10 @@ Deliver:
       properties: {
         reproduction: { type: 'string' },
         rootCause: { type: 'string' },
+        // At least one, at most DEFECTS_MAX — stated in the brief above and counted once
+        // the result is in hand. Never bound here: a bound on this list answers a
+        // one-over enumeration by destroying the reproduction, the root cause and the
+        // repository resolution along with it, and triage then has nothing at all.
         defects: {
           type: 'array',
           items: {
@@ -218,6 +258,9 @@ Deliver:
 // The repository the fix is built in. A supplied one is the answer; otherwise it is what
 // the diagnosis LOCATED, reported as a finding beside the blast radius. Never a guess made
 // here: an empty string is carried as null and the caller refuses to write without one.
+// The enumeration the diagnosis was asked to stay inside, measured now so it is observed
+// on the needs-prd path too. An observation only: every defect is carried forward.
+if (analysis) checkLimit('Triage', 'defects', Array.isArray(analysis.defects) ? analysis.defects : [], DEFECTS_MAX, 1)
 const resolvedRepoPath = repoKnown ? bead.repoPath : String((analysis && analysis.repoPath) || '').trim() || null
 if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resolvedRepoPath}` : 'NOT located'} — ${(analysis && analysis.repoResolution) || 'no resolution reported'}`)
 
@@ -280,6 +323,7 @@ if (scope === 'needs-prd') {
     affectedFiles: analysis.affectedFiles,
     blastRadius: analysis.blastRadius,
     acceptanceCriteria: [],
+    ...(limitFindings.length ? { limitFindings } : {}),
     note:
       'This defect needs a PRD and an Epic, not a fix. Its honest remedy changes a contract, ' +
       'schema, or boundary, and the fix path has no PRD validation, no architecture ruling, and ' +
@@ -311,7 +355,7 @@ log(`Triage: ${defectIds.length || 'unenumerated'} defect(s) — acceptance crit
 const contract = await settleAgent(
   `${rulingsBlock}Write the expected-behavior contract for this bug fix as testable given/when/then acceptance criteria — the correct behavior the fix must satisfy and that a failing test will encode. Do NOT write code.
 
-ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total.
+ONE OR TWO CRITERIA PER DEFECT, and every criterion carries the id of the defect it covers. Every defect below must have at least one. Between ${AC_MIN} and ${AC_MAX} criteria in total — nothing past ${AC_MAX} will be read, so if you are heading past it you are enumerating variants of one behaviour.
 
 A CRITERION DESCRIBES AN EXECUTION, NOT THE REPOSITORY. Apply this test to everything you are about to write: **if it would still be checkable with the change reverted, it is not an acceptance criterion.** "No occurrence of \`redis://\` anywhere in the repo" passes that test trivially — it is checkable before, during and after the fix, against code nobody touched — which is exactly what makes it a LINT RULE wearing an acceptance-criterion costume. Return those in \`lintRules\` instead. They are real and they are worth enforcing; they are just not something a failing test can encode, and putting them here blocks the build on a grep no Red phase can legitimately make fail.
 
@@ -374,7 +418,7 @@ const covered = new Set(authoredAc.map((x) => String(x.defectId || '')))
 const uncoveredDefects = defectIds.filter((id) => !covered.has(id))
 if (uncoveredDefects.length) log(`⚠ Triage: defect(s) with no acceptance criterion: ${uncoveredDefects.join(', ')}`)
 // The range is an expectation, not a gate: every criterion is carried through either way.
-if (authoredAc.length > AC_MAX) log(`Triage: ${authoredAc.length} acceptance criteria for ${defectIds.length || 'unenumerated'} defect(s) — above the ${AC_MAX} this bug's size suggests; all are carried through`)
+checkLimit('Triage', `acceptance criteria for ${defectIds.length || 'unenumerated'} defect(s)`, authoredAc, AC_MAX, AC_MIN)
 const lintRules = (contract && Array.isArray(contract.lintRules) ? contract.lintRules : []).filter(Boolean)
 if (lintRules.length) log(`Triage: ${lintRules.length} repo-wide invariant(s) routed to lint, not to the Red phase`)
 
@@ -394,6 +438,7 @@ return {
   surfaces: analysis.surfaces || [],
   acceptanceCriteria: authoredAc,
   uncoveredDefects,
+  ...(limitFindings.length ? { limitFindings } : {}),
   // Carried on the contract for the settle/deploy path to land as a repo gate. NOT
   // acceptance criteria and never handed to the Red phase.
   lintRules,

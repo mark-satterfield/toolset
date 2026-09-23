@@ -94,6 +94,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: {
 //   prd: {                      // the PRD being reconciled against reality (required)
 //     id?: string,
@@ -339,6 +369,23 @@ const headingEstimate = Math.max(
 const labelEstimate = new Set(prdBody.match(/\b[A-Z]{2,6}-\d{2,3}\b/g) || []).size
 const requirementEstimate = Math.min(MAX_REQUIREMENTS, Math.max(MIN_REQUIREMENTS, headingEstimate, labelEstimate))
 const CALL_CEILING = requirementEstimate * CALLS_PER_REQUIREMENT + BUDGET_OVERHEAD
+
+// ── THE LIST LIMITS THIS CHECK WORKS UNDER ───────────────────────────────────────
+//
+// Each one is stated in the brief below and counted in the reduction, never bound in the
+// schema. The numbers are the ones this phase has always worked to, raised where the old
+// value sat close enough to normal output to fire on it: a requirement citing more than
+// eight pieces of evidence is thorough, not runaway, and a UI pass legitimately opens more
+// than forty artifacts. They exist to stop an enumeration running away with the token
+// budget — not to trim an honest inventory, which is why exceeding one costs a log line
+// and nothing else.
+const EVIDENCE_MIN = 1
+const EVIDENCE_MAX = 15
+const MATERIAL_MAX = 60
+const REPOS_MAX = 25
+const CONSULTED_MAX = 120
+const CHANGE_FINDINGS_MAX = 40
+const UNEXAMINED_MAX = Math.max(200, requirementEstimate)
 log(
   `Search budget: ~${requirementEstimate} requirement(s) estimated from the PRD structure ` +
     `(${headingEstimate} heading(s), ${labelEstimate} requirement label(s)) × ${CALLS_PER_REQUIREMENT} call(s) each ` +
@@ -406,6 +453,12 @@ requirement's fate:
                 deleted in \`removalTargets\`, cited. Being deployed, being large, or being
                 recently written are not reasons to call something conforming.
 - absent      — nothing exists. Say what is missing in \`missing\`. It gets built.
+
+Each requirement carries at most ${EVIDENCE_MAX} pieces of \`evidence\` (and at least
+${EVIDENCE_MIN} — see below), at most ${MATERIAL_MAX} entries in \`conformingMaterial\` or \`removalTargets\`, and
+at most ${REPOS_MAX} in \`repos\`. Nothing past those counts is read: past them you are
+corroborating a status that is already settled, on a search budget that has other
+requirements to cover.
 
 Also classify the SURFACE each requirement lives on, in \`surface\`:
   ui | service | infra | data | unknown
@@ -499,7 +552,8 @@ requirement — a \`.../batch-<stamp>/views/<slug>/spec/build-spec.md\` or a
 \`design-mocks/pages/<name>.html\` is strong evidence for a UI requirement in exactly the way
 a \`file:line\` is for a service one. List every artifact path you opened in
 \`uiAuthority.artifactsConsulted\`, and keep \`uiAuthority.shellsConsulted\` /
-\`uiAuthority.pagesConsulted\` for the loose shells and pages you read. Record the batch you
+\`uiAuthority.pagesConsulted\` for the loose shells and pages you read — at most
+${CONSULTED_MAX} paths in each of the three, and nothing past that is read. Record the batch you
 selected in \`uiAuthority.bundlePath\` and the mocks directory in \`uiAuthority.mocksDir\`.
 
 A UI requirement is \`conforms\` ONLY when the deployed UI matches the PACKAGED artifact
@@ -539,7 +593,7 @@ ${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') 
 
 Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions. This is not a search for defects in the PRD's wording — it is a search for ground that moved. Return this check under \`dependencyChanges\`:
 - current: true if no invalidating upstream change is found, false otherwise.
-- changeFindings: each invalidating change (dependency, change describing what changed, invalidates describing which PRD assumption it breaks).
+- changeFindings: each invalidating change (dependency, change describing what changed, invalidates describing which PRD assumption it breaks). At most ${CHANGE_FINDINGS_MAX}; nothing past that is read.
 - evidence: how you verified the dependency state (one paragraph, under 60 words).
 
 ═══ YOUR BUDGET ═══
@@ -549,7 +603,7 @@ Your structured output IS the deliverable. Nothing you read reaches anybody exce
 You have roughly ${CALL_CEILING} tool calls — that figure is this PRD's own requirement count at ${CALLS_PER_REQUIREMENT} calls each, plus overhead, so it is sized to let you look at EVERY requirement. Spend it breadth-first: cover every requirement at least once before you deepen any of them, because a requirement you never looked at comes back as \`absent\` and gets built from scratch beside material that already exists. By call ${CALL_CEILING}, stop investigating and emit your structured output with whatever you have — a partial inventory with honest evidence is a usable result; a perfect inventory you never returned is not.
 
 AN UNEXAMINED REQUIREMENT IS NAMED, NEVER REPORTED AS \`absent\`. \`absent\` is a FINDING: it means you searched for the material and it is not there. "I ran out of budget before reaching it" is not that finding, and reporting it as one is the single most expensive error this phase can make. So return \`coverage\` on every run:
-- \`unexaminedRequirementIds\` — the id of EVERY requirement you did not actually search for, exactly as you numbered it in \`requirements\`. Empty when you covered them all, which is the expected outcome.
+- \`unexaminedRequirementIds\` — the id of EVERY requirement you did not actually search for, exactly as you numbered it in \`requirements\`. Empty when you covered them all, which is the expected outcome. At most ${UNEXAMINED_MAX} ids; nothing past that is read.
 - \`budgetExhausted\` — true if you stopped because you reached the ceiling rather than because the work was done.
 - \`note\` — one sentence on what was left and why, when either of the above is non-empty.
 Such a requirement still appears in \`requirements\` with its honest status, and the phase reports it as unexamined to its caller.`,
@@ -571,6 +625,9 @@ Such a requirement still appears in \`requirements\` with its honest status, and
           additionalProperties: false,
           required: ['unexaminedRequirementIds', 'budgetExhausted'],
           properties: {
+            // UNEXAMINED_MAX is stated in the brief and counted below, never bound here:
+            // this list exists precisely for the run that went badly, and a bound on it
+            // would discard the inventory of the run most in need of reporting.
             unexaminedRequirementIds: { type: 'array', items: { type: 'string' } },
             budgetExhausted: { type: 'boolean' },
             note: { type: 'string' },
@@ -594,6 +651,7 @@ Such a requirement still appears in \`requirements\` with its honest status, and
               // destroy the whole inventory, including the N-1 requirements that WERE cited.
               evidence: { type: 'array', items: { type: 'string' } },
               surface: { type: 'string', enum: ['ui', 'service', 'infra', 'data', 'unknown'] },
+              // MATERIAL_MAX each, stated in the brief and counted in the reduction.
               conformingMaterial: { type: 'array', items: { type: 'string' } },
               removalTargets: { type: 'array', items: { type: 'string' } },
               missing: { type: 'string' },
@@ -646,6 +704,7 @@ Such a requirement still appears in \`requirements\` with its honest status, and
 
 const reality = combined
 const dependencyChanges = (combined && combined.dependencyChanges) || null
+checkLimit('Reconcile (dependencies)', 'changeFindings', dependencyChanges && dependencyChanges.changeFindings, CHANGE_FINDINGS_MAX)
 
 // ── A DEAD AGENT IS NOT A FINDING ───────────────────────────────────────────────
 //
@@ -778,6 +837,14 @@ const requirements = reality.requirements.map((r, i) => {
     })
   }
   const list = (v) => (Array.isArray(v) ? v.filter((x) => hasText(x)).map((x) => x.trim()) : [])
+  // The stated per-requirement limits, counted. The MINIMUM is not counted here because
+  // it is already ENFORCED above, and better: an unevidenced status is demoted to
+  // `absent` and named in `evidenceViolations`, which costs that one requirement its
+  // status and leaves the other N-1 intact.
+  checkLimit(`Reconcile (${id})`, 'evidence', evidence, EVIDENCE_MAX)
+  checkLimit(`Reconcile (${id})`, 'conformingMaterial', list(r && r.conformingMaterial), MATERIAL_MAX)
+  checkLimit(`Reconcile (${id})`, 'removalTargets', list(r && r.removalTargets), MATERIAL_MAX)
+  checkLimit(`Reconcile (${id})`, 'repos', list(r && r.repos), REPOS_MAX)
   return {
     id,
     requirement: (r && r.requirement) || '',
@@ -808,6 +875,7 @@ const requirements = reality.requirements.map((r, i) => {
 // are carried on the requirement AND reported as their own list, and the phase says plainly
 // when its budget ran out.
 const cov = (reality && reality.coverage) || {}
+checkLimit('Reconcile', 'unexaminedRequirementIds', cov.unexaminedRequirementIds, UNEXAMINED_MAX)
 const unexaminedIds = new Set(
   (Array.isArray(cov.unexaminedRequirementIds) ? cov.unexaminedRequirementIds : []).filter((x) => hasText(x)).map((x) => x.trim())
 )
@@ -898,6 +966,9 @@ const uiAuthority = {
   shellsConsulted: strList(ua.shellsConsulted),
   pagesConsulted: strList(ua.pagesConsulted),
 }
+checkLimit('Reconcile (ui authority)', 'artifactsConsulted', uiAuthority.artifactsConsulted, CONSULTED_MAX)
+checkLimit('Reconcile (ui authority)', 'shellsConsulted', uiAuthority.shellsConsulted, CONSULTED_MAX)
+checkLimit('Reconcile (ui authority)', 'pagesConsulted', uiAuthority.pagesConsulted, CONSULTED_MAX)
 
 log(
   `Reconciliation: ${requirements.length} requirement(s) inventoried — ${conformsCount} conform (reuse), ` +
@@ -925,6 +996,7 @@ const ledger = {
   absentCount,
   removalWork: removalWork.length,
   evidenceViolations: evidenceViolations.length,
+  limitOverages: limitFindings.length,
   unexaminedCount: unexaminedRequirements.length,
   budgetExhausted: coverage.budgetExhausted,
   callCeiling: CALL_CEILING,
@@ -955,5 +1027,8 @@ return {
   coverage,
   unexaminedRequirements,
   evidenceSummary: (reality && reality.evidenceSummary) || null,
+  // Every list that came back longer than the brief stated, named with its count. The
+  // inventory above carries all of it regardless; this is what it cost.
+  ...(limitFindings.length ? { limitFindings } : {}),
   ledger,
 }

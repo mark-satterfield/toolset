@@ -96,6 +96,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: {
 //   request: { id?, title?, description?, repoPath?, requestedBy? },  // raw stakeholder request
 //   maxPasses?: number,   // bounded maker-checker passes for the PRD draft (default 2)
@@ -141,6 +171,22 @@ phase('Intake')
 // Segregation of duties is untouched: nothing here judges anything. The scope framing and
 // the brief are both intake authoring, and the independent alignment check downstream
 // still judges the PRD against this brief without having written any of it.
+// ── THE LIST LIMITS EACH MAKER WORKS UNDER ───────────────────────────────────────
+//
+// Stated in each brief, counted after the result is in hand, never bound in the schema:
+// one list entry over must not cost this mini the PRD, the persona or the OKRs that came
+// back with it. Every number is the one this mini has always worked to, raised where it
+// sat close to plausible output — a large PRD legitimately states more than 40 P0
+// criteria (the measured maximum across 147 PRDs in this project is 68).
+const SCOPE_LIST_MAX = 25
+const CONSTRAINTS_MAX = 30
+const OPEN_QUESTIONS_MAX = 25
+const PERSONA_LIST_MAX = 15
+const KEY_RESULTS_MAX = 8
+const SECTIONS_MAX = 50
+const P0_CRITERIA_MAX = 80
+const ALIGNMENT_DIMENSIONS = ['intake', 'persona', 'okr', 'template']
+
 const intake = await settleAgent(
   `Scope this stakeholder request and capture it as a structured intake brief. Both halves, one pass, each field under its own key. State the problem, the audience, and the desired outcome plainly — WHAT the job seeker needs, not HOW to build it. Do NOT write the PRD itself, the persona, or the OKRs; later makers own those.
 
@@ -161,7 +207,9 @@ And the intake brief:
 - audience: who is affected (the job-seeker segment).
 - desiredOutcome: the outcome the feature must produce for that audience.
 - constraints: known constraints or non-negotiables (array).
-- openQuestions: unresolved ambiguities to carry forward (array).`,
+- openQuestions: unresolved ambiguities to carry forward (array).
+
+Ceilings, and nothing past them is read: ${SCOPE_LIST_MAX} entries each in \`inScope\` and \`outOfScope\`, ${CONSTRAINTS_MAX} in \`constraints\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`. A framing that needs more than that is enumerating restatements of one concern.`,
   {
     label: 'intake:scope-and-brief',
     effort: 'medium',
@@ -196,6 +244,12 @@ And the intake brief:
 if (!intake) {
   return { ok: false, stage: 'intake', error: 'intake produced nothing — no scope framing and no brief to author a PRD from' }
 }
+// The stated ceilings, measured. Observation only: every entry is carried forward.
+checkLimit('Intake', 'inScope', intake.inScope, SCOPE_LIST_MAX)
+checkLimit('Intake', 'outOfScope', intake.outOfScope, SCOPE_LIST_MAX)
+checkLimit('Intake', 'constraints', intake.constraints, CONSTRAINTS_MAX)
+checkLimit('Intake', 'openQuestions', intake.openQuestions, OPEN_QUESTIONS_MAX)
+
 // Both shapes the rest of this file already reads, assembled from the one session.
 const scope = {
   scopeSummary: intake.scopeSummary,
@@ -232,7 +286,9 @@ Deliver:
 - summary: a one-paragraph portrait of this job seeker.
 - goals: what they are trying to achieve (array).
 - frustrations: the pain points the feature must relieve (array).
-- context: their situation/environment relevant to this feature.`,
+- context: their situation/environment relevant to this feature.
+
+At most ${PERSONA_LIST_MAX} entries each in \`goals\` and \`frustrations\`; nothing past that is read. A persona with more goals than that has no persona.`,
       {
         label: 'persona:author',
         effort: 'low',
@@ -261,7 +317,7 @@ ${briefBlock}
 
 Deliver:
 - objective: the single qualitative objective this feature serves.
-- keyResults: measurable results, each with a metric and a target (array).`,
+- keyResults: measurable results, each with a metric and a target (array) — at most ${KEY_RESULTS_MAX}, and nothing past that is read. An objective with more than a handful of key results has no objective.`,
       {
         label: 'okr:author',
         effort: 'low',
@@ -311,6 +367,10 @@ if (!persona || !okrs) {
   }
 }
 
+checkLimit('Persona & OKR', 'goals', persona.goals, PERSONA_LIST_MAX)
+checkLimit('Persona & OKR', 'frustrations', persona.frustrations, PERSONA_LIST_MAX)
+checkLimit('Persona & OKR', 'keyResults', okrs.keyResults, KEY_RESULTS_MAX)
+
 const personaBlock = `Persona: ${persona.name} — ${persona.summary}
 Goals: ${(persona.goals || []).join('; ') || 'n/a'}
 Frustrations: ${(persona.frustrations || []).join('; ') || 'n/a'}`
@@ -340,8 +400,8 @@ ${okrBlock}
 Deliver:
 - title: the PRD title.
 - prd: the full PRD body in Markdown, template-conformant.
-- sections: the section headings present (array), to confirm template coverage.
-- acceptanceCriteria: P0 acceptance criteria as given/when/then (array) — P0 ONLY, at most 40, each clause under 30 words.
+- sections: the section headings present (array), to confirm template coverage — at most ${SECTIONS_MAX}.
+- acceptanceCriteria: P0 acceptance criteria as given/when/then (array) — P0 ONLY, at most ${P0_CRITERIA_MAX}, each clause under 30 words. Nothing past ${P0_CRITERIA_MAX} is read, and every one of them is re-read by the alignment checker, by PRD validation, by the TRD author and by every spec author.
 - epicScope: a one-paragraph scope statement for the Epic that pairs with this PRD — a container-level summary of the scope the PRD owns, with no acceptance criteria and no repository specifics (one Epic may span repos).${
       feedback
         ? `\n\nALIGNMENT FEEDBACK from the independent checker — address every point before resubmitting:\n${feedback}`
@@ -401,7 +461,7 @@ Decide exactly one verdict:
 - "aligned": the PRD covers the intake problem/outcome, serves the named persona, and its acceptance criteria trace to the OKRs.
 - "misaligned": one or more of those hold false. Return feedback specific enough that the prd-writer can fix it without interpretation.
 
-For each dimension (intake, persona, okr, template), state whether it is satisfied with evidence.`,
+For each dimension (intake, persona, okr, template), state whether it is satisfied with evidence — exactly ${ALIGNMENT_DIMENSIONS.length} entries in \`dimensions\`, one per dimension and no others.`,
     {
       label: 'prd:alignment-check',
       // A checker, and the prd-alignment-verifier's own file already says `effort: low`
@@ -418,7 +478,8 @@ For each dimension (intake, persona, okr, template), state whether it is satisfi
           verdict: { type: 'string', enum: ['aligned', 'misaligned'] },
           dimensions: {
             type: 'array',
-            // Exactly the four dimensions the enum names, one entry each.
+            // Exactly the four dimensions the enum names, one entry each — stated in the
+            // brief and counted after the ruling, never bound here.
             items: {
               type: 'object',
               additionalProperties: false,
@@ -447,10 +508,13 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   if (!prd) {
     return { ok: false, stage: 'prd-draft', reason: 'the prd-writer returned nothing — there is no PRD to check', intakeBrief, persona, okrs, scope }
   }
+  checkLimit(`PRD Draft (pass ${pass})`, 'sections', prd.sections, SECTIONS_MAX)
+  checkLimit(`PRD Draft (pass ${pass})`, 'P0 acceptance criteria', prd.acceptanceCriteria, P0_CRITERIA_MAX)
   alignmentVerdict = await verifyAlignment(prd)
   if (!alignmentVerdict) {
     return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', prd }
   }
+  checkLimit(`PRD Draft (pass ${pass})`, 'alignment dimensions', alignmentVerdict.dimensions, ALIGNMENT_DIMENSIONS.length)
   if (alignmentVerdict.verdict === 'aligned') {
     log(`PRD draft: ALIGNED on pass ${pass}/${MAX_PASSES}`)
     break
@@ -526,6 +590,7 @@ return {
   alignmentVerdict,
   scope,
   decision,
+  ...(limitFindings.length ? { limitFindings } : {}),
   note: ok
     ? 'PRD is intake/persona/OKR-aligned and template-conformant.'
     : 'PRD did not reach alignment within the bounded passes; see decision for the binding ruling.',

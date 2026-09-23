@@ -92,6 +92,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: {
 //   repoPath: string,      // the repository (or an already-established worktree) to work from
 //   beadId: string,        // the work item — names the branch and the worktree directory
@@ -313,6 +343,25 @@ const purposeBlock = purposeText
 
 phase('Workspace')
 
+// THE REPORTING BUDGET, stated to both dispatches and measured after each answers.
+//
+// These are the two diagnostic fields that killed a run: the structured-output channel
+// cuts an oversized payload mid-string, and a cut payload is invalid JSON — so a pasted
+// git transcript in `evidence` destroyed eight correctly-observed paths with it. The
+// limits stay, because the fields really do have to stay small; what changed is that
+// they are stated in the brief and COUNTED here, not enforced by a schema that answers
+// an over-long footnote by discarding the whole report.
+//
+// The character budgets are the original 400 and 300, raised on neither count: a
+// three-line git digest fits in them several times over, and nothing legitimate needs
+// more. The entry counts are raised — three worked-around obstacles is a plausible
+// number to hit on a bad fetch, and being one over is not a reason to say anything.
+const PROVISION_EVIDENCE_MAX = 400
+const VERIFY_EVIDENCE_MAX = 300
+const PROVISION_BLOCKED_MAX = 6
+const VERIFY_NOTES_MAX = 8
+const SHORT_ENTRY_MAX = 200
+
 const BRANCH = `${prefix}/${beadId}`
 
 const provisionPathBlock = dataFence(
@@ -381,8 +430,8 @@ REPORT — FIELD BY FIELD. The script reads ONLY these fields. A correct account
 - \`branch\` — the branch STEP 6 printed for \`$WT\`.
 - \`reused\` — true if you reused an existing tree (STEP 1 or STEP 3), false if you cut one in STEP 5.
 - \`isLinkedWorktree\` — REQUIRED, and it is a STEP 6 finding rather than a statement of intent: true ONLY when you saw, on the tree you are reporting, that --git-dir and --git-common-dir DIFFER. If you did not run STEP 6 against that exact path, report false. The script refuses the whole run when this is anything but true, because an unverified tree is a main working tree until proven otherwise — so an honest false is a usable answer and a guessed true is not.
-- \`evidence\` — the STEP 6 values ONLY, at most 400 characters: the git-dir, the git-common-dir and the branch, one short line each, exactly as git printed them. NOT a transcript, and not the output of the other steps. THIS FIELD IS WHY RUNS DIE: the result you are filling in is a small structured payload with a hard size limit, it is discarded as unparseable the moment it exceeds that limit, and it is discarded WHOLE — every other field you filled in correctly goes with it. A pasted command log overruns the limit every time, so an over-long \`evidence\` fails the run exactly as surely as a wrong \`repoPath\`. Report what you saw in as few characters as it takes, and paste nothing you were not asked for.
-- \`blocked\` — anything that stopped you or that you worked around: at most 3 entries, one short sentence each, under the same size limit. Do not quote command output into it.
+- \`evidence\` — the STEP 6 values ONLY, at most ${PROVISION_EVIDENCE_MAX} characters: the git-dir, the git-common-dir and the branch, one short line each, exactly as git printed them. NOT a transcript, and not the output of the other steps. THIS FIELD IS WHY RUNS DIE: the result you are filling in is a small structured payload with a hard size limit, it is discarded as unparseable the moment it exceeds that limit, and it is discarded WHOLE — every other field you filled in correctly goes with it. A pasted command log overruns the limit every time, so an over-long \`evidence\` fails the run exactly as surely as a wrong \`repoPath\`. Report what you saw in as few characters as it takes, and paste nothing you were not asked for.
+- \`blocked\` — anything that stopped you or that you worked around: at most ${PROVISION_BLOCKED_MAX} entries, one short sentence each and at most ${SHORT_ENTRY_MAX} characters apiece; nothing past that is read. Do not quote command output into it.
 
 The path you report must be one of these EXACTLY — the script compares it byte for byte and refuses anything else, because the path it accepts is one it built rather than one you chose. They are directory names, nothing more:
 [BEGIN ACCEPTABLE PATHS]
@@ -402,7 +451,7 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         branch: { type: 'string' },
         reused: { type: 'boolean' },
         isLinkedWorktree: { type: 'boolean' },
-        // BOUNDED BY THE SCHEMA, not merely asked for in prose.
+        // BOUNDED IN THE PROMPT AND COUNTED BELOW, never bound in this schema.
         //
         // The structured-output channel truncates a payload at a fixed size, and a
         // truncated payload is not a short answer — it is invalid JSON, cut mid-string.
@@ -413,16 +462,28 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         // on the first attempt and on all four retries; nothing about the worktree was
         // wrong, and no retry could ever have repaired it.
         //
-        // So the size limit is stated where it binds. A diagnostic field is never worth
-        // a run: `evidence` is echoed into the return value and the journal and NOTHING
-        // in this script or downstream branches on it, which is precisely why it must not
-        // be allowed to grow until it destroys the fields that ARE load-bearing.
+        // So the size limit is STATED to the provisioner, in the report brief above, and
+        // measured here once the result is in hand. A diagnostic field is never worth a
+        // run: `evidence` is echoed into the return value and the journal and NOTHING in
+        // this script or downstream branches on it, which is precisely why it must not be
+        // allowed to grow until it crowds out the fields that ARE load-bearing — and why
+        // an over-long one is logged rather than allowed to refuse a good worktree.
         evidence: { type: 'string' },
         blocked: { type: 'array', items: { type: 'string' } },
       },
     },
   }
 )
+
+// The stated reporting budget, measured. Observation only: every field is used exactly as
+// returned, whatever the counts say.
+if (provisioned) {
+  checkLimit('Workspace (provision)', 'evidence (characters)', provisioned.evidence, PROVISION_EVIDENCE_MAX)
+  checkLimit('Workspace (provision)', 'blocked', provisioned.blocked, PROVISION_BLOCKED_MAX)
+  for (const b of Array.isArray(provisioned.blocked) ? provisioned.blocked : []) {
+    checkLimit('Workspace (provision)', 'a blocked entry (characters)', b, SHORT_ENTRY_MAX)
+  }
+}
 
 // A missing or unusable result is a failure, never a shrug. The caller must be able to
 // refuse to run rather than write into whichever tree it was pointed at.
@@ -646,7 +707,7 @@ Report these as \`callerGitDir\`, \`callerCommonDir\`, \`callerBranch\` and \`ca
 
 If \`--path-format=absolute\` is not supported by this git, run the same rev-parse without it and resolve each result to an absolute path yourself against the path it was run in, and say so in \`notes\`.
 
-3. Report a SHORT digest as \`evidence\` — at most 300 characters, naming only anything the fields above could not carry (a command that failed, a fallback you had to use). It is NOT a transcript of the commands. The result you are filling in is a small structured payload with a hard size limit, and it is discarded WHOLE as unparseable the moment it exceeds that limit — every correctly-observed path goes with it. The fields above are the report; \`evidence\` is a footnote.
+3. Report a SHORT digest as \`evidence\` — at most ${VERIFY_EVIDENCE_MAX} characters, naming only anything the fields above could not carry (a command that failed, a fallback you had to use). It is NOT a transcript of the commands. The result you are filling in is a small structured payload with a hard size limit, and it is discarded WHOLE as unparseable the moment it exceeds that limit — every correctly-observed path goes with it. The fields above are the report; \`evidence\` is a footnote. \`notes\` holds at most ${VERIFY_NOTES_MAX} entries, one short sentence each and at most ${SHORT_ENTRY_MAX} characters apiece; nothing past that is read.
 
 A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIMATE OBSERVATION and not a failure of yours: leave that path's fields EMPTY, say what git printed in \`notes\`, and go on to report the other path in full. Every value you report must be the literal output of the command that produced it. If a command does not answer, leave its field EMPTY and name the failure in \`notes\` — one failing probe must not discard an answer another probe already gave, and an inferred value is worse than an absent one, because the script cannot tell them apart. Set \`ok\` false only if you could not run git at all.`,
   {
@@ -667,7 +728,7 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
         callerCommonDir: { type: 'string' },
         callerBranch: { type: 'string' },
         callerDefaultBranch: { type: 'string' },
-        // The same bound for the same reason. This report carries eight
+        // The same stated limit for the same reason. This report carries eight
         // absolute paths before `evidence` contributes a byte, so it is the MORE exposed
         // of the two dispatches, not the less: it survived the failing run only because
         // the provisioner died first and it was never dispatched. Its observations are
@@ -679,6 +740,16 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
     },
   }
 )
+
+// The same measurement on the independent report, and the same rule: it is an
+// observation, and the report is read exactly as it came back.
+if (verified) {
+  checkLimit('Workspace (verify)', 'evidence (characters)', verified.evidence, VERIFY_EVIDENCE_MAX)
+  checkLimit('Workspace (verify)', 'notes', verified.notes, VERIFY_NOTES_MAX)
+  for (const n of Array.isArray(verified.notes) ? verified.notes : []) {
+    checkLimit('Workspace (verify)', 'a notes entry (characters)', n, SHORT_ENTRY_MAX)
+  }
+}
 
 // The independent report is the PRIMARY control, not an optional extra, so a missing or
 // unusable one REFUSES. 6.0.6's git layer could fall through when it was unavailable
@@ -856,6 +927,7 @@ return {
   // it resolved in its own favour is not a reason to fail — the independent check ruled on
   // the path it chose — but it is not a thing to swallow either.
   blocked: [...(Array.isArray(provisioned.blocked) ? provisioned.blocked : []), ...pathNotes],
+  ...(limitFindings.length ? { limitFindings } : {}),
   ledger: {
     phase: 'workspace',
     beadId,

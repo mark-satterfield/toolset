@@ -100,6 +100,36 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
+// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+//
+// Every list this script asks a dispatch for carries a limit, and that limit lives in the
+// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
+// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
+// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
+// really did, on 61 items against a bound of 60, claiming files were unread that had been
+// read. So the agent is told the limit up front, and the count is checked once the result
+// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
+// truncated, dropped or reordered, and no control flow changes. The limits still do their
+// job — they keep an unbounded enumeration from running away, and they cost token and
+// context budget when they are exceeded — they just no longer detonate.
+//
+// This block is identical in every workflow script on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text everywhere.
+const limitFindings = []
+function checkLimit(where, what, value, max, min) {
+  const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
+  if (n === null) return value
+  if (typeof max === 'number' && n > max) {
+    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
+    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  }
+  if (typeof min === 'number' && n < min) {
+    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
+    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+  }
+  return value
+}
+
 // args: {
 //   prd: {                        // the PRD — required, and WHOLE. Not a subtracted version
 //     id?, title?,                // of it: a requirement whose deployed implementation
@@ -633,7 +663,7 @@ Also return:
 
 READING BUDGET (binding): read NOTHING. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
 
-Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
+Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a result this phase can use, and an empty list ends the run. Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
       {
         label: 'scope:greenfield-shape',
         effort: 'medium',
@@ -644,6 +674,9 @@ Draw the smallest number of boundaries the design honestly needs. Every boundary
           additionalProperties: false,
           required: ['workUnits', 'designSummary'],
           properties: {
+            // At least one, stated in the brief above and checked below once the result
+            // is in hand — never a schema minItems, which would discard a whole design
+            // rather than report that it was empty.
             workUnits: {
               type: 'array',
               items: {
@@ -735,6 +768,7 @@ Also return:
     ),
 ])
 
+if (shape) checkLimit('Shape and survey', 'workUnits', shape.workUnits, undefined, 1)
 if (!shape || !Array.isArray(shape.workUnits) || !shape.workUnits.length) {
   return failDispatch('the greenfield shaper returned no work units — there is nothing to place, and a span cannot be ruled from nothing.', 'Shape and survey')
 }
@@ -1114,5 +1148,6 @@ return {
   spanRationale: ruling.spanRationale || null,
   surveySummary: survey.surveySummary || null,
   architectureSkipped,
+  ...(limitFindings.length ? { limitFindings } : {}),
   ledger,
 }
