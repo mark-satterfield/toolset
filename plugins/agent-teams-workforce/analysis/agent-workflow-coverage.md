@@ -144,7 +144,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | power-tools-configuration-implementer | tdd-green | Green *(implementer roster)* | Lambda Power Tools config |
 | prd-alignment-verifier | prd-creation | verify | Traceability: requirement→spec→criteria |
 | prd-creation-lead | prd-creation | orchestration | Sequences intake/persona/OKR/draft |
-| prd-trd-traceability-verifier | trd-authoring | check | Bidirectional PRD↔TRD traceability |
+| prd-trd-traceability-verifier | trd-authoring | check | TRD source traceability: each requirement anchored to a PRD requirement or a SAD entry (not 1:1) |
 | prd-validation-lead | prd-validation | orchestration | Fans PRD to analysts; aggregates |
 | prd-writer | prd-creation | draft | Drafts the PRD (maker) |
 | production-readiness-review-facilitator | deploy | Deploy-readiness | Aggregates evidence → go/no-go |

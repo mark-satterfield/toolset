@@ -3073,7 +3073,8 @@ async function runRepoScoping() {
 }
 
 // ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
-// Consumes PRD + SAD extract; produces the TRD + bidirectional traceability matrix.
+// Consumes PRD + SAD extract; produces the TRD + its source traceability matrix (every
+// requirement anchored to a PRD requirement OR a SAD entry — the relation is not 1:1).
 // The TRD is per-PRD, not per-repo: it is authored exactly ONCE here and never
 // fanned out with the per-repo spec passes below.
 const TRD_INPUTS = [
@@ -3116,8 +3117,8 @@ async function runTrdAuthoring() {
     // control-boundary assertion (Rule 4): trd-authoring.js runs both checkers structurally
     // and loops on reject, and this criterion is what makes that binding at the gate.
     criteria: [
-      { class: 'competitive', text: 'The TRD derives only from the PRD and the SAD source extract (no invented requirements)' },
-      { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration has a TRD entry. A requirement needing none is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional or total coverage.' },
+      { class: 'competitive', text: 'Every TRD requirement is sourced — from a PRD requirement OR from a SAD crosscutting concept or architecture decision. A requirement the architecture imposes with no PRD parent (which events a service must emit, performance budgets, schema, encryption, retention, monitoring) is CORRECT and expected, not an invented requirement. Only a requirement serving neither the PRD nor any architecture concern, or one contradicting the SAD, is a defect.' },
+      { class: 'competitive', text: 'Every PRD requirement that NEEDS technical elaboration is answered — by a TRD entry, or by citing the SAD decision that already settles it. A requirement needing none is NOT a gap, one an existing SAD decision answers is NOT a gap, and a TRD may elaborate part of a PRD — the product is built iteratively. Do NOT require bidirectional, 1:1 or total coverage.' },
       { class: 'competitive', text: 'The TRD validator and traceability verifier both pass' },
     ],
     escalateTargets: ['architecture', 'prd-author'],

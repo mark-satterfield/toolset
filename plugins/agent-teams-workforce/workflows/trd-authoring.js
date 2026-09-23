@@ -1,11 +1,11 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. A TRD is the blueprint for HOW a feature is built — architecture, data models, security, performance, infrastructure — and its requirements come from TWO sources: the PRD requirements that need technical elaboration, and the technical requirements the architecture and standing engineering policy impose that no PRD would ever state (which events a new service must emit, its performance budgets, its schema, its encryption and retention obligations). The relation to the PRD is NOT 1:1, and traceability is RE-POINTED rather than abandoned: every TRD requirement still names a source, that source being EITHER a PRD requirement OR a SAD crosscutting concept or architecture decision, so a SAD-anchored requirement is fully traced and only a requirement with no source of either kind is an orphan. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + source traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
-    { title: 'Verify & Traceability', detail: 'independent validation + PRD<->TRD traceability; decider on deadlock' },
+    { title: 'Verify & Traceability', detail: 'independent validation + source traceability (PRD or SAD anchor per requirement); decider on deadlock' },
   ],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -567,9 +567,11 @@ const EXPECTED_VOLUME = {
   prdRefs: 10,
   sadRefs: 10,
   // The traceability report: one row per real link, and a gap or an orphan is the finding
-  // the check exists to produce. All three are properties of the PRD/TRD pair, not choices.
+  // the check exists to produce. All of these are properties of the PRD/SAD/TRD set, not
+  // choices the verifier makes.
   links: 200,
   prdGaps: 40,
+  prdSadAnswered: 40,
   trdOrphans: 40,
 }
 // A CREATE's stated limit, rendered for its brief. The agent is told this number and the
@@ -1136,7 +1138,17 @@ async function authorTrd(pass) {
   log(`Authoring TRD (${pass}) at ${authorPath}`)
 
   const authored = await settleAgent(
-    `${rulingsBlock}Author the Technical Requirements Document (TRD). The TRD translates the PRD's product requirements into testable technical requirements, grounded in and consistent with the SAD extract below. Write the TRD; do not write production code. Work within the repository at: ${repo}
+    `${rulingsBlock}Author the Technical Requirements Document (TRD). A TRD is the BLUEPRINT FOR HOW this feature will be built — architecture, data models, interfaces, security, performance, infrastructure, observability — grounded in and consistent with the SAD extract below. It is NOT a technical translation of the PRD and its relation to the PRD is NOT 1:1. Write the TRD; do not write production code. Work within the repository at: ${repo}
+
+THE TRD'S REQUIREMENTS COME FROM TWO SOURCES, AND BOTH MUST BE PRESENT.
+
+1. PRD REQUIREMENTS THAT NEED TECHNICAL ELABORATION. Part of a TRD is a reworded product requirement with architecture citations. That is real, it is expected, and it stays. One PRD requirement may need several technical requirements, and several may be answered by one.
+
+2. TECHNICAL REQUIREMENTS NO PRD WOULD EVER STATE, arising from the architecture and standing engineering policy. These have NO PRD parent and that is correct, not scope drift. Derive them by reading the SAD extract's crosscutting concepts and architecture decisions and asking what they oblige of the thing this PRD builds, whether or not the PRD mentions it. The worked example: this system uses EVENTS as its observability mechanism — warnings and failures are emitted as events from services — so if this PRD results in a service being built, the TRD specifies WHICH EVENTS that service must emit. None of those events is part of the core feature functionality and nobody would write them in a PRD; they are technical requirements, not product requirements. The same class covers scalability and performance budgets (throughput, latency), data modelling and schema design, API contracts, security and compliance (encryption, retention, auth protocols), technical debt and refactoring carried as part of this work, and monitoring and alerting.
+
+Nobody upstream supplies the second kind. If your TRD contains none of it, the architecture's own obligations were never derived and the document is incomplete.
+
+Where the SAD ALREADY SETTLES a point a PRD requirement raises, CITE THAT DECISION rather than writing a hollow TRD requirement that restates it. The citation is the correct answer; the restatement is filler.
 
 ${writeBrief}
 PRD (source of product requirements):
@@ -1147,9 +1159,9 @@ SAD extract (architecture constraints/strategy/crosscutting the TRD must honor; 
 ${extractText}
 ${feedback ? `\nFeedback on the previous version (checker, gate or decider) — address every point:\n${feedback}` : ''}
 
-Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
+Each technical requirement must have a stable ID, NAME ITS SOURCE, and be verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR a SAD crosscutting concept or architecture decision (in \`sadRefs\`) — a requirement of the second kind carries an empty \`prdRefs\` and that is fully traced, not an orphan. What is forbidden is a requirement with NEITHER: a requirement serving neither the PRD nor any architecture concern is scope drift. A requirement that CONTRADICTS the SAD is a defect whatever it cites. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
 
-VOLUME IS THE COST OF THIS PHASE. ${atMost(STATED_LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${STATED_LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+VOLUME IS THE COST OF THIS PHASE. ${atMost(STATED_LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${STATED_LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Consolidating is how you stay under it — never by dropping a sourced obligation, and never by leaving out the architecture-imposed requirements above, which are as much a part of this document as the PRD-derived ones. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
 
 The citations are NOT bounded, and deliberately: \`decisionIds\`, \`prdRefs\` and \`sadRefs\` record what a requirement actually rests on, so a number to stay under would only make you drop a real dependency. Cite every one, and if a requirement genuinely rests on a great many SAD entries, that is a sign it is several requirements written as one — split it rather than trimming its citations.
 
@@ -1225,11 +1237,18 @@ async function verifyTrd() {
   phase('Verify & Traceability')
 
   const verified = await settleAgent(
-    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(STATED_LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows, and choosing which ones block is part of your judgment. The traceability report is NOT bounded: \`links\`, \`prdGaps\` and \`trdOrphans\` describe what the PRD and the TRD actually contain, so report every one and never shorten any of the three to reach a number.
+    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(STATED_LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows, and choosing which ones block is part of your judgment. The traceability report is NOT bounded: \`links\`, \`prdGaps\`, \`prdSadAnswered\` and \`trdOrphans\` describe what the PRD, the SAD and the TRD actually contain, so report every one and never shorten any of them to reach a number.
 
 CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
 
-CHECK 2 — bidirectional PRD<->TRD traceability (return under \`traceability\`): every PRD requirement maps forward to at least one TRD requirement (no coverage gaps), and every TRD requirement maps back to a PRD requirement (no orphans). Build the traceability matrix and report gaps in both directions. One row per real link — a matrix with a row for every PRD requirement against every TRD requirement is a cross-product, not a mapping. verdict "pass" only if traceability is complete in BOTH directions with no unexplained gaps or orphans.
+CHECK 2 — SOURCE traceability (return under \`traceability\`). A TRD is the blueprint for HOW a feature is built, NOT a technical translation of the PRD: the relation is NOT 1:1, and a TRD legitimately contains technical requirements the PRD never mentions, arising from the architecture and standing engineering policy — which events a service must emit (this system uses events as its observability mechanism), performance budgets, schema design, API contracts, encryption, retention, auth, monitoring, refactoring carried as part of the work. Every TRD requirement still has a SOURCE; the source is EITHER a PRD requirement OR a SAD crosscutting concept or architecture decision. Judge it that way:
+
+- \`links\` — one row per real link, \`prdRef\` naming the PRD requirement or the SAD entry id the requirement rests on and \`trdRef\` the TRD requirement. One row per real link: a row for every PRD requirement against every TRD requirement is a cross-product, not a mapping.
+- \`trdOrphans\` — ONLY a TRD requirement that cites NO source of either kind, or whose cited source does not support it. A requirement anchored to a SAD entry with no PRD parent is FULLY TRACED and must NOT be listed here. Genuine scope drift — a requirement serving neither the PRD nor any architecture concern — belongs here. So does a requirement that CONTRADICTS the SAD, which is a defect whatever it cites.
+- \`prdGaps\` — ONLY a PRD requirement that needs technical elaboration and nothing answers. A PRD requirement fully answered by an existing SAD decision is NOT a gap: record it in \`prdSadAnswered\` with the decision cited. Writing a hollow TRD requirement that restates a settled SAD decision is the wrong outcome, so do not demand one.
+- \`prdSadAnswered\` — each PRD requirement answered by a cited SAD decision rather than by a TRD requirement, naming the decision id. This is a correct disposition, not a finding.
+
+verdict "pass" when every TRD requirement is sourced, no requirement contradicts the SAD, and every PRD requirement needing technical elaboration is either elaborated or answered by a cited SAD decision. Do NOT reject for the absence of a 1:1 mapping, for TRD requirements with no PRD parent, or for a PRD requirement the SAD already settles.
 
 PRD (source requirements):
 ${prdText}
@@ -1282,7 +1301,7 @@ ${extractText}`,
           traceability: {
             type: 'object',
             additionalProperties: false,
-            required: ['verdict', 'links', 'prdGaps', 'trdOrphans', 'feedback'],
+            required: ['verdict', 'links', 'prdGaps', 'prdSadAnswered', 'trdOrphans', 'feedback'],
             properties: {
               verdict: { type: 'string', enum: ['pass', 'reject'] },
               links: {
@@ -1307,7 +1326,19 @@ ${extractText}`,
               // exist is a fact about the PRD and the TRD rather than the verifier's choice.
               // Bounding either — here or in the brief — would suppress the verdict precisely
               // when it has the most to say. Observed below, never limited.
+              //
+              // BOTH ARE NARROWER THAN THEIR NAMES SUGGEST, and the brief says so. A TRD
+              // requirement anchored to a SAD entry with no PRD parent is fully traced, so it
+              // is NOT a `trdOrphans` entry: only a requirement with no source of either kind,
+              // or one contradicting the SAD, is. And a PRD requirement an existing SAD
+              // decision already answers is NOT a `prdGaps` entry: that disposition is
+              // recorded below instead, because the alternative is a hollow TRD requirement
+              // restating a settled decision — filler manufactured to satisfy a count.
               prdGaps: { type: 'array', items: { type: 'string' } },
+              // Where a PRD requirement's answer legitimately lives in the SAD rather than in
+              // the TRD. Recorded so the disposition survives the run instead of being either
+              // dropped or mis-filed as a gap; nothing branches on it.
+              prdSadAnswered: { type: 'array', items: { type: 'string' } },
               trdOrphans: { type: 'array', items: { type: 'string' } },
               feedback: { type: 'string' },
             },
@@ -1324,6 +1355,7 @@ ${extractText}`,
     checkLimit('verify:trd', 'validation findings', (v && Array.isArray(v.findings) ? v.findings : []).length, STATED_LIMITS.findings)
     checkExpected('verify:trd', 'traceability links', (t && Array.isArray(t.links) ? t.links : []).length, EXPECTED_VOLUME.links)
     checkExpected('verify:trd', 'prdGaps', (t && Array.isArray(t.prdGaps) ? t.prdGaps : []).length, EXPECTED_VOLUME.prdGaps)
+    checkExpected('verify:trd', 'prdSadAnswered', (t && Array.isArray(t.prdSadAnswered) ? t.prdSadAnswered : []).length, EXPECTED_VOLUME.prdSadAnswered)
     checkExpected('verify:trd', 'trdOrphans', (t && Array.isArray(t.trdOrphans) ? t.trdOrphans : []).length, EXPECTED_VOLUME.trdOrphans)
   }
   return verified
