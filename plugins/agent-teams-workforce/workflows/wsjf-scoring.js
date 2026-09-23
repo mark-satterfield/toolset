@@ -97,32 +97,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -249,16 +275,18 @@ const JUDGE_SCHEMA = {
     path: { type: 'string' },
     judged: { type: 'integer' },
     // An Epic session judges one item; a Task session judges one Epic's Tasks. The
-    // UNSCORED_MAX limit is stated in both prompts and checked after the result is in
-    // hand — never here, where exceeding it would destroy the judgment set with it.
+    // Never bound here: `unscored` reports what a session could not judge, and a bound
+    // on it would destroy the judgments that DID come back in the same result.
     unscored: { type: 'array', items: { type: 'string' } },
   },
 }
-// A session judges one Epic, or one Epic's Tasks, so its unscored list is bounded by the
-// work it was handed. Raised from the 60 it used to be: 60 sat close enough to a large
-// Epic's Task count to fire on legitimate output, and this is a guard against a runaway
-// enumeration, not a budget on honest work.
-const UNSCORED_MAX = 200
+// A session judges one Epic, or one Epic's Tasks, and `unscored` names the ones it could
+// not judge — a READ of the work it was handed, not a volume it chooses. So nothing is
+// stated to it: an honest "I could not judge these 61" must come back whole. The figure
+// below is what this script EXPECTS, used only to flag a count worth looking at; it is
+// raised from the 60 that used to be a schema bound, because 60 sat close enough to a
+// large Epic's Task count to fire on ordinary output.
+const UNSCORED_EXPECTED = 200
 const epicDir = file('judgments/epic')
 const taskDir = file('judgments/task')
 
@@ -277,7 +305,7 @@ Judge \`userBusinessValue\`, \`timeCriticality\` and their \`confidence\` (integ
 
 Write ${epicDir}/${id}.json as ONE JSON object: {"rubric": "epic-wsjf", "scores": [{"id": "${id}", "userBusinessValue", "timeCriticality", "confidence", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence" (the four size fields only when hasTasks is false), "rationale": {"userBusinessValue", "timeCriticality", "jobSize"}}], "unscored": []}, or, when you cannot judge it, {"rubric": "epic-wsjf", "scores": [], "unscored": [{"id": "${id}", "reason"}]}.
 
-Return the path you wrote, how many items you judged (1 or 0), and the ids you could not judge. Return at most ${UNSCORED_MAX} ids in \`unscored\`; nothing past ${UNSCORED_MAX} will be read.`,
+Return the path you wrote, how many items you judged (1 or 0), and the ids you could not judge.`,
   // A scorer against a published rubric, not a decider: `rejudge` re-runs it by design
   // and the arithmetic is recomputed on every edge change, so no ruling here is expensive
   // to reverse. At `high` this was the portfolio's largest recurring cost — one session
@@ -298,7 +326,7 @@ For each of those Tasks, judge the size estimate \`jobSize\` with \`sizeLow\`, \
 
 Write ${taskDir}/${group.key}.json as ONE JSON object: {"rubric": "task-wsjf", "scores": [{"id", "jobSize", "sizeLow", "sizeHigh", "sizeConfidence", "rationale": {"jobSize"}}], "unscored": [{"id", "reason"}]}, with exactly one entry per Task listed above, in \`scores\` or in \`unscored\`, and none for any other item.
 
-Return the path you wrote, how many Tasks you judged, and the ids you could not judge. Return at most ${UNSCORED_MAX} ids in \`unscored\`; nothing past ${UNSCORED_MAX} will be read.`,
+Return the path you wrote, how many Tasks you judged, and the ids you could not judge.`,
     { label: `judge:task:${group.key}`, phase: 'Judge', effort: 'medium', schema: JUDGE_SCHEMA }
   )
 }
@@ -322,7 +350,7 @@ for (let i = 0; i < jobs.length; i += JUDGE_CONCURRENCY) {
     tally.sessions += 1
     if (out) {
       tally.judged += out.judged || 0
-      checkLimit(`Judge (${job.level}:${job.key})`, 'unscored', out.unscored, UNSCORED_MAX)
+      checkLimit(`Judge (${job.level}:${job.key})`, 'unscored', out.unscored, UNSCORED_EXPECTED)
       return
     }
     tally.failedSessions += 1

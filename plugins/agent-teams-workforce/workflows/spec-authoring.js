@@ -97,32 +97,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -207,11 +233,16 @@ function checkLimit(where, what, value, max, min) {
 // case. It is a guard against runaway enumeration, not a budget on honest coverage.
 const ARTIFACT_PATHS_MAX = 25
 const OPEN_QUESTIONS_MAX = 30
-const DECISION_IDS_MAX = 60
+// A READ, and so stated to nobody: `decisionIds` cites the SAD entries the artifact was
+// designed against and `outOfRepoFindings` reports work the spec set implies elsewhere.
+// Both are properties of documents this maker did not write. Counted, never capped — a
+// citation list told to stay short is a citation dropped, and a dropped decision id is a
+// spec that cannot be found again when that decision changes.
+const DECISION_IDS_EXPECTED = 60
 const CRITERIA_MAX = 120
 const DOD_MAX = 30
 const REVIEW_FINDINGS_MAX = 30
-const OUT_OF_REPO_FINDINGS_MAX = 40
+const OUT_OF_REPO_FINDINGS_EXPECTED = 40
 
 const COVERAGE_SHORTFALL_SCHEMA = {
   type: 'object',
@@ -228,8 +259,9 @@ const SPEC_SCHEMA = {
   additionalProperties: false,
   required: ['artifactPaths', 'summary', 'content'],
   properties: {
-    // ARTIFACT_PATHS_MAX / OPEN_QUESTIONS_MAX / DECISION_IDS_MAX are stated in the
-    // reporting-ceilings line of the shared context block and counted after the fact.
+    // artifactPaths and openQuestions carry a ceiling from the reporting line in the
+    // shared context block; decisionIds carries none, because it cites the SAD. All three
+    // are counted after the fact, and none of them is bound here.
     artifactPaths: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     content: { type: 'string' },
@@ -361,7 +393,8 @@ const STORY_SCHEMA = {
   properties: {
     title: { type: 'string' },
     description: { type: 'string' },
-    // OUT_OF_REPO_FINDINGS_MAX, stated in the story brief and counted after the fact.
+    // Counted after the fact, capped nowhere: work in another repository is a fact about
+    // the spec set, and a Story that under-reports it hides work from the caller.
     outOfRepoFindings: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -539,7 +572,7 @@ function ctxBlock(s, trd, constraints) {
     // silent truncation: a maker that cannot cover the repository says so in
     // `coverageShortfall`, which travels out of this mini with the spec set.
     'READING BUDGET (binding on SCOPE, not on thoroughness): the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories, ever. Within it, read what the spec actually requires: prefer one targeted search over a directory walk, never re-open a file you have already read, and stop reading a file once it has told you what you needed. Read at most 80 files. If you reach that cap with the repository still not adequately covered for the artifact you are authoring, DO NOT quietly author a partial contract: return `coverageShortfall` with the number of files you read and one sentence naming what you could not cover, and record the specific gaps as open questions. A spec that states what it could not establish is usable; one that silently omits it is not.',
-    `REPORTING CEILINGS, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\`, ${OPEN_QUESTIONS_MAX} in \`openQuestions\`, ${DECISION_IDS_MAX} in \`decisionIds\`. These are the fields that carry your result to the next phase, not the place to enumerate everything you saw.`,
+    `REPORTING CEILINGS on what you WRITE, and nothing past them is read: at most ${ARTIFACT_PATHS_MAX} entries in \`artifactPaths\` and ${OPEN_QUESTIONS_MAX} in \`openQuestions\` — these carry your result to the next phase, not everything you saw. \`decisionIds\` has NO ceiling: it cites the SAD entries this artifact was designed against, and how many those are is the SAD's business. Cite every one.`,
     constraints && constraints.length
       ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
@@ -708,7 +741,7 @@ ${ctx}${criteriaBrief}`,
     if (!draft || typeof draft !== 'object') continue
     checkLimit(`Author specs (${what})`, 'artifactPaths', draft.artifactPaths, ARTIFACT_PATHS_MAX)
     checkLimit(`Author specs (${what})`, 'openQuestions', draft.openQuestions, OPEN_QUESTIONS_MAX)
-    checkLimit(`Author specs (${what})`, 'decisionIds', draft.decisionIds, DECISION_IDS_MAX)
+    checkLimit(`Author specs (${what})`, 'decisionIds', draft.decisionIds, DECISION_IDS_EXPECTED)
   }
   checkLimit('Author specs (criteria)', 'acceptanceCriteria', criteriaDraft && criteriaDraft.acceptanceCriteria, CRITERIA_MAX)
   checkLimit('Author specs (criteria)', 'definitionOfDone', criteriaDraft && criteriaDraft.definitionOfDone, DOD_MAX)
@@ -1000,7 +1033,7 @@ For each, rule:
   }
 
   const storyDraft = await settleAgent(
-    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo) — at most ${OUT_OF_REPO_FINDINGS_MAX} of them, and nothing past that is read. Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
+    `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo) Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${JSON.stringify(specSet, null, 2)}\n\n${ctx}${storyBrief}`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
@@ -1074,7 +1107,7 @@ For each, rule:
         .map((x) => String(x == null ? '' : x).trim())
         .filter(Boolean)
     )],
-    outOfRepoFindings: checkLimit('Story', 'outOfRepoFindings', storyDraft.outOfRepoFindings || [], OUT_OF_REPO_FINDINGS_MAX),
+    outOfRepoFindings: checkLimit('Story', 'outOfRepoFindings', storyDraft.outOfRepoFindings || [], OUT_OF_REPO_FINDINGS_EXPECTED),
     // Every maker that could not cover the repository, named. Empty is the expected case and
     // means the makers covered what the spec required — never that nobody checked.
     coverageShortfalls: [

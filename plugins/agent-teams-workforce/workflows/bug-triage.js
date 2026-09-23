@@ -92,32 +92,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -164,11 +190,15 @@ THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate th
 
 phase('Triage')
 
-// The enumeration this diagnosis is expected to stay inside. A bug carrying more distinct
-// defects than this is not a bug any more, and the `needs-prd` escape below is the honest
-// answer to it — but that is a judgment for the analyst to make, and being one over it is
-// never a reason to lose the whole diagnosis.
-const DEFECTS_MAX = 20
+// What a bug is EXPECTED to contain, used to flag a count worth a look and stated to
+// nobody. How many distinct defects sit behind one symptom is a fact about the code, not
+// a volume the analyst chooses, so capping it would only buy a shorter list than the
+// truth. A bug that really does carry twenty has an answer already — the `needs-prd`
+// sizing step below rules it a redesign — and that ruling needs the full enumeration to
+// be made on. The MINIMUM is stated, because "at least one" demands completeness rather
+// than brevity: a diagnosis with no enumerated defect leaves the contract with nothing
+// to cover.
+const DEFECTS_EXPECTED = 20
 
 // 1) Diagnosis — read-only analyst. Separation of duties: this agent does not fix.
 const analysis = await settleAgent(
@@ -180,7 +210,7 @@ ${bead.description || ''}
 Deliver:
 - reproduction: the minimal, concrete steps/conditions that trigger the defect.
 - rootCause: the precise mechanism and code location (file:line where possible), as prose.
-- defects: the SAME root cause, ENUMERATED — one entry per distinct defect, each with a short stable id (D1, D2, ...), its mechanism, and the file and line where it lives. One bead frequently contains several distinct defects, and returning them only as one paragraph of prose leaves everything downstream with nothing countable: the acceptance criteria are then written against a blob and cannot be bounded, indexed, or checked for coverage. Return exactly one entry per defect you would fix separately — not one per file, not one per symptom. AT LEAST ONE entry, always: a bug with no enumerated defect leaves the contract below with nothing to cover. At most ${DEFECTS_MAX}; nothing past that is read, and a bug that honestly has more than ${DEFECTS_MAX} distinct defects is a redesign, which you report as \`needs-prd\` rather than enumerating.
+- defects: the SAME root cause, ENUMERATED — one entry per distinct defect, each with a short stable id (D1, D2, ...), its mechanism, and the file and line where it lives. One bead frequently contains several distinct defects, and returning them only as one paragraph of prose leaves everything downstream with nothing countable: the acceptance criteria are then written against a blob and cannot be bounded, indexed, or checked for coverage. Return exactly one entry per defect you would fix separately — not one per file, not one per symptom. AT LEAST ONE entry, always: a bug with no enumerated defect leaves the contract below with nothing to cover. There is no ceiling on the count — a bug that honestly contains fifteen distinct defects has fifteen, and the answer to that is the \`needs-prd\` sizing below, never a shorter list.
 - affectedFiles: the files that must change to fix it (paths).
 - blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.
 - surfaces: which surfaces from the CLOSED SET below the fix actually touches. This decides which specialist test writers run downstream, so it is a real decision, not a label:
@@ -208,10 +238,10 @@ Deliver:
       properties: {
         reproduction: { type: 'string' },
         rootCause: { type: 'string' },
-        // At least one, at most DEFECTS_MAX — stated in the brief above and counted once
-        // the result is in hand. Never bound here: a bound on this list answers a
-        // one-over enumeration by destroying the reproduction, the root cause and the
-        // repository resolution along with it, and triage then has nothing at all.
+        // At least one — stated in the brief above, and counted once the result is in
+        // hand. Never bound here: a bound on this list answers a one-over enumeration by
+        // destroying the reproduction, the root cause and the repository resolution along
+        // with it, and triage then has nothing at all.
         defects: {
           type: 'array',
           items: {
@@ -258,9 +288,9 @@ Deliver:
 // The repository the fix is built in. A supplied one is the answer; otherwise it is what
 // the diagnosis LOCATED, reported as a finding beside the blast radius. Never a guess made
 // here: an empty string is carried as null and the caller refuses to write without one.
-// The enumeration the diagnosis was asked to stay inside, measured now so it is observed
-// on the needs-prd path too. An observation only: every defect is carried forward.
-if (analysis) checkLimit('Triage', 'defects', Array.isArray(analysis.defects) ? analysis.defects : [], DEFECTS_MAX, 1)
+// Measured here so the count is observed on the needs-prd path too. An observation only:
+// every defect is carried forward, and the `at least one` is the only thing asked for.
+if (analysis) checkLimit('Triage', 'defects', Array.isArray(analysis.defects) ? analysis.defects : [], DEFECTS_EXPECTED, 1)
 const resolvedRepoPath = repoKnown ? bead.repoPath : String((analysis && analysis.repoPath) || '').trim() || null
 if (!repoKnown) log(`Triage: repository ${resolvedRepoPath ? `located at ${resolvedRepoPath}` : 'NOT located'} — ${(analysis && analysis.repoResolution) || 'no resolution reported'}`)
 

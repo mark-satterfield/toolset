@@ -94,32 +94,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -212,23 +238,37 @@ if (!prdBody) {
 const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
 const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
 
-// ── THE LIST LIMITS EACH LENS WORKS UNDER ────────────────────────────────────────
+// ── WHICH LENSES GET A CEILING, AND WHICH ONLY GET COUNTED ───────────────────────
 //
-// Stated in the brief, counted after the result is in hand, and never bound in the
-// schema: a lens that returns one finding too many must not cost the run the other five
-// lenses' findings along with it. Each number is the one this phase has always worked to,
-// doubled or better where the old value sat close to observed output — the largest
-// recorded ambiguities list was 8 and the largest completenessGaps 11 against a limit of
-// 15, which is near enough to fire on a genuinely thorough PRD.
+// The judging lenses COMPOSE their output. An ambiguity, a completeness gap, a conflict,
+// a boundary finding and a clarification are all written by the analyst, which chooses
+// how finely to split one problem into entries — so a ceiling stated to it is a real
+// instruction, and the one it needs: the failure mode here is enumerating restatements of
+// a single finding, and the gate re-reads every one of them. Those ceilings are stated in
+// the brief, counted below, and never bound in the schema, so a lens one finding over
+// cannot cost the run the other five lenses' findings.
+//
+// THREE ARE READS and get no stated ceiling at all. `constraints` are extracted from the
+// PRD — it imposes what it imposes. The BRD traceability mapping (`matrix`,
+// `orphanRequirements`, `unimplementedObjectives`) is a correspondence between two
+// documents, so its size is decided by those documents and by nothing the analyst does.
+// Telling a read to report fewer rows than it found can only be honoured by dropping
+// rows. `conflicts[].requirements` is read the same way: how many requirements are in
+// tension is a fact about the PRD, not a budget.
+//
+// Every figure below is what this script expects, used to flag a count worth a look. The
+// judging ones are doubled from the schema bounds they used to be, because the largest
+// recorded ambiguities list was 8 and the largest completenessGaps 11 against a bound of
+// 15 — near enough to fire on a genuinely thorough PRD.
 const LENS_FINDINGS_MAX = 30
 const CONFLICTS_MAX = 20
-const CONFLICT_REQUIREMENTS_MAX = 10
-const CONSTRAINTS_MAX = 40
 const BOUNDARY_FINDINGS_MAX = 25
 const CLARIFICATIONS_MAX = 30
-const MATRIX_MAX = 200
-const OBJECTIVES_PER_REQUIREMENT_MAX = 20
-const TRACEABILITY_LIST_MAX = 100
+const CONFLICT_REQUIREMENTS_EXPECTED = 10
+const CONSTRAINTS_EXPECTED = 40
+const MATRIX_EXPECTED = 200
+const OBJECTIVES_PER_REQUIREMENT_EXPECTED = 20
+const TRACEABILITY_LIST_EXPECTED = 100
 
 // A finding-list schema reused across the lenses that emit flat findings.
 // Across eleven recorded Epic runs the largest ambiguities list was 8 and the largest
@@ -358,7 +398,7 @@ const analysis = await settleAgent(
 - This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. A requirement owned by a sibling is not a gap, a cross-PRD contract is not a conflict, and naming a sibling's behavior is not a boundary violation — flag a violation only where this PRD claims to OWN behavior a sibling owns.
 - The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.
 - Keep every issue/question/detail field under 40 words. Report findings, not essays.
-- EVERY LENS HAS A CEILING, and nothing past it is read: at most ${LENS_FINDINGS_MAX} entries each in \`ambiguities\` and \`completenessGaps\`, ${CONFLICTS_MAX} in \`conflicts\` (each citing at most ${CONFLICT_REQUIREMENTS_MAX} requirements), ${CONSTRAINTS_MAX} in \`constraints\`, ${BOUNDARY_FINDINGS_MAX} in \`boundaryFindings\` and ${CLARIFICATIONS_MAX} in \`clarifications\`. These are generous against what this phase actually produces — the largest recorded ambiguities list is 8. A lens heading past its ceiling is enumerating restatements of one finding, which costs the gate a re-read of every one of them.
+- THE LENSES YOU COMPOSE HAVE A CEILING, and nothing past it is read: at most ${LENS_FINDINGS_MAX} entries each in \`ambiguities\` and \`completenessGaps\`, ${CONFLICTS_MAX} in \`conflicts\`, ${BOUNDARY_FINDINGS_MAX} in \`boundaryFindings\` and ${CLARIFICATIONS_MAX} in \`clarifications\`. These are generous against what this phase actually produces — the largest recorded ambiguities list is 8. A lens heading past its ceiling is enumerating restatements of one finding, which costs the gate a re-read of every one of them. \`constraints\` has NO ceiling: the PRD imposes what it imposes, and you are reading them out of it rather than deciding how many to write.
 
 Lens 1 — AMBIGUITY (return in \`ambiguities\`): requirements whose intended user-observable behavior is genuinely unclear, internally contradictory, or open to two incompatible readings, each with a concrete clarification.
 Lens 2 — COMPLETENESS (return in \`completenessGaps\`): each requirement should name an actor, a trigger, and an observable user outcome, with acceptance criteria as observable behavior; flag missing user-observable paths (cancel, error, empty/limit states) described as behavior.
@@ -366,7 +406,7 @@ Lens 3 — CONFLICT (return in \`conflicts\`): pairs (or sets) of requirements w
 Lens 4 — CONSTRAINTS (return in \`constraints\`): the explicit AND implied constraints the PRD imposes (regulatory, business, platform, policy), each with its source, kind, and explicit/implied.
 Lens 5 — DOMAIN BOUNDARIES (return in \`boundaryFindings\`): requirements that make this feature own behavior another feature or service owns, or that sit in more than one bounded context.
 Lens 6 — CLARIFICATION REQUESTS (return in \`clarifications\`): the open questions the author must answer before this PRD can be specified — do not resolve them.
-${brd ? `Lens 7 — BRD TRACEABILITY (return in \`traceability\`) — INFORMATIONAL ONLY, NOT A JUDGMENT OF THE PRD: map each PRD requirement to the BRD objective(s) it serves. List in orphanRequirements those that map to no objective, and in unimplementedObjectives those objectives no requirement serves (only where this single PRD could plausibly have served them). At most ${MATRIX_MAX} rows in \`matrix\` with at most ${OBJECTIVES_PER_REQUIREMENT_MAX} objectives each, and at most ${TRACEABILITY_LIST_MAX} entries in each of the two lists; nothing past that is read. Set \`traceable\` to say whether a mapping could be built at all — it is NOT a verdict on the PRD. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features.
+${brd ? `Lens 7 — BRD TRACEABILITY (return in \`traceability\`) — INFORMATIONAL ONLY, NOT A JUDGMENT OF THE PRD: map each PRD requirement to the BRD objective(s) it serves. List in orphanRequirements those that map to no objective, and in unimplementedObjectives those objectives no requirement serves (only where this single PRD could plausibly have served them). Set \`traceable\` to say whether a mapping could be built at all — it is NOT a verdict on the PRD. A requirement mapping to a stated objective or guiding principle is traced; the BRD states objectives, not features.
 
 THIS LENS NEVER PRODUCES A DEFECT. The PRD is the top of the requirements chain and answers to no document above it, so a requirement that traces to no BRD objective is perfectly valid and must NOT be reported as a problem, a gap, an ambiguity, or a conflict through this or any other lens. You are recording a correspondence, not auditing the PRD against the BRD.
 
@@ -432,23 +472,23 @@ const traceability = brd
   ? analysis.traceability || { traceable: false, matrix: [], orphanRequirements: [], unimplementedObjectives: [] }
   : { traceable: false, matrix: [], orphanRequirements: [], unimplementedObjectives: [] }
 
-// An observation, never a gate. Each lens was given its ceiling in the brief; the counts
-// are measured here and every finding is consolidated below whatever they say.
+// Counted, never a gate. The judging lenses were given their ceiling in the brief; the
+// reads were given none. Every finding is consolidated below whatever the counts say.
 checkLimit('Validate', 'ambiguities', ambiguities, LENS_FINDINGS_MAX)
 checkLimit('Validate', 'completenessGaps', completenessGaps, LENS_FINDINGS_MAX)
 checkLimit('Validate', 'conflicts', conflicts, CONFLICTS_MAX)
-for (const c of conflicts) checkLimit('Validate', 'the requirements cited by a conflict', c && c.requirements, CONFLICT_REQUIREMENTS_MAX)
-checkLimit('Validate', 'constraints', constraints, CONSTRAINTS_MAX)
+for (const c of conflicts) checkLimit('Validate', 'the requirements cited by a conflict', c && c.requirements, CONFLICT_REQUIREMENTS_EXPECTED)
+checkLimit('Validate', 'constraints', constraints, CONSTRAINTS_EXPECTED)
 checkLimit('Validate', 'boundaryFindings', boundaryFindings, BOUNDARY_FINDINGS_MAX)
 checkLimit('Validate', 'clarifications', clarifications, CLARIFICATIONS_MAX)
 // The traceability lens is informational and binds nothing, which is exactly why a bound
 // on it must never have been able to take the six judging lenses down with it.
-checkLimit('Validate (traceability)', 'matrix', traceability.matrix, MATRIX_MAX)
+checkLimit('Validate (traceability)', 'matrix', traceability.matrix, MATRIX_EXPECTED)
 for (const row of Array.isArray(traceability.matrix) ? traceability.matrix : []) {
-  checkLimit('Validate (traceability)', 'the objectives cited by one requirement', row && row.objectives, OBJECTIVES_PER_REQUIREMENT_MAX)
+  checkLimit('Validate (traceability)', 'the objectives cited by one requirement', row && row.objectives, OBJECTIVES_PER_REQUIREMENT_EXPECTED)
 }
-checkLimit('Validate (traceability)', 'orphanRequirements', traceability.orphanRequirements, TRACEABILITY_LIST_MAX)
-checkLimit('Validate (traceability)', 'unimplementedObjectives', traceability.unimplementedObjectives, TRACEABILITY_LIST_MAX)
+checkLimit('Validate (traceability)', 'orphanRequirements', traceability.orphanRequirements, TRACEABILITY_LIST_EXPECTED)
+checkLimit('Validate (traceability)', 'unimplementedObjectives', traceability.unimplementedObjectives, TRACEABILITY_LIST_EXPECTED)
 
 // ── Deterministic consolidation ─────────────────────────────────────────────────
 // The flat findings list and the verdict are RULES over the typed lens outputs, so

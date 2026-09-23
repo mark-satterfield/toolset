@@ -92,32 +92,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -352,15 +378,22 @@ phase('Workspace')
 // they are stated in the brief and COUNTED here, not enforced by a schema that answers
 // an over-long footnote by discarding the whole report.
 //
-// The character budgets are the original 400 and 300, raised on neither count: a
-// three-line git digest fits in them several times over, and nothing legitimate needs
-// more. The entry counts are raised — three worked-around obstacles is a plausible
-// number to hit on a bad fetch, and being one over is not a reason to say anything.
+// The CHARACTER budgets are stated, and they are the original 400, 300 and 200. A
+// character budget on a prose digest is a limit on how verbosely the agent WRITES, which
+// is its own choice: the git facts themselves live in structured fields, and `evidence`
+// is the footnote beside them. Unchanged on every count — a three-line git digest fits
+// several times over.
+//
+// The ENTRY COUNTS are not stated, and the two that used to be bounds (3 and 4) are now
+// only what this script expects. How many obstacles the provisioner worked around, and
+// how many observations the verifier has, are facts about the tree it found — a read.
+// Capping them asks for an incomplete report, and an incomplete report from the verifier
+// is how this step refuses a good worktree or certifies a bad one.
 const PROVISION_EVIDENCE_MAX = 400
 const VERIFY_EVIDENCE_MAX = 300
-const PROVISION_BLOCKED_MAX = 6
-const VERIFY_NOTES_MAX = 8
 const SHORT_ENTRY_MAX = 200
+const PROVISION_BLOCKED_EXPECTED = 6
+const VERIFY_NOTES_EXPECTED = 8
 
 const BRANCH = `${prefix}/${beadId}`
 
@@ -431,7 +464,7 @@ REPORT — FIELD BY FIELD. The script reads ONLY these fields. A correct account
 - \`reused\` — true if you reused an existing tree (STEP 1 or STEP 3), false if you cut one in STEP 5.
 - \`isLinkedWorktree\` — REQUIRED, and it is a STEP 6 finding rather than a statement of intent: true ONLY when you saw, on the tree you are reporting, that --git-dir and --git-common-dir DIFFER. If you did not run STEP 6 against that exact path, report false. The script refuses the whole run when this is anything but true, because an unverified tree is a main working tree until proven otherwise — so an honest false is a usable answer and a guessed true is not.
 - \`evidence\` — the STEP 6 values ONLY, at most ${PROVISION_EVIDENCE_MAX} characters: the git-dir, the git-common-dir and the branch, one short line each, exactly as git printed them. NOT a transcript, and not the output of the other steps. THIS FIELD IS WHY RUNS DIE: the result you are filling in is a small structured payload with a hard size limit, it is discarded as unparseable the moment it exceeds that limit, and it is discarded WHOLE — every other field you filled in correctly goes with it. A pasted command log overruns the limit every time, so an over-long \`evidence\` fails the run exactly as surely as a wrong \`repoPath\`. Report what you saw in as few characters as it takes, and paste nothing you were not asked for.
-- \`blocked\` — anything that stopped you or that you worked around: at most ${PROVISION_BLOCKED_MAX} entries, one short sentence each and at most ${SHORT_ENTRY_MAX} characters apiece; nothing past that is read. Do not quote command output into it.
+- \`blocked\` — anything that stopped you or that you worked around: one short sentence each, at most ${SHORT_ENTRY_MAX} characters apiece, and as MANY entries as there were things. There is no cap on the count and you must not leave one out to stay tidy — an obstacle nobody hears about is one the next run meets again. Do not quote command output into it.
 
 The path you report must be one of these EXACTLY — the script compares it byte for byte and refuses anything else, because the path it accepts is one it built rather than one you chose. They are directory names, nothing more:
 [BEGIN ACCEPTABLE PATHS]
@@ -451,7 +484,9 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
         branch: { type: 'string' },
         reused: { type: 'boolean' },
         isLinkedWorktree: { type: 'boolean' },
-        // BOUNDED IN THE PROMPT AND COUNTED BELOW, never bound in this schema.
+        // THE CHARACTER BUDGET IS STATED IN THE PROMPT AND COUNTED BELOW, never bound
+        // in this schema. The entry count of `blocked` is not stated at all: it reports
+        // what the provisioner hit, and that is not its to keep short.
         //
         // The structured-output channel truncates a payload at a fixed size, and a
         // truncated payload is not a short answer — it is invalid JSON, cut mid-string.
@@ -475,11 +510,11 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
   }
 )
 
-// The stated reporting budget, measured. Observation only: every field is used exactly as
-// returned, whatever the counts say.
+// The stated character budgets and the expected entry counts, measured. Observation only:
+// every field is used exactly as returned, whatever the counts say.
 if (provisioned) {
   checkLimit('Workspace (provision)', 'evidence (characters)', provisioned.evidence, PROVISION_EVIDENCE_MAX)
-  checkLimit('Workspace (provision)', 'blocked', provisioned.blocked, PROVISION_BLOCKED_MAX)
+  checkLimit('Workspace (provision)', 'blocked', provisioned.blocked, PROVISION_BLOCKED_EXPECTED)
   for (const b of Array.isArray(provisioned.blocked) ? provisioned.blocked : []) {
     checkLimit('Workspace (provision)', 'a blocked entry (characters)', b, SHORT_ENTRY_MAX)
   }
@@ -707,7 +742,7 @@ Report these as \`callerGitDir\`, \`callerCommonDir\`, \`callerBranch\` and \`ca
 
 If \`--path-format=absolute\` is not supported by this git, run the same rev-parse without it and resolve each result to an absolute path yourself against the path it was run in, and say so in \`notes\`.
 
-3. Report a SHORT digest as \`evidence\` — at most ${VERIFY_EVIDENCE_MAX} characters, naming only anything the fields above could not carry (a command that failed, a fallback you had to use). It is NOT a transcript of the commands. The result you are filling in is a small structured payload with a hard size limit, and it is discarded WHOLE as unparseable the moment it exceeds that limit — every correctly-observed path goes with it. The fields above are the report; \`evidence\` is a footnote. \`notes\` holds at most ${VERIFY_NOTES_MAX} entries, one short sentence each and at most ${SHORT_ENTRY_MAX} characters apiece; nothing past that is read.
+3. Report a SHORT digest as \`evidence\` — at most ${VERIFY_EVIDENCE_MAX} characters, naming only anything the fields above could not carry (a command that failed, a fallback you had to use). It is NOT a transcript of the commands. The result you are filling in is a small structured payload with a hard size limit, and it is discarded WHOLE as unparseable the moment it exceeds that limit — every correctly-observed path goes with it. The fields above are the report; \`evidence\` is a footnote. \`notes\` holds one short sentence per observation, at most ${SHORT_ENTRY_MAX} characters apiece, and as many entries as you actually have — the count is not capped, and an observation left out is one this script cannot rule on.
 
 A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIMATE OBSERVATION and not a failure of yours: leave that path's fields EMPTY, say what git printed in \`notes\`, and go on to report the other path in full. Every value you report must be the literal output of the command that produced it. If a command does not answer, leave its field EMPTY and name the failure in \`notes\` — one failing probe must not discard an answer another probe already gave, and an inferred value is worse than an absent one, because the script cannot tell them apart. Set \`ok\` false only if you could not run git at all.`,
   {
@@ -742,10 +777,10 @@ A PATH THAT DOES NOT EXIST, or that is not inside a git repository, IS A LEGITIM
 )
 
 // The same measurement on the independent report, and the same rule: it is an
-// observation, and the report is read exactly as it came back.
+// observation, and the report is used exactly as it came back.
 if (verified) {
   checkLimit('Workspace (verify)', 'evidence (characters)', verified.evidence, VERIFY_EVIDENCE_MAX)
-  checkLimit('Workspace (verify)', 'notes', verified.notes, VERIFY_NOTES_MAX)
+  checkLimit('Workspace (verify)', 'notes', verified.notes, VERIFY_NOTES_EXPECTED)
   for (const n of Array.isArray(verified.notes) ? verified.notes : []) {
     checkLimit('Workspace (verify)', 'a notes entry (characters)', n, SHORT_ENTRY_MAX)
   }

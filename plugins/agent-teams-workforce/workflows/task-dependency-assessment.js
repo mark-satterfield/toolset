@@ -98,32 +98,58 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// ── A STATED LIMIT NEVER LIVES IN THE SCHEMA ─────────────────────────────────────
+// ── A LIMIT BELONGS WHERE THE DATA IS MADE, AND AN OVERAGE IS A FLAG ─────────────
 //
-// Every list this script asks a dispatch for carries a limit, and that limit lives in the
-// PROMPT and in a check HERE — never as a JSON-Schema maxItems/minItems/maxLength. A
-// schema bound cannot trim an over-long answer: the runtime rejects the WHOLE result, the
-// caller receives a bare null it cannot tell from a dead agent, and the run halts. One
-// really did, on 61 items against a bound of 60, claiming files were unread that had been
-// read. So the agent is told the limit up front, and the count is checked once the result
-// is in hand: the overage is logged and recorded, EVERY item is kept, nothing is
-// truncated, dropped or reordered, and no control flow changes. The limits still do their
-// job — they keep an unbounded enumeration from running away, and they cost token and
-// context budget when they are exceeded — they just no longer detonate.
+// Two rules, and they are different rules.
+//
+// ONE: a limit is never a JSON-Schema maxItems/minItems/maxLength. A schema bound cannot
+// trim an over-long answer — the runtime rejects the WHOLE result, the caller receives a
+// bare null it cannot tell from a dead agent, and the run halts. One really did, on 61
+// items against a bound of 60, claiming files were unread that had been read. So a limit
+// is STATED in the prompt and COUNTED here, once the result is in hand.
+//
+// TWO, and it decides whether a limit may be stated at all: a limit belongs at the layer
+// where the data is CREATED, not where it is read. A dispatch that AUTHORS its output —
+// criteria, findings, a persona, a draft — chooses its own volume, so a ceiling stated to
+// it is a real instruction it can honour. A dispatch that READS or EXTRACTS — an
+// inventory of what exists, the evidence found in a repository, the ids it was handed,
+// what git printed — has a volume that is a property of the source. Telling it "at most
+// N" instructs it to truncate, which loses information, or to lie. Those dispatches get
+// NO stated ceiling; bounding what they may DRAW ON (which repository, which files) is
+// the guard that works, and it already lives in their prompts. Where a read's volume
+// genuinely ought to be smaller, the fix belongs upstream, in whatever made the data.
+//
+// BOTH kinds are still counted here, because a wildly unexpected count is exactly the
+// signal worth having, and nothing is ever truncated, dropped, reordered or summarised at
+// any multiple. The count is a GRADUATED FLAG: modestly over the expected figure is
+// ordinary variation and reads as an observation; at SCRUTINY_MULTIPLE times it or more,
+// the shape is no longer variation — it is what padding, a misread assignment or
+// duplicated entries look like — and it is logged prominently so a person looks. 2x is
+// the threshold because a single band has to sit above the honest overshoots this
+// pipeline actually produces (61 against 60 is 1.02x; the worst recorded lens overshoot
+// is well under 1.5x) and below the runaway enumerations the limits exist to catch. It is
+// a flag for a person, never a thing the code acts on: neither branch alters control flow.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
 const limitFindings = []
-function checkLimit(where, what, value, max, min) {
+const SCRUTINY_MULTIPLE = 2
+function checkLimit(where, what, value, expected, min) {
   const n = Array.isArray(value) ? value.length : typeof value === 'string' ? value.length : null
   if (n === null) return value
-  if (typeof max === 'number' && n > max) {
-    limitFindings.push({ where, what, count: n, limit: max, bound: 'max' })
-    log(`${where}: ${what} returned ${n} against a stated limit of ${max} — over by ${n - max}; every item is kept`)
+  if (typeof expected === 'number' && n > expected) {
+    const ratio = expected > 0 ? n / expected : Infinity
+    const scrutinise = ratio >= SCRUTINY_MULTIPLE
+    limitFindings.push({ where, what, count: n, expected, ratio: Math.round(ratio * 100) / 100, severity: scrutinise ? 'scrutinise' : 'observation' })
+    log(
+      scrutinise
+        ? `⚠ ${where}: ${what} returned ${n} where ${expected} was expected — ${Math.round(ratio * 10) / 10}x. Every item is kept and nothing downstream changes, but a count this far over is the shape of padding, a misread assignment or duplicated entries: worth a look.`
+        : `${where}: ${what} returned ${n} where ${expected} was expected — over by ${n - expected}; every item is kept.`
+    )
   }
   if (typeof min === 'number' && n < min) {
-    limitFindings.push({ where, what, count: n, limit: min, bound: 'min' })
-    log(`${where}: ${what} returned ${n}, under the stated minimum of ${min} — carried through as returned`)
+    limitFindings.push({ where, what, count: n, expected: min, severity: 'under' })
+    log(`${where}: ${what} returned ${n}, under the ${min} this asked for — carried through as returned.`)
   }
   return value
 }
@@ -260,18 +286,27 @@ const ASSESS_SCHEMA = {
     reasoningPath: { type: 'string' },
     edgeCount: { type: 'integer' },
     valid: { type: 'boolean' },
-    // RELATED_READ_MAX and UNSURE_MAX are stated in the prompt and checked after the
-    // result is in hand. Never bounds here: a list one entry long would take the whole
+    // Never bounds here, and no ceiling is stated for either: both report what the
+    // mapper read and what it could not settle, and one entry over would take the whole
     // proposal down with it.
     relatedRead: { type: 'array', items: { type: 'string' } },
     unsure: { type: 'array', items: { type: 'string' } },
   },
 }
-// The reading budget this assessment is expected to stay inside. Raised from the 40 and
-// 20 they used to be: the corpus is every open Task, and a Task in a busy repository
-// legitimately reads more than 40 of them.
-const RELATED_READ_MAX = 80
-const UNSURE_MAX = 40
+// WHAT THIS ASSESSMENT IS EXPECTED TO READ — an expectation, not an instruction.
+//
+// `relatedRead` reports the Tasks it read in full and `unsure` the edges it could not
+// settle. Both are READS: their size is a property of the corpus (every open Task)
+// and of how tangled this Task's dependencies actually are. Nothing is stated to the
+// mapper about either count, because "report at most N of what you read" can only be
+// honoured by under-reporting. What DOES bound the read is already in the brief: search
+// first, and read no Task the search did not find related.
+//
+// The figures below are what this script expects, used only to flag a count worth a look.
+// Raised from the 40 and 20 that used to be schema bounds — a Task touching a broad
+// decision legitimately reads more than 40.
+const RELATED_READ_EXPECTED = 80
+const UNSURE_EXPECTED = 40
 const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, an event contract, a table, an IAM grant, a deployed resource. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`
 const assessPrompt = `Assess the build dependencies of ONE Task, ${target}, which was created outside elaboration. ${target} is new or has changed.
 
@@ -292,7 +327,7 @@ Work in this order:
 6. Write ${edgesFile} as {"edges": [{"from", "to", "reason", "confidence"}], "withdrawn": [{"from", "to", "reason"}]}. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
 7. Validate: \`${cmd('validate', `--edges ${shq(edgesFile)}${scope}`)}\` — fix the file until \`ok\` is true. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test is reported, not forced: return \`valid: false\` and name the cycle in \`unsure\`.
 
-Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Task you read in full, other than ${target} — and each edge you were unsure of with what would settle it. Return at most ${RELATED_READ_MAX} ids in \`relatedRead\` and at most ${UNSURE_MAX} entries in \`unsure\`; nothing past those counts will be read, so if you are heading past either one you are reading or enumerating more than this assessment needs.`
+Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Task you read in full, other than ${target} — and each edge you were unsure of with what would settle it.`
 
 // Code validates every attempt, whatever the session claims. A proposal that does not
 // validate is assessed again with the validator's findings, at most ASSESS_ATTEMPTS
@@ -351,8 +386,8 @@ Attempt ${attempt - 1} did not validate. The validator's findings, verbatim: ${J
   })
   if (!session) break
   assessed = session
-  checkLimit(`Assess (${target}#${attempt})`, 'relatedRead', session.relatedRead, RELATED_READ_MAX)
-  checkLimit(`Assess (${target}#${attempt})`, 'unsure', session.unsure, UNSURE_MAX)
+  checkLimit(`Assess (${target}#${attempt})`, 'relatedRead', session.relatedRead, RELATED_READ_EXPECTED)
+  checkLimit(`Assess (${target}#${attempt})`, 'unsure', session.unsure, UNSURE_EXPECTED)
   // Printed without --out, so the whole report comes back.
   const report = await runStep(
     `validate#${attempt}`,
