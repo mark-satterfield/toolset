@@ -877,6 +877,29 @@ function batchKey(files) {
 }
 const shardSavePath = (files) => (SHARD_SAVE_DIR ? `${SHARD_SAVE_DIR}/${batchKey(files)}.json` : null)
 
+// ── THE RESUME INDEX IS A PLAIN OBJECT, AND THAT IS A BOUNDARY REQUIREMENT ──────
+// It is built by `readSavedShards` and read by `runBatch`, and between those two it crosses
+// `parallel()`. Every value that crosses a workflow boundary — a `parallel` lane's result, a
+// `pipeline` stage's result, an `agent()` result, the script's own return — is rebuilt by the
+// workflow VM's intake clone, which walks it with `Array.isArray` and `Object.keys`: strings
+// and numbers survive, arrays survive, a plain object survives key by key, functions become
+// `undefined`, and EVERYTHING ELSE is rebuilt as `{}` from its own enumerable keys. A Map, a
+// Set, a Date and a class instance all have none, so all four arrive as an empty plain object
+// with none of their methods.
+//
+// A Map here therefore arrived as `{}`, `saved.get` was undefined, and all six SAD extraction
+// batches died on `saved.get is not a function` on 2026-09-23, taking the Epic's TRD with
+// them. The fix is the SHAPE, not a re-wrap at the call site: re-hydrating a Map downstream
+// would leave the same trap for the next value that travels this way.
+//
+// Lookup is by own key only. `batchKey` always begins with a digit, so it can never name an
+// inherited property, but the guard states that rather than relying on it.
+function savedFor(saved, files) {
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return null
+  const key = batchKey(files)
+  return Object.prototype.hasOwnProperty.call(saved, key) ? saved[key] : null
+}
+
 // One batch dispatch. `feeds` names the sections this session owns; every other feed in
 // its result is discarded by the merge, so a shard can never widen its own assignment.
 function extractShardAgent(label, feeds, files) {
@@ -973,7 +996,7 @@ function retireFailures(labels) {
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
 // escapes this and every death is recorded before it is answered.
 async function runBatch(label, feeds, files, saved) {
-  const hit = saved.get(batchKey(files))
+  const hit = savedFor(saved, files)
   if (hit) {
     log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
     return [{ label, feeds, files, out: hit, resumed: true }]
@@ -1009,7 +1032,7 @@ async function runBatch(label, feeds, files, saved) {
 // direction: re-reading files costs sessions, while resuming from half a file would put
 // concepts nobody can point at into the TRD.
 async function readSavedShards() {
-  if (!SHARD_SAVE_DIR) return new Map()
+  if (!SHARD_SAVE_DIR) return {}
   const read = await settleAgent(
     `You are READ-ONLY. Return the contents of every \`.json\` file directly inside the directory ${SHARD_SAVE_DIR}, verbatim and complete. Summarize nothing, reformat nothing, read nothing outside that directory, and WRITE NOTHING.
 
@@ -1039,7 +1062,8 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
       },
     }
   )
-  const saved = new Map()
+  // A plain object, keyed by batchKey — see the note on savedFor for why nothing else works.
+  const saved = {}
   for (const e of (read && Array.isArray(read.entries) ? read.entries : [])) {
     if (!e || typeof e.content !== 'string') continue
     let body = null
@@ -1054,9 +1078,10 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
       log(`Resume: ${e.path} does not hold a saved batch — its batch is dispatched`)
       continue
     }
-    saved.set(batchKey(files), body.extract)
+    saved[batchKey(files)] = body.extract
   }
-  if (saved.size) log(`Resume: ${saved.size} SAD batch(es) already saved for this Epic — those files are not read again`)
+  const count = Object.keys(saved).length
+  if (count) log(`Resume: ${count} SAD batch(es) already saved for this Epic — those files are not read again`)
   return saved
 }
 
@@ -1194,8 +1219,33 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 
   // Each lane covers its own gaps by splitting, so what comes back is not one result per
   // planned shard but one LEAF OUTCOME per batch that actually ran.
+  // The resume index crossed `parallel()` to get here. An empty object is the normal answer on
+  // a first run; anything that is not a plain object is not an index this run can consult, and
+  // saying so is not optional — a run that quietly treats an unreadable index as "nothing was
+  // saved" re-reads the whole SAD while reporting a clean resume. `savedFor` still answers null
+  // for it, so the batches are dispatched rather than stopped: resume is an optimisation over a
+  // read, and losing it costs sessions, never correctness.
+  const resumeUnusable = !savedBatches || typeof savedBatches !== 'object' || Array.isArray(savedBatches)
+  if (resumeUnusable) {
+    log(
+      `Resume: the saved-batch index arrived as ${Array.isArray(savedBatches) ? 'an array' : savedBatches === null ? 'null' : typeof savedBatches} ` +
+        `rather than a lookup of saved batches, so NOTHING is resumed and every batch is dispatched — the whole SAD is read again. ` +
+        `This is a defect in this run, not an empty resume set.`
+    )
+  }
+
   const lanes = await parallel(jobs.map((j) => () => runBatch(j.label, j.feeds, j.files, savedBatches)))
-  const outcomes = lanes.flatMap((r) => (Array.isArray(r) ? r : []))
+  // A LANE THAT RETURNED NOTHING IS NOT A LANE THAT READ NOTHING. `parallel` answers null for a
+  // thunk that threw, and `runBatch` lets no throw of its own escape — so a null here is a
+  // defect in this script, and that lane's files were never read. Folding those away is what
+  // turned the 2026-09-23 failure silent: with every lane null, `outcomes` was empty, so there
+  // were no dead batches either, and the phase logged "SAD extracted whole: 0 constraint(s) ...
+  // from 0 batch(es)" and authored a TRD against an architecture nobody had read. A broken lane
+  // is carried as a dead batch so the INCOMPLETE stop below sees it and names its files.
+  lanes.forEach((r, i) => {
+    if (!Array.isArray(r)) log(`${jobs[i].label}: the lane failed before any batch completed — its ${jobs[i].files.length} file(s) are counted as UNREAD`)
+  })
+  const outcomes = lanes.flatMap((r, i) => (Array.isArray(r) ? r : [{ label: jobs[i].label, feeds: jobs[i].feeds, files: jobs[i].files, out: null }]))
 
   // ── Step 3: the SCRIPT merges, in batch order, de-duplicated by stable id.
   //
