@@ -295,6 +295,28 @@ function dispatchFailedReport(...phases) {
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
 }
 
+// What was RECORDED about the most recent failure of one dispatch label. `failureCauseFor`
+// (shared block, untouched) answers the cause alone; a shrunken panel has to name WHY a lens
+// went missing, so this reaches the same entry for its outcome and the runtime's message.
+// Also local to this script for the same reason.
+//
+// A dispatch that was SKIPPED rather than failed leaves no entry at all, and this answers null
+// for it. The caller reports that as unrecorded. Naming a cause nothing recorded would be an
+// invention, and an invented cause is worse than an absent one.
+function failureDetailFor(label) {
+  for (let i = dispatchFailures.length - 1; i >= 0; i--) {
+    const f = dispatchFailures[i]
+    if (f.label === label) {
+      return {
+        cause: f.cause || 'deterministic',
+        outcome: f.outcome || null,
+        message: typeof f.message === 'string' && f.message ? f.message : null,
+      }
+    }
+  }
+  return null
+}
+
 // args: {
 //   decision: { id?, title, context, drivers?, repoPath? },  // the architecture question
 //   sadPath: string,         // path to the arc42 SAD (ATW_SAD_PATH) — required. NOT in the
@@ -1637,6 +1659,61 @@ let failureModes = []
 // the decider's blocking constraints attached, instead of re-deriving the framing.
 let frameBlock = ''
 let activeMakers = []
+// ── A PANEL THAT SHRANK SAYS SO ──────────────────────────────────────────────────
+// Three lenses are not the same panel as five, and until this existed nothing said which one
+// the decider ruled over: a dead lane was dropped twice — by the truthiness test that stitches
+// the results and again by `.filter(Boolean)` — and `checkProposalLimits` is a log over the
+// proposals that ARE present, so it can never fire on one that is absent. The ruling then read
+// exactly as a full panel's ruling reads.
+//
+// A LENS THAT WAS NEVER DISPATCHED IS NOT A SHORTFALL. Triage sizes the panel deliberately, so
+// a dimension outside `activeMakers` never reaches here at all, and a lens answered from a
+// saved artifact was not dispatched either — it is counted as reused, not as missing. Only a
+// lens dispatched in THIS round whose lane came back empty is a shortfall.
+//
+// THIS RECORDS; IT DECIDES NOTHING. No halt, no ok:false, no work skipped, no threshold
+// invented: the gap is named in the log, stated to the decider as fact, and carried out on the
+// result so the gate that already judges this phase can weigh it. Silence was the defect.
+let panelShortfall = null
+function recordPanelShortfall(round, dispatchedMakers, results, labelFor, reusedFromDisk, advisorsDied) {
+  const dead = dispatchedMakers
+    .map((m, i) => ({ m, returned: !!results[i] }))
+    .filter((x) => !x.returned)
+    .map(({ m }) => {
+      // settleAgent sits out every transient failure and only then answers null, so a death
+      // here has already survived the backoff. The cause is still READ from what was recorded
+      // rather than assumed to be deterministic.
+      const detail = failureDetailFor(labelFor(m))
+      return {
+        dim: m.dim,
+        lens: m.lens,
+        agentType: m.agentType || null,
+        cause: (detail && detail.cause) || 'unrecorded',
+        outcome: (detail && detail.outcome) || null,
+        message: (detail && detail.message) || null,
+      }
+    })
+  if (!dead.length && !advisorsDied) {
+    panelShortfall = null
+    return
+  }
+  panelShortfall = {
+    round,
+    panelSized: activeMakers.length,
+    dispatched: dispatchedMakers.length,
+    returned: dispatchedMakers.length - dead.length,
+    reusedFromDisk,
+    deadLenses: dead,
+    ...(advisorsDied ? { analysisAdvisorsDied: true } : {}),
+  }
+  log(
+    `Proposal panel SHORT (round ${round}): ${panelShortfall.returned}/${panelShortfall.dispatched} dispatched lens(es) returned` +
+      `${reusedFromDisk ? ` plus ${reusedFromDisk} reused from disk` : ''}, against the ${activeMakers.length} lens(es) triage sized. ` +
+      `Absent: ${dead.map((l) => `${l.lens} (${l.cause}${l.message ? `: ${l.message.slice(0, 120)}` : ''})`).join('; ') || 'none'}` +
+      `${advisorsDied ? '. The read-only analysis advisor also returned nothing, so the context map and failure modes are empty for THAT reason' : ''}. ` +
+      `The decider still rules — this is recorded, not a halt — and the shortfall travels to the gate on panelShortfall.`
+  )
+}
 let wantsContextMap = false
 let wantsFailureModes = false
 if (settled) {
@@ -1758,6 +1835,12 @@ ${SURVEY_BOUND}${persistBrief(ART, 'architecture-analysis.json', PROPOSAL_WHAT)}
   })
   proposals = activeMakers.map((m) => replayProposals.get(m.dim) || freshByDim.get(m.dim) || null).filter(Boolean)
   checkProposalLimits(proposals)
+  // The advisors ride in the slot after the lenses, and only when one was dispatched — a
+  // replayed analysis pushes no job. An empty `failureModes` from a dead advisor reads exactly
+  // like "this design has no failure modes", which is why its death is recorded too.
+  const advisorsDispatched = (wantsContextMap || wantsFailureModes) && !replayAnalysis
+  const advisorsDied = advisorsDispatched && !proposalResults[pending.length]
+  recordPanelShortfall(1, pending, proposalResults, (m) => `proposals:${m.lens}`, replayProposals.size, advisorsDied)
   if (wantsContextMap || wantsFailureModes) {
     const advisors = replayAnalysis || proposalResults[pending.length] || null
     if (wantsContextMap) contextMap = (advisors && advisors.contextMap) || null
@@ -1985,6 +2068,26 @@ const challengesEvidence = () =>
     ? `(none — ${challengeWave.reason}. No challenger ran; an empty set here is a recorded skip, not a clean bill.)`
     : challengesText
 let challengesText = JSON.stringify(challenges, null, 2)
+// The same discipline as challengesEvidence, for the panel rather than the wave: an option set
+// missing a lens must not read to the decider as the whole panel's view. Empty on the normal
+// path, so the evidence block is unchanged when every dispatched lens came back.
+const panelEvidence = () => {
+  if (!panelShortfall) return ''
+  // Each sentence is conditional on its own fact. An advisor that died while every lens
+  // returned must NOT be announced as missing lenses — writing a shortfall that overstates
+  // itself is the same defect as the silence it replaces, pointed the other way.
+  const lens = panelShortfall.deadLenses.length
+    ? `${panelShortfall.returned} of the ${panelShortfall.dispatched} lens(es) dispatched for this round returned` +
+      `${panelShortfall.reusedFromDisk ? ` (a further ${panelShortfall.reusedFromDisk} reused from a saved artifact)` : ''}. ` +
+      `Absent: ${panelShortfall.deadLenses.map((l) => `${l.lens} (${l.cause})`).join('; ')}. ` +
+      `Those lenses are MISSING from the proposals above — an absent perspective is not a lens reporting nothing to say. ` +
+      `Rule on the evidence you have and name in your rationale which lens did not speak.`
+    : ''
+  const advisor = panelShortfall.analysisAdvisorsDied
+    ? `The read-only analysis advisor returned nothing, so an empty context map or failure-mode list below means it was never produced, not that none exist.`
+    : ''
+  return `\n\nPANEL SHORTFALL — ${[lens, advisor].filter(Boolean).join(' ')}`
+}
 
 // ── Phase 3: Decide ─────────────────────────────────────────────────────────────
 // The decider ONLY rules — it does not analyze or author. Distinct from makers and
@@ -2011,7 +2114,7 @@ ${analysisText}
 Challenges:
 ${challengesEvidence()}
 
-Blocking challenges must be resolved by the ruling or the ruling is invalid.`
+Blocking challenges must be resolved by the ruling or the ruling is invalid.${panelEvidence()}`
 
 const DECISION_SCHEMA = {
   type: 'object',
@@ -2109,7 +2212,7 @@ ${analysisText}
 Challenges:
 ${challengesEvidence()}
 
-Blocking challenges must be resolved by the ruling or the ruling is invalid.`
+Blocking challenges must be resolved by the ruling or the ruling is invalid.${panelEvidence()}`
 
   decision = await settleAgent(
     `${rulingsBlock}${DECIDER_CHARTER}
@@ -2161,7 +2264,12 @@ Propose a NEW option set. Requirements for this round:
       { label: `proposals:${m.lens}-r${round + 1}`, phase: 'Proposals', agentType: m.agentType, schema: PROPOSAL_SCHEMA, effort: 'low' }
     )
   )
-  const reProposed = (await parallel(reJobs)).filter(Boolean)
+  const reResults = await parallel(reJobs)
+  // Every lens is dispatched in a re-proposal round — nothing is replayed — so the same count
+  // applies, and the record is REPLACED rather than added to: this round's panel is the panel
+  // the next ruling is made on. A round where every lens came back clears it.
+  recordPanelShortfall(round + 1, activeMakers, reResults, (m) => `proposals:${m.lens}-r${round + 1}`, 0, false)
+  const reProposed = reResults.filter(Boolean)
   if (!reProposed.length) {
     log('Re-proposal round produced nothing — the inadmissible verdict stands')
     break
@@ -2214,6 +2322,7 @@ if (!decision) {
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths, reason: deaths.map((f) => f.note).join('; ') } : {}),
     triage,
     proposals,
+    panelShortfall,
     challenges,
   }
 }
@@ -2240,6 +2349,9 @@ if (!admissible) {
     triage,
     settledByTriage: settled,
     panelDimensions: activeDimensions,
+    // Null when every dispatched lens returned. Set, it names the lenses that did not and why,
+    // so a ruling made on a narrower panel is never read as the full panel's.
+    panelShortfall,
     challengeWave,
     replayed: replaySummary(),
     sadExtract,
@@ -2746,6 +2858,9 @@ return {
   triage,
   settledByTriage: settled,
   panelDimensions: activeDimensions,
+  // Null when every dispatched lens returned. Set, it names the lenses that did not and why,
+  // so a ruling made on a narrower panel is never read as the full panel's.
+  panelShortfall,
   challengeWave,
   // Which intermediates this run read off disk instead of authoring. The caller records it on
   // the run journal, so a cheap resumed attempt is distinguishable from a full cold panel.
