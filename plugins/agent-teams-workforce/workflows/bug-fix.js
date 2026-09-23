@@ -1,7 +1,7 @@
 export const meta = {
   name: 'bug-fix',
   description:
-    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-deploy tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails, decided in code with no agent: a gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated. Two tests that assert opposite outcomes for the same input are a CONTRADICTION, not a defective test — the test-strategy-decider rules which contract binds and the Red re-author corrects the losing test. An integration failure is repaired through Green once and the suites run again; re-running them over an unchanged tree cannot change the result. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the fix in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
+    'Composite — fixes a bug bead. Stitches the bug-triage front-end onto the shared build-and-deploy tail (Red, Green, Refactor, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails, decided in code with no agent: a gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated. Two tests that assert opposite outcomes for the same input are a CONTRADICTION, not a defective test — the test-strategy-decider rules which contract binds and the Red re-author corrects the losing test. An integration failure is repaired through Green once and the suites run again; re-running them over an unchanged tree cannot change the result. A confirmed security finding at Gate 4 is fixed in the same run: the code goes back through Green with the adjudicated findings, then Integration and Adversarial run again over the fixed tree, bounded by maxSecurityRepairs. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the fix in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Triage', detail: 'runs FIRST, before Workspace, when the caller supplied no repository — the diagnosis locates the repository the defect lives in' },
@@ -305,8 +305,9 @@ async function settleAgent(prompt, opts) {
 const DEPLOYED_RED_CRITERION =
   'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
 
-// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations? }
+// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations?, maxSecurityRepairs? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
+//   maxSecurityRepairs? — bounded Gate 4 finding -> Green fix -> re-certify cycles per run (default 2)
 //   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
 //   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
 //   prCommand — absolute path of the executable settle runs, inside the worktree, as
@@ -360,6 +361,11 @@ const MAX_LOOPS = a.maxLoops || 2
 // converging, and each iteration costs a real AWS rollout. On exhaustion the run FAILS and
 // the headline names the smoke failure; it never quietly passes.
 const MAX_DEPLOY_ITERATIONS = a.maxDeployIterations || 3
+// A confirmed Gate 4 finding is a defect this run found, so this run fixes it: back through
+// Green with the adjudicated findings, then Integration and Adversarial again over the fixed
+// tree. The bound is run-wide and survives a resume, so a finding that keeps coming back ends
+// the run under the adversarial stage once it is spent.
+const MAX_SECURITY_REPAIRS = a.maxSecurityRepairs || 2
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied — refusing to run without a work item', deployedToDev: false, smokePassed: false, deployIteration: 0 }
 // A Bug is filed against a symptom and often names no repository. Triage is this
 // composite's contract producer, and the repository the defect lives in is one of its
@@ -1143,7 +1149,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [], repairFeedback: '', priorRulings: [], refactorPending: null }
+const cp = { active: false, path: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, deployIterationsDone: 0, doneSmokeSuite: [], repairFeedback: '', priorRulings: [], refactorPending: null, securityRepair: null, securityRepairsDone: 0 }
 // The phases that certify a Green result, in run order, and the fingerprint of that Green.
 const CP_BASIS_KEYS = ['integration', 'adversarial']
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
@@ -1261,19 +1267,35 @@ ${cp.path}`,
     cp.repairFeedback = typeof pr.feedback === 'string' ? pr.feedback : ''
     cp.priorRulings = savedRulings
   }
+  // A Gate 4 security repair is recorded under its own key, so it never displaces the deploy
+  // repair record above. Recorded over the Green being resumed, it was in flight: Integration
+  // and Adversarial are dropped and the repair re-runs first. Over any other Green it finished,
+  // and its count is what this run has already spent. It stays in the checkpoint either way.
+  const sr = phases.securityRepair
+  delete phases.securityRepair
+  const srCount = sr && typeof sr === 'object' && Number.isInteger(sr.count) && sr.count > 0 ? sr.count : 0
+  cp.securityRepairsDone = srCount
+  if (srCount && typeof sr.feedback === 'string' && sr.feedback && sr.basis === cpBasis(savedGreen)) {
+    const dropped = ['integration', 'adversarial'].filter((k) => phases[k] !== undefined)
+    for (const k of dropped) delete phases[k]
+    cp.securityRepair = { count: srCount, feedback: sr.feedback, priorRulings: Array.isArray(sr.priorRulings) ? sr.priorRulings : savedRulings }
+    runLedger.push({ phase: 'checkpoint', event: 'repair-pending', kind: 'security', path: cp.path, securityRepair: srCount, dropped })
+    log(`Checkpoint: Gate 4 security repair ${srCount}/${MAX_SECURITY_REPAIRS} was in flight when the run stopped — it is re-run before Integration, and ${dropped.join(', ') || 'nothing'} is re-certified`)
+  }
   // The Green snapshot a Refactor recorded before it edited anything. With no Refactor saved
   // after it, over the Green being resumed, that attempt never finished and the tree may hold
   // its unverified edits, so the resumed Refactor first puts the tree back at the snapshot. A
-  // deploy repair on record proves the run got past Refactor, so the record is not honoured then.
+  // deploy or security repair on record proves the run got past Refactor, so the record is not
+  // honoured then.
   const rp = phases.refactorPending
   delete phases.refactorPending
-  if (!pr && phases.refactor === undefined && rp && typeof rp === 'object' && rp.basis === cpBasis(savedGreen) && CP_TREE_ID.test(String(rp.tree || ''))) {
+  if (!pr && !srCount && phases.refactor === undefined && rp && typeof rp === 'object' && rp.basis === cpBasis(savedGreen) && CP_TREE_ID.test(String(rp.tree || ''))) {
     cp.refactorPending = { tree: String(rp.tree), basis: rp.basis }
     runLedger.push({ phase: 'checkpoint', event: 'refactor-interrupted', path: cp.path, tree: cp.refactorPending.tree })
     log(`An earlier Refactor of this Green did not finish: the tree is put back at its snapshot ${cp.refactorPending.tree} before Refactor runs again`)
   }
   cp.loaded = phases
-  cp.phases = { ...phases, ...(cp.refactorPending ? { refactorPending: cp.refactorPending } : {}) }
+  cp.phases = { ...phases, ...(cp.refactorPending ? { refactorPending: cp.refactorPending } : {}), ...(srCount ? { securityRepair: sr } : {}) }
   cp.touched = true
   const done = Object.keys(phases)
   runLedger.push({ phase: 'checkpoint', event: 'resumed', path: cp.path, resumedAfter: done[done.length - 1], reused: done })
@@ -1894,6 +1916,18 @@ if (resumedRepair) {
   if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
   await cpSave('green', { redArtifact: redResult.artifact, green })
 }
+// A Gate 4 security repair in flight is finished the same way; Adversarial below is then
+// adjudicated against the rulings it recorded.
+const resumedSecurity = cp.securityRepair
+let securityRepairs = cp.securityRepairsDone
+if (resumedSecurity) {
+  log(`Resuming Gate 4 security repair ${resumedSecurity.count}/${MAX_SECURITY_REPAIRS} — re-entering Green with the recorded findings`)
+  const through = await greenThroughRed(`TDD Green (security repair ${resumedSecurity.count}/${MAX_SECURITY_REPAIRS}, resumed)`, resumedSecurity.feedback)
+  if (through.handback) return through.handback
+  green = through.green
+  if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
+  await cpSave('green', { redArtifact: redResult.artifact, green })
+}
 
 // Documentation runs ALONGSIDE the rest of the tail (started, awaited before deploy).
 docContract = contract
@@ -2094,8 +2128,8 @@ if (!integration.ok) return await failAfterDoc('integration', integration)
 // strings because it renders them as strings.
 //
 // One attempt: a retry re-runs the attacks over an unchanged tree, so it cannot close a real
-// finding. The only re-run is a deploy correction, and it is seeded with the rulings that
-// STOOD after the previous pass — the constitutional-agent's where a self-contradictory
+// finding. Every re-run follows a code change — a Gate 4 security repair or a deploy
+// correction — and is seeded with the rulings that STOOD after the previous pass — the constitutional-agent's where a self-contradictory
 // packet went to gate-constitutional, the adjudicator's otherwise — so the adjudicator is
 // accountable to what was already ruled.
 const runAdversarial = (phaseName, seed, priorRulings) => gateLoop({
@@ -2126,10 +2160,73 @@ const standingRulings = (result) =>
   (result && result.verdict && Array.isArray(result.verdict.rulings) && result.verdict.rulings) ||
   (result && result.artifact && result.artifact.adjudication && Array.isArray(result.artifact.adjudication.rulings) && result.artifact.adjudication.rulings) ||
   []
+// ── A CONFIRMED FINDING IS FIXED IN THIS RUN ─────────────────────────────────
+// A confirmed constitutive finding is a defect this run found, and the run that finds a
+// defect fixes it: back through Green with the adjudicated findings as feedback, then
+// Integration and Adversarial again, because the fix is new code neither has run against.
+// The record saved before the repair starts lets a run killed inside it resume the repair.
+// Only when MAX_SECURITY_REPAIRS is spent does the finding end the run, under the
+// adversarial stage. A self-contradictory packet is gate-constitutional's to settle, and a
+// dead lane or adjudicator judged nothing, so neither is repaired here.
+const confirmedFinding = (r) =>
+  !!(r && !r.ok && !r.dispatchFailed && !r.phaseBlocked && r.artifact && r.artifact.selfContradictory !== true && Number(r.artifact.constitutiveOpen) > 0)
+function securityFeedback(r) {
+  const art = r.artifact || {}
+  const byId = new Map((Array.isArray(art.findings) ? art.findings : []).map((f) => [f && f.findingId, f || {}]))
+  const open = standingRulings(r).filter((x) => x && x.real === true && x.classification === 'constitutive')
+  const lines = open.map((x) => {
+    const f = byId.get(x.findingId) || {}
+    return `- [${x.severity || f.severity || 'unrated'}] ${x.title || f.title || x.findingId}${f.reproduction ? ` — reproduction: ${String(f.reproduction).slice(0, 1500)}` : ''}`
+  })
+  return (
+    `Adversarial validation (Gate 4) CONFIRMED ${art.constitutiveOpen} open constitutive security finding(s) against this fix, as adjudicated. ` +
+    `Fix the production code so each one is closed, without weakening any test:\n${lines.join('\n') || r.reason || 'the adjudication itemised no finding'}`
+  )
+}
+// Returns `{ adversarial }` (ok or not) or `{ handback }` to return as is.
+async function certifyAdversarial(phaseName, seed, priorRulings) {
+  let r = await runAdversarial(phaseName, seed, priorRulings)
+  while (confirmedFinding(r) && securityRepairs < MAX_SECURITY_REPAIRS) {
+    if (r.artifact.ledger) runLedger.push(r.artifact.ledger)
+    securityRepairs += 1
+    const n = securityRepairs
+    const feedback = securityFeedback(r)
+    const rulings = standingRulings(r)
+    log(`Gate 4: ${r.artifact.constitutiveOpen} confirmed security finding(s) — re-entering Green to fix them (security repair ${n}/${MAX_SECURITY_REPAIRS}), then Integration and Adversarial run again over the fixed tree`)
+    await cpSave('securityRepair', { basis: cpBasis(green), count: n, feedback, priorRulings: rulings })
+    const through = await greenThroughRed(`TDD Green (security repair ${n}/${MAX_SECURITY_REPAIRS})`, feedback)
+    if (through.handback) {
+      await Promise.allSettled([docTrack, repairDocTrack])
+      return through
+    }
+    green = through.green
+    if (!green.ok) return { handback: await failAfterDoc('green', green) }
+    await cpSave('green', { redArtifact: redResult.artifact, green })
+    await Promise.allSettled([repairDocTrack])
+    repairDocTrack = startDocTrack(green.artifact)
+    enterPhase('Integration')
+    const certified = await certifyIntegration(`Integration Testing (after security repair ${n})`, feedback)
+    if (certified.handback) return certified
+    integration = certified.integration
+    if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
+    if (!integration.ok) return { handback: await failAfterDoc('integration', integration) }
+    await cpSave('integration', { ...integration, basis: cpBasis(green) })
+    enterPhase('Adversarial')
+    r = await runAdversarial(`${phaseName} (after security repair ${n})`, [seed, feedback].filter(Boolean).join('\n\n'), rulings)
+  }
+  if (confirmedFinding(r)) log(`Gate 4: confirmed security finding(s) remain and the budget of ${MAX_SECURITY_REPAIRS} security repair(s) is spent — the run ends here`)
+  return { adversarial: r }
+}
 enterPhase('Adversarial')
 let adversarial = satisfiedOnly ? notRun('Adversarial') : cpGet('adversarial')
 if (adversarial === undefined) {
-  adversarial = await runAdversarial('Adversarial Validation', resumedRepair ? resumedRepair.feedback : cp.repairFeedback, resumedRepair ? resumedRepair.priorRulings : cp.priorRulings)
+  const certified = await certifyAdversarial(
+    'Adversarial Validation',
+    [resumedRepair ? resumedRepair.feedback : cp.repairFeedback, resumedSecurity && resumedSecurity.feedback].filter(Boolean).join('\n\n'),
+    resumedSecurity ? resumedSecurity.priorRulings : resumedRepair ? resumedRepair.priorRulings : cp.priorRulings
+  )
+  if (certified.handback) return certified.handback
+  adversarial = certified.adversarial
   if (adversarial.ok) await cpSave('adversarial', { ...adversarial, basis: cpBasis(green), standingRulings: standingRulings(adversarial) })
 }
 if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
@@ -2323,7 +2420,9 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
   if (!integration.ok) return { ...(await failAfterDoc('integration', integration)), ...deployEvidence(deployIterations) }
   await cpSave('integration', { ...integration, basis: cpBasis(green) })
   enterPhase('Adversarial')
-  adversarial = await runAdversarial(`Adversarial Validation (after deploy correction ${deployIteration})`, smokeFeedback, standingRulings(adversarial))
+  const secured = await certifyAdversarial(`Adversarial Validation (after deploy correction ${deployIteration})`, smokeFeedback, standingRulings(adversarial))
+  if (secured.handback) return { ...secured.handback, ...deployEvidence(deployIterations) }
+  adversarial = secured.adversarial
   if (adversarial.artifact && adversarial.artifact.ledger) runLedger.push(adversarial.artifact.ledger)
   if (!adversarial.ok) return { ...(await failAfterDoc('adversarial', adversarial)), ...deployEvidence(deployIterations) }
   await cpSave('adversarial', { ...adversarial, basis: cpBasis(green), standingRulings: standingRulings(adversarial) })
