@@ -4,6 +4,7 @@ description: >-
   Routes spec freshness checks to validators and aggregates findings into a
   gate packet for workflow-2 Gate 1. Use for Spec Freshness phase work
   requiring delegation, validation routing, and gate packet assembly.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

@@ -6,6 +6,7 @@ description: >-
   tests. Use for Integration Testing work
   requiring flakiness verification, rerun-based reproduction, and
   root-cause findings.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus

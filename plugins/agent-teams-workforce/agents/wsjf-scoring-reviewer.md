@@ -5,6 +5,7 @@ description: >-
   evidence-backed, and defensible; reports findings, never fixes. Use for Task Decomposition
   work requiring scoring validation, consistency
   auditing, and prioritization challenge.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

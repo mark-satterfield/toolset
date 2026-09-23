@@ -5,6 +5,7 @@ description: >-
   publish through the event API", "all Lambdas extend the chassis". Use for
   Architecture Analysis work requiring fitness function
   authoring, constraint formalization, and conformance criteria.
+  No workflow currently dispatches it.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: fable

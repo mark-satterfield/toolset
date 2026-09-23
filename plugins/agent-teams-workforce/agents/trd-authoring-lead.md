@@ -5,6 +5,7 @@ description: >-
   pass, invokes the decider on deadlock, then assembles the Gate 2b packet; never
   writes TRD content, only pass/rework signals. Use for TRD Authoring work requiring maker-checker loop coordination, delegation, and
   read-only orchestration.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

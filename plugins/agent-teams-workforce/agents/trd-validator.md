@@ -8,6 +8,7 @@ description: >-
   concept or architecture decision, the relation being not 1:1.
   Use for TRD Authoring work requiring testability review,
   feasibility checking, SAD-conflict detection, and traceability verification.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
 model: sonnet

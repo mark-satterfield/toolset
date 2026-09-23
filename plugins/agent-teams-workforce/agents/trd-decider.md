@@ -5,6 +5,7 @@ description: >-
   conflicts routed by trd-authoring-lead; generates no TRD content or
   analysis. Use for TRD Authoring work requiring
   decision adjudication, deadlock resolution, and rationale recording.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

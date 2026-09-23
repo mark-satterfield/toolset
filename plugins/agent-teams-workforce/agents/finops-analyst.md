@@ -5,6 +5,7 @@ description: >-
   curves, budget impact — recommendations only, never decisions. Use for
   Deployment team work requiring cost analysis, unit
   economics modeling, and budget impact assessment.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

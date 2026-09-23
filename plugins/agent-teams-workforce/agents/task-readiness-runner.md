@@ -7,6 +7,7 @@ description: >-
   says, run the moment the Task becomes a bead rather than discovered by a later sweep. It
   forms no verdict of its own, scores nothing, and repairs nothing — the skill owns the
   judgment and the writes.
+  No workflow currently dispatches it.
 tools: Bash, Skill
 disallowedTools: Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, NotebookEdit
 skills: [agent-teams-workforce:beads-contract]

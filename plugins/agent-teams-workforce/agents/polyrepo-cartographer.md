@@ -7,6 +7,7 @@ description: >-
   when the session agent needs repo names, purposes, owners, dependencies,
   conventions, rules, search recipes, or documentation pointers without
   loading the full manifest into session context.
+  No workflow currently dispatches it.
 allowed-tools: [Read, Glob, Grep, Bash]
 effort: low
 ---

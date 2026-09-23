@@ -4,6 +4,7 @@ description: >-
   Designs SLOs and error budgets: SLIs, targets, burn-rate alerts, budget
   policies. Use for Deployment team work requiring SLO
   design, error budget policy, SLI selection, and CloudWatch alerting design.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

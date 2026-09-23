@@ -6,6 +6,7 @@ description: >-
   never halts the pipeline for non-invalidating findings. Use for Governance
   work requiring advantage-principle evaluation, speculative-execution
   oversight, and commit-or-revert verdicts.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

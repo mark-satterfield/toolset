@@ -4,6 +4,7 @@ description: >-
   Produces operational runbooks: incident response procedures, rollback
   steps, and disaster recovery. Use for Deployment team work requiring runbook authoring, incident response design, and
   rollback documentation.
+  No workflow currently dispatches it.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: opus

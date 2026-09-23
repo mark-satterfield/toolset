@@ -5,6 +5,7 @@ description: >-
   FinOps — with recorded rationale; generates no analysis. Use for
   Deployment team work requiring decision adjudication,
   evidence weighing, and rationale recording.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

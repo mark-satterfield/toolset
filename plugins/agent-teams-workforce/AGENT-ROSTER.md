@@ -9,7 +9,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | sdlc-pipeline-orchestrator | orchestrate | Top-level workflow-only orchestrator for both SDLC pipelines |
 | phase-gate-enforcer | approve | Referee for every phase gate in both workflows |
 | constitutional-agent | approve | Appeals court for novel conflicts the Phase Gate Enforcer cannot resolve from existing rules |
-| advantage-evaluator | approve | Evaluates competitive (non-constitutive) conflicts via speculative execution with rollback: lets the pipeline proceed under a flag, observes the outcome, then commits or reverts |
+| advantage-evaluator | approve | Evaluates competitive (non-constitutive) conflicts via speculative execution with rollback: lets the pipeline proceed under a flag, observes the outcome, then commits or reverts. No workflow currently dispatches it. |
 | context-curator | execute | Owns context integrity across the workforce: assembles role-specific context packets per the least-context principle, and guarantees constitutive constraints survive context compaction verbatim — they are never summarized away |
 
 ## PRD Creation
@@ -47,7 +47,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | security-architecture-designer | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model |
 | cdk-infrastructure-designer | plan | Analyzes CDK construct options, Lambda boundaries within the chassis, and layer packaging |
 | event-schema-designer | execute | Designs event schemas within the event API envelope format |
-| api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals |
+| api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. No workflow currently dispatches it. |
 | cost-architecture-reviewer | plan | Estimates cost per architecture option and identifies cost cliffs |
 | bounded-context-mapper | plan | Maps domain boundaries and identifies context relationships |
 | domain-event-modeler | execute | Models domain events, event flows, and event contracts |
@@ -59,7 +59,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
 | architecture-decider | approve | Receives all analyses, challenges, and cost data |
 | architecture-impact-analyst | test | Judges what an architecture decision a ruling created, changed or retired reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
-| architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. |
+| architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. No workflow currently dispatches it. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
 | c4-diagram-author | execute | Renders the decided design as C4 Mermaid diagrams (Level 1 Context, Level 2 Container, Level 3 Component) for the SAD. |
 | uml-diagram-author | execute | Renders the decided behaviours and structures as UML Mermaid diagrams (sequence, class, state) for the SAD. |
@@ -73,11 +73,11 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet |
+| trd-authoring-lead | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet. No workflow currently dispatches it. |
 | trd-author | execute | Authors the Technical Requirements Document — the CARRIER that takes the architecture's obligations (uptime, latency, maintainability, security, failover, DR, infrastructure/CDK, observability) into the build chain, alongside the PRD requirements needing technical elaboration. Cites the SAD rather than restating it, so a correct TRD is often very short. |
-| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture. |
-| prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or a SAD entry, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. |
-| trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead |
+| trd-validator | test | Validates each TRD technical requirement is unambiguous, testable, and feasible within the SAD constraints and decisions, flagging any requirement that contradicts the architecture. No workflow currently dispatches it. |
+| prd-trd-traceability-verifier | test | Builds and checks the TRD's source traceability matrix: every TRD requirement anchored to a PRD requirement or a SAD entry, every PRD requirement needing elaboration answered, genuine scope drift flagged. Not a 1:1 relation. No workflow currently dispatches it. |
+| trd-decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead. No workflow currently dispatches it. |
 
 ## Spec Authoring
 
@@ -94,20 +94,20 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | event-schema-reviewer | test | Validates event schemas conform to the event API envelope format. |
 | dynamodb-schema-access-pattern-reviewer | test | Validates the specified access patterns are implementable and performant. |
 | graphql-schema-reviewer | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. |
-| spec-decider | approve | Receives competing spec approaches, maker-checker deadlocks, and checker conflict reports routed by spec-authoring-lead |
+| spec-decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back |
 
 ## Task Decomposition
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate |
+| task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate. No workflow currently dispatches it. |
 | task-decomposer | execute | Breaks the spec into tasks: one chassis extension, one endpoint, or one event handler per task. |
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
 | wsjf-scorer | execute | Scores each task: (value + time criticality + risk reduction) divided by size. |
-| wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. |
+| wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. No workflow currently dispatches it. |
 | user-story-writer | execute | Writes user stories per task with acceptance criteria drawn from the spec. |
 | user-story-reviewer | test | Validates stories are complete, testable, and properly scoped. |
-| beads-format-validator | test | Validates Beads issue format: title, acceptance criteria, DoD, WSJF score, dependencies, spec link. |
+| beads-format-validator | test | Validates Beads issue format: title, acceptance criteria, DoD, WSJF score, dependencies, spec link. No workflow currently dispatches it. |
 
 ## PRD Reconciliation
 
@@ -120,7 +120,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| spec-freshness-lead | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. |
+| spec-freshness-lead | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. No workflow currently dispatches it. |
 | spec-currency-validator | test | Validates the spec still matches current project reality before implementation begins. |
 | dependency-change-detector | test | Detects dependency version or contract changes since the spec was written. |
 
@@ -216,7 +216,7 @@ shown the answer is not a checker.
 | cross-service-contract-tester | test | Runs contract tests across service and repository boundaries. |
 | test-environment-orchestrator | execute | Provisions and resets the integration test environments. |
 | root-cause-analyst | plan | Determines whether a failure is code, test, environment, or architecture — and therefore which team the finding escalates to |
-| flaky-test-detector | test | Identifies intermittent test failures and their root causes |
+| flaky-test-detector | test | Identifies intermittent test failures and their root causes. No workflow currently dispatches it. |
 | cross-repo-integration-test-coordinator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead |
 
 ## Adversarial Validation
@@ -243,12 +243,12 @@ shown the answer is not a checker.
 | cdk-stack-author | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. |
 | github-actions-pipeline-implementer | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. |
 | cdk-infrastructure-drift-detector | test | Detects drift between deployed infrastructure and the CDK stacks. |
-| slo-error-budget-designer | plan | Designs SLOs and error budgets for the deployed feature. |
+| slo-error-budget-designer | plan | Designs SLOs and error budgets for the deployed feature. No workflow currently dispatches it. |
 | smoke-test-author | test | Writes post-deployment smoke tests. |
 | production-readiness-review-facilitator | orchestrate | Coordinates the production readiness review: collects required artifacts, routes them to reviewers, and assembles the readiness packet |
-| finops-analyst | plan | Analyzes the cost posture of the feature before deployment: unit economics, scaling cost curves, budget impact |
-| incident-response-runbook-designer | execute | Produces operational runbooks for the deployed feature: incident response, rollback steps, disaster recovery. |
-| deployment-strategy-decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead |
+| finops-analyst | plan | Analyzes the cost posture of the feature before deployment: unit economics, scaling cost curves, budget impact. No workflow currently dispatches it. |
+| incident-response-runbook-designer | execute | Produces operational runbooks for the deployed feature: incident response, rollback steps, disaster recovery. No workflow currently dispatches it. |
+| deployment-strategy-decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead. No workflow currently dispatches it. |
 
 ## Documentation
 
@@ -260,7 +260,7 @@ shown the answer is not a checker.
 | changelog-writer | execute | Generates changelog entries from merged work: conventional commit parsing, semantic version notes. |
 | user-guide-writer | execute | Writes user-facing feature documentation and guides from specs and shipped behavior. |
 | documentation-currency-auditor | test | Audits that documentation was updated when code shipped |
-| documentation-accuracy-reviewer | test | Reviews produced documentation against actual shipped behavior for accuracy and completeness. |
+| documentation-accuracy-reviewer | test | Reviews produced documentation against actual shipped behavior for accuracy and completeness. No workflow currently dispatches it. |
 
 ## Standalone
 

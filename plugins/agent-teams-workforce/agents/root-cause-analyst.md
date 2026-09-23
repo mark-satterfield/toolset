@@ -5,6 +5,8 @@ description: >-
   environment, or architecture, and which team it escalates to; analyzes
   evidence only, never fixes. Use for Integration Testing work requiring failure classification, evidence-chain analysis, and
   escalation routing.
+  No workflow dispatches it on integration test failures; the bug-triage
+  workflow dispatches it to diagnose a bug bead's root cause.
 tools: Read, Glob, Grep, Write
 disallowedTools: AskUserQuestion, Edit, Bash, Agent, NotebookEdit
 model: opus

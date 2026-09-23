@@ -98,8 +98,8 @@ asking questions?
 ### Acceptance Criteria
 
 Consumed by: `workflows/tdd-red.js` — it reads `contract.acceptanceCriteria` and derives
-the failing tests from it, then an independent coverage reviewer checks the authored tests
-back against those same criteria. `workflows/task-to-deploy.js` carries them onto the
+the failing tests from it, and Gate 2a judges whether the authored tests encode those same
+criteria. `workflows/task-to-deploy.js` carries them onto the
 contract; `workflows/bug-triage.js` authors the equivalent contract for a bug. An item with
 no verifiable pass condition gives the Red phase nothing to encode.
 

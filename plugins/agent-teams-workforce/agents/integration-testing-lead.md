@@ -5,6 +5,10 @@ description: >-
   Gate 3 packet, and escalates to the target the Root Cause Analyst names. Use
   for Integration Testing work requiring test-run
   orchestration, result aggregation, and escalation routing.
+  The integration workflow dispatches it only to select the suites, and
+  whether the test environment is provisioned first, when the contract
+  declares no surfaces; no workflow runs a root-cause classification or a
+  flakiness check on integration failures.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

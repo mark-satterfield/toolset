@@ -8,6 +8,7 @@ description: >-
   requirement is not an orphan. Use for TRD Authoring work requiring
   requirement-to-technical-requirement tracing, source-extract anchoring, and
   scope-drift detection.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: sonnet

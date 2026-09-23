@@ -5,6 +5,7 @@ description: >-
   criteria, DoD, dependencies, spec link) and obeys the hierarchy rule; reports
   defects, never fixes. Use for Task Decomposition work requiring Beads
   format validation, field completeness, and traceability checks.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: haiku

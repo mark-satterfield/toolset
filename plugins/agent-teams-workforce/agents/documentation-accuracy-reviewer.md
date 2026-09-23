@@ -4,6 +4,7 @@ description: >-
   Reviews documentation against actual shipped behavior, reporting findings
   with cited evidence. Use for cross-cutting Documentation team work requiring
   accuracy verification, claim-by-claim checking, and completeness review.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Bash, Write
 disallowedTools: AskUserQuestion, Edit, Agent
 model: opus

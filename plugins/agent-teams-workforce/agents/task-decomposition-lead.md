@@ -5,6 +5,7 @@ description: >-
   validate — assembling the Beads task set, WSJF scores, and dependency DAG
   for Gate 4. Use for Task Decomposition work requiring
   delegation, pipeline sequencing, and gate reporting.
+  No workflow currently dispatches it.
 tools: Read, Glob, Grep, Agent, SendMessage
 disallowedTools: AskUserQuestion, Write, Edit, NotebookEdit, Bash
 model: sonnet

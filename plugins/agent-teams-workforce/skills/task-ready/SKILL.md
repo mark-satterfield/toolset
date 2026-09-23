@@ -1,6 +1,6 @@
 ---
 name: task-ready
-description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run at Task creation time inside the prd-to-spec workflow. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores review_status, review_missing, reviewed_at and ready_content_hash as issue attributes, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
+description: Completeness gate for one issue — decides whether it carries what someone needs in order to work it, and records that verdict on the issue itself. Quality control on a Task's CONTENT, run when a Task is claimed for work — `/next-task` runs it on the candidates before dispatching one. Resolves the issue from Beads (primary) or GitHub (backup), reuses the stored review verdict while the content is unchanged, reruns the review when it is missing or stale, records missing lineage or a missing repository as a note on the verdict rather than as a refusal, stores review_status, review_missing, reviewed_at and ready_content_hash as issue attributes, and emits one fixed contract. It judges content completeness and nothing else — not dependencies, not blockers, not priority. Triggers on /task-ready or "is this ready to implement", "is this issue complete", "prepare this issue".
 ---
 
 # Task Ready — Content Completeness Gate
@@ -14,11 +14,11 @@ has no custom fields, so it uses the marker-comment fallback described below.
 
 ## What this skill is for
 
-**Quality control on a Task's CONTENT, at the moment the Task is created.** Its home is
-inside the `prd-to-spec` workflow, where it runs over what the decomposer just emitted and
-answers one question: does this Task say enough for someone to work it, and if not, what is
-missing. That is its whole purpose, and running it there is what keeps an incomplete Task
-from reaching the board in the first place.
+**Quality control on a Task's CONTENT, at the moment the Task is claimed for work.** It
+runs over a candidate before anyone works it — `/next-task` runs it on the candidates in
+WSJF order — and answers one question: does this Task say enough for someone to work it,
+and if not, what is missing. That is its whole purpose, and running it there is what keeps
+an incomplete Task from being dispatched.
 
 **It is NOT an eligibility gate.** Eligibility means dependencies and blockers. This skill
 has never consulted either, and both belong entirely to whatever decides eligibility.

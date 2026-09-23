@@ -4,6 +4,7 @@ description: >-
   Produces OpenAPI and GraphQL contract drafts for review. Use for
   Architecture Analysis work requiring OpenAPI
   authoring, GraphQL schema drafting, and API contract consistency.
+  No workflow currently dispatches it.
 tools: Read, Write, Edit, Glob, Grep, Bash
 disallowedTools: AskUserQuestion, Agent
 model: fable
