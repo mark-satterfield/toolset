@@ -475,6 +475,10 @@ let settleIsLinkedWorktree = false
 // unobtainable, which narrows the guard back to the floor rather than widening it to a
 // guess.
 let settleDefaultBranch = null
+// The repository triage LOCATED when the caller supplied none. It rides out on the handback so
+// a re-dispatch of the same bead can supply it: without it, every resume of a triage-first run
+// pays the whole diagnosis again just to learn where its checkpoint is.
+let locatedRepoPath = null
 
 // ===== SHARED BLOCK path-guard — BEGIN (canonical: scripts/shared-path-guard.mjs) =====
 // ── PATH SAFETY: a path is COMMAND TEXT and PROMPT TEXT at the same time ─────
@@ -1338,6 +1342,7 @@ if (!repoSupplied) {
   }
   log(`Repository located by triage: ${located}`)
   bead.repoPath = located
+  locatedRepoPath = located
 }
 // Checkpoint identity: the bead and its text. bead.repoPath is known on BOTH paths
 // by here — supplied by the caller, or located by the triage-first branch above.
@@ -2290,6 +2295,7 @@ return {
   enterPhase('Settle')
   const settle = await settleRun()
   if (result) applySettle(result, settle)
+  if (result && locatedRepoPath) result.locatedRepoPath = locatedRepoPath
   // A COMPLETED run deletes its checkpoint — resuming finished work replays it.
   if (result && result.ok === true) await cpDelete()
 }

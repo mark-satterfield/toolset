@@ -465,7 +465,13 @@ let rewritten = false
 
 for (let pass = 2; pass <= MAX_COST_LOOPS && !costResolved; pass++) {
   log(`Cost review blocking — re-running cdk-infrastructure-designer (pass ${pass}/${MAX_COST_LOOPS})`)
-  const revised = await makeIntent(costFindings.feedback || '')
+  // A blocking security finding on the intent being rewritten is fixed in the same pass;
+  // otherwise the rewrite is re-scanned, blocks again, and the whole mini re-runs at G1.
+  const securityBlock =
+    securityFindings.blocking === true
+      ? `\n\nThe security scan also blocked this intent — fix these in the same revision:\n${JSON.stringify(securityFindings.findings || [])}`
+      : ''
+  const revised = await makeIntent(`${costFindings.feedback || ''}${securityBlock}`)
   if (!revised) return dispatchFailedResult('the cdk-infrastructure-designer')
   intent = revised
   rewritten = true
