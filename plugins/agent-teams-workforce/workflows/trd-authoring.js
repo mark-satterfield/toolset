@@ -1156,6 +1156,8 @@ CITE THE SAD; DO NOT RESTATE IT. Turning an obligation into a requirement does N
 
 A CORRECT TRD IS OFTEN VERY SHORT, AND THAT IS NOT A DEFECT. Because it leans on the SAD it is terse by design. Never lengthen the document, split a requirement that did not need splitting, or add one you would not otherwise write, in order to look complete. How many requirements this TRD needs is a fact about this PRD and this architecture, not a target.
 
+AND WHERE THE ARCHITECTURE OBLIGES NOTHING NEW, WRITE NOTHING. Asking what the architecture demands is required of you; finding an answer is not. A small incremental change — the text on a button — may need no new architecture at all, and its TRD is legitimately just the technical version of that PRD, with no architecture-sourced requirement in it, and it is complete and correct. Never manufacture one to look thorough. Inventing an architecture obligation this change does not have is the same filler as restating a settled SAD decision, arriving from the other side.
+
 Where the SAD ALREADY SETTLES a point a PRD requirement raises, CITE THAT DECISION rather than writing a hollow TRD requirement that restates it. That is the normal, correct shape — the citation is the answer and the restatement is filler.
 
 ${writeBrief}
@@ -1274,7 +1276,7 @@ CHECK 2 — SOURCE traceability (return under \`traceability\`). A TRD is the bl
 - \`prdGaps\` — ONLY a PRD requirement that needs technical elaboration and nothing answers. A PRD requirement fully answered by an existing SAD decision is NOT a gap: record it in \`prdSadAnswered\` with the decision cited. Writing a hollow TRD requirement that restates a settled SAD decision is the wrong outcome, so do not demand one.
 - \`prdSadAnswered\` — each PRD requirement answered by a cited SAD decision rather than by a TRD requirement, naming the decision id. This is a correct disposition, not a finding.
 
-verdict "pass" when every TRD requirement is sourced, no requirement contradicts the SAD, and every PRD requirement needing technical elaboration is either elaborated or answered by a cited SAD decision. Do NOT reject for the absence of a 1:1 mapping, for TRD requirements with no PRD parent, for a PRD requirement the SAD already settles, or for a requirement that cites a SAD section instead of restating its content.
+verdict "pass" when every TRD requirement is sourced, no requirement contradicts the SAD, and every PRD requirement needing technical elaboration is either elaborated or answered by a cited SAD decision. Do NOT reject for the absence of a 1:1 mapping, for TRD requirements with no PRD parent, for a PRD requirement the SAD already settles, or for a requirement that cites a SAD section instead of restating its content. Do NOT reject because the TRD carries FEW architecture-sourced requirements or NONE: a change that needs no new architecture yields a TRD that is legitimately just the technical version of its PRD, and you cannot tell that case from a missed obligation by counting. Judge the requirements that are there.
 
 PRD (source requirements):
 ${prdText}
