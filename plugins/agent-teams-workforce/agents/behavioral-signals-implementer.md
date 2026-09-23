@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Redefining a signal or feature; changing specified aggregation windows, transformations, or quality thresholds; dropping or synthesizing data to make a test pass; altering event contracts; altering test expectations.
 - **Inputs Required:** Delegation packet from implementation-lead; failing tests produced by tdd-unit-test-generator and data-pipeline-test-writer; the ml-evaluation-tester suite expectations for the component; the approved signal and feature specification with definitions, windows, and quality rules; the approved event contracts; interface definitions for stream sources and feature consumers; project conventions.
 - **Outputs Produced:** Signal capture and feature pipeline implementation patch with a test-run record showing previously failing tests now pass and the ml-evaluation-tester suites pass, plus the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test encodes feature values the specified transformation cannot produce; the specification omits a window, default, or quality rule a test depends on; an event contract lacks a field a specified feature requires; satisfying a test would require changing a specified definition.
 - **Acceptance Criteria:** All assigned failing tests pass; the ml-evaluation-tester suites for the component pass; no test was modified, skipped, or weakened; every transformation, window, and quality guard traces to the specification; pipelines are idempotent and deterministic where the tests require it.
 - **Anti-Goals:** Feature redefinition disguised as implementation; silent data dropping or imputation beyond the specification; hidden coupling to stream internals; cleverness beyond what the tests require.
@@ -57,7 +57,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

@@ -698,6 +698,7 @@ Return found=true with the file's full text in \`content\`, or found=false with 
     {
       label: 'replay:read-saved-recon',
       phase: 'Reconciliation checks',
+      model: 'haiku',
       effort: 'low',
       schema: {
         type: 'object',

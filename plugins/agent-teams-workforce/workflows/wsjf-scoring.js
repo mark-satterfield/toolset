@@ -382,14 +382,15 @@ async function runSteps(label, steps) {
 ${steps.map((s, i) => `${i + 1}. name "${s.name}":\n   ${s.command}`).join('\n')}
 
 Each prints one JSON object on stdout. Return one entry per command in \`results\`: its name exactly as given, its process exit code as \`exitCode\`, and that JSON object, parsed and unaltered, as \`output\`. If a command's stdout is not JSON, its \`output\` is {"error": "<stdout and stderr, verbatim>"}. Do not retry, do not repair, do not run any other command.`,
-    { label, phase: currentPhase, effort: 'low', schema: RUN_SCHEMA }
+    // Copying command output is not judgment: the smallest model does it.
+    { label, phase: currentPhase, model: 'haiku', effort: 'low', schema: RUN_SCHEMA }
   )
   const byName = new Map((out && Array.isArray(out.results) ? out.results : []).map((r) => [r && r.name, r]))
   const outputs = {}
   for (const s of steps) {
     const r = byName.get(s.name)
     if (!r) {
-      failures.push({ step: s.name, reason: out ? 'the runner did not report this command' : 'the runner returned no result' })
+      failures.push({ step: s.name, reason: out ? 'the runner did not report this command' : 'the runner returned no result', dead: !out })
       outputs[s.name] = null
     } else if (r.exitCode !== 0 || (r.output && r.output.error)) {
       failures.push({ step: s.name, reason: (r.output && r.output.error) || `exit ${r.exitCode}` })
@@ -446,7 +447,11 @@ const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const flags = `${a.all === true ? '--all ' : ''}${a.rejudge === true ? '--rejudge ' : ''}${only.length ? `--only ${shq(only.join(','))} ` : ''}`
 const dry = dryRun ? ' --dry-run' : ''
-const stop = (error, extra) => ({ ok: false, stage: currentPhase, headline: error, workDir: work, dryRun, error, ...extra, failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() })
+// A run that failed only because sessions died is reported under the environment stage the
+// supervisor never charges to the work; a command that ran and failed is a failure of its phase.
+const failedStage = (phaseName) =>
+  dispatchDeaths().length > 0 && failures.every((f) => f.dead) ? 'agent-dispatch-failed' : phaseName
+const stop = (error, extra) => ({ ok: false, stage: failedStage(currentPhase), headline: error, workDir: work, dryRun, error, ...extra, failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() })
 
 // ── Plan ─────────────────────────────────────────────────────────────────────────
 enter('Plan')
@@ -632,7 +637,7 @@ const scoredOk = !!score && failures.length === 0 && judgingFailed.length === 0
 // `stage` and `headline` are what the supervisor reads off this return.
 return {
   ok: scoredOk,
-  stage: scoredOk ? 'done' : judgingFailed.length ? 'Judge' : 'Apply',
+  stage: scoredOk ? 'done' : failedStage(judgingFailed.length ? 'Judge' : 'Apply'),
   headline: runError.error || (score ? `scored ${score.epicsScored} Epic(s) and ${score.tasksScored} Task(s); ${score.epicsWritten + score.tasksWritten} value(s) written${dryRun ? ' (dry run)' : ''}` : 'the arithmetic did not run'),
   workDir: work,
   dryRun,

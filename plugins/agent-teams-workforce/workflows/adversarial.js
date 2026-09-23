@@ -551,8 +551,47 @@ for (const r of priorRulings) priorById[r.findingId] = r
 const priorIds = Object.keys(priorById)
 
 phase('Adjudicate')
-const adjudication = await settleAgent(
-  `You are the adversarial-critique-adjudicator (Referee). Rule on each finding's real severity and whether it is CONSTITUTIVE (a security/validity hard stop — implementers cannot downgrade it) or COMPETITIVE (a tradeable quality concern). Discard false positives with reasoning.
+// One schema for the adjudication and for the follow-up below, constrained to the ids asked.
+const rulingsSchema = (ids) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['rulings'],
+  properties: {
+    rulings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['findingId', 'title', 'severity', 'classification', 'real'],
+        properties: {
+          // Constrained to the ids the script derived, so a ruling cannot be attached
+          // to a finding nobody reported and cannot be renamed out of its own history.
+          findingId: { type: 'string', enum: ids },
+          ...(priorIds.length ? { priorFindingId: { type: 'string', enum: priorIds } } : {}),
+          title: { type: 'string' },
+          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
+          classification: { type: 'string', enum: ['constitutive', 'competitive'] },
+          real: { type: 'boolean' },
+          // The ONLY field in which a reversal may be declared. Schema-level, because
+          // the prose control ("cite an audit trail", "never downgrade a constitutive
+          // finding") already existed in the agent charter and the model rendered no
+          // worse for having ignored it.
+          reversalOf: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['evidence'],
+            properties: {
+              priorReal: { type: 'boolean' },
+              priorClassification: { type: 'string', enum: ['constitutive', 'competitive'] },
+              evidence: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  },
+})
+const adjudicationPrompt = (list, lead) => `You are the adversarial-critique-adjudicator (Referee). ${lead}Rule on each finding's real severity and whether it is CONSTITUTIVE (a security/validity hard stop — implementers cannot downgrade it) or COMPETITIVE (a tradeable quality concern). Discard false positives with reasoning.
 
 Return EXACTLY ONE ruling per findingId. Two rulings for the same findingId that disagree about \`real\` or \`classification\` is a self-contradictory packet; it is detected mechanically, it cannot be argued past, and it costs a constitutional appeal. A finding you return no ruling for is counted as an open constitutive finding.
 
@@ -560,53 +599,14 @@ ${priorRulings.length ? `PRIOR RULINGS — you (in an earlier round of this same
 
 ${JSON.stringify(priorRulings, null, 2)}
 ` : ''}
-Findings (${findings.length}):
-${JSON.stringify(findings, null, 2)}`,
-  {
-    label: 'adversarial:adjudicate',
-    phase: 'Adjudicate',
-    agentType: 'agent-teams-workforce:adversarial-critique-adjudicator',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['rulings'],
-      properties: {
-        rulings: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['findingId', 'title', 'severity', 'classification', 'real'],
-            properties: {
-              // Constrained to the ids the script derived, so a ruling cannot be attached
-              // to a finding nobody reported and cannot be renamed out of its own history.
-              findingId: { type: 'string', enum: knownFindingIds },
-              ...(priorIds.length ? { priorFindingId: { type: 'string', enum: priorIds } } : {}),
-              title: { type: 'string' },
-              severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'info'] },
-              classification: { type: 'string', enum: ['constitutive', 'competitive'] },
-              real: { type: 'boolean' },
-              // The ONLY field in which a reversal may be declared. Schema-level, because
-              // the prose control ("cite an audit trail", "never downgrade a constitutive
-              // finding") already existed in the agent charter and the model rendered no
-              // worse for having ignored it.
-              reversalOf: {
-                type: 'object',
-                additionalProperties: false,
-                required: ['evidence'],
-                properties: {
-                  priorReal: { type: 'boolean' },
-                  priorClassification: { type: 'string', enum: ['constitutive', 'competitive'] },
-                  evidence: { type: 'string' },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  }
-)
+Findings (${list.length}):
+${JSON.stringify(list, null, 2)}`
+const adjudication = await settleAgent(adjudicationPrompt(findings, ''), {
+  label: 'adversarial:adjudicate',
+  phase: 'Adjudicate',
+  agentType: 'agent-teams-workforce:adversarial-critique-adjudicator',
+  schema: rulingsSchema(knownFindingIds),
+})
 
 // A dead adjudicator ruled on nothing. Reading its silence as zero open findings would
 // pass Gate 4 over confirmed findings nobody classified.
@@ -646,6 +646,29 @@ function disagrees(x, y) {
 }
 
 const rawRulings = (Array.isArray(adjudication.rulings) ? adjudication.rulings : []).filter((r) => r && r.findingId)
+
+// A confirmed finding the adjudicator skipped was never classified, and below it counts as an
+// open constitutive finding — which, at a one-attempt Gate 4, fails the run on an omission
+// rather than a ruling. Those findings, and only those, are put to the adjudicator once more:
+// a smaller question, not the same one again. What it still leaves unruled stays open.
+const ruledIds = new Set(rawRulings.map((r) => r.findingId))
+const unruled = findings.filter((f) => !ruledIds.has(f.findingId))
+if (unruled.length) {
+  log(`Adversarial: the adjudicator returned no ruling for ${unruled.length} finding(s) — asking once more for those alone`)
+  const followUp = await settleAgent(
+    adjudicationPrompt(unruled, `Your previous ruling on this change omitted the findings below; rule on each of them. `),
+    {
+      label: 'adversarial:adjudicate-unruled',
+      phase: 'Adjudicate',
+      agentType: 'agent-teams-workforce:adversarial-critique-adjudicator',
+      schema: rulingsSchema(unruled.map((f) => f.findingId)),
+    }
+  )
+  const unruledIds = new Set(unruled.map((f) => f.findingId))
+  for (const r of (followUp && Array.isArray(followUp.rulings) ? followUp.rulings : [])) {
+    if (r && unruledIds.has(r.findingId)) rawRulings.push(r)
+  }
+}
 
 // 1. INTRA-PACKET: two rulings for one findingId that disagree.
 const contradictions = []

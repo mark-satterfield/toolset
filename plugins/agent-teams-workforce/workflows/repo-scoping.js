@@ -544,7 +544,7 @@ Return one entry per file, echoing its slot exactly as given: found=true with th
 Also return \`now\` — the CURRENT time as an ISO-8601 UTC timestamp. Read it from the machine's clock by running exactly \`date -u +%Y-%m-%dT%H:%M:%SZ\` and returning what it prints; do not compose the value from memory or from anything you read in the files above. It is used to age one of them. If the command is unavailable, omit \`now\` rather than guessing — omitting it is handled, and a guessed clock silently ages a file wrong.`
         : ''
     }`,
-    { label: 'replay:read-saved-artifacts', phase: phaseName, effort: 'low', schema: REPLAY_READ_SCHEMA }
+    { label: 'replay:read-saved-artifacts', phase: phaseName, model: 'haiku', effort: 'low', schema: REPLAY_READ_SCHEMA }
   )
   const entries = read && Array.isArray(read.files) ? read.files : []
   if (!entries.length) {
@@ -723,15 +723,21 @@ const pathFault = (label, p) => {
 
 const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 const prdBlock = `${prdHeader}\n\n${prdBody}`
-// The architecture ruling as text. It is the design the placement serves, so both the
-// shaper and the decider get it; the surveyor gets it too, because knowing what is being
-// built is what tells it which repositories are worth describing in detail. All three read
-// the SAME text, so a cut here is a cut for every one of them — which is why it is cut
+// The architecture ruling as text. It is the design the placement serves, so the shaper
+// gets it. The surveyor does not: its inventory is cached across Epics. A cut here is cut
 // through `capped()` and announces itself rather than simply ending.
 const ARCHITECTURE_CAP = 20000
+// A ruling reused from a saved run arrives as the path of its file, with no `decision` in
+// the object. The agents are then told to read that one file, and the shaper's
+// read-nothing budget allows it.
+const rulingFile =
+  !architectureSkipped && !architecture.decision && typeof architecture.decisionPath === 'string' && /^\/[A-Za-z0-9._/-]+$/.test(architecture.decisionPath)
+    ? architecture.decisionPath
+    : null
 const architectureBlock = architectureSkipped
   ? '(no architecture decision was ruled for this PRD — triage found none outstanding, so the design is the existing one. Shape the work from the PRD itself and from the patterns the requirements already imply.)'
-  : capped('architecture ruling', JSON.stringify(architecture, null, 2), ARCHITECTURE_CAP)
+  : capped('architecture ruling', JSON.stringify(architecture, null, 2), ARCHITECTURE_CAP) +
+    (rulingFile ? `\n\nThe ruling itself is the document at ${rulingFile}. Read that one file before you answer.` : '')
 
 // ── THE SURVEY IS CACHED ACROSS EPICS; THE SPAN NEVER IS ────────────────────────
 //
@@ -893,7 +899,7 @@ For each work unit return:
 Also return:
 - designSummary — the shape of the whole, in a few sentences.
 
-READING BUDGET (binding): read NOTHING. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
+READING BUDGET (binding): read NOTHING${rulingFile ? ' except the ruling file named above' : ''}. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
 
 Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a result this phase can use, and an empty list ends the run. Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
       {
@@ -943,23 +949,17 @@ Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a resul
 
 Use the polyrepo-steward's own knowledge and the polyrepo-* skills to answer. Do not open the polyrepo manifest yourself — repository knowledge flows through the steward, so that one participant owns it and the answer stays consistent with every other consumer.
 
-This inventory feeds a placement ruling for the work below. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it.
+This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: this inventory is cached and reused for other PRDs, so it describes the estate, not one PRD's view of it.
 
-The work being placed, for context on which repositories are worth describing in detail:
-${prdBlock}
-
-Architecture ruling for this work:
-${architectureBlock}
-
-For every repository that could plausibly bear on this work, return:
+For every repository the project has, return:
 - repoPath — its absolute local path, exactly as the steward records it.
 - name — its repository name.
 - role — what kind of repository it is (service, infrastructure, shared library, frontend, tooling, docs).
 - owns — the capability it owns, in one line. This is the field the placement turns on: a PRD lands in the repository that already owns the capability far more often than in a new one.
 - lifecycle — active, deprecated, or unknown.
-- notes — anything a placement decision needs: it is empty, it is being retired, it already contains a partial implementation of this work, its conventions differ.
+- notes — anything a placement decision needs: it is empty, it is being retired, its conventions differ.
 
-Include repositories that are adjacent or arguably relevant. A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. This inventory is CACHED and reused by the next PRDs, which are not this one, so enumerate every repository the project has rather than only the ones bearing on the work above.
+A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. Enumerate every repository the project has.
 
 SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
 
@@ -1274,6 +1274,11 @@ const ledger = {
 
 return {
   ok: true,
+  // True only when the shape, the survey and the ruling were ALL read back from saved files,
+  // so no shaper, surveyor or decider ran and the caller may record the phase as reused.
+  ...(replayShape && replaySurvey && replayRuling && !surveyCacheHit ? { resumed: true } : {}),
+  // The saved outputs actually read back and used in place of their sessions.
+  replayed: [replayShape && 'shape', replaySurvey && !surveyCacheHit && 'survey', replayRuling && 'ruling'].filter(Boolean),
   // The span. Everything downstream that fans out per repo reads this and only this.
   repos,
   placements,

@@ -728,15 +728,23 @@ for (let pass = 1; pass <= MAX_PASSES; pass++) {
   checkLimit(`PRD Draft (pass ${pass})`, 'P0 acceptance criteria', prd.acceptanceCriteria, P0_CRITERIA_MAX)
   alignmentVerdict = await verifyAlignment(prd)
   if (!alignmentVerdict) {
-    return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', prd, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
+    return { ok: false, stage: 'prd-draft', reason: 'alignment check returned no verdict', intakeBrief, persona, okrs, scope, prd, dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') }
   }
   checkLimit(`PRD Draft (pass ${pass})`, 'alignment dimensions', alignmentVerdict.dimensions, ALIGNMENT_DIMENSIONS.length)
+  // The verdict is read off the checker's own dimensions: "aligned" beside a dimension it
+  // marked unsatisfied is not alignment, and the unsatisfied evidence is the rework brief.
+  const unsatisfied = (Array.isArray(alignmentVerdict.dimensions) ? alignmentVerdict.dimensions : []).filter((d) => d && d.satisfied === false)
+  if (alignmentVerdict.verdict === 'aligned' && unsatisfied.length) {
+    log(`PRD draft: the checker said aligned but marked ${unsatisfied.map((d) => d.dimension).join(', ')} unsatisfied — read as misaligned`)
+    alignmentVerdict = { ...alignmentVerdict, verdict: 'misaligned' }
+  }
   if (alignmentVerdict.verdict === 'aligned') {
     log(`PRD draft: ALIGNED on pass ${pass}/${MAX_PASSES}`)
     break
   }
-  log(`PRD draft: MISALIGNED pass ${pass}/${MAX_PASSES} — ${alignmentVerdict.feedback}`)
-  feedback = alignmentVerdict.feedback || ''
+  // A misaligned verdict with empty feedback would re-run the maker on identical input.
+  feedback = String(alignmentVerdict.feedback || '').trim() || unsatisfied.map((d) => `${d.dimension}: ${d.evidence}`).join('\n')
+  log(`PRD draft: MISALIGNED pass ${pass}/${MAX_PASSES} — ${feedback || '(no feedback given)'}`)
   if (pass === MAX_PASSES) deadlocked = true
 }
 
@@ -747,7 +755,16 @@ if (deadlocked) {
   decision = await settleAgent(
     `The prd-writer and the independent prd-alignment-verifier could not converge after ${MAX_PASSES} passes. Rule on the standoff. Your ruling is binding.
 
-Latest checker feedback: ${alignmentVerdict.feedback || '(none)'}
+Latest checker feedback: ${feedback || '(none)'}
+
+The checker judged the PRD against these inputs; judge its objection against the same ones.
+
+Intake brief:
+${briefBlock}
+
+${personaBlock}
+
+${okrBlock}
 
 PRD under review (title: ${prd.title}):
 ${prd.prd}

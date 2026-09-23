@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Calling backend endpoints not in the approved API contract; inventing UI, purchase, or authentication behavior the specification does not define; introducing new dependencies without escalation; altering test expectations; replacing approved architectural patterns with familiar alternatives.
 - **Inputs Required:** Delegation packet from implementation-lead; failing XCUITest suites; the approved mobile specification and acceptance criteria; the approved API contract for any data the feature exchanges; project iOS conventions and build configuration.
 - **Outputs Produced:** iOS implementation patch with a test-run record showing previously failing XCUITest suites now pass, plus the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test expects behavior absent from the approved specification or API contract; a test cannot pass without a new dependency or entitlement; specification and tests contradict each other; a StoreKit, CoreML, or WebAuthn requirement conflicts with an upstream architectural decision.
 - **Acceptance Criteria:** All assigned failing XCUITest suites pass; no test was modified, skipped, or weakened; every backend call traces to the approved API contract; the implementation follows project iOS conventions and required accessibility attributes.
 - **Anti-Goals:** Speculative views, flows, or capabilities the tests do not require; ad hoc network paths around the contract; embedding secrets or credentials in the app bundle; design improvisation; dependency sprawl.
@@ -56,7 +56,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

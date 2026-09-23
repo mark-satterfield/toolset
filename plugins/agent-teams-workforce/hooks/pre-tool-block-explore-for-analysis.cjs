@@ -73,7 +73,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(trd|technical requirement|nfr|non-functional)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/trd-authoring.js" })',
-      'agent-teams-workforce:trd-author / agent-teams-workforce:trd-validator',
+      'agent-teams-workforce:trd-author — writes the TRD in one pass; spec authoring is where it is judged',
     ],
   },
   {
@@ -99,7 +99,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(bug|defect|root cause|repro|reproduce|regression|triage)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/bug-triage.js" })',
-      'agent-teams-workforce:root-cause-analyst — classifies where a failure escalates',
+      'agent-teams-workforce:root-cause-analyst — reproduces a defect and diagnoses its root cause',
     ],
   },
   {
@@ -107,7 +107,8 @@ const DOMAIN_ROUTES = [
     pattern: /\b(test plan|test strateg|test design|coverage|tdd|failing test|red phase)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/tdd-red.js" })',
-      'agent-teams-workforce:test-design-lead / agent-teams-workforce:test-coverage-gap-reviewer',
+      'agent-teams-workforce:tdd-unit-test-generator — failing tests from acceptance criteria',
+      'agent-teams-workforce:test-coverage-gap-reviewer — which acceptance criteria lack a covering test',
     ],
   },
   {
@@ -133,7 +134,8 @@ const DOMAIN_ROUTES = [
     pattern: /\b(deploy|rollout|runbook|slo|error budget|cdk|pipeline|finops|drift)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/deploy.js" })',
-      'agent-teams-workforce:deployment-strategy-decider',
+      'agent-teams-workforce:cdk-stack-author — the CDK stacks a deploy rolls out',
+      'agent-teams-workforce:cdk-infrastructure-drift-detector — drift between deployed and CDK state',
     ],
   },
   {
@@ -149,7 +151,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(readme|changelog|user guide|api doc|documentation)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/documentation.js" })',
-      'agent-teams-workforce:documentation-lead',
+      'agent-teams-workforce:documentation-currency-auditor — which docs a change left stale, and whose they are',
     ],
   },
 ];

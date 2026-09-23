@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-change',
   description:
-    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-deploy tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails, decided in code with no agent: a gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated. An assertion Green cannot pass as authored, or two assertions that contradict each other, returns the run to Red: the test-strategy-decider rules a contradiction first, and Red re-authors the losing or defective assertion, bounded. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the change in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The run builds against the BUILD CONTRACT on the Task and holds no architectural judgment of its own: the repository, the spec documents and sections, the acceptance criteria, the Definition of Done, the requirement ids and the SAD decision ids all arrive on the Task from elaboration, and reach every phase that writes code. A Task whose contract names no repository is refused at input, pointing back to elaboration. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
+    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-deploy tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails, decided in code with no agent: a gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated. An assertion Green cannot pass as authored, or two assertions that contradict each other, returns the run to Red: the test-strategy-decider rules a contradiction first, and Red re-authors the losing or defective assertion, bounded. An integration failure is repaired through Green once and the checks run again; re-running them over an unchanged tree cannot change the result. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the change in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The run builds against the BUILD CONTRACT on the Task and holds no architectural judgment of its own: the repository, the spec documents and sections, the acceptance criteria, the Definition of Done, the requirement ids and the SAD decision ids all arrive on the Task from elaboration, and reach every phase that writes code. A Task whose contract names no repository is refused at input, pointing back to elaboration. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Infra Intent' },
@@ -298,7 +298,7 @@ async function settleAgent(prompt, opts) {
 //                                                 //   refuses at `input`. The tree the phases write in
 //                                                 //   comes from the Workspace step, not this value.
 //   runAdversarial?: boolean,                     // run the TRIMMED adversarial lane (default false)
-//   maxLoops?: number,                            // gate retry budget per phase (default 3)
+//   maxLoops?: number,                            // gate retry budget per phase (default 2)
 //   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
 //   Absent, the Workspace step falls back to a `.worktrees/` directory beside the repo.
 //   prCommand — absolute path of the executable settle runs, inside the worktree, as
@@ -451,6 +451,18 @@ function persistRun(outcome) {
 // that died before or inside the workspace step sent settle into the MAIN working tree
 // to commit there. Nothing writes before the workspace step, so until that step verifies
 // a tree there is genuinely nothing to land.
+// The documentation tracks run beside the tail. A track never rejects — a failed docs run is
+// logged and is not the run's failure — and every exit awaits both before Settle commits, so a
+// docs writer still editing the tree cannot race the commit.
+let docTrack = null
+let repairDocTrack = null
+let docContract = null
+function startDocTrack(greenArtifact) {
+  return Promise.resolve(workflow('agent-teams-workforce:documentation', { contract: docContract, green: greenArtifact })).catch((e) => {
+    log(`documentation track failed (non-blocking): ${(e && e.message) || e}`)
+    return null
+  })
+}
 let settleRepoPath = null
 // What the workspace step VERIFIED about that tree. The settle mini re-checks both before
 // it is willing to commit.
@@ -572,6 +584,7 @@ function recordGate(gate, phaseName, attempt, verdict, extra) {
     gate,
     gatePhase: phaseName,
     attempt,
+    // Overridden by gateLoop with the gate's own budget, which is 1 at G3, G4 and G5.
     maxLoops: MAX_LOOPS,
     verdict: (verdict && verdict.verdict) || 'no-verdict',
     criteria: ((verdict && verdict.criteria) || []).map((c) => ({
@@ -648,7 +661,7 @@ function deployEvidence(rows) {
   return {
     deployedToDev: rows.some((r) => r.deployedToDev === true),
     smokePassed: !!(last && last.deployedToDev === true && last.smokePassed === true),
-    deployIteration: rows.length,
+    deployIteration: last ? last.iteration : 0,
   }
 }
 
@@ -750,6 +763,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
   // the exhaustion path simply never saw them.
   let lastVerdict = null
   const attempts = []
+  const rec = (attempt, verdict, extra) => recordGate(gate, phaseName, attempt, verdict, { maxLoops: loopBudget, ...(extra || {}) })
   for (let attempt = 1; attempt <= loopBudget; attempt++) {
     // Announce the START of the attempt. The progress panel cannot tick this phase:
     // its work happens inside a nested workflow(), whose agents the engine puts in
@@ -795,7 +809,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     if (artifact && artifact.phaseBlocked === true) {
       const why = artifact.blockedReason || `${phaseName} reported that its input admits no artifact it could produce`
       log(`${phaseName}: BLOCKED — ${why} Gate ${gate} is NOT run: there is nothing to judge, and a retry would return the same answer.`)
-      recordGate(gate, phaseName, attempt, null, { terminal: 'phase-blocked', blockedReason: why })
+      rec(attempt, null, { terminal: 'phase-blocked', blockedReason: why })
       return { ok: false, phaseBlocked: true, reason: why, artifact }
     }
     // A phase whose producing agents died has no artifact to judge, and a retry would meet
@@ -805,7 +819,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         artifact.reason ||
         `${(artifact.dispatchFailures || []).length || 'one or more'} agent dispatch(es) in ${phaseName} returned nothing`
       log(`${phaseName}: DISPATCH FAILURE — ${why} Gate ${gate} is NOT run: there is nothing to judge, and a retry would meet the same wall.`)
-      recordGate(gate, phaseName, attempt, null, { terminal: 'dispatch-failed', dispatchFailures: artifact.dispatchFailures || [] })
+      rec(attempt, null, { terminal: 'dispatch-failed', dispatchFailures: artifact.dispatchFailures || [] })
       return { ok: false, dispatchFailed: true, dispatchFailures: artifact.dispatchFailures || [], reason: why, artifact }
     }
     // A CONTRADICTION or a DEFECTIVE TEST reported by Green cannot be repaired by another
@@ -814,7 +828,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     if (artifact && (artifact.contradiction || artifact.testDefect) && artifact.greenConfirmed !== true) {
       const what = artifact.contradiction ? 'contradiction' : 'test-defect'
       log(`${phaseName}: ${what.toUpperCase()} reported — gate ${gate} is NOT run and no retry is spent; escalating to red`)
-      recordGate(gate, phaseName, attempt, null, { terminal: what })
+      rec(attempt, null, { terminal: what })
       return {
         ok: false,
         escalate: 'red',
@@ -841,7 +855,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
       verdict = await workflow(route.gateWorkflow || 'agent-teams-workforce:gate-enforce', gateArgs)
     }
     if (!verdict) {
-      recordGate(gate, phaseName, attempt, null, { terminal: 'no-verdict' })
+      rec(attempt, null, { terminal: 'no-verdict' })
       return {
         ok: false,
         reason: `gate ${gate} returned no verdict twice — the judge never ruled, so this is NOT a finding against the phase, whose output stands`,
@@ -853,7 +867,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     // never judged, so it is reported under the environment stage and no retry is spent on a
     // wall the re-dispatch would meet again.
     if (verdict.dispatchFailed === true) {
-      recordGate(gate, phaseName, attempt, verdict, { terminal: 'gate-dispatch-failed', dispatchFailures: verdict.dispatchFailures || [] })
+      rec(attempt, verdict, { terminal: 'gate-dispatch-failed', dispatchFailures: verdict.dispatchFailures || [] })
       log(`Gate ${gate} (${phaseName}): the judge never ruled — ${verdict.feedback || 'no reason given'}`)
       return {
         ok: false,
@@ -864,7 +878,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
         verdict,
       }
     }
-    recordGate(gate, phaseName, attempt, verdict)
+    rec(attempt, verdict)
     lastVerdict = verdict
     attempts.push({
       attempt,
@@ -899,8 +913,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     ]),
   ]
   const judgedUnmet = exhaustedUnmet.filter((cc) => !deterministicLabels.has(cc.criterion)).map((cc) => cc.criterion)
-  recordGate(gate, phaseName, loopBudget, lastVerdict, {
-    maxLoops: loopBudget,
+  rec(loopBudget, lastVerdict, {
     verdict: 'loop-exhausted',
     terminal: measuredFailures.length ? 'deterministic-failure' : 'loop-exhausted',
     measuredFailures,
@@ -973,7 +986,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
 // 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
 const CHECKPOINT_SEMANTICS = '1'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, seq: 0 }
+const cp = { active: false, path: null, walPath: null, inputHash: null, loaded: null, phases: {}, touched: false, pendingRepair: null, seq: 0 }
 // The phases that certify a Green result, in run order, and the fingerprint of that Green.
 const CP_BASIS_KEYS = ['integration', 'adversarial']
 const cpBasis = (greenResult) => cpHash(JSON.stringify((greenResult && greenResult.artifact) ?? null))
@@ -1177,6 +1190,25 @@ async function cpLoad() {
       log(`Checkpoint: ${dropped.join(', ')} NOT reused — ${key} certified a different Green than the one being resumed (a deploy correction replaced Green after it was saved)`)
       break
     }
+  }
+  // A deploy repair that was IN FLIGHT when the run died: its record carries the Green it was
+  // correcting. When that is still the saved Green, the tree may hold a half-made repair that
+  // Integration and Adversarial never certified, so both are dropped and the repair is re-run
+  // first. A record whose basis differs is stale — the repaired Green was saved after it.
+  const pr = phases.pendingRepair
+  delete phases.pendingRepair
+  if (pr && typeof pr === 'object' && typeof pr.feedback === 'string' && pr.feedback && pr.basis === cpBasis(phases.green)) {
+    const priorRulings = (phases.adversarial && Array.isArray(phases.adversarial.standingRulings) && phases.adversarial.standingRulings) || []
+    const dropped = ['integration', 'adversarial'].filter((k) => phases[k] !== undefined)
+    for (const k of dropped) delete phases[k]
+    cp.pendingRepair = {
+      feedback: pr.feedback,
+      smokeTestFiles: Array.isArray(pr.smokeTestFiles) ? pr.smokeTestFiles : [],
+      iteration: Number.isFinite(pr.iteration) ? pr.iteration : 1,
+      priorRulings,
+    }
+    runLedger.push({ phase: 'checkpoint', event: 'repair-pending', path: cp.path, iteration: cp.pendingRepair.iteration, dropped })
+    log(`Checkpoint: a deploy repair (iteration ${cp.pendingRepair.iteration}) was in flight when the run stopped — it is re-run before Integration, and ${dropped.join(', ') || 'nothing'} is re-certified`)
   }
   cp.loaded = phases
   cp.phases = { ...phases }
@@ -1475,7 +1507,10 @@ const tailContract = {
   // empty list is a positive statement — unit/synth coverage only — not an omission.
   surfaces: [],
   testStrategy: null,
+  // The Task's own criteria first — they are part of the build contract and of the checkpoint
+  // key — then the synth assertion every infra change owes.
   acceptanceCriteria: [
+    ...(Array.isArray(bead.acceptanceCriteria) ? bead.acceptanceCriteria.filter(Boolean) : []),
     {
       given: `the provisioning intent for ${bead.title || 'this infra change'} on stacks ${(intent.affectedStacks || []).join(', ') || '(affected stacks)'}`,
       when: 'cdk synth runs against the changed stacks',
@@ -1520,7 +1555,7 @@ red = await gateLoop({
   // report no gaps, and the confirm-existing branch would hand the gate back the very
   // test it just rejected — through a code path the gate's objection never reaches.
   // A re-run after a rejection authors; it does not shop for what it already wrote.
-  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback, skipDiscovery: !!(loop && loop.attempt > 1) }),
+  phaseFn: (feedback, loop) => workflow('agent-teams-workforce:tdd-red', { contract: tailContract, feedback, skipDiscovery: !!(loop && loop.attempt > 1), ...(loop && loop.attempt > 1 && loop.priorArtifact ? { red: loop.priorArtifact } : {}) }),
 })
 if (red.ok) await cpSave('red', red)
 }
@@ -1631,10 +1666,10 @@ async function greenThroughRed(phaseName, extraFeedback) {
       checks: RED_CHECKS,
       escalateTargets: ['infra-intent'],
       // A re-author repairs the assertions on disk rather than shopping for them again.
-      phaseFn: (feedback) =>
+      phaseFn: (feedback, loop) =>
         workflow('agent-teams-workforce:tdd-red', {
           contract: tailContract,
-          red: priorRed,
+          red: (loop && loop.priorArtifact) || priorRed,
           skipDiscovery: true,
           feedback: [rulingBlock, why, feedback].filter(Boolean).join('\n\n'),
         }),
@@ -1662,13 +1697,27 @@ if (green === undefined) {
 if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
 if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
 
+// A deploy repair that was in flight when the previous dispatch stopped is finished first, the
+// way the deploy loop runs it, and then certified by Integration and Adversarial below.
+const resumedRepair = cp.pendingRepair
+if (resumedRepair) {
+  log(`Resuming the deploy repair from iteration ${resumedRepair.iteration} — re-entering Green with its smoke failure`)
+  const through = await greenThroughRed(`TDD Green (resumed deploy repair ${resumedRepair.iteration}/${MAX_DEPLOY_ITERATIONS})`, resumedRepair.feedback)
+  if (through.handback) return through.handback
+  green = through.green
+  if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
+  if (!green.ok) return handback(false, gateStage('green', green), gateHeadline('green', green), green)
+  if (through.reauthored && cp.active) cp.phases.red = red
+  await cpSave('green', green)
+}
+
 // Documentation runs ALONGSIDE the rest of the tail (started after Green, awaited before deploy).
-const docTrack = workflow('agent-teams-workforce:documentation', { contract: tailContract, green: green.artifact })
+docContract = tailContract
+docTrack = startDocTrack(green.artifact)
 
 // Settle the parallel documentation tracks before any early failure return, so a
 // failed run never leaves one as an unhandled rejection or orphaned work. A deploy
 // correction starts its own track for the repair.
-let repairDocTrack = null
 async function failAfterDoc(stage, detail) {
   await Promise.allSettled([docTrack, repairDocTrack])
   return handback(false, gateStage(stage, detail), gateHeadline(stage, detail), detail)
@@ -1680,8 +1729,14 @@ async function failAfterDoc(stage, detail) {
 // criterion carries a PLATFORM BAN (never CloudFormation exports), so it is a hard stop,
 // never deleted. Drift is detected deterministically by deploy.js (`cdkDriftDetected`).
 // Consumed by: Deploy (G5) rolls out to AWS dev only past this gate.
+//
+// One attempt per run of the checks: the integration mini only RUNS them, so re-running it
+// over the same stack reproduces a real failure, and an unmet SSM criterion is a CDK change.
+// certifyIntegration below repairs a failure through Green, or runs the checks again when the
+// test environment was not ready.
 const runIntegration = (phaseName, seed) => gateLoop({
   gate: 'G3', phaseName,
+  maxLoops: 1,
   criteria: [
     { class: 'constitutive', text: 'Cross-stack SSM references resolve (no CloudFormation exports)' },
   ],
@@ -1696,10 +1751,58 @@ const runIntegration = (phaseName, seed) => gateLoop({
     feedback: [seed, feedback].filter(Boolean).join('\n\n'),
   }),
 })
+// Integration, and on a failure the one repair that can change the outcome. Returns
+// `{ integration }` (ok or not) or `{ handback }` to return as is. A repair through Green
+// replaces `green` and saves it, so the saved Integration certifies the repaired Green.
+const MAX_INTEGRATION_REPAIRS = 1
+async function certifyIntegration(phaseName, seed) {
+  let r = await runIntegration(phaseName, seed)
+  for (let repair = 1; !r.ok && repair <= MAX_INTEGRATION_REPAIRS; repair++) {
+    if (r.dispatchFailed || r.phaseBlocked || (r.escalate && r.escalate !== 'green')) break
+    if (r.artifact && r.artifact.ledger) runLedger.push(r.artifact.ledger)
+    const art = r.artifact || {}
+    const envNotReady = !!(art.envSetup && art.envSetup.ready === false)
+    const evidence =
+      [
+        ...(Array.isArray(art.failures) ? art.failures : []),
+        ...(r.unmetCriteria || []).map((cc) => `${cc.criterion}: ${cc.evidence}`),
+      ].join('\n') ||
+      r.reason ||
+      'the integration checks did not pass'
+    if (!envNotReady) {
+      log(`Integration failed against the Green stack — re-entering Green with the failures (repair ${repair}/${MAX_INTEGRATION_REPAIRS}), then running the checks again`)
+      const through = await greenThroughRed(
+        `TDD Green (integration repair ${repair}/${MAX_INTEGRATION_REPAIRS})`,
+        `The infra integration checks FAILED against this stack. The synth assertion passes, but the change breaks what the integration checks exercise. Fix the CDK so these pass, without weakening any assertion:\n${evidence}`
+      )
+      if (through.handback) {
+        await Promise.allSettled([docTrack, repairDocTrack])
+        return through
+      }
+      green = through.green
+      if (green.artifact && green.artifact.ledger) runLedger.push(green.artifact.ledger)
+      if (!green.ok) return { handback: await failAfterDoc('green', green) }
+      if (through.reauthored && cp.active) cp.phases.red = red
+      await cpSave('green', green)
+      await Promise.allSettled([repairDocTrack])
+      repairDocTrack = startDocTrack(green.artifact)
+    } else {
+      log(`Integration: the test environment was not ready — running the checks again, which re-provisions it`)
+    }
+    enterPhase('Integration')
+    r = await runIntegration(
+      `${phaseName} (after ${envNotReady ? 'the environment was not ready' : `Green repair ${repair}`})`,
+      [seed, `The previous integration run failed:\n${evidence}`].filter(Boolean).join('\n\n')
+    )
+  }
+  return { integration: r }
+}
 enterPhase('Integration')
 let integration = cpGet('integration')
 if (integration === undefined) {
-  integration = await runIntegration('Integration Testing', '')
+  const certified = await certifyIntegration('Integration Testing', resumedRepair ? resumedRepair.feedback : '')
+  if (certified.handback) return certified.handback
+  integration = certified.integration
   if (integration.ok) await cpSave('integration', { ...integration, basis: cpBasis(green) })
 }
 if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
@@ -1755,18 +1858,24 @@ if (RUN_ADVERSARIAL) {
   enterPhase('Adversarial')
   adv = cpGet('adversarial')
   if (adv === undefined) {
-    adv = await runAdversarial('Adversarial Validation', '', [])
+    adv = await runAdversarial('Adversarial Validation', resumedRepair ? resumedRepair.feedback : '', resumedRepair ? resumedRepair.priorRulings : [])
     if (adv.ok) await cpSave('adversarial', { ...adv, basis: cpBasis(green), standingRulings: standingRulings(adv) })
   }
+  if (adv.artifact && adv.artifact.ledger) runLedger.push(adv.artifact.ledger)
   if (!adv.ok) return await failAfterDoc('adversarial', adv)
   adversarial = adv.artifact
 } else {
   log('Adversarial lane skipped (runAdversarial=false) — trimmed infra path')
 }
 
-// Documentation must be current before the deploy.
+// Documentation must be current before the deploy, including the track for an integration repair.
 const docCurrency = await docTrack
 if (docCurrency && docCurrency.ledger) runLedger.push(docCurrency.ledger)
+if (repairDocTrack) {
+  const repairDocs = await repairDocTrack
+  repairDocTrack = null
+  if (repairDocs && repairDocs.ledger) runLedger.push(repairDocs.ledger)
+}
 
 // ── Deploy to dev (Gate 5) — dev IS deployed; only qa/prod is human-gated ───────
 // Deploying to dev is how infrastructure reaches AWS and is part of the
@@ -1788,12 +1897,14 @@ const deployIterations = []
 let deployReady = null
 let deployIteration = 0
 let smokeFeedback = ''
-let smokeSuite = []
+let smokeSuite = resumedRepair ? resumedRepair.smokeTestFiles : []
 // The repository the worktree belongs to, as git reports it: the dev deployment lease is
 // keyed on it, because every worktree path differs and two runs in one repository deploy
 // the same stacks.
 const leaseScope = (workspace.verification && workspace.verification.gitCommonDir) || null
-for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIteration++) {
+// A resumed deploy repair continues the iteration count it was interrupted in.
+const firstDeployIteration = resumedRepair ? Math.min(resumedRepair.iteration + 1, MAX_DEPLOY_ITERATIONS) : 1
+for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIteration++) {
   enterPhase('Deploy-to-dev')
   // Distinct per-iteration telemetry so a monitor can render "deploy #2".
   log(`Deploy to dev — iteration ${deployIteration}/${MAX_DEPLOY_ITERATIONS} (stage deploy-to-dev#${deployIteration})`)
@@ -1866,8 +1977,15 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   const failedCases = (Array.isArray(rolloutOut.smokeCases) ? rolloutOut.smokeCases : []).filter((sc) => sc && sc.passed !== true)
   const smokeFailedInDev = deployArtifact.deployedToDev === true && deployArtifact.smokePassed !== true && failedCases.length > 0
   if (!smokeFailedInDev) {
+    // Another Task holding the shared dev lease is the environment, not this work.
+    const leaseBlocked = typeof deployArtifact.leaseBlocked === 'string' && deployArtifact.leaseBlocked ? deployArtifact.leaseBlocked : null
     return {
-      ...handback(false, gateStage('deploy-to-dev', deployReady), gateHeadline('deploy-to-dev', deployReady), { ...deployReady, deployIterations }),
+      ...handback(
+        false,
+        leaseBlocked ? 'agent-dispatch-failed' : gateStage('deploy-to-dev', deployReady),
+        leaseBlocked ? `deploy-to-dev: ${leaseBlocked}` : gateHeadline('deploy-to-dev', deployReady),
+        { ...deployReady, deployIterations }
+      ),
       ...deployEvidence(deployIterations),
     }
   }
@@ -1899,6 +2017,9 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
     `The previous deploy iteration (${deployIteration}/${MAX_DEPLOY_ITERATIONS}) DID reach the AWS dev environment, ` +
     `and the smoke tests then FAILED against the deployed endpoints. This is a real defect the deployed environment ` +
     `has proved, not a test-harness problem. Smoke failure: ${smokeEvidence}`
+  // Saved BEFORE the repair edits the tree: a run killed mid-repair must not resume on this
+  // Green with its Integration and Adversarial still counted as certifying it.
+  await cpSave('pendingRepair', { basis: cpBasis(green), iteration: deployIteration, smokeTestFiles: smokeSuite, feedback: smokeFeedback })
 
   // Back through Green — the fix — then round the loop to deploy again. Red is re-run only
   // if Green reports an assertion it cannot pass or a contradiction: the failing assertion
@@ -1915,7 +2036,7 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   await cpSave('green', green)
   // Documentation for the repair runs alongside its re-certification, scoped to the files
   // the repair changed, and is awaited before the redeploy.
-  repairDocTrack = workflow('agent-teams-workforce:documentation', { contract: tailContract, green: green.artifact })
+  repairDocTrack = startDocTrack(green.artifact)
 
   // ── A REPAIR IS NEW CODE, AND NEW CODE IS UNCERTIFIED ────────────────────────
   // Integration and Adversarial certified the stack before this repair. Integration re-runs
@@ -1924,7 +2045,9 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
   // previous pass. A failure here keeps deployEvidence: the rollout that already reached dev
   // is not un-deployed by a later phase failing.
   enterPhase('Integration')
-  integration = await runIntegration(`Integration Testing (after deploy correction ${deployIteration})`, smokeFeedback)
+  const certified = await certifyIntegration(`Integration Testing (after deploy correction ${deployIteration})`, smokeFeedback)
+  if (certified.handback) return { ...certified.handback, ...deployEvidence(deployIterations) }
+  integration = certified.integration
   if (integration.artifact && integration.artifact.ledger) runLedger.push(integration.artifact.ledger)
   if (!integration.ok) return { ...(await failAfterDoc('integration', integration)), ...deployEvidence(deployIterations) }
   await cpSave('integration', { ...integration, basis: cpBasis(green) })
@@ -1959,7 +2082,8 @@ for (deployIteration = 1; deployIteration <= MAX_DEPLOY_ITERATIONS; deployIterat
 const finalDeploy = deployReady.artifact || {}
 const deployedToDev = finalDeploy.deployedToDev === true
 const smokePassed = finalDeploy.smokePassed === true
-const iterationNote = deployIterations.length > 1 ? ` after ${deployIterations.length} deploy iterations` : ''
+const lastIteration = deployIterations.length ? deployIterations[deployIterations.length - 1].iteration : 0
+const iterationNote = lastIteration > 1 ? ` after ${lastIteration} deploy iterations` : ''
 return {
   ...handback(
     true,
@@ -2000,7 +2124,7 @@ return {
   // dashboard reads. Git truth is added on top by applySettle.
   deployedToDev,
   smokePassed,
-  deployIteration: deployIterations.length,
+  deployIteration: lastIteration,
 }
   })()
 } catch (err) {
@@ -2024,14 +2148,17 @@ return {
   // interrupted run in any case.
   const message = String((err && err.message) || err)
   const deaths = dispatchDeaths()
+  // Only an infrastructure cause is the environment's. The dispatch deaths recorded so far were
+  // already handled where they happened, so a throw beside them is still the script's own fault.
+  const environmental = failureCause(err) === 'transient' || /session limit|usage limit|spend limit|credit balance|out of credits/i.test(message)
   const where = currentPhase || 'unknown'
   const slug = String(where).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown'
   log(`RUN ABORTED in ${where}: ${message.slice(0, 300)}`)
   result = handback(
     false,
-    deaths.length ? 'agent-dispatch-failed' : slug,
+    environmental ? 'agent-dispatch-failed' : slug,
     `${where}: the run threw and was finalised rather than discarded — ${message.slice(0, 300)}`,
-    { reason: message.slice(0, 400), dispatchFailed: deaths.length > 0, dispatchFailures: deaths }
+    { reason: message.slice(0, 400), dispatchFailed: environmental, dispatchFailures: deaths }
   )
 } finally {
   // The journal is written FIRST, because it is now the only place the run's detail exists
@@ -2045,6 +2172,7 @@ return {
   enterPhase('Run Ledger')
   const detailPath = await persistRun(result && result.ok ? 'ok' : `failed:${(result && result.stage) || 'unknown'}`)
   if (result) result.detailPath = detailPath || null
+  await Promise.allSettled([docTrack, repairDocTrack])
   enterPhase('Settle')
   const settle = await settleRun()
   if (result) applySettle(result, settle)

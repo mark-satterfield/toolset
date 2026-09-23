@@ -763,7 +763,12 @@ for (const w of deadWriters) noteDead(`red:${w}`)
 const writerResults = writerResultsRaw.filter(Boolean)
 
 const testFiles = writerResults.flatMap((r) => (r && r.testFiles) || [])
-const redConfirmed = writerResults.length > 0 && writerResults.every((r) => r && r.redConfirmed)
+// Red is judged over the writers that AUTHORED something. A surface writer with nothing of
+// its specialty to add (a web-ui writer whose gap the unit tests already cover) returns no
+// file and redConfirmed:false; counting that as "the tests did not fail" failed a genuine
+// Red, and every retry re-asked the same writer the same question.
+const authoringWriters = writerResults.filter((r) => r && Array.isArray(r.testFiles) && r.testFiles.length)
+const redConfirmed = authoringWriters.length > 0 && authoringWriters.every((r) => r.redConfirmed === true)
 const evidence = writerResults.map((r) => r && r.evidence).filter(Boolean).join('\n---\n')
 
 // ── A CONTRACT THAT ADMITS NO TEST IS NOT A FAILED PHASE ──────────────────────
@@ -864,9 +869,10 @@ for (const entry of greenPath) {
     )
   }
 }
-const declaredFor = new Set(greenPath.map((e) => normPath(e.testFile)))
-for (const f of testFiles) {
-  if (!declaredFor.has(normPath(f))) greenPathFindings.push(`${f}: no greenPath entry — the test declares no route to green`)
+// Matched the way targetFile is: writers report testFiles absolute and greenPath entries
+// repo-relative (or the reverse), and an exact comparison failed every such Red.
+for (const f of [...new Set(testFiles)]) {
+  if (!greenPath.some((e) => sameFile(e.testFile, f))) greenPathFindings.push(`${f}: no greenPath entry — the test declares no route to green`)
 }
 const greenReachable = redConfirmed && greenPathFindings.length === 0
 if (greenPathFindings.length) {
@@ -912,6 +918,17 @@ if (deadWriters.length) {
   }
 }
 
+// What a retry must fix, in words. The gate's check feedback names only the boolean that
+// failed, and a writer re-dispatched on "greenReachable = false" cannot tell which test lacks
+// its path to green.
+const failureReason = [
+  !authoringWriters.length ? 'no writer authored a test file' : '',
+  authoringWriters.length && !redConfirmed
+    ? `not Red: ${authoringWriters.filter((r) => r.redConfirmed !== true).flatMap((r) => r.testFiles).join(', ')} did not fail as intended`
+    : '',
+  ...greenPathFindings,
+].filter(Boolean)
+
 return {
   testFiles,
   redConfirmed,
@@ -920,6 +937,7 @@ return {
   greenReachable,
   greenPathChecked: true,
   greenPathFindings,
+  ...(failureReason.length ? { reason: failureReason.join(' | ') } : {}),
   // Auxiliary dispatches that died without stopping the phase. Carried so the gate's
   // reader can tell "discovery found nothing" from "discovery never ran", which are the
   // same empty array otherwise.

@@ -414,7 +414,9 @@ const escalateTarget = (a.escalateTargets && a.escalateTargets[0]) || 'upstream'
 if (contradicted) {
   phase('Gate (constitutional)')
   const { node, contradictions } = contradicted
-  const ids = contradictions.map((cx) => cx && cx.findingId).filter(Boolean)
+  // One id per finding: three disagreeing rulings on one finding produce two contradiction
+  // entries, and a repeated value in the schema enum below is an invalid schema.
+  const ids = [...new Set(contradictions.map((cx) => cx && cx.findingId).filter(Boolean))]
   const idSet = new Set(ids)
   const findings = (Array.isArray(node.findings) ? node.findings : []).filter((f) => f && idSet.has(f.findingId))
   const adjudication = asPacketObject(node.adjudication)

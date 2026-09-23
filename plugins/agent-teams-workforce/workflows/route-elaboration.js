@@ -290,6 +290,7 @@ async function settleAgent(prompt, opts) {
 //     title?:       string,
 //     description?: string,
 //     parentType?:  string,
+//     parentId?:    string,          // a Story's Epic — the bead prd-to-spec is run over
 //     ancestorTypes?: string[],
 //   },
 //   allowAmbiguityAgent?: boolean,   // default true
@@ -382,7 +383,7 @@ function deterministicRoute() {
     }
     return elaborate(
       'prd-to-spec',
-      `working this story was human-initiated → prd-to-spec, whose task-decomposition phase reconciles the Story with its Spec and emits the Task beads parented to it. A Story that ALREADY has Tasks may still need this — the Spec may have moved on.`,
+      `working this story was human-initiated → prd-to-spec, run over the Story's parent Epic${bead.parentId ? ` (${bead.parentId})` : ''} — prd-to-spec takes an Epic, never a Story — whose task-decomposition phase reconciles the Story with its Spec and emits the Task beads parented to it. A Story that ALREADY has Tasks may still need this — the Spec may have moved on.`,
     )
   }
 
@@ -512,7 +513,7 @@ if (!kind || kind === 'other' || !confident) {
 // agent's answer.
 let final
 if (kind === 'epic' || kind === 'story' || kind === 'feature') {
-  const what = kind === 'feature' ? 'feature-shaped work with no hierarchy yet' : `an ${kind}`
+  const what = kind === 'feature' ? 'feature-shaped work with no hierarchy yet' : kind === 'epic' ? 'an epic' : `a ${kind}`
   final = humanInitiated
     ? elaborate('prd-to-spec', `classified as ${what} and the run is human-initiated: ${agentReason} → prd-to-spec`)
     : skip(`classified as ${what}: ${agentReason}. Elaborating its document is a decision to build, which is a human's call, not a sweep's → SKIP (invoke /agent-teams-workforce:work-bead ${id} to proceed)`)

@@ -161,9 +161,9 @@ This applies to:
 - deployment plans
 - release decisions
 
-Every agent **MUST** review it's own work for correctness, completeness, and risk, but it may not approve it, and therefore may not end until it is approved by another agent.
+Every agent **MUST** review it's own work for correctness, completeness, and risk, but it may not approve it.
 
-Independent review is mandatory for any agent that creates or modifies a project artifact, or makes, recommends, or records an architectural decision.
+Where an independent reviewer's verdict can change what gets built, that review is mandatory (Rule 4). Where it cannot, the output is judged by the phase that consumes it, never approved by the agent that made it.
 
 ### **5.6 Separation of Intent, Design, Implementation, and Review**
 
@@ -358,21 +358,16 @@ Examples:
 
 If an agent does not produce a defined output, its role should be questioned.
 
-### **Rule 4: Every Mutable Output Requires Independent Review**
+### **Rule 4: Independent Review Only Where Its Verdict Can Change What Gets Built**
 
-Any agent that creates or modifies a deliverable must have an independent reviewer.
+An output gets an independent reviewer when that reviewer's verdict can change what gets built: send the artifact back, stop the run, or change what the next phase receives.
 
-This applies to:
+An output never gets a second review of a question already decided:
 
-- code
-- infrastructure
-- schemas
-- documentation
-- diagrams
-- test plans
-- architecture decisions
-- deployment plans
-- operational runbooks
+- a property a deterministic check measures is decided by the check, and no agent re-judges it
+- a question an earlier reviewer ruled on is not reviewed again downstream
+
+An output no verdict could change has no reviewer, and is still not approved by its author. It is judged where it is used. A review whose verdict nothing reads, or that repeats a decided question, is removed rather than kept as advisory.
 
 ### **Rule 5: Agents Must State Assumptions**
 
@@ -470,7 +465,7 @@ Invalid consolidation reasons include:
 
 Agents must not be consolidated if doing so removes:
 
-- independent review
+- an independent review Rule 4 requires
 - separation of concerns
 - conflict visibility
 - authority boundaries

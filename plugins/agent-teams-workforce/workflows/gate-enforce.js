@@ -490,11 +490,19 @@ phase('Gate')
 
 if (failedChecks.length) {
   const detail = failedChecks.map((r) => `${r.criterion} — ${r.evidence}`).join('; ')
+  // The observed value says WHICH condition failed, not why. The phase's own account of why
+  // rides along, so a retry has something to act on beyond "field = false".
+  const art = a.artifact && typeof a.artifact === 'object' ? a.artifact : {}
+  const phaseReason = [art.reason, art.error, Array.isArray(art.failures) ? art.failures.join('; ') : '']
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter(Boolean)
+    .join(' | ')
+    .slice(0, 2000)
   log(`Gate ${a.gate || '?'} (${a.phaseName || 'phase'}): LOOP on deterministic check(s), no adjudication needed — ${detail}`)
   return {
     verdict: 'loop',
     criteria: checkResults,
-    feedback: `The phase did not meet a mechanically-verified condition, so there is nothing to adjudicate: ${detail}. Fix that and re-run; do not argue the observation.`,
+    feedback: `The phase did not meet a mechanically-verified condition, so there is nothing to adjudicate: ${detail}.${phaseReason ? ` The phase reported: ${phaseReason}.` : ''} Fix that and re-run; do not argue the observation.`,
     flags: [],
     deterministic: true,
     deterministicChecks: checkResults,

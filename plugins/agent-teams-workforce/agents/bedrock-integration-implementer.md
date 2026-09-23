@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Swapping the specified model or model version; altering specified inference parameters such as temperature or token limits; rewriting prompt templates to make a test pass; hardcoding credentials or bypassing the specified authentication path; altering test expectations.
 - **Inputs Required:** Delegation packet from implementation-lead; failing unit tests; the ml-evaluation-tester suite expectations for the component; the approved integration specification with model identifiers, inference parameters, prompt templates, and error-handling rules; interface definitions for downstream consumers; project conventions.
 - **Outputs Produced:** Bedrock integration implementation patch with a test-run record showing previously failing unit tests now pass and the ml-evaluation-tester suites pass, plus the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test encodes outputs the specified model and parameters cannot produce; the specification omits an inference parameter, template variable, or error-handling rule a test depends on; satisfying a test would require changing the specified model or parameters; quota, region, or permission constraints block the specified invocation path.
 - **Acceptance Criteria:** All assigned failing unit tests pass; the ml-evaluation-tester suites for the component pass; no test was modified, skipped, or weakened; every model identifier, parameter, and template traces to the specification; no secret or credential appears in code or logs.
 - **Anti-Goals:** Model or parameter substitution disguised as implementation; prompt edits to dodge failing tests; untyped pass-through of raw model responses; cleverness beyond what the tests require.
@@ -57,7 +57,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

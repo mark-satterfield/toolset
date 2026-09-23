@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Changing schemas, metric definitions, or model grain relative to the specification; pointing tables at lake paths the layout specification does not define; substituting one query engine for the other where the specification names one; altering test expectations.
 - **Inputs Required:** Delegation packet from implementation-lead; failing suites authored by data-pipeline-test-writer; the approved data model specification, analytics requirements, and lake layout specification; project SQL conventions.
 - **Outputs Produced:** Analytics implementation patch (DDL, views, models, queries) with a test-run record showing previously failing suites now pass; a deployment-requirements note (workgroup, database, warehouse, and load assumptions) for Deployment team coordination; the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test asserts a metric or column absent from the specification; the specified lake layout cannot supply the data a tested model requires; a tested result depends on warehouse configuration rather than SQL.
 - **Acceptance Criteria:** All assigned data-pipeline-test-writer suites pass; no test was modified, skipped, or weakened; every table definition matches the specified lake layout and schemas; every metric traces to its specified definition; the deployment-requirements note is complete.
 - **Anti-Goals:** Improvised metrics or columns; full-scan queries where the specification promises partition pruning; models that duplicate ETL transformation responsibilities; speculative views the tests do not require.
@@ -56,7 +56,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. Otherwise a read-only code-quality-lead SELECTS which optimizers to run for what changed; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. The refactorer, the optimizers and the reviewer each receive pointers to the contract the change was built to — the spec documents and sections and the SAD decision ids — so a refactor stays inside the design. Lead/advisor/checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
+    'Shared-tail mini — TDD Refactor. complexity-analyzer advises FIRST (read-only), and when it returns no recommendations the phase ENDS THERE — nothing is routed, edited, or reviewed, because the only agent qualified to judge has said the change needs no cleanup. The same read-only analysis names which optimizer specialties the change calls for; the code-refactoring-specialist and the selected optimizers apply behavior-preserving changes SEQUENTIALLY (tests stay green after each), then an independent code-correctness-reviewer confirms no regression. A null analysis means unknown, not nothing, and does not skip; a re-run carrying gate feedback always proceeds. The refactorer, the optimizers and the reviewer each receive pointers to the contract the change was built to — the spec documents and sections and the SAD decision ids — so a refactor stays inside the design. Advisor and checker are read-only — only the refactorer and selected optimizers edit code; no self-approval.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving cleanup + optimizer selection + independent review' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -337,9 +337,11 @@ async function restoreGreen(tree, why) {
     `RESTORE this worktree to the snapshot taken before a refactor, because ${why}. Run these commands exactly, in order, and nothing else that writes:
 
 1. git -C "${repo}" add -A
-2. git -C "${repo}" diff --cached --name-only ${tree}
-   These are the paths that changed since the snapshot. Set aside the documentation paths (${DOC_PATHS}) — a concurrent documentation step owns them. Every OTHER path is restored.
-3. git -C "${repo}" restore --source=${tree} --staged --worktree -- <each path from step 2 that is not documentation>
+2. git -C "${repo}" diff --cached --no-renames --name-status ${tree}
+   These are the paths that changed since the snapshot, each with its status letter. Set aside the documentation paths (${DOC_PATHS}) — a concurrent documentation step owns them. Every OTHER path is restored in step 3.
+3. For each non-documentation path from step 2:
+   - status A (the file did not exist at the snapshot): git -C "${repo}" rm -f -q -- <path>
+   - any other status: git -C "${repo}" restore --source=${tree} --staged --worktree -- <path>
 4. git -C "${repo}" diff --cached --name-only ${tree}
    Report restored=true only if this lists documentation paths and nothing else.
 
@@ -398,12 +400,29 @@ if (!repoPathOk) {
   }
 }
 
-// 1) ADVISOR — complexity-analyzer reads the green-tested change and returns prioritized
-// refactor recommendations. READ-ONLY: it makes no edits; its output informs selection.
-const complexity = await settleAgent(
-  `Analyze the code changed by the fix for complexity, duplication, and refactor opportunities. You are READ-ONLY — make NO edits. Return a prioritized list of refactor recommendations the downstream refactorer and optimizers will act on. Work within: ${repo}
+// The optimizers this mini may dispatch, each an EDITOR that applies its change and reruns
+// the suite. accessibility-validator is not one: it reports violations and never edits, so as
+// an "optimizer" its findings were read by nothing and its testsGreen answer could only undo
+// the refactor.
+const OPTIMIZER_ROSTER = {
+  'lambda-performance-optimizer': 'Lambda hot paths, cold start, memory sizing',
+  'dynamodb-cost-optimizer': 'DynamoDB capacity, access patterns, index cost',
+  'frontend-performance-optimizer': 'web/frontend bundle, render path, Core Web Vitals',
+  'code-style-and-linting-enforcer': 'lint/format/style cleanup',
+}
 
-Changed files from the fix: ${changedFromGreen}`,
+// 1) ADVISOR — complexity-analyzer reads the green-tested change and returns prioritized
+// refactor recommendations, and names which optimizer specialties the change calls for.
+// READ-ONLY: it makes no edits. Naming the optimizers here, from the same reading of the
+// code, replaces a separate routing session that re-read the change to answer it.
+const complexity = await settleAgent(
+  `Analyze the code changed by the fix for complexity, duplication, and refactor opportunities. You are READ-ONLY — make NO edits. Return a prioritized list of refactor recommendations the downstream refactorer will act on; return an EMPTY list when the change needs no cleanup — that ends the phase. Work within: ${repo}
+
+Changed files from the fix: ${changedFromGreen}
+
+Also name, in \`optimizers\`, the FEWEST optimizer specialties whose work this change calls for, in the order they should run (each runs after the refactorer, one at a time), drawn ONLY from:
+${Object.entries(OPTIMIZER_ROSTER).map(([name, what]) => `- ${name}: ${what}`).join('\n')}
+Name none when none applies.`,
   {
     label: 'refactor:analyze-complexity',
     phase: 'Refactor',
@@ -411,9 +430,10 @@ Changed files from the fix: ${changedFromGreen}`,
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['recommendations'],
+      required: ['recommendations', 'optimizers'],
       properties: {
         recommendations: { type: 'array', items: { type: 'string' } },
+        optimizers: { type: 'array', items: { type: 'string' } },
         hotspots: { type: 'array', items: { type: 'string' } },
         notes: { type: 'string' },
       },
@@ -425,12 +445,9 @@ Changed files from the fix: ${changedFromGreen}`,
 //
 // The analyzer is advisory and READ-ONLY, so an empty recommendation list is a
 // real finding: this change carries no complexity, duplication, or cleanup worth
-// making. Everything below — the optimizer router, the refactoring specialist,
-// each selected optimizer, the independent correctness reviewer, and the gate
-// that judges them — is then pure cost. That is roughly six turns of quality work
-// spent on code that has just passed its tests and that the only agent qualified
-// to assess it says needs nothing. For a one-line fix it was the largest unearned
-// expense in the tail.
+// making. Everything below — the refactoring specialist, each selected optimizer,
+// the independent correctness reviewer, and the gate that judges them — is then
+// pure cost on code that has just passed its tests.
 //
 // Two guards on the exit. A NULL analysis means UNKNOWN, not "nothing", and must
 // never skip — an analyzer that died is not an analyzer that approved. And a
@@ -442,7 +459,7 @@ const recommendations =
     ? complexity.recommendations.filter((r) => String(r || '').trim())
     : null
 if (recommendations && !recommendations.length && !a.feedback) {
-  log('Refactor: complexity analysis found nothing to do — skipping optimizer selection, the refactorer, and the review')
+  log('Refactor: complexity analysis found nothing to do — skipping the refactorer, the optimizers, and the review')
   return {
     refactor: null,
     optimizers: [],
@@ -460,50 +477,11 @@ if (recommendations && !recommendations.length && !a.feedback) {
   }
 }
 
-// 2) SELECTION — code-quality-lead is a READ-ONLY router. It selects the FEWEST optimizers
-// whose specialty matches what changed (Lambda hot paths, DynamoDB access, frontend, style,
-// a11y). It writes no code. On empty selection the mini falls back to no optimizers (the
-// refactoring-specialist alone), which is the 'default' mode in the ledger.
-const OPTIMIZER_ROSTER = [
-  'lambda-performance-optimizer',
-  'dynamodb-cost-optimizer',
-  'frontend-performance-optimizer',
-  'code-style-and-linting-enforcer',
-  'accessibility-validator',
+// 2) SELECTION — the analyzer's named optimizers, filtered to the roster. None named (or a
+// dead analyzer) means the refactoring-specialist runs alone: the 'default' mode.
+const pickedOptimizers = [
+  ...new Set(complexity && Array.isArray(complexity.optimizers) ? complexity.optimizers.filter((o) => Object.prototype.hasOwnProperty.call(OPTIMIZER_ROSTER, o)) : []),
 ]
-const selection = await settleAgent(
-  `You are the code-quality-lead — a READ-ONLY router. Do NOT write code. Based on what the fix changed and the complexity analysis, select the FEWEST optimizer agent(s) whose specialty applies, drawn ONLY from: ${OPTIMIZER_ROSTER.join(', ')}.
-- lambda-performance-optimizer: Lambda hot paths, cold start, memory sizing.
-- dynamodb-cost-optimizer: DynamoDB capacity, access patterns, index cost.
-- frontend-performance-optimizer: web/frontend bundle, render path, Core Web Vitals.
-- code-style-and-linting-enforcer: lint/format/style cleanup.
-- accessibility-validator: UI a11y (WCAG 2.2 A/AA) — select only when the change touches UI.
-Select none if no optimizer applies (the refactoring-specialist alone will run). Order them so earlier ones lay groundwork for later ones; they will run SEQUENTIALLY so tests stay green after each.
-
-Work within the repository at: ${repo}
-
-Changed files from the fix: ${changedFromGreen}
-Complexity recommendations: ${(complexity && complexity.recommendations || []).join('; ') || 'n/a'}`,
-  {
-    label: 'refactor:select-optimizers',
-    effort: 'low',
-    phase: 'Refactor',
-    agentType: 'agent-teams-workforce:code-quality-lead',
-    schema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['optimizers', 'rationale'],
-      properties: {
-        optimizers: { type: 'array', items: { type: 'string' } },
-        rationale: { type: 'string' },
-      },
-    },
-  }
-)
-const pickedOptimizers =
-  selection && Array.isArray(selection.optimizers)
-    ? selection.optimizers.filter((o) => OPTIMIZER_ROSTER.includes(o))
-    : []
 const selectionMode = pickedOptimizers.length ? 'selected' : 'default'
 
 // The Green snapshot. Taken here, after the read-only steps and before the first edit.
@@ -669,8 +647,8 @@ Optimizers run: ${pickedOptimizers.join(', ') || 'none'}${contractBlock}`,
 )
 
 // Decision ledger — what this phase actually did, for over-time mining.
-// chosen = the writers + checker that ran, in order. mode 'selected' = code-quality-lead
-// chose optimizers; mode 'default' = no optimizer applied and only the fixed pair ran.
+// chosen = the writers + checker that ran, in order. mode 'selected' = the complexity-analyzer
+// named optimizers; mode 'default' = no optimizer applied and only the fixed pair ran.
 const ledger = {
   phase: 'refactor',
   beadId,

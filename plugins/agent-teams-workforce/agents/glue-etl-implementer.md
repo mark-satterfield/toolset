@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Changing source or target schemas, partition strategy, or data contracts relative to the specification; substituting a streaming pattern for the specified batch pattern; selecting deployment strategy (deployment-strategy-decider territory); altering test expectations.
 - **Inputs Required:** Delegation packet from implementation-lead; failing suites authored by data-pipeline-test-writer; the approved data model and pipeline specifications; project data engineering conventions.
 - **Outputs Produced:** Glue ETL implementation patch with a test-run record showing previously failing suites now pass; a deployment-requirements note (job parameters, connections, worker configuration the job assumes) for Deployment team coordination; the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test requires a transformation, source, or attribute absent from the specification; the specified schemas cannot be reconciled by transformation alone; the job cannot meet a specified behavior without infrastructure changes (capacity, connections, networking).
 - **Acceptance Criteria:** All assigned data-pipeline-test-writer suites pass; no test was modified, skipped, or weakened; every transformation traces to a specified contract; incremental-processing behavior matches the specification; the deployment-requirements note is complete.
 - **Anti-Goals:** Speculative transformations the tests do not require; silent schema drift; bypassing job bookmarks to force reprocessing; embedding infrastructure definitions inside job code.
@@ -55,7 +55,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

@@ -317,7 +317,8 @@ const IMPLEMENTER_ROSTER = [
   'cdk-stack-author',
 ]
 
-// args: { contract, red, implementer?, feedback? }
+// args: { contract, red, implementer?, implementers?, feedback? }
+//   implementers?: string[]  // a prior attempt's selection (its ledger.chosen), reused on a retry
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const red = a.red || {}
@@ -424,14 +425,26 @@ const specBlock = (() => {
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()
 
+// Red's evidence is every writer's captured output joined, and it reaches the lead and every
+// implementer. The implementer re-runs the tests itself, so the head of it is enough.
+const RED_EVIDENCE_CHARS = 4000
+const redEvidence = typeof red.evidence === 'string' ? red.evidence.trim() : ''
+// Each Red test already declared the production file and symbol whose change makes it pass.
+const greenPathBlock = (() => {
+  const entries = (Array.isArray(red.greenPath) ? red.greenPath : []).filter((e) => e && str(e.targetFile))
+  return entries.length
+    ? `\nWhere each test expects the change (declared by the test author):\n${entries.map((e) => `  - ${str(e.testFile) || '(test)'} → ${str(e.targetFile)}${str(e.targetSymbol) ? ` :: ${str(e.targetSymbol)}` : ''}`).join('\n')}`
+    : ''
+})()
+
 const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || ''}: ${c.bead.title || ''}` : 'Feature implementation'}${
   beadDescription ? `\n\n${beadDescription}` : ''
 }${isBugContract ? `\n\nReproduction: ${c.reproduction || 'n/a'}\nRoot cause: ${c.rootCause || 'n/a'}` : ''}${specBlock}
 
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 ${ac.length ? `\nAcceptance criteria this change satisfies:\n${ac.map(acLine).join('\n')}\n` : ''}
-Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}
-Red evidence: ${red.evidence || 'n/a'}`
+Failing test(s) to satisfy: ${(red.testFiles || []).join(', ') || 'n/a'}${greenPathBlock}
+Red evidence${redEvidence.length > RED_EVIDENCE_CHARS ? ` (first ${RED_EVIDENCE_CHARS} characters — run the failing tests for the rest)` : ''}: ${redEvidence.slice(0, RED_EVIDENCE_CHARS) || 'n/a'}`
 
 phase('Green')
 
@@ -457,6 +470,11 @@ if (a.implementer) {
   }
   implementers = [a.implementer]
   selectionMode = 'selected'
+} else if (Array.isArray(a.implementers) && a.implementers.some((i) => IMPLEMENTER_ROSTER.includes(i))) {
+  // A retry of the same Task hands back the set an earlier attempt selected (its
+  // ledger.chosen), so the routing question is not asked again over the same change.
+  implementers = [...new Set(a.implementers.filter((i) => IMPLEMENTER_ROSTER.includes(i)))]
+  selectionMode = 'reused'
 } else {
   const selection = await settleAgent(
     `You are the implementation-lead — a READ-ONLY router. Do NOT write code. Select the FEWEST implementer agent(s) whose specialty covers this change, drawn ONLY from the implementer roster: ${IMPLEMENTER_ROSTER.join(', ')}. Any name outside this list is discarded. A standard Python-Lambda service change is chassis-extension-implementer alone. Order them so earlier ones lay groundwork for later ones.
@@ -586,6 +604,7 @@ Constraints: minimum change to pass; build to the contract above; do not modify 
 
 // Decision ledger — what this phase actually did, for over-time mining.
 // mode 'selected' = implementation-lead (or the caller) chose the implementer(s);
+// mode 'reused'   = a retry carried an earlier attempt's selection;
 // mode 'default'  = selection produced nothing and the mini fell back to the chassis default.
 const ledger = {
   phase: 'green',
@@ -611,4 +630,10 @@ if (deadImplementers.length) {
   }
 }
 
-return { ...(green || {}), changedFiles, contradiction, testDefect, ledger }
+// On a failed attempt the gate's feedback names only the boolean; the implementer's own
+// account of where it stopped is what the next attempt needs.
+const stoppedAt =
+  green && (green.greenConfirmed !== true || green.noRegressions !== true)
+    ? [str(green.notes), str(green.evidence).slice(-1500)].filter(Boolean).join(' | ')
+    : ''
+return { ...(green || {}), changedFiles, contradiction, testDefect, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }

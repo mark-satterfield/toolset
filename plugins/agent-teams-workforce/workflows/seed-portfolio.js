@@ -316,13 +316,14 @@ const ID = /^[A-Za-z0-9._-]+$/
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (missingArgs.length) {
-  return { ok: false, stage: 'input', error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
+  const error = `required absolute path argument(s) missing: ${missingArgs.join(', ')}`
+  return { ok: false, stage: 'input', error, headline: error }
 }
 if (!(typeof a.since === 'string' && ISO.test(a.since))) {
-  return { ok: false, stage: 'input', error: '`since`, the ISO 8601 instant the seeding began, is required' }
+  return { ok: false, stage: 'input', error: '`since`, the ISO 8601 instant the seeding began, is required', headline: '`since`, the ISO 8601 instant the seeding began, is required' }
 }
 if (!(Array.isArray(a.epics) && a.epics.every((e) => typeof e === 'string' && ID.test(e)))) {
-  return { ok: false, stage: 'input', error: '`epics`, the list of Epic ids to assess, is required' }
+  return { ok: false, stage: 'input', error: '`epics`, the list of Epic ids to assess, is required', headline: '`epics`, the list of Epic ids to assess, is required' }
 }
 const work = a.workDir.replace(/\/+$/, '')
 const file = (name) => `${work}/${name}`
@@ -335,10 +336,13 @@ const assessed = []
 let stoppedAt = null
 let remaining = []
 let scoring = null
+// The nested run that stopped the seeding, when its own sessions died: that is reported under
+// the environment stage and with its dispatch failures, not as a failure of the work.
+let nestedDeaths = []
 // `stage` and `headline` are what a dispatcher reads off any composite's return.
 const result = (ok, extra) => ({
   ok,
-  stage: stoppedAt ? 'Assess' : ok ? 'done' : 'Score',
+  stage: ok ? 'done' : nestedDeaths.length ? 'agent-dispatch-failed' : stoppedAt ? 'Assess' : 'Score',
   headline: (extra && extra.error) || `${assessed.length} Epic(s) assessed${applies ? ' and the portfolio rescored' : ' (proposed only)'}`,
   since: a.since,
   apply: applies,
@@ -347,8 +351,8 @@ const result = (ok, extra) => ({
   remaining,
   scoring,
   ...(extra || {}),
-  dispatchFailed: dispatchDeaths().length > 0,
-  dispatchFailures: dispatchDeaths(),
+  dispatchFailed: dispatchDeaths().length + nestedDeaths.length > 0,
+  dispatchFailures: [...dispatchDeaths(), ...nestedDeaths],
 })
 log(`${queue.length} Epic(s) to assess since ${a.since}`)
 
@@ -404,6 +408,7 @@ for (let i = 0; i < queue.length; i++) {
     dispatchFailures: (r && r.dispatchFailures) || [],
   }
   remaining = queue.slice(i)
+  if (r && r.stage === 'agent-dispatch-failed') nestedDeaths = stoppedAt.dispatchFailures
   log(`Seeding stopped at ${id}: ${stoppedAt.error}`)
   return result(false, { error: `the seeding stopped at ${id}; settle it, then resume with the same since, ${a.since}` })
 }
@@ -424,6 +429,7 @@ try {
   scoringThrown = String((err && err.message) || err).slice(0, 500)
 }
 if (!(scoring && scoring.ok === true)) {
+  if (scoring && scoring.stage === 'agent-dispatch-failed') nestedDeaths = scoring.dispatchFailures || []
   const why = scoringThrown || (scoring && scoring.error) || 'wsjf-scoring returned no result'
   log(`Scoring failed: ${why}`)
   return result(false, { error: `every Epic was assessed, but scoring failed: ${why}; resume with the same since, ${a.since}, to score` })

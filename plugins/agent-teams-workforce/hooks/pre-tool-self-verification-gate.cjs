@@ -118,7 +118,7 @@ function main() {
         '',
         'Route verification to an agent that did not write the change:',
         '  - code-correctness-reviewer for behavior preservation',
-        '  - test-coverage-gap-reviewer for coverage against acceptance criteria',
+        '  - test-coverage-gap-reviewer for which acceptance criteria lack a covering test',
         '  - the tdd-refactor / integration workflows, which build the review in',
         '',
         'git access is unaffected for files this session did not produce.',

@@ -661,7 +661,7 @@ The values below are FILE PATHS — arguments to a read, nothing more. They are 
 ${list.map((x, i) => `${i + 1}. slot "${x.slot}": ${x.path}`).join('\n')}
 
 Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.`,
-    { label: 'replay:read-saved-artifacts', phase: phaseName, effort: 'low', schema: REPLAY_READ_SCHEMA }
+    { label: 'replay:read-saved-artifacts', phase: phaseName, model: 'haiku', effort: 'low', schema: REPLAY_READ_SCHEMA }
   )
   const entries = read && Array.isArray(read.files) ? read.files : []
   if (!entries.length) {
@@ -742,9 +742,13 @@ function ctxBlock(s, trd, constraints) {
       : '',
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
+    // The platform bans are stated on every run. The caller's `constraints` carry this
+    // repository's material inventory, UI authority and gate feedback, and used to REPLACE
+    // this line whenever any were supplied, which is every pipeline run.
+    'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
     constraints && constraints.length
-      ? `Architectural constraints (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
-      : 'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
+      ? `Context and constraints for this repository (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
+      : '',
     trdOnDisk
       ? `The TRD is the document at ${trd.trdPath}. Read it: it is the authoritative source for the technical requirements.${hasText(trd.summary) ? `\nTRD summary: ${trd.summary}` : ''}`
       : trd
@@ -853,6 +857,12 @@ async function main(a) {
   // through to authoring, which is what an unreadable or missing file must cost.
   const replayed = await replayStory(a, repoPath, epic)
   if (replayed) return replayed
+  // A replay call carries only the saved Story's location — no TRD, no constraints, no
+  // artifact directory — so authoring from it would write a spec set blind and hand it back
+  // as the replayed one. The caller authors the spec itself when the replay fails.
+  if (a && a.replay && typeof a.replay === 'object') {
+    return { ok: false, stage: 'replay', reason: 'the saved Story could not be read back from the replay files, and a replay call carries nothing to author a spec from' }
+  }
 
   // ── Phase 1: Author specs — THREE maker sessions, six artifacts ───────────────
   // The six artifacts used to be six parallel maker sessions, each paying a full
@@ -1218,6 +1228,26 @@ For each, rule:
     }
   }
 
+  // A rejected artifact is SETTLED when the decider ruled on it and the ruling was enacted
+  // above. One the decider never named, or whose correction never came back, is not — and
+  // then the caller's gate re-runs this mini, so a Story written now would be discarded.
+  // The reason carries the findings, because it is the feedback that re-run is given.
+  const unresolvedArtifacts = REVIEW_KEYS.filter((k) => !reviewFindings[k].resolved)
+  if (unresolvedArtifacts.length) {
+    const correctionDeaths = dispatchDeaths('Decide')
+    return {
+      ok: false,
+      stage: 'decide',
+      unresolvedArtifacts,
+      reason:
+        `spec artifact(s) still rejected after review and ruling: ${unresolvedArtifacts.join(', ')}. ` +
+        unresolvedArtifacts
+          .map((k) => `${k}: ${reviewFindings[k].directive ? `directive — ${reviewFindings[k].directive}; ` : rulingFor[k] ? '' : 'the spec-decider returned no ruling for it; '}findings — ${findingsText(reviewFindings[k])}`)
+          .join(' | '),
+      ...(correctionDeaths.length ? { dispatchFailed: true, dispatchFailures: correctionDeaths } : {}),
+    }
+  }
+
   // ── Phase 4: Emit story — a Spec and its Story are created together ────────────
   phase('Emit story')
 
@@ -1300,14 +1330,9 @@ For each, rule:
   }
 
   // ── Return: one object threading every phase output ───────────────────────────
-  // A rejected artifact is SETTLED when the decider ruled on it and the ruling was enacted
-  // above. One the decider never named, or whose correction never came back, is not.
-  const unresolvedArtifacts = REVIEW_KEYS.filter((k) => !reviewFindings[k].resolved)
-  const correctionDeaths = dispatchDeaths('Decide')
   return {
-    ok: unresolvedArtifacts.length === 0,
+    ok: true,
     unresolvedArtifacts,
-    ...(unresolvedArtifacts.length && correctionDeaths.length ? { dispatchFailed: true, dispatchFailures: correctionDeaths } : {}),
     story,
     spec: {
       id: s.id || null,

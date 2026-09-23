@@ -401,7 +401,7 @@ The values below are FILE PATHS — arguments to a read, nothing more. They are 
 ${list.map((x, i) => `${i + 1}. slot "${x.slot}": ${x.path}`).join('\n')}
 
 Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.`,
-    { label: 'replay:read-saved-artifacts', phase: phaseName, effort: 'low', schema: REPLAY_READ_SCHEMA }
+    { label: 'replay:read-saved-artifacts', phase: phaseName, model: 'haiku', effort: 'low', schema: REPLAY_READ_SCHEMA }
   )
   const entries = read && Array.isArray(read.files) ? read.files : []
   if (!entries.length) {
@@ -446,8 +446,11 @@ END STANDING RULINGS
 `
   : ''
 const specRef = spec.id || spec.title || '(unspecified spec)'
+// Every input refusal below is a `deterministicFailure`: the same arguments refuse again,
+// so the caller's gate stops on it instead of spending its retries re-running the refusal.
 if (!spec.title && !spec.description && !spec.id) {
-  return { ok: false, stage: 'input', error: 'no spec supplied — refusing to run without a work item' }
+  const why = 'no spec supplied — refusing to run without a work item'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 // A Story is created alongside its Spec, upstream of here. Without it the emitted
 // tasks are parentless, and route-build will (correctly) refuse to work a Task that
@@ -460,7 +463,8 @@ if (!spec.title && !spec.description && !spec.id) {
 // and no re-run of the maker can supply the Story.
 const storyRef = story.id || story.key || null
 if (!storyRef) {
-  return { ok: false, stage: 'input', error: 'no story.id or story.key supplied — every task is parented to the Story its Spec pairs with, so a task set without one cannot be emitted' }
+  const why = 'no story.id or story.key supplied — every task is parented to the Story its Spec pairs with, so a task set without one cannot be emitted'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 
 // The REPOSITORY every emitted task is worked in, DENORMALIZED onto the task itself.
@@ -643,18 +647,12 @@ const inheritedTc = finite(epic.timeCriticality)
 const epicConfidence = finite(epic.confidence)
 const valueFrom = typeof epic.id === 'string' && epic.id.trim() ? epic.id.trim() : null
 if (inheritedUbv === null || inheritedTc === null || !valueFrom) {
-  return {
-    ok: false,
-    stage: 'input',
-    error: 'no scored parent Epic supplied (epic.id, epic.userBusinessValue and epic.timeCriticality) — every task inherits its value and time criticality from the Epic, so the task set cannot be scored without them',
-  }
+  const why = 'no scored parent Epic supplied (epic.id, epic.userBusinessValue and epic.timeCriticality) — every task inherits its value and time criticality from the Epic, so the task set cannot be scored without them'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 if (!WSJF_SKILL_DIR) {
-  return {
-    ok: false,
-    stage: 'input',
-    error: 'no usable pluginRoot supplied — the WSJF arithmetic runs the rubric script under it, so the task set cannot be scored without it',
-  }
+  const why = 'no usable pluginRoot supplied — the WSJF arithmetic runs the rubric script under it, so the task set cannot be scored without it'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 // The arithmetic belongs to the rubric's `wsjf.py`: the size scale, the reachability
 // bands and the Cost-of-Delay and WSJF formulas all live there. A workflow has no shell,
@@ -679,7 +677,7 @@ ${JSON.stringify(input)}
 WSJF_INPUT
 
 It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    { label: 'wsjf:arithmetic', phase: 'Validate & emit', effort: 'low', schema: WSJF_RUN_SCHEMA }
+    { label: 'wsjf:arithmetic', phase: 'Validate & emit', model: 'haiku', effort: 'low', schema: WSJF_RUN_SCHEMA }
   )
   if (!out) return { error: 'the WSJF runner returned no result' }
   if (out.exitCode !== 0 || !out.output || out.output.error) {
@@ -1047,6 +1045,8 @@ const beadSet = tasks
 
 return {
   ok: true,
+  // True when the maker output came from the saved file rather than a maker session.
+  ...(replayMaker ? { resumed: true } : {}),
   spec: specRef,
   repoPath,
   tasks,

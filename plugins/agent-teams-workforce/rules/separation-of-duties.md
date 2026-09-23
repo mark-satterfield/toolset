@@ -38,7 +38,7 @@ If an agent determines that work needs to be done, it reports that finding to it
 
 ## No Self-Approval
 
-No agent may approve its own work. Every agent must review its own work for correctness, completeness, and risk before handing it off, but the work is not done until an independent agent in the approve or test category has passed it.
+No agent may approve its own work. Every agent must review its own work for correctness, completeness, and risk before handing it off. An independent agent in the approve or test category passes the work wherever its verdict can change what gets built; an output no verdict could change, or whose question a deterministic check or an earlier reviewer already decided, gets no further review and is judged by the phase that consumes it — never approved by the agent that made it.
 
 ## Task Atomicity Is Scoped
 
@@ -51,7 +51,7 @@ Every gate has three outcomes:
 | Outcome | Trigger | Action |
 | -------- | ------------------------------------------------ | ------------------------------------------------------------ |
 | Pass | All criteria met | Forward to the next phase |
-| Loop | Criteria not met; root cause is within this phase | Gate produces structured feedback (what failed, why, which agent's output). Feedback becomes input to the team lead on the next iteration. Max iterations: 3 routine, 5 complex |
+| Loop | Criteria not met; root cause is within this phase | Gate produces structured feedback (what failed, why, which agent's output). The composite re-runs the phase with that feedback. At most `maxLoops` attempts per gate — default 2. In the build composites Gates 2c, 3, 4 and 5 make one attempt and do not retry: a failed refactor is restored to Green and the run continues; failing integration suites go back through Green once, then integration runs again (an environment that was not ready just re-runs the suites). When the budget is spent the composite fails on an unmet deterministic or constitutive criterion and proceeds, flagged, on competitive ones |
 | Escalate | Failure is upstream; this phase cannot fix it | Structured finding sent backward to an earlier phase's team lead. Expensive, rare |
 
 Constitutive failures define validity — "tests must pass" means the code is not done. Hard loop, no exceptions. Competitive failures are desirable but tradeable — the gate can pass with a flag. Do not halt the pipeline for something that does not invalidate the output.

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. Smoke authoring (skipped on a redeploy, which re-runs the suite the previous iteration authored) and CDK synth/drift run concurrently, joined by the pipeline implementer only when the change touches .github/workflows; the build lane deploys exactly one repository per Task. Readiness is computed by the script from facts it holds — confirmed Green evidence and a valid CDK synth (or an evidenced not-applicable). On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
+    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. Smoke authoring (skipped on a redeploy, which re-runs the suite the previous iteration authored) and CDK synth/drift run concurrently, joined by the pipeline implementer only when the change touches .github/workflows; the build lane deploys exactly one repository per Task. Readiness is computed by the script from facts it holds — confirmed Green evidence, a valid CDK synth (or an evidenced not-applicable) and an authored smoke suite, without which a rollout could never be verified. On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
   phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke authoring + computed readiness, then roll out to AWS dev and smoke-check the deployed endpoints' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -335,8 +335,11 @@ const contractPathFault = (() => {
   return null
 })()
 if (contractPathFault) {
+  // Refused identically on every retry, so the caller's gate is not run on it.
   return {
     ok: false,
+    phaseBlocked: true,
+    blockedReason: `${contractPathFault}.`,
     readiness: { ready: false },
     deployedToDev: false,
     smokePassed: false,
@@ -486,15 +489,19 @@ const strategy = { rolloutStyle: 'single-stack, no canary', riskLevel: 'low (int
 //   - `cdk synth`, by the drift detector's own read-only run. A repo that owns no CDK app
 //     cannot fail a synth, but a not-applicable claim counts only with the validator's
 //     evidence for it in `details`. A missing cdk result is unknown, not absolution.
-// Smoke tests are NOT a precondition: they can only run against a deployed environment.
+//   - a smoke suite to run. Passing smoke tests are not a precondition — they can only run
+//     against a deployed environment — but a rollout with NO suite can never show that it
+//     works, and Gate 5 requires one, so it would be an AWS deploy spent on a certain failure.
 // Drift is reported, not blocking: the rollout reconciles the stack with this code. The
 // security gate (Gate 4) has already passed before this mini runs.
 const cdkSynthOk = !cdk ? false : cdk.applicable === false ? cdkDetails !== '' : cdk.synthValid === true
+const smokeTestFiles = (smoke && Array.isArray(smoke.smokeTestFiles) ? smoke.smokeTestFiles : []).map((f) => String(f || '').trim()).filter(Boolean)
 const localGatesOk = greenEvidenceOk && cdkSynthOk
 const readiness = {
-  ready: localGatesOk,
+  ready: localGatesOk && smokeTestFiles.length > 0,
   findings: [
     ...(greenEvidenceOk ? [] : [`BLOCKED: ${greenStatusLine}`]),
+    ...(smokeTestFiles.length ? [] : [smoke ? 'BLOCKED: the smoke-test author named no smoke test file, so a rollout could not be verified' : 'BLOCKED: the smoke-test author returned nothing']),
     ...(cdkSynthOk
       ? []
       : [
@@ -597,7 +604,10 @@ IF THE DIRECTORY ALREADY EXISTS, another Task is deploying this scope. Then:
   1. Read its \`holder\` file and work out the lease's age in minutes from the epoch
      seconds recorded in it against the epoch seconds now.
   2. If the lease is OLDER THAN ${LEASE_STALE_MINUTES} MINUTES it belongs to a run that
-     died holding it. Break it: remove the directory and acquire it yourself by the same
+     died holding it — and so does a lease whose holder bead id is THIS work item
+     (${(c.bead && c.bead.id) || 'unknown'}), whatever its age: one work item is never deployed
+     by two runs at once, so that lease was left by an earlier dispatch of this same work
+     that died holding it. Break it: remove the directory and acquire it yourself by the same
      atomic \`mkdir\`. Report \`brokeStale: true\` and the age you measured in \`staleAgeMinutes\`.
   3. Otherwise WAIT. Poll every 30 seconds, for up to ${LEASE_WAIT_MINUTES} MINUTES total,
      retrying the atomic \`mkdir\` each time, until you either acquire it or the wait is
@@ -610,6 +620,8 @@ Report literally what happened — an \`acquired: true\` you did not observe wou
 rollouts run against one stack, which is the exact failure this step exists to prevent.`,
     {
       label: 'deploy:lease-acquire',
+      // A scripted mkdir protocol with a fixed report; no judgment beyond the stated rules.
+      effort: 'low',
       phase: 'Deploy-readiness',
       // The agent that serializes access to a shared environment. Its charter is
       // environment state — provisioning, resetting, and confirming readiness of a shared
@@ -697,7 +709,7 @@ Deploy just this repo against dev, USING THE MECHANISM THIS REPO ACTUALLY DEPLOY
           : 'this repo has a CDK app, so run `cdk deploy` for the affected stack(s) against dev.'
 } Beware a task NAMED cdk:deploy that runs no CDK operation — read what it actually executes before trusting the name.
 
-Then RUN the smoke tests (${(smoke && smoke.smokeTestFiles || []).join(', ') || 'none authored'}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
+Then RUN the smoke tests (${smokeTestFiles.join(', ')}) against the deployed endpoints and report their literal output — a deploy that succeeds while its smoke test fails is a FAILED rollout, not a successful one.
 
 EVIDENCE IS REQUIRED, NOT OPTIONAL. \`deployed\` and \`smokePassed\` are your own booleans about your own work, so the schema demands the observations behind them and the dispatch FAILS without them. Report, for this rollout:
 - \`commands\`: every deploy and smoke command you ran, each with the exit code the shell returned. A command you did not run has no row; a row with no exit code is not a result.
@@ -800,6 +812,9 @@ RELEASE IT ONLY IF IT IS STILL OURS. Read the \`holder\` file inside it and comp
 Never remove a lease whose token you did not match.`,
     {
       label: 'deploy:lease-release',
+      // One token comparison and one rm: lock bookkeeping, priced as such.
+      model: 'haiku',
+      effort: 'low',
       phase: 'Deploy-readiness',
       agentType: 'agent-teams-workforce:test-environment-orchestrator',
       schema: {
@@ -872,7 +887,6 @@ const smokePassed = !!(rollout && rollout.smokePassed === true && smokeCases.len
 // Two more facts hoisted for Gate 5's flat checks: `cdkSynthOk` (computed above, with the
 // not-applicable carve-out) and `smokeTestFiles`, so "present" is a length check.
 const cdkDriftDetected = !!(cdk && cdk.applicable !== false && cdk.driftDetected === true)
-const smokeTestFiles = (smoke && Array.isArray(smoke.smokeTestFiles) ? smoke.smokeTestFiles : []).filter(Boolean)
 
 const ledger = {
   phase: 'deploy',

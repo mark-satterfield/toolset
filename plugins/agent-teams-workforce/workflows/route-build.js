@@ -524,7 +524,7 @@ if (kind === 'bug') {
       : work(workComposite(), `classified as a task with no parent Story and/or ancestor Epic — a roll-up parent for reporting, never a dispatch precondition: ${agentReason} → ${workComposite()}`)
 } else {
   final = skip(
-    `classified as ${kind === 'feature' ? 'feature-shaped work' : `an ${kind}`}: ${agentReason}. That is elaboration work, not development work → SKIP here. Route it through route-elaboration.js.`,
+    `classified as ${kind === 'feature' ? 'feature-shaped work' : kind === 'epic' ? 'an epic' : `a ${kind}`}: ${agentReason}. That is elaboration work, not development work → SKIP here. Route it through route-elaboration.js.`,
   )
 }
 

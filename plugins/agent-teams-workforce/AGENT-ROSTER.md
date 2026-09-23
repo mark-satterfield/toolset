@@ -103,7 +103,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate. No workflow currently dispatches it. |
 | task-decomposer | execute | Breaks the spec into tasks: one chassis extension, one endpoint, or one event handler per task. |
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
-| wsjf-scorer | execute | Scores each task: (value + time criticality + risk reduction) divided by size. |
+| wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. Dispatched by prd-to-spec to size the knock-on Tasks an architecture change adds to an Epic; task-decomposer sizes the Tasks it decomposes. |
 | wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. No workflow currently dispatches it. |
 | user-story-writer | execute | Writes user stories per task with acceptance criteria drawn from the spec. |
 | user-story-reviewer | test | Validates stories are complete, testable, and properly scoped. |
@@ -113,8 +113,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| prd-reality-reconciler | test | Builds the MATERIAL INVENTORY behind a PRD: for every requirement the PRD states, what already exists and whether it conforms — `conforms`, `contradicts`, or `absent` — with cited file:line or live-endpoint evidence. |
-| dependency-change-detector | test | Also serves this phase — detects upstream changes that invalidate what the PRD assumes. |
+| prd-reality-reconciler | test | Builds the MATERIAL INVENTORY behind a PRD: for every requirement the PRD states, what already exists and whether it conforms — `conforms`, `contradicts`, or `absent` — with cited file:line or live-endpoint evidence. The same session also detects upstream dependency changes that invalidate what the PRD assumes. |
 
 ## Spec Freshness
 
@@ -148,7 +147,7 @@ shown the answer is not a checker.
 | playwright-e2e-web-test-writer | test | Writes Playwright end-to-end web tests for UI and API flows. |
 | performance-benchmark-writer | test | Writes performance benchmarks with explicit budgets derived from the NFRs. |
 | test-plan-strategy-reviewer | test | Reviews the test plan strategy: pyramid balance, risk coverage, environment needs. |
-| test-coverage-gap-reviewer | test | Reviews planned tests against spec acceptance criteria and flags coverage gaps. |
+| test-coverage-gap-reviewer | test | Before Red authors anything, names which acceptance criteria existing tests already encode and which are gaps; when none is a gap, runs only those tests and rules red / already-satisfied / not-encoded. Dispatched by tdd-red. |
 | xcuitest-writer | test | Writes failing XCUITest suites for iOS features from spec acceptance criteria. |
 | espresso-test-writer | test | Writes failing Espresso test suites for Android features from spec acceptance criteria. |
 | mobile-e2e-test-writer | test | Writes failing Detox and Maestro end-to-end tests for React Native and cross-platform mobile flows. |
@@ -195,15 +194,15 @@ shown the answer is not a checker.
 
 | Agent | Category | Purpose |
 | --- | --- | --- |
-| code-quality-lead | orchestrate | Routes refactor work, verifies tests stay green after every change, and reports to Gate 2c. |
-| complexity-analyzer | plan | Analyzes complexity and duplication |
+| code-quality-lead | orchestrate | Routes refactor work, verifies tests stay green after every change, and reports to Gate 2c. No workflow currently dispatches it: tdd-refactor takes the optimizer selection from complexity-analyzer. |
+| complexity-analyzer | plan | Analyzes complexity and duplication, and names the fewest optimizer specialties the change calls for, in run order |
 | code-refactoring-specialist | execute | Restructures existing code for clarity and cohesion without changing behavior. |
 | lambda-performance-optimizer | execute | Optimizes Lambda cold start, memory sizing, and hot paths without breaking tests. |
 | dynamodb-cost-optimizer | execute | Optimizes DynamoDB capacity, access patterns, and cost without changing behavior. |
 | code-style-and-linting-enforcer | execute | Runs the project linters and applies formatting and style fixes. |
 | code-correctness-reviewer | test | Reviews refactored code for correctness regressions and behavioral drift. |
 | frontend-performance-optimizer | execute | Optimizes frontend performance without breaking tests: bundle size, rendering paths, Core Web Vitals. |
-| accessibility-validator | test | Validates UI changes against WCAG 2.2 Level A and AA: automated scans plus heuristics for contrast, keyboard navigation, ARIA semantics, focus management, and screen-reader flows |
+| accessibility-validator | test | Validates UI changes against WCAG 2.2 Level A and AA: automated scans plus heuristics for contrast, keyboard navigation, ARIA semantics, focus management, and screen-reader flows. No workflow currently dispatches it; it reports and never edits, so it is not a refactor optimizer |
 
 ## Integration Testing
 
@@ -215,7 +214,7 @@ shown the answer is not a checker.
 | data-consistency-checker | test | Verifies data consistency across services and stores after test runs. |
 | cross-service-contract-tester | test | Runs contract tests across service and repository boundaries. |
 | test-environment-orchestrator | execute | Provisions and resets the integration test environments. |
-| root-cause-analyst | plan | Determines whether a failure is code, test, environment, or architecture — and therefore which team the finding escalates to |
+| root-cause-analyst | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step; integration no longer dispatches it. |
 | flaky-test-detector | test | Identifies intermittent test failures and their root causes. No workflow currently dispatches it. |
 | cross-repo-integration-test-coordinator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead |
 
@@ -259,7 +258,7 @@ shown the answer is not a checker.
 | readme-writer | execute | Writes and maintains README files for repositories and directories: setup instructions, usage, onboarding flows. |
 | changelog-writer | execute | Generates changelog entries from merged work: conventional commit parsing, semantic version notes. |
 | user-guide-writer | execute | Writes user-facing feature documentation and guides from specs and shipped behavior. |
-| documentation-currency-auditor | test | Audits that documentation was updated when code shipped |
+| documentation-currency-auditor | test | Audits that documentation was updated when code shipped, and names the roster writer that owns each stale doc |
 | documentation-accuracy-reviewer | test | Reviews produced documentation against actual shipped behavior for accuracy and completeness. No workflow currently dispatches it. |
 
 ## Standalone

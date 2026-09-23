@@ -138,7 +138,13 @@ The bead is an Epic or a Story: the tracker face of a document. Nothing decompos
 it. Its **document** is what decomposes, and the beads beneath it are what that
 chain deposits.
 
-Resolve the other face — the PRD (for an Epic) or the Spec (for a Story). PRDs live under
+A Story is elaborated through its parent Epic: `prd-to-spec` takes an Epic and its PRD,
+and re-specifies every Story beneath it, so a Story passed in the Epic's place would be
+elaborated as if it were an Epic. For a Story, take its parent Epic from the parent
+chain (step 1) and continue below with that Epic. A Story with no parent Epic: report
+that and stop.
+
+Resolve the Epic's PRD. PRDs live under
 `$ATW_PRD_DIR`; if it is unset, report `ATW_PRD_DIR is unset` and stop:
 
 ```bash

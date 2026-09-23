@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Forbidden Decisions:** Swapping the specified embedding model, dimensions, metric, or index parameters; degrading specified filters to make a test pass; caching or persisting vectors outside the specified store; altering test expectations.
 - **Inputs Required:** Delegation packet from implementation-lead; failing unit tests; the approved retrieval specification (model, dimensions, metric, chunking, filters); vector store interface definitions; project conventions.
 - **Outputs Produced:** Vector search and embeddings implementation patch with a test-run record showing previously failing tests now pass, plus the required closing sections.
-- **Required Reviewers:** code-correctness-reviewer; code-style-and-linting-enforcer
+- **Required Reviewers:** none: Gate 2b checks the Green result in code (`greenConfirmed`, `evidence`, `noRegressions`), and the later phases — Refactor's code-correctness-reviewer, Integration, Adversarial and the deploy smoke tests — exercise the code further.
 - **Escalation Triggers:** A failing test expects retrieval behavior the specified model or metric cannot produce; the specification omits chunking or filter rules a test depends on; satisfying a test would require changing specified index parameters.
 - **Acceptance Criteria:** All assigned failing tests pass; no test was modified, skipped, or weakened; every embedding call, index operation, and query traces to the specification; retrieval interfaces match the contract matching-algorithm-implementer consumes.
 - **Anti-Goals:** Model or metric substitutions; bespoke similarity math; uncontrolled vector duplication across stores; speculative retrieval features the tests do not require.
@@ -57,7 +57,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Collaborate through explicit artifacts — the durable record is the artifact, not conversation.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions.
 - Prefer the skills and tools provided to you over internal training.
-- Review your own work for correctness, completeness, and risk before handoff, but never approve it — your work is not done until an independent reviewer passes it.
+- Review your own work for correctness, completeness, and risk before handoff, but never approve it. It is judged by the Gate 2b checks in code — `greenConfirmed`, `evidence` and `noRegressions` — and by the later phases, not by a reviewer session.
 
 ## When You're in Over Your Head
 

@@ -543,7 +543,12 @@ def validate(
         }
         kept = {_pair(e) for e in edges}
         dropped = {_pair(e) for e in withdrawn}
-        missing_sad_check = sorted({_pair(e) for e in edges if not e.sad_check.strip()})
+        # A SAD check is the Epic edge test; a Task edge is a build dependency and carries none.
+        missing_sad_check = (
+            sorted({_pair(e) for e in edges if not e.sad_check.strip()})
+            if level == "epic"
+            else []
+        )
         withdrawn_before = {
             f"{w['from']}->{w['to']}": w for w in withdrawal_history(graph, item, level)
         }

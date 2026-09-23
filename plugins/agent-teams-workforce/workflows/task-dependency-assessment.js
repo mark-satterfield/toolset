@@ -448,14 +448,14 @@ Work in this order:
 1. Run these two commands, once each. Each prints one JSON object; if either exits non-zero, stop, set \`valid\` false, \`applyExitCode\` -1, \`applySummary\` {}, and put its output in \`error\`.
    ${cmd('assess-plan', `--level task ${scope} --out ${shq(planFile)}`)}
    ${cmd('assess-context', `${scope} --dir ${shq(contextDir)} --out ${shq(contextFile)}`)}
-   They write: ${target} at ${taskFile}; the corpus at ${corpusDir}, one file per open Task named <id>.md; the index at ${indexFile}, one line per open Task with its title, Epic, repository, status and file; and ${contextFile}, whose \`standing\` lists every edge between ${target} and another open Task, in either direction, as {from, to, type, owned, reason, confidence, setBy, setAt} — \`from\` is the Task built first, \`reason\` the one recorded when the edge was set, or null.
+   They write: ${target} at ${taskFile}; the corpus at ${corpusDir}, one file per open Task named <id>.md; the index at ${indexFile}, one line per open Task with its title, Epic, repository, status and file; and ${contextFile}, whose \`standing\` lists every edge between ${target} and another open Task, in either direction, as {from, to, type, owned, reason, confidence, setBy, setAt} — \`from\` is the Task built first, \`reason\` the one recorded when the edge was set, or null. \`withdrawn\` lists every edge touching ${target} that an earlier assessment WITHDREW, as {from, to, reason, withdrawnBy, withdrawnAt}: that edge was judged not to exist, for the reason recorded. Setting it again is admitted only when you answer that reason.
 2. Read ${target}.
 3. Name what it consumes and what it provides.
 4. Search the corpus with Grep, and the index, for the Tasks that provide what ${target} consumes or consume what it provides. Read no Task the search did not find related.
 5. Read in full every related Task, and the Task at the other end of every standing edge.
 6. Apply the test in both directions: an edge from another Task to ${target} where ${target} consumes what that Task provides, and an edge from ${target} to another Task where that Task consumes what ${target} provides.
-7. Write ${edgesFile} as {"edges": [{"from", "to", "reason", "confidence"}], "withdrawn": [{"from", "to", "reason"}]}. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
-8. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(edgesFile)} ${scope}`)} | tee ${shq(validationFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: set \`valid\` false, put the validator's findings in \`findings\`, name the cycle in \`unsure\`, and do not run step 9 (\`applyExitCode\` -1, \`applySummary\` {}).
+7. Write ${edgesFile} as {"edges": [{"from", "to", "reason", "confidence", "answers"}], "withdrawn": [{"from", "to", "reason"}]}. \`answers\` is required only on an edge the context's \`withdrawn\` list covers: state why the recorded withdrawal reason is wrong. An edge you cannot answer that way is not set — the earlier judgment stands. \`edges\` holds EVERY edge to or from ${target} that passes the test — a standing one it keeps included — and no edge that does not touch ${target}. \`withdrawn\` holds every standing edge with \`owned: true\` that is not in \`edges\`, with a reason that answers the reason recorded for it. Every reason names the artifact and which Task provides it; \`confidence\` is \`high\`, \`medium\` or \`low\`. A standing edge with \`owned: false\` was made by hand: leave it out of both lists. No edge is a valid result. Write the reasoning, per edge and per withdrawal, to ${reasoningFile}.
+8. Validate: \`set -o pipefail; ${cmd('validate', `--edges ${shq(edgesFile)} ${scope}`)} | tee ${shq(validationFile)}\` — revise the file until \`ok\` is true, keeping to THE TEST: an edge that fails the test is dropped, never kept to satisfy the validator; an owned standing edge you drop goes in \`withdrawn\` with a reason. It refuses an edge that does not touch ${target}, an edge whose ends are not both open Tasks, a missing reason, an edge an earlier assessment withdrew that carries no \`answers\`, an owned standing edge left unaccounted, a withdrawal of an edge that is not an owned standing edge, and a cycle against every other Task edge. A cycle you cannot remove by dropping one of your own edges that fails the test — one through an edge with \`owned: false\` — is reported, not forced: set \`valid\` false, put the validator's findings in \`findings\`, name the cycle in \`unsure\`, and do not run step 9 (\`applyExitCode\` -1, \`applySummary\` {}).
 9. Only once validation passes, run exactly this, once: \`${applyCmd}\`. Return its exit code as \`applyExitCode\` and the \`summary\` object it printed, unaltered, as \`applySummary\`. Do not retry it or repair anything it refuses.
 
 Return the edge file path, the reasoning file path, the edge count, whether the final validation passed, \`relatedRead\` — the id of every Task you read in full, other than ${target} — each edge you were unsure of with what would settle it, and the apply-edges result.`
@@ -485,6 +485,13 @@ const stopMessage = stop
       .join('; ') || (assessed.unsure || []).join('; ') || 'see the validation file'}`
   : null
 if (stopMessage) log(stopMessage)
+// apply-edges validates again against the live tracker and exits 0 when it refuses; the
+// defects it found are the reason, so they are named rather than a bare exit code.
+const refusedBy = (v) => {
+  if (!v || typeof v !== 'object') return ''
+  const found = Object.entries(v).filter(([k, x]) => k !== 'ok' && (Array.isArray(x) ? x.length : typeof x === 'string' && x))
+  return found.length ? `: ${found.map(([k, x]) => `${k}: ${Array.isArray(x) ? x.join(', ') : x}`).join('; ')}` : ''
+}
 const edges = {
   ...summary,
   applied: applies && summary.applied === true,
@@ -502,7 +509,7 @@ const edges = {
             ? `the context could not be written: ${assessed.error}`
             : stop
               ? 'the proposed edge set did not validate; the tracker keeps its current edges'
-              : `apply-edges did not accept the proposal (exit ${assessed.applyExitCode}); the tracker keeps its current edges`,
+              : `apply-edges did not accept the proposal (exit ${assessed.applyExitCode}${refusedBy(summary.validation)}); the tracker keeps its current edges`,
       }),
 }
 if (settled) log(`Edges (${target})${applies ? '' : ', proposed'}: ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged — detail in ${applyFile}`)
@@ -515,7 +522,12 @@ let scoring = null
 const scores = applies && settled && a.score !== false
 if (scores) {
   enter('Score')
-  scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+  // The edges are already applied; a scoring run that throws is reported, not propagated.
+  try {
+    scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+  } catch (err) {
+    scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
+  }
 }
 
 // The supervisor reads `ok`, `stage` and `headline` off this return, so all three are set on
@@ -531,7 +543,7 @@ const failure = stop
 return {
   ok: settled && scoredOk,
   // A mapper that died did not assess anything: the stage says so, as the composites' does.
-  stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? 'Score' : 'done',
+  stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done',
   beadId: target,
   headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}`,
   apply: applies,

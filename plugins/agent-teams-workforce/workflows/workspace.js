@@ -660,6 +660,8 @@ ${ACCEPTABLE_WORKTREE_PATHS.map((x) => `  - ${x}`).join('\n')}
 [END ACCEPTABLE PATHS]`,
   {
     label: 'workspace:provision',
+    // Scripted git commands with a fixed report; the script, not this agent, rules on it.
+    effort: 'low',
     phase: 'Workspace',
     agentType: 'agent-teams-workforce:github-actions-pipeline-implementer',
     schema: {

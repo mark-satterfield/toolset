@@ -495,6 +495,13 @@ const stopMessage = stop
       .join('; ') || (assessed.unsure || []).join('; ') || 'see the validation file'}`
   : null
 if (stopMessage) log(stopMessage)
+// apply-edges validates again against the live tracker and exits 0 when it refuses; the
+// defects it found are the reason, so they are named rather than a bare exit code.
+const refusedBy = (v) => {
+  if (!v || typeof v !== 'object') return ''
+  const found = Object.entries(v).filter(([k, x]) => k !== 'ok' && (Array.isArray(x) ? x.length : typeof x === 'string' && x))
+  return found.length ? `: ${found.map(([k, x]) => `${k}: ${Array.isArray(x) ? x.join(', ') : x}`).join('; ')}` : ''
+}
 const edges = {
   ...summary,
   applied: applies && summary.applied === true,
@@ -512,7 +519,7 @@ const edges = {
             ? `the context could not be written: ${assessed.error}`
             : stop
               ? 'the proposed edge set did not validate; the tracker keeps its current edges'
-              : `apply-edges did not accept the proposal (exit ${assessed.applyExitCode}); the tracker keeps its current edges`,
+              : `apply-edges did not accept the proposal (exit ${assessed.applyExitCode}${refusedBy(summary.validation)}); the tracker keeps its current edges`,
       }),
 }
 if (settled) log(`Edges (${target})${applies ? '' : ', proposed'}: ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged`)
@@ -525,7 +532,12 @@ let scoring = null
 const scores = applies && settled && a.score !== false
 if (scores) {
   enter('Score')
-  scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+  // The edges are already applied; a scoring run that throws is reported, not propagated.
+  try {
+    scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
+  } catch (err) {
+    scoring = { ok: false, error: String((err && err.message) || err).slice(0, 500) }
+  }
 }
 
 // The supervisor reads `ok`, `stage` and `headline` off this return, so all three are set on
@@ -541,7 +553,7 @@ const failure = stop
 return {
   ok: settled && scoredOk,
   // A mapper that died did not assess anything: the stage says so, as the composites' does.
-  stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? 'Score' : 'done',
+  stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done',
   beadId: target,
   headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}`,
   apply: applies,

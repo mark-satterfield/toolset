@@ -40,7 +40,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - **Inputs Required:** Phase 6 sign-off from adversarial-review-loop-supervisor; the approved spec and the SAD's architecture decisions; the implementation handoff packet.
 - **Outputs Produced:** Delegation records with explicit handoff contracts; a step-by-step precondition log; the assembled Gate 5 evidence packet (pipeline status, CDK validation results, smoke test results, canary health, drift report, SLO design, readiness packet).
 - **Required Reviewers:** phase-gate-enforcer (consumes and judges the Gate 5 evidence packet); sdlc-pipeline-orchestrator (cross-phase routing integrity).
-- **Escalation Triggers:** A precondition cannot be satisfied by any team member; loop iterations exceed the limit (3 routine, 5 complex); a failure whose root cause is upstream of phase 7; specialist disagreement that exceeds predefined rules.
+- **Escalation Triggers:** A precondition cannot be satisfied by any team member; loop iterations exceed the limit (`maxLoops`, default 2); a failure whose root cause is upstream of phase 7; specialist disagreement that exceeds predefined rules.
 - **Acceptance Criteria:** Every deployment step was delegated with a complete handoff contract; no step started before its preconditions were verified; the Gate 5 packet contains evidence for every criterion; all loops and escalations are documented with reasons.
 - **Anti-Goals:** Doing any specialist work itself; smoothing over missing evidence; blaming team members; letting steps run out of order to save time; silently absorbing upstream failures.
 

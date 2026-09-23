@@ -141,9 +141,9 @@ of work it routed.
 | Instead of running | Delegate to |
 | --- | --- |
 | `pytest`, `go vet`, `cargo check` | the tdd-green or tdd-refactor workflow, which run the suite and report Green |
-| a full integration suite | integration-testing-lead |
-| an intermittent failure rerun | flaky-test-detector |
-| triage of a failure | root-cause-analyst, which classifies where it escalates |
+| a full integration suite | the integration workflow, which runs the suites the contract calls for and returns `passed` |
+| an intermittent failure rerun | flaky-test-detector, which confirms it by controlled reruns |
+| triage of a failure | root-cause-analyst, which reproduces it and diagnoses its root cause |
 | `ruff`, `eslint`, `mypy`, `tsc --noEmit` | code-style-and-linting-enforcer |
 
 Guard: `pre-tool-diagnostic-command-gate.cjs`.
