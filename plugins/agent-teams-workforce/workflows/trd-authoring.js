@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; every limit on what a dispatch may return is stated in its brief and checked in the script afterwards rather than bound in a schema, because a schema bound cannot trim — it can only destroy the whole result; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus an arc42 SAD extract. Read-only extractors pull the SAD source feeds (constraints, solution strategy, crosscutting) into a typed packet, reading every SAD file in full across as many concurrent batches as the file count needs; a batch that fails on a transient infrastructure error is sent again after a bounded backoff, one that returns nothing for any other reason is split in half and the halves dispatched, down to a single file, and never re-sent unchanged; every batch that succeeds is persisted so a re-run resumes at the failure instead of re-reading the SAD; the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; the trd-author writes the TRD; ONE independent checker session performs both checks (structure/quality + bidirectional PRD<->TRD traceability) — merged checks in one checker session, never a maker checking itself. Maker never judges its own work; on a bounded maker-checker deadlock the trd-decider rules, and a "revise" ruling is carried out: one targeted author pass with the required changes, then one independent re-check. Gate feedback from a previous run of this phase seeds the first author pass. Read/author only — no production code.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract (maker)' },
@@ -332,8 +332,9 @@ else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 // one-file-per-section layout — the same detection the extractor already does.
 //
 // EVERYTHING BELOW EXISTS SO THIS PHASE NEVER SIMPLY STOPS. The number of shards follows
-// from the file count instead of capping it; every limit on what a batch returns is stated
-// in its brief and checked in the script afterwards, so no limit can ever destroy a result;
+// from the file count instead of capping it; what a batch returns is bounded by nothing at
+// all, because this is a READ and §8 is as large as it is — the script checks the volume
+// afterwards and logs it, and never acts on it;
 // a batch that comes back empty on a TRANSIENT infrastructure error is sent again after a
 // wait, a bounded number of times, and one that comes back empty for any other reason is
 // split in half and its halves dispatched, down to one file, with no dispatch ever repeated
@@ -353,7 +354,7 @@ const ASSUMED_BYTES = 20000 // an inventory entry with no usable size is costed 
 
 const readingRule = `READING RULE (binding): read EVERY file assigned to you below, IN FULL — none of them is optional, and an index, README or table of contents is never read in place of the files it lists. Do NOT read any file outside the SAD, and do not survey this repository or any other repository for architecture content that is not in the SAD. A section the SAD does not state comes back empty; it is never reconstructed from code.`
 
-// ── A LIMIT IS STATED IN THE BRIEF AND CHECKED IN THE SCRIPT, NEVER IN A SCHEMA ──
+// ── WHERE A LIMIT BELONGS, AND WHAT AN OVERAGE MEANS ────────────────────────────
 //
 // These feeds used to carry `maxItems`, on the reasoning that a feed longer than its cap
 // was the extractor reconstructing architecture from code. On 2026-09-21 that number cost
@@ -364,68 +365,122 @@ const readingRule = `READING RULE (binding): read EVERY file assigned to you bel
 // reported those sixteen files as UNREAD and ended the run. The files WERE read. We
 // destroyed the answer and then blamed the SAD for it.
 //
-// THE LIMITS ARE NOT THE DEFECT. Unbounded output is a real cost — every entry here is
-// read again by the author, by the verifier and by every spec session downstream — and
-// these numbers exist to hold it down. What was wrong is WHERE they lived. A schema bound
-// has exactly one action available to it: reject the whole result. It cannot trim and it
-// cannot warn, and what it rejects is destroyed before this script ever sees it. So the
-// one thing a cost measure must never do — fail the run — was the only thing it could do.
+// Two rules come out of that, and they answer different questions.
 //
-// Every limit therefore moves to the two places that can act sensibly:
+// ── RULE 1: A LIMIT BELONGS WHERE THE DATA IS CREATED, NOT WHERE IT IS READ ─────
 //
-//   1. THE BRIEF states it up front, in the agent's own prompt, as a hard expectation
-//      ("Return at most N …; anything beyond N will not be read"). Telling the agent the
-//      number is what makes it self-limit, and it is the ONLY mechanism here that reduces
-//      cost at all — anything checked afterwards has already been paid for.
-//   2. THE SCRIPT checks the count once the result is safely in hand. Over the limit is
-//      one line in the log naming the dispatch, the actual count and the stated limit, and
-//      every item is KEPT. It never truncates, never drops, never changes what the caller
-//      receives and never becomes `ok: false`. A limit that can fail the run is the defect
-//      above, rebuilt.
+// A limit should be a function of the data, not of the read. To limit the size of a PRD,
+// limit it when the PRD is WRITTEN; capping what a reader may report about one is chasing
+// the problem in the wrong layer. So every dispatch in this file is sorted:
 //
-// The anti-reconstruction rule the feed caps were standing in for is carried where it
-// belongs: in `readingRule`, which the extractor is bound by.
+//   A READ reports a property of a document somebody else already wrote. The number of §8
+//   crosscutting concepts is a fact about the SAD, and an extractor that finds 61 of them
+//   in sixteen files is reporting reality. Telling it "return at most 60" leaves it two
+//   moves — truncate, which loses information and is forbidden here, or lie. So a READ
+//   DISPATCH IS GIVEN NO OUTPUT LIMIT IN ITS PROMPT. What bounds a read is `readingRule`,
+//   which says what it may draw on rather than how much it may report, and that is the
+//   right guard for a read: it constrains the source, not the answer.
 //
-// The mechanism below — `atMost` and `checkLimit` — is the same text in trd-authoring.js
-// and in architecture.js. The TABLE differs: the two files dispatch different agents.
-const LIMITS = {
+//   A CREATE chooses its own volume. An author deciding how to carve one Epic's HOW into
+//   requirements, a checker deciding which findings block, a decider listing the changes
+//   one pass can carry — the number is that agent's judgment, not a fact it discovered. A
+//   stated limit there is legitimate, and it is the only mechanism in this file that
+//   reduces cost at all, because anything measured afterwards has already been paid for.
+//
+// A GENUINELY AMBIGUOUS DISPATCH IS TREATED AS A READ. An unstated limit costs a line in
+// the log; a wrongly stated one distorts real work. Citations go read-side under that rule
+// even though an authoring session emits them: capping `sadRefs` would push an author to
+// drop a dependency its requirement actually has, which is the truncate-or-lie harm again
+// wearing different clothes.
+//
+// Where the VOLUME of §8 itself wants holding down, that belongs on SAD AUTHORING — the
+// layer that creates those concepts. It is not this phase's to impose, and is not imposed.
+//
+// ── RULE 2: NOTHING IS ENFORCED IN A SCHEMA, AND AN OVERAGE IS A GRADUATED FLAG ─
+//
+// A schema bound has exactly one action available to it: reject the whole result. It
+// cannot trim and it cannot warn, and what it rejects is destroyed before this script ever
+// sees it — so the one thing a volume measure must never do, fail the run, was the only
+// thing it could do. Every number below is therefore checked AFTER the result is safely in
+// hand, and the check is an observation with no veto and no branch behind it.
+//
+// It is also not a boolean, because 53 against 50 and 100 against 50 are not the same
+// event. A little over is ordinary variation — a dense document, a thorough session. DOUBLE
+// is the shape that suggests an agent padded, misread its assignment or duplicated entries,
+// and that is worth a person's eye. So the check speaks at two volumes: a quiet line over
+// the number, and SCRUTINISE at twice it. The band between is deliberately quiet, because a
+// document that is legitimately dense must not spend a person's attention every single run.
+//
+// EVERY ITEM IS KEPT AT EVERY MULTIPLE. Nothing here truncates, drops, reorders or
+// summarises, at any ratio, ever, and neither branch touches control flow. The flag exists
+// so a person can LOOK, never so the code can act — you do not know which entry mattered,
+// so you do not get to lose one.
+//
+// The mechanism below — `atMost`, `checkLimit` and `checkExpected` — is the same text in
+// trd-authoring.js and in architecture.js. The TABLES differ: the two files dispatch
+// different agents, and each sorts its own into reads and creates.
+// What a CREATE dispatch is TOLD, and what the script then checks. Only dispatches whose
+// volume is the agent's own judgment appear here.
+const STATED_LIMITS = {
+  // The author decides how to carve one Epic's worth of HOW into requirements.
+  requirements: 40,
+  // The verifier is asked to name what BLOCKS rather than everything it noticed, which is
+  // a selection it makes — and it is bounded by what one revision pass can absorb.
+  findings: 25,
+  // A revise buys exactly ONE targeted author pass; a longer list is a rewrite the decider
+  // had no mandate to order.
+  requiredChanges: 15,
+}
+// What a READ dispatch is EXPECTED to return. Stated to nobody, and not a limit: these are
+// facts about documents this phase did not write, so the number only decides when the log
+// says something. See rule 1.
+const EXPECTED_VOLUME = {
   // Per BATCH of the SAD extract, not per document: §8 is read in slices.
   constraints: 40,
   solutionStrategy: 40,
-  // RAISED, from 60. Sixteen §8 files returned 61 concepts in ordinary operation, so 60
-  // was set below what a full batch of this SAD actually states — a limit a CORRECT answer
-  // trips is miscalibrated, not disciplined. 120 sits well clear of observed output and is
-  // still low enough that a runaway extract shows up in the log.
-  crosscuttingConcepts: 120,
-  // The SAD's own file list. Mechanical: only a glob that escaped the SAD reaches this.
+  // RAISED, from 60. Sixteen §8 files returned 61 concepts in ordinary operation, so 60 sat
+  // below what a full batch of this SAD actually states, and an expectation a correct answer
+  // routinely trips is noise rather than signal. 80 clears observed output; 160 scrutinises.
+  crosscuttingConcepts: 80,
+  // The SAD's own file list. Mechanical: only a listing that escaped the SAD reaches this.
   inventoryFiles: 400,
-  // The TRD the author returns.
-  requirements: 40,
+  // Citations. Read-side by rule 1 even though the author emits them — a stated cap here
+  // would push the author to drop a dependency its requirement genuinely has.
   decisionIds: 60,
   prdRefs: 10,
   sadRefs: 10,
-  // The independent verifier's report.
-  findings: 25,
+  // The traceability report: one row per real link, and a gap or an orphan is the finding
+  // the check exists to produce. All three are properties of the PRD/TRD pair, not choices.
   links: 200,
   prdGaps: 40,
   trdOrphans: 40,
-  // The decider's ruling.
-  requiredChanges: 15,
 }
-// The sentence a brief carries, so the number the agent is told and the number the script
-// checks are one value and cannot drift apart.
+// A CREATE's stated limit, rendered for its brief. The agent is told this number and the
+// script checks the same constant, so the sentence and the log can never drift apart.
 const atMost = (n, what) => `Return at most ${n} ${what}; anything beyond ${n} will not be read.`
-// The check, run once the result is in hand. It LOGS and returns the count unchanged. It
-// is not a gate, it holds no veto, nothing branches on it, and no item is discarded —
-// keeping everything is the entire point of checking here instead of in the schema.
-function checkLimit(dispatch, what, count, limit) {
-  if (!Number.isFinite(count) || !Number.isFinite(limit) || count <= limit) return count
-  log(
-    `OVER THE STATED LIMIT — ${dispatch} returned ${count} ${what} against the ${limit} its brief stated. ` +
-      `Every one of them is KEPT: this line exists so an unusual result is visible, never so one is discarded.`
-  )
+// Twice the number is where a count stops reading as variation and starts reading as a
+// signal. Below it the check stays quiet on purpose; see rule 2.
+const SCRUTINY_RATIO = 2
+// The one check, for both kinds. `stated` changes the WORDING only — an agent that was
+// given a number and one that was not are both reported, and neither is acted on.
+function checkVolume(dispatch, what, count, bound, stated) {
+  if (!Number.isFinite(count) || !Number.isFinite(bound) || bound <= 0 || count <= bound) return count
+  const against = stated ? `the ${bound} its brief stated` : `the ${bound} expected for a dispatch of this shape`
+  const kept = 'Every one of them is KEPT — nothing is truncated, dropped, reordered or summarised, at any multiple.'
+  if (count >= bound * SCRUTINY_RATIO) {
+    log(
+      `SCRUTINISE — ${dispatch} returned ${count} ${what}, ${(count / bound).toFixed(1)}x ${against}. At this ratio look for ` +
+        `padding, a misread assignment or duplicated entries before trusting the shape of it. ${kept}`
+    )
+  } else {
+    log(`Over the expected volume — ${dispatch} returned ${count} ${what} against ${against}. Ordinary variation, recorded so it is visible. ${kept}`)
+  }
   return count
 }
+// A CREATE: the agent was told this number (see atMost).
+const checkLimit = (dispatch, what, count, limit) => checkVolume(dispatch, what, count, limit, true)
+// A READ: nobody told the agent anything, and this is only how much was expected.
+const checkExpected = (dispatch, what, count, expected) => checkVolume(dispatch, what, count, expected, false)
 const feedSchema = () => ({
   type: 'array',
   items: {
@@ -504,10 +559,7 @@ ${readingRule}
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
 
 For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
-
-HOW MUCH TO RETURN — read every assigned file IN FULL regardless of this, then report within these limits:
-${feeds.map((f) => `- ${f.title}: ${atMost(LIMITS[f.key], 'entries')}`).join('\n')}
-Consolidate closely-related statements into one entry rather than going over. Never drop a section's substance to fit, and never leave a file unread to stay inside a number.${
+ Return everything your files state: there is NO limit on how many entries you may return, and nothing is dropped for being numerous. This is a READ — how many concepts §8 holds is a fact about the SAD, not a budget you are working to — so report what is there and never consolidate, trim or omit an entry to reach a smaller number.${
       savePath
         ? `
 
@@ -747,9 +799,7 @@ Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY fi
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
 
-A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere in this repository or in another repository. If a section has no files at all, return it as an empty array.
-
-${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sections 2, 4 and 8 of one SAD do not run to that many files; a list that long means the listing has escaped the SAD, and the fix is to narrow it back to the SAD rather than to truncate it.`,
+A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere in this repository or in another repository. If a section has no files at all, return it as an empty array. List every file that holds them, however many that is: this is a READ and the count is a fact about the SAD, so never shorten the list to reach a number.`,
         {
           label: 'inventory:sad',
           phase: 'Extract SAD',
@@ -767,10 +817,10 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
               layout: { type: 'string' },
               notes: { type: 'string' },
             },
-            // No `maxItems` here either, for the same reason as the feeds: a SAD with one file
-            // more than the number we guessed would have its whole inventory rejected, and the
-            // phase would report that the architecture could not be listed. A file list is
-            // mechanical — however many files hold sections 2, 4 and 8 is how many come back.
+            // No `maxItems` here, and no stated cap in the brief either: this is a READ, and how
+            // many files hold sections 2, 4 and 8 is a fact about the SAD. A bound would reject the
+            // whole inventory over one file and report that the architecture could not be listed;
+            // a stated cap would invite a short list. The script checks the count afterwards.
             $defs: {
               files: {
                 type: 'array',
@@ -798,7 +848,7 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
 
   const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  checkLimit('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, LIMITS.inventoryFiles)
+  checkExpected('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
   const crossShards = shardFiles(crossEntries)
   log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
 
@@ -851,7 +901,7 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
     if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${batch.label}] ${out.notes.trim()}`)
     for (const feed of batch.feeds) {
       const entries = Array.isArray(out[feed.key]) ? out[feed.key] : []
-      checkLimit(batch.label, `${feed.key} entries`, entries.length, LIMITS[feed.key])
+      checkExpected(batch.label, `${feed.key} entries`, entries.length, EXPECTED_VOLUME[feed.key])
       entries.forEach((entry, entryIndex) => {
         if (!entry || typeof entry !== 'object') return
         // An entry the extractor left unidentified is still something the SAD states, so
@@ -1000,9 +1050,9 @@ ${feedback ? `\nFeedback on the previous version (checker, gate or decider) — 
 
 Each technical requirement must have a stable ID, trace upward to a PRD requirement, cite any SAD source IDs it depends on, and be verifiable. Deliver the TRD file path(s) you wrote, the structured requirements, and the upstream PRD/SAD references each requirement carries.
 
-VOLUME IS THE COST OF THIS PHASE. ${atMost(LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
+VOLUME IS THE COST OF THIS PHASE. ${atMost(STATED_LIMITS.requirements, 'technical requirements')} State each in under 60 words and keep the TRD document itself under about 25,000 characters. That is not a quota to fill — it is a ceiling, and a TRD that needs more than ${STATED_LIMITS.requirements} requirements is one Epic's worth of HOW spread too thin: consolidate related obligations into one requirement rather than splitting them, and drop restatement, background and rationale the PRD or the SAD already carries. Every word here is read again by the verifier and by every spec author downstream, so length is paid for many times over.
 
-The same applies to the citations. ${atMost(LIMITS.decisionIds, 'entries in `decisionIds`')} Per requirement: ${atMost(LIMITS.prdRefs, 'entries in `prdRefs`')} ${atMost(LIMITS.sadRefs, 'entries in `sadRefs`')} A requirement resting on more SAD entries than that is several requirements written as one.
+The citations are NOT bounded, and deliberately: \`decisionIds\`, \`prdRefs\` and \`sadRefs\` record what a requirement actually rests on, so a number to stay under would only make you drop a real dependency. Cite every one, and if a requirement genuinely rests on a great many SAD entries, that is a sign it is several requirements written as one — split it rather than trimming its citations.
 
 CITE THE DECISIONS, IN THE DOCUMENT AS WELL AS IN YOUR RESULT.
 A \`sadRefs\` entry that reaches only your structured result is read by this run and by nothing after it. The TRD file itself carries the citation twice:
@@ -1026,10 +1076,10 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
           decisionIds: { type: 'array', items: { type: 'string' } },
           requirements: {
             type: 'array',
-            // The requirement ceiling is REAL — output volume is what this phase costs —
-            // and it lives in the brief above and in the check below, not here. Enforced
+            // Requirements are a CREATE: the author decides how to carve the TRD, so the
+            // ceiling is real and is stated in the brief above. It is not enforced here —
             // as `maxItems`, a TRD with one requirement too many is thrown away whole and
-            // the phase reports that nothing was authored: the exact failure that cost a
+            // the phase reports that nothing was authored, the exact failure that cost a
             // batch of the SAD extract. Stated up front the author self-limits; checked
             // afterwards the overage is visible and every requirement survives.
             items: {
@@ -1055,12 +1105,12 @@ Cite the SAD's own entry tags exactly as the extract writes them (\`C-…\`, \`S
   // truncates or re-dispatches: an overage is a line in the log and the TRD is used whole.
   if (authored) {
     const reqs = Array.isArray(authored.requirements) ? authored.requirements : []
-    checkLimit('author:trd', 'technical requirements', reqs.length, LIMITS.requirements)
-    checkLimit('author:trd', 'decisionIds', (Array.isArray(authored.decisionIds) ? authored.decisionIds : []).length, LIMITS.decisionIds)
+    checkLimit('author:trd', 'technical requirements', reqs.length, STATED_LIMITS.requirements)
+    checkExpected('author:trd', 'decisionIds', (Array.isArray(authored.decisionIds) ? authored.decisionIds : []).length, EXPECTED_VOLUME.decisionIds)
     reqs.forEach((r, i) => {
       const which = `author:trd requirement ${(r && typeof r.id === 'string' && r.id.trim()) || `#${i + 1}`}`
-      checkLimit(which, 'prdRefs', (r && Array.isArray(r.prdRefs) ? r.prdRefs : []).length, LIMITS.prdRefs)
-      checkLimit(which, 'sadRefs', (r && Array.isArray(r.sadRefs) ? r.sadRefs : []).length, LIMITS.sadRefs)
+      checkExpected(which, 'prdRefs', (r && Array.isArray(r.prdRefs) ? r.prdRefs : []).length, EXPECTED_VOLUME.prdRefs)
+      checkExpected(which, 'sadRefs', (r && Array.isArray(r.sadRefs) ? r.sadRefs : []).length, EXPECTED_VOLUME.sadRefs)
     })
   }
   return authored
@@ -1076,7 +1126,7 @@ async function verifyTrd() {
   phase('Verify & Traceability')
 
   const verified = await settleAgent(
-    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows. In the traceability report: ${atMost(LIMITS.links, 'rows in `links`')} ${atMost(LIMITS.prdGaps, 'entries in `prdGaps`')} ${atMost(LIMITS.trdOrphans, 'entries in `trdOrphans`')}
+    `You are an INDEPENDENT verifier. You did NOT author this TRD; you only judge it. Do not modify it. Perform BOTH checks below in one pass and return each under its own key. Keep every finding and feedback item under 40 words, and name what BLOCKS rather than everything you noticed. ${atMost(STATED_LIMITS.findings, 'findings under `validation`')} That is as many as an author can act on in the single revision pass this loop allows, and choosing which ones block is part of your judgment. The traceability report is NOT bounded: \`links\`, \`prdGaps\` and \`trdOrphans\` describe what the PRD and the TRD actually contain, so report every one and never shorten any of the three to reach a number.
 
 CHECK 1 — structure and quality (return under \`validation\`): required sections present, every requirement has a stable ID and a concrete verification method, requirements are unambiguous and testable, and the TRD is internally consistent with the SAD extract it cites. verdict "pass" only if every check holds; otherwise "reject" with feedback specific enough that the author can fix it without interpretation, and each finding with its severity.
 
@@ -1112,10 +1162,10 @@ ${extractText}`,
               verdict: { type: 'string', enum: ['pass', 'reject'] },
               findings: {
                 type: 'array',
-                // The finding limit the brief states is not repeated as `maxItems`: a
-                // verdict rejected for holding one finding too many is a verdict nobody
-                // ever sees, and the phase then reports that the TRD was never judged.
-                // It is checked after the verdict is in hand instead, and nothing is cut.
+                // Findings are a CREATE — the verifier selects what blocks — so the brief
+                // states a number. It is not repeated as `maxItems`: a verdict rejected for
+                // holding one finding too many is a verdict nobody ever sees, and the phase
+                // then reports that the TRD was never judged. Checked afterwards, nothing cut.
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -1139,10 +1189,11 @@ ${extractText}`,
               links: {
                 type: 'array',
                 // The traceability matrix is the one place where completeness IS the
-                // check, which is exactly why no limit is enforced here: a matrix rejected
-                // by the runtime is destroyed whole, and one allowed through short would
-                // report perfect coverage of the rows that fit. The brief states the row
-                // limit and says a cross-product is wrong; the script checks, and keeps.
+                // check, so it is bounded NOWHERE — not in this schema and not in the brief.
+                // A matrix rejected by the runtime is destroyed whole; one written short to
+                // reach a number reports perfect coverage of the rows that fit. The brief
+                // asks for one row per real link and says a cross-product is wrong, which
+                // constrains the SHAPE without capping the count. The script only observes.
                 items: {
                   type: 'object',
                   additionalProperties: false,
@@ -1153,9 +1204,10 @@ ${extractText}`,
                   },
                 },
               },
-              // A gap or an orphan is the finding this check exists to produce; bounding
-              // either HERE would discard the verdict precisely when it has the most to
-              // say. The limits are stated in the brief and checked below.
+              // A gap or an orphan is the finding this check exists to produce, and how many
+              // exist is a fact about the PRD and the TRD rather than the verifier's choice.
+              // Bounding either — here or in the brief — would suppress the verdict precisely
+              // when it has the most to say. Observed below, never limited.
               prdGaps: { type: 'array', items: { type: 'string' } },
               trdOrphans: { type: 'array', items: { type: 'string' } },
               feedback: { type: 'string' },
@@ -1170,10 +1222,10 @@ ${extractText}`,
   if (verified) {
     const v = verified.validation
     const t = verified.traceability
-    checkLimit('verify:trd', 'validation findings', (v && Array.isArray(v.findings) ? v.findings : []).length, LIMITS.findings)
-    checkLimit('verify:trd', 'traceability links', (t && Array.isArray(t.links) ? t.links : []).length, LIMITS.links)
-    checkLimit('verify:trd', 'prdGaps', (t && Array.isArray(t.prdGaps) ? t.prdGaps : []).length, LIMITS.prdGaps)
-    checkLimit('verify:trd', 'trdOrphans', (t && Array.isArray(t.trdOrphans) ? t.trdOrphans : []).length, LIMITS.trdOrphans)
+    checkLimit('verify:trd', 'validation findings', (v && Array.isArray(v.findings) ? v.findings : []).length, STATED_LIMITS.findings)
+    checkExpected('verify:trd', 'traceability links', (t && Array.isArray(t.links) ? t.links : []).length, EXPECTED_VOLUME.links)
+    checkExpected('verify:trd', 'prdGaps', (t && Array.isArray(t.prdGaps) ? t.prdGaps : []).length, EXPECTED_VOLUME.prdGaps)
+    checkExpected('verify:trd', 'trdOrphans', (t && Array.isArray(t.trdOrphans) ? t.trdOrphans : []).length, EXPECTED_VOLUME.trdOrphans)
   }
   return verified
 }
@@ -1210,7 +1262,7 @@ for (let attempt = 1; attempt <= MAX_LOOPS; attempt++) {
   if (attempt === MAX_LOOPS) {
     log('Maker-checker loop exhausted — escalating to trd-decider for a binding ruling')
     const ruling = await settleAgent(
-      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything. Keep it targeted — ${atMost(LIMITS.requiredChanges, 'entries in `requiredChanges`')} That is the most a single pass can carry, and a longer list is a rewrite you have no mandate to order.
+      `The TRD author and the independent checkers reached a deadlock across the bounded retry loop. You ONLY rule — you did not author the TRD and you do not re-analyze it from scratch. Decide whether the TRD ships as-is ("accept"), returns to the author for a final targeted change ("revise"), or is rejected ("reject"), and state the binding rationale. A "revise" is carried out: the author makes the changes you list in \`requiredChanges\` and the TRD is re-checked once, so list every change, each precise enough to apply without re-deciding anything. Keep it targeted — ${atMost(STATED_LIMITS.requiredChanges, 'entries in `requiredChanges`')} That is the most a single pass can carry, and a longer list is a rewrite you have no mandate to order.
 
 TRD:
 ${JSON.stringify(trd, null, 2)}
@@ -1244,7 +1296,7 @@ Traceability feedback: ${(traceabilityMatrix && traceabilityMatrix.feedback) || 
       }
     )
     if (ruling) {
-      checkLimit('decide:trd', 'requiredChanges', (Array.isArray(ruling.requiredChanges) ? ruling.requiredChanges : []).length, LIMITS.requiredChanges)
+      checkLimit('decide:trd', 'requiredChanges', (Array.isArray(ruling.requiredChanges) ? ruling.requiredChanges : []).length, STATED_LIMITS.requiredChanges)
     }
     decision = ruling
       ? { verdict: ruling.verdict, ruledByDecider: true, rationale: ruling.rationale, requiredChanges: ruling.requiredChanges || [] }

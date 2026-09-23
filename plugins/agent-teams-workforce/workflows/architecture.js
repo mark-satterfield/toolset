@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Leaf mini — Architecture decision front-end. Turns an architecture question into a ruled decision and a current arc42 SAD. A read-only triage step first sizes the panel to the decision: questions the SAD already settles skip the analyst fan-out and challenge wave, while contested questions dispatch only the analysts whose dimensions bear on the choice. Analysts propose integration/security/cost options; an independent challenger stresses the patterns and tradeoffs ONLY when the decision is actually contested (an analyst reports a live conflict, or triage flags SAD-reversal risk or high stakes — converged decisions skip the wave and the skip is recorded); the architecture-decider rules; the sad-maintainer consolidates the ruling into the SAD source-feed sections (§2/§4/§8) under an independent conformance check. A decider that can rule on NOTHING returns an explicit inadmissible verdict rather than a dressed-up rejection: the SAD is never written, the run reports ok:false, and the blocking rules are classified as constitutive (a real external constraint) or convention (a house rule this project wrote for itself). A convention never halts delivery — where one conflicts with best practice or AWS Well-Architected, the design wins and the rule is returned as a ruleChallenge for the human owner. A CONSTITUTIVE rule, including the platform bans the constitutional gate asserts downstream, is honored instead of overridden: the decider rules on the options that respect it and returns a ruleChallenge if it thinks the rule is wrong. Segregation of duties throughout — proposers never judge, the decider never analyzes or authors, the maintainer never reviews its own SAD edit, and triage classifies but never decides.',
   phases: [
-    { title: 'Extract SAD', detail: 'one read-only inventory dispatch resolves the SAD layout, §8 is sharded into as many slices small enough to read IN FULL as the file count needs, the shards run concurrently and the SCRIPT merges the typed entries; a batch that fails on a transient infrastructure error is sent again after a bounded backoff and one that comes back empty for any other reason is split rather than re-sent, every batch that returns is persisted so a re-run resumes at the failure, and every limit on what a dispatch may return is stated in its brief and checked in the script afterwards rather than bound in a schema, because a schema bound cannot trim — it can only destroy the whole result; a packet the caller already holds is reused rather than re-bought' },
+    { title: 'Extract SAD', detail: 'one read-only inventory dispatch resolves the SAD layout, §8 is sharded into as many slices small enough to read IN FULL as the file count needs, the shards run concurrently and the SCRIPT merges the typed entries; a batch that fails on a transient infrastructure error is sent again after a bounded backoff and one that comes back empty for any other reason is split rather than re-sent, every batch that returns is persisted so a re-run resumes at the failure, and the extraction dispatches carry NO output limit, because a read reports what a document holds and capping it would only make the reader truncate or lie — a limit belongs on the layer that CREATES content, so only the authoring dispatches state one, and every stated number is checked in the script afterwards rather than bound in a schema, graduated so a modest overage is an observation and double is flagged for scrutiny, with every item kept either way; a packet the caller already holds is reused rather than re-bought' },
     { title: 'Triage', detail: 'architecture-boundary-guardian classifies the decision against the SAD — settled questions skip the panel; contested ones name the analysis dimensions' },
     { title: 'Proposals', detail: 'only the triage-selected analysts propose (integration/security/cost/persistence/cdk options, concurrent), with context-map + failure-mode analysis in one advisor session; skipped when settled' },
     { title: 'Challenge', detail: 'CONDITIONAL — one independent challenger session applies all five lenses (pattern, tradeoff, boundary, cost-impact, ops-readiness), but only when the decision is actually contested: an analyst reports a live conflict, triage flags SAD-reversal risk or a high-stakes question, or any signal is ambiguous (a dead analyst, an unstated flag, no triage verdict) — ambiguity challenges by default. Skipping requires AFFIRMATIVE evidence: every lens explicitly contested=false and triage explicitly low-risk/low-stakes; the judgment is recorded either way' },
@@ -420,7 +420,7 @@ const PROPOSAL_SCHEMA = {
     options: {
       type: 'array',
       // The option limit is stated to the analyst in SURVEY_BOUND and checked by the script
-      // once the panel is in hand (LIMITS.options). It is NOT repeated as `maxItems`,
+      // once the panel is in hand (STATED_LIMITS.options). It is NOT repeated as `maxItems`,
       // because a panel rejected for holding one option too many is a panel nobody sees,
       // and the lens then reports that it produced nothing at all — the failure the feed
       // schemas were changed to stop.
@@ -542,8 +542,9 @@ const TRIAGE_SCHEMA = {
 // trd-authoring.js carries for the same reason the settleAgent block is: workflow scripts
 // have no import mechanism, so shared logic is shared by being identical in both files.
 // The number of shards follows from the file count instead of capping it; every limit on
-// what a batch returns is stated in its brief and checked in the script afterwards, so no
-// limit can ever destroy a result; a batch that comes back empty on a TRANSIENT
+// what a batch returns is an EXPECTATION the script checks afterwards rather than a cap the
+// prompt imposes — reading the SAD is a READ, and how many concepts §8 holds is a fact about
+// the document, not a budget the extractor works to; a batch that comes back empty on a TRANSIENT
 // infrastructure error is sent again after a bounded wait, and one that comes back empty
 // for any other reason is SPLIT rather than re-sent; and
 // every batch that succeeds is written to disk under the Epic's working directory, which
@@ -576,7 +577,7 @@ const readingRule = `READING RULE (binding): read EVERY file assigned to you bel
 const sadWhere = `SAD location (AUTHORITATIVE — read here, and only here): ${sadPath}
 This path is NOT inside the product repository this decision is about. Do not look for the SAD under ${repo}, and do not substitute anything you find there for what the SAD states.`
 
-// ── A LIMIT IS STATED IN THE BRIEF AND CHECKED IN THE SCRIPT, NEVER IN A SCHEMA ──
+// ── WHERE A LIMIT BELONGS, AND WHAT AN OVERAGE MEANS ────────────────────────────
 //
 // These feeds used to carry `maxItems`, on the reasoning that a feed longer than its cap
 // was the extractor reconstructing architecture from code. On 2026-09-21 that number cost
@@ -587,68 +588,116 @@ This path is NOT inside the product repository this decision is about. Do not lo
 // reported those sixteen files as UNREAD and ended the run. The files WERE read. We
 // destroyed the answer and then blamed the SAD for it.
 //
-// THE LIMITS ARE NOT THE DEFECT. Unbounded output is a real cost — every entry here is
-// read again by the author, by the verifier and by every spec session downstream — and
-// these numbers exist to hold it down. What was wrong is WHERE they lived. A schema bound
-// has exactly one action available to it: reject the whole result. It cannot trim and it
-// cannot warn, and what it rejects is destroyed before this script ever sees it. So the
-// one thing a cost measure must never do — fail the run — was the only thing it could do.
+// Two rules come out of that, and they answer different questions.
 //
-// Every limit therefore moves to the two places that can act sensibly:
+// ── RULE 1: A LIMIT BELONGS WHERE THE DATA IS CREATED, NOT WHERE IT IS READ ─────
 //
-//   1. THE BRIEF states it up front, in the agent's own prompt, as a hard expectation
-//      ("Return at most N …; anything beyond N will not be read"). Telling the agent the
-//      number is what makes it self-limit, and it is the ONLY mechanism here that reduces
-//      cost at all — anything checked afterwards has already been paid for.
-//   2. THE SCRIPT checks the count once the result is safely in hand. Over the limit is
-//      one line in the log naming the dispatch, the actual count and the stated limit, and
-//      every item is KEPT. It never truncates, never drops, never changes what the caller
-//      receives and never becomes `ok: false`. A limit that can fail the run is the defect
-//      above, rebuilt.
+// A limit should be a function of the data, not of the read. To limit the size of a PRD,
+// limit it when the PRD is WRITTEN; capping what a reader may report about one is chasing
+// the problem in the wrong layer. So every dispatch in this file is sorted:
 //
-// The anti-reconstruction rule the feed caps were standing in for is carried where it
-// belongs: in `readingRule`, which the extractor is bound by.
+//   A READ reports a property of a document somebody else already wrote. The number of §8
+//   crosscutting concepts is a fact about the SAD, and an extractor that finds 61 of them
+//   in sixteen files is reporting reality. Telling it "return at most 60" leaves it two
+//   moves — truncate, which loses information and is forbidden here, or lie. So a READ
+//   DISPATCH IS GIVEN NO OUTPUT LIMIT IN ITS PROMPT. What bounds a read is `readingRule`,
+//   which says what it may draw on rather than how much it may report, and that is the
+//   right guard for a read: it constrains the source, not the answer.
 //
-// The mechanism below — `atMost` and `checkLimit` — is the same text in trd-authoring.js
-// and in architecture.js. The TABLE differs: the two files dispatch different agents.
-const LIMITS = {
+//   A CREATE chooses its own volume. An author deciding how to carve one Epic's HOW into
+//   requirements, a checker deciding which findings block, a decider listing the changes
+//   one pass can carry — the number is that agent's judgment, not a fact it discovered. A
+//   stated limit there is legitimate, and it is the only mechanism in this file that
+//   reduces cost at all, because anything measured afterwards has already been paid for.
+//
+// A GENUINELY AMBIGUOUS DISPATCH IS TREATED AS A READ. An unstated limit costs a line in
+// the log; a wrongly stated one distorts real work. Citations go read-side under that rule
+// even though an authoring session emits them: capping `sadRefs` would push an author to
+// drop a dependency its requirement actually has, which is the truncate-or-lie harm again
+// wearing different clothes.
+//
+// Where the VOLUME of §8 itself wants holding down, that belongs on SAD AUTHORING — the
+// layer that creates those concepts. It is not this phase's to impose, and is not imposed.
+//
+// ── RULE 2: NOTHING IS ENFORCED IN A SCHEMA, AND AN OVERAGE IS A GRADUATED FLAG ─
+//
+// A schema bound has exactly one action available to it: reject the whole result. It
+// cannot trim and it cannot warn, and what it rejects is destroyed before this script ever
+// sees it — so the one thing a volume measure must never do, fail the run, was the only
+// thing it could do. Every number below is therefore checked AFTER the result is safely in
+// hand, and the check is an observation with no veto and no branch behind it.
+//
+// It is also not a boolean, because 53 against 50 and 100 against 50 are not the same
+// event. A little over is ordinary variation — a dense document, a thorough session. DOUBLE
+// is the shape that suggests an agent padded, misread its assignment or duplicated entries,
+// and that is worth a person's eye. So the check speaks at two volumes: a quiet line over
+// the number, and SCRUTINISE at twice it. The band between is deliberately quiet, because a
+// document that is legitimately dense must not spend a person's attention every single run.
+//
+// EVERY ITEM IS KEPT AT EVERY MULTIPLE. Nothing here truncates, drops, reorders or
+// summarises, at any ratio, ever, and neither branch touches control flow. The flag exists
+// so a person can LOOK, never so the code can act — you do not know which entry mattered,
+// so you do not get to lose one.
+//
+// The mechanism below — `atMost`, `checkLimit` and `checkExpected` — is the same text in
+// trd-authoring.js and in architecture.js. The TABLES differ: the two files dispatch
+// different agents, and each sorts its own into reads and creates.
+// What a CREATE dispatch is TOLD, and what the script then checks. Only dispatches whose
+// volume is the agent's own judgment appear here.
+const STATED_LIMITS = {
+  // Three options is the job, and the analyst INVENTS them: a fourth is not a richer panel,
+  // it is more text for the decider to read and for the challenge wave to stress.
+  options: 3,
+  // Fitness functions the ruling creates or changes. The author derives them from the
+  // ruling and chooses how many to write, so the number is its judgment.
+  fitnessFunctions: 12,
+}
+// What a READ dispatch is EXPECTED to return. Stated to nobody, and not a limit: these are
+// facts about a document this phase did not write, so the number only decides when the log
+// says something. See rule 1.
+const EXPECTED_VOLUME = {
   // Per BATCH of the SAD extract, not per document: §8 is read in slices.
   constraints: 40,
   solutionStrategy: 40,
-  // RAISED, from 60. Sixteen §8 files returned 61 concepts in ordinary operation, so 60
-  // was set below what a full batch of this SAD actually states — a limit a CORRECT answer
-  // trips is miscalibrated, not disciplined. 120 sits well clear of observed output and is
-  // still low enough that a runaway extract shows up in the log.
-  crosscuttingConcepts: 120,
-  // The SAD's own file list. Mechanical: only a glob that escaped the SAD reaches this.
+  // RAISED, from 60. Sixteen §8 files returned 61 concepts in ordinary operation, so 60 sat
+  // below what a full batch of this SAD actually states, and an expectation a correct answer
+  // routinely trips is noise rather than signal. 80 clears observed output; 160 scrutinises.
+  crosscuttingConcepts: 80,
+  // The SAD's own file list. Mechanical: only a listing that escaped the SAD reaches this.
   inventoryFiles: 400,
-  // One analyst lens's option set. Three options is the job; a fourth is not a richer
-  // panel, it is more text for the decider to read and for the challenge wave to stress.
-  options: 3,
-  // Fitness functions the ruling creates or changes — not a restatement of the standing
-  // platform constraints, which hold already.
-  fitnessFunctions: 12,
 }
-// The sentence a brief carries, so the number the agent is told and the number the script
-// checks are one value and cannot drift apart.
+// A CREATE's stated limit, rendered for its brief. The agent is told this number and the
+// script checks the same constant, so the sentence and the log can never drift apart.
 const atMost = (n, what) => `Return at most ${n} ${what}; anything beyond ${n} will not be read.`
-// The check, run once the result is in hand. It LOGS and returns the count unchanged. It
-// is not a gate, it holds no veto, nothing branches on it, and no item is discarded —
-// keeping everything is the entire point of checking here instead of in the schema.
-function checkLimit(dispatch, what, count, limit) {
-  if (!Number.isFinite(count) || !Number.isFinite(limit) || count <= limit) return count
-  log(
-    `OVER THE STATED LIMIT — ${dispatch} returned ${count} ${what} against the ${limit} its brief stated. ` +
-      `Every one of them is KEPT: this line exists so an unusual result is visible, never so one is discarded.`
-  )
+// Twice the number is where a count stops reading as variation and starts reading as a
+// signal. Below it the check stays quiet on purpose; see rule 2.
+const SCRUTINY_RATIO = 2
+// The one check, for both kinds. `stated` changes the WORDING only — an agent that was
+// given a number and one that was not are both reported, and neither is acted on.
+function checkVolume(dispatch, what, count, bound, stated) {
+  if (!Number.isFinite(count) || !Number.isFinite(bound) || bound <= 0 || count <= bound) return count
+  const against = stated ? `the ${bound} its brief stated` : `the ${bound} expected for a dispatch of this shape`
+  const kept = 'Every one of them is KEPT — nothing is truncated, dropped, reordered or summarised, at any multiple.'
+  if (count >= bound * SCRUTINY_RATIO) {
+    log(
+      `SCRUTINISE — ${dispatch} returned ${count} ${what}, ${(count / bound).toFixed(1)}x ${against}. At this ratio look for ` +
+        `padding, a misread assignment or duplicated entries before trusting the shape of it. ${kept}`
+    )
+  } else {
+    log(`Over the expected volume — ${dispatch} returned ${count} ${what} against ${against}. Ordinary variation, recorded so it is visible. ${kept}`)
+  }
   return count
 }
+// A CREATE: the agent was told this number (see atMost).
+const checkLimit = (dispatch, what, count, limit) => checkVolume(dispatch, what, count, limit, true)
+// A READ: nobody told the agent anything, and this is only how much was expected.
+const checkExpected = (dispatch, what, count, expected) => checkVolume(dispatch, what, count, expected, false)
 // Every lens's option set, checked once the panel is assembled. The decider rules on the
 // options it was given, all of them; this only says so in the log when a lens went long.
 function checkProposalLimits(list) {
   for (const p of Array.isArray(list) ? list : []) {
     if (!p || typeof p !== 'object') continue
-    checkLimit(`proposals:${p.lens || 'unnamed lens'}`, 'options', (Array.isArray(p.options) ? p.options : []).length, LIMITS.options)
+    checkLimit(`proposals:${p.lens || 'unnamed lens'}`, 'options', (Array.isArray(p.options) ? p.options : []).length, STATED_LIMITS.options)
   }
   return list
 }
@@ -729,10 +778,7 @@ ${readingRule}
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays. Do not read another shard's files and do not guess at what it will find.
 
 For every entry: assign a stable, content-anchored ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is genuinely absent from your files, return it as an empty array — do not fabricate.
-
-HOW MUCH TO RETURN — read every assigned file IN FULL regardless of this, then report within these limits:
-${feeds.map((f) => `- ${f.title}: ${atMost(LIMITS[f.key], 'entries')}`).join('\n')}
-Consolidate closely-related statements into one entry rather than going over. Never drop a section's substance to fit, and never leave a file unread to stay inside a number.${
+ Return everything your files state: there is NO limit on how many entries you may return, and nothing is dropped for being numerous. This is a READ — how many concepts §8 holds is a fact about the SAD, not a budget you are working to — so report what is there and never consolidate, trim or omit an entry to reach a smaller number.${
       savePath
         ? `
 
@@ -968,9 +1014,7 @@ Resolve the arc42 layout (single-file vs one-file-per-section) and list EVERY fi
 - Section 4 — Solution Strategy
 - Section 8 — Crosscutting Concepts
 
-A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere. If a section has no files at all, return it as an empty array.
-
-${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sections 2, 4 and 8 of one SAD do not run to that many files; a list that long means the listing has escaped the SAD, and the fix is to narrow it back to the SAD rather than to truncate it.`,
+A section held in a DIRECTORY is listed as all of its content files, recursively — every concept file, not the directory and not its README index. Where a section's content lives inside one larger file, list that file under every section it holds. List only files inside the SAD; never list a file elsewhere. If a section has no files at all, return it as an empty array. List every file that holds them, however many that is: this is a READ and the count is a fact about the SAD, so never shorten the list to reach a number.`,
         {
           label: 'inventory:sad',
           phase: 'Extract SAD',
@@ -988,10 +1032,10 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
               layout: { type: 'string' },
               notes: { type: 'string' },
             },
-            // No `maxItems` here either, for the same reason as the feeds: a SAD with one file
-            // more than the number we guessed would have its whole inventory rejected, and the
-            // phase would report that the architecture could not be listed. A file list is
-            // mechanical — however many files hold sections 2, 4 and 8 is how many come back.
+            // No `maxItems` here, and no stated cap in the brief either: this is a READ, and how
+            // many files hold sections 2, 4 and 8 is a fact about the SAD. A bound would reject the
+            // whole inventory over one file and report that the architecture could not be listed;
+            // a stated cap would invite a short list. The script checks the count afterwards.
             $defs: {
               files: {
                 type: 'array',
@@ -1019,7 +1063,7 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
 
   const coreFiles = [...new Set([...fileList(inventory.constraintsFiles), ...fileList(inventory.solutionStrategyFiles)].map((e) => e.path))]
   const crossEntries = fileList(inventory.crosscuttingFiles)
-  checkLimit('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, LIMITS.inventoryFiles)
+  checkExpected('inventory:sad', 'SAD files', coreFiles.length + crossEntries.length, EXPECTED_VOLUME.inventoryFiles)
   const crossShards = shardFiles(crossEntries)
   log(`SAD inventory: §2+§4 = ${coreFiles.length} file(s); §8 = ${crossEntries.length} file(s) in ${crossShards.length} shard(s)`)
 
@@ -1071,7 +1115,7 @@ ${atMost(LIMITS.inventoryFiles, 'files in total across the three sections')} Sec
     if (typeof out.notes === 'string' && out.notes.trim()) notes.push(`[${batch.label}] ${out.notes.trim()}`)
     for (const feed of batch.feeds) {
       const entries = Array.isArray(out[feed.key]) ? out[feed.key] : []
-      checkLimit(batch.label, `${feed.key} entries`, entries.length, LIMITS[feed.key])
+      checkExpected(batch.label, `${feed.key} entries`, entries.length, EXPECTED_VOLUME[feed.key])
       entries.forEach((entry, entryIndex) => {
         if (!entry || typeof entry !== 'object') return
         // An entry the extractor left unidentified is still something the SAD states, so
@@ -1398,7 +1442,7 @@ Returning three well-reasoned options with honest tradeoffs is the whole job. An
 is not improved by having read more of the repository, and an incomplete survey stated as
 fact is worse than an option marked with the uncertainty you actually have.
 
-${atMost(LIMITS.options, 'options')} Keep every tradeoff, failure mode and assumption under 30 words.
+${atMost(STATED_LIMITS.options, 'options')} Keep every tradeoff, failure mode and assumption under 30 words.
 A pro, a con, a risk: one sentence each. The decider rules on the substance, not the prose,
 and a long option set costs every session downstream that has to read it.`
 
@@ -2103,7 +2147,7 @@ function authorDecisionArtifacts() {
   return settleAgent(
   `Author the decision artifacts FROM the ruling below — do NOT re-decide anything. Two artifacts, each under its own key:
 
-1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis". ${atMost(LIMITS.fitnessFunctions, 'fitness functions')} Only the ones THIS ruling creates or changes. Do not restate standing platform constraints (the bans, service isolation, Powertools-only, REST v1) — they hold already and a fitness function repeating one buys nothing. Keep each \`assertion\` and each \`check\` under 30 words.
+1. \`fitnessFunctions\`: testable fitness functions — mechanically checkable assertions such as "all events publish through the event API" or "all Lambdas extend the chassis". ${atMost(STATED_LIMITS.fitnessFunctions, 'fitness functions')} Only the ones THIS ruling creates or changes. Do not restate standing platform constraints (the bans, service isolation, Powertools-only, REST v1) — they hold already and a fitness function repeating one buys nothing. Keep each \`assertion\` and each \`check\` under 30 words.
 2. \`diagrams\`: the architecture diagram(s) of the decided design in the project's standard Mermaid format. SAD location: ${sadPath}.
 
 ${decisionContext}${persistBrief(ART, 'architecture-fitness.json', PROPOSAL_WHAT)}`,
@@ -2146,7 +2190,7 @@ const authoredArtifacts = {
   fitnessFunctions: (authored && authored.fitnessFunctions) || [],
   diagrams: (authored && authored.diagrams) || [],
 }
-checkLimit('author:decision-artifacts', 'fitness functions', authoredArtifacts.fitnessFunctions.length, LIMITS.fitnessFunctions)
+checkLimit('author:decision-artifacts', 'fitness functions', authoredArtifacts.fitnessFunctions.length, STATED_LIMITS.fitnessFunctions)
 const designDrafts = draftsResult
   ? designSpecs.map(([key]) => draftsResult[key]).filter(Boolean)
   : []
