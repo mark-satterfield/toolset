@@ -28,7 +28,8 @@ export const meta = {
 // Each `dispatchFailures` entry ALSO carries the CAUSE — see failureCause below — because
 // a caller that can only see THAT a dispatch produced nothing cannot tell the one failure
 // worth sending again from the many that are not. `failureCauseFor(label)` is how a call
-// site reads it back.
+// site reads it back, and a TRANSIENT cause is waited out inside settleAgent itself, so
+// every dispatch in every script survives an API overload rather than only some of them.
 //
 // This block is identical in every workflow script on purpose. Workflow scripts have no
 // import mechanism, so a shared helper is shared by being the same text everywhere.
@@ -72,16 +73,16 @@ function settleTranscript(err, label) {
 // the problem, and the call that failed produced nothing to pay for. Waiting and sending
 // the same dispatch again therefore has a real reason to come out differently, which is
 // the only thing that ever justifies a second attempt. This is the one case retried here,
-// and it is retried a BOUNDED number of times so a sustained outage cannot loop forever.
-// It is never answered by splitting the input: the input was fine, and splitting
-// multiplies calls against an endpoint that is already failing to serve the first one.
+// and it is retried until it clears — see the backoff below. It is never answered by
+// splitting the input: the input was fine, and splitting multiplies calls against an
+// endpoint that is already failing to serve the first one.
 //
 // DETERMINISTIC — a schema rejection, an agent that finished without producing output,
 // anything settled by arithmetic. Re-issuing the identical dispatch against the identical
 // input has NO reason to produce a different result; it is a hope with a token cost, and
 // this project removed exactly those blind retries after they burned tokens to exhaustion
 // on attempts that could not succeed. The only sanctioned re-dispatch is one with
-// materially CHANGED input — for the SAD batches below, the split.
+// materially CHANGED input — for the SAD batches, the split.
 //
 // ANYTHING UNRECOGNISED IS DETERMINISTIC, and that direction is deliberate rather than
 // defensive. Guessing "transient" on an unknown error invents a retry that is forbidden
@@ -89,8 +90,8 @@ function settleTranscript(err, label) {
 // a retry that might have worked, and the caller still has its split and its report. The
 // cheap mistake is the one to take.
 //
-// This block is identical in every workflow script that classifies, on purpose. Workflow
-// scripts have no import mechanism, so a shared helper is shared by being the same text.
+// This block is identical in every workflow script, on purpose. Workflow scripts have no
+// import mechanism, so a shared helper is shared by being the same text.
 const DETERMINISTIC_ERROR_TEXT =
   /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
 const TRANSIENT_ERROR_TEXT =
@@ -119,6 +120,74 @@ function failureCauseFor(label) {
   }
   return null
 }
+// ── A TRANSIENT FAILURE IS WAITED OUT, NOT COUNTED DOWN ─────────────────────────
+//
+// An API overload is a server-side condition with its own clock. It clears in thirty
+// seconds, or five minutes, or fifteen; nothing this script does shortens it, and a failed
+// call costs nothing, so there is nothing here to conserve by giving up. A run started in
+// the evening must still be running in the morning, having sat out whatever happened at
+// 3am and carried on by itself. So there is NO attempt ceiling and no elapsed-time budget:
+// the wait grows, flattens at five minutes, and repeats at five minutes for as long as the
+// endpoint keeps failing. If you are about to add a maximum, you are re-introducing the
+// defect this replaced — a two-attempt budget that guaranteed a back-to-back second
+// failure and then quit.
+//
+// The schedule: 5s, then triple each time, capped at 300s — 5, 15, 45, 135, 300, 300, …
+// Five seconds is short enough that a brief blip costs seconds rather than minutes; a
+// factor of three reaches the cap on the fifth wait, about eight minutes in, so a genuine
+// outage is at the polite five-minute cadence quickly instead of hammering the endpoint
+// for an hour of doublings.
+//
+// JITTER exists because these lanes run concurrently. Identical waits make every lane that
+// failed together return together, which is the thundering herd arriving at an endpoint
+// that is already struggling. Each wait is therefore 50–100% of the scheduled interval:
+// the growth shape survives, and the lanes spread out.
+//
+// The offset is DERIVED, never drawn. A workflow script cannot draw a random number — a
+// resumed run would draw a different one — and it does not need to: what jitter has to
+// vary across is LANES, not runs. Hashing the dispatch's own identity together with the
+// attempt number gives concurrent lanes different offsets, which is the whole requirement,
+// and gives a resumed run the same one, which is the house rule.
+//
+// THE WAIT IS LOGGED, and that is the point of it being allowed to be this long. Every
+// retry prints the attempt number, the wait about to be taken and the TOTAL time spent
+// waiting so far, so someone reading a log at 3am can tell a run patiently sitting out an
+// outage from a run that is hung.
+const TRANSIENT_BACKOFF_BASE_MS = 5000
+const TRANSIENT_BACKOFF_FACTOR = 3
+const TRANSIENT_BACKOFF_CAP_MS = 300000
+const TRANSIENT_BACKOFF_JITTER = 0.5
+// FNV-1a over the dispatch identity, normalised to [0, 1). Any stable spread would do; this
+// one is four lines and needs nothing the sandbox withholds.
+function settleSpread(text) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  }
+  return (h >>> 0) / 4294967296
+}
+function transientWaitMs(name, attempt) {
+  const scheduled = Math.min(
+    TRANSIENT_BACKOFF_CAP_MS,
+    TRANSIENT_BACKOFF_BASE_MS * Math.pow(TRANSIENT_BACKOFF_FACTOR, Math.max(0, attempt - 1))
+  )
+  const spread = settleSpread(`${name}#${attempt}`)
+  return Math.round(scheduled * (1 - TRANSIENT_BACKOFF_JITTER + TRANSIENT_BACKOFF_JITTER * spread))
+}
+// Workflow scripts are a sandbox with no Node API, and the runner guarantees only its seven
+// injected globals, so a timer is probed for rather than assumed.
+//
+// THE NO-CEILING RULE IS CONDITIONAL ON BEING ABLE TO WAIT. Without a timer there is no
+// backoff at all, and an unbounded loop with no wait is not patience — it is a hot loop
+// hammering an endpoint that is already failing, which is worse than stopping. So on a host
+// with no timer the transient retry falls back to a few immediate attempts and then reports
+// the failure, saying in the log exactly why it stopped. Every host this runs on today
+// provides setTimeout; this branch exists so that if one ever does not, the failure mode is
+// a reported stop rather than a spin.
+const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
+const TRANSIENT_ATTEMPTS_WITHOUT_WAIT = 3
+const settleSleep = (ms) =>
+  SETTLE_CAN_WAIT ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
 async function settleAgent(prompt, opts) {
   const o = opts && typeof opts === 'object' ? opts : {}
   const call = { ...o }
@@ -131,41 +200,88 @@ async function settleAgent(prompt, opts) {
   }
   const name = who.label || who.agentType || 'agent'
   const whose = `${name}${who.agentType && who.agentType !== name ? ` (${who.agentType})` : ''}${who.phase ? ` in ${who.phase}` : ''}`
-  let out = null
-  try {
-    out = await agent(prompt, call)
-  } catch (err) {
-    const message = String((err && err.message) || err)
-    const cause = failureCause(err)
-    dispatchFailures.push({
+  // The failures THIS call recorded. A dispatch that finally returns after sitting out an
+  // overload did not die, and leaving its transient entries in `dispatchFailures` would
+  // tell the caller's gate that a phase which produced its artifact must not be
+  // adjudicated. They are removed by identity, so a concurrent lane's entries are safe.
+  const mine = []
+  const fail = (entry) => {
+    dispatchFailures.push(entry)
+    mine.push(entry)
+  }
+  const retireMine = () => {
+    for (const entry of mine) {
+      const at = dispatchFailures.indexOf(entry)
+      if (at >= 0) dispatchFailures.splice(at, 1)
+    }
+    mine.length = 0
+  }
+  let waitedMs = 0
+  for (let attempt = 1; ; attempt++) {
+    let out = null
+    try {
+      out = await agent(prompt, call)
+    } catch (err) {
+      const message = String((err && err.message) || err)
+      const cause = failureCause(err)
+      fail({
+        ...who,
+        outcome: 'threw',
+        cause,
+        attempt,
+        message: message.slice(0, 300),
+        transcript: settleTranscript(err, name),
+        note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''} (${cause}): ${message.slice(0, 160)}`,
+      })
+      log(`${name}: session ended without a structured result (${cause}, attempt ${attempt}) — ${message.slice(0, 160)}`)
+      if (cause === 'transient' && !SETTLE_CAN_WAIT && attempt >= TRANSIENT_ATTEMPTS_WITHOUT_WAIT) {
+        log(
+          `${name}: TRANSIENT infrastructure failure on attempt ${attempt}, and this host provides no timer, so the dispatch ` +
+            `cannot be spaced out. Stopping rather than spinning against a failing endpoint — re-run once the API has recovered.`
+        )
+        if (o.rethrow) throw err
+        return null
+      }
+      if (cause === 'transient') {
+        const wait = transientWaitMs(name, attempt)
+        waitedMs += wait
+        log(
+          `${name}: TRANSIENT infrastructure failure — attempt ${attempt} failed; waiting ${Math.round(wait / 1000)}s ` +
+            `before sending the same dispatch again (${Math.round(waitedMs / 1000)}s spent waiting so far). ` +
+            `This is a server-side condition with no attempt limit here: it keeps retrying, at five minutes apart once the backoff caps, until it clears.`
+        )
+        await settleSleep(wait)
+        continue
+      }
+      // A caller that owns its own failure reporting asks for the throw back, so the real
+      // reason reaches its catch instead of being flattened to "returned no result". Only
+      // a DETERMINISTIC failure ever gets here — a transient one is still being waited out.
+      if (o.rethrow) throw err
+      return null
+    }
+    if (out) {
+      if (waitedMs > 0) {
+        log(`${name}: returned on attempt ${attempt} after ${Math.round(waitedMs / 1000)}s of waiting out a transient failure`)
+      }
+      retireMine()
+      return out
+    }
+    fail({
       ...who,
-      outcome: 'threw',
-      cause,
-      message: message.slice(0, 300),
-      transcript: settleTranscript(err, name),
-      note: `${whose} finished without a structured result${who.schema ? ` for schema ${who.schema}` : ''} (${cause}): ${message.slice(0, 160)}`,
+      outcome: 'skipped',
+      // A null with no error text carries no evidence of anything, and an unrecognised cause
+      // is deterministic. It is also the right answer on the merits here: the runtime has
+      // ALREADY exhausted its own retries before it hands back a null, so sending the same
+      // dispatch again is the blind retry, not the recovery.
+      cause: 'deterministic',
+      attempt,
+      message: null,
+      transcript: settleTranscript(null, name),
+      note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
     })
-    log(`${name}: session ended without a structured result (${cause}) — ${message.slice(0, 160)}`)
-    // A caller that owns its own failure reporting asks for the throw back, so the real
-    // reason reaches its catch instead of being flattened to "returned no result".
-    if (o.rethrow) throw err
+    log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
     return null
   }
-  if (out) return out
-  dispatchFailures.push({
-    ...who,
-    outcome: 'skipped',
-    // A null with no error text carries no evidence of anything, and an unrecognised cause
-    // is deterministic. It is also the right answer on the merits here: the runtime has
-    // ALREADY exhausted its own retries before it hands back a null, so sending the same
-    // dispatch again is the blind retry, not the recovery.
-    cause: 'deterministic',
-    message: null,
-    transcript: settleTranscript(null, name),
-    note: `${whose} returned nothing — skipped, or died on a terminal API error after the runtime's own retries`,
-  })
-  log(`${name}: returned nothing — skipped, or died on a terminal API error after the runtime's own retries`)
-  return null
 }
 
 // args: {
@@ -335,8 +451,9 @@ else log(`Extracting arc42 source feeds from SAD at ${sadRef}`)
 // from the file count instead of capping it; what a batch returns is bounded by nothing at
 // all, because this is a READ and §8 is as large as it is — the script checks the volume
 // afterwards and logs it, and never acts on it;
-// a batch that comes back empty on a TRANSIENT infrastructure error is sent again after a
-// wait, a bounded number of times, and one that comes back empty for any other reason is
+// a batch that fails on a TRANSIENT infrastructure error is sent again, after a capped
+// exponential wait, for as long as the API keeps failing — settleAgent does that for every
+// dispatch in every script — and one that comes back empty for any other reason is
 // split in half and its halves dispatched, down to one file, with no dispatch ever repeated
 // unchanged; and every batch that succeeds is written to disk, so a run that does end here
 // resumes at the failure rather than re-reading 787KB to get back to it. What remains a
@@ -606,11 +723,13 @@ function retireFailures(labels) {
 //
 // So the cause decides, and `failureCauseFor` is where it comes from:
 //
-//   TRANSIENT (429, 529, rate limit, quota, network timeout) — SEND IT AGAIN, after a
-//   wait, a bounded number of times. The failure is external and time-varying, the input
-//   was fine, and the failed call produced nothing to pay for; a later attempt has a real
-//   reason to differ. It is NOT split: splitting a transient failure attacks the wrong
-//   thing and doubles the load that caused it.
+//   TRANSIENT (429, 529, rate limit, quota, network timeout) — never arrives here at all
+//   any more. settleAgent waits it out in place, with the capped exponential backoff
+//   defined beside it, and returns only once it has cleared. That is where it belongs:
+//   every dispatch in every workflow script goes through settleAgent, so putting the wait
+//   there makes an overnight run survive an overload everywhere instead of only in these
+//   SAD batches. It is NOT split either way: splitting a transient failure attacks the
+//   wrong thing and doubles the load that caused it.
 //
 //   DETERMINISTIC (a schema rejection, a session that produced no output, anything
 //   unrecognised) — NEVER re-sent as it was. Identical files, identical prompt, identical
@@ -624,44 +743,24 @@ function retireFailures(labels) {
 // at this one. A batch that is already ONE file has nothing left to change, so it is not
 // dispatched again at all: that is the floor, and it is reported unread.
 //
-// If you are reading this and reaching for a general attempt counter, do not. The bound
-// below exists only so a sustained outage cannot loop forever; widening it to cover the
-// deterministic branch rebuilds the blind retry this comment exists to prevent.
+// If you are reading this and reaching for a general attempt counter, do not. There is no
+// attempt counter left in this function: a null now means DETERMINISTIC, because the only
+// other cause is still being waited out upstream. An attempt counter here would re-send an
+// input that cannot succeed, which is the blind retry this comment exists to prevent.
 //
 // Returns one leaf outcome per batch that actually ran: { label, feeds, files, out }, with
 // `out` null only for a floor batch. Every dispatch goes through settleAgent, so no throw
 // escapes this and every death is recorded before it is answered.
-const TRANSIENT_ATTEMPTS = 2
-const TRANSIENT_BACKOFF_MS = [5000, 20000]
-// Sending the next attempt into the same overloaded endpoint at once is what turns a
-// retry into a second failure. Workflow scripts are a sandbox with no Node API, so the
-// wait uses `setTimeout` where the host provides one and otherwise degrades to yielding:
-// the attempts stay bounded and stay ordered after the failure either way, and only the
-// wall-clock gap is lost.
-const backoff = (ms) =>
-  typeof setTimeout === 'function' ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
 async function runBatch(label, feeds, files, saved) {
   const hit = saved.get(batchKey(files))
   if (hit) {
     log(`${label}: resumed from the saved result for these ${files.length} file(s) — not dispatched, and not re-read`)
     return [{ label, feeds, files, out: hit, resumed: true }]
   }
-  let out = await extractShardAgent(label, feeds, files)
-  for (let attempt = 1; !out && attempt <= TRANSIENT_ATTEMPTS && failureCauseFor(label) === 'transient'; attempt++) {
-    const wait = TRANSIENT_BACKOFF_MS[attempt - 1] || TRANSIENT_BACKOFF_MS[TRANSIENT_BACKOFF_MS.length - 1]
-    log(
-      `${label}: the dispatch failed on a TRANSIENT infrastructure error — waiting ${wait}ms and sending the same batch again ` +
-        `(attempt ${attempt} of ${TRANSIENT_ATTEMPTS}). The input was not the problem, so it is NOT split.`
-    )
-    await backoff(wait)
-    out = await extractShardAgent(label, feeds, files)
-  }
-  // A batch that only ever failed transiently and then returned is not a death its caller
-  // must honor: the artifact exists. Retiring it here is the same reasoning as the split's.
-  if (out) {
-    retireFailures([label])
-    return [{ label, feeds, files, out }]
-  }
+  // settleAgent has already sat out any transient failure and retired its own record of
+  // it, so a batch that returns leaves nothing in `dispatchFailures` for this label.
+  const out = await extractShardAgent(label, feeds, files)
+  if (out) return [{ label, feeds, files, out }]
   if (files.length === 1) {
     log(`${label}: one file and nothing came back (${failureCauseFor(label) || 'no recorded cause'}) — there is nothing left to change, so it is NOT dispatched again; reported unread: ${files[0]}`)
     return [{ label, feeds, files, out: null }]
