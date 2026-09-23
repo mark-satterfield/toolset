@@ -441,11 +441,19 @@ phase('Green')
 let implementers
 let selectionMode
 if (a.implementer) {
+  // Refused before any dispatch, and refused again on every retry, so it is phaseBlocked:
+  // a throw here would leave the composite and discard every phase it had already paid for.
   if (!IMPLEMENTER_ROSTER.includes(a.implementer)) {
-    throw new Error(
-      `tdd-green: caller pre-specified implementer '${a.implementer}', which is not on the implementer roster. ` +
-        `Dispatching it would resolve to a nonexistent agent type. Roster: ${IMPLEMENTER_ROSTER.join(', ')}`
-    )
+    return {
+      ok: false,
+      phaseBlocked: true,
+      blockedReason:
+        `the caller pre-specified implementer '${a.implementer}', which is not on the implementer roster, so dispatching it ` +
+        `would resolve to a nonexistent agent type. Roster: ${IMPLEMENTER_ROSTER.join(', ')}`,
+      greenConfirmed: false,
+      changedFiles: [],
+      ledger: { phase: 'green', beadId: (c.bead && c.bead.id) || null, chosen: [], mode: 'refused', ok: false },
+    }
   }
   implementers = [a.implementer]
   selectionMode = 'selected'
@@ -570,6 +578,10 @@ Constraints: minimum change to pass; build to the contract above; do not modify 
     contradiction = green.contradiction
     log(`Green: '${impl}' reports a test contradiction — ${contradiction.testA} and ${contradiction.testB} assert opposite outcomes for the same input`)
   }
+  // No later implementer can make an unpassable or self-contradicting test pass, so the
+  // sequence stops at the first report and the caller sends it back to Red.
+  if (testDefect || contradiction) break
+  if (!green) break
 }
 
 // Decision ledger — what this phase actually did, for over-time mining.

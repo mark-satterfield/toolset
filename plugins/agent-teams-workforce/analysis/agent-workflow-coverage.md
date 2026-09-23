@@ -80,7 +80,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | data-pipeline-test-writer | tdd-red | Red *(writer roster)* | Failing data-pipeline tests |
 | definition-of-done-enforcer | spec-authoring | authoring | Authors the Definition of Done |
 | dependency-change-detector | infra-intent | freshness check | Detects dependency contract changes |
-| dependency-change-detector | spec-freshness | parallel checkers | Detects dependency drift since spec authored |
+| dependency-change-detector | infra-intent | freshness checker | Detects dependency drift since spec authored |
 | dependency-cve-auditor | adversarial | Attack *(infra lane)* | CVE/supply-chain audit |
 | dependency-cve-auditor | infra-change | Adversarial *(trimmed lane)* | Infra-path CVE audit |
 | dependency-graph-extractor | prd-validation | fan-out analysts | Builds dependency manifest |
@@ -168,10 +168,10 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | security-test-case-designer | tdd-red | Red *(writer roster)* | Failing security test cases |
 | slo-error-budget-designer | deploy | Deploy-readiness *(artifact roster: slo)* | SLOs / error budgets |
 | smoke-test-author | deploy | Deploy-readiness | Post-deploy smoke tests |
-| spec-currency-validator | spec-freshness | parallel checkers | Spec-vs-codebase drift |
+| spec-currency-validator | — (no workflow) | — | Spec-vs-codebase drift |
 | spec-decider | prd-creation | draft deadlock | Rules PRD maker-checker deadlock |
 | spec-decider | spec-authoring | authoring deadlock | Rules spec maker-checker deadlock |
-| spec-freshness-lead | spec-freshness | aggregation | Aggregates freshness verdicts |
+| spec-freshness-lead | — (no workflow) | — | Aggregates freshness verdicts |
 | stakeholder-request-intake-writer | prd-creation | intake | Captures raw stakeholder request |
 | task-decomposer | task-decomposition | decompose | Breaks spec into atomic tasks |
 | task-dependency-mapper | task-decomposition | sequence | Builds dependency DAG |
@@ -239,7 +239,7 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 | architecture-decider | 2 | architecture, infra-intent |
 | cdk-infrastructure-designer | 2 | architecture, infra-intent |
 | cost-impact-reviewer | 2 | architecture, infra-intent |
-| dependency-change-detector | 2 | infra-intent, spec-freshness |
+| dependency-change-detector | 1 | infra-intent |
 | dependency-cve-auditor | 2 | adversarial, infra-change |
 | data-exposure-scanner | 2 | adversarial, infra-change |
 | root-cause-analyst | 2 | bug-triage, integration |
@@ -280,7 +280,7 @@ Related asymmetry: `acceptance-criteria-writer` runs in **both** bug-triage and 
 - **API-contract authoring across phases.** `api-contract-designer` (architecture, OpenAPI *draft*) and `api-specification-author` (spec-authoring, API *spec*) author the same API contract at two phases, reviewed by yet another agent (`openapi-contract-reviewer`). Defensible as draft→elaborate, but it is two distinct author agents for one artifact lineage.
 - **Event-schema authoring across phases.** `event-schema-designer` (architecture *draft*) and `event-contract-author` (spec-authoring *contract*) — same draft→elaborate split for event shapes, with `event-schema-reviewer` judging.
 - **GraphQL review gap.** `graphql-schema-designer` drafts GraphQL in `architecture`, but the dedicated `graphql-schema-reviewer` is an **orphan** — the REST path gets `openapi-contract-reviewer` review in spec-authoring while the GraphQL path's reviewer is never invoked (an asymmetric coverage hole, not just duplication).
-- **Lead/router agents vs. script routing.** Nine `*-lead`/router agents ARE still dispatched as read-only selectors (`test-design-lead`, `implementation-lead`, `integration-testing-lead`, `code-quality-lead`, `deployment-lead`, `documentation-lead`, `prd-creation-lead`, `prd-validation-lead`, `spec-freshness-lead`), while four others (`spec-authoring-lead`, `task-decomposition-lead`, `trd-authoring-lead`, `sdlc-pipeline-orchestrator`) were **replaced by script control flow and orphaned**. This is an **inconsistent pattern**: some phases keep a lead agent to do runtime specialist selection; others fold that selection into the `.js` and drop the lead. Whichever is correct, the two conventions coexist unreconciled.
+- **Lead/router agents vs. script routing.** Nine `*-lead`/router agents ARE still dispatched as read-only selectors (`test-design-lead`, `implementation-lead`, `integration-testing-lead`, `code-quality-lead`, `deployment-lead`, `documentation-lead`, `prd-creation-lead`, `prd-validation-lead`), while four others (`spec-authoring-lead`, `task-decomposition-lead`, `trd-authoring-lead`, `sdlc-pipeline-orchestrator`) were **replaced by script control flow and orphaned**. This is an **inconsistent pattern**: some phases keep a lead agent to do runtime specialist selection; others fold that selection into the `.js` and drop the lead. Whichever is correct, the two conventions coexist unreconciled.
 
 ### Ambiguity note (candidate vs. actual dispatch)
 

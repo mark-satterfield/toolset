@@ -121,8 +121,8 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | spec-freshness-lead | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. No workflow currently dispatches it. |
-| spec-currency-validator | test | Validates the spec still matches current project reality before implementation begins. |
-| dependency-change-detector | test | Detects dependency version or contract changes since the spec was written. |
+| spec-currency-validator | test | Validates the spec still matches current project reality before implementation begins. No workflow currently dispatches it. |
+| dependency-change-detector | test | Detects dependency version or contract changes since the spec was written. Dispatched by infra-intent. |
 
 ## Workspace
 

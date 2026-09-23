@@ -295,9 +295,13 @@ const SUITE_AGENTS = {
   'cross-service-contract-tester': 'cross-service / cross-repo API and event contracts',
 }
 
-// Context every selected suite (and the lead) receives.
+// Context every selected suite (and the lead) receives. The files Green actually changed
+// are named beside the contract's affected files: a Task contract often lists none, and a
+// suite told "n/a" has to rediscover the change before it can exercise it.
 const changeUnderTest = c.bead ? `${c.bead.id || ''} ${c.bead.title || ''}`.trim() : 'feature'
+const greenChanged = a.green && Array.isArray(a.green.changedFiles) ? a.green.changedFiles.filter(Boolean) : []
 const surfaces = `Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
+Files the change modified: ${greenChanged.join(', ') || 'n/a'}
 Change under test: ${changeUnderTest}`
 
 phase('Integration')
@@ -429,6 +433,34 @@ ${surfaces}`,
   )
 }
 
+// The suites depend on the environment, so a dead setup is reported before any suite is
+// dispatched against it.
+if (provisionEnv && !envSetup) {
+  return {
+    ok: false,
+    dispatchFailed: true,
+    dispatchFailures: dispatchDeaths('Integration'),
+    reason: 'the test-environment-orchestrator returned nothing — skipped, or died on a terminal API error',
+    passed: false,
+    ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: ['test-environment-orchestrator'], mode: selectionMode, ok: false },
+  }
+}
+// An environment the orchestrator reports NOT ready would fail every suite for a reason
+// that is not the change, so no suite is run over it. It is a failed attempt, not a dead
+// dispatch: the gate's retry re-provisions.
+if (provisionEnv && envSetup && envSetup.ready !== true) {
+  log(`Integration: the test environment is not ready — no suite is run. ${envSetup.evidence || ''}`)
+  return {
+    passed: false,
+    coverageMet: false,
+    flaky: [],
+    failures: [`the integration test environment was not ready, so no suite ran: ${envSetup.evidence || 'no evidence given'}`],
+    evidence: envSetup.evidence || '',
+    envSetup,
+    ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: ['test-environment-orchestrator'], mode: selectionMode, ok: false },
+  }
+}
+
 // Run the selected suites in PARALLEL — each reads/runs over the provisioned env, so
 // concurrency is safe (unlike the sequential code-writing implementers in tdd-green).
 const suiteRuns = await parallel(
@@ -451,15 +483,15 @@ Deliver pass/fail, coverage, any flaky tests, and concrete failure details.`,
 )
 
 // A suite that returned nothing never ran. `passed` over the survivors would be a
-// verdict on part of the selected set, so any dead suite (or a dead environment setup the
-// suites depended on) is reported as a dispatch failure and the gate spends no retry on it.
+// verdict on part of the selected set, so any dead suite is reported as a dispatch
+// failure and the gate spends no retry on it.
 const deadSuites = suites.filter((_s, i) => !(suiteRuns || [])[i])
-if (deadSuites.length || (provisionEnv && !envSetup)) {
+if (deadSuites.length) {
   return {
     ok: false,
     dispatchFailed: true,
     dispatchFailures: dispatchDeaths('Integration'),
-    reason: `${deadSuites.length ? `integration suite(s) ${deadSuites.join(', ')}` : 'the test-environment-orchestrator'} returned nothing — skipped, or died on a terminal API error`,
+    reason: `integration suite(s) ${deadSuites.join(', ')} returned nothing — skipped, or died on a terminal API error`,
     passed: false,
     ledger: { phase: 'integration', beadId: (c.bead && c.bead.id) || null, chosen: suites, mode: selectionMode, ok: false },
   }

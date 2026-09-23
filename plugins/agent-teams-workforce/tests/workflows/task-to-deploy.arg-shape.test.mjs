@@ -29,7 +29,6 @@ function run(args) {
       if (call.name === 'agent-teams-workforce:workspace') {
         return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
-      if (call.name === 'agent-teams-workforce:spec-freshness') return { fresh: true }
       if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
         if (call.payload.gate === '1') return { verdict: 'pass', criteria: [], flags: [] }
         return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
@@ -46,23 +45,22 @@ test('the composite the routers actually call reaches its phases instead of thro
   const { result, calls } = await run({ bead: BEAD })
   assert.ok(result, 'the run must produce a result at all — it used to throw ReferenceError at Gate 1')
   const names = calls.filter((c) => c.kind === 'workflow').map((c) => c.name)
-  assert.ok(names.includes('agent-teams-workforce:spec-freshness'), 'Gate 1 must actually run')
-  assert.ok(names.includes('agent-teams-workforce:tdd-red'), 'and the run must get past it')
+  assert.ok(names.includes('agent-teams-workforce:tdd-red'), 'the run must reach Red')
 })
 
 test('spec defaults to the bead — the only shape any caller sends', async () => {
   const { calls } = await run({ bead: BEAD })
-  const freshness = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:spec-freshness')
-  assert.ok(freshness, 'spec-freshness must be dispatched')
-  assert.equal(freshness.payload.spec.id, 'ssbd-nhcx', 'with no separate spec document, the bead IS the spec')
+  const red = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:tdd-red')
+  assert.ok(red, 'tdd-red must be dispatched')
+  assert.equal(red.payload.contract.spec.id, 'ssbd-nhcx', 'with no separate spec document, the bead IS the spec')
 })
 
 test('an explicitly-supplied spec document still wins', async () => {
   // The header documented args.spec for two releases. A caller that followed it must
   // keep working rather than being silently ignored.
   const { calls } = await run({ bead: BEAD, spec: { id: 'SPEC-9', title: 'the spec', path: 'docs/spec.md' } })
-  const freshness = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:spec-freshness')
-  assert.equal(freshness.payload.spec.id, 'SPEC-9')
+  const red = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:tdd-red')
+  assert.equal(red.payload.contract.spec.id, 'SPEC-9')
 })
 
 test('the contract carries the bead, so Red and Adversarial know what they are working on', async () => {

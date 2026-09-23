@@ -512,6 +512,9 @@ Return exactly one resolution per findingId: ${ids.join(', ')}.`,
       : `No constitutive finding remains open after the constitutional ruling. ${ruling.rationale}`,
     ...(open.length ? { escalateTo: escalateTarget } : {}),
     constitutiveOpen: open.length,
+    // The rulings that stand after this ruling, so a later adversarial re-run is adjudicated
+    // against them (its priorRulings) rather than against the contradictory packet.
+    rulings: finalRulings,
     unresolvedFindings: unresolvedIds,
     ruledByConstitutionalAgent: true,
     ruledFromPrecedent: false,

@@ -359,8 +359,8 @@ function enter(title) {
 //                           // written. Default true.
 // }
 //
-// Returns: { ok, apply, settled, workDir, epic, assessment, edges, scoring, stop, error?,
-//            headline?, dispatchFailed, dispatchFailures }
+// Returns: { ok, stage, beadId, headline, apply, settled, workDir, epic, assessment, edges, scoring,
+//            stop, error?, dispatchFailed, dispatchFailures }
 //   settled:    the proposal validated and apply-edges accepted it
 //   assessment: the session's result
 //   edges:      apply-edges' summary as the session reported it, with the files holding every
@@ -369,18 +369,21 @@ function enter(title) {
 //               proposal did not validate; `error` and `headline` then name the Epic
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 if (Object.prototype.hasOwnProperty.call(a, 'mode')) {
-  return { ok: false, settled: false, error: '`mode` is not an argument: dependency assessment covers exactly one Epic' }
+  const error = '`mode` is not an argument: dependency assessment covers exactly one Epic'
+  return { ok: false, settled: false, stage: 'input', error, headline: error }
 }
 const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.test(p)
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (a.contextDir !== undefined && !isAbs(a.contextDir)) missingArgs.push('contextDir')
 if (missingArgs.length) {
-  return { ok: false, settled: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
+  const error = `required absolute path argument(s) missing: ${missingArgs.join(', ')}`
+  return { ok: false, settled: false, stage: 'input', error, headline: error }
 }
 const target = a.epic
 if (!(typeof target === 'string' && /^[A-Za-z0-9._-]+$/.test(target))) {
-  return { ok: false, settled: false, error: '`epic`, the id of the one Epic to assess, is required' }
+  const error = '`epic`, the id of the one Epic to assess, is required'
+  return { ok: false, settled: false, stage: 'input', error, headline: error }
 }
 const repo = a.repoPath.replace(/\/+$/, '')
 const work = a.workDir.replace(/\/+$/, '')
@@ -525,8 +528,22 @@ if (scores) {
   scoring = await workflow('agent-teams-workforce:wsjf-scoring', { ...project, workDir: file('scoring') })
 }
 
+// The supervisor reads `ok`, `stage` and `headline` off this return, so all three are set on
+// every path: the stage names where the run ended, and the headline says what happened.
+const scoredOk = !scores || (!!scoring && scoring.ok === true)
+const failure = stop
+  ? stopMessage
+  : !settled
+    ? `${target}: ${edges.reason}`
+    : !scoredOk
+      ? `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}`
+      : null
 return {
-  ok: settled && (!scores || (!!scoring && scoring.ok === true)),
+  ok: settled && scoredOk,
+  // A mapper that died did not assess anything: the stage says so, as the composites' does.
+  stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? 'Score' : 'done',
+  beadId: target,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}`,
   apply: applies,
   settled,
   workDir: work,
@@ -536,13 +553,7 @@ return {
   scoring,
   stop,
   ...(limitFindings.length ? { limitFindings } : {}),
-  ...(stop
-    ? { error: stopMessage, headline: stopMessage }
-    : !settled
-      ? { error: `${target}: ${edges.reason}` }
-      : scores && !(scoring && scoring.ok === true)
-        ? { error: `${target}: the edges were applied, but scoring failed: ${(scoring && scoring.error) || 'wsjf-scoring returned no result'}` }
-        : {}),
+  ...(failure ? { error: failure } : {}),
   dispatchFailed: dispatchDeaths().length > 0,
   dispatchFailures: dispatchDeaths(),
 }

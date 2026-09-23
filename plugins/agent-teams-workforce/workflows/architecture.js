@@ -1121,6 +1121,25 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
 // Both treated a number we picked as a fact about the architecture. The number of shards
 // is an OUTPUT: every shard obeys SHARD_MAX_FILES and SHARD_TARGET_BYTES, and however many
 // that takes is however many run. Nothing overflows, because there is nothing to overflow.
+//
+// A SHARD ALSO ENDS AT A FILE WHOSE PATH HASHES TO AN ANCHOR. Packed on sizes alone, one
+// edited or added file moves every boundary after it, every later batch's key changes, and
+// a SAD edit of one file re-reads most of §8. An anchor is a boundary set by a file NAME, so
+// a size change moves boundaries only as far as the next anchor. Measured over this SAD's 67
+// §8 files: an edit re-read 21 files on average and 56 at worst on sizes alone, and 10 and 12
+// with anchors, for two more batches on a first read. The minimum keeps anchors from cutting
+// batches too small to be worth a session. The same text is in architecture.js and
+// trd-authoring.js, because the two share this Epic's saved batches.
+const SHARD_ANCHOR_EVERY = 8
+const SHARD_ANCHOR_MIN_FILES = 6
+function isShardAnchor(path) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < path.length; i++) {
+    h ^= path.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h % SHARD_ANCHOR_EVERY === 0
+}
 function shardFiles(entries) {
   const shards = []
   let current = []
@@ -1134,6 +1153,11 @@ function shardFiles(entries) {
     }
     current.push(e)
     bytes += size
+    if (current.length >= SHARD_ANCHOR_MIN_FILES && isShardAnchor(e.path)) {
+      shards.push(current)
+      current = []
+      bytes = 0
+    }
   }
   if (current.length) shards.push(current)
   return shards
@@ -2447,6 +2471,30 @@ identity the moment anybody rewords it, and every citation to it rots without a 
   prevent, and it is worse than a tag nobody cites.
 - Report every tag you minted, preserved or superseded under \`entryTags\`.`
 
+// A run killed after the maintainer edited the SAD, and before the gate accepted the edit,
+// resumes by ruling again and consolidating again. The earlier pass's entries are already in
+// the SAD, and a second pass that mints fresh tags beside them leaves two copies of one
+// ruling. Nothing downstream consumed the earlier entries (the phase was never accepted),
+// so they are this ruling's own draft: updated in place, never superseded.
+const priorPassRefs = [
+  ART ? `the file ${ART.dir}/sad-update.json, when it exists — the report an earlier pass wrote, whose \`entryTags\` and \`changedFiles\` name its entries` : '',
+  ART ? `\`derived_from\` provenance and entries naming ${ART.epicId}` : '',
+  d.id ? `entries naming decision ${d.id}` : '',
+].filter(Boolean)
+const PRIOR_PASS_BRIEF = `
+AN EARLIER PASS OF THIS SAME RULING MAY ALREADY BE IN THE SAD. A previous run of this Epic can
+have consolidated its ruling and then stopped before that edit was accepted, so the entries it
+wrote are still in the document. Before you write, look for them: ${priorPassRefs.length ? priorPassRefs.join('; ') : 'entries whose provenance names this decision'}. Grep for those tags; do not read the SAD end to end.
+- An entry an earlier pass of this Epic wrote is THIS ruling's own unaccepted draft. UPDATE IT IN
+  PLACE under its existing tag and report it as \`preserved\`. Never append a second entry for the
+  same fact under a new tag, and never mark this Epic's own draft entry superseded.
+- If the ruling now decides a DIFFERENT fact than such an entry states, rewrite that entry to the
+  new fact under a NEW tag and delete the old tag from the document entirely, since nothing ever
+  cited an unaccepted draft. Report the old tag as \`superseded\`, with \`supersededBy\` naming the new one.
+- Entries from OTHER Epics' accepted rulings follow the ordinary tag rules above.
+- Backlinks and index rows the earlier pass added are corrected in place too; the result is one copy
+  of each fact, as if the ruling had been consolidated once.`
+
 // A REJECT MUST EXPLAIN ITSELF, AGAINST A NAMED RULE, IN WRITING THAT SURVIVES.
 // A free-text findings list let the reviewer halt the phase on taste alone: no rule
 // cited, no location, no severity, and nothing on disk afterwards. Every finding now
@@ -2511,6 +2559,7 @@ NEVER LABEL THE ADOPTED OPTION WITH A BARE PROPOSAL LETTER.
 Option letters are packet-local and do not survive outside the packet — the same letter routinely names an eliminated option elsewhere. Write the descriptive name. Where a provenance label is needed, write the full dual label, never a bare letter.
 
 ${SAD_TAG_BRIEF}
+${PRIOR_PASS_BRIEF}
 
 MARK WHAT THIS RULING SUPERSEDES IN PROVENANCE, NOT ONLY IN PROSE.
 If a \`derived_from\` entry asserts a state this ruling overturns, append a supersession marker naming this decision to that entry. A reader or extractor reading provenance alone must not come away with two rulings asserting opposite states.
@@ -2591,6 +2640,7 @@ function resumeSad(reviewerFeedback, label) {
 
 Do NOT start over and do NOT re-read the whole SAD. Run \`git status --short\` and \`git diff --stat\` in the repository holding ${sadPath} to see what was changed, open only the changed files you need, finish any statement of a changed claim the previous pass left inconsistent (targeted grep, list files only — never print whole files), and return. Keep §2/§4/§8 mutually consistent; no changelog narrative; never label the adopted option with a bare proposal letter.
 ${SAD_TAG_BRIEF}
+${PRIOR_PASS_BRIEF}
 Check the entries the previous pass touched: an entry it rewrote WITHOUT a tag needs one before you return, and an entry whose tag it changed needs the original tag restored.
 
 Ruling: ${decision.ruling}

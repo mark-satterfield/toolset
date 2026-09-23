@@ -417,7 +417,7 @@ function enter(title) {
 //   dryRun?:      boolean,   // compute everything and write nothing to the tracker
 // }
 //
-// Returns: { ok, workDir, dryRun, plan, judging, judgingFailed, error?, record, score,
+// Returns: { ok, stage, headline, workDir, dryRun, plan, judging, judgingFailed, error?, record, score,
 //            failures, dispatchFailed, dispatchFailures }
 //
 // A judging session that returns nothing fails the run: `ok` is false and
@@ -430,12 +430,13 @@ const isAbs = (p) => typeof p === 'string' && p.startsWith('/') && !/[\n\r\0]/.t
 const shq = (p) => `'${String(p).replace(/'/g, "'\\''")}'`
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (missingArgs.length) {
-  return { ok: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
+  const error = `required absolute path argument(s) missing: ${missingArgs.join(', ')}`
+  return { ok: false, stage: 'input', error, headline: error }
 }
 const ID = /^[A-Za-z0-9._-]+$/
 const only = a.only == null ? [] : a.only
 if (!Array.isArray(only) || !only.every((id) => typeof id === 'string' && ID.test(id))) {
-  return { ok: false, error: '`only` must be a list of bead ids' }
+  return { ok: false, stage: 'input', error: '`only` must be a list of bead ids', headline: '`only` must be a list of bead ids' }
 }
 const dryRun = a.dryRun === true
 const repo = a.repoPath.replace(/\/+$/, '')
@@ -445,7 +446,7 @@ const file = (name) => `${work}/${name}`
 const cmd = (sub, extra) => `python3 ${shq(DS)} ${sub} -C ${shq(repo)}${extra ? ` ${extra}` : ''}`
 const flags = `${a.all === true ? '--all ' : ''}${a.rejudge === true ? '--rejudge ' : ''}${only.length ? `--only ${shq(only.join(','))} ` : ''}`
 const dry = dryRun ? ' --dry-run' : ''
-const stop = (error, extra) => ({ ok: false, workDir: work, dryRun, error, ...extra, failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() })
+const stop = (error, extra) => ({ ok: false, stage: currentPhase, headline: error, workDir: work, dryRun, error, ...extra, failures, dispatchFailed: dispatchDeaths().length > 0, dispatchFailures: dispatchDeaths() })
 
 // ── Plan ─────────────────────────────────────────────────────────────────────────
 enter('Plan')
@@ -483,6 +484,11 @@ const taskGroups = inputs.task && Array.isArray(inputs.task.summary.groups)
   : []
 if (inputs.epic && epicIds.length !== plan.epicsToJudge) {
   return stop(`the plan names ${plan.epicsToJudge} Epic(s) to judge and the judge input lists ${epicIds.length}; nothing was judged or written`, { plan })
+}
+// The same check for Tasks: a group dropped here would leave its Tasks silently unjudged.
+const groupedTasks = taskGroups.reduce((n, g) => n + g.tasks.length, 0)
+if (inputs.task && groupedTasks !== plan.tasksToJudge) {
+  return stop(`the plan names ${plan.tasksToJudge} Task(s) to judge and the judge input groups ${groupedTasks}; nothing was judged or written`, { plan })
 }
 
 // ── Judge ────────────────────────────────────────────────────────────────────────
@@ -622,8 +628,12 @@ const errors = [
 ].filter(Boolean)
 const runError = errors.length ? { error: errors.join('; ') } : {}
 
+const scoredOk = !!score && failures.length === 0 && judgingFailed.length === 0
+// `stage` and `headline` are what the supervisor reads off this return.
 return {
-  ok: !!score && failures.length === 0 && judgingFailed.length === 0,
+  ok: scoredOk,
+  stage: scoredOk ? 'done' : judgingFailed.length ? 'Judge' : 'Apply',
+  headline: runError.error || (score ? `scored ${score.epicsScored} Epic(s) and ${score.tasksScored} Task(s); ${score.epicsWritten + score.tasksWritten} value(s) written${dryRun ? ' (dry run)' : ''}` : 'the arithmetic did not run'),
   workDir: work,
   dryRun,
   plan,

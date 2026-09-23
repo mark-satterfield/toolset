@@ -590,14 +590,17 @@ For each criterion, state whether it is met with evidence, quoting the criterion
 
 // ── The class is BINDING, not advisory ────────────────────────────────────────
 //
-// A `pass` cannot stand while a criterion the caller marked CONSTITUTIVE is reported
-// unmet. Matched by exact text so a paraphrase can never trip it. Competitive criteria
-// were never sent to the judge, so they join the flags here.
+// A `pass` cannot stand while the judge itemises a criterion as unmet. Only constitutive
+// criteria were sent to it, so every unmet entry it returns is one of them — however it
+// worded the criterion. Matching the text back against the caller's list would let a
+// paraphrased constitutive failure pass. Entries restating a settled deterministic check
+// are excluded: those were measured and held. Competitive criteria were never sent to the
+// judge, so they join the flags here.
 let ruled = verdict
 if (ruled && ruled.verdict) {
-  const unmet = (Array.isArray(ruled.criteria) ? ruled.criteria : []).filter((c) => c && c.met === false)
-  const constitutiveTexts = new Set(constitutiveCriteria.map((c) => c.text))
-  const unmetConstitutive = unmet.filter((c) => constitutiveTexts.has(c.criterion))
+  const settledLabels = new Set(checkResults.map((r) => r.criterion))
+  const unmet = (Array.isArray(ruled.criteria) ? ruled.criteria : []).filter((c) => c && c.met === false && !settledLabels.has(c.criterion))
+  const unmetConstitutive = unmet
   if (competitiveFlags.length) {
     ruled = { ...ruled, flags: [...(Array.isArray(ruled.flags) ? ruled.flags : []), ...competitiveFlags] }
   }

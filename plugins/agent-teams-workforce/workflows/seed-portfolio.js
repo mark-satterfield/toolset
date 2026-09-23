@@ -316,13 +316,13 @@ const ID = /^[A-Za-z0-9._-]+$/
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/
 const missingArgs = ['repoPath', 'pluginRoot', 'workDir'].filter((k) => !isAbs(a[k]))
 if (missingArgs.length) {
-  return { ok: false, error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
+  return { ok: false, stage: 'input', error: `required absolute path argument(s) missing: ${missingArgs.join(', ')}` }
 }
 if (!(typeof a.since === 'string' && ISO.test(a.since))) {
-  return { ok: false, error: '`since`, the ISO 8601 instant the seeding began, is required' }
+  return { ok: false, stage: 'input', error: '`since`, the ISO 8601 instant the seeding began, is required' }
 }
 if (!(Array.isArray(a.epics) && a.epics.every((e) => typeof e === 'string' && ID.test(e)))) {
-  return { ok: false, error: '`epics`, the list of Epic ids to assess, is required' }
+  return { ok: false, stage: 'input', error: '`epics`, the list of Epic ids to assess, is required' }
 }
 const work = a.workDir.replace(/\/+$/, '')
 const file = (name) => `${work}/${name}`
@@ -335,8 +335,11 @@ const assessed = []
 let stoppedAt = null
 let remaining = []
 let scoring = null
+// `stage` and `headline` are what a dispatcher reads off any composite's return.
 const result = (ok, extra) => ({
   ok,
+  stage: stoppedAt ? 'Assess' : ok ? 'done' : 'Score',
+  headline: (extra && extra.error) || `${assessed.length} Epic(s) assessed${applies ? ' and the portfolio rescored' : ' (proposed only)'}`,
   since: a.since,
   apply: applies,
   assessed,

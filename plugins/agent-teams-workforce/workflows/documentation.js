@@ -397,17 +397,25 @@ let selectionMode = 'default'
 let writersChosen = []
 
 if (needsWork) {
-  // Normalize the auditor's assignments: keep only valid roster writers that were given docs.
-  const validAssignments = (audit && Array.isArray(audit.assignments) ? audit.assignments : [])
-    .filter((x) => x && WRITERS.includes(x.writer) && Array.isArray(x.docs) && x.docs.filter(Boolean).length)
-    .map((x) => ({ writer: x.writer, docs: x.docs.filter(Boolean) }))
+  // Normalize the auditor's assignments: keep only valid roster writers, each doc with the
+  // FIRST writer it was given to. The writers run in parallel in one tree, so a doc handed
+  // to two of them is two concurrent edits of one file.
+  const assigned = new Set()
+  const validAssignments = []
+  for (const x of audit && Array.isArray(audit.assignments) ? audit.assignments : []) {
+    if (!x || !WRITERS.includes(x.writer) || !Array.isArray(x.docs)) continue
+    const docs = [...new Set(x.docs.filter(Boolean))].filter((doc) => !assigned.has(doc))
+    for (const doc of docs) assigned.add(doc)
+    if (!docs.length) continue
+    const existing = validAssignments.find((v) => v.writer === x.writer)
+    if (existing) existing.docs.push(...docs)
+    else validAssignments.push({ writer: x.writer, docs })
+  }
 
   // Every stale doc must reach a writer. An assignment set that covers only some of them
   // is not a reason to drop the rest — the auditor said they were stale, and the audit is
   // what `docsCurrent` is computed against below.
-  const assigned = new Set()
-  for (const asg of validAssignments) for (const doc of asg.docs) assigned.add(doc)
-  const unassigned = staleDocs.filter((doc) => !assigned.has(doc))
+  const unassigned = [...new Set(staleDocs)].filter((doc) => !assigned.has(doc))
   if (unassigned.length) {
     // Map the leftovers deterministically by path rather than paying a session to route
     // them. Merge into an existing assignment where the writer already has work.

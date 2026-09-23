@@ -285,7 +285,10 @@ async function settleAgent(prompt, opts) {
 
 // args: { contract, green, trimmedScope?, feedback?, priorRulings? }
 //   priorRulings?: [{ findingId, title, severity, classification, real }]
-//     The adjudication from the PREVIOUS attempt at this gate. Its absence is what let
+//     The rulings that stood after the PREVIOUS pass at this gate (the composites pass them
+//     on a deploy-correction re-run). Ids minted by an older fingerprint are fine: the
+//     adjudicator links a current finding to a prior one through `priorFindingId`, which
+//     is constrained to the prior ids as given. Its absence is what let
 //     the adjudicator rule one fact constitutive/real in one round and competitive/not-real
 //     in the next with no new evidence: the feedback string reached only the ATTACKER
 //     prompts, so the adjudicator was a fresh instance every round that had never been
@@ -671,14 +674,17 @@ for (const r of rawRulings) {
 // 2. CROSS-ROUND: a reversal of a prior ruling with no citation has NO EFFECT. The prior
 //    ruling is reinstated. Reversal itself stays legal — adversarial re-runs against a
 //    CHANGED tree, so a finding the fix removed can legitimately flip to real=false, and
-//    a blanket ban would deadlock every repaired finding forever.
+//    a blanket ban would deadlock every repaired finding forever. The rule guards against
+//    SOFTENING only, by the same tie-break as the intra-packet case: a ruling now more
+//    severe than the prior one stands uncited, because reinstating the softer prior is how
+//    a real exposure in a repair gets waved through.
 const unjustifiedReversals = []
 for (const id of Object.keys(byId)) {
   const now = byId[id]
   const prior = priorById[now.priorFindingId || id]
   if (!disagrees(prior, now)) continue
   const cited = !!(now.reversalOf && String(now.reversalOf.evidence || '').trim())
-  if (cited) continue
+  if (cited || severityWeight(now) >= severityWeight(prior)) continue
   unjustifiedReversals.push({
     findingId: id,
     priorFindingId: prior.findingId,

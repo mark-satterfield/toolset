@@ -416,9 +416,7 @@ if (!prdBody) {
     ambiguities: [],
     conflicts: [],
     completenessGaps: [],
-    nfrs: null,
     constraints: [],
-    dependencyGraph: null,
     boundaryFindings: [],
   }
 }
@@ -643,9 +641,7 @@ if (!analysis) {
     ambiguities: [],
     conflicts: [],
     completenessGaps: [],
-    nfrs: null,
     constraints: [],
-    dependencyGraph: null,
     boundaryFindings: [],
   }
 }
@@ -723,9 +719,7 @@ return {
   ambiguities,
   conflicts,
   completenessGaps,
-  nfrs: null,
   constraints,
-  dependencyGraph: null,
   boundaryFindings,
   clarifications,
   traceability,

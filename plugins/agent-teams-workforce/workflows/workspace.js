@@ -718,6 +718,8 @@ const refuse = (reason) => ({
   reused: false,
   blocked: [reason, ...((provisioned && Array.isArray(provisioned.blocked) && provisioned.blocked) || [])],
   evidence: (provisioned && provisioned.evidence) || null,
+  // A provisioner or verifier that died did not refuse the tree; nobody looked at it.
+  ...(dispatchDeaths().length ? { dispatchFailed: true, dispatchFailures: dispatchDeaths() } : {}),
 })
 
 if (!provisioned || provisioned.ok !== true || !String(provisioned.repoPath || '').trim()) {

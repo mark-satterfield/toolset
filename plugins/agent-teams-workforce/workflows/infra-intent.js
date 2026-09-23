@@ -531,16 +531,8 @@ const fresh = dependencyChanges.invalidated !== true
 // A cost finding still blocking after the bounded maker loop leaves the intent not ready.
 if (!costResolved) log(`Cost review still blocking after ${MAX_COST_LOOPS} maker pass(es) — the intent is not ready`)
 
-// ── Contract: one object threading every phase output ──────────────────────────
-// `ready` is at the top level too: infra-change Gate 1 checks it directly.
+// `ready` is at the top level: infra-change Gate 1 checks it directly.
 const ready = fresh && securityFindings.blocking !== true && costResolved
-const contract = {
-  ready,
-  change: change.id || null,
-  repoPath: change.repoPath || null,
-  affectedStacks: intent.affectedStacks,
-  fresh,
-}
 
 return {
   ready,
@@ -550,5 +542,4 @@ return {
   securityFindings,
   costFindings,
   fresh,
-  contract,
 }

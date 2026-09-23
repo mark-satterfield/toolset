@@ -593,7 +593,7 @@ PRD-to-Spec pipeline, phase 4 — decomposes a Spec's Story into sized, dependen
 
 ### Spec Freshness — Execution Team
 
-The `spec-freshness` mini validates spec and dependency currency and computes the fresh/stale verdict in code; no composite runs it. 3 agents.
+No workflow dispatches `spec-freshness-lead` or `spec-currency-validator`; `dependency-change-detector` is dispatched by `infra-intent` as its freshness check. 3 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |

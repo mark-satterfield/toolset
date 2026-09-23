@@ -862,6 +862,25 @@ If the directory does not exist or holds no \`.json\` file, return an empty list
 // Both treated a number we picked as a fact about the architecture. The number of shards
 // is an OUTPUT: every shard obeys SHARD_MAX_FILES and SHARD_TARGET_BYTES, and however many
 // that takes is however many run. Nothing overflows, because there is nothing to overflow.
+//
+// A SHARD ALSO ENDS AT A FILE WHOSE PATH HASHES TO AN ANCHOR. Packed on sizes alone, one
+// edited or added file moves every boundary after it, every later batch's key changes, and
+// a SAD edit of one file re-reads most of §8. An anchor is a boundary set by a file NAME, so
+// a size change moves boundaries only as far as the next anchor. Measured over this SAD's 67
+// §8 files: an edit re-read 21 files on average and 56 at worst on sizes alone, and 10 and 12
+// with anchors, for two more batches on a first read. The minimum keeps anchors from cutting
+// batches too small to be worth a session. The same text is in architecture.js and
+// trd-authoring.js, because the two share this Epic's saved batches.
+const SHARD_ANCHOR_EVERY = 8
+const SHARD_ANCHOR_MIN_FILES = 6
+function isShardAnchor(path) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < path.length; i++) {
+    h ^= path.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h % SHARD_ANCHOR_EVERY === 0
+}
 function shardFiles(entries) {
   const shards = []
   let current = []
@@ -875,6 +894,11 @@ function shardFiles(entries) {
     }
     current.push(e)
     bytes += size
+    if (current.length >= SHARD_ANCHOR_MIN_FILES && isShardAnchor(e.path)) {
+      shards.push(current)
+      current = []
+      bytes = 0
+    }
   }
   if (current.length) shards.push(current)
   return shards

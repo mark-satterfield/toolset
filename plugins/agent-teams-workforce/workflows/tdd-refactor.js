@@ -286,6 +286,7 @@ const c = a.contract || {}
 const green = a.green || {}
 const repo = c.repoPath || (c.bead && c.bead.repoPath) || '(repo path not provided)'
 const changedFromGreen = (green.changedFiles || []).join(', ') || 'n/a'
+const beadId = (c.bead && c.bead.id) || null
 
 // ── THE CONTRACT THE CHANGE WAS BUILT TO ──────────────────────────────────────────
 // A refactor preserves behavior AND stays inside the design the change was built to. That
@@ -311,7 +312,91 @@ const contractBlock = (() => {
   return lines.length ? `\n\n${lines.join('\n')}` : ''
 })()
 
+// ── A FAILED REFACTOR PUTS THE TREE BACK AT GREEN ──────────────────────────────
+//
+// Refactor edits code that has just passed Green, and nothing commits before settle, so a
+// refactor that breaks the suite, or is rejected by the correctness reviewer, or dies half
+// way, would otherwise leave its partial edits in the worktree for every later phase to
+// build, test and deploy. So the Green state is snapshotted as a git tree BEFORE the first
+// edit, and every failure below restores the tree to it.
+//
+// The restore covers every path that differs from the snapshot except documentation: the
+// documentation track runs concurrently in the same worktree and writes only documentation,
+// so its edits are left alone, and a refactor edit the agents did not report is still
+// found and undone. Only the worktree path and the snapshot id are interpolated into the
+// commands; both are validated here first.
+const REPO_PATH_SHAPE = /^\/[A-Za-z0-9._/-]+$/
+const repoPathOk = REPO_PATH_SHAPE.test(repo) && !repo.includes('//') && !repo.endsWith('/') && !repo.split('/').includes('..')
+const TREE_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/
+const DOC_PATHS = 'files ending in .md, .mdx, .rst or .adoc, and anything under a docs/ directory'
+
+// The restore is ONE dispatch. `restored` is true only when the agent reports the tree back
+// at the snapshot for every non-documentation path.
+async function restoreGreen(tree, why) {
+  const out = await settleAgent(
+    `RESTORE this worktree to the snapshot taken before a refactor, because ${why}. Run these commands exactly, in order, and nothing else that writes:
+
+1. git -C "${repo}" add -A
+2. git -C "${repo}" diff --cached --name-only ${tree}
+   These are the paths that changed since the snapshot. Set aside the documentation paths (${DOC_PATHS}) — a concurrent documentation step owns them. Every OTHER path is restored.
+3. git -C "${repo}" restore --source=${tree} --staged --worktree -- <each path from step 2 that is not documentation>
+4. git -C "${repo}" diff --cached --name-only ${tree}
+   Report restored=true only if this lists documentation paths and nothing else.
+
+Do not edit any file by hand, do not run tests, and do not touch any other tree. Return the paths you restored and the output of step 4 as evidence.`,
+    {
+      label: 'refactor:restore-green',
+      phase: 'Refactor',
+      effort: 'low',
+      agentType: 'agent-teams-workforce:code-refactoring-specialist',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['restored', 'restoredFiles', 'evidence'],
+        properties: {
+          restored: { type: 'boolean' },
+          restoredFiles: { type: 'array', items: { type: 'string' } },
+          evidence: { type: 'string' },
+        },
+      },
+    }
+  )
+  const restored = !!(out && out.restored === true)
+  log(`Refactor: restore to the Green snapshot ${restored ? 'SUCCEEDED' : 'FAILED'} (${why})`)
+  return {
+    restored,
+    restoredFiles: (out && Array.isArray(out.restoredFiles) ? out.restoredFiles : []),
+    restoreEvidence: (out && out.evidence) || null,
+    ...(restored ? {} : { restoreReason: out ? `the restore agent reported the tree is not back at the snapshot: ${out.evidence || 'no evidence'}` : 'the restore dispatch returned nothing' }),
+  }
+}
+
+// A failed attempt returns with the tree restored. When the restore itself failed the tree
+// holds unverified edits, so the result is `phaseBlocked`: the caller's gate does not retry
+// on top of them, and `restored: false` tells the composite not to build on the tree.
+async function failRestored(tree, why, result) {
+  const r = await restoreGreen(tree, why)
+  return {
+    ...result,
+    ...r,
+    ...(r.restored ? {} : { phaseBlocked: true, blockedReason: `${why}, and ${r.restoreReason}` }),
+  }
+}
+
 phase('Refactor')
+
+// A path the snapshot and restore commands cannot safely carry means a refactor could not
+// be undone, so none is attempted and nothing is dispatched.
+if (!repoPathOk) {
+  return {
+    phaseBlocked: true,
+    blockedReason: `the contract repoPath ${JSON.stringify(repo)} is not an absolute path of plain characters, so no snapshot command can be issued and a refactor could not be undone`,
+    testsGreen: false,
+    behaviorPreserved: false,
+    changedFiles: [],
+    ledger: { phase: 'refactor', beadId, chosen: [], mode: 'refused', ok: false },
+  }
+}
 
 // 1) ADVISOR — complexity-analyzer reads the green-tested change and returns prioritized
 // refactor recommendations. READ-ONLY: it makes no edits; its output informs selection.
@@ -421,6 +506,42 @@ const pickedOptimizers =
     : []
 const selectionMode = pickedOptimizers.length ? 'selected' : 'default'
 
+// The Green snapshot. Taken here, after the read-only steps and before the first edit.
+// Without it a failure could not be undone, so no refactor is attempted.
+const snapshot = await settleAgent(
+  `Record the current state of this worktree as a git tree object, so a refactor can be undone. Run exactly these two commands and nothing else:
+
+1. git -C "${repo}" add -A
+2. git -C "${repo}" write-tree
+
+Return the id step 2 printed, verbatim, as \`tree\`. Do not edit any file.`,
+  {
+    label: 'refactor:snapshot-green',
+    phase: 'Refactor',
+    effort: 'low',
+    agentType: 'agent-teams-workforce:code-refactoring-specialist',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['tree'],
+      properties: { tree: { type: 'string' } },
+    },
+  }
+)
+const snapshotTree = snapshot && TREE_ID.test(String(snapshot.tree || '').trim()) ? String(snapshot.tree).trim() : null
+if (!snapshotTree) {
+  const why = snapshot ? `the snapshot step returned ${JSON.stringify(snapshot.tree)}, which is not a git tree id` : 'the snapshot step returned nothing'
+  log(`Refactor: no Green snapshot (${why}) — no refactor is attempted, because a failure could not be undone`)
+  return {
+    ok: false,
+    ...(snapshot ? { phaseBlocked: true, blockedReason: why } : { dispatchFailed: true, dispatchFailures: dispatchDeaths('Refactor'), reason: why }),
+    testsGreen: false,
+    behaviorPreserved: false,
+    changedFiles: [],
+    ledger: { phase: 'refactor', beadId, chosen: [], mode: selectionMode, ok: false },
+  }
+}
+
 // 3) MAKER — the code-refactoring-specialist applies the behavior-preserving refactor first,
 // keeping every test green. This is the segregation invariant's writer half; it pairs with
 // the read-only correctness reviewer at the end.
@@ -452,14 +573,19 @@ Deliver the files you touched, whether tests are still green, and the captured t
 
 // A refactorer that returned nothing never ran, so there is nothing to review or judge.
 // Reported as a dispatch failure: the composite spends no gate retry on it.
+// It may still have edited the tree before it died, so the tree is restored first.
 if (!refactor) {
-  return {
+  return await failRestored(snapshotTree, 'the code-refactoring-specialist returned nothing', {
     ok: false,
     dispatchFailed: true,
     dispatchFailures: dispatchDeaths('Refactor'),
     reason: 'the code-refactoring-specialist returned nothing — skipped, or died on a terminal API error',
-    ledger: { phase: 'refactor', beadId: (c.bead && c.bead.id) || null, chosen: ['code-refactoring-specialist'], mode: selectionMode, ok: false },
-  }
+    testsGreen: false,
+    behaviorPreserved: false,
+    changedFiles: [],
+    snapshotTree,
+    ledger: { phase: 'refactor', beadId, chosen: ['code-refactoring-specialist'], mode: selectionMode, ok: false },
+  })
 }
 
 const OPTIMIZER_SCHEMA = {
@@ -479,6 +605,22 @@ const OPTIMIZER_SCHEMA = {
 // suite green; the captured output proves it before the next one runs.
 const optimizerRuns = []
 const changedFiles = [...(refactor.changedFiles || [])]
+// A writer that reports the suite red has already failed the phase: no later writer and no
+// reviewer can make it pass, so the tree is restored and the phase ends there.
+const writerRed = (who, run) =>
+  failRestored(snapshotTree, `${who} reported the test suite is no longer green`, {
+    refactor,
+    optimizers: optimizerRuns,
+    complexityAnalysis: complexity,
+    review: null,
+    findings: [`${who} reported the suite red after its change: ${String((run && run.evidence) || 'no evidence').slice(0, 2000)}`],
+    changedFiles,
+    testsGreen: false,
+    behaviorPreserved: false,
+    snapshotTree,
+    ledger: { phase: 'refactor', beadId, chosen: ['code-refactoring-specialist', ...optimizerRuns.map((o) => o.optimizer)], mode: selectionMode, ok: false },
+  })
+if (refactor.testsGreen !== true) return await writerRed('the code-refactoring-specialist', refactor)
 for (const opt of pickedOptimizers) {
   const run = await settleAgent(
     `Apply your optimization to the refactored code WITHOUT changing behavior, then run the test suite and confirm every test is still green. Work within: ${repo}
@@ -497,6 +639,7 @@ Constraints: preserve behavior; stay inside the contract above; do not modify te
   )
   optimizerRuns.push({ optimizer: opt, ...(run || {}) })
   if (run && Array.isArray(run.changedFiles)) changedFiles.push(...run.changedFiles)
+  if (run && run.testsGreen !== true) return await writerRed(`the ${opt}`, run)
 }
 
 // 5) CHECKER — independent correctness review LAST. A different, READ-ONLY agent confirms the
@@ -530,14 +673,15 @@ Optimizers run: ${pickedOptimizers.join(', ') || 'none'}${contractBlock}`,
 // chose optimizers; mode 'default' = no optimizer applied and only the fixed pair ran.
 const ledger = {
   phase: 'refactor',
-  beadId: (c.bead && c.bead.id) || null,
+  beadId,
   chosen: ['code-refactoring-specialist', ...pickedOptimizers, 'code-correctness-reviewer'],
   mode: selectionMode,
   ok: !!(review && review.testsGreen && review.behaviorPreserved),
 }
 
+// An unreviewed refactor is not kept: nobody confirmed it preserves behavior.
 if (!review) {
-  return {
+  return await failRestored(snapshotTree, 'the code-correctness-reviewer returned nothing', {
     ok: false,
     dispatchFailed: true,
     dispatchFailures: dispatchDeaths('Refactor'),
@@ -545,18 +689,25 @@ if (!review) {
     refactor,
     optimizers: optimizerRuns,
     changedFiles,
+    testsGreen: false,
+    behaviorPreserved: false,
+    snapshotTree,
     ledger,
-  }
+  })
 }
 
 // Gate 2c checks these two booleans directly, so they sit at the top level.
-return {
+const reviewed = {
   refactor,
   optimizers: optimizerRuns,
   complexityAnalysis: complexity,
   review,
+  findings: Array.isArray(review.findings) ? review.findings : [],
   changedFiles,
   testsGreen: review.testsGreen === true,
   behaviorPreserved: review.behaviorPreserved === true,
+  snapshotTree,
   ledger,
 }
+if (reviewed.testsGreen && reviewed.behaviorPreserved) return reviewed
+return await failRestored(snapshotTree, 'the code-correctness-reviewer rejected the refactor', reviewed)

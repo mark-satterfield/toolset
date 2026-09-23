@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. Smoke authoring and CDK synth/drift run concurrently, joined by the pipeline implementer only when the change touches .github/workflows; the build lane deploys exactly one repository per Task. Readiness is computed by the script from facts it holds — confirmed Green evidence and a valid CDK synth (or an evidenced not-applicable). On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
+    'Shared-tail mini — Deploy (Gate 5). DEPLOYS CODE TO AWS DEV; it does not open a pull request and never has one as a precondition. Smoke authoring (skipped on a redeploy, which re-runs the suite the previous iteration authored) and CDK synth/drift run concurrently, joined by the pipeline implementer only when the change touches .github/workflows; the build lane deploys exactly one repository per Task. Readiness is computed by the script from facts it holds — confirmed Green evidence and a valid CDK synth (or an evidenced not-applicable). On a go, it rolls out to dev and runs the smoke tests against the deployed endpoints — deploying to dev is how code reaches AWS and is not human-gated. LANDING the work (commit, push, PR) is a separate concern owned by the calling composite\'s Settle step, so this mini can run — repeatedly — with no PR in existence. qa/prod rollout is outward-facing, stays human-gated, and never happens from here.',
   phases: [{ title: 'Deploy-readiness', detail: 'synth + smoke authoring + computed readiness, then roll out to AWS dev and smoke-check the deployed endpoints' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -280,7 +280,12 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green, feedback? }
+// args: { contract, green, feedback?, smokeTestFiles?, leaseScope? }
+//   smokeTestFiles?: string[] — a smoke suite an earlier iteration authored and ran. A
+//     redeploy after a Green repair re-runs THIS suite, the one that proved the defect,
+//     rather than re-authoring it from a prompt saying it failed.
+//   leaseScope?: string — the repository identity the dev deployment lease is keyed on (the
+//     worktree's git common dir). Absent, the lease is keyed on the contract repoPath.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -379,11 +384,16 @@ const changedPaths = (green.changedFiles || []).map((f) => String(f || ''))
 const touchesPipeline = changedPaths.some((f) => /(^|\/)\.github\/workflows\//i.test(f))
 log(`Readiness: ${touchesPipeline ? 'the change touches .github/workflows, so the pipeline implementer runs' : 'no pipeline change — smoke authoring and CDK validation only'}`)
 
+const priorSmokeFiles = (Array.isArray(a.smokeTestFiles) ? a.smokeTestFiles : []).map((f) => String(f || '').trim()).filter(Boolean)
+if (priorSmokeFiles.length) log(`Smoke suite: re-running the ${priorSmokeFiles.length} file(s) the previous iteration authored — not re-authoring them`)
+
 // Smoke authoring, CDK synth/drift and (when needed) the pipeline update run in ONE wave:
 // none of them consumes another's output.
 const [smoke, cdk, pipeline] = await parallel([
   () =>
-    settleAgent(
+    priorSmokeFiles.length
+      ? Promise.resolve({ smokeTestFiles: priorSmokeFiles, reused: true })
+      : settleAgent(
       `Author post-deployment smoke tests that verify the fixed behavior against a deployed endpoint. Do not deploy. Work within: ${repo}
 
 Change: ${c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'}
@@ -555,7 +565,14 @@ const LEASE_STALE_MINUTES = 45
 // correction loop. It gives up rather than waiting forever because a phase that never
 // returns is indistinguishable from a hung one.
 const LEASE_WAIT_MINUTES = 20
-const leaseScope = suppliedRepoPath || '(unscoped)'
+// A worktree path is per Task, so keying on it serialized nothing between two Tasks of one
+// repository. The caller's `leaseScope` (the repository's git common dir) is the key when
+// it is a plain absolute path; otherwise the contract path is.
+const suppliedLeaseScope = String(a.leaseScope || '').trim()
+const leaseScope =
+  (CONTRACT_PATH_SHAPE.test(suppliedLeaseScope) && !suppliedLeaseScope.includes('//') && !suppliedLeaseScope.split('/').includes('..') ? suppliedLeaseScope.replace(/\/+$/, '') : '') ||
+  suppliedRepoPath ||
+  '(unscoped)'
 const leaseKey = `${DEV_ACCOUNT}/${DEV_REGION}/${leaseScope}`
 
 const wantsRollout = readiness.ready && rolloutAllowed
@@ -846,7 +863,11 @@ Never remove a lease whose token you did not match.`,
 // three times. It is deliberately NOT done here, and this comment exists so the next
 // reader knows the value is a claim rather than discovering it the hard way.
 const deployedToDev = !!(rollout && rollout.deployed)
-const smokePassed = !!(rollout && rollout.smokePassed)
+// The summary boolean holds only when the per-case rows agree with it: at least one case
+// ran and none failed. A `smokePassed: true` beside a failing or empty case list is the
+// rollout contradicting its own observations, and the observations win.
+const smokeCases = rollout && Array.isArray(rollout.smokeCases) ? rollout.smokeCases.filter(Boolean) : []
+const smokePassed = !!(rollout && rollout.smokePassed === true && smokeCases.length && smokeCases.every((sc) => sc.passed === true))
 
 // Two more facts hoisted for Gate 5's flat checks: `cdkSynthOk` (computed above, with the
 // not-applicable carve-out) and `smokeTestFiles`, so "present" is a length check.
@@ -860,7 +881,7 @@ const ledger = {
   stage: deployedToDev ? 'deployed-to-dev' : 'not-deployed',
   beadId: (c.bead && c.bead.id) || null,
   // Readiness is computed by the script; no lead, facilitator, decider or enforcer runs.
-  chosen: ['smoke-test-author', 'cdk-infrastructure-drift-detector', ...(touchesPipeline ? ['github-actions-pipeline-implementer'] : []), ...(rollout ? ['cdk-stack-author'] : [])],
+  chosen: [...(priorSmokeFiles.length ? [] : ['smoke-test-author']), 'cdk-infrastructure-drift-detector', ...(touchesPipeline ? ['github-actions-pipeline-implementer'] : []), ...(rollout ? ['cdk-stack-author'] : [])],
   mode: touchesPipeline ? 'pipeline-change' : 'fixed',
   env: targetEnv,
   localGatesOk,

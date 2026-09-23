@@ -471,12 +471,14 @@ Deliver:
   }
 )
 
-// A dead dispatch is not a diagnosis, a sizing or a contract. The caller treats a null
-// result as "triage produced nothing" and stops, so each death returns null with its
-// cause logged — reading `.rootCause` off a null analysis used to throw out of the run.
+// A dead dispatch is not a diagnosis, a sizing or a contract. Each death returns the
+// `dispatchFailed` shape every other mini returns, so the caller reports it under the
+// environment stage and never checkpoints it as a contract.
 const triageDied = (what) => {
-  log(`Triage: the ${what} returned nothing — ${dispatchDeaths('Triage').map((f) => f.note).join('; ') || 'no dispatch was recorded'}`)
-  return null
+  const deaths = dispatchDeaths('Triage')
+  const reason = `the triage ${what} returned nothing — ${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}`
+  log(`Triage: ${reason}`)
+  return { ok: false, dispatchFailed: true, dispatchFailures: deaths, reason }
 }
 if (!analysis) return triageDied('diagnosis')
 
@@ -671,7 +673,7 @@ return {
   acceptanceCriteria: authoredAc,
   uncoveredDefects,
   ...(limitFindings.length ? { limitFindings } : {}),
-  // Carried on the contract for the settle/deploy path to land as a repo gate. NOT
-  // acceptance criteria and never handed to the Red phase.
+  // Repo-wide invariants the writer routed out of the acceptance criteria. Recorded in the
+  // run journal; no phase reads them, and they are never handed to the Red phase.
   lintRules,
 }

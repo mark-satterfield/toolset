@@ -301,7 +301,7 @@ async function settleAgent(prompt, opts) {
 // Returns: {
 //   bead,
 //   action,      // 'work' | 'skip'
-//   composite,   // 'task-to-deploy' | 'bug-fix' | 'infra-change' | null
+//   composite,   // 'task-to-deploy' | 'infra-change' | null
 //   reason,
 //   ruledBy?,    // 'deterministic' | 'ambiguity-detector'
 // }
@@ -501,7 +501,9 @@ const agentReason = (classification && classification.reason) || 'no reason retu
 if (!kind || kind === 'other' || !confident) {
   const reason = `ambiguity-detector could not confidently classify this bead (kind="${kind || 'none'}", confident=${confident}): ${agentReason} → SKIP (reported, not force-fit)`
   log(`route-build ${bead.id || '(no id)'}: SKIP — ${reason}`)
-  return skip(reason)
+  // A classifier that died did not rule: the skip says so, so a caller can tell it from a
+  // bead that was looked at and could not be placed.
+  return classification ? skip(reason) : { ...skip(reason), dispatchFailed: true, dispatchFailures: dispatchDeaths('Classify') }
 }
 
 // Re-apply the SAME workability rules to the classified kind. The classifier

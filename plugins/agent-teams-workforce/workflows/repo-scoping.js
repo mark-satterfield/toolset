@@ -830,6 +830,23 @@ if (wantSurveyCache && !replaySurvey && replayRead.surveyCache) {
   }
 }
 
+// On a cache hit no surveyor runs, so nothing would write THIS Epic's
+// repo-scoping-survey.json, and a later run could only replay this ruling beside the survey
+// file of an earlier run — or never, when that older file has gone stale. The decider holds
+// the cached inventory verbatim in its brief, so it saves this Epic's copy with its ruling.
+const cachedSurveyBrief = (s) =>
+  surveyCacheHit && ART
+    ? persistBrief(
+        ART,
+        'repo-scoping-survey.json',
+        `the cached repository survey this ruling was made over — exactly this JSON object, verbatim — ${JSON.stringify({
+          repositories: s.repositories,
+          conventions: s.conventions || null,
+          surveySummary: s.surveySummary || null,
+        })} —`
+      )
+    : ''
+
 // When the surveyor DOES run, it refreshes the shared cache as it returns — the same
 // save-before-you-return discipline persistBrief imposes, to a second, shared location.
 // The freshness stamp is written by the session that did the surveying, because it is the
@@ -1071,7 +1088,7 @@ Rule, and return:
 
 Every work unit in the design must appear in exactly one placement or one newRepos entry. A unit you place nowhere is work that gets specified nowhere.
 
-Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}`,
+Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}${cachedSurveyBrief(survey)}`,
   {
     label: 'scope:rule-span',
     phase: 'Rule the span',

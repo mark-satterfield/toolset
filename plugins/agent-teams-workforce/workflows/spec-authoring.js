@@ -374,11 +374,9 @@ function checkLimit(where, what, value, expected, min) {
 //                                 // the spec documents themselves are handed on as paths.
 //
 // returns { ok, unresolvedArtifacts, story, spec, apiSpec, dataModelSpec, eventContracts, errorSpec,
-// acceptanceCriteria, definitionOfDone, reviewFindings, decision, decisionIds, outOfRepoFindings,
-// coverageShortfalls, criteriaShortfall, note } where coverageShortfalls names every maker
-// that could not cover the repository within its reading budget (empty is the expected
-// case) and criteriaShortfall names the acceptance criteria the maker chose not to
-// enumerate (null is the expected case)
+// decisionIds, outOfRepoFindings, note }. The acceptance criteria and Definition of Done reach
+// the caller in spec-<slug>.criteria.md, which task decomposition reads; a coverage or
+// criteria shortfall, and the review findings and rulings, are logged where they happen.
 // where story is the ONE Story bead specification this Spec pairs with (a Spec and its
 // Story are created together; nothing here writes to .beads — the caller writes it with bd):
 //   story: {
@@ -719,9 +717,8 @@ async function replayStory(a, repoPath, epic) {
     spec: { id: s.id || null, title: s.title || null, service: s.service || null, repoPath },
     specPaths,
     outOfRepoFindings: Array.isArray(saved.outOfRepoFindings) ? saved.outOfRepoFindings : [],
-    // No maker ran on a replay, so no maker reported a shortfall. The shape stays uniform.
-    coverageShortfalls: [],
-    criteriaShortfall: null,
+    // Saved with the Story; a file written before it was saved there carries none.
+    decisionIds: Array.isArray(saved.decisionIds) ? saved.decisionIds.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [],
     // The summary is a navigation aid downstream and the documents are the contract. An
     // empty one makes the consumer fall back to the TRD summary rather than believe this.
     apiSpec: { summary: '' },
@@ -850,7 +847,6 @@ async function main(a) {
   const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')
   const dataModelBrief = persistBrief(ART, `spec-${artSlug}.data-model.md`, 'the data-model specification you return, with its full content, as a markdown document')
   const criteriaBrief = persistBrief(ART, `spec-${artSlug}.criteria.md`, 'the acceptance criteria and Definition of Done you return, as ONE markdown document with a section for each')
-  const storyBrief = persistBrief(ART, `story-${artSlug}.json`, 'your complete structured result (title, description, outOfRepoFindings — exactly as you return them) as ONE JSON object')
 
   // A rerun whose spec artifacts are fresh needs this mini's OUTPUT, not its work. Checked
   // before the first maker is dispatched; a replay that yields nothing usable falls straight
@@ -980,12 +976,13 @@ ${criteriaMakerCtx}${criteriaBrief}`,
   }
 
   for (const [artifact, draft] of [
-    ['contracts', contractsDraft],
-    ['data-model', dataModelSpecDraft],
+    ['apiSpec', contractsDraft && contractsDraft.apiSpec],
+    ['eventContracts', contractsDraft && contractsDraft.eventContracts],
+    ['errorSpec', contractsDraft && contractsDraft.errorSpec],
+    ['dataModelSpec', dataModelSpecDraft],
     ['criteria', criteriaDraft],
   ]) {
-    const sf = draft && draft.coverageShortfall
-    const one = sf && typeof sf === 'object' ? sf : draft && draft.apiSpec && draft.apiSpec.coverageShortfall
+    const one = draft && draft.coverageShortfall
     if (one && typeof one === 'object') {
       log(`Coverage shortfall (${artifact}): ${one.filesRead} file(s) read in ${repoPath} — not covered: ${String(one.uncovered || '').slice(0, 200)}`)
     }
@@ -1149,6 +1146,9 @@ For each, rule:
       // A ruling naming something that did not deadlock is DROPPED, never guessed at.
       if (r && typeof r.artifact === 'string' && deadlocked.includes(r.artifact)) rulingFor[r.artifact] = r
     }
+    for (const k of deadlocked) {
+      log(`spec-decider on ${k}: ${rulingFor[k] ? `${rulingFor[k].ruling} — ${String(rulingFor[k].rationale || '').slice(0, 200)}` : 'no ruling returned'}`)
+    }
 
     // ── Enact the rulings that send an artifact BACK to its maker ─────────────────
     //
@@ -1243,6 +1243,21 @@ For each, rule:
     .filter(Boolean)
     .join('\n\n')
 
+  // The SAD entry ids this spec set was designed against, merged across its artifacts. The
+  // caller records them on the Story and on every Task beneath it, which is how a changed
+  // decision finds them again; they are saved in story-<slug>.json so a replay keeps them.
+  const decisionIds = [...new Set(
+    [finalArtifacts.apiSpec, finalArtifacts.dataModelSpec, finalArtifacts.eventContracts, authored.errorSpec]
+      .flatMap((x) => (x && Array.isArray(x.decisionIds) ? x.decisionIds : []))
+      .map((x) => String(x == null ? '' : x).trim())
+      .filter(Boolean)
+  )]
+  const storyBrief = persistBrief(
+    ART,
+    `story-${artSlug}.json`,
+    `your complete structured result (title, description, outOfRepoFindings — exactly as you return them) plus the key "decisionIds" holding exactly this list, ${JSON.stringify(decisionIds)}, as ONE JSON object`
+  )
+
   const storyDraft = await settleAgent(
     `Author the Story bead this Spec pairs with. A Spec and its Story are created together, and a Story is scoped to a SINGLE repository — the one named below. Write a title and a description stating what this Story contains in terms of the authored spec set. The Story is a CONTAINER: it is never worked, and it is never itself decomposed — its SPEC is what decomposes into tasks downstream — do NOT include a task breakdown, a WSJF score, or any priority. If the spec set implies work in any OTHER repository, do not fold that work into this Story and do not mint a second story: report each such case in outOfRepoFindings instead (the caller runs this mini once per repo). Author only — do not review your own work.\n\nThis Story's single repository: ${repoPath || '(none supplied)'}\n\nAuthored spec set to summarize and scope-check:\n${specDigest}${specDocPaths.length ? `\n\nThe spec documents — read them for the scope check:\n${specDocPaths.map((p) => `- ${p}`).join('\n')}` : ''}\n\n${storyCtx}${storyBrief}`,
     {
@@ -1304,37 +1319,8 @@ For each, rule:
     dataModelSpec: finalArtifacts.dataModelSpec,
     eventContracts: finalArtifacts.eventContracts,
     errorSpec: authored.errorSpec,
-    acceptanceCriteria: finalArtifacts.acceptance,
-    definitionOfDone: authored.dod,
-    reviewFindings,
-    decision,
-    // The SAD entry ids this spec set was designed against, merged across its artifacts. The
-    // caller records the ids on the Story and on every Task beneath it, which is how a changed
-    // decision finds them again.
-    decisionIds: [...new Set(
-      [finalArtifacts.apiSpec, finalArtifacts.dataModelSpec, finalArtifacts.eventContracts, authored.errorSpec]
-        .flatMap((x) => (x && Array.isArray(x.decisionIds) ? x.decisionIds : []))
-        .map((x) => String(x == null ? '' : x).trim())
-        .filter(Boolean)
-    )],
+    decisionIds,
     outOfRepoFindings: checkLimit('Story', 'outOfRepoFindings', storyDraft.outOfRepoFindings || [], OUT_OF_REPO_FINDINGS_EXPECTED),
-    // Every maker that could not cover the repository, named. Empty is the expected case and
-    // means the makers covered what the spec required — never that nobody checked.
-    coverageShortfalls: [
-      ['apiSpec', contractsDraft && contractsDraft.apiSpec],
-      ['eventContracts', contractsDraft && contractsDraft.eventContracts],
-      ['errorSpec', contractsDraft && contractsDraft.errorSpec],
-      ['dataModelSpec', dataModelSpecDraft],
-      ['criteria', criteriaDraft],
-    ]
-      .filter(([, x]) => x && x.coverageShortfall && typeof x.coverageShortfall === 'object')
-      .map(([artifact, x]) => ({ artifact, repoPath, ...x.coverageShortfall })),
-    // Null is the expected case: the criteria maker covered this repository's behaviour
-    // and left nothing out. Non-null names behaviours that will otherwise reach no test.
-    criteriaShortfall,
-    // Every list that came back longer than the brief stated, with its count. Each one was
-    // used in full; this is what it cost.
-    ...(limitFindings.length ? { limitFindings } : {}),
     note:
       'errorSpec, definitionOfDone, and the story bead are not reviewed anywhere: this mini has no reviewer for them, and the caller\'s gate only checks that ok is true and a Story exists. No maker judged its own work; the spec-decider only ruled on artifacts the reviewer rejected. The story is a CONTAINER (no tasks, no WSJF) covering exactly one repo — outOfRepoFindings lists any work the spec set implies elsewhere; the caller runs this mini once per repo and writes the bead set with bd.',
   }

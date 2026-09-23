@@ -1500,10 +1500,11 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
 const artPhases = {}
 // ACCEPTANCE IS ANNOUNCED THE MOMENT IT HAPPENS, not only in the final result. The host
 // commits a per-phase acceptance file from durable evidence, and the final result is not
-// always there to read: a killed workflow's harness record carries this script's log
-// lines but no result. So every acceptance is also written as one machine-readable log
-// line, `ACCEPTED {json}` — deterministic script code, no agent, no tokens — which the
-// host's artifact recorder folds exactly like the result's `artifacts.phases`. Bound to bytes
+// always there to read: the harness writes its wf_*.json record only when a workflow
+// completes, so a killed run leaves no result. So every acceptance is also written as one
+// machine-readable log line, `ACCEPTED {json}` — deterministic script code, no agent, no
+// tokens — which the host recovers for a killed run from the live
+// subagents/workflows/<runId>/journal.jsonl and folds exactly like `artifacts.phases`. Bound to bytes
 // host-side: a phase whose files are rewritten later is not accepted by this line.
 function acceptPhase(phaseId, status, extra) {
   artPhases[phaseId] = status
@@ -1893,6 +1894,8 @@ const ART_REL = ART_ON && SS_ROOT && ART_DIR.startsWith(`${SS_ROOT}/`) ? ART_DIR
 const artPath = (name) => (ART_ON ? `${ART_DIR}/${name}` : null)
 const PRD_INPUTS = prd && hasText(prd.path) ? [prd.path] : []
 const specFiles = (slug) => [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`]
+// The cross-Story Task dependency mapper's phase: one per Epic, saved as task-deps.json.
+const TASK_DEPS_PHASE = 'task-deps'
 if (ART_ON) {
   log(`Artifacts: ${ART_DIR}${ART_REL ? '' : ' — no project root supplied (args.projectRoot, ATW_PROJECT_ROOT), so no root-relative path is recorded on any bead'}${RESUME ? '' : ' — no args.resume, so every phase runs'}`)
 } else {
@@ -2301,10 +2304,13 @@ const ARCH_INPUTS = PRD_INPUTS
 // Any other reason — a changed input, a damaged or missing file — offers nothing, and the
 // panel runs cold.
 const ARCH_REPLAY_SLOTS = ['analysis', 'challenges']
-function archReplayFiles(dims) {
-  if (!RESUME || !ART_ON) return null
+function archDraftIntact() {
+  if (!RESUME || !ART_ON) return false
   const own = RESUME.phases.architecture
-  if (!own || own.fresh || !/its draft is intact but no gate acceptance is recorded/.test(own.reason || '')) return null
+  return !!own && !own.fresh && /its draft is intact but no gate acceptance is recorded/.test(own.reason || '')
+}
+function archReplayFiles(dims) {
+  if (!archDraftIntact()) return null
   const files = {}
   for (const d of Array.isArray(dims) ? dims : []) files[`proposal-${d}`] = artPath(`architecture-proposal-${d}.json`)
   files.analysis = artPath('architecture-analysis.json')
@@ -2321,7 +2327,7 @@ function archReplayFiles(dims) {
  * read-only session over one small file replaces that. Absent or unparseable reads as null,
  * which simply runs the phase: the safe direction.
  */
-async function readSavedTriage(path) {
+async function readSavedTriage(path, what = 'architecture-triage') {
   if (!path) return null
   const read = await settleAgent(
     `Return the contents of the file below, verbatim and complete. Summarize nothing, reformat nothing, add no commentary, and read nothing else. WRITE NOTHING and change nothing.
@@ -2332,7 +2338,7 @@ ${path}
 
 Return found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.`,
     {
-      label: 'replay:read-architecture-triage',
+      label: `replay:read-${what}`,
       phase: 'Architecture',
       effort: 'low',
       schema: {
@@ -2348,9 +2354,14 @@ Return found=true with the file's full text in \`content\`, or found=false with 
     const parsed = JSON.parse(read.content)
     return parsed && typeof parsed === 'object' ? parsed : null
   } catch (err) {
-    log(`Replay: the saved architecture triage is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — the phase runs`)
+    log(`Replay: the saved ${what} file is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — the phase runs`)
     return null
   }
+}
+/** The saved triage of a stale architecture phase whose draft is intact, or null to triage afresh. */
+async function readSavedStaleTriage() {
+  const t = await readSavedTriage(artPath('architecture-triage.json'))
+  return t && typeof t.needed === 'boolean' ? t : null
 }
 const archHit = resumeFresh('architecture')
 let archReuse
@@ -2363,6 +2374,13 @@ if (archHit) {
   if (!hasRuling && !savedTriage && archHit.artifacts['architecture-triage.json']) {
     savedTriage = await readSavedTriage(artPath('architecture-triage.json'))
   }
+  // The SAD update names the entries the ruling minted or superseded, which is what the
+  // impact phase judges. A run that died before emission lost the knock-on Tasks that phase
+  // proposed, so the resumed ruling carries its entry tags and the phase runs again.
+  let savedSadUpdate = artData(archHit, 'sad-update.json') || null
+  if (hasRuling && !savedSadUpdate && archHit.artifacts['sad-update.json']) {
+    savedSadUpdate = await readSavedTriage(artPath('sad-update.json'), 'sad-update')
+  }
   if (hasRuling || (savedTriage && savedTriage.needed === false)) {
     reuseFrom('architecture', archHit, hasRuling ? 'downstream phases read the ruling from its file' : 'the saved triage found no architecture decision')
     acceptPhase('architecture', 'reused', { notNeeded: !hasRuling })
@@ -2374,7 +2392,8 @@ if (archHit) {
             resumed: true,
             artifact: {
               decisionPath: artPath('architecture-decision.md'),
-              sadUpdate: artData(archHit, 'sad-update.json') || null,
+              sadUpdate: savedSadUpdate,
+              entryTags: savedSadUpdate && Array.isArray(savedSadUpdate.entryTags) ? savedSadUpdate.entryTags : [],
               artifactPaths: Object.keys(archHit.artifacts).map(artPath),
               note: 'This architecture ruling was reused from fresh artifacts. Read the ruling in the file at decisionPath.',
             },
@@ -2396,6 +2415,12 @@ if (a.skipArchitecture === true) {
   archTriage = { needed: false, reason: 'caller passed skipArchitecture:true', settledBy: 'caller' }
 } else if (a.skipArchitecture === false) {
   archTriage = { needed: true, reason: 'caller passed skipArchitecture:false', settledBy: 'caller' }
+} else if (archDraftIntact() && (archTriage = await readSavedStaleTriage())) {
+  // The draft is intact, so its proposals are replayed below, and they were made for the
+  // panel the SAVED triage sized. A fresh triage can name other axes, and every lens the
+  // saved set lacks re-dispatches its analyst and the challenge wave with it.
+  log(`Architecture triage REUSED from its saved file (the draft is intact): needed=${archTriage.needed}`)
+  archNeeded = archTriage.needed !== false
 } else {
   const triagePrompt =
     `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
@@ -3552,6 +3577,29 @@ const specConstraints = (recon, repo, feedback) => {
   if (feedback) c.push(feedback)
   return c.length ? c : undefined
 }
+// ── WHICH REPOSITORIES HOLD UI, FROM THE SPAN RULING ────────────────────────────
+//
+// The reconciler's UI check resolves every `ui` requirement against the cds bundle and mocks,
+// and in a backend repository there is nothing to find. The span ruling says where the UI is:
+// each placement names the work units it holds, and each unit carries the `homeKind` the
+// shaper gave it. A repository holds UI when a `frontend` unit is placed in it, and the
+// reconciler is told `uiRepo: false` for every other repository. When the span was pinned,
+// the ruling carries no unit kinds, or no `frontend` unit is placed anywhere in the span,
+// this run cannot tell, `uiRepo` is left out, and the check runs.
+const uiRepos = (() => {
+  const units = scoping && Array.isArray(scoping.workUnits) ? scoping.workUnits : []
+  const placements = scoping && Array.isArray(scoping.placements) ? scoping.placements : []
+  if (!units.length || !placements.length) return null
+  const frontend = new Set(units.filter((u) => u && u.homeKind === 'frontend' && hasText(u.id)).map((u) => u.id))
+  const held = new Set(
+    placements
+      .filter((p) => p && hasText(p.repoPath) && Array.isArray(p.workUnitIds) && p.workUnitIds.some((id) => frontend.has(id)))
+      .map((p) => p.repoPath.trim())
+  )
+  return held.size ? held : null
+})()
+const uiRepoFor = (repo) => (uiRepos ? uiRepos.has(String(repo).trim()) : undefined)
+if (uiRepos) log(`UI check: the span ruling places frontend work in ${[...uiRepos].join(', ')} — the reconciler skips its cds check in every other repository`)
 // Per-repo reconciliation results, keyed by repo, kept whatever the spec then did with
 // them. A repository whose reconciliation succeeded and whose SPEC failed still found
 // material — including material that has to be removed — and that finding must not vanish
@@ -3559,6 +3607,7 @@ const specConstraints = (recon, repo, feedback) => {
 // which is the honest reading rather than a silent drop.
 const reconByRepo = new Map()
 const reconFailures = [] // repos whose current-state comparison could not be established
+const reconReused = [] // repos whose spec and task set were both reused, so no comparison ran
 const specPairs = [] // one { repoPath, spec, story } per repo that passed G3
 const specFailures = [] // repos whose spec failed G3 — kept so they cannot silently vanish
 // Work the spec set implies in a repository OTHER than the one its Story covers.
@@ -3621,9 +3670,79 @@ async function authorSpecForRepo(repo, repoIndex) {
   // Its own checkpoint key, so a resume that already paid for one repository's inventory
   // does not pay again — and so a repo whose SPEC failed can be re-run without re-reading
   // the repository.
-  let recon = cpGet(`recon:${repo}`)
+  //
+  // A resume whose spec AND task set for this repository are both fresh does not run it.
+  // The inventory feeds the spec's brief and the removal work decomposition is handed, and
+  // both were consumed by the saved spec and task set it replays; comparing again would pay
+  // a full repository search to feed nothing. See the reuse check after the spec replay.
+  const slug = repoSlug(repo)
+  const specPhase = `spec:${slug}`
+  const storyFile = `story-${slug}.json`
+  const specHit = resumeFresh(specPhase)
+  const storyData = artData(specHit, storyFile)
+  const specNames = specHit ? Object.keys(specHit.artifacts) : []
+  let specAuthoring
+  if (specHit && !(storyData && typeof storyData === 'object' && hasText(storyData.title)) && ART_ON && specNames.indexOf(storyFile) !== -1) {
+    // The plan NAMED the Story artifact without inlining it, which is the normal case. The
+    // mini reads its own saved output from disk in one read-only session and returns the
+    // Spec/Story pair; the spec documents themselves go downstream as paths, unread here.
+    const replayedSpec = await workflow('agent-teams-workforce:spec-authoring', {
+      spec: a.spec || { id: prd.id, title: prd.title, repoPath: repo },
+      repoPath: repo,
+      storyKey,
+      epic,
+      replay: { files: { story: artPath(storyFile) }, specPaths: specFiles(slug).map(artPath) },
+    })
+    if (replayedSpec && replayedSpec.ok && replayedSpec.story && hasText(replayedSpec.story.title)) {
+      reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
+      acceptPhase(specPhase, 'reused')
+      specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
+      await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
+    } else {
+      log(`Phase '${specPhase}' is fresh but its saved Story could not be read back (${(replayedSpec && replayedSpec.reason) || 'no result'}) — it runs`)
+    }
+  } else if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
+    reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
+    acceptPhase(specPhase, 'reused')
+    specAuthoring = {
+      ok: true,
+      resumed: true,
+      artifact: {
+        story: {
+          key: storyKey,
+          type: 'story',
+          title: storyData.title,
+          description: typeof storyData.description === 'string' ? storyData.description : '',
+          repoPath: repo,
+          parentEpicKey: (epic && (epic.key || epic.id)) || null,
+        },
+        outOfRepoFindings: Array.isArray(storyData.outOfRepoFindings) ? storyData.outOfRepoFindings : [],
+        decisionIds: Array.isArray(storyData.decisionIds) ? storyData.decisionIds.filter((x) => hasText(x)) : [],
+        specPaths: specFiles(slug).map(artPath),
+        apiSpec: { summary: '' },
+      },
+    }
+    await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
+  } else if (specHit) {
+    log(`Phase '${specPhase}' is fresh but ${storyFile} is neither inlined nor named as a file this run can point at (${specNames.join(', ') || 'no artifact named'}) — it runs`)
+  }
+  // The comparison is saved as recon-<slug>.json under phase recon:<slug>. A fresh one is
+  // replayed by the mini, which reads the file and runs its own reduction over it again.
+  const reconPhase = `recon:${slug}`
+  const reconFile = `recon-${slug}.json`
+  const reconHit = resumeFresh(reconPhase)
+  const reconReplay = reconHit && ART_ON && reconHit.artifacts[reconFile] ? { files: { recon: artPath(reconFile) } } : null
+  if (reconHit && !reconReplay) log(`Phase '${reconPhase}' is fresh but ${reconFile} is not named — it runs`)
+  const tasksPlan = specAuthoring && RESUME ? RESUME.phases[`tasks:${slug}`] : null
+  if (!reconReplay && specAuthoring && tasksPlan && tasksPlan.fresh && ART_ON && tasksPlan.artifacts[`tasks-${slug}.json`]) {
+    log(`Spec Authoring for ${repo}: the spec and its task set are both reused and no saved comparison exists, so the comparison they were made from is not run again`)
+    return { repo, recon: null, reconReused: true, specAuthoring }
+  }
+  let recon = reconReplay ? undefined : cpGet(`recon:${repo}`)
   if (recon === undefined) {
     recon = await workflow('agent-teams-workforce:prd-reconciliation', {
+      artifacts: artFor(reconPhase, PRD_INPUTS, { slug }),
+      ...(reconReplay ? { replay: reconReplay } : {}),
       // The WHOLE PRD, always. Scoping the SEARCH to one repository is not the same thing
       // as scoping the REQUIREMENTS to it: every requirement the PRD states comes back with
       // a status for this repository, including `absent`, because "nothing here" is a
@@ -3637,8 +3756,15 @@ async function authorSpecForRepo(repo, repoIndex) {
       // finding it returns is attributable to it by construction.
       repos: [repo],
       dependencies: a.dependencies,
+      uiRepo: uiRepoFor(repo),
     })
-    if (recon && recon.ok !== false) await cpSave(`recon:${repo}`, recon, reconRuling(repo, recon))
+    if (recon && recon.ok !== false) {
+      const replayed = !!(reconReplay && recon.resumed === true)
+      if (replayed) reuseFrom(reconPhase, reconHit, 'the mini replayed the saved comparison through its reduction')
+      else if (reconReplay) log(`Phase '${reconPhase}' is fresh but the mini did not replay it — the comparison ran again`)
+      acceptPhase(reconPhase, replayed ? 'reused' : 'passed')
+      await cpSave(`recon:${repo}`, recon, reconRuling(repo, recon))
+    }
   }
   if (recon && recon.ledger) runLedger.push(recon.ledger)
   // ── A FAILED RECONCILIATION IS NOT AN EMPTY ONE ───────────────────────────────
@@ -3667,58 +3793,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       specAuthoring: null,
     }
   }
-  const slug = repoSlug(repo)
-  const specPhase = `spec:${slug}`
-  let specAuthoring
-  const specHit = resumeFresh(specPhase)
-  const storyData = artData(specHit, `story-${slug}.json`)
-  const storyFile = `story-${slug}.json`
-  const specNames = specHit ? Object.keys(specHit.artifacts) : []
-  if (specHit && !(storyData && typeof storyData === 'object' && hasText(storyData.title)) && ART_ON && specNames.indexOf(storyFile) !== -1) {
-    // The plan NAMED the Story artifact without inlining it, which is the normal case. The
-    // mini reads its own saved output from disk in one read-only session and returns the
-    // Spec/Story pair; the spec documents themselves go downstream as paths, unread here.
-    const replayedSpec = await workflow('agent-teams-workforce:spec-authoring', {
-      spec: a.spec || { id: prd.id, title: prd.title, repoPath: repo },
-      repoPath: repo,
-      storyKey,
-      epic,
-      replay: { files: { story: artPath(storyFile) }, specPaths: specFiles(slug).map(artPath) },
-    })
-    if (replayedSpec && replayedSpec.ok && replayedSpec.story && hasText(replayedSpec.story.title)) {
-      reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-      acceptPhase(specPhase, 'reused')
-      specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
-      await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
-    } else {
-      log(`Phase '${specPhase}' is fresh but its saved Story could not be read back (${(replayedSpec && replayedSpec.reason) || 'no result'}) — it runs`)
-      specAuthoring = cpGet(`spec:${repo}`)
-    }
-  } else if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
-    reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-    acceptPhase(specPhase, 'reused')
-    specAuthoring = {
-      ok: true,
-      resumed: true,
-      artifact: {
-        story: {
-          key: storyKey,
-          type: 'story',
-          title: storyData.title,
-          description: typeof storyData.description === 'string' ? storyData.description : '',
-          repoPath: repo,
-          parentEpicKey: (epic && (epic.key || epic.id)) || null,
-        },
-        outOfRepoFindings: Array.isArray(storyData.outOfRepoFindings) ? storyData.outOfRepoFindings : [],
-        specPaths: specFiles(slug).map(artPath),
-        apiSpec: { summary: '' },
-      },
-    }
-    await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
-  } else {
-    if (specHit) log(`Phase '${specPhase}' is fresh but ${storyFile} is neither inlined nor named as a file this run can point at (${specNames.join(', ') || 'no artifact named'}) — it runs`)
-    specAuthoring = cpGet(`spec:${repo}`)
-  }
+  if (specAuthoring === undefined) specAuthoring = cpGet(`spec:${repo}`)
   if (specAuthoring === undefined) {
   specAuthoring = await gateLoop({
     gate: 'G3', phaseName: repos.length > 1 ? `Spec Authoring — ${repo}` : 'Spec Authoring',
@@ -3768,6 +3843,7 @@ for (const [repoIndex, repo] of repos.entries()) {
   // that found material to REMOVE and then lost its spec has still found material to
   // remove — which reappears below as an item no Story can carry rather than disappearing.
   if (settled && settled.recon && settled.recon.ok !== false) reconByRepo.set(repo, settled.recon)
+  if (settled && settled.reconReused) reconReused.push(repo)
   // The current-state comparison could not be established for this repository, so no spec
   // was attempted for it. Recorded in BOTH lists: `reconFailures` says what actually
   // happened, and `specFailures` is what every downstream accounting reads, so a repo
@@ -3948,6 +4024,7 @@ produced.materialInventory = {
   scope: 'per-repo, merged for reporting — each repository reconciled the whole PRD',
   reposReconciled: reconByRepo.size,
   reposFailed: reconFailures.length,
+  reposReused: reconReused.length,
   requirements: reqInventory.length,
   ...mergedCounts,
   removalWork: reconRemovalWork,
@@ -3965,6 +4042,8 @@ if (reconByRepo.size) {
       `${obsoleteRemovalWork.length ? `, ${obsoleteRemovalWork.length} from the span ruling superseding it${mergedObsolete ? ` (${mergedObsolete} naming the same material, merged with both rationales kept)` : ''}` : ''}` +
       ` — ${allRemovalWork.length} distinct item(s) in total.`
   )
+} else if (reconReused.length === repos.length) {
+  log(`No current-state comparison ran: every repository's spec and task set were reused from the run that compared them.`)
 } else {
   log(
     `NO repository produced a current-state comparison (${reconFailures.length} failed of ${repos.length}) — ` +
@@ -4755,7 +4834,10 @@ async function decomposeStory(pair) {
       decomposition = { ok: true, resumed: true, artifact: replayed }
       await cpSave(cpDecompKey, decomposition, reusedDecision(tasksPhase))
     } else {
-      log(`Phase '${tasksPhase}' is fresh but its replay produced no valid task set (${(replayed && replayed.reason) || 'no result'}) — it runs`)
+      log(
+        `Phase '${tasksPhase}' is fresh but its replay produced no valid task set (${(replayed && replayed.reason) || 'no result'}) — it runs` +
+          (reconReused.includes(pair.repoPath) ? ', without this repository\'s removal work, because no current-state comparison ran for it in this run' : '')
+      )
     }
   } else {
     if (tasksHit) log(`Phase '${tasksPhase}' is fresh but ${tasksFile} is neither inlined nor named as a file this run can point at (${tasksNames.join(', ') || 'no artifact named'}) — it runs`)
@@ -5045,7 +5127,33 @@ if (taskStories.size < 2) {
       )
       .join('\n')
   ).join('\n\n')
-  const mapped = await settleAgent(
+  // ── A SAVED EDGE SET IS REUSED ONLY OVER THE TASK SET IT WAS DERIVED FROM ─────────
+  // The edges name Task keys, and the keys come from each Story's decomposition. So the saved
+  // `task-deps.json` is reused only when every Story's task set was itself reused in this
+  // run, and only when every saved edge still joins two Tasks of this run in different
+  // Stories. Anything less and the mapper runs.
+  const depsFile = 'task-deps.json'
+  const depsHit = resumeFresh(TASK_DEPS_PHASE)
+  const allTasksReused =
+    !decompositionFailures.length &&
+    decompositions.length === specPairs.length &&
+    specPairs.every((p) => artPhases[`tasks:${repoSlug(p.repoPath)}`] === 'reused')
+  let savedDeps = null
+  if (depsHit && ART_ON && depsHit.artifacts[depsFile] && allTasksReused) {
+    const read = await readSavedTriage(artPath(depsFile), 'task-deps')
+    const edgeOk = (e) =>
+      e && storyOfTask.has(e.from) && storyOfTask.has(e.to) && storyOfTask.get(e.from) !== storyOfTask.get(e.to)
+    if (read && Array.isArray(read.edges) && typeof read.acyclic === 'boolean' && read.edges.every(edgeOk)) {
+      savedDeps = read
+      reuseFrom(TASK_DEPS_PHASE, depsHit, 'the saved cross-Story edges join Tasks of this run and are applied as they stand')
+    } else {
+      log(`Phase '${TASK_DEPS_PHASE}' is fresh but its saved edges could not be read or no longer match this run's Tasks — the mapper runs`)
+    }
+  } else if (depsHit) {
+    log(`Phase '${TASK_DEPS_PHASE}' is fresh but ${allTasksReused ? `${depsFile} is not named` : 'not every Story reused its task set'} — the mapper runs`)
+  }
+  const depsInputs = specPairs.map((p) => artPath(`tasks-${repoSlug(p.repoPath)}.json`)).filter(Boolean)
+  const mapped = savedDeps || await settleAgent(
     `Derive the Task-to-Task build dependencies whose two ends are Tasks in different Stories of one Epic. A Story only groups Tasks and carries no dependency of its own. Each Story is one repository's slice of Epic ${epic.id} — ${epic.title || ''}; every Task below is already decomposed, and the edges inside each Story are already drawn and listed. Return ONLY edges whose two ends are Tasks in DIFFERENT Stories. Reference Tasks by their key exactly as given. An edge "from -> to" means "from must be built before to".
 
 Add an edge ONLY where a Task genuinely cannot be built until a Task in another Story is built: an API it consumes that the other Task provides, an event contract whose producer must publish first, a table, bucket or IAM grant the other repository provisions. Sharing a domain, a vocabulary or this Epic is NOT a dependency. When in doubt leave the edge out: a false edge serializes work that could run in parallel. Type each edge as data, contract, infrastructure or event-flow and justify it in one line from the two Tasks' contracts.
@@ -5054,7 +5162,7 @@ The whole Task graph — the edges already drawn plus yours — MUST be acyclic.
 
 Do NOT add, remove, split or rescope Tasks. Do NOT write code.
 
-${listing}`,
+${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), depsFile, 'your complete answer (edges, acyclic, cycle — exactly as you return them) as ONE JSON object')}`,
     {
       label: 'sequence:cross-story-tasks',
       effort: 'medium',
@@ -5162,6 +5270,7 @@ ${listing}`,
     const t = tasks.find((x) => x.key === e.to)
     t.dependsOn = [...(t.dependsOn || []), e.from]
   }
+  acceptPhase(TASK_DEPS_PHASE, savedDeps ? 'reused' : 'passed')
   log(
     `Cross-Story Task dependencies: ${crossStory.edges.length} edge(s) across ${taskStories.size} Stories` +
       `${crossStory.rejected.length ? `; ${crossStory.rejected.length} proposed edge(s) not applied — ${crossStory.rejected.map((r) => `${r.from}->${r.to} (${r.reason})`).join(', ')}` : ''}.`
@@ -6449,7 +6558,12 @@ return {
           (reconFailures.length
             ? `NOT COMPARED: ${reconFailures.length} repositor(ies) — ${reconFailures.map((f) => `${f.repoPath} (${f.reason})`).join(' | ')}. No spec was authored for them and any contradicting material there is unfound. `
             : '')
-        : `NO repository could be compared against current state (${reconFailures.length} of ${repos.length} failed), so what already exists is UNKNOWN rather than absent. `) +
+        : reconReused.length === repos.length
+          ? 'Every repository\'s spec and task set were reused, so no current-state comparison ran in this run. '
+          : `NO repository could be compared against current state (${reconFailures.length} of ${repos.length} failed), so what already exists is UNKNOWN rather than absent. `) +
+      (reconByRepo.size && reconReused.length
+        ? `${reconReused.length} repositor(ies) reused their spec and task set and were not compared again: ${reconReused.join(', ')}. `
+        : '') +
       (allRemovalWork.length
         ? `${removalEmitted} of ${allRemovalWork.length} removal work item(s) reached a Story whose tasks are durable in beads` +
           (removalAccounting.byOrigin.repoScoping

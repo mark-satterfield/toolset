@@ -398,7 +398,7 @@ function deterministicRoute() {
     }
     return elaborate(
       'prd-to-spec',
-      `promoting this feature was human-initiated → prd-to-spec, which authors the PRD and mints the Epic, then carries it to TRD, Spec(s), Stories and Tasks`,
+      `promoting this feature was human-initiated → prd-to-spec, once the invoking command has resolved or minted its PRD and Epic (prd-to-spec starts from a ready PRD and never writes one); it carries them to TRD, Spec(s), Stories and Tasks`,
     )
   }
 
@@ -502,7 +502,9 @@ const agentReason = (classification && classification.reason) || 'no reason retu
 if (!kind || kind === 'other' || !confident) {
   const reason = `ambiguity-detector could not confidently classify this bead (kind="${kind || 'none'}", confident=${confident}): ${agentReason} → SKIP (reported, not force-fit)`
   log(`route-elaboration ${bead.id || '(no id)'}: SKIP — ${reason}`)
-  return skip(reason)
+  // A classifier that died did not rule: the skip says so, so a caller can tell it from a
+  // bead that was looked at and could not be placed.
+  return classification ? skip(reason) : { ...skip(reason), dispatchFailed: true, dispatchFailures: dispatchDeaths('Classify') }
 }
 
 // Re-apply the SAME rules to the classified kind. The classifier decides what the

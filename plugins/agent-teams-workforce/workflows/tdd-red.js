@@ -283,6 +283,8 @@ async function settleAgent(prompt, opts) {
 // args: {
 //   contract:    <bug-triage output or spec contract>,
 //   feedback?:   string,     // gate feedback from a previous attempt
+//   red?:        object,     // the previous Red artifact, on a re-author after a Green
+//                            // escalation: its testFiles are the tests to repair in place
 //   skipDiscovery?: boolean, // force fresh authoring, bypassing existing-test reuse.
 //                            // Use when the tests on disk are known bad — discovery
 //                            // would otherwise report them as covering the contract.
@@ -366,6 +368,12 @@ const affectedFiles = Array.isArray(c.affectedFiles) ? c.affectedFiles.filter(Bo
 // code path the objection never touched.
 const feedbackBlock = a.feedback
   ? `\n\nA GATE REJECTED THE PREVIOUS ATTEMPT AT THIS PHASE. Read this before deciding anything is already covered — a test the gate has objected to is NOT covering test, however well it matches by name:\n${a.feedback}`
+  : ''
+// On a re-author the previous Red's test files are on disk and are what gets repaired; a
+// writer that cannot see them authors a parallel file beside the defective one.
+const priorTestFiles = a.red && Array.isArray(a.red.testFiles) ? a.red.testFiles.map((f) => String(f || '').trim()).filter(Boolean) : []
+const priorTestsBlock = priorTestFiles.length
+  ? `\n\nTHE PREVIOUS RED ATTEMPT AUTHORED THESE TEST FILES. They are the tests to repair — edit them in place; do not create a parallel file:\n${priorTestFiles.join('\n')}`
   : ''
 
 phase('Red')
@@ -726,7 +734,7 @@ A second file covering the same behavior is worse than no test at all — the su
 
 ${taskBlock}
 
-${strategyBlock}${gapBlock}
+${strategyBlock}${gapBlock}${priorTestsBlock}
 ${a.feedback ? `\nGate feedback from the previous attempt — address it:\n${a.feedback}` : ''}
 
 DECLARE THE PATH TO GREEN. For every test you author, name the PRODUCTION file and symbol whose change will make it pass, and what the test actually asserts about that symbol. This is not paperwork: a test whose mock is patched at the module path the code used BEFORE the fix fails perfectly and can never go green, and this declaration is the only thing that distinguishes it from a correct Red. The targetFile must be a production file this change will actually touch${affectedFiles.length ? ` — the contract names these: ${affectedFiles.join(', ')}` : ''}. If you cannot name one, you have not written a test the fix can satisfy.
@@ -885,7 +893,7 @@ if (deadWriters.length) {
   return {
     ok: false,
     dispatchFailed: true,
-    dispatchFailures: deadAgents,
+    dispatchFailures: dispatchDeaths('Red'),
     reason:
       `${deadWriters.length} of ${writersFinal.length} Red test writer(s) returned nothing — ${deadAgents.join(', ')}. ` +
       'They were skipped or died on a terminal API error, so this phase never ran to a verdict. ' +

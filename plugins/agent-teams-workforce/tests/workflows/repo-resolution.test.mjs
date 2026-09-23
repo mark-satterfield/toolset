@@ -39,7 +39,6 @@ function runSpecSide(file, { bead } = {}) {
     },
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') return okWorkspace(call.payload.repoPath)
-      if (call.name === 'agent-teams-workforce:spec-freshness') return { fresh: true }
       if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
       if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
         if (call.payload.gate === '1') return { verdict: 'pass', criteria: [], flags: [] }

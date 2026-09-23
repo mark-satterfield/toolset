@@ -776,6 +776,8 @@ Decide exactly one verdict:
 const aligned = alignmentVerdict && alignmentVerdict.verdict === 'aligned'
 const ruledAccept = decision && decision.verdict === 'accept'
 const ok = Boolean(aligned || ruledAccept)
+// A deadlock ruling that never came back is a dispatch failure, not a rejection.
+const deciderDied = deadlocked && !decision
 
 // A PRD and its Epic are created at the same time — the Epic is the bead-side
 // half of that pairing, assembled here from the maker's own output rather than
@@ -797,6 +799,8 @@ const epic = prd
 
 return {
   ok,
+  ...(ok ? {} : { stage: 'prd-draft' }),
+  ...(deciderDied ? { dispatchFailed: true, dispatchFailures: dispatchDeaths('PRD Draft') } : {}),
   request: request.id ? request.id : null,
   intakeBrief,
   persona,
