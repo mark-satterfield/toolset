@@ -2587,7 +2587,6 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
 DOCTOR_CHECKS: dict[str, list[str]] = {
     "reconcile": ["reconcile"],
     "agents-sync": ["agents-sync", "--check"],
-    "templates-check": ["templates-check"],
 }
 
 
@@ -2623,25 +2622,6 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
             }
             for r in data.get("repos") or []
             if isinstance(r, dict) and r.get("state") != "current"
-        )
-    elif check == "templates-check":
-        out.extend(
-            {
-                "check": check,
-                "subject": t,
-                "kind": "template-lags",
-                "detail": "files in the repos built from it are newer than the template",
-            }
-            for t in data.get("lagging_templates") or []
-        )
-        out.extend(
-            {
-                "check": check,
-                "subject": k["kind"],
-                "kind": "no-template",
-                "detail": "repos with no template: " + ", ".join(k["repos"]),
-            }
-            for k in data.get("kinds_without_template") or []
         )
     return out
 
@@ -2682,7 +2662,7 @@ def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
 def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
-    The checks are reconcile, agents-sync --check, templates-check (run in parallel, each as
+    The checks are reconcile and agents-sync --check (run in parallel, each as
     its own process of this script) and the governance locations. Judgment checks (knowledge-
     store pointers written as prose) belong to the polyrepo-doctor skill.
 
@@ -2880,7 +2860,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser(
         "doctor",
         parents=[common],
-        help="reconcile, agents-sync --check, templates-check and governance, as one report",
+        help="reconcile, agents-sync --check and governance, as one report",
     )
     s.set_defaults(func=cmd_doctor)
     return p

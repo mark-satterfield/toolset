@@ -20,7 +20,6 @@ the `polyrepo-repo` skill for its commands). Run every check with `--json`.
 |---|---|---|
 | Disk, GitHub and manifest agree | `reconcile --json` (with `--fix` under `--fix`) | exit 0, `open` is 0 |
 | Every repo has the current shared `AGENTS.md` block | `agents-sync --check --json` | exit 0 |
-| Templates keep up with their repos; every repo kind has a template | `templates-check --json` | exit 0 |
 | Knowledge-store pointers resolve | read `.polyrepo/knowledge.yaml`; for each `kind: location` or `pointer` entry, confirm the file, folder, vault note or command it names exists (vault notes through `obsidian-cli vault="skillspoke-docs"`) | every pointer resolves |
 | Governance entries resolve | for each manifest `governance` entry, confirm its `location` exists and its `invoke` runs (`--help` or equivalent) | every entry resolves |
 

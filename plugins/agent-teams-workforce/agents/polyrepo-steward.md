@@ -121,7 +121,6 @@ hand the facts back for the caller to act on.
 | Search across repos | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
 | Propagate the shared `AGENTS.md` block | `agents-sync` (`--check` to report only) |
-| Keep the templates current | `templates-check`, then your judgment on each lagging template |
 
 A repository is never deleted. "Delete" means deprecate: the repo is renamed with a
 `deprecated-` prefix, a leading `SkillSpoke-` becoming lowercase `skillspoke-`
@@ -149,16 +148,13 @@ Your judgment is for what a script cannot decide, and only that:
 - **Grouping and dependencies.** Which group a repo belongs to and which repos depend on
   it. Edit these in the manifest yourself (see the `polyrepo-repo` skill for how), with a
   changelog entry, then run `reconcile` to confirm no new finding.
-- **Template changes.** `templates-check` reports which templates lag the repos built from
-  them and which repo kinds have no template. You decide what a template should take from
-  its repos, and change the template in `$SKILLSPOKE_CC/repositories/templates/`.
 
 ## Your skills
 
 | Job | Skill |
 |---|---|
 | Tool command reference; repo create, update, deprecate, list, search; manifest edits | `polyrepo-repo` |
-| Health check: reconcile, `agents-sync --check`, `templates-check`, knowledge-store pointers | `polyrepo-doctor` |
+| Health check: reconcile, `agents-sync --check`, knowledge-store pointers | `polyrepo-doctor` |
 | Facts outside the manifest ("which repos contain a DynamoDB table?"), and the knowledge store | `polyrepo-info` |
 | Sweep repos and docs for durable "where things live" facts | `polyrepo-tribal-knowledge` |
 | Registry of the project's own scripts, tools and procedures | `polyrepo-governance` |
