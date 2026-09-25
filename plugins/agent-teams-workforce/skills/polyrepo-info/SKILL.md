@@ -50,19 +50,34 @@ knowledge:
 ## Operations (CUDLS)
 
 - **search** — answer the question via the precedence ladder. If the answer is a durable
-  "where to find it" fact, offer to record it so the next lookup is instant.
+  "where to find it" fact, record it so the next lookup is instant.
 - **create / update** — add or revise a knowledge entry.
 - **delete / deprecate** — retire an entry (keep a tombstone with the reason where it matters).
 - **list** — enumerate knowledge entries by topic or kind.
 
+## Every entry is verified against reality
+
+An entry is a claim until it is checked, and it is checked every time it is used:
+
+- **Before storing** an entry, confirm it: the file, folder or vault note it names exists
+  (vault notes through `obsidian-cli vault="skillspoke-docs"`), the command it names runs, and
+  the fact it states is what the code, the repo or the canonical document says now.
+- **Before answering from** an entry, confirm it the same way. An entry that no longer holds
+  is corrected (find where the thing lives now) or retired with the reason, in the same
+  invocation, and the answer comes from what you found, not from the entry.
+- Repository facts (which repos exist, their state, their purpose) are never stored here;
+  they come from the `polyrepo` tool (see **polyrepo-repo**).
+
 ## Recording
 
 Curation changes follow the learning protocol (`../polyrepo-repo/references/learning-protocol.md`):
-update `.polyrepo/knowledge.yaml` **and** append `.polyrepo/changelog.md`. Read non-obvious
-facts back before storing.
+update `.polyrepo/knowledge.yaml` **and** append `.polyrepo/changelog.md`, then commit both on
+`main` in `$SKILLSPOKE_CC` and push. There is no read-back or approval step; verification
+replaces it.
 
 ## Boundaries
 
-Structural questions (repos, owners, dependencies, groups, deploy waves) belong to
-**polyrepo-repo**, not here. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
+Structural questions (repos, owners, dependencies, groups, repo state) belong to
+**polyrepo-repo** and the `polyrepo` tool, not here. Deployment order lives in
+`$SKILLSPOKE_CC/deployment/waves*.yaml`. Bulk scanning to populate the store is **polyrepo-tribal-knowledge**.
 The project's own scripts/tools/procedures registry is **polyrepo-governance**.

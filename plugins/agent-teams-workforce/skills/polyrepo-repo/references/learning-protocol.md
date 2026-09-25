@@ -1,188 +1,74 @@
 # Learning Protocol
 
-The steward is a *learning* skill. The manifest is only useful if it
-stays accurate, and reality changes constantly: repos get added,
-renamed, archived; new dependencies appear; conventions evolve; rules
-get added or relaxed. This file defines what counts as a learning
-event and how to capture it.
+The manifest is the steward's private cache of the repositories plus the few facts neither
+the folders nor GitHub hold: purpose, `owns`, groups, dependencies, deprecation dates. It is
+only useful if it is correct, and the repositories change constantly. Keeping it correct is
+the steward's normal operation, done on its own authority: there is no read-back step and no
+approval step for a manifest change.
 
-The principle: **the manifest is the project's living memory, and you
-are its custodian.** Every fact you learn that affects how the project
-should be cared for must be written down — promptly, with reasoning,
-and without silently dropping anything that came before.
+## Who writes what
+
+- **The `polyrepo` tool** writes every mechanical fact. `reconcile --fix` adds entries for
+  new repos, removes entries whose repo is gone, follows renames, sets `remote_url`,
+  `lifecycle`, archived state and `deprecated_on`, and appends the changelog itself.
+  `create`, `deprecate` and `purpose` do the same for their own changes. Never edit a field
+  the tool maintains.
+- **The steward** writes what needs judgment: a purpose (through `purpose <repo> --text`),
+  and groups, `owns`, dependencies, `role`, `owner` (by editing the manifest, per the
+  `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward.
 
 ## What counts as a learning event
 
-Any of the following triggers a learning event. The list is not
-exhaustive — when in doubt, capture it.
+Anything the steward learns that changes one of the judgment fields:
 
-### Repo-level changes
+- What a repo is for (its purpose), or what it owns.
+- A new or removed dependency between two repos, or a change in its kind.
+- A repo joining or leaving a group; a group added or removed.
+- A change of a repo's role or owner.
 
-- A new repo joined the project.
-- A repo was renamed.
-- A repo's role changed (e.g., a library became a service).
-- A repo's owner changed.
-- A repo was deprecated, archived, or extracted into a separate
-  project.
-- A repo's primary language, default branch, or remote URL changed.
-- A repo that was previously not cloned locally is now cloned (or
-  vice versa).
+Facts that are not about the repositories themselves go elsewhere: "where to find things"
+to the knowledge store (**polyrepo-info**), the project's own scripts and procedures to
+**polyrepo-governance**. Facts whose canonical home is another document (architecture,
+requirements, deployment order) are never stored; see `manifest-schema.md`.
 
-### Relationship changes
+## How to capture one
 
-- A new dependency between two repos.
-- A removed dependency.
-- A new shared contract (proto, openapi, schema, types) crossed
-  multiple repos.
-- A change in deploy ordering (see *Group and deploy-wave changes*).
-- A newly observed circular dependency, or one that was resolved.
-
-### Group and deploy-wave changes
-
-- A new group was defined, or an existing one removed.
-- A repo joined or left a group's `members`.
-- A new deploy wave (stage) was added, or one removed or reordered.
-- A repo joined or left a wave, or a wave repo's `gate` or `deploy_task`
-  changed.
-- A rule or dependency's scope changed because it was retargeted to (or
-  away from) a `group:<name>`.
-
-Each of these updates the manifest (`groups`, `relationships.deploy_waves`,
-or the affected dependency/rule) **and** appends a changelog entry, like
-any other learning event.
-
-### Convention or rule changes
-
-- A new naming convention, or a change to an existing one.
-- A new branching, commit, PR, or release rule.
-- A new architectural rule (e.g., "no direct DB access from frontend").
-- A new security or compliance rule.
-- A relaxation of an existing rule (record this carefully — relaxations
-  are easy to forget about).
-
-### Documentation, search, ownership
-
-- A new documentation location.
-- A new cross-repo search recipe.
-- A new owner or contact for a topic.
-- A change in how documentation is organized.
-
-### Topology changes
-
-- The shape of the project changed (a meta repo was added; a monorepo
-  was extracted into pieces; repos were consolidated).
-
-### Steward self-changes
-
-- A new field was added to the manifest schema.
-- A new reference file was added or updated.
-- A new search recipe was added.
-
-## How to capture a learning event
-
-Every learning event has the same shape:
-
-1. **Update the manifest.** Find the right field in
-   `manifest.yaml` and edit it. If the field does not yet exist, add
-   it (and increment `schema_version` if the addition is structural).
-   Do not stamp a date on it — git history records when it changed.
-
-2. **Append to the changelog.** Add an entry to
-   `.polyrepo/changelog.md` of the form:
+1. **Update the manifest**, preserving comments. Do not stamp a date on the change — git
+   history records when it changed.
+2. **Append to `.polyrepo/changelog.md`**:
 
    ```markdown
    ## YYYY-MM-DD — <short title>
    - **What:** the fact, stated plainly.
-   - **Why:** why this matters, or what motivated the change.
-   - **Source:** how the steward learned this — "user mentioned",
-     "PR review", "scan reconciled drift", etc.
-   - **Affected:** repo names, rule IDs, or fields touched.
+   - **Why:** what motivated the change.
+   - **Source:** how the steward learned it — "caller request", "reconcile", "code read".
+   - **Affected:** repo names or fields touched.
    ```
 
-3. **Resolve any related drift entries.** If this learning resolves
-   an open entry in `topology.drift_log` or elsewhere, mark it
-   `resolved` and link the changelog date.
+3. **Resolve related drift.** If the change settles an open `drift_log` entry, set it to
+   `resolved`.
+4. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
+5. **Commit and push** `.polyrepo/manifest.yaml` and `.polyrepo/changelog.md` on `main` in
+   `$SKILLSPOKE_CC`.
+6. **Speak in outcomes.** "Noted — X now depends on Y." Not the file mechanics.
 
-4. **Confirm with the human if the fact is non-obvious.** If you are
-   recording something the human told you in passing, briefly read
-   it back: "I'm going to remember that <fact>. Sound right?" This
-   prevents the manifest from accumulating misheard or misremembered
-   facts.
+## Drift
 
-5. **Speak in outcomes, not internals.** When you tell the human
-   you've captured something, do not narrate the file mechanics. "I
-   updated `manifest.yaml` and appended the changelog" is internals.
-   "Got it — I'll remember that" is outcome.
+`reconcile` is the drift check, and it runs at the start of every steward invocation. Every
+mechanical finding is repaired by `--fix`. A finding that needs judgment is settled by the
+steward in the same invocation when the request touches that repo, and on every
+`polyrepo-doctor` run. A `drift_log` entry is written only for a disagreement between the
+manifest and another document that the steward cannot settle from the repositories, GitHub
+or the code; the steward names it in its reply. It never invents an answer.
 
-## Append-only, never destructive
+## Never destructive
 
-The changelog is append-only. The manifest is editable, but never
-silently destructive: when something is removed (a repo archived, a
-rule retired), record the removal explicitly rather than deleting the
-entry. The schema supports this through `lifecycle` on repos, and
-through tombstone-style entries on rules:
-
-```yaml
-- id: no-fe-to-db
-  category: architectural
-  statement: Frontend never talks to the database directly.
-  reason: Maintained the API as the single integration point.
-  status: retired
-  retired_reason: >-
-    Replaced by per-feature service-mesh policies that enforce the
-    same boundary at the network layer.
-```
-
-A future steward, agent, or human reading the manifest learns *why*
-the rule went away, not just that it is gone.
-
-## Reconciling drift
-
-Periodically — when invoked with a refresh intent, or when you notice
-something that does not match the manifest — run a reconcile pass.
-Things to check:
-
-- Do the local clones still exist at the recorded paths?
-- Do the remote URLs still resolve?
-- Do the `CODEOWNERS` files match the recorded owners?
-- Are there `.git` directories under the project's parent folder that
-  are not in the manifest? (a possible new repo)
-- Are there manifest entries with no corresponding repo on disk or
-  remote? (a possible archived/renamed/deleted repo)
-
-For each piece of drift you cannot resolve immediately, append a
-`drift_log` entry with `status: open`. The next time the human is
-available, surface the open drift entries and ask. Do not invent
-answers.
+The changelog is append-only. A repository is never deleted: it is deprecated and later
+archived, and its entry stays with `lifecycle`, `deprecated_on`, and a changelog record of
+why.
 
 ## Audit trail
 
-**Git history is the audit trail** — it records what changed, when, and
-why, and never goes stale. The changelog complements it with the human
-narrative. Two things should be true at all times:
-
-- Every change to `manifest.yaml` has a corresponding changelog entry.
-- Every changelog entry has enough information that someone reading it a
-  year later can understand *what* changed and *why*.
-
-Do not add or maintain manual metadata date fields (`last_updated` and the
-like) to "track" currency — they go stale and lie; git already knows. A
-provenance date the human states inside an `origin` string is fine.
-
-## When the steward learns something about itself
-
-Sometimes the human teaches the steward how to do its job better, not
-something about the project. Examples: "stop asking about CODEOWNERS
-files — we don't use them"; "always check Confluence before saying
-docs don't exist". These are *steward-tuning* facts, and they belong
-in the manifest's `steward_preferences` section (add it if it does
-not exist):
-
-```yaml
-steward_preferences:
-  - preference: Do not ask about CODEOWNERS files; this team does
-      not use them.
-    reason: Team uses Slack-based ownership, not git-based.
-```
-
-These get logged to the changelog like any other learning event.
+Git history is the audit trail. Every manifest change has a changelog entry, and every
+entry says what changed and why. Do not add manual date fields (`last_updated` and the
+like); `deprecated_on` is a lifecycle fact, not an audit field.

@@ -15,9 +15,8 @@ When the user's prompt is ambiguous about whether the steward is
 relevant, scan this list. If any pattern matches, activate. If
 multiple match, activate once and address all of them in a single
 focused reply. If you fire and the user signals it was unwanted (a
-quick "not now" or "I know"), record that in
-`steward_preferences` so the same pattern does not over-fire next
-time.
+quick "not now" or "I know"), stop firing on that pattern for the
+rest of the conversation.
 
 ## Always-fire patterns
 
@@ -96,18 +95,10 @@ steward.
 
 ## On false positives and false negatives
 
-You will sometimes be wrong in both directions. Record both:
-
-- **False positive** (steward fired when it shouldn't have): if the
-  user signals the trigger was unwanted, capture a
-  `steward_preferences` entry so the same pattern does not over-fire
-  next time. Example: "stop reminding me about cross-repo
-  implications when I'm working on a feature inside the docs repo."
-- **False negative** (steward should have fired but didn't): if the
-  human explicitly tells you "you should have warned me about Y", add
-  a trigger pattern entry to the steward's tuning notes and capture
-  it as a learning event. Over time, the trigger patterns become
-  more accurate for this project specifically.
+You will sometimes be wrong in both directions. When the user says a
+trigger was unwanted, or that the steward should have fired and did
+not, the correction belongs in this file: report it in your reply as
+a change to the pattern lists above, naming the pattern.
 
 ## When firing, lead with the relevance
 

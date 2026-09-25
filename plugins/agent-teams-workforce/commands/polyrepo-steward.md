@@ -1,5 +1,5 @@
 ---
-description: Summon the polyrepo-steward — librarian and caretaker of this project's repositories, their knowledge, and their health.
+description: Summon the polyrepo-steward — the one place for anything about this project's repositories, answered from live git and GitHub facts, with the repository work done for you.
 argument-hint: "[create|update|delete|deprecate|list|search] [request]"
 ---
 

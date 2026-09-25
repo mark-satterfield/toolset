@@ -1,7 +1,10 @@
 # Manifest Schema
 
-The manifest at `.polyrepo/manifest.yaml` is the steward's source of
-truth. This file defines its schema. The schema is **descriptive, not
+The manifest at `.polyrepo/manifest.yaml` is the steward's private cache
+of the repositories plus the few facts neither the repository folders nor
+GitHub hold. The folders and GitHub are the source of truth; the
+`polyrepo` tool keeps the manifest true to them. This file defines its
+schema. The schema is **descriptive, not
 prescriptive** — its job is to capture whatever shape the project
 actually has, not to force projects into a fixed mold.
 
@@ -120,8 +123,6 @@ ownership:
 governance: [GovernanceEntry]?   # v3 — registry of the project's own
                                  # scripts/tools/procedures/knowledge-base
                                  # locations; see The `.polyrepo/` directory (v3)
-
-open_questions: [string]?        # things the steward does not know yet
 
 drift_log: [DriftEntry]?         # observations that the manifest may
                                  # be stale; resolved during refresh

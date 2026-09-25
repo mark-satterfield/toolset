@@ -32,7 +32,21 @@ governance:
 # No date field — git history is the audit trail for when an entry changed.
 ```
 
-## Local procedures (the steward's proactive builds)
+## Registered tools
+
+| id | What it is | Invoke |
+|---|---|---|
+| `polyrepo-tool` | The `polyrepo` tool: live repo facts and every deterministic repository action | `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command> --json` |
+
+Its commands: `reconcile`, `status`, `list`, `search`, `inventory`, `purpose`, `grep`,
+`rebase`, `create`, `deprecate`, `agents-sync`, `templates-check`. The command reference is
+the **polyrepo-repo** skill; the tool's `--help` is the authority. When the tool gains or
+loses a command, update this list and the `governance` entry together.
+
+A deterministic job the steward does repeatedly belongs in this tool as a new command, not
+as a hand-run procedure.
+
+## Local procedures
 
 When the steward writes a new **local procedure** — project-side, not pushed back into the
 plugin — the script lives under `.polyrepo/procedures/<name>` and is registered here. That is

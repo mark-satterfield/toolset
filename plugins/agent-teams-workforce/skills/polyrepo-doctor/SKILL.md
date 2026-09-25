@@ -1,49 +1,53 @@
 ---
 name: polyrepo-doctor
 description: >-
-  Audit one or more repositories, the manifest, the knowledge store, and their data for
-  problems — drift, broken references, missing entries, stale facts, convention violations —
-  and report findings. With `--fix`, repair the findings that are safe to repair automatically.
-  Use for a health check before a release, after significant changes, or on request. The set of
-  automatically-fixable findings is being expanded (TBD).
+  Health check for the project's repositories and the steward's records of them: reconcile
+  disk, GitHub and the manifest; check that every repo carries the current shared
+  `AGENTS.md` block; check that the repo templates keep up with the repos built from them;
+  check that every knowledge-store and governance pointer still resolves. Reports findings,
+  and with `--fix` repairs every finding it can. Use for a health check before a release,
+  after significant changes, on a schedule, or on request.
 ---
 
 # Polyrepo Doctor
 
-You are the health check for the polyrepo. You audit, you report, and — only with `--fix` and
-only where it is clearly safe — you repair.
+The tool is `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py"` (see
+the `polyrepo-repo` skill for its commands). Run every check with `--json`.
 
-> Status: initial version. The audit surface below is the target; the set of auto-fixable
-> findings is still being defined (TBD). Prefer reporting over fixing until a finding type is
-> explicitly marked safe.
+## Checks
 
-## What you check (target surface)
+| Check | Command | Clean when |
+|---|---|---|
+| Disk, GitHub and manifest agree | `reconcile --json` (with `--fix` under `--fix`) | exit 0, `open` is 0 |
+| Every repo has the current shared `AGENTS.md` block | `agents-sync --check --json` | exit 0 |
+| Templates keep up with their repos; every repo kind has a template | `templates-check --json` | exit 0 |
+| Knowledge-store pointers resolve | read `.polyrepo/knowledge.yaml`; for each `kind: location` or `pointer` entry, confirm the file, folder, vault note or command it names exists (vault notes through `obsidian-cli vault="skillspoke-docs"`) | every pointer resolves |
+| Governance entries resolve | for each manifest `governance` entry, confirm its `location` exists and its `invoke` runs (`--help` or equivalent) | every entry resolves |
 
-- **Manifest vs reality** — do local clones exist at recorded paths? Do remotes resolve? Do
-  recorded owners match? Are there `.git` directories under the project that are not in the
-  manifest (a possible new repo)? Are there manifest entries with no repo on disk or remote (a
-  possible archived/renamed/deleted repo)?
-- **Internal consistency** — every `groups[].members`, dependency endpoint, `deploy_waves`
-  repo, and rule `applies_to` resolves; names conform to the repository-naming standard;
-  deprecated repos are out of active deploy waves and audits.
-- **Knowledge store** — stale or contradicted entries; "where to find it" pointers that no
-  longer resolve.
-- **Governance** — registered scripts/tools/procedures that no longer exist at their location.
+The three tool checks run independently; run them in parallel.
 
 ## Output
 
-A findings list, each with severity and evidence. Append unresolved items to the manifest's
-`drift_log` (`status: open`) so they surface at the next opportunity.
+One findings list: each finding with its check, repo or entry, severity, and the evidence
+(the tool's `detail`, or the path that did not resolve). End with the count per check.
 
 ## `--fix`
 
-Repair only the clearly-safe findings (for example, reconcile an obvious moved path or changed
-remote, or close a drift entry that is now resolved) — always **through the owning skill's
-learning flow**, never by hand-editing files — and report exactly what changed. Never fix an
-ambiguous finding automatically; surface it to the human.
+- `reconcile --fix` repairs every mechanical finding. Settle the judgment findings it leaves
+  open as the `polyrepo-repo` skill's finding table says, then run `reconcile` again.
+- `agents-sync` (without `--check`) writes the block into every out-of-date repo, committing
+  and pushing each on `main`.
+- A lagging template: bring the template up to what its repos now share, in
+  `$SKILLSPOKE_CC/repositories/templates/`, and commit it. A repo kind with no template:
+  report it with the repos of that kind; creating a new template is a judgment the steward
+  makes when a request needs a repo of that kind.
+- A knowledge-store or governance pointer that no longer resolves: find where the thing
+  now lives and update the entry (**polyrepo-info** or **polyrepo-governance**), or retire
+  the entry with the reason when the thing is gone.
+
+Report exactly what changed and what is still open.
 
 ## Boundaries
 
-Read-and-report by default. `--fix` writes only through the owning skills (polyrepo-repo,
-polyrepo-info, polyrepo-governance) and their learning protocol. You never edit the manifest,
-knowledge store, or repos directly.
+Every write goes through the tool or the owning skill (**polyrepo-repo**,
+**polyrepo-info**, **polyrepo-governance**) and its learning protocol.

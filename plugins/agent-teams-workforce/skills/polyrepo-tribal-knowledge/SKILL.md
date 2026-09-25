@@ -31,9 +31,11 @@ Follow the precedence ladder in `../polyrepo-info/references/search-recipes.md`:
 ## What you produce
 
 Add or update entries in the knowledge store `.polyrepo/knowledge.yaml` (owned by
-**polyrepo-info**; see it for the entry shape). Record through the learning protocol
-(`../polyrepo-repo/references/learning-protocol.md`): update the store **and** append
-`.polyrepo/changelog.md`. Read non-obvious findings back to the human before storing.
+**polyrepo-info**; see it for the entry shape). Verify every entry against reality before
+storing it — the path, vault note or command it names exists, and the fact it states is what
+the code or the canonical document says now — as **polyrepo-info** describes. Record through
+the learning protocol (`../polyrepo-repo/references/learning-protocol.md`): update the store
+**and** append `.polyrepo/changelog.md`, then commit and push. There is no read-back step.
 
 ## What you do not do
 
@@ -43,5 +45,6 @@ Add or update entries in the knowledge store `.polyrepo/knowledge.yaml` (owned b
 
 ## Reconcile
 
-Flag stale or contradicted knowledge entries you encounter, and surface them to the human
-rather than silently overwriting.
+Every sweep also re-verifies every existing entry the same way. An entry that no longer holds
+is corrected to where the thing lives now, or retired with the reason when the thing is gone,
+and the change is recorded in the changelog. Report what was corrected or retired.
