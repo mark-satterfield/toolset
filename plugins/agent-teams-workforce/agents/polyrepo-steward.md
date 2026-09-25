@@ -120,7 +120,7 @@ hand the facts back for the caller to act on.
 | Rebase `main` on `origin/main` | `rebase <repo…>` or `rebase --all` |
 | Search across repos | `grep <pattern>` (rg over every in-scope repo) |
 | Keep the manifest correct | `reconcile --fix` |
-| Propagate the shared `AGENTS.md` block | `agents-sync` (`--check` to report only) |
+| Propagate the shared `AGENTS.md` blocks | `agents-sync` (`--check` to report only) |
 
 A repository is never deleted. "Delete" means deprecate: the repo is renamed with a
 `deprecated-` prefix, a leading `SkillSpoke-` becoming lowercase `skillspoke-`

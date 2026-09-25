@@ -4,7 +4,7 @@ These are the **canonical source** for the agent-teams-workforce pipelines: the 
 
 ## Status: canonical here, deployed by hand (for now)
 
-The Claude Code plugin framework does not deploy workflows natively, so these do not ship to a project automatically the way agents and skills do. Deployment will be **automated** — a `SessionStart` hook (modeled on `../scripts/init-update-project.sh`) will symlink this folder into a consuming project at `.claude/workflows/agent-teams-workforce-pipelines/` and refresh it when the plugin version changes.
+The Claude Code plugin framework does not deploy workflows natively, so these do not ship to a project automatically the way agents and skills do. Deployment will be **automated** — a `SessionStart` hook will symlink this folder into a consuming project at `.claude/workflows/agent-teams-workforce-pipelines/` and refresh it when the plugin version changes.
 
 Until that automation lands:
 

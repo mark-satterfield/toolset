@@ -42,7 +42,6 @@ const GUARD_SCOPE = {
 
   // Not guards: they report or maintain, and block nothing.
   'session-start-config-conflict-check.cjs': 'advisory',
-  'init-update-project.sh': 'advisory',
 };
 
 /** @returns {'orchestrator-role'|'universal'|'advisory'|null} */

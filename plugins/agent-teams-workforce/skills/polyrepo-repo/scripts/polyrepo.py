@@ -2022,11 +2022,12 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     if cp.returncode != 0:
         msg = f"copier failed: {_last_line(cp)}"
         raise PolyrepoError(msg)
-    block, marker = _agents_block(cfg)
     agents = dest / "AGENTS.md"
     agents.write_text(
-        _with_block(
-            agents.read_text() if agents.exists() else None, block, name, marker
+        _with_blocks(
+            agents.read_text() if agents.exists() else None,
+            _blocks_for(_agents_blocks(cfg), name),
+            name,
         )
     )
     try:
@@ -2219,42 +2220,139 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
 # agents-sync ----------------------------------------------------------------------------------
 
 
-def _agents_block(cfg: Config) -> tuple[str, str]:
-    """Return the shared AGENTS.md block, wrapped in its markers, and the marker name.
+PLUGIN_ROOT = Path(__file__).resolve().parents[3]
+PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}"
+PLUGIN_IMPORT = re.compile(r"^@\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)`?\s*$", re.M)
+
+
+@dataclasses.dataclass(frozen=True)
+class AgentsBlock:
+    """One marked block agents-sync owns in every repo's AGENTS.md."""
+
+    marker: str
+    text: str
+    exclude: frozenset[str]
+
+    def pattern(self) -> re.Pattern[str]:
+        """Return the regex matching this block, markers included, whatever its BEGIN note.
+
+        Returns:
+            The compiled pattern.
+        """
+        m = re.escape(self.marker)
+        return re.compile(rf"<!-- BEGIN {m}\b.*?<!-- END {m} -->", re.S)
+
+
+def _plugin_block_body(f: Path) -> str:
+    """Render a plugin block source: drop its front matter and inline every plugin import.
+
+    A line `@${CLAUDE_PLUGIN_ROOT}/<file>` is replaced by that plugin file's content, so the
+    block names no installed-plugin path and no plugin version.
 
     Returns:
-        (block, marker).
+        The block body.
 
     Raises:
-        PolyrepoError: when the block file is missing.
+        PolyrepoError: when an imported file is missing or a plugin path is left in the body.
+    """
+    text = f.read_text()
+    if text.startswith("---\n"):
+        end = text.find("\n---\n", 4)
+        if end != -1:
+            text = text[end + 5 :]
+
+    def inline(m: re.Match[str]) -> str:
+        src = PLUGIN_ROOT / m.group(1)
+        if not src.is_file():
+            msg = f"{f.name} imports {m.group(1)}, which is not in the plugin"
+            raise PolyrepoError(msg)
+        return src.read_text().strip()
+
+    body = PLUGIN_IMPORT.sub(inline, text).strip()
+    if PLUGIN_ROOT_TOKEN in body:
+        msg = f"{f.name} still names {PLUGIN_ROOT_TOKEN} after its imports are inlined"
+        raise PolyrepoError(msg)
+    return body
+
+
+def _agents_blocks(cfg: Config) -> list[AgentsBlock]:
+    """Return every block agents-sync owns, in the order they appear in a new AGENTS.md.
+
+    A block's content comes from `block_file` (relative to the config folder) or from
+    `plugin_file` (relative to this plugin's root, rendered by _plugin_block_body).
+
+    Returns:
+        The blocks.
+
+    Raises:
+        PolyrepoError: when a block has no source or its source file is missing.
     """
     sc = cfg.raw.get("agents_sync") or {}
-    f = cfg.setting_path(
-        "agents_sync", "block_file", "../repositories/agents-shared-block.md"
-    )
-    if not f.is_file():
-        msg = f"shared AGENTS.md block file {f} not found"
+    specs = sc.get("blocks") or []
+    out = []
+    for spec in specs:
+        marker = str(spec.get("marker") or "")
+        if spec.get("plugin_file"):
+            f = PLUGIN_ROOT / str(spec["plugin_file"])
+        elif spec.get("block_file"):
+            f = (cfg.file.parent / str(spec["block_file"])).resolve()
+        else:
+            msg = f"agents_sync block {marker or '(unnamed)'} names no source file"
+            raise PolyrepoError(msg)
+        if not marker or not f.is_file():
+            msg = f"agents_sync block {marker or '(unnamed)'}: {f} not found"
+            raise PolyrepoError(msg)
+        body = (
+            _plugin_block_body(f) if spec.get("plugin_file") else f.read_text().strip()
+        )
+        note = str(spec.get("note") or "written by polyrepo agents-sync")
+        out.append(
+            AgentsBlock(
+                marker,
+                f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->",
+                frozenset(spec.get("exclude") or []),
+            )
+        )
+    if not out:
+        msg = "agents_sync.blocks in the polyrepo config lists no block"
         raise PolyrepoError(msg)
-    marker = str(sc.get("marker") or "SKILLSPOKE SHARED")
-    note = str(sc.get("note") or "written by polyrepo agents-sync")
-    body = f.read_text().strip()
-    return f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->", marker
+    return out
 
 
-def _with_block(text: str | None, block: str, name: str, marker: str) -> str:
-    """Put the block into AGENTS.md text: replace the marked copy, or append one.
+def _blocks_for(blocks: list[AgentsBlock], name: str) -> list[AgentsBlock]:
+    """Return the blocks a repo receives.
+
+    Returns:
+        The blocks whose exclude list does not name the repo.
+    """
+    return [b for b in blocks if name not in b.exclude]
+
+
+def _with_blocks(text: str | None, blocks: list[AgentsBlock], name: str) -> str:
+    """Put each block into AGENTS.md text: replace its marked copy, or append one.
 
     Returns:
         The new text.
     """
-    if text is None:
-        return f"# {name}\n\n{block}\n"
-    rx = re.compile(
-        rf"<!-- BEGIN {re.escape(marker)}\b.*?<!-- END {re.escape(marker)} -->", re.S
-    )
-    if rx.search(text):
-        return rx.sub(lambda _m: block, text, count=1)
-    return text.rstrip("\n") + "\n\n" + block + "\n"
+    out = f"# {name}\n" if text is None else text
+    for b in blocks:
+        rx = b.pattern()
+        if rx.search(out):
+            out = rx.sub(lambda _m, t=b.text: t, out, count=1)
+        else:
+            out = out.rstrip("\n") + "\n\n" + b.text + "\n"
+    return out
+
+
+def _without_blocks(text: str, blocks: list[AgentsBlock]) -> str:
+    """Return the text with every owned block removed, for comparing what else changed.
+
+    Returns:
+        The text outside the owned blocks.
+    """
+    for b in blocks:
+        text = b.pattern().sub("", text)
+    return text
 
 
 def _commit_paths(repo: Path, paths: list[str], message: str) -> None:
@@ -2271,16 +2369,16 @@ def _commit_paths(repo: Path, paths: list[str], message: str) -> None:
 
 
 def _sync_one(
-    cfg: Config, r: LocalRepo, block: str, marker: str, write: bool
+    cfg: Config, r: LocalRepo, blocks: list[AgentsBlock], write: bool
 ) -> dict[str, Any]:
     f = r.path / "AGENTS.md"
     cur = f.read_text() if f.is_file() else None
-    want = _with_block(cur, block, r.name, marker)
+    want = _with_blocks(cur, blocks, r.name)
     if cur == want:
         state = "current"
     elif cur is None:
         state = "missing-file"
-    elif f"<!-- BEGIN {marker}" in cur:
+    elif all(b.pattern().search(cur) for b in blocks):
         state = "outdated"
     else:
         state = "missing-block"
@@ -2291,12 +2389,16 @@ def _sync_one(
     branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
     if branch != b:
         return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
-    if git_out(r.path, "status", "--porcelain", "--", "AGENTS.md"):
-        return {
-            **res,
-            "status": "skipped",
-            "detail": "AGENTS.md has uncommitted changes",
-        }
+    if cur is not None and git_out(r.path, "status", "--porcelain", "--", "AGENTS.md"):
+        head = git(r.path, "show", "HEAD:AGENTS.md")
+        if head.returncode != 0 or _without_blocks(
+            head.stdout, blocks
+        ) != _without_blocks(cur, blocks):
+            return {
+                **res,
+                "status": "skipped",
+                "detail": "AGENTS.md has uncommitted changes outside the synced blocks",
+            }
     f.write_text(want)
     paths = ["AGENTS.md"]
     claude = r.path / "CLAUDE.md"
@@ -2304,9 +2406,7 @@ def _sync_one(
         claude.symlink_to("AGENTS.md")
         paths.append("CLAUDE.md")
     try:
-        _commit_paths(
-            r.path, paths, "docs(agents): sync the shared SkillSpoke instructions block"
-        )
+        _commit_paths(r.path, paths, "docs(agents): sync the shared instruction blocks")
     except GitFailedError as exc:
         git(r.path, "reset", "-q", "--", *paths)
         if cur is None:
@@ -2327,21 +2427,20 @@ def _sync_one(
 
 
 def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
-    """Write the shared block into every repo's AGENTS.md, committing and pushing each repo.
+    """Write the owned blocks into every repo's AGENTS.md, committing and pushing each repo.
 
     Returns:
         0 when every repo is current (or was brought current and pushed), else 1.
     """
-    block, marker = _agents_block(cfg)
-    skip = set((cfg.raw.get("agents_sync") or {}).get("exclude") or [])
+    blocks = _agents_blocks(cfg)
     repos = [
-        r
+        (r, own)
         for r in _local_repos(cfg, args.repo)
-        if r.name not in skip and not r.name.startswith("deprecated-")
+        if not r.name.startswith("deprecated-") and (own := _blocks_for(blocks, r.name))
     ]
     write = not args.check and not args.dry_run
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        results = list(ex.map(lambda r: _sync_one(cfg, r, block, marker, write), repos))
+        results = list(ex.map(lambda rb: _sync_one(cfg, rb[0], rb[1], write), repos))
     if write:
         bad = [
             x for x in results if x["state"] != "current" and x["status"] != "pushed"
@@ -2846,7 +2945,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser(
         "agents-sync",
         parents=[common],
-        help="write the shared AGENTS.md block into every repo",
+        help="write the shared AGENTS.md blocks into every repo",
     )
     s.add_argument("--check", action="store_true", help="report repos out of date")
     s.add_argument("--dry-run", action="store_true", help="same as --check")
