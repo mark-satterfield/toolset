@@ -8,7 +8,7 @@ actually has, not to force projects into a fixed mold.
 ## Top-level structure
 
 ```yaml
-schema_version: 2
+schema_version: 4
 project:
   name: string                   # short kebab-case identifier
   purpose: string                # one sentence, what the project does
@@ -16,18 +16,11 @@ project:
   # No created_at / last_updated — git history is the audit trail
   # (see "Dates and the audit trail" below).
 
-topology:
-  kind: enum                     # see Topology kinds below
-  description: string            # the human's own words, verbatim
-  layout_notes: string?          # how the repos are arranged on disk
-  manifest_location: string      # absolute path of this file
-
 repos: [Repo]                    # see Repo schema below
 adjacent_repos: [Repo]?          # related but not part of the project
 
 groups: [Group]?                 # named sets of repos, usable as
-                                 # dependency endpoints and rule-scope
-                                 # targets; see Group schema
+                                 # dependency endpoints; see Group schema
 
 relationships:
   dependencies: [Dependency]?    # see Dependency schema; each endpoint
@@ -39,23 +32,11 @@ relationships:
   cycles: [Cycle]?               # known circular deps, with notes
 
 conventions:
-  naming: { repos, branches, commits, tags, releases }?
   branching_model: string?
   commit_format: string?
   pr_rules: string?
   versioning: string?
   code_style: { tools: [string], shared: bool }?
-
-rules: [Rule]                    # see Rule schema — architectural,
-                                 # security, deployment, soft rules
-
-documentation:
-  per_repo: string?              # convention, e.g., "each repo has /docs"
-  project_level: [string]?       # paths or URLs
-  runbooks: [string]?
-  onboarding: [string]?
-
-search_recipes: [SearchRecipe]?  # see SearchRecipe schema
 
 ownership:
   contacts: { topic: owner }?    # e.g., { build: alice, infra: bob }
@@ -71,30 +52,9 @@ drift_log: [DriftEntry]?         # observations that the manifest may
                                  # be stale; resolved during refresh
 ```
 
-## Topology kinds
-
-The `topology.kind` field is the **steward's inference label** for the
-project's shape. It is never picked by the human from a flat list. You
-derive it from the discovery interview (and an optional filesystem scan,
-with permission), propose it to the human with your reasoning, and they
-confirm in their own words or redirect. See
-`references/topology-recommendations.md` for the inference decision
-tree and tradeoffs.
-
-The category is for the steward's quick reasoning; the human's verbatim
-description in `topology.description` is what truly defines the shape.
-
-- `siblings_only` — repos are peers, no umbrella, often co-located in a
-  parent directory.
-- `meta_and_satellites` — one umbrella/meta repo plus member repos.
-- `monorepo_plus_satellites` — one large monorepo plus a few outliers.
-- `scattered` — no shared parent directory; repos live in unrelated
-  filesystem locations.
-- `remote_only` — repos do not share a local layout; only git remotes
-  unify them.
-- `hybrid` — combination; describe in `description`.
-- `other` — does not fit any of the above; the human's description
-  carries the meaning.
+There is no `topology` section, no top-level `rules`, no `documentation`,
+no `search_recipes`, and `conventions` carries no `naming` subsection —
+see *Schema version history (v4)* for what replaced each of them and why.
 
 ## Repo schema
 
@@ -104,7 +64,6 @@ description in `topology.description` is what truly defines the shape.
   role: enum                     # service, library, infra, docs,
                                  # orchestrator, meta, app, mobile-app,
                                  # sdk, scripts, fork, other
-  local_path: string?            # absolute, or null if not cloned
   remote_url: string?            # primary remote
   default_branch: string?        # main, master, develop, etc.
   owner: string?
@@ -113,6 +72,11 @@ description in `topology.description` is what truly defines the shape.
   language: string?              # primary language
   notes: string?
 ```
+
+No `local_path`. A repo's location on disk is a live fact the steward's
+tool derives from the project's repo-root environment variable plus this
+`name` — recording it in the manifest is exactly the kind of hardcoded,
+machine-specific path that goes stale on every re-clone or new machine.
 
 Required: `name`, `purpose`, `role`, `lifecycle`. Everything else is
 encouraged but optional — fill in what you can, mark the rest as
@@ -129,8 +93,8 @@ encouraged but optional — fill in what you can, mark the rest as
 
 A **group** is a named set of repos that share a role or constraint — a
 *class* like "backend services", "mobile clients", or "infra repos".
-Groups exist so dependencies and rules can name a class of repos instead
-of hand-listing members or being forced project-wide. A shared library
+Groups exist so a dependency can name a class of repos instead of
+hand-listing members or being forced project-wide. A shared library
 consumed by every backend service is one `group:backend-services →
 shared-types` edge, not N repo→repo edges that rot the moment a service
 is added.
@@ -150,16 +114,14 @@ Several fields name a node in the project graph. A node may be either:
   `group:backend-services`
 
 The `group:` prefix is the only thing that distinguishes the two; a bare
-string is always a repo name. The fields that accept this notation are:
+string is always a repo name. The one field that accepts this notation is
+`relationships.dependencies[].from` and `.to`.
 
-- `relationships.dependencies[].from` and `.to`
-- `rules[].applies_to[]`
-
-Any `group:<name>` used in these fields must resolve to a group defined
-in the top-level `groups` section. A group endpoint means "every member
-of that group", expanded against `groups` at read time — so the manifest
-stays correct as members are added or removed without editing every edge
-or rule by hand.
+Any `group:<name>` used there must resolve to a group defined in the
+top-level `groups` section. A group endpoint means "every member of that
+group", expanded against `groups` at read time — so the manifest stays
+correct as members are added or removed without editing every edge by
+hand.
 
 ## Dependency schema
 
@@ -221,47 +183,6 @@ A repo with no gate and no task override is still listed by name; an
 empty wave entry is just `- name: <repo>` with `gate` and `deploy_task`
 omitted.
 
-## Rule schema
-
-```yaml
-- id: string                     # short slug, e.g., "no-fe-to-db"
-  category: enum                 # architectural, security, compliance,
-                                 # deployment, convention, soft
-  statement: string              # the rule itself, declarative
-  reason: string                 # WHY the rule exists
-  applies_to: [endpoint]?        # repo names and/or group:<name> entries
-                                 # (see Endpoint notation); omit for
-                                 # project-wide
-  origin: string?                # who introduced the rule, if known
-                                 # (a provenance date inside this string is fine)
-```
-
-The `reason` field is non-negotiable. Rules without reasons rot — the
-next agent or human will violate them and not understand why they
-mattered.
-
-Each `applies_to` entry may be a repo name or a `group:<name>` (see
-*Endpoint notation*). Group scoping is the right tool when a rule governs
-a *class* of repos: "backend services consume shared types only via the
-published package" is `applies_to: [group:backend-services]`, which stays
-correct as services join or leave the group — instead of a hand-listed
-wall of repos that rots, or a wrongly project-wide rule that constrains
-repos it was never meant to.
-
-## SearchRecipe schema
-
-```yaml
-- intent: string                 # "find React components", "find API
-                                 # routes that touch billing"
-  command: string                # the actual command or query
-  scope: [string]?               # repo names to run it across
-  notes: string?
-```
-
-Recipes encode tribal search knowledge. Every time you find yourself
-running a non-obvious command to locate something across repos, capture
-it as a recipe.
-
 ## DriftEntry schema
 
 ```yaml
@@ -288,21 +209,20 @@ those are content, not metadata the steward must keep current.
 When writing or updating the manifest, ensure (all v1 invariants still
 hold; the group and wave rules are new in v2):
 
-- `schema_version` is present and is `2`.
+- `schema_version` is present and is `4`.
 - Every `repos[].name` is unique.
 - Every `groups[].name` is unique, and every `groups[].members[]` entry
   resolves to a real repo (in `repos`, or an adjacent repo).
 - Every dependency endpoint (`from` and `to`) is either a real repo (or
   adjacent repo) or a `group:<name>` that resolves to a defined group.
-- Every `rules[].applies_to[]` entry is either a real repo (or adjacent
-  repo) or a `group:<name>` that resolves to a defined group.
 - Every `relationships.deploy_waves[].repos[].name` resolves to a real
   repo (or adjacent repo).
 - `relationships.deploy_waves` stage order **is the list order** — the
   first stage deploys first. No separate ordering field exists or is
   implied; do not add one.
-- `topology.manifest_location` matches the actual on-disk path.
-- All paths in `local_path` and `manifest_location` are absolute.
+- No `repos[].local_path`, `topology`, top-level `rules`,
+  `documentation`, or `search_recipes` field — see *Schema version
+  history (v4)*.
 
 If a write would violate any of these, fix the violation before
 saving — do not write a partially valid manifest.
@@ -459,10 +379,14 @@ knowledge:
 ### `steward_preferences` decomposition (v3)
 
 `steward_preferences` had become a catch-all of preferences, rules, and knowledge. Under v3
-it is decomposed: behavioural preferences move to the steward *agent* (its system prompt);
-genuine constraints move to `rules[]`; and "where to find it" knowledge moves to
-`knowledge.yaml`. Any remaining project-specific behavioural preference the agent must read
-may still live in `steward_preferences`.
+it was decomposed: behavioural preferences move to the steward *agent* (its system prompt);
+genuine constraints moved to `rules[]`; and "where to find it" knowledge moves to
+`knowledge.yaml`. **v4 removed `rules[]` itself** (see *Schema version history*) — a
+constraint's canonical home is the project's own architecture/SAD or convention doc, never
+the manifest, so a constraint that would have gone to `rules[]` under v3 now goes there
+instead, and the manifest carries a pointer only if one is genuinely useful. Any remaining
+project-specific behavioural preference the agent must read may still live in
+`steward_preferences`.
 
 ## Evolving the schema
 
@@ -499,3 +423,19 @@ read `schema_version` and know exactly what changed between versions.
   Also removed the manual metadata date fields (`created_at` / `last_updated` /
   `recorded_at` / `observed_at` / `retired_at`) — git history is the audit trail.
   Backward-compatible: the additions are optional and the date fields were advisory.
+- **v4** — removed every field whose canonical home is another document, per the
+  identity-vs-claim test (a manifest field is fine when it states what a repo *is*;
+  it is a defect when it restates a claim another document already owns). Removed:
+  `topology` (a repo's location is a live fact the tool derives from the repo-root
+  environment variable plus its name, not a fact worth freezing into the manifest);
+  `repos[].local_path` (same reason, per repo — a stored path goes stale on every
+  re-clone or new machine); `conventions.naming` (the project's own naming-standard
+  document is canonical); top-level `rules[]` (architectural/security/deployment
+  constraints belong in the project's SAD, AGENTS.md, or crosscutting-concerns doc —
+  a rule copied into the manifest drifts the moment the canonical doc changes and
+  nothing updates the copy); `documentation` and `search_recipes` (both are "where
+  to find it" pointers, which is exactly what `.polyrepo/knowledge.yaml` — the
+  `polyrepo-info` knowledge store — exists to hold; restating them here duplicated
+  that store's one job). Not backward-compatible: a v3 manifest carrying any of
+  these fields must have them removed (and, where the fact is still worth keeping,
+  moved to its real canonical home or to `knowledge.yaml`) to become valid v4.

@@ -8,31 +8,28 @@
 # See references/manifest-schema.md for the full schema and validation
 # rules.
 
-schema_version: 2
+schema_version: 4
 
 project:
   name: <project-name>
   purpose: <one-sentence description of what this project does>
   owners:
     - <person-or-team>
-  created_at: <YYYY-MM-DD>
-  last_updated: <YYYY-MM-DD>
+  # No created_at / last_updated — git history is the audit trail.
 
-topology:
-  kind: <siblings_only | meta_and_satellites | monorepo_plus_satellites | scattered | remote_only | hybrid | other>
-  description: >-
-    <the human's verbatim description of the project's shape — this is
-    the most important field; do not paraphrase>
-  layout_notes: >-
-    <how repos are arranged on disk; e.g., "all under ~/projects/foo,
-    plus one fork under ~/forks">
-  manifest_location: <absolute path to this file>
+# No topology section. A local_path, a layout description, and this
+# file's own location are all facts the steward's tool derives live
+# from disk — recording them here is a hardcoded, stale-prone copy of
+# something the filesystem already answers. If the project's shape
+# genuinely needs a one-line description for a human reader, it belongs
+# in this project's own docs, not the manifest.
 
 repos:
   - name: <repo-name>
     purpose: <one-sentence purpose>
     role: <service | library | infra | docs | orchestrator | meta | app | mobile-app | sdk | scripts | fork | other>
-    local_path: <absolute path or null>
+    # No local_path — the tool derives it live from the repo root env
+    # var plus this name; a stored path goes stale on every clone.
     remote_url: <url or null>
     default_branch: <main | master | etc.>
     owner: <person-or-team or unknown>
@@ -81,13 +78,12 @@ relationships:
     #     - name: <repo-name>          # no gate, no override
   cycles: []
 
+# Repo naming, branching, commit format, PR rules and similar conventions
+# belong in this project's own naming-standard / contributing doc, not
+# here — that doc is the canonical source and the manifest would only
+# duplicate and drift from it. `conventions` keeps facts about *this*
+# project's tooling that have no other home.
 conventions:
-  naming:
-    repos: <pattern or "none">
-    branches: <pattern or "none">
-    commits: <pattern or "none">
-    tags: <pattern or "none">
-    releases: <pattern or "none">
   branching_model: <trunk-based | gitflow | custom — describe>
   commit_format: <conventional-commits | freeform | issue-prefixed | etc.>
   pr_rules: <description>
@@ -96,26 +92,13 @@ conventions:
     tools: []
     shared: <true | false>
 
-rules:
-  # - id: no-fe-to-db
-  #   category: architectural | security | compliance | deployment | convention | soft
-  #   statement: <the rule, declarative>
-  #   reason: <WHY this rule exists — non-negotiable>
-  #   applies_to: [<repo-name>, group:<name>] # repos and/or groups; omit for project-wide
-  #   origin: <who introduced it>
-  #   recorded_at: <YYYY-MM-DD>
-
-documentation:
-  per_repo: <convention; e.g., "each repo has a /docs folder">
-  project_level: []
-  runbooks: []
-  onboarding: []
-
-search_recipes:
-  # - intent: <what the human is trying to find>
-  #   command: <the actual command>
-  #   scope: [<repo-name>]
-  #   notes: <optional>
+# No top-level `rules`, `documentation`, or `search_recipes` sections.
+# Architectural/security/deployment rules live in the project's SAD,
+# AGENTS.md, or crosscutting-concerns doc; doc locations and search
+# recipes are "where to find it" facts that belong in the knowledge
+# store (.polyrepo/knowledge.yaml, owned by polyrepo-info), not in the
+# structural manifest — restating them here duplicates their one
+# canonical home and lets the copy drift.
 
 ownership:
   contacts: {}
