@@ -888,21 +888,19 @@ function runSurvey(label) {
   return settleAgent(
     `Inventory the repositories this project HAS. You are READ-ONLY: describe, change nothing, and create nothing.
 
-Use the polyrepo-steward's own knowledge and the polyrepo-* skills to answer. Do not open the polyrepo manifest yourself — repository knowledge flows through the steward, so that one participant owns it and the answer stays consistent with every other consumer.
-
 This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: this inventory is cached and reused for other PRDs, so it describes the estate, not one PRD's view of it.
 
 For every repository the project has, return:
-- repoPath — its absolute local path, exactly as the steward records it.
+- repoPath — its absolute local path.
 - name — its repository name.
 - role — what kind of repository it is (service, infrastructure, shared library, frontend, tooling, docs).
 - owns — the capability it owns, in one line. This is the field the placement turns on: a PRD lands in the repository that already owns the capability far more often than in a new one.
 - lifecycle — active, deprecated, or unknown.
-- notes — anything a placement decision needs: it is empty, it is being retired, its conventions differ.
+- notes — anything a placement decision needs to know about what the repository really is: it is empty, it is being retired, it is a finished, deployed site that no PRD changes, its conventions differ.
 
 A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. Enumerate every repository the project has.
 
-SEARCH BUDGET (binding): the steward's manifest and knowledge store already hold every field asked for above, so this is a LOOKUP — ask the steward, read its answer, and return it. Do not walk repository trees, do not open source files to work out what a repository owns, and do not clone or fetch anything. Roughly ten tool calls is the expected shape. Where the steward's records do not state a field, return it as unknown rather than investigating the repository to fill it in — unknown is a usable answer here and an unbounded estate crawl is not.
+Describe each repository as it actually is on this machine today. How you establish that is yours to decide.
 
 Also return:
 - conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
@@ -973,7 +971,7 @@ For each work unit return:
 Also return:
 - designSummary — the shape of the whole, in a few sentences.
 
-READING BUDGET (binding): read NOTHING${shaperFiles.length ? ` except ${shaperFiles.join(' and ')}` : ''}. This is a design task over the two documents above, and there is no file, repository or manifest that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
+READING BUDGET (binding): read NOTHING${shaperFiles.length ? ` except ${shaperFiles.join(' and ')}` : ''}. This is a design task over the two documents above, and there is no file or repository that could inform it — a blank slate has nothing to consult. Any search you run here is either wasted or a leak of the status quo into a design that is supposed to be blind to it.
 
 Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a result this phase can use, and an empty list ends the run. Draw the smallest number of boundaries the design honestly needs. Every boundary you draw becomes a separate Story, a separate deployment, and a separate coordination cost; every one you fail to draw hides a coupling that will be paid for later. Do not inflate the unit count to look thorough, and do not collapse genuinely separate concerns to look simple.${persistBrief(ART, 'repo-scoping-shape.json', 'your complete structured result (workUnits and designSummary, exactly as you return them) as ONE JSON object')}`,
       {
@@ -1015,8 +1013,8 @@ Return AT LEAST ONE work unit: a PRD that decomposes into nothing is not a resul
     ),
 
   // 2) SURVEY. Read-only recognition of what the project actually has. Repository
-  //    knowledge belongs to the polyrepo-steward and is reached THROUGH it — the manifest
-  //    is never read directly, here or anywhere else, so that one participant owns it.
+  //    knowledge belongs to the polyrepo-steward and is reached THROUGH it, so that one
+  //    participant owns it and this script knows nothing of how it keeps that knowledge.
   () => (replaySurvey ? Promise.resolve(replaySurvey) : runSurvey('scope:repository-survey')),
 ])
 
@@ -1111,6 +1109,8 @@ Rule, and return:
 - spanRationale — why this is the span, in a few sentences.
 
 Every work unit in the design must appear in exactly one placement or one newRepos entry. A unit you place nowhere is work that gets specified nowhere.
+
+RELEVANCE IS YOUR JUDGMENT. The inventory lists every repository the project has, and most of them have nothing to do with this PRD. A repository is in the span only when this PRD's requirements belong there. Leave every other repository out of every field you return — placements, obsoletes, reclassified, spanRationale and any open question — without comment. A repository whose purpose lies outside this PRD is never a place to put this PRD's work and never a subject for a remark about it.
 
 Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}${cachedSurveyBrief()}`,
     {
@@ -1297,7 +1297,7 @@ if (!rawPlacements.length && !newRepos.length) {
 const requiredHumanActions = []
 for (const n of newRepos) {
   requiredHumanActions.push(
-    `Create the repository "${n.proposedName}" (${n.purpose}) through the polyrepo-steward, so the manifest is written with it, then re-run this PRD. No existing repository fits: ${n.whyNoExistingRepoFits}`
+    `Create the repository "${n.proposedName}" (${n.purpose}) through the polyrepo-steward, then re-run this PRD. No existing repository fits: ${n.whyNoExistingRepoFits}`
   )
 }
 for (const b of blocked) {
@@ -1370,11 +1370,10 @@ return {
   placements,
   // Proposed, never created. The justification is in the caller's hands rather than
   // this script's: creating a repository is outward-facing and effectively irreversible
-  // (a remote, a manifest entry, CI, permissions), the manifest belongs to the
-  // polyrepo-steward rather than to a pipeline phase, and — decisively — the span is
-  // recomputed on EVERY run and stored nowhere, so a phase that minted a repository would
-  // have to consult the manifest its own previous run wrote in order to avoid minting a
-  // second one on the re-run. Recomputation and silent creation cannot both be safe.
+  // (a remote, CI, permissions), repository records belong to the polyrepo-steward
+  // rather than to a pipeline phase, and — decisively — the span is recomputed on EVERY
+  // run and stored nowhere, so a phase that minted a repository would have to find what
+  // its own previous run created in order to avoid minting a second one on the re-run. Recomputation and silent creation cannot both be safe.
   newRepos,
   requiredHumanActions,
   reclassified: (Array.isArray(ruling.reclassified) ? ruling.reclassified : []).filter((r) => r && hasText(r.workUnitId)),
