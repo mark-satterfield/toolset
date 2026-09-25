@@ -661,6 +661,38 @@ class State:
         man = str(e.get("lifecycle")) if e and e.get("lifecycle") else "active"
         return "active" if man in LIFECYCLES_INACTIVE else man
 
+    def purpose_moved(self, r: LocalRepo | None, purpose_head: object) -> bool:
+        """Say whether a repo's main has moved since its purpose was written.
+
+        In the repo that holds the steward's own folder, commits that touch only that
+        folder do not count: recording a purpose there commits the manifest, which would
+        otherwise mark the purpose stale again at once.
+
+        Returns:
+            True when the purpose needs a recheck.
+        """
+        if not r or not r.main_sha:
+            return False
+        if not purpose_head:
+            return True
+        if purpose_head == r.main_sha:
+            return False
+        own = self.cfg.file.parent.resolve()
+        if r.path != own and r.path not in own.parents:
+            return True
+        rel = own.relative_to(r.path).as_posix()
+        cp = git(
+            r.path,
+            "diff",
+            "--quiet",
+            str(purpose_head),
+            r.main_sha,
+            "--",
+            ".",
+            f":(exclude){rel}",
+        )
+        return cp.returncode != 0
+
     def tracked_names(self) -> list[str]:
         """Every repo in scope: on disk, in the manifest, or a deprecated project repo on GitHub.
 
@@ -724,7 +756,7 @@ class State:
             "github": g,
             "purpose": str(e["purpose"]).strip() if e.get("purpose") else None,
             "purpose_head": purpose_head,
-            "purpose_stale": bool(r and r.main_sha and purpose_head != r.main_sha),
+            "purpose_stale": self.purpose_moved(r, purpose_head),
             "owns": list(e.get("owns") or []),
             "groups": self.manifest.groups_of(name),
             "dependencies": self.manifest.dependencies(name),
@@ -1139,7 +1171,7 @@ def _check_local(
             out.append(
                 Finding("purpose-missing", name, "manifest entry has no purpose")
             )
-        elif r.main_sha and e.get("purpose_head") != r.main_sha:
+        elif st.purpose_moved(r, e.get("purpose_head")):
             ph = e.get("purpose_head")
             why = (
                 f"was written at {str(ph)[:12]}"
