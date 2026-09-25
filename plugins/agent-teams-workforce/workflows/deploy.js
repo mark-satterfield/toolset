@@ -646,10 +646,10 @@ if (wantsRollout) {
   lease = await settleAgent(
     `Acquire the shared DEV deployment lease before a rollout, and report what happened. This is a MUTEX over one AWS environment, not a deploy: do NOT deploy anything, do not run cdk, do not touch any AWS resource.
 
-The lease directory is \`$HOME/.claude/agent-teams-workforce/deploy-leases\`. Create it if it does not exist (\`mkdir -p\`).
+The lease directory is \`\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agent-teams-workforce/deploy-leases\`. Create it if it does not exist (\`mkdir -p\`).
 
 The lease for this rollout is the single directory:
-  $HOME/.claude/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
+  \${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
 
 ACQUIRE IT ATOMICALLY. Use \`mkdir\` on that exact path — NOT \`mkdir -p\`, and never a
 test-then-create, which races. \`mkdir\` on an existing directory fails, and that failure IS
@@ -856,7 +856,7 @@ if (leaseHeld) {
     `Release the shared DEV deployment lease. This is lock bookkeeping, not a deploy: do NOT deploy anything and do not touch any AWS resource.
 
 The lease directory is:
-  $HOME/.claude/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
+  \${CLAUDE_CONFIG_DIR:-$HOME/.claude}/agent-teams-workforce/deploy-leases/${leaseKey.replace(/[^A-Za-z0-9._-]+/g, '_')}
 
 RELEASE IT ONLY IF IT IS STILL OURS. Read the \`holder\` file inside it and compare the token it records with the token this run holds: ${(lease && lease.holderToken) || '(none reported)'}.
 
