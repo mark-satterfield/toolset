@@ -663,6 +663,7 @@ class State:
             "space": r.space if r else self.cfg.expected_space(name),
             "path": str(r.path) if r else None,
             "lifecycle": self.lifecycle(name),
+            "role": str(e["role"]) if e.get("role") else None,
             "present": {
                 "disk": r is not None,
                 "github": g is not None,
