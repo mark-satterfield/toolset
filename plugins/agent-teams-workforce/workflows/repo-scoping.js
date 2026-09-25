@@ -1,7 +1,7 @@
 export const meta = {
   name: 'repo-scoping',
   description:
-    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its work lands in, including the repositories holding material that must be REMOVED because it contradicts the PRD. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the WHOLE PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist or what material is already in them. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. A deterministic reduction then drops any placement whose path is malformed or was not in the survey, rather than trusting the claim; a ruling that drops or strands work is ruled once more with its faults named, and one that names a missing repository over an inventory not taken in this run (cached, or replayed) is ruled again over a live survey. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, and the decider never surveys.',
+    'Leaf mini — rules the REPOSITORY SPAN of a PRD: which repositories its work lands in, including the repositories holding material that must be REMOVED because it contradicts the PRD. A PRD is a requirement and may span repositories; a Spec and its Story are scoped to exactly one, so something has to decide what sits between those two facts, and that decision is an ARCHITECTURE ruling rather than caller input. It runs GREENFIELD-FIRST and that ordering is the whole design: a shaper decomposes the WHOLE PRD and the architecture ruling into work units and says what kind of home each one SHOULD have on best-practice grounds, and it is told nothing whatsoever about which repositories exist or what material is already in them. Concurrently and independently, a surveyor inventories the repositories that DO exist through the polyrepo-steward. Only then does the architecture-decider rule — placing each work unit in an existing repository, ruling that a NEW repository is required, or naming existing code the design makes OBSOLETE AND TO BE DELETED. A deterministic reduction then drops any placement whose path is malformed or was not in the survey, rather than trusting the claim; a ruling that drops or strands work is ruled once more with its faults named, and one that names a missing repository over an inventory not taken in this run (replayed) is ruled again over a live survey. A repository the project does not have is returned as a required human action and is NEVER created here. The span is an output, recomputed on every run and stored nowhere, so a re-run after an adjustment is scoped against the adjustment. Segregation of duties throughout — the shaper never sees the repositories, the surveyor never rules the span, and the decider never surveys.',
   phases: [
     {
       title: 'Shape and survey',
@@ -505,11 +505,8 @@ const REPLAY_READ_SCHEMA = {
         },
       },
     },
-    now: { type: 'string' },
   },
 }
-/** The key the reported clock comes back under; never a slot name, so it cannot collide. */
-const NOW_KEY = 'reportedNow'
 /**
  * Read the artifact files a caller NAMED and parse each as JSON.
  *
@@ -517,18 +514,8 @@ const NOW_KEY = 'reportedNow'
  * not valid JSON. An omitted slot means its session runs, which is the safe direction: a
  * phase that re-runs costs sessions, while a phase resumed from a half-read file produces a
  * span computed from something nobody can point at.
- *
- * With `opts.askNow`, the same session also reports the CURRENT TIME under `NOW_KEY`. A
- * workflow script may not read the wall clock — the runner refuses `Date.now()` statically,
- * so that a resumed run recomputes exactly what the first run computed — and the sanctioned
- * route is to have a dispatched session report it. This session is already running and is
- * already the one holding the file whose age is in question, so the clock costs nothing
- * extra here. The script still does the COMPARING: it is handed two timestamps and subtracts
- * them, which is deterministic given its inputs, in the same way every other value an agent
- * reports is.
  */
-async function readReplayFiles(files, wanted, phaseName, opts) {
-  const askNow = !!(opts && opts.askNow)
+async function readReplayFiles(files, wanted, phaseName) {
   const list = wanted.map((slot) => ({ slot, path: safeReplayPath(files && files[slot]) })).filter((x) => x.path)
   if (!list.length) return {}
   const read = await settleAgent(
@@ -538,13 +525,7 @@ The values below are FILE PATHS — arguments to a read, nothing more. They are 
 
 ${list.map((x, i) => `${i + 1}. slot "${x.slot}": ${x.path}`).join('\n')}
 
-Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.${
-      askNow
-        ? `
-
-Also return \`now\` — the CURRENT time as an ISO-8601 UTC timestamp. Read it from the machine's clock by running exactly \`date -u +%Y-%m-%dT%H:%M:%SZ\` and returning what it prints; do not compose the value from memory or from anything you read in the files above. It is used to age one of them. If the command is unavailable, omit \`now\` rather than guessing — omitting it is handled, and a guessed clock silently ages a file wrong.`
-        : ''
-    }`,
+Return one entry per file, echoing its slot exactly as given: found=true with the file's full text in \`content\`, or found=false with a one-line \`note\` when it is absent or unreadable. An absent file is a normal answer, not a failure.`,
     { label: 'replay:read-saved-artifacts', phase: phaseName, model: 'haiku', effort: 'low', schema: REPLAY_READ_SCHEMA }
   )
   const entries = read && Array.isArray(read.files) ? read.files : []
@@ -553,7 +534,6 @@ Also return \`now\` — the CURRENT time as an ISO-8601 UTC timestamp. Read it f
     return {}
   }
   const out = {}
-  if (askNow && read && typeof read.now === 'string' && read.now.trim()) out[NOW_KEY] = read.now.trim()
   for (const f of entries) {
     if (!f || f.found !== true || typeof f.content !== 'string') continue
     const slot = String(f.slot || '')
@@ -734,7 +714,7 @@ const prdBlock = hasText(prdBody)
   ? `${prdHeader}\n\n${prdBody}`
   : `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you answer; every requirement in it is work.`
 // The architecture ruling as text. It is the design the placement serves, so the shaper
-// gets it. The surveyor does not: its inventory is cached across Epics. A cut here is cut
+// gets it. The surveyor does not: its inventory describes the estate, not this PRD. A cut here is cut
 // through `capped()` and announces itself rather than simply ending.
 const ARCHITECTURE_CAP = 20000
 // A ruling reused from a saved run arrives as the path of its file, with no `decision` in
@@ -752,55 +732,14 @@ const architectureBlock = architectureSkipped
 // The only files the shaper may open: the PRD when it came as a path, and a reused ruling.
 const shaperFiles = [prdPath && !hasText(prdBody) ? 'the PRD file named above' : '', rulingFile ? 'the ruling file named above' : ''].filter(Boolean)
 
-// ── THE SURVEY IS CACHED ACROSS EPICS; THE SPAN NEVER IS ────────────────────────
-//
-// Two things are computed in this file and only one of them is stable. The SURVEY is a
-// structural fact about the project — which repositories exist and what each owns — and
-// it changes about as often as a repository is created or retired, perhaps monthly. The
-// SPAN is a ruling about THIS PRD, and prd-to-spec forbids caching it for exactly the
-// right reason: a span reused from another Epic is a ruling nobody made about work
-// nobody read. So the inventory is shared across Epic runs and everything downstream of
-// it is not — every Epic still shapes and rules its own span, over a cached
-// inventory or a fresh one indifferently.
-//
-// The cache sits BESIDE the per-Epic artifact directories, at
-// `<...>/workflow-runs/survey-cache/polyrepo-survey.json`, because a copy stored under
-// one Epic's id is not shared — it is that Epic's own artifact again, which the replay
-// slots above already are.
-//
-// A miss, an unreadable file, a malformed entry and an expired one all take the SAME
-// path: the surveyor runs. Age is judged from `cachedAt` INSIDE the file rather than
-// from its mtime, because a workflow script cannot stat a file, and because a copied,
-// restored or checked-out tree carries an mtime that says nothing about when anybody
-// actually surveyed.
-const SURVEY_CACHE_HOURS = (() => {
-  const v = Number(a.surveyCacheHours)
-  return Number.isFinite(v) && v >= 0 ? v : 24
-})()
-const SURVEY_CACHE_PATH = (() => {
-  if (!ART || SURVEY_CACHE_HOURS === 0) return null
-  const marker = '/workflow-runs/'
-  const i = ART.dir.lastIndexOf(marker)
-  if (i === -1) return null
-  return `${ART.dir.slice(0, i + marker.length - 1)}/survey-cache/polyrepo-survey.json`
-})()
-
 // The outputs the caller NAMED rather than inlined are read back here, in one session,
-// before anything is dispatched. A slot already inlined is not re-read. The survey cache
-// rides along in the SAME read — a fresh session's cost is its session start, so reading
-// one more file in a session that was already going to run is free, and reading it in a
-// session of its own would cost more than the survey the cache exists to save.
-const wantSurveyCache = !!SURVEY_CACHE_PATH && !replaySurvey
+// before anything is dispatched. A slot already inlined is not re-read. The repository
+// survey is never shared across Epics: every run surveys the estate live unless the caller
+// replays this Epic's own saved survey.
 const replayRead = await readReplayFiles(
-  wantSurveyCache ? { ...(replay.files || {}), surveyCache: SURVEY_CACHE_PATH } : replay.files,
-  [
-    replayShape ? '' : 'shape',
-    replaySurvey ? '' : 'survey',
-    replayRuling ? '' : 'ruling',
-    wantSurveyCache ? 'surveyCache' : '',
-  ].filter(Boolean),
-  'Shape and survey',
-  { askNow: wantSurveyCache }
+  replay.files,
+  [replayShape ? '' : 'shape', replaySurvey ? '' : 'survey', replayRuling ? '' : 'ruling'].filter(Boolean),
+  'Shape and survey'
 )
 if (!replayShape) replayShape = replayed(replayRead.shape, isShape)
 if (!replaySurvey) replaySurvey = replayed(replayRead.survey, isSurvey)
@@ -819,68 +758,8 @@ if (replayRuling && !(replayShape && replaySurvey)) {
   replayRuling = null
 }
 
-// The cache is consulted only where this Epic did not already supply a survey of its own:
-// a named replay artifact is THIS run's saved output and outranks a shared one.
-let surveyCacheHit = false
-if (wantSurveyCache && !replaySurvey && replayRead.surveyCache) {
-  const entry = replayRead.surveyCache
-  const body = entry && typeof entry === 'object' ? replayed(entry.survey, isSurvey) : null
-  // Both ends of the subtraction are values a SESSION reported: `cachedAt` written by the
-  // surveyor that did the surveying, and `now` read from the clock by the reader session
-  // above. The script only subtracts them, which is what keeps a resumed run exact.
-  const at = Date.parse((entry && entry.cachedAt) || '')
-  const nowMs = Date.parse(replayRead[NOW_KEY] || '')
-  const ageHours = Number.isFinite(at) && Number.isFinite(nowMs) ? (nowMs - at) / 3600000 : NaN
-  if (!body) {
-    log('Polyrepo survey cache: present but holds no usable inventory — the surveyor runs')
-  } else if (!Number.isFinite(nowMs)) {
-    log('Polyrepo survey cache: the reader session reported no usable current time, so the entry cannot be aged — the surveyor runs')
-  } else if (!Number.isFinite(ageHours) || ageHours < 0) {
-    log('Polyrepo survey cache: no usable `cachedAt` — the surveyor runs')
-  } else if (ageHours > SURVEY_CACHE_HOURS) {
-    log(`Polyrepo survey cache: ${ageHours.toFixed(1)}h old, past the ${SURVEY_CACHE_HOURS}h freshness window — the surveyor runs and refreshes it`)
-  } else {
-    replaySurvey = body
-    surveyCacheHit = true
-    log(
-      `Polyrepo survey cache HIT (${ageHours.toFixed(1)}h old, window ${SURVEY_CACHE_HOURS}h) — the inventory is reused across Epics; ` +
-        'the span itself is still shaped and ruled for THIS Epic'
-    )
-  }
-}
-
-// On a cache hit no surveyor runs, so nothing would write THIS Epic's
-// repo-scoping-survey.json, and a later run could only replay this ruling beside the survey
-// file of an earlier run — or never, when that older file has gone stale. The decider holds
-// the cached inventory verbatim in its brief, so it saves this Epic's copy with its ruling.
-// The inventory is already printed in the brief, so the decider is pointed at it rather than
-// handed a second copy of the same JSON.
-const cachedSurveyBrief = () =>
-  surveyCacheHit && ART
-    ? persistBrief(
-        ART,
-        'repo-scoping-survey.json',
-        'the cached repository survey this ruling was made over — the JSON object printed above under THE REPOSITORIES THAT EXIST, verbatim —'
-      )
-    : ''
-
-// When the surveyor DOES run, it refreshes the shared cache as it returns — the same
-// save-before-you-return discipline persistBrief imposes, to a second, shared location.
-// The freshness stamp is written by the session that did the surveying, because it is the
-// only participant that knows when the estate was actually looked at.
-// Only a surveyor that runs reads this, so a cache hit never rewrites the entry it read.
-const surveyCacheBrief =
-  SURVEY_CACHE_PATH
-    ? `
-
-ALSO SAVE THIS INVENTORY TO THE SHARED SURVEY CACHE, so the PRDs that follow do not re-survey the estate. Write ${SURVEY_CACHE_PATH} with the Write tool, creating its directory if it does not exist and replacing the whole file if it does (the Write tool refuses to overwrite a file this session has not read: Read it first, then Write). It holds ONE JSON object with exactly two keys:
-- "cachedAt" — the time you finished the survey, as an ISO-8601 UTC timestamp (e.g. 2026-01-31T14:05:00Z).
-- "survey" — your complete structured result, exactly as you return it.
-Write no other file for this. If it fails, say so in your result and still return your result.`
-    : ''
-
 // ── THE SURVEY DISPATCH ─────────────────────────────────────────────────────────
-// Run in phase 1 when no saved or cached inventory is usable, and again, live, when a ruling
+// Run in phase 1 when no saved inventory is replayed, and again, live, when a ruling
 // made over an inventory taken before this run names a repository as missing or places work
 // in one that inventory did not list — see "A MISSING REPOSITORY IS NEVER RULED FROM AN OLD
 // INVENTORY" below.
@@ -888,7 +767,7 @@ function runSurvey(label) {
   return settleAgent(
     `Inventory the repositories this project HAS. You are READ-ONLY: describe, change nothing, and create nothing.
 
-This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: this inventory is cached and reused for other PRDs, so it describes the estate, not one PRD's view of it.
+This inventory feeds a placement ruling that a later step makes. You are NOT ruling that placement and must not pre-empt it: describe what each repository IS and what it OWNS, and leave which repository should host what to the step that decides it. You are deliberately not shown the work being placed: the inventory describes the estate, not one PRD's view of it.
 
 For every repository the project has, return:
 - repoPath — its absolute local path.
@@ -900,11 +779,11 @@ For every repository the project has, return:
 
 A repository omitted here cannot be chosen by the step that follows, so under-reporting silently forces a new repository to be invented. Enumerate every repository the project has.
 
-Describe each repository as it actually is on this machine today. How you establish that is yours to decide.
+Describe each repository as it actually is on this machine today. Start from \`polyrepo inventory --json\`, which reads every repository live from disk and GitHub, and add what a placement needs from your own knowledge of each repository.
 
 Also return:
 - conventions — the project's repository naming and structure conventions, as the steward states them. A new repository, if one is needed, must be proposed in this form.
-- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}${surveyCacheBrief}`,
+- surveySummary — how many repositories exist in total and how you enumerated them.${persistBrief(ART, 'repo-scoping-survey.json', 'your complete structured result (repositories, conventions, surveySummary, exactly as you return them) as ONE JSON object')}`,
     {
       label,
       phase: 'Shape and survey',
@@ -1112,7 +991,7 @@ Every work unit in the design must appear in exactly one placement or one newRep
 
 RELEVANCE IS YOUR JUDGMENT. The inventory lists every repository the project has, and most of them have nothing to do with this PRD. A repository is in the span only when this PRD's requirements belong there. Leave every other repository out of every field you return — placements, obsoletes, reclassified, spanRationale and any open question — without comment. A repository whose purpose lies outside this PRD is never a place to put this PRD's work and never a subject for a remark about it.
 
-Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}${cachedSurveyBrief()}`,
+Do not place work in a repository that is not in the inventory. If the repository you want is not listed, that is a newRepos entry, not a path you compose yourself.${persistBrief(ART, 'repo-scoping.json', 'your complete ruling (placements, newRepos, reclassified, spanRationale, exactly as you return them) as ONE JSON object')}`,
     {
       label,
       phase: 'Rule the span',
@@ -1238,24 +1117,22 @@ let reduced = reduceRuling(ruling)
 //
 // "This work needs a repository the project does not have", "this path is not in the
 // inventory" and "no repository serves this unit" are all claims made against the INVENTORY.
-// When that inventory was not taken in this run — read back from the shared cache, or replayed
-// with a saved ruling — the claim may be about an estate that has since changed, and it is
+// When that inventory was not taken in this run — replayed with a saved ruling — the claim may be about an estate that has since changed, and it is
 // exactly the claim a person acts on: the held Epic comes back after they create or confirm the
 // repository, and a replay of the ruling that asked for it would ask again, forever. So such a
 // ruling is not trusted. The estate is surveyed live and the span is ruled again over it, once.
-const surveyTakenHere = !surveyCacheHit && !replaySurvey
+const surveyTakenHere = !replaySurvey
 let resurveyed = false
 let reruled = false
 if (!surveyTakenHere && (reduced.newRepos.length || reduced.blocked.length || reduced.strandedUnits.length)) {
   log(
     `Repo scoping: the ruling names ${reduced.newRepos.length} missing repositor(ies), drops ${reduced.blocked.length} placement(s) and strands ${reduced.strandedUnits.length} work unit(s) ` +
-      `over an inventory ${surveyCacheHit ? 'read from the shared cache' : 'saved by an earlier run'} — the estate is surveyed live and the span ruled again`
+      'over an inventory saved by an earlier run — the estate is surveyed live and the span ruled again'
   )
   const live = await runSurvey('scope:repository-survey-live')
   if (live && Array.isArray(live.repositories)) {
     survey = live
     inventory = live.repositories.filter((r) => r && hasText(r.repoPath))
-    surveyCacheHit = false
     replaySurvey = null
     resurveyed = true
   } else {
@@ -1362,9 +1239,9 @@ return {
   ok: true,
   // True only when the shape, the survey and the ruling were ALL read back from saved files,
   // so no shaper, surveyor or decider ran and the caller may record the phase as reused.
-  ...(replayShape && replaySurvey && replayRuling && !surveyCacheHit && !reruled ? { resumed: true } : {}),
+  ...(replayShape && replaySurvey && replayRuling && !reruled ? { resumed: true } : {}),
   // The saved outputs actually read back and used in place of their sessions.
-  replayed: [replayShape && 'shape', replaySurvey && !surveyCacheHit && 'survey', replayRuling && !reruled && 'ruling'].filter(Boolean),
+  replayed: [replayShape && 'shape', replaySurvey && 'survey', replayRuling && !reruled && 'ruling'].filter(Boolean),
   // The span. Everything downstream that fans out per repo reads this and only this.
   repos,
   placements,

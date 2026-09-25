@@ -305,7 +305,7 @@ async function settleAgent(prompt, opts) {
 const DEPLOYED_RED_CRITERION =
   'A test reproduces the defect — failing at HEAD, or failing at the pre-fix revision and passing at HEAD (differential red), or failing against the DEPLOYED environment while the source tree is already correct (deployed red). Deployed red is fully sufficient on its own ONLY WHEN its precondition actually holds: a failing run against the deployed environment was actually OBSERVED and reported, AND the source tree was checked and found already correct. Provided that both hold, do NOT additionally demand a source-level failure and do NOT reject the red because the working tree greps clean. Do NOT accept a deployed-red claim when no failing run against the deployed environment was observed, when the source tree was never checked for a source-level red, or merely because running a source-level test is inconvenient, the environment is unclear, or credentials are missing — each of those is a genuine failure to obtain red, not a deployed red.'
 
-// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations?, maxSecurityRepairs? }
+// args: { bead: { id, title, description, repoPath?, repoHints?, inventoryCommand? }, implementer?, maxLoops?, maxEscalations?, maxDeployIterations?, maxSecurityRepairs? }
 //   maxDeployIterations? — bounded deploy -> smoke -> fix -> REDEPLOY cycles (default 3)
 //   maxSecurityRepairs? — bounded Gate 4 finding -> Green fix -> re-certify cycles per run (default 2)
 //   worktreeRoot? — absolute directory every cut worktree is placed under (ATW_WORKTREE_ROOT).
@@ -319,8 +319,9 @@ const DEPLOYED_RED_CRITERION =
 //   is filed against a symptom, and the repository the defect lives in is a FINDING of the
 //   triage — so with no repoPath the run triages FIRST, takes the repository the diagnosis
 //   located beside its blast radius, and only then establishes a worktree. `repoHints`
-//   (names or paths the caller suspects) and `manifestPath` (the polyrepo manifest) reach
-//   the diagnosing agent as hints, never as answers. The tree the phases write in is
+//   (names or paths the caller suspects) and `inventoryCommand` (the polyrepo tool command
+//   that lists every repository and its local path) reach the diagnosing agent as hints,
+//   never as answers. The tree the phases write in is
 //   established by the Workspace step below and is NOT this value.
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 // The executable that pushes the current branch and opens its pull request (ATW_PR_COMMAND).

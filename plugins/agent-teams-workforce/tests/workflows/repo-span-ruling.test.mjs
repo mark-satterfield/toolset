@@ -155,7 +155,7 @@ test('a required NEW repository comes back as a human action and is never in the
   assert.equal(result.newRepos.length, 1)
   assert.ok(
     result.requiredHumanActions.some((x) => /polyrepo-steward/.test(x)),
-    'the action must route through the steward, so the manifest is written with the repository',
+    'the action must route through the steward, which creates the repository',
   )
 })
 

@@ -336,13 +336,13 @@ function checkLimit(where, what, value, expected, min) {
   return value
 }
 
-// args: { bead: { id, title, description, repoPath?, repoHints?, manifestPath? } }
+// args: { bead: { id, title, description, repoPath?, repoHints?, inventoryCommand? } }
 //
 // `repoPath` is the repository when the caller knows it. It is NOT required: a Bug is
 // filed against a SYMPTOM, and which repository the defect lives in is a finding of the
 // diagnosis — the blast radius names the code at fault, and the code at fault is in a
 // repository. So when no repoPath is supplied the diagnosing agent is told to LOCATE it,
-// from the symptom, the polyrepo manifest (`manifestPath`) and any names the caller merely
+// from the symptom, the repository inventory (`inventoryCommand`) and any names the caller merely
 // suspects (`repoHints`), and to report it CONFIRMED — an absolute path that exists and is
 // a git repository — or to report that it could not. A guessed repository is not an
 // answer: bug-fix validates what comes back and refuses what it cannot use.
@@ -368,13 +368,13 @@ END STANDING RULINGS
 `
   : ''
 const repoHints = (Array.isArray(bead.repoHints) ? bead.repoHints : []).map((h) => String(h == null ? '' : h).trim()).filter(Boolean)
-const manifestPath = String(bead.manifestPath || '').trim()
+const inventoryCommand = String(bead.inventoryCommand || '').trim()
 const LOCATE_REPO =
   repoKnown
     ? ''
     : `
 
-THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate the repository whose source contains the code at fault. Start from the symptom and the blast radius; consult the polyrepo manifest${manifestPath ? ` at ${manifestPath}` : ''} for the repositories this project has and where each is checked out on this machine${repoHints.length ? `; the caller suspects it may be one of: ${repoHints.join(', ')} — a suspicion, not an answer` : ''}. Report repoPath as the ABSOLUTE path of that repository — the repository itself, not a worktree beneath it and not a subdirectory — and only after you have CONFIRMED the directory exists and is a git repository. If you cannot confirm one, report repoPath as an empty string and say in repoResolution which repositories you examined and why none was confirmed. A guessed repository sends a pipeline that writes code, commits and opens a pull request into a tree nobody chose; an honest empty answer does not.`
+THE REPOSITORY IS NOT KNOWN, AND FINDING IT IS PART OF THIS DIAGNOSIS. Locate the repository whose source contains the code at fault. Start from the symptom and the blast radius; list the repositories this project has and where each is checked out on this machine ${inventoryCommand ? `by running \`${inventoryCommand}\`` : 'by asking the polyrepo-steward'}${repoHints.length ? `; the caller suspects it may be one of: ${repoHints.join(', ')} — a suspicion, not an answer` : ''}. Report repoPath as the ABSOLUTE path of that repository — the repository itself, not a worktree beneath it and not a subdirectory — and only after you have CONFIRMED the directory exists and is a git repository. If you cannot confirm one, report repoPath as an empty string and say in repoResolution which repositories you examined and why none was confirmed. A guessed repository sends a pipeline that writes code, commits and opens a pull request into a tree nobody chose; an honest empty answer does not.`
 
 phase('Triage')
 

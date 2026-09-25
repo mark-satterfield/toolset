@@ -3,18 +3,31 @@ name: polyrepo-router
 description: >-
   The way to reach the polyrepo-steward. Load this skill whenever repository work is
   needed — the count or list of repos, where something lives, which repo owns a piece
-  of functionality, the naming convention, creating/renaming/deprecating a repo, reading
-  or changing the manifest, or any knowledge about the project's repositories. It
-  instantiates the `polyrepo-steward` agent and hands the request to it. Any agent that
-  needs repository work should route through here rather than touching the manifest or
-  the repos directly. Replaces direct use of the retired `polyrepo-steward` skill.
+  of functionality, whether a repo has uncommitted files or is up to date with GitHub
+  `main`, when it was last updated, the naming convention, creating, renaming,
+  deprecating or rebasing a repo, searching across repos, or any knowledge about the
+  project's repositories. It instantiates the `polyrepo-steward` agent and hands the
+  request to it; the steward answers and does the repository work itself.
 ---
 
 # Polyrepo Router
 
 You are **not** the steward. You are the doorway to it. Your only job is to instantiate
-the **polyrepo-steward** agent, hand the caller's request to it, and relay its reply. You
-do no repository work yourself, and you never read or edit the manifest.
+the **polyrepo-steward** agent, hand the caller's request to it, and relay its reply.
+
+## What the steward does
+
+The polyrepo-steward is the one place for anything about a repository, other than work
+inside a repository's contents:
+
+- **Answers** from live facts it checks against the repositories and GitHub: which repos
+  exist, which repo owns a function, uncommitted files in a repo, when a repo was last
+  updated, whether a repo is up to date with GitHub `main`, what depends on what.
+- **Acts**: creates a repo from a template (locally and on GitHub), deprecates and archives
+  repos, rebases repos on `origin/main`, searches across repos, propagates shared
+  `AGENTS.md` content, and keeps the repo templates current.
+- **Owns its scope**: when a caller needs repository facts in order to do repository work,
+  the steward does that work instead of handing the facts back.
 
 ## What you receive
 
@@ -34,19 +47,8 @@ Spawn it with the Agent tool, `subagent_type: agent-teams-workforce:polyrepo-ste
 (fall back to the bare name `polyrepo-steward` if the scoped name does not resolve). Run it
 in the foreground so you can relay its reply.
 
-## What you never do
-
-- You never do the repository work yourself.
-- You never read or edit `.polyrepo/manifest.yaml`, the knowledge store, or any repo — that
-  is the steward's domain, and it is protective of it.
-- You never paraphrase the caller's request; the steward wants it verbatim.
-- Once the steward replies, relay that reply and stop.
-
-## Why this exists
-
-Repository knowledge and every manifest change flow through the steward, never around it.
-This skill is how any human or agent reaches the steward without needing to know how it is
-wired. Callers that used to reach for the old `polyrepo-steward` skill come here now.
+Once the steward replies, relay that reply and stop. Pass the caller's request verbatim;
+do not paraphrase it.
 
 For the fuller signal of *when* repository work is in play — and thus when to route here —
 see `references/trigger-patterns.md`.

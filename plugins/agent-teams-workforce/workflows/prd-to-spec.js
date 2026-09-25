@@ -3554,7 +3554,7 @@ if (!repos.length) {
       true,
       'repo-scoping',
       `the work lands in ${newRepos.length} repositor(ies) that do not exist yet, so no Spec or Story could be authored. ` +
-        `Create them — ${newRepos.map((n) => n.proposedName).join(', ') || '(unnamed)'} — through the polyrepo-steward so the manifest is written too, then set elaboration_state=ready on ${epicBeadId}${lifecycle.held ? ' (it has been taken out of the sweep until then)' : ''} and re-run this PRD. ` +
+        `Create them — ${newRepos.map((n) => n.proposedName).join(', ') || '(unnamed)'} — through the polyrepo-steward, which creates each one locally and on GitHub, then set elaboration_state=ready on ${epicBeadId}${lifecycle.held ? ' (it has been taken out of the sweep until then)' : ''} and re-run this PRD. ` +
         'This run created nothing: a repository is an outward-facing, effectively irreversible addition, and a phase that minted one would mint a second on the next pass.',
       { action: 'create-repos', scoping, prd, epic }
     ),

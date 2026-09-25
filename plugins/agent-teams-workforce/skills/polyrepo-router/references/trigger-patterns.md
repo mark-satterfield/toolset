@@ -26,11 +26,11 @@ These are unambiguous. Activate without hesitation.
 - The user mentions setting up, onboarding, or restructuring a
   polyrepo project.
 - The user explicitly invokes the steward by name, or asks for "the
-  project map", "the polyrepo manifest", "the cross-repo picture".
+  project map", "the list of repos", "the cross-repo picture".
 - The user asks "what repos are there", "where does X live", "who
-  owns X", "what depends on X", "what does X depend on", "what's
-  the deployment order", "what are the rules", or any minor
-  variation.
+  owns X", "what depends on X", "what does X depend on", "does X
+  have uncommitted changes", "is X up to date with main", "when was
+  X last updated", or any minor variation.
 - The user asks about cross-repo search ("how do I find X across all
   repos", "where is the auth code", etc.).
 - The user mentions adding, renaming, archiving, or splitting a
@@ -47,8 +47,8 @@ These warrant activation in most contexts. Confirm relevance briefly
 if the conversation has been narrowly scoped to a single repo.
 
 - **Feature planning.** "I want to add X" — ask whether the feature
-  is likely to touch more than one repo, then surface the manifest
-  view. Even single-repo features often have downstream consumers.
+  is likely to touch more than one repo, then surface the repos it
+  touches. Even single-repo features often have downstream consumers.
 - **Refactoring.** "I'm going to refactor X" — refactors that look
   local often ripple through shared contracts. Surface dependents
   before the refactor starts.
@@ -59,28 +59,23 @@ if the conversation has been narrowly scoped to a single repo.
   that consume X.
 - **API or contract changes.** "I'm changing the response shape of
   X" — surface every consumer.
-- **Deployment work.** "I'm deploying X" — surface deployment order
-  and any rules that apply.
+- **Deployment work.** "I'm deploying X" — surface the repos X
+  depends on and the repos that depend on X.
 - **Onboarding.** "Where do I start" / "How do I set up my dev env"
-  — give them the manifest's view of the project and the relevant
-  documentation pointers.
+  — give them the steward's view of the project's repositories and
+  the relevant documentation pointers.
 - **Code review preparation.** "I'm reviewing PR #X" — if the PR
   touches a repo with known dependents or rules, surface them.
-- **Retros and postmortems.** "Why did X fail" — the manifest often
-  contains rules or constraints that explain why something is the
-  way it is.
+- **Retros and postmortems.** "Why did X fail" — the dependencies
+  between repos often explain why something is the way it is.
 
 ## Conditional-fire patterns
 
 These warrant activation only when context suggests cross-repo
 relevance.
 
-- The user is in a directory that contains a `.polyrepo-pointer.json`
-  or whose parent contains `.polyrepo/`. Filesystem context is a
-  strong signal that polyrepo work is happening, even if the prompt
-  does not say so.
-- The user mentions a name that you can identify as a repo in the
-  manifest, even in passing.
+- The user mentions a name that you can identify as one of the
+  project's repos, even in passing.
 - The user is doing infrastructure work (Terraform, Kubernetes
   manifests, CI templates) that often spans repos.
 - The user is asking about deployment, environments, or

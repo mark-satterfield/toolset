@@ -5,6 +5,81 @@ truth. This file defines its schema. The schema is **descriptive, not
 prescriptive** — its job is to capture whatever shape the project
 actually has, not to force projects into a fixed mold.
 
+## What belongs in the manifest
+
+The manifest records **structural facts about repositories** and **pointers to canonical
+sources**. It never caches, restates, or duplicates a fact whose canonical home is another
+document. This applies to every write the steward makes to the manifest, whether through the
+`polyrepo` tool or by judgment (purposes, ownership, grouping).
+
+### What belongs
+
+Facts that are true of the repository *as a repository*, and that have no other home:
+
+| Belongs | Example |
+|---|---|
+| Repo identity | `name`, `purpose` (one line, what the repo *is*), `role`, `lifecycle` |
+| Ownership | `owner`, `owns` |
+| Repo-to-repo structure | dependency edges, groups |
+| Lifecycle dates | `deprecated_on` |
+| Pointers | a path or link to the canonical document for anything else |
+
+Local paths are derived live by the `polyrepo` tool from the repository folders and are not
+stored. `remote_url` is kept in step with GitHub by `polyrepo reconcile --fix`.
+
+### What does not belong
+
+Any **derived fact** — anything decided, specified, or described somewhere else:
+
+- Architecture and technology decisions (which datastore, which transport, which library). Canonical home: the arc42 SAD.
+- Requirements and behavior. Canonical home: the PRD.
+- Interface and schema detail. Canonical home: the spec / OpenAPI document.
+- Operational thresholds, limits, retention windows. Canonical home: the SAD crosscutting concepts.
+- Deployment waves — which repos deploy in which order. Canonical home: `deployment/waves.yaml` (the personal-agent app) and `deployment/waves.shared.yaml` (the shared platform, which deploys first), in the command-and-control repo.
+
+### The test: identity versus claim
+
+Naming a technology is not automatically a violation. Apply this test:
+
+- **Identity — keep.** A statement of what *this* repo is, owns, or provisions. `SkillSpoke-sessionCache-infra: ElastiCache (Valkey/Redis) for sessions` is what that repo *is*; deleting it would make the manifest useless for finding which repo owns what.
+- **Claim — remove.** A statement about how *another* system behaves, or which mechanism something uses. `Idempotency via RedisCachePersistenceLayer` on the `shared-chassis → SkillSpoke-sessionCache-infra` edge is a claim about the chassis's internals, and the SAD owns it.
+
+A dependency **edge** between two repos is structural and belongs. A `notes:` field on that
+edge explaining *how* the dependency is implemented is a claim, not identity, and does not
+belong — name the canonical document instead, or let `kind:` carry it.
+
+### Why
+
+A duplicated fact has no owner, so nothing updates it when the original changes, and nothing
+detects that it has drifted. It then reads as authoritative because it sits in a
+canonical-looking file.
+
+The real case cuts both ways. The manifest recorded `Idempotency via RedisCachePersistenceLayer`
+on the `shared-chassis → SkillSpoke-sessionCache-infra` edge. The SAD stated the opposite
+normatively — that the idempotency store must be a chassis-owned DynamoDB store — so the
+manifest was corrected to match it. The SAD was wrong: idempotency runs on the shared
+ElastiCache for Redis cluster, and the manifest had been right. Because the incorrect SAD line
+was treated as settled canon, it was cited repeatedly to overturn the correct value. The lesson
+is not that the manifest is always the defect. It is that **a duplicated fact drifts in
+whichever copy is wrong**, and that a normatively-phrased sentence in a canonical-looking file
+is not evidence that it is true. Check the decision, not the formatting.
+
+### Precedence
+
+The canonical document is where a claim BELONGS; that is a rule about location, not about who
+is right. When the manifest disagrees with the SAD, a PRD, or a spec, resolve it against the
+**decision** — not against whichever file looks more canonical.
+
+- If the canonical document reflects the decision, the manifest is the defect. Correct the manifest.
+- If the canonical document contradicts a decision that was actually made, **the canonical document is the defect** and is corrected, in the same turn, everywhere it states the claim. A document never outranks a decision, and a self-authored MUST never outranks industry best practice or AWS Well-Architected.
+
+Either way the fact ends up in exactly one place: the canonical document.
+
+### Compliance criteria
+
+- No manifest field asserts a technology, mechanism, threshold, or behavior that a SAD section, PRD, or spec also states.
+- Where such context is useful, the manifest carries a pointer (document path or section reference), not the content.
+
 ## Top-level structure
 
 ```yaml

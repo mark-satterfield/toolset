@@ -81,7 +81,7 @@ for (const file of ['task-to-deploy.js', 'infra-change.js']) {
 
 function runBugFix({ bead, triage } = {}) {
   return runWorkflowScript(path.join(WF, 'bug-fix.js'), {
-    args: { bead: bead || { id: 'ssbd-bug1', title: 'it breaks', description: 'd', repoHints: ['SkillSpoke-web'], manifestPath: '/repos/app/.polyrepo/manifest.yaml' } },
+    args: { bead: bead || { id: 'ssbd-bug1', title: 'it breaks', description: 'd', repoHints: ['SkillSpoke-web'], inventoryCommand: '/tools/polyrepo.py inventory --all --no-fetch --json' } },
     agentImpl: (call) => {
       if (call.label === 'settle:land-work') return { treeClean: true, hasWork: false, branch: 'b', prUrl: '' }
       if (call.label === 'ledger:persist') return { written: true, path: '/p.jsonl' }
@@ -105,7 +105,7 @@ test('bug-fix: with no repoPath, triage runs FIRST and the worktree is cut from 
   const triage = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:bug-triage')
   assert.equal(triage.payload.bead.repoPath, undefined, 'triage is told the repository is NOT known')
   assert.deepEqual(triage.payload.bead.repoHints, ['SkillSpoke-web'], 'the hints reach the diagnosis')
-  assert.equal(triage.payload.bead.manifestPath, '/repos/app/.polyrepo/manifest.yaml')
+  assert.equal(triage.payload.bead.inventoryCommand, '/tools/polyrepo.py inventory --all --no-fetch --json')
   const ws = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:workspace')
   assert.equal(ws.payload.repoPath, RULED, 'the worktree is cut from what triage LOCATED')
   const red = calls.find((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:tdd-red')
@@ -149,7 +149,7 @@ test('bug-fix: a bug sized as needs-prd on the triage-first path stops BEFORE an
 
 test('bug-triage: when no repository is supplied the diagnosis is told to LOCATE it, and the schema can carry the answer', async () => {
   const { calls } = await runWorkflowScript(path.join(WF, 'bug-triage.js'), {
-    args: { bead: { id: 'ssbd-bug1', title: 'it breaks', description: 'd', repoHints: ['SkillSpoke-web'], manifestPath: '/repos/app/.polyrepo/manifest.yaml' } },
+    args: { bead: { id: 'ssbd-bug1', title: 'it breaks', description: 'd', repoHints: ['SkillSpoke-web'], inventoryCommand: '/tools/polyrepo.py inventory --all --no-fetch --json' } },
     agentImpl: (call) => {
       if (call.label === 'triage:diagnosis') return { reproduction: 'r', rootCause: 'c', defects: [{ id: 'D1', mechanism: 'm' }], affectedFiles: [], blastRadius: 'b', surfaces: [], repoPath: RULED, repoResolution: 'confirmed' }
       if (call.label === 'triage:sizing') return { scope: 'fix', rationale: 'r' }
@@ -158,7 +158,7 @@ test('bug-triage: when no repository is supplied the diagnosis is told to LOCATE
   })
   const diagnosis = calls.find((c) => c.kind === 'agent' && c.label === 'triage:diagnosis')
   assert.match(diagnosis.prompt, /THE REPOSITORY IS NOT KNOWN/)
-  assert.match(diagnosis.prompt, /\/repos\/app\/\.polyrepo\/manifest\.yaml/, 'the manifest is offered as where the repositories are listed')
+  assert.match(diagnosis.prompt, /\/tools\/polyrepo\.py inventory --all --no-fetch --json/, 'the inventory command is offered as where the repositories are listed')
   assert.match(diagnosis.prompt, /SkillSpoke-web/, 'the hints are offered')
   assert.match(diagnosis.prompt, /a suspicion, not an answer/)
   assert.equal(diagnosis.opts.schema.properties.repoPath.type, 'string', 'the schema carries the located repository')

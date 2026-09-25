@@ -19,7 +19,6 @@ The roster is defined by the agent files in `agents/`.
 Current roster scope:
 
 - 173 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
-- 1 standalone specialist: `polyrepo-cartographer`
 
 Workforce rules live in `rules/separation-of-duties.md`.
 

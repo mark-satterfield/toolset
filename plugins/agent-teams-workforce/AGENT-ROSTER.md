@@ -263,4 +263,4 @@ shown the answer is not a checker.
 
 ## Standalone
 
-- `polyrepo-steward` — caretaker and librarian of the project's repositories: reads and maintains the polyrepo manifest and knowledge store, answers count/ownership/structure questions, and performs all repository create/update/deprecate/list/search work. Reached via the `polyrepo-router` skill or the `/polyrepo-steward` command.
+- `polyrepo-steward` — caretaker and librarian of the project's repositories: answers count/ownership/structure/status questions from live facts it checks against the repositories and GitHub, and performs all repository work — create, deprecate, archive, rebase, search, `AGENTS.md` propagation, template upkeep. Reached via the `polyrepo-router` skill or the `/polyrepo-steward` command.
