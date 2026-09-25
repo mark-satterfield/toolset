@@ -29,6 +29,7 @@ Usage:
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
+  polyrepo.py doctor
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -2551,6 +2552,161 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["lagging_templates"] or no_template else 0
 
 
+DOCTOR_CHECKS: dict[str, list[str]] = {
+    "reconcile": ["reconcile"],
+    "agents-sync": ["agents-sync", "--check"],
+    "templates-check": ["templates-check"],
+}
+
+
+def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Turn one check's JSON output into doctor findings.
+
+    Returns:
+        One finding per open problem the check reported.
+    """
+    out: list[dict[str, Any]] = []
+    if "error" in data:
+        return [
+            {"check": check, "subject": "-", "kind": "error", "detail": data["error"]}
+        ]
+    if check == "reconcile":
+        out.extend(
+            {
+                "check": check,
+                "subject": f["repo"],
+                "kind": f["kind"],
+                "detail": f["detail"],
+            }
+            for f in data.get("findings") or []
+            if f.get("status") in {"open", "failed", "planned"}
+        )
+    elif check == "agents-sync":
+        out.extend(
+            {
+                "check": check,
+                "subject": r["repo"],
+                "kind": r["state"],
+                "detail": r.get("detail") or "shared AGENTS.md block not current",
+            }
+            for r in data.get("repos") or []
+            if isinstance(r, dict) and r.get("state") != "current"
+        )
+    elif check == "templates-check":
+        out.extend(
+            {
+                "check": check,
+                "subject": t,
+                "kind": "template-lags",
+                "detail": "files in the repos built from it are newer than the template",
+            }
+            for t in data.get("lagging_templates") or []
+        )
+        out.extend(
+            {
+                "check": check,
+                "subject": k["kind"],
+                "kind": "no-template",
+                "detail": "repos with no template: " + ", ".join(k["repos"]),
+            }
+            for k in data.get("kinds_without_template") or []
+        )
+    return out
+
+
+def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
+    """Check that every manifest governance entry's location exists.
+
+    Returns:
+        One finding per entry whose location does not resolve.
+    """
+    plugin_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(plugin_root)}
+    doc = Manifest(cfg.manifest).doc
+    out = []
+    for e in doc.get("governance") or []:
+        if not isinstance(e, dict) or not e.get("location"):
+            continue
+        loc = re.sub(
+            r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?",
+            lambda m: env.get(m.group(1), m.group(0)),
+            str(e["location"]),
+        )
+        target = Path(loc).expanduser()
+        if not target.is_absolute():
+            target = cfg.file.parent.parent / target
+        if not target.exists():
+            out.append(
+                {
+                    "check": "governance",
+                    "subject": str(e.get("id") or e.get("name")),
+                    "kind": "location-missing",
+                    "detail": f"{e['location']} does not resolve ({target})",
+                }
+            )
+    return out
+
+
+def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
+    """Run every deterministic health check and report one findings list.
+
+    The checks are reconcile, agents-sync --check, templates-check (run in parallel, each as
+    its own process of this script) and the governance locations. Judgment checks (knowledge-
+    store pointers written as prose) belong to the polyrepo-doctor skill.
+
+    Returns:
+        0 when no check reports a finding, else 1.
+    """
+    t0 = time.time()
+    extra = ["--json", "--config", str(cfg.file)]
+    if args.no_cache:
+        extra.append("--no-cache")
+
+    def one(item: tuple[str, list[str]]) -> tuple[str, int, dict[str, Any]]:
+        name, argv = item
+        cp = run(
+            [sys.executable, str(Path(__file__).resolve()), *argv, *extra], timeout=900
+        )
+        try:
+            data = json.loads(cp.stdout) if cp.stdout.strip() else {}
+        except json.JSONDecodeError:
+            data = {"error": f"unreadable output: {cp.stdout[:200]}"}
+        if cp.returncode == 2 and "error" not in data:  # noqa: PLR2004
+            data["error"] = _last_line(cp) or "exited 2"
+        return name, cp.returncode, data
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(DOCTOR_CHECKS)) as ex:
+        results = list(ex.map(one, DOCTOR_CHECKS.items()))
+    findings: list[dict[str, Any]] = []
+    exits: dict[str, int] = {}
+    for name, rc, data in results:
+        exits[name] = rc
+        findings.extend(_doctor_findings(name, data))
+    findings.extend(_governance_findings(cfg))
+    counts: dict[str, int] = {c: 0 for c in [*DOCTOR_CHECKS, "governance"]}
+    for f in findings:
+        counts[f["check"]] = counts.get(f["check"], 0) + 1
+    data = {
+        "findings": findings,
+        "counts": counts,
+        "exit_codes": exits,
+        "open": len(findings),
+        "elapsed_s": round(time.time() - t0, 1),
+    }
+
+    def text() -> str:
+        lines = [f"{len(findings)} findings in {data['elapsed_s']}s"]
+        lines.extend(f"  {c}: {n}" for c, n in counts.items())
+        lines.extend(
+            f"  [{f['check']}/{f['kind']}] {f['subject']}: {f['detail']}"
+            for f in findings
+        )
+        return "\n".join(lines)
+
+    emit(args, data, text)
+    return 1 if findings else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser.
 
@@ -2688,6 +2844,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="compare the templates with the repos built from them",
     )
     s.set_defaults(func=cmd_templates_check)
+
+    s = sub.add_parser(
+        "doctor",
+        parents=[common],
+        help="reconcile, agents-sync --check, templates-check and governance, as one report",
+    )
+    s.set_defaults(func=cmd_doctor)
     return p
 
 

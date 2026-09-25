@@ -24,7 +24,7 @@ the `polyrepo-repo` skill for its commands). Run every check with `--json`.
 | Knowledge-store pointers resolve | read `.polyrepo/knowledge.yaml`; for each `kind: location` or `pointer` entry, confirm the file, folder, vault note or command it names exists (vault notes through `obsidian-cli vault="skillspoke-docs"`) | every pointer resolves |
 | Governance entries resolve | for each manifest `governance` entry, confirm its `location` exists and its `invoke` runs (`--help` or equivalent) | every entry resolves |
 
-The three tool checks run independently; run them in parallel.
+The tool's `doctor` command runs the three tool checks in parallel and the governance location check, and returns them as one findings list; start from `doctor --json`, then run the knowledge-store check. The launchd agent `com.skillspoke.polyrepo-daily` runs `reconcile --fix` and `doctor` daily; its reports are under `$SKILLSPOKE_LOGS/polyrepo/`.
 
 ## Output
 

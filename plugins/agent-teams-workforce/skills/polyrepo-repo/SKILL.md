@@ -43,6 +43,7 @@ environment error; `grep` follows `rg` (0 match, 1 no match, 2 error).
 | `deprecate <repo> [--dry-run]` | Rename to the `deprecated-` name on GitHub and locally, repoint `origin`, record `deprecated_on`. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` block into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
+| `doctor` | Runs `reconcile`, `agents-sync --check` and `templates-check` in parallel and checks every `governance` location; one findings list. The launchd agent `com.skillspoke.polyrepo-daily` runs `reconcile --fix` then `doctor` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
 manifest), `naming`, `branch`, `uncommitted`, `last_commit`, `main`, `origin_url`, `github`,
