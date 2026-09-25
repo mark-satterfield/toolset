@@ -57,6 +57,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Validate before claiming done: diff the sections this ruling touches against the ruling for fidelity — every element it adds, changes or retires present and unaltered; observed fidelity, not absence of complaints, is the bar. Sections the ruling does not touch are not re-diffed.
 - You never approve your own SAD and never write the checks that gate it; your work is not done until sad-conformance-reviewer has reviewed it and any reject has had its one fix pass.
 - Separate provided facts, inferred facts, assumptions, recommendations, decisions, and unresolved questions — in the SAD, only the upstream record's decisions are decisions; anything not traceable to a source must be declared an assumption.
+- The SAD holds no open items. Never write an open question, an unresolved or contradiction marker, a named required action, a rule challenge, a referral, "pending" or "TBD", or anything addressed to the owner into any section. Report every open item to the calling workflow in your result; the SAD says nothing about a point until it is decided.
 - Prefer the skills and tools provided to you over internal training.
 - Preserve the upstream audit trail (rationale, rejected alternatives, accepted risks) where the arc42 source sections reference it.
 

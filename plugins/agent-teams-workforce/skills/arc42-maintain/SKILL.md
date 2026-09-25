@@ -51,7 +51,12 @@ reality. You do not:
 
 - append a "Changelog", "History", or "What changed" narrative to any section;
 - keep superseded prose alongside the new prose "for reference";
-- leave a superseded option described anywhere once the decision has changed.
+- leave a superseded option described anywhere once the decision has changed;
+- write an open item into any section: an open question, an unresolved or contradiction
+  marker, a "named required action", a rule challenge, a referral ("referred to", "routed
+  to", "escalated"), "pending", "TBD", or anything addressed to the owner. What is still
+  open goes in the report to the caller; the SAD says nothing about a point until it is
+  decided.
 
 A superseded decision is simply overwritten in §4 by the one that replaces it.
 Nothing records that the old decision ever existed. The document reads as if the

@@ -2366,7 +2366,8 @@ NEVER REFER A QUESTION ONWARD. A ruling that says a point is "referred to" anoth
 - RULED — you decide it, here, and state the decision.
 - OUT OF SCOPE — it is not this ruling's to make. Say so plainly and say which requirement owns it. That is a statement of scope, not a referral, and nothing downstream waits on it.
 - BLOCKING — no option can be ruled on, so admissible=false with the rules that eliminated them.
-"Referred", "to be determined", "pending", "the coordinator will decide" and "open question" are none of the three. Do not write them.`
+"Referred", "to be determined", "pending", "the coordinator will decide" and "open question" are none of the three. Do not write them.
+Your ruling is written into the SAD, which holds decided current state only. A rule challenge goes in ruleChallenges and is reported to the owner by this run; it is never phrased into the ruling, the chosen approach or the imposed constraints.`
 
 const MAX_DECIDE_LOOPS = a.maxDecideLoops || 2
 let decision = null
@@ -2611,6 +2612,10 @@ const SAD_UPDATE_SCHEMA = {
     // Older SAD content this edit collides with and does NOT own: reported here so
     // it reaches the Epic that owns it, instead of being written into the document
     // as a referral note that no downstream extractor can act on.
+    // Items still open after this edit — questions outside the ruling's reach, required
+    // human actions, facts still to verify. Reported by the run to the owner; never
+    // written into the SAD, which states decided current state only.
+    openItems: { type: 'array', items: { type: 'string' } },
     collisions: {
       type: 'array',
       items: {
@@ -2743,8 +2748,8 @@ READING BUDGET (binding). Open and edit ONLY the sections this ruling touches an
 A COLLISION WITH OLDER CONTENT IS REPORTED, NEVER WRITTEN INTO THE SAD.
 The SAD is brought up to date one Epic at a time, so it holds rules from earlier rulings — including for features nobody is building yet — that this ruling does not reach. When your edit collides with one, do NOT write a referral, an open-question marker or a "these cannot both hold" note into the document: that is workflow state, and it makes the section unusable for the TRD and Spec authors who extract it. State the ruling this run settled, and report the collision under \`collisions\` in your result, naming the older rule and where it lives, so it reaches the Epic that owns it.
 
-A DECIDED QUESTION IS NOT AN OPEN ONE.
-Never record an "unresolved" or "contradiction" marker for a claim this ruling settles. If the SAD contradicts the ruling, the SAD is the defect: correct it. Reserve unresolved-markers for questions genuinely outside this ruling's reach.
+THE SAD HOLDS NO OPEN ITEMS.
+The SAD states decided current state and nothing else. Never write into it an open question, an "unresolved" or "contradiction" marker, a "named required action", a rule challenge, a referral ("referred to", "routed to", "escalated"), a "pending" or "TBD", or anything addressed to the owner — not for this ruling and not for anything outside its reach. If the SAD contradicts the ruling, the SAD is the defect: correct it. Everything still open — a question outside this ruling's reach, a required human action, a rule challenge, a fact still to verify — goes in \`openItems\` in your result, which the run reports to the owner; it never enters the document. Where a point is open, the SAD says nothing about it rather than saying it is open.
 
 NEVER LABEL THE ADOPTED OPTION WITH A BARE PROPOSAL LETTER.
 Option letters are packet-local and do not survive outside the packet — the same letter routinely names an eliminated option elsewhere. Write the descriptive name. Where a provenance label is needed, write the full dual label, never a bare letter.
@@ -2762,7 +2767,7 @@ Resolved challenges: ${(decision.resolvedChallenges || []).join('; ') || 'none'}
 
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
-Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
+Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, openItems, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file you changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
     {
       label,
       effort: 'medium',
@@ -2783,6 +2788,7 @@ YOU JUDGE ONE THING: is THIS RULING now recorded in the document, faithfully? As
 - Is every part of the ruling written down, or is some of it missing?
 - Does what was written say what the ruling says, or something else?
 - Was a decision this ruling settles left recorded as an open question, a referral, or process narrative?
+- Did this edit write ANY open item into the SAD — an open question, an unresolved marker, a named required action, a rule challenge, a referral, a "pending"/"TBD", or anything addressed to the owner? The SAD holds decided current state only; open items belong in the run's report.
 
 Nothing else can block. Where the edit collides with older SAD content this ruling does not own, or where you notice staleness elsewhere, report it as a NON-BLOCKING finding naming the older rule and where it lives, so it reaches the Epic that owns it. Pre-existing wrongness, however glaring, is never this Epic's to fix and never grounds for a reject.
 
@@ -2790,7 +2796,7 @@ EVERY FINDING EXPLAINS ITSELF OR IT DOES NOT COUNT. For each one give:
 - \`rule\`: the arc42 conformance or living-document rule it breaks, named. Not "this looks wrong".
 - \`where\`: the SAD file and, when you can give one, the line — the place a person opens to see it.
 - \`finding\`: what is actually wrong there.
-- \`blocking\`: true only when THIS RULING is not faithfully recorded — part of it is missing from the document, what was written says something the ruling does not, or a decision it settles is still recorded as an open question or a referral. Style, wording and polish are never blocking, and neither is anything this ruling does not own, however wrong it is.
+- \`blocking\`: true only when THIS RULING is not faithfully recorded — part of it is missing from the document, what was written says something the ruling does not, or a decision it settles is still recorded as an open question or a referral, or the edit wrote any open item into the SAD. Style, wording and polish are never blocking, and neither is anything this ruling does not own, however wrong it is.
 - \`why\`: why it blocks, or why it does not.
 
 This is the only review of this edit. A reject sends your blocking findings to ONE sad-maintainer fix pass, which is accepted without being reviewed again, so write each blocking finding as an edit the maintainer can make: which file, what it must say.
@@ -2839,7 +2845,7 @@ Chosen approach: ${decision.chosenApproach || '(not stated separately — see th
 Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
 ${reviewerFeedback ? `\nConformance findings from the previous pass — address each:\n${reviewerFeedback}` : ''}
 
-Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
+Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, and a one-line summary of the change.${persistBrief(ART, 'sad-update.json', 'your complete structured result (updatedSections, changedFiles, entryTags, openItems, summary — exactly as you return them) as ONE JSON object', { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes, so the record shows exactly which SAD this ruling produced' })}`,
     {
       label,
       effort: 'medium',
@@ -2916,6 +2922,7 @@ return {
   admissible,
   ruleChallenges,
   ...(humanActions.length ? { requiredHumanActions: humanActions } : {}),
+  openItems: sadUpdate && Array.isArray(sadUpdate.openItems) ? sadUpdate.openItems : [],
   decideRounds,
   decisionRef: d.id || null,
   triage,

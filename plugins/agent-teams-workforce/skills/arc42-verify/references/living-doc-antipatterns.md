@@ -50,6 +50,21 @@ but planned".
   capacity if traffic triples") — that is risk assessment, not aspiration, and is **not** a finding.
   Roadmap items belong in a roadmap, not in §4 or §5.
 
+## 3a. Open items
+
+The SAD states decided current state only. An open item written into it is workflow state: it
+cannot be extracted into a TRD or Spec, and it reads as architecture.
+
+**Flag phrasing like:** "Open question", "Open:", "open, routed to", "referred to the owner",
+"referred to the workflow coordinator", "routed to the architecture-decider", "escalated",
+"named required action", "rule challenges routed to the owner", "until the owner rules",
+"undecided", "not decided here", "unresolved", "TBD", "pending a decision".
+
+- **Severity:** `FAIL`.
+- **Evidence:** quote the sentence.
+- **Remedy:** remove it. A decided fact it contains is restated as current state; the open item
+  itself goes to the owner through the run's report, never into the document.
+
 ## 4. Orphaned sections
 
 A section that exists structurally but connects to nothing — content with no inbound or outbound
