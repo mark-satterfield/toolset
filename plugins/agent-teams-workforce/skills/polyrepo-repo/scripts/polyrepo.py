@@ -64,6 +64,7 @@ GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
 WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
+PURPOSE_NEUTRAL_FILES = ("AGENTS.md", "CLAUDE.md")
 ENTRY_LISTS = ("repos", "deprecations")
 
 
@@ -664,9 +665,11 @@ class State:
     def purpose_moved(self, r: LocalRepo | None, purpose_head: object) -> bool:
         """Say whether a repo's main has moved since its purpose was written.
 
-        In the repo that holds the steward's own folder, commits that touch only that
-        folder do not count: recording a purpose there commits the manifest, which would
-        otherwise mark the purpose stale again at once.
+        Commits that touch only agent instruction files (`AGENTS.md`, `CLAUDE.md`, at any
+        depth) do not count: they say nothing about what the repo is. In the repo that
+        holds the steward's own folder, commits that touch only that folder do not count
+        either: recording a purpose there commits the manifest, which would otherwise
+        mark the purpose stale again at once.
 
         Returns:
             True when the purpose needs a recheck.
@@ -677,10 +680,10 @@ class State:
             return True
         if purpose_head == r.main_sha:
             return False
+        excludes = [f":(exclude,glob)**/{n}" for n in PURPOSE_NEUTRAL_FILES]
         own = self.cfg.file.parent.resolve()
-        if r.path != own and r.path not in own.parents:
-            return True
-        rel = own.relative_to(r.path).as_posix()
+        if r.path == own or r.path in own.parents:
+            excludes.append(f":(exclude){own.relative_to(r.path).as_posix()}")
         cp = git(
             r.path,
             "diff",
@@ -689,7 +692,7 @@ class State:
             r.main_sha,
             "--",
             ".",
-            f":(exclude){rel}",
+            *excludes,
         )
         return cp.returncode != 0
 
