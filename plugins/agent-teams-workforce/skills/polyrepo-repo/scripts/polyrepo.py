@@ -23,10 +23,17 @@ Usage:
   polyrepo.py search attr=value [attr~regex ...] [--fetch]
   polyrepo.py inventory [--all] [--no-fetch]
   polyrepo.py purpose <repo> [--text TEXT]
+  polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
+  polyrepo.py rebase <repo ...|--all>
+  polyrepo.py create <name> --space S --template T --purpose TEXT [--dry-run]
+  polyrepo.py deprecate <repo> [--dry-run]
+  polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
+  polyrepo.py templates-check
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
-GitHub-listing freshness window). Exit status: 0 success, 1 findings remain after reconcile,
-2 usage or environment error.
+GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
+repo left out of date by agents-sync or rebase, a template that lags), 2 usage or environment
+error. grep follows rg: 0 matches, 1 no match, 2 error.
 """
 
 from __future__ import annotations
@@ -35,12 +42,14 @@ import argparse
 import concurrent.futures
 import dataclasses
 import datetime as dt
+import fnmatch
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -48,11 +57,13 @@ from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.error import YAMLError
 
 GIT_TIMEOUT = 60
 FETCH_TIMEOUT = 45
 WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
+ENTRY_LISTS = ("repos", "deprecations")
 
 
 class PolyrepoError(Exception):
@@ -135,6 +146,16 @@ class Config:
     ttl: int
     owned: list[re.Pattern[str]]
     patterns: list[dict[str, Any]]
+    raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+
+    def setting_path(self, section: str, key: str, default: str) -> Path:
+        """Resolve a path setting, relative to the config file's folder.
+
+        Returns:
+            The absolute path.
+        """
+        rel = (self.raw.get(section) or {}).get(key) or default
+        return (self.file.parent / str(rel)).resolve()
 
     def classify(self, name: str) -> dict[str, Any] | None:
         """Return the first naming pattern the name matches.
@@ -247,6 +268,7 @@ def load_config(explicit: str | None) -> Config:
         ttl=int(raw.get("cache_ttl_seconds", 300)),
         owned=[re.compile(r) for r in naming.get("owned") or []],
         patterns=list(naming.get("patterns") or []),
+        raw=raw,
     )
 
 
@@ -487,14 +509,15 @@ class Manifest:
         self.dirty = False
 
     def entries(self) -> dict[str, CommentedMap]:
-        """Return the repo entries by name.
+        """Return the repo entries by name, from `repos` and from the `deprecations` list.
 
         Returns:
             A name → entry mapping.
         """
         return {
             e["name"]: e
-            for e in self.doc["repos"]
+            for key in ENTRY_LISTS
+            for e in self.doc.get(key) or []
             if isinstance(e, dict) and e.get("name")
         }
 
@@ -565,9 +588,12 @@ class Manifest:
 
     def remove_entry(self, name: str) -> None:
         """Remove an entry, its group memberships and its dependency edges."""
-        self.doc["repos"] = type(self.doc["repos"])(
-            e for e in self.doc["repos"] if e.get("name") != name
-        )
+        for key in ENTRY_LISTS:
+            items = self.doc.get(key)
+            if items:
+                keep = [e for e in items if e.get("name") != name]
+                items.clear()
+                items.extend(keep)
         for g in self._groups():
             members = g.get("members")
             if members and name in members:
@@ -900,6 +926,9 @@ def reconcile(st: State) -> list[Finding]:
                             "lifecycle": lc,
                             "remote_url": cfg.github_url(n),
                             "default_branch": cfg.default_branch,
+                            **(
+                                {"deprecated_on": today()} if lc == "deprecated" else {}
+                            ),
                         },
                     ),
                     manifest_change=True,
@@ -934,6 +963,7 @@ def _check_local(
                         "lifecycle": lc,
                         "remote_url": cfg.github_url(name),
                         "default_branch": b,
+                        **({"deprecated_on": today()} if lc == "deprecated" else {}),
                     },
                 ),
                 manifest_change=True,
@@ -1169,7 +1199,54 @@ def _check_tracked(
                     name,
                     "manifest says deprecated but the repo was never renamed with the deprecated- prefix",
                 )
+        if st.lifecycle(name) == "deprecated":
+            out.extend(_check_deprecation_age(st, name, e))
     return out
+
+
+def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Finding]:
+    """Date an undated deprecation, and archive a deprecated repo once its time is up."""
+    cfg, man = st.cfg, st.manifest
+    since = e.get("deprecated_on")
+    if not since:
+        return [
+            Finding(
+                "deprecated-undated",
+                name,
+                "deprecated repo with no deprecated_on date",
+                fix=f"record deprecated_on {today()}, the first day the tool saw it deprecated",
+                action=lambda: man.set_field(name, "deprecated_on", today()),
+                manifest_change=True,
+            )
+        ]
+    try:
+        start = dt.date.fromisoformat(str(since)[:10])
+    except ValueError:
+        return [
+            Finding(
+                "deprecated-undated", name, f"deprecated_on {since!r} is not a date"
+            )
+        ]
+    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
+    age = (dt.date.fromisoformat(today()) - start).days
+    if age < days:
+        return []
+
+    def act() -> None:
+        must(
+            run(["gh", "repo", "archive", f"{cfg.owner}/{name}", "--yes"], timeout=120)
+        )
+        man.set_field(name, "lifecycle", "archived")
+
+    return [
+        Finding(
+            "archive-due",
+            name,
+            f"deprecated {age} days ago ({start}); repos are archived {days} days after deprecation",
+            fix=f"archive {cfg.owner}/{name} on GitHub and set lifecycle archived",
+            action=act,
+        )
+    ]
 
 
 def _create_on_github(st: State, name: str, r: LocalRepo, has_origin: bool) -> Finding:
@@ -1243,6 +1320,15 @@ def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
             "polyrepo reconcile --fix",
             [f"{f.kind} {f.repo}: {f.fix}" for f in done],
         )
+
+
+def today() -> str:
+    """Return today's local date.
+
+    Returns:
+        The date as YYYY-MM-DD.
+    """
+    return dt.datetime.now().astimezone().date().isoformat()
 
 
 def append_changelog(cfg: Config, title: str, lines: list[str]) -> None:
@@ -1544,6 +1630,927 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+# --------------------------------------------------------------------------------------------
+# actions: grep, rebase, create, deprecate, agents-sync, templates-check
+
+REBASE_OK = ("up-to-date", "rebased", "fast-forwarded")
+
+
+def _local_repos(
+    cfg: Config, names: list[str] | None = None, space: str | None = None
+) -> list[LocalRepo]:
+    """Return the repos on disk, optionally narrowed to names (or paths) and one app space.
+
+    Returns:
+        The repos, sorted by name.
+
+    Raises:
+        PolyrepoError: when a name is not a repo on disk.
+    """
+    local, _ = discover(cfg)
+    lower = {n.lower(): n for n in local}
+    picked: list[LocalRepo] = []
+    for w in names or []:
+        n = lower.get(w.lower())
+        p = Path(w).expanduser()
+        if n is None and p.exists():
+            p = p.resolve()
+            n = next(
+                (k for k, r in local.items() if r.path == p or r.path in p.parents),
+                None,
+            )
+        if n is None:
+            msg = f"no repo named {w!r} on disk"
+            raise PolyrepoError(msg)
+        picked.append(local[n])
+    if not names:
+        picked = list(local.values())
+    if space:
+        picked = [r for r in picked if r.space == space]
+    return sorted(picked, key=lambda r: r.name.lower())
+
+
+def _last_line(cp: subprocess.CompletedProcess[str]) -> str:
+    lines = (cp.stderr or cp.stdout or "").strip().splitlines()
+    return lines[-1] if lines else f"exit {cp.returncode}"
+
+
+# grep -----------------------------------------------------------------------------------------
+
+
+def cmd_grep(args: argparse.Namespace, cfg: Config) -> int:
+    """Search every repo on disk (or one space, or named repos) with rg.
+
+    Returns:
+        rg's status: 0 matches, 1 no match.
+
+    Raises:
+        PolyrepoError: when there is nothing to search or rg fails.
+    """
+    repos = _local_repos(cfg, args.repo, args.space)
+    if not repos:
+        msg = "no repos to search"
+        raise PolyrepoError(msg)
+    rels = {r.path.relative_to(cfg.root).as_posix(): r.name for r in repos}
+    argv = ["rg", "--no-config", "--color=never", "--glob", "!.worktrees"]
+    for g in args.glob or []:
+        argv += ["--glob", g]
+    for flag, on in (
+        ("-i", args.ignore_case),
+        ("-F", args.fixed_strings),
+        ("-w", args.word),
+    ):
+        if on:
+            argv.append(flag)
+    if args.json:
+        argv.append("--json")
+    elif args.files:
+        argv.append("--files-with-matches")
+    else:
+        argv += ["--line-number", "--with-filename"]
+    argv += ["-e", args.pattern, "--", *rels]
+    cp = run(argv, cwd=cfg.root, timeout=300)
+    if cp.returncode not in (0, 1):
+        msg = f"rg failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    if not args.json:
+        print(cp.stdout, end="")
+        return cp.returncode
+    matches: list[dict[str, Any]] = []
+    for ln in cp.stdout.splitlines():
+        ev = json.loads(ln)
+        if ev.get("type") != "match":
+            continue
+        d = ev["data"]
+        rel = d["path"].get("text", "")
+        top = next((k for k in rels if rel.startswith(k + "/")), None)
+        matches.append(
+            {
+                "repo": rels[top] if top else None,
+                "file": rel[len(top) + 1 :] if top else rel,
+                "line": d["line_number"],
+                "text": d["lines"].get("text", "").rstrip("\n"),
+            }
+        )
+    if args.files:
+        files = sorted({(m["repo"], m["file"]) for m in matches}, key=str)
+        data: dict[str, Any] = {
+            "count": len(files),
+            "files": [{"repo": r, "file": f} for r, f in files],
+        }
+    else:
+        data = {"count": len(matches), "matches": matches}
+    print(json.dumps(data, indent=2))
+    return 0 if matches else 1
+
+
+# rebase ---------------------------------------------------------------------------------------
+
+
+def _worktree_on(repo: Path, branch: str) -> Path | None:
+    """Return the worktree that has the branch checked out.
+
+    Returns:
+        Its path, or None when no worktree has it.
+    """
+    cur: Path | None = None
+    for ln in (git_out(repo, "worktree", "list", "--porcelain") or "").splitlines():
+        if ln.startswith("worktree "):
+            cur = Path(ln[len("worktree ") :])
+        elif ln == f"branch refs/heads/{branch}" and cur is not None:
+            return cur
+    return None
+
+
+def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
+    """Fetch origin and bring main up to origin/main, stopping on a dirty tree or a conflict.
+
+    Returns:
+        {repo, status, ...}; status is one of REBASE_OK or the reason it stopped.
+    """
+    b = cfg.default_branch
+    res: dict[str, Any] = {"repo": r.name, "path": str(r.path)}
+    if not git_out(r.path, "remote", "get-url", "origin"):
+        return {**res, "status": "no-origin"}
+    cp = git(r.path, "fetch", "--quiet", "--prune", "origin", timeout=FETCH_TIMEOUT)
+    if cp.returncode != 0:
+        return {**res, "status": "fetch-failed", "detail": _last_line(cp)}
+    main = git_out(r.path, "rev-parse", "--verify", "-q", f"refs/heads/{b}")
+    om = git_out(r.path, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{b}")
+    if not main or not om:
+        return {**res, "status": "no-main", "detail": f"no {b} or no origin/{b}"}
+    counts = git_out(
+        r.path,
+        "rev-list",
+        "--left-right",
+        "--count",
+        f"refs/heads/{b}...refs/remotes/origin/{b}",
+    )
+    ahead, behind = (int(x) for x in (counts or "0 0").split())
+    res.update(ahead=ahead, behind=behind)
+    if behind == 0:
+        return {**res, "status": "up-to-date"}
+    wt = _worktree_on(r.path, b)
+    if wt is None:
+        if ahead:
+            return {
+                **res,
+                "status": "not-checked-out",
+                "detail": f"{b} has diverged and is not checked out in any worktree",
+            }
+        cp = git(r.path, "update-ref", f"refs/heads/{b}", om, main)
+        if cp.returncode != 0:
+            return {**res, "status": "failed", "detail": _last_line(cp)}
+        return {**res, "status": "fast-forwarded", "behind": 0}
+    res["worktree"] = str(wt)
+    dirty = git(wt, "status", "--porcelain=v1", "--untracked-files=no").stdout
+    if dirty.strip():
+        return {
+            **res,
+            "status": "dirty",
+            "files": [ln[3:] for ln in dirty.splitlines() if ln.strip()],
+        }
+    if ahead == 0:
+        cp = git(wt, "merge", "--ff-only", "--quiet", f"refs/remotes/origin/{b}")
+        if cp.returncode != 0:
+            return {**res, "status": "failed", "detail": _last_line(cp)}
+        return {**res, "status": "fast-forwarded", "behind": 0}
+    cp = git(wt, "rebase", f"refs/remotes/origin/{b}", timeout=300)
+    if cp.returncode != 0:
+        conflicts = git_out(wt, "diff", "--name-only", "--diff-filter=U") or ""
+        git(wt, "rebase", "--abort")
+        return {
+            **res,
+            "status": "conflict",
+            "files": conflicts.splitlines(),
+            "detail": "rebase aborted; main is as it was",
+        }
+    return {**res, "status": "rebased", "behind": 0}
+
+
+def cmd_rebase(args: argparse.Namespace, cfg: Config) -> int:
+    """Rebase main on origin/main in the named repos, or all of them.
+
+    Returns:
+        0 when every repo ended up to date, else 1.
+
+    Raises:
+        PolyrepoError: when neither repos nor --all are given.
+    """
+    if not args.repos and not args.all:
+        msg = "name one or more repos, or pass --all"
+        raise PolyrepoError(msg)
+    repos = _local_repos(cfg, None if args.all else args.repos)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        results = list(ex.map(lambda r: rebase_one(cfg, r), repos))
+    bad = [x for x in results if x["status"] not in REBASE_OK]
+
+    def text() -> str:
+        lines = []
+        for x in results:
+            extra = "; ".join(
+                s for s in (x.get("detail"), ", ".join(x.get("files") or [])) if s
+            )
+            lines.append(f"{x['repo']}: {x['status']}{'  ' + extra if extra else ''}")
+        return "\n".join(lines)
+
+    emit(args, {"repos": results, "stopped": len(bad)}, text)
+    return 1 if bad else 0
+
+
+# create ---------------------------------------------------------------------------------------
+
+
+def _templates(cfg: Config) -> tuple[Path, dict[str, Any]]:
+    """Return the templates folder and the templates settings.
+
+    Returns:
+        (folder, settings).
+    """
+    return (
+        cfg.setting_path("templates", "dir", "../repositories/templates"),
+        cfg.raw.get("templates") or {},
+    )
+
+
+def _service_name(name: str) -> str:
+    n = name.lower()
+    return n[len("skillspoke-") :] if n.startswith("skillspoke-") else n
+
+
+def _copier_render(
+    tdir: Path, dest: Path, data: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    argv = ["copier", "copy", "--defaults", "--quiet"]
+    for k, v in data.items():
+        argv += ["--data", f"{k}={v}"]
+    return run([*argv, str(tdir), str(dest)], timeout=300)
+
+
+def _create_checks(args: argparse.Namespace, cfg: Config) -> tuple[Path, Path]:
+    """Validate a create request against the naming rules, the templates, disk and GitHub.
+
+    Returns:
+        (template folder, destination folder).
+
+    Raises:
+        PolyrepoError: when the request breaks a rule or the name is taken.
+    """
+    name, space, template = args.name, args.space, args.template
+    pat = cfg.classify(name)
+    if pat is None or pat["kind"] != "application":
+        msg = f"{name} matches no application naming pattern"
+        raise PolyrepoError(msg)
+    want = cfg.expected_space(name)
+    if want != space:
+        msg = f"a {pat['name']} repo belongs in space {want}, not {space}"
+        raise PolyrepoError(msg)
+    troot, tset = _templates(cfg)
+    tdir = troot / template
+    if not (tdir / "copier.yml").is_file():
+        msg = f"no template {template!r} in {troot}"
+        raise PolyrepoError(msg)
+    rx = ((tset.get("kinds") or {}).get(template) or {}).get("name_regex")
+    if rx and not re.search(rx, name):
+        msg = f"a {template} repo name must match {rx}"
+        raise PolyrepoError(msg)
+    sub = args.dir
+    if sub is None:
+        sub = ((tset.get("placement") or {}).get(space) or {}).get(template, "")
+    space_dir = cfg.root / space
+    if not space_dir.is_dir():
+        msg = f"no app space folder {space_dir}"
+        raise PolyrepoError(msg)
+    dest = space_dir / sub / name if sub else space_dir / name
+    local, _ = discover(cfg)
+    if dest.exists() or name.lower() in {n.lower() for n in local}:
+        msg = f"{name} already exists on disk"
+        raise PolyrepoError(msg)
+    if GitHub(cfg, use_cache=False).resolve(name) is not None:
+        msg = f"{cfg.owner}/{name} already exists on GitHub"
+        raise PolyrepoError(msg)
+    if name in Manifest(cfg.manifest).entries():
+        msg = f"{name} already has a manifest entry"
+        raise PolyrepoError(msg)
+    return tdir, dest
+
+
+def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
+    """Create a repo from a template, on disk and on GitHub, with its manifest entry.
+
+    Returns:
+        0 on success, 1 when a step after rendering failed.
+
+    Raises:
+        PolyrepoError: when the request is invalid or the template does not render.
+    """
+    name, b = args.name, cfg.default_branch
+    tdir, dest = _create_checks(args, cfg)
+    data = {"service_name": _service_name(name), "repo_name": name}
+    res: dict[str, Any] = {
+        "repo": name,
+        "space": args.space,
+        "template": args.template,
+        "path": str(dest),
+        "dry_run": args.dry_run,
+        "steps": [
+            f"render the {args.template} template into {dest}",
+            "write the shared AGENTS.md block",
+            f"git init on {b} and commit",
+            f"create the private GitHub repo {cfg.owner}/{name} and push {b}",
+            f"add the manifest entry (lifecycle {args.lifecycle}) with the purpose given",
+        ],
+    }
+    if args.dry_run:
+        with tempfile.TemporaryDirectory(prefix="polyrepo-create-") as tmp:
+            out = Path(tmp) / name
+            cp = _copier_render(tdir, out, data)
+            if cp.returncode != 0:
+                msg = f"copier failed: {_last_line(cp)}"
+                raise PolyrepoError(msg)
+            res["rendered_files"] = sorted(
+                p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()
+            )
+        emit(
+            args,
+            res,
+            lambda: "\n".join(
+                [f"dry run: {name} -> {dest}"]
+                + [f"  {s}" for s in res["steps"]]
+                + [f"  template renders {len(res['rendered_files'])} files"]
+            ),
+        )
+        return 0
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cp = _copier_render(tdir, dest, data)
+    if cp.returncode != 0:
+        msg = f"copier failed: {_last_line(cp)}"
+        raise PolyrepoError(msg)
+    block, marker = _agents_block(cfg)
+    agents = dest / "AGENTS.md"
+    agents.write_text(
+        _with_block(
+            agents.read_text() if agents.exists() else None, block, name, marker
+        )
+    )
+    try:
+        must(git(dest, "init", f"--initial-branch={b}"))
+        must(git(dest, "add", "-A"))
+        must(
+            git(
+                dest,
+                "commit",
+                "-m",
+                f"chore(repo): scaffold {name} from the {args.template} template",
+                timeout=300,
+            )
+        )
+        must(
+            run(
+                ["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"],
+                timeout=120,
+            )
+        )
+        must(git(dest, "remote", "add", "origin", cfg.github_url(name)))
+        must(git(dest, "push", "-u", "origin", b, timeout=120))
+    except GitFailedError as exc:
+        res["error"] = str(exc)
+        emit(
+            args, res, lambda: f"{name}: created at {dest} but stopped: {res['error']}"
+        )
+        return 1
+    man = Manifest(cfg.manifest)
+    man.add_entry(
+        name,
+        {
+            "lifecycle": args.lifecycle,
+            "remote_url": cfg.github_url(name),
+            "default_branch": b,
+            "purpose": args.purpose.strip(),
+            "purpose_head": git_out(dest, "rev-parse", "HEAD"),
+        },
+    )
+    man.save()
+    append_changelog(
+        cfg,
+        "polyrepo create",
+        [
+            f"{name}: created in {args.space} from the {args.template} template and pushed to {cfg.owner}/{name}"
+        ],
+    )
+    GitHub(cfg, use_cache=True).invalidate()
+    emit(args, res, lambda: f"{name}: created at {dest} and pushed to GitHub")
+    return 0
+
+
+# deprecate ------------------------------------------------------------------------------------
+
+
+def deprecated_name(name: str) -> str:
+    """Return the deprecated name of a repo: the deprecated- prefix, all lowercase.
+
+    Returns:
+        The new name.
+    """
+    return "deprecated-" + name.lower()
+
+
+def _deprecate_plan(
+    st: State, name: str
+) -> tuple[str, dict[str, Any] | None, LocalRepo | None, Path | None, list[str]]:
+    """Work out and check a deprecation before anything moves.
+
+    Returns:
+        (new name, GitHub record, local repo, new local path, steps).
+
+    Raises:
+        PolyrepoError: when the repo cannot be deprecated as it stands.
+    """
+    cfg = st.cfg
+    if name.startswith("deprecated-"):
+        msg = f"{name} is already deprecated"
+        raise PolyrepoError(msg)
+    new = deprecated_name(name)
+    p = cfg.classify(new)
+    if p is None or p["kind"] != "deprecated":
+        msg = f"{new} matches no deprecated naming pattern"
+        raise PolyrepoError(msg)
+    if st.gh.get(new) is not None:
+        msg = f"{cfg.owner}/{new} already exists on GitHub"
+        raise PolyrepoError(msg)
+    r = st.local.get(name)
+    parsed = parse_github_url(r.origin_url) if r else None
+    rec = st.gh.resolve(parsed[1] if parsed else name)
+    steps = []
+    if rec:
+        steps.append(f"rename the GitHub repo {cfg.owner}/{rec['name']} to {new}")
+    new_path = None
+    if r:
+        if r.fetch_error:
+            msg = f"{name}: git fetch failed ({r.fetch_error}); cannot confirm main is pushed"
+            raise PolyrepoError(msg)
+        if r.ahead:
+            msg = f"{name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
+            raise PolyrepoError(msg)
+        new_path = r.path.with_name(new)
+        if new_path.exists():
+            msg = f"{new_path} already exists"
+            raise PolyrepoError(msg)
+        steps += [
+            f"move {r.path} to {new_path}",
+            f"point origin at {cfg.github_url(new)}",
+        ]
+        if (git_out(r.path, "worktree", "list", "--porcelain") or "").count(
+            "worktree "
+        ) > 1:
+            steps.append("repair the repo's linked worktrees")
+    steps.append(
+        f"manifest: rename the entry to {new}, lifecycle deprecated, deprecated_on {today()}"
+    )
+    return new, rec, r, new_path, steps
+
+
+def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
+    """Deprecate a repo: rename it on GitHub and on disk with the deprecated- prefix, and date it.
+
+    Returns:
+        0 on success, 1 when a step failed part way.
+    """
+    st = gather(cfg, fetch=True, use_cache=not args.no_cache)
+    (name,) = resolve_names(st, [args.repo])
+    new, rec, r, new_path, steps = _deprecate_plan(st, name)
+    res: dict[str, Any] = {
+        "repo": name,
+        "new_name": new,
+        "dry_run": args.dry_run,
+        "steps": steps,
+    }
+    if args.dry_run:
+        emit(
+            args,
+            res,
+            lambda: "\n".join(
+                [f"dry run: deprecate {name} as {new}"] + [f"  {s}" for s in steps]
+            ),
+        )
+        return 0
+    done: list[str] = []
+    try:
+        if rec:
+            must(
+                run(
+                    [
+                        "gh", "repo", "rename", new,
+                        "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
+                    ],
+                    timeout=120,
+                )
+            )  # fmt: skip
+            done.append(f"GitHub {rec['name']} renamed to {new}")
+        if r and new_path:
+            r.path.rename(new_path)
+            done.append(f"moved {r.path} to {new_path}")
+            verb = "set-url" if r.origin_url else "add"
+            must(git(new_path, "remote", verb, "origin", cfg.github_url(new)))
+            must(git(new_path, "worktree", "repair"))
+    except (GitFailedError, OSError) as exc:
+        res.update(error=str(exc), done=done)
+        if done:
+            append_changelog(cfg, f"polyrepo deprecate {name} (stopped)", done)
+        emit(args, res, lambda: f"{name}: stopped after {done}: {res['error']}")
+        return 1
+    man = st.manifest
+    if name in man.entries():
+        man.rename_entry(name, new)
+    else:
+        man.add_entry(new, {})
+    man.set_field(new, "lifecycle", "deprecated")
+    man.set_field(new, "deprecated_on", today())
+    man.set_field(new, "remote_url", cfg.github_url(new))
+    man.set_field(new, "default_branch", cfg.default_branch)
+    man.set_field(new, "local_path", None)
+    man.save()
+    append_changelog(
+        cfg,
+        f"polyrepo deprecate {name}",
+        [*done, f"manifest entry is now {new}, deprecated on {today()}"],
+    )
+    st.gh.invalidate()
+    emit(args, res, lambda: f"{name}: deprecated as {new}")
+    return 0
+
+
+# agents-sync ----------------------------------------------------------------------------------
+
+
+def _agents_block(cfg: Config) -> tuple[str, str]:
+    """Return the shared AGENTS.md block, wrapped in its markers, and the marker name.
+
+    Returns:
+        (block, marker).
+
+    Raises:
+        PolyrepoError: when the block file is missing.
+    """
+    sc = cfg.raw.get("agents_sync") or {}
+    f = cfg.setting_path(
+        "agents_sync", "block_file", "../repositories/agents-shared-block.md"
+    )
+    if not f.is_file():
+        msg = f"shared AGENTS.md block file {f} not found"
+        raise PolyrepoError(msg)
+    marker = str(sc.get("marker") or "SKILLSPOKE SHARED")
+    note = str(sc.get("note") or "written by polyrepo agents-sync")
+    body = f.read_text().strip()
+    return f"<!-- BEGIN {marker}: {note} -->\n{body}\n<!-- END {marker} -->", marker
+
+
+def _with_block(text: str | None, block: str, name: str, marker: str) -> str:
+    """Put the block into AGENTS.md text: replace the marked copy, or append one.
+
+    Returns:
+        The new text.
+    """
+    if text is None:
+        return f"# {name}\n\n{block}\n"
+    rx = re.compile(
+        rf"<!-- BEGIN {re.escape(marker)}\b.*?<!-- END {re.escape(marker)} -->", re.S
+    )
+    if rx.search(text):
+        return rx.sub(lambda _m: block, text, count=1)
+    return text.rstrip("\n") + "\n\n" + block + "\n"
+
+
+def _commit_paths(repo: Path, paths: list[str], message: str) -> None:
+    """Commit only these paths, re-staging once when a pre-commit hook rewrote them.
+
+    Raises:
+        GitFailedError: when the commit still fails.
+    """
+    must(git(repo, "add", "--", *paths))
+    cp = git(repo, "commit", "-m", message, "--", *paths, timeout=300)
+    if cp.returncode != 0:
+        must(git(repo, "add", "--", *paths))
+        must(git(repo, "commit", "-m", message, "--", *paths, timeout=300))
+
+
+def _sync_one(
+    cfg: Config, r: LocalRepo, block: str, marker: str, write: bool
+) -> dict[str, Any]:
+    f = r.path / "AGENTS.md"
+    cur = f.read_text() if f.is_file() else None
+    want = _with_block(cur, block, r.name, marker)
+    if cur == want:
+        state = "current"
+    elif cur is None:
+        state = "missing-file"
+    elif f"<!-- BEGIN {marker}" in cur:
+        state = "outdated"
+    else:
+        state = "missing-block"
+    res: dict[str, Any] = {"repo": r.name, "state": state}
+    if state == "current" or not write:
+        return res
+    b = cfg.default_branch
+    branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch != b:
+        return {**res, "status": "skipped", "detail": f"on {branch}, not {b}"}
+    if git_out(r.path, "status", "--porcelain", "--", "AGENTS.md"):
+        return {
+            **res,
+            "status": "skipped",
+            "detail": "AGENTS.md has uncommitted changes",
+        }
+    f.write_text(want)
+    paths = ["AGENTS.md"]
+    claude = r.path / "CLAUDE.md"
+    if cur is None and not claude.exists() and not claude.is_symlink():
+        claude.symlink_to("AGENTS.md")
+        paths.append("CLAUDE.md")
+    try:
+        _commit_paths(
+            r.path, paths, "docs(agents): sync the shared SkillSpoke instructions block"
+        )
+    except GitFailedError as exc:
+        git(r.path, "reset", "-q", "--", *paths)
+        if cur is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.write_text(cur)
+        if "CLAUDE.md" in paths:
+            claude.unlink(missing_ok=True)
+        return {**res, "status": "failed", "detail": str(exc)}
+    cp = git(r.path, "push", "origin", b, timeout=120)
+    if cp.returncode != 0:
+        return {
+            **res,
+            "status": "committed",
+            "detail": f"push failed: {_last_line(cp)}",
+        }
+    return {**res, "status": "pushed"}
+
+
+def cmd_agents_sync(args: argparse.Namespace, cfg: Config) -> int:
+    """Write the shared block into every repo's AGENTS.md, committing and pushing each repo.
+
+    Returns:
+        0 when every repo is current (or was brought current and pushed), else 1.
+    """
+    block, marker = _agents_block(cfg)
+    skip = set((cfg.raw.get("agents_sync") or {}).get("exclude") or [])
+    repos = [
+        r
+        for r in _local_repos(cfg, args.repo)
+        if r.name not in skip and not r.name.startswith("deprecated-")
+    ]
+    write = not args.check and not args.dry_run
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        results = list(ex.map(lambda r: _sync_one(cfg, r, block, marker, write), repos))
+    if write:
+        bad = [
+            x for x in results if x["state"] != "current" and x["status"] != "pushed"
+        ]
+    else:
+        bad = [x for x in results if x["state"] != "current"]
+    counts: dict[str, int] = {}
+    for x in results:
+        counts[x["state"]] = counts.get(x["state"], 0) + 1
+
+    def text() -> str:
+        lines = [
+            f"{len(results)} repos: "
+            + ", ".join(f"{v} {k}" for k, v in sorted(counts.items()))
+        ]
+        for x in results:
+            if x["state"] == "current":
+                continue
+            st_ = x.get("status", "would update" if args.dry_run else "")
+            detail = x.get("detail", "")
+            lines.append(
+                f"  {x['repo']}: {x['state']}{'  ' + st_ if st_ else ''}{'  ' + detail if detail else ''}"
+            )
+        return "\n".join(lines)
+
+    emit(args, {"repos": results, "counts": counts, "not_current": len(bad)}, text)
+    return 1 if bad else 0
+
+
+# templates-check ------------------------------------------------------------------------------
+
+
+def _read_yaml(f: Path) -> dict[str, Any]:
+    if not f.is_file():
+        return {}
+    try:
+        d = YAML(typ="safe").load(f.read_text())
+    except (OSError, YAMLError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def _template_for(
+    r: LocalRepo, kinds: dict[str, Any]
+) -> tuple[str | None, str | None, dict[str, Any]]:
+    """Decide which template a repo was built from: Copier answers, then repo.status.yaml, then its name.
+
+    Returns:
+        (template, how it was decided, Copier answers).
+    """
+    answers = _read_yaml(r.path / ".copier-answers.yml")
+    src = str(answers.get("_src_path") or "").rstrip("/")
+    if src and Path(src).name in kinds:
+        return Path(src).name, "copier-answers", answers
+    stype = _read_yaml(r.path / "repo.status.yaml").get("service_type")
+    for t, k in kinds.items():
+        if stype and stype in ((k or {}).get("status_types") or []):
+            return t, "repo.status.yaml", answers
+    for t, k in kinds.items():
+        rx = (k or {}).get("name_regex")
+        if rx and re.search(rx, r.name):
+            return t, "name", answers
+    return None, None, answers
+
+
+def _template_files(tdir: Path, ignore: list[str]) -> dict[str, str]:
+    """Map each file a template renders at a fixed path to its source in the template.
+
+    Returns:
+        rendered path → template source path.
+    """
+    out: dict[str, str] = {}
+    for p in sorted(tdir.rglob("*")):
+        if not p.is_file():
+            continue
+        src = p.relative_to(tdir).as_posix()
+        if src == "copier.yml" or "_copier_conf" in src:
+            continue
+        rel = src.removesuffix(".jinja")
+        if "{{" in rel or any(fnmatch.fnmatch(rel, g) for g in ignore):
+            continue
+        out[rel] = src
+    return out
+
+
+def _commit_time(repo: Path, rel: str) -> int | None:
+    s = git_out(repo, "log", "-1", "--format=%ct", "--", rel)
+    return int(s) if s else None
+
+
+def _compare_to_template(
+    r: LocalRepo, tdir: Path, files: dict[str, str], answers: dict[str, Any]
+) -> dict[str, Any]:
+    """Render the template as this repo would have been rendered and compare file by file.
+
+    Returns:
+        {repo, files: {path: (state, repo commit time)}} or {repo, error}.
+    """
+    data = {k: str(v) for k, v in answers.items() if not k.startswith("_")} or {
+        "service_name": _service_name(r.name),
+        "repo_name": r.name,
+    }
+    out: dict[str, tuple[str, int | None]] = {}
+    with tempfile.TemporaryDirectory(prefix="polyrepo-tc-") as tmp:
+        rendered = Path(tmp) / r.name
+        cp = _copier_render(tdir, rendered, data)
+        if cp.returncode != 0:
+            return {"repo": r.name, "error": _last_line(cp)}
+        for rel in files:
+            t, mine = rendered / rel, r.path / rel
+            if not t.is_file():
+                continue
+            if not mine.is_file():
+                out[rel] = ("missing", None)
+            elif t.read_bytes() == mine.read_bytes():
+                out[rel] = ("same", None)
+            else:
+                out[rel] = ("differs", _commit_time(r.path, rel))
+    return {"repo": r.name, "files": out}
+
+
+def _check_template(
+    tdir: Path, members: list[tuple[LocalRepo, str, dict[str, Any]]], ignore: list[str]
+) -> dict[str, Any]:
+    files = _template_files(tdir, ignore)
+    now = int(time.time())
+    tdates = {rel: _commit_time(tdir, src) or now for rel, src in files.items()}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        compared = list(
+            ex.map(lambda m: _compare_to_template(m[0], tdir, files, m[2]), members)
+        )
+    rows = []
+    for rel in files:
+        row: dict[str, Any] = {
+            "file": rel,
+            "same": 0,
+            "missing": [],
+            "repo_newer": [],
+            "template_newer": [],
+        }
+        for c in compared:
+            state, when = (c.get("files") or {}).get(rel, (None, None))
+            if state == "same":
+                row["same"] += 1
+            elif state == "missing":
+                row["missing"].append(c["repo"])
+            elif state == "differs":
+                key = "repo_newer" if when and when > tdates[rel] else "template_newer"
+                row[key].append(c["repo"])
+        if row["missing"] or row["repo_newer"] or row["template_newer"]:
+            rows.append(row)
+    return {
+        "template": tdir.name,
+        "repos": [{"repo": m[0].name, "matched_by": m[1]} for m in members],
+        "render_errors": [
+            {"repo": c["repo"], "error": c["error"]} for c in compared if "error" in c
+        ],
+        "files": rows,
+        "lags": any(row["repo_newer"] for row in rows),
+    }
+
+
+def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
+    """Compare each template with the repos built from it, and name repo kinds with no template.
+
+    Returns:
+        0 when no template lags and every repo kind has a template, else 1.
+
+    Raises:
+        PolyrepoError: when the templates folder is missing.
+    """
+    troot, tset = _templates(cfg)
+    if not troot.is_dir():
+        msg = f"templates folder {troot} not found"
+        raise PolyrepoError(msg)
+    kinds = {
+        t: k
+        for t, k in (tset.get("kinds") or {}).items()
+        if (troot / t / "copier.yml").is_file()
+    }
+    ignore = list(tset.get("ignore") or [])
+    by_template: dict[str, list[tuple[LocalRepo, str, dict[str, Any]]]] = {
+        t: [] for t in kinds
+    }
+    untemplated: dict[str, list[str]] = {}
+    for r in _local_repos(cfg):
+        if r.name.startswith("deprecated-"):
+            continue
+        t, how, answers = _template_for(r, kinds)
+        if t is None:
+            kind = r.name.rsplit("-", 1)[-1].lower() if "-" in r.name else r.name
+            untemplated.setdefault(kind, []).append(r.name)
+        else:
+            by_template[t].append((r, str(how), answers))
+    for d in sorted(troot.iterdir()):
+        if d.is_dir() and (d / "copier.yml").is_file() and d.name not in kinds:
+            by_template[d.name] = []
+    results = [
+        _check_template(troot / t, members, ignore)
+        for t, members in sorted(by_template.items())
+    ]
+    no_template = [
+        {"kind": k, "repos": sorted(v)} for k, v in sorted(untemplated.items())
+    ]
+    data = {
+        "templates": results,
+        "kinds_without_template": no_template,
+        "lagging_templates": [x["template"] for x in results if x["lags"]],
+    }
+
+    def text() -> str:
+        lines = []
+        for x in results:
+            how: dict[str, int] = {}
+            for m in x["repos"]:
+                how[m["matched_by"]] = how.get(m["matched_by"], 0) + 1
+            lines.append(
+                f"{x['template']}: {len(x['repos'])} repos ("
+                + ", ".join(f"{v} by {k}" for k, v in sorted(how.items()))
+                + f"){'  TEMPLATE LAGS' if x['lags'] else ''}"
+            )
+            for row in x["files"]:
+                bits = []
+                if row["repo_newer"]:
+                    bits.append(
+                        f"newer in {len(row['repo_newer'])} repo(s) than the template"
+                    )
+                if row["template_newer"]:
+                    bits.append(f"older in {len(row['template_newer'])} repo(s)")
+                if row["missing"]:
+                    bits.append(f"missing from {len(row['missing'])} repo(s)")
+                lines.append(
+                    f"  {row['file']}: same in {row['same']}; " + "; ".join(bits)
+                )
+            lines.extend(
+                f"  render error {e['repo']}: {e['error']}" for e in x["render_errors"]
+            )
+        lines.append("repo kinds with no template:")
+        lines.extend(f"  {k['kind']}: {', '.join(k['repos'])}" for k in no_template)
+        return "\n".join(lines)
+
+    emit(args, data, text)
+    return 1 if data["lagging_templates"] or no_template else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser.
 
@@ -1623,6 +2630,64 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("repo")
     s.add_argument("--text", help="the new purpose (omit to confirm the current one)")
     s.set_defaults(func=cmd_purpose)
+
+    s = sub.add_parser("grep", parents=[common], help="rg across the repos on disk")
+    s.add_argument("pattern")
+    s.add_argument("--space", help="only this app space")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.add_argument("-i", "--ignore-case", action="store_true")
+    s.add_argument("-F", "--fixed-strings", action="store_true")
+    s.add_argument("-w", "--word", action="store_true")
+    s.add_argument("-l", "--files", action="store_true", help="files with matches only")
+    s.add_argument("--glob", action="append", help="rg --glob (repeatable)")
+    s.set_defaults(func=cmd_grep)
+
+    s = sub.add_parser(
+        "rebase", parents=[common], help="rebase main on origin/main after a fetch"
+    )
+    s.add_argument("repos", nargs="*", help="repo names or paths")
+    s.add_argument("--all", action="store_true", help="every repo on disk")
+    s.set_defaults(func=cmd_rebase)
+
+    s = sub.add_parser(
+        "create", parents=[common], help="create a repo from a template, on GitHub too"
+    )
+    s.add_argument("name")
+    s.add_argument("--space", required=True, help="the app space it belongs in")
+    s.add_argument("--template", required=True, help="the Copier template")
+    s.add_argument("--purpose", required=True, help="one line: what the repo is")
+    s.add_argument("--lifecycle", default="active")
+    s.add_argument(
+        "--dir", help="folder inside the space (default: the config's placement)"
+    )
+    s.add_argument("--dry-run", action="store_true", help="check and render only")
+    s.set_defaults(func=cmd_create)
+
+    s = sub.add_parser(
+        "deprecate",
+        parents=[common],
+        help="rename a repo deprecated-*, here and on GitHub",
+    )
+    s.add_argument("repo")
+    s.add_argument("--dry-run", action="store_true", help="check and plan only")
+    s.set_defaults(func=cmd_deprecate)
+
+    s = sub.add_parser(
+        "agents-sync",
+        parents=[common],
+        help="write the shared AGENTS.md block into every repo",
+    )
+    s.add_argument("--check", action="store_true", help="report repos out of date")
+    s.add_argument("--dry-run", action="store_true", help="same as --check")
+    s.add_argument("--repo", action="append", help="only this repo (repeatable)")
+    s.set_defaults(func=cmd_agents_sync)
+
+    s = sub.add_parser(
+        "templates-check",
+        parents=[common],
+        help="compare the templates with the repos built from them",
+    )
+    s.set_defaults(func=cmd_templates_check)
     return p
 
 
