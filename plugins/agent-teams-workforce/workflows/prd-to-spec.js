@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives an existing, scored Epic and its ready PRD all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini has the polyrepo-steward map the greenfield work units onto the repositories that exist and CREATE any repository the work needs that the project does not have — a needed repository is never returned as a human action, and work the steward cannot place fails the phase with the faults named. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget fails when an unmet deterministic check or constitutive criterion remains, and proceeds with the flags recorded when only competitive criteria remain; the script decides this, no agent. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives an existing, scored Epic and its ready PRD all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini has the polyrepo-steward map the greenfield work units onto the repositories that exist and CREATE any repository the work needs that the project does not have — a needed repository is never returned as a human action, and work the steward cannot place fails the phase with the faults named. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its loops with an unmet deterministic check or constitutive criterion does not end the run: the advantage-evaluator rules it — proceed, with every unmet criterion carried forward as a named residual, or one directed revision the gate judges again, after which proceed is the only ruling — and the phase fails closed only when no ruling returns. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'refuse, with a named reason, unless the Epic is open, scored, every Epic it depends on has finished elaboration, and it is ready or in_progress with no other owner; then mark it in_progress' },
     { title: 'PRD', detail: 'read the ready PRD the caller supplied — this run never writes to a PRD' },
@@ -417,8 +417,11 @@ let MAX_TOTAL_ATTEMPTS = attemptsFor(seedRepos.length)
 // Infinity and this never trips.
 const BUDGET_FLOOR = a.budgetFloor || 60000
 let attemptsSpent = 0
+// The attempt ceiling stops a run only when the CALLER pinned `maxTotalAttempts`: every
+// gate is bounded by its own loops and the ruling on its exhaustion, so a derived ceiling
+// would only end an attempt that is still making progress.
 const budgetStop = () => {
-  if (attemptsSpent >= MAX_TOTAL_ATTEMPTS) {
+  if (a.maxTotalAttempts && attemptsSpent >= MAX_TOTAL_ATTEMPTS) {
     return (
       `run attempt budget exhausted (${attemptsSpent}/${MAX_TOTAL_ATTEMPTS} phase attempts across ` +
       `${repos.length || seedRepos.length} repo(s)). Raise args.maxTotalAttempts to allow more.`
@@ -1247,12 +1250,12 @@ function phaseAccount(artifact) {
   return `the reviewer's rejection of ${artifact.unresolvedArtifacts.join(', ')} was never resolved`
 }
 
-// ── Loop exhaustion is decided in code ──────────────────────────────────────
+// ── Loop exhaustion is ruled on, not ended ────────────────────────────────────
 //
-// A spent retry budget always fails the phase. Both gates loop only on a failed
-// deterministic check or an unmet constitutive criterion — gate-enforce records competitive
-// criteria as flags and never sends them to a judge — so whatever is left unmet is a hard
-// stop, whatever wording the judge used for it.
+// Both gates loop only on a failed deterministic check or an unmet constitutive criterion —
+// gate-enforce records competitive criteria as flags and never sends them to a judge. When a
+// gate's loops are spent, the advantage-evaluator rules how the run continues
+// (`ruleExhaustedGate` below); the phase fails only when no ruling returns.
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 //
@@ -1466,7 +1469,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       if (account) feedback = `${feedback} Also: ${account}.`
     }
   }
-  // The budget is spent. See "Loop exhaustion is decided in code" above.
+  // The loops are spent. See "Loop exhaustion is ruled on, not ended" above.
   const exhaustedUnmet = lastVerdict
     ? (lastVerdict.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence }))
     : []
@@ -1480,15 +1483,139 @@ async function gateLoop({ gate, phaseName, criteria, checks, structural, escalat
       : exhaustedUnmet.length
         ? 'a constitutive criterion is still unmet'
         : 'the last verdict named no unmet criterion, so what remains cannot be classified'
-  log(`Gate ${gate} (${phaseName}): budget spent — ${why}; the phase fails`)
-  return {
-    ok: false,
-    reason: `gate ${gate} exceeded ${MAX_LOOPS} loops and ${why}`,
-    loopExhausted: true,
-    artifact: lastArtifact,
-    verdict: lastVerdict,
-    unmetCriteria: exhaustedUnmet,
+  log(`Gate ${gate} (${phaseName}): loops spent — ${why}; the advantage-evaluator rules how the run continues`)
+  return await ruleExhaustedGate({
+    gate,
+    phaseName,
+    criteria,
+    checks,
+    structural,
+    escalateTargets,
+    phaseFn,
+    gateView,
+    workflowName,
+    recordGate,
     attempts,
+    lastArtifact,
+    lastVerdict,
+    exhaustedUnmet,
+    why,
+    loops: MAX_LOOPS,
+  })
+}
+
+// ── AN EXHAUSTED GATE IS RULED ON; THE RUN CONTINUES ON THE RULING ────────────────
+//
+// Spending a gate's loops does not end the attempt. The exhausted gate goes to the
+// advantage-evaluator (gate-enforce `mode: 'exhaustion'`), which rules `proceed` — the
+// latest output stands and every unmet criterion travels on as a named residual — or
+// `revise` — the phase runs once more under a directive it states, and its gate judges the
+// result; a revision the gate still does not pass is ruled on again with `proceed` as the
+// only ruling. The run fails closed only when no ruling returns. Maker, gate judge and
+// decider are three different agents.
+async function ruleExhaustedGate(ctx) {
+  const { gate, phaseName, criteria, checks, structural, escalateTargets, phaseFn, gateView, workflowName, recordGate, attempts, why, loops } = ctx
+  let { lastArtifact, lastVerdict, exhaustedUnmet } = ctx
+  const unmetOf = (v) => (v ? (v.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [])
+  const ask = (final) =>
+    workflow('agent-teams-workforce:gate-enforce', {
+      mode: 'exhaustion',
+      gate,
+      phaseName,
+      criteria,
+      checks,
+      gateWorkflow: workflowName,
+      artifact: gateView ? gateView(lastArtifact) : lastArtifact,
+      attempts: attempts.map((x) => ({ attempt: x.attempt, feedback: x.feedback, unmetCriteria: x.unmetCriteria })),
+      unmetCriteria: exhaustedUnmet,
+      final,
+    })
+  const unruled = (reason) => {
+    recordGate(loops, lastVerdict, { verdict: 'loop-exhausted', terminal: 'decider-no-ruling' })
+    log(`Gate ${gate} (${phaseName}): ${reason} — failing closed`)
+    return {
+      ok: false,
+      reason: `gate ${gate} exhausted ${loops} loop(s) (${why}) and ${reason}`,
+      loopExhausted: true,
+      // A decider that died is a dispatch failure; one that answered without a ruling leaves
+      // the phase failed at its own gate.
+      ...(!ruled || ruled.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (ruled && ruled.dispatchFailures) || [] } : {}),
+      artifact: lastArtifact,
+      verdict: lastVerdict,
+      unmetCriteria: exhaustedUnmet,
+      attempts,
+    }
+  }
+  let ruled = await ask(false)
+  if (ruled && ruled.verdict === 'ruled' && ruled.ruling === 'revise') {
+    recordGate(loops + 1, lastVerdict, { verdict: 'decider-revise', terminal: null, directive: ruled.directive, decidedBy: ruled.decidedBy })
+    log(`Gate ${gate} (${phaseName}): the advantage-evaluator directs one revision — ${ruled.directive}`)
+    attemptsSpent++
+    const revised = await phaseFn(ruled.directive, {
+      attempt: loops + 1,
+      maxLoops: loops,
+      feedback: ruled.directive,
+      priorArtifact: lastArtifact,
+      priorVerdicts: attempts.map((x) => x.verdict).filter(Boolean),
+      unmetCriteria: exhaustedUnmet,
+      directedBy: ruled.decidedBy,
+    })
+    if (revised && revised.dispatchFailed === true) {
+      recordGate(loops + 1, null, { terminal: 'dispatch-failed', dispatchFailures: revised.dispatchFailures || [] })
+      return { ok: false, dispatchFailed: true, dispatchFailures: revised.dispatchFailures || [], reason: revised.reason || `the directed revision of ${phaseName} dispatched nothing`, artifact: revised }
+    }
+    if (revised && revised.deterministicFailure === true && revised.ok !== true) {
+      recordGate(loops + 1, null, { terminal: 'deterministic-failure', deterministicReason: revised.reason })
+      return { ok: false, deterministicFailure: true, reason: revised.reason || `${phaseName} reported a deterministic failure`, artifact: revised }
+    }
+    lastArtifact = revised
+    const structuralMiss =
+      workflowName === 'agent-teams-workforce:gate-constitutional' && structural && structural.requireOk === true && !(revised && revised.ok === true)
+    const verdict = structuralMiss
+      ? {
+          verdict: 'loop',
+          deterministic: true,
+          criteria: [{ criterion: 'the phase reports ok:true', met: false, evidence: `observed ok = ${JSON.stringify(revised ? revised.ok : undefined)}` }],
+          feedback: 'The directed revision did not report ok:true.',
+          flags: [],
+        }
+      : await workflow(workflowName, { gate, phaseName, criteria, checks, structural, artifact: gateView ? gateView(revised) : revised, escalateTargets })
+    if (!verdict || verdict.dispatchFailed === true || verdict.malformedVerdict === true) {
+      recordGate(loops + 1, verdict || null, { terminal: 'no-verdict' })
+      return { ok: false, dispatchFailed: true, dispatchFailures: (verdict && verdict.dispatchFailures) || [], reason: `gate ${gate} returned no usable verdict on the directed revision — the judge never ruled`, artifact: revised, verdict }
+    }
+    recordGate(loops + 1, verdict)
+    attempts.push({ attempt: loops + 1, verdict, feedback: ruled.directive, unmetCriteria: unmetOf(verdict) })
+    if (verdict.verdict === 'pass') {
+      log(`Gate ${gate} (${phaseName}): PASS on the directed revision`)
+      return { ok: true, artifact: revised, verdict }
+    }
+    if (verdict.verdict === 'escalate') {
+      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${verdict.escalateTo || 'upstream'} on the directed revision`)
+      return { ok: false, escalate: verdict.escalateTo || 'upstream', artifact: revised, verdict }
+    }
+    lastVerdict = verdict
+    exhaustedUnmet = unmetOf(verdict)
+    ruled = await ask(true)
+  }
+  if (!ruled || ruled.verdict !== 'ruled' || ruled.ruling !== 'proceed') {
+    return unruled('the advantage-evaluator returned no ruling')
+  }
+  recordGate(loops, lastVerdict, { verdict: 'decider-proceed', terminal: null, decidedBy: ruled.decidedBy, residuals: ruled.residuals, rationale: ruled.rationale })
+  log(`Gate ${gate} (${phaseName}): the advantage-evaluator ruled PROCEED — ${ruled.residuals.length} residual(s) carried forward`)
+  return {
+    ok: true,
+    artifact: lastArtifact,
+    verdict: {
+      ...(lastVerdict || {}),
+      verdict: 'pass',
+      ruledOnExhaustion: true,
+      decidedBy: ruled.decidedBy,
+      rationale: ruled.rationale,
+      residuals: ruled.residuals,
+      flags: [...(((lastVerdict && lastVerdict.flags) || [])), ...(ruled.flags || [])],
+    },
+    residuals: ruled.residuals,
   }
 }
 
@@ -1600,7 +1727,8 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
 // `in_progress` with its owner released, every sweep would elaborate it again at full cost to
 // the same result. So its `elaboration_state` is cleared — the state the sweep
 // and `elaboration-start` both leave alone, and the one a person hands back from by setting
-// `ready` — with a cause naming why, and the need itself reaches the human queue through the
+// `in_progress`, which resumes the run from its persisted checkpoint and artifacts rather than
+// starting it over — with a cause naming why, and the need itself reaches the human queue through the
 // handback. The write goes through the beads-contract CLI, the channel depscore uses.
 const HOLD_CAUSE = 'awaiting-human-action'
 /** How a person hands a held Epic back, named exactly: the state to set and the command that sets it. */
@@ -1608,7 +1736,7 @@ function restoreStep(epicId, after = 'what it names has been settled') {
   const elabmark = typeof a.artifactScript === 'string' && /\/artifactio\.py$/.test(a.artifactScript)
     ? `python3 ${a.artifactScript.replace(/artifactio\.py$/, 'elabmark.py')}`
     : 'elabmark.py (in the SDLC automation directory)'
-  return `After ${after}, set ${epicId} back to elaboration_state=ready: ${elabmark} --set=ready --bead=${epicId} --apply — the next elaboration sweep then picks it up.`
+  return `After ${after}, set ${epicId} to elaboration_state=in_progress: ${elabmark} --set=in_progress --bead=${epicId} --apply — the next elaboration sweep resumes it from its last persisted step, reusing every artifact it already accepted. Never set a partly-elaborated Epic to ready.`
 }
 async function holdForPerson(epicId) {
   const out = await settleAgent(
@@ -1623,7 +1751,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
   lifecycle.held = held
   log(
     held
-      ? `Epic ${epicId}: elaboration_state cleared (cause ${HOLD_CAUSE}) — sweeps leave it alone until a person sets it ready`
+      ? `Epic ${epicId}: elaboration_state cleared (cause ${HOLD_CAUSE}) — sweeps leave it alone until a person sets it in_progress, which resumes it where it stopped`
       : `Epic ${epicId}: could NOT be taken out of the sweep (${(out && out.output && out.output.error) || 'no result'}) — it stays in_progress and a sweep may elaborate it again`
   )
   return held
@@ -7146,7 +7274,7 @@ return {
   //
   // Elaboration is complete for an Epic once its Tasks exist: its elaboration_state becomes
   // `done`, the Tasks are the workable items, and it is elaborated again only when a person
-  // sets it back to `ready`. The Epic itself stays open until its work is released. So the
+  // sets it to `in_progress`, which resumes from its persisted artifacts. The Epic itself stays open until its work is released. So the
   // caller needs to know that Tasks actually landed, and `emissionOk`/`beadsEmitted` cannot
   // tell it — `beadsEmitted` counts every level together, so a run that wrote an Epic and a
   // Story and no Task at all reports 2 and looks like progress. An Epic whose elaboration

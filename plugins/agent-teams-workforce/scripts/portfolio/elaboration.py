@@ -222,7 +222,8 @@ def start(
         return _refusal(
             "epic-done",
             f"{epic_id} is {STATE_KEY}={DONE}: its Tasks are written and they are the "
-            f"workable items. A person sets {STATE_KEY}={READY} to elaborate it again",
+            f"workable items. A person sets {STATE_KEY}={IN_PROGRESS} to elaborate it again, "
+            "which resumes from its persisted artifacts",
             epic,
         )
     if state not in (READY, IN_PROGRESS):

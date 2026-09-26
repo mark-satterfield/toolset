@@ -164,7 +164,8 @@ Epic, and by the `wsjf-scoring` workflow, never by the readiness gate: `wsjf`,
 `elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
 `elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its
 start, under the run's owner token in `elaboration_state_owner`, and `done` when its Tasks are
-written; a person sets `ready`.
+written; a person sets `ready` when a new PRD is finished, and `in_progress` to hand back
+an Epic that was already started — never `ready`, which would start it over.
 
 **`elab_key` is the identity a re-elaboration matches on**, written once at the create and never
 recomputed. A Story is keyed by the repository it covers, a Task by its repository and the slug

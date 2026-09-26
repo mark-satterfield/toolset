@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-change',
   description:
-    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-deploy tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate that spends its retry budget fails, decided in code with no agent: a gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated. An assertion Green cannot pass as authored, or two assertions that contradict each other, returns the run to Red: the test-strategy-decider rules a contradiction first, and Red re-authors the losing or defective assertion, bounded. An integration failure is repaired through Green once and the checks run again; re-running them over an unchanged tree cannot change the result. A confirmed security finding at Gate 4 is fixed in the same run: the code goes back through Green with the adjudicated findings, then Integration and Adversarial run again over the fixed stack, bounded by maxSecurityRepairs. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the change in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The run builds against the BUILD CONTRACT on the Task and holds no architectural judgment of its own: the repository, the spec documents and sections, the acceptance criteria, the Definition of Done, the requirement ids and the SAD decision ids all arrive on the Task from elaboration, and reach every phase that writes code. A Task whose contract names no repository is refused at input, pointing back to elaboration. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
+    'Composite — provisions or changes infrastructure. Stitches the infra-intent front-end onto a TRIMMED shared build-and-deploy tail (Red, Green, Integration, Adversarial, Deploy) via mini workflows, with an independent gate between phases and Documentation as a parallel track. The Refactor phase is omitted on the infra path. Adversarial runs a TRIMMED lane (infra-security + dependency-CVE + data-exposure only) and is optional/skipped by default. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing agents never judge their own work. A gate only ever loops on a deterministic check or a constitutive criterion, because competitive criteria are recorded as flags and never adjudicated; a gate whose loops are spent does not end the run — the advantage-evaluator rules it: proceed, with every unmet criterion carried forward as a named residual, or one directed revision the gate judges again, after which proceed is the only ruling. The phase fails closed only when no ruling returns. An assertion Green cannot pass as authored, or two assertions that contradict each other, returns the run to Red: the test-strategy-decider rules a contradiction first, and Red re-authors the losing or defective assertion, bounded. An integration failure is repaired through Green once and the checks run again; re-running them over an unchanged tree cannot change the result. A confirmed security finding at Gate 4 is fixed in the same run: the code goes back through Green with the adjudicated findings, then Integration and Adversarial run again over the fixed stack, bounded by maxSecurityRepairs. DEPLOYING AND LANDING ARE DIFFERENT THINGS AND HAPPEN IN THAT ORDER. Deploy puts the change in AWS dev and smoke-checks the deployed endpoints, and it ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, bounded. No pull request exists or is required while that is happening; only afterwards does Settle land the work in git. Gate 5 asserts deployedToDev and smokePassed — a pull request is never deploy evidence. The run builds against the BUILD CONTRACT on the Task and holds no architectural judgment of its own: the repository, the spec documents and sections, the acceptance criteria, the Definition of Done, the requirement ids and the SAD decision ids all arrive on the Task from elaboration, and reach every phase that writes code. A Task whose contract names no repository is refused at input, pointing back to elaboration. The caller receives { ok, stage, beadId, headline, detailPath } plus the landing verdict; every phase artifact goes to the run journal.',
   phases: [
     { title: 'Workspace', detail: 'establishes the linked worktree every writing phase then operates in' },
     { title: 'Infra Intent' },
@@ -745,14 +745,15 @@ Name the BINDING test (the one whose expectation is correct), the LOSING test (t
   )
 }
 
-// ── Loop exhaustion is decided in code ────────────────────────────────────────
+// ── Loop exhaustion is ruled on, not ended ────────────────────────────────────
 //
 // A gate only loops on something that blocks: gate-enforce loops on a failed deterministic
 // check or an unmet criterion of the ones it adjudicates, and it adjudicates ONLY
-// constitutive criteria; every criterion of gate-constitutional is constitutive. So an
-// exhausted budget always means a blocking condition is still unmet, and the gate fails.
-// Reading the enforcer's criterion text back against the caller's list to find a
-// "competitive" remainder would let a paraphrased constitutive criterion proceed as a flag.
+// constitutive criteria; every criterion of gate-constitutional is constitutive. When the
+// loops are spent, the advantage-evaluator rules how the run continues
+// (`ruleExhaustedGate`); the phase fails only when no ruling returns. Reading the
+// enforcer's criterion text back against the caller's list to find a "competitive"
+// remainder would let a paraphrased constitutive criterion proceed as an unruled flag.
 
 // Run a phase, judge it at an INDEPENDENT gate, apply the verdict.
 //
@@ -937,7 +938,7 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     log(`Gate ${gate} (${phaseName}): LOOP ${attempt}/${loopBudget} — ${verdict.feedback}`)
     gateFeedback = verdict.feedback || ''
   }
-  // The budget is spent, and whatever remains unmet blocks (see "Loop exhaustion" above).
+  // The loops are spent. What remains unmet goes to the advantage-evaluator's ruling below.
   // Measured failures are named separately so a reader can tell a lost measurement from a
   // lost judgment.
   const exhaustedUnmet = lastVerdict
@@ -960,8 +961,8 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     constitutiveUnmet: judgedUnmet,
   })
   const blocking = [...new Set([...measuredFailures, ...judgedUnmet])]
-  log(`Gate ${gate} (${phaseName}): budget spent — ${blocking.length ? `still unmet: ${blocking.join('; ')}` : 'the final verdict itemised no unmet criterion'}`)
-  return {
+  log(`Gate ${gate} (${phaseName}): loops spent — ${blocking.length ? `still unmet: ${blocking.join('; ')}` : 'the final verdict itemised no unmet criterion'}; the advantage-evaluator rules how the run continues`)
+  const failure = {
     ok: false,
     reason: blocking.length
       ? `gate ${gate} exceeded ${loopBudget} loop(s) with ${blocking.length} blocking criterion/check(s) still unmet (${blocking.join('; ')})`
@@ -973,6 +974,125 @@ async function gateLoop({ gate, phaseName, criteria, checks, escalateTargets, ph
     verdict: lastVerdict,
     unmetCriteria: exhaustedUnmet,
     attempts,
+  }
+  return await ruleExhaustedGate({
+    gate,
+    phaseName,
+    route: lastRoute,
+    escalateTargets,
+    runPhase: (fb, ctx) => phaseFn([seed, fb].filter(Boolean).join('\n'), ctx),
+    record: rec,
+    attempts,
+    loops: loopBudget,
+    lastArtifact: artifact,
+    lastVerdict,
+    unmet: exhaustedUnmet,
+    failure,
+  })
+}
+
+// ── AN EXHAUSTED GATE IS RULED ON; THE RUN CONTINUES ON THE RULING ────────────────
+//
+// Spending a gate's loops does not end the attempt. The exhausted gate goes to the
+// advantage-evaluator (gate-enforce `mode: 'exhaustion'`), which rules `proceed` — the
+// latest output stands and every unmet criterion travels on as a named residual — or
+// `revise` — the phase runs once more under a directive it states, and its gate judges the
+// result; a revision the gate still does not pass is ruled on again with `proceed` as the
+// only ruling. The run fails closed only when no ruling returns: `failure`, the loop's own
+// account of what stayed unmet, is then returned with `dispatchFailed` set, because the
+// decider never ruled. Maker, gate judge and decider are three different agents.
+async function ruleExhaustedGate(ctx) {
+  const { gate, phaseName, route, escalateTargets, runPhase, record, attempts, loops, failure } = ctx
+  let { lastArtifact, lastVerdict, unmet } = ctx
+  const gateWorkflow = (route && route.gateWorkflow) || 'agent-teams-workforce:gate-enforce'
+  const unmetOf = (v) => (v ? (v.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [])
+  const ask = (final) =>
+    workflow('agent-teams-workforce:gate-enforce', {
+      mode: 'exhaustion',
+      gate,
+      phaseName,
+      criteria: route && route.criteria,
+      checks: route && route.checks,
+      gateWorkflow,
+      artifact: lastArtifact,
+      attempts: attempts.map((x) => ({ attempt: x.attempt, feedback: x.feedback, unmetCriteria: x.unmetCriteria })),
+      unmetCriteria: unmet,
+      final,
+    })
+  let ruled = await ask(false)
+  if (ruled && ruled.verdict === 'ruled' && ruled.ruling === 'revise') {
+    record(loops + 1, lastVerdict, { verdict: 'decider-revise', terminal: null, directive: ruled.directive, decidedBy: ruled.decidedBy })
+    log(`Gate ${gate} (${phaseName}): the advantage-evaluator directs one revision — ${ruled.directive}`)
+    const revised = await runPhase(ruled.directive, {
+      attempt: loops + 1,
+      maxLoops: loops,
+      feedback: ruled.directive,
+      priorArtifact: lastArtifact,
+      priorVerdicts: attempts.map((x) => x.verdict).filter(Boolean),
+      unmetCriteria: unmet,
+      directedBy: ruled.decidedBy,
+    })
+    if (revised && revised.dispatchFailed === true) {
+      record(loops + 1, null, { terminal: 'dispatch-failed', dispatchFailures: revised.dispatchFailures || [] })
+      return { ok: false, dispatchFailed: true, dispatchFailures: revised.dispatchFailures || [], reason: revised.reason || `the directed revision of ${phaseName} dispatched nothing`, artifact: revised }
+    }
+    lastArtifact = revised
+    const verdict = await workflow(gateWorkflow, {
+      gate,
+      phaseName,
+      criteria: route && route.criteria,
+      checks: route && route.checks,
+      artifact: revised,
+      escalateTargets,
+    })
+    if (!verdict || verdict.dispatchFailed === true || verdict.malformedVerdict === true) {
+      record(loops + 1, verdict || null, { terminal: 'no-verdict' })
+      return { ok: false, dispatchFailed: true, dispatchFailures: (verdict && verdict.dispatchFailures) || [], reason: `gate ${gate} returned no usable verdict on the directed revision — the judge never ruled`, artifact: revised, verdict }
+    }
+    record(loops + 1, verdict)
+    attempts.push({ attempt: loops + 1, verdict, feedback: ruled.directive, unmetCriteria: unmetOf(verdict) })
+    if (verdict.verdict === 'pass') {
+      log(`Gate ${gate} (${phaseName}): PASS on the directed revision`)
+      return { ok: true, artifact: revised, verdict }
+    }
+    if (verdict.verdict === 'escalate') {
+      const escalateTo = verdict.escalateTo || (Array.isArray(escalateTargets) && escalateTargets[0]) || 'upstream'
+      log(`Gate ${gate} (${phaseName}): ESCALATE -> ${escalateTo} on the directed revision`)
+      return { ok: false, escalate: escalateTo, reason: verdict.feedback ? `escalated to ${escalateTo}: ${verdict.feedback}` : undefined, artifact: revised, verdict }
+    }
+    lastVerdict = verdict
+    unmet = unmetOf(verdict)
+    ruled = await ask(true)
+  }
+  if (!ruled || ruled.verdict !== 'ruled' || ruled.ruling !== 'proceed') {
+    record(loops, lastVerdict, { verdict: 'loop-exhausted', terminal: 'decider-no-ruling' })
+    log(`Gate ${gate} (${phaseName}): the advantage-evaluator returned no ruling — failing closed`)
+    return {
+      ...failure,
+      reason: `${failure.reason}, and the advantage-evaluator returned no ruling`,
+      // A decider that died is a dispatch failure; one that answered without a ruling leaves
+      // the phase failed at its own gate.
+      ...(!ruled || ruled.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (ruled && ruled.dispatchFailures) || [] } : {}),
+      artifact: lastArtifact,
+      verdict: lastVerdict,
+      unmetCriteria: unmet,
+    }
+  }
+  record(loops, lastVerdict, { verdict: 'decider-proceed', terminal: null, decidedBy: ruled.decidedBy, residuals: ruled.residuals, rationale: ruled.rationale })
+  log(`Gate ${gate} (${phaseName}): the advantage-evaluator ruled PROCEED — ${ruled.residuals.length} residual(s) carried forward`)
+  return {
+    ok: true,
+    artifact: lastArtifact,
+    verdict: {
+      ...(lastVerdict || {}),
+      verdict: 'pass',
+      ruledOnExhaustion: true,
+      decidedBy: ruled.decidedBy,
+      rationale: ruled.rationale,
+      residuals: ruled.residuals,
+      flags: [...((lastVerdict && lastVerdict.flags) || []), ...(ruled.flags || [])],
+    },
+    residuals: ruled.residuals,
   }
 }
 

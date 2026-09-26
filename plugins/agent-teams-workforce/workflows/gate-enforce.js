@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-enforce',
   description:
-    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — can never block, so it is recorded as a flag and never adjudicated. Only CONSTITUTIVE criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate; a gate with no constitutive criterion passes on its checks with no session at all. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. A blocking verdict that names no reason is asked again once with the defect named, and a second reasonless one comes back as `malformedVerdict`, never as a finding against the work. Enforces segregation of duties: the judge never produced the work it judges.',
+    'Reusable phase gate. DETERMINISTIC checks are evaluated first, directly against the artifact and with no model turn: a phase that failed one is looped immediately with the observed value, and a gate whose criteria are all mechanical passes without adjudication. Every judgment criterion carries a CLASS: a `constitutive` one is a hard stop, while a `competitive` one — the default for any criterion nobody deliberately marked otherwise — can never block, so it is recorded as a flag and never adjudicated. Only CONSTITUTIVE criteria go to an independent phase-gate-enforcer, told which checks are already settled so it cannot re-open them, and it returns pass / loop / escalate; a gate with no constitutive criterion passes on its checks with no session at all. Every verdict carries `deterministicChecks`, so a caller can tell a criterion that was MEASURED against the artifact from one that was argued about. A blocking verdict that names no reason is asked again once with the defect named, and a second reasonless one comes back as `malformedVerdict`, never as a finding against the work. With `mode: \'exhaustion\'` it takes a gate whose loops are spent to the advantage-evaluator, which rules proceed (every unmet criterion carried forward as a named residual) or one directed revision; no ruling fails closed as a dispatch failure. Enforces segregation of duties: the judge never produced the work it judges, and the decider neither produced nor judged it.',
   phases: [{ title: 'Gate', detail: 'phase-gate-enforcer adjudicates the artifact' }],
 }
 // ── EVERY DISPATCH IS SETTLED ────────────────────────────────────────────────────
@@ -381,6 +381,115 @@ function capForPrompt(value, depth) {
 }
 const artifactText =
   typeof a.artifact === 'string' ? capForPrompt(a.artifact, 0) : JSON.stringify(capForPrompt(a.artifact ?? {}, 0), null, 2)
+
+// ── AN EXHAUSTED GATE IS RULED ON, NOT ENDED ──────────────────────────────────
+//
+// `mode: 'exhaustion'` is how a composite whose gate loop has spent its loops reaches the
+// pipeline's decider for that situation, the advantage-evaluator. The attempt continues on
+// its ruling:
+//
+//   proceed  the phase's latest output stands and the attempt continues from it; every
+//            criterion still unmet is carried forward as a named residual (a flag), with
+//            the mitigation the decider states.
+//   revise   the phase runs ONCE more under the directive the decider states — a changed
+//            instruction, never a blind re-run — and its gate judges the result. When
+//            `final` is set (the directed revision already ran) the only ruling offered is
+//            proceed, so every exhausted gate ends in a ruling rather than a spent budget.
+//
+// The decider did not produce the work and did not judge it at the gate: maker, checker and
+// decider stay three different agents. When no ruling returns, the gate fails closed: the
+// caller receives `dispatchFailed` and reports the phase as unruled, never as passed.
+//
+// args (this mode): { mode: 'exhaustion', gate, phaseName, criteria, checks, artifact,
+//   attempts: [{attempt, feedback, unmetCriteria}], unmetCriteria: [{criterion, evidence}],
+//   final?: boolean, gateWorkflow?: string }
+if (a.mode === 'exhaustion') {
+  phase('Gate')
+  const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
+  const history = (Array.isArray(a.attempts) ? a.attempts : [])
+    .map((x, i) => {
+      const unmetList = (Array.isArray(x && x.unmetCriteria) ? x.unmetCriteria : [])
+        .map((u) => `    - ${u.criterion}${u.evidence ? ` — ${u.evidence}` : ''}`)
+        .join('\n')
+      return `  Loop ${(x && x.attempt) || i + 1}: feedback given — ${String((x && x.feedback) || '(none)').slice(0, 1500)}${unmetList ? `\n${unmetList}` : ''}`
+    })
+    .join('\n')
+  const unmetNow = (Array.isArray(a.unmetCriteria) ? a.unmetCriteria : [])
+    .map((u) => `- ${u.criterion}${u.evidence ? ` — ${u.evidence}` : ''}`)
+    .join('\n')
+  const criteriaText = (Array.isArray(a.criteria) ? a.criteria : [])
+    .map((c, i) => `${i + 1}. ${typeof c === 'string' ? c : (c && c.text) || ''}${c && c.class ? ` [${c.class}]` : ''}`)
+    .join('\n')
+  const final = a.final === true
+  const rulings = final ? ['proceed'] : ['proceed', 'revise']
+  const ruling = await settleAgent(
+    `You are the advantage-evaluator, ruling on an EXHAUSTED GATE. You did not produce this work and you did not judge it at the gate; the phase's makers produced it and the gate's judge looped it until its loops were spent. An exhausted gate does not end the run: your ruling decides how the run continues.
+
+${where}${a.gateWorkflow ? ` — judged by ${a.gateWorkflow}` : ''}
+
+The gate's criteria:
+${criteriaText || '(none recorded)'}
+
+What the loops asked for, in order:
+${history || '  (no loop history recorded)'}
+
+Still unmet on the latest output:
+${unmetNow || '- (the last verdict itemised no unmet criterion)'}
+
+The phase's latest output:
+${artifactText}
+
+Rule exactly one of: ${rulings.map((r) => `"${r}"`).join(', ')}.
+- "proceed": the latest output stands and the run continues from it. For EVERY criterion still unmet, return one \`residuals\` entry naming the criterion, why proceeding is acceptable or what carries the risk forward, and the mitigation the downstream phases must honour. A residual is recorded and travels with the work; it is never silently dropped.${final ? '' : `
+- "revise": the phase runs ONCE more under your \`directive\`. Rule this only when you can state a concrete, changed instruction — what the makers must do differently from every loop above — that you expect to close the unmet criteria. A directive that repeats earlier loop feedback is not a revision.`}
+${final ? 'The directed revision has already run and the gate judged it; the only ruling left is proceed, with every remaining unmet criterion recorded as a residual.\n' : ''}
+State your rationale from the evidence above. Separate what the evidence shows from what you infer. Do not modify any artifact and do not dispatch any work.`,
+    {
+      label: `exhaustion:${a.gate || a.phaseName || 'phase'}`,
+      phase: 'Gate',
+      effort: 'high',
+      agentType: 'agent-teams-workforce:advantage-evaluator',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ruling', 'rationale', 'residuals'],
+        properties: {
+          ruling: { type: 'string', enum: rulings },
+          rationale: { type: 'string' },
+          directive: { type: 'string' },
+          residuals: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['criterion', 'reason', 'mitigation'],
+              properties: {
+                criterion: { type: 'string' },
+                reason: { type: 'string' },
+                mitigation: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    }
+  )
+  if (!ruling || !rulings.includes(ruling.ruling) || (ruling.ruling === 'revise' && !String(ruling.directive || '').trim())) {
+    const why = `${where}: the advantage-evaluator returned no usable ruling on the exhausted gate — the run fails closed at this gate rather than proceeding unruled`
+    log(why)
+    return { ...failDispatch(why, 'Gate'), exhaustionRuling: null }
+  }
+  log(`${where}: exhausted gate ruled ${ruling.ruling.toUpperCase()} by the advantage-evaluator — ${String(ruling.rationale).slice(0, 400)}`)
+  return {
+    verdict: 'ruled',
+    ruling: ruling.ruling,
+    directive: ruling.ruling === 'revise' ? String(ruling.directive).trim() : null,
+    rationale: ruling.rationale,
+    residuals: ruling.residuals || [],
+    decidedBy: 'agent-teams-workforce:advantage-evaluator',
+    flags: (ruling.residuals || []).map((r) => `residual accepted on exhausted gate ${a.gate || '?'}: ${r.criterion} — ${r.mitigation}`),
+  }
+}
 
 // ── Deterministic checks, evaluated BEFORE any model turn ─────────────────────
 //

@@ -76,7 +76,8 @@ Reason: [one line — why, whichever way it went]
 
 No metadata, no comments, no labels. It reads and it rules. `elaboration_state` is written
 by `prd-to-spec` — `in_progress` at its start, `done` when its Tasks are written — and by a
-person setting `ready`; writing it from a readiness check would let a gate claim progress no
+person: `ready` when a new PRD is finished, `in_progress` to hand back an Epic that was
+already started, so it resumes from its persisted artifacts rather than starting over; writing it from a readiness check would let a gate claim progress no
 run made.
 
 ## Recipes

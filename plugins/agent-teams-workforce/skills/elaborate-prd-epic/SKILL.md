@@ -47,7 +47,7 @@ refuses, with `stage: epic-lifecycle` and a `refusal` naming the code, when:
 | `epic-unscored` | no `wsjf_ubv`, `wsjf_tc` or `wsjf` | Run the `dependency-assessment` and `wsjf-scoring` workflows for it |
 | `upstream-not-elaborated` | an Epic it depends on is not `elaboration_state=done` | Elaborate that Epic first |
 | `epic-authoring` | no `elaboration_state` | Set `elaboration_state=ready` when the PRD is finished |
-| `epic-done` | already `done` | A person sets it back to `ready` to elaborate again |
+| `epic-done` | already `done` | A person sets it to `in_progress` to elaborate again; the run resumes from its persisted artifacts |
 | `epic-owned` | `in_progress` under another run's owner token | Pass `reclaim: true` only once that run is known not to be live |
 
 Report a refusal verbatim and stop. Otherwise the run marks the Epic `in_progress`, and

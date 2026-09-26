@@ -1,10 +1,6 @@
-// ssbd-75nr — loop exhaustion HALTED instead of ruling, and ssbd-rhfx — composites
-// returned their whole state to the caller.
-//
-// Exhaustion is decided in code: whatever the final verdict still names as unmet blocks
-// the run, which fails at the gate's stage and names the unmet criteria. No agent is
-// consulted to rule the remainder competitive. The trimmed return (ssbd-rhfx) is pinned on
-// that failing path.
+// An exhausted gate is ruled on by the advantage-evaluator (gate-enforce `mode:
+// 'exhaustion'`) and the run continues on its ruling; it fails closed only when no ruling
+// returns. The trimmed return (ssbd-rhfx) is pinned on the ruled path.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -29,7 +25,7 @@ const LOOP_VERDICT = {
 const RED_ARTIFACT = { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
 
 /** Exhaust the Red gate of bug-fix; every later gate is scripted to pass. */
-async function runToExhaustion() {
+async function runToExhaustion(ruling = { verdict: 'ruled', ruling: 'proceed', rationale: 'AC5 residual is covered downstream', residuals: [{ criterion: 'Every acceptance criterion is covered', reason: 'two clauses are exercised by integration', mitigation: 'integration suite asserts AC5' }], decidedBy: 'agent-teams-workforce:advantage-evaluator', flags: ['residual accepted on exhausted gate 2a: Every acceptance criterion is covered — integration suite asserts AC5'] }) {
   return runWorkflowScript(BUG_FIX, {
     args: { maxLoops: 2, bead: { id: 'ssbd-97as', title: 'settings 500', description: 'd', repoPath: '/repos/chassis' } },
     agentImpl: (call) => {
@@ -44,6 +40,7 @@ async function runToExhaustion() {
       if (call.name === 'agent-teams-workforce:bug-triage') {
         return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
       }
+      if (call.name.endsWith('gate-enforce') && call.payload.mode === 'exhaustion') return ruling
       if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
         // Only the Red gate misbehaves; every later gate passes so the run can finish.
         return call.payload.gate === '2a' ? LOOP_VERDICT : { verdict: 'pass', criteria: [], flags: [] }
@@ -58,17 +55,22 @@ async function runToExhaustion() {
   })
 }
 
-test('an exhausted gate fails the run at its stage, naming what is still unmet', async () => {
+test('an exhausted gate is ruled on and the run continues on a proceed ruling', async () => {
   const { result, calls } = await runToExhaustion()
+  const ruled = calls.filter((c) => c.kind === 'workflow' && c.payload && c.payload.mode === 'exhaustion')
+  assert.equal(ruled.length, 1, 'the exhausted gate goes to the decider exactly once')
+  assert.equal(ruled[0].payload.gate, '2a')
+  assert.deepEqual(ruled[0].payload.unmetCriteria.map((u) => u.criterion), ['Every acceptance criterion is covered'])
+  assert.notEqual(result.stage, 'red', 'the attempt did not end at the exhausted gate')
+  assert.equal(result.deployedToDev, true)
+})
+
+test('an exhausted gate with no ruling fails closed, naming what is still unmet', async () => {
+  const { result } = await runToExhaustion(null)
   assert.equal(result.ok, false)
-  assert.equal(result.stage, 'red')
-  assert.equal(result.deployedToDev, false)
+  assert.equal(result.stage, 'agent-dispatch-failed')
   assert.match(result.headline, /gate 2a exceeded 2 loop\(s\)/)
-  assert.match(result.headline, /Every acceptance criterion is covered/, 'the headline names the unmet criterion')
-  assert.ok(
-    !calls.some((c) => c.kind === 'agent' && /advantage/.test(String(c.label))),
-    'exhaustion is decided in code — no agent rules on it',
-  )
+  assert.match(result.headline, /no ruling/)
 })
 
 test('the caller receives a headline and a journal path, never the phase artifacts', async () => {

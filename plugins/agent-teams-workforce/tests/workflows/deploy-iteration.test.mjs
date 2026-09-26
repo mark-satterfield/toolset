@@ -317,9 +317,10 @@ test('the field names the dashboard reads do not move', async () => {
 
 // ── A MEASURED FACT IS NOT OPEN TO A RULING ──────────────────────────────────
 //
-// Retry exhaustion is decided in code: no advantage-evaluator is consulted, and every
-// unmet criterion blocks. A measured check that failed is named as a measured failure, and
-// no ruling can turn it into ok:true.
+// An exhausted gate goes to the advantage-evaluator through gate-enforce's exhaustion mode.
+// Here the scripted gate answers that call with a verdict rather than a ruling, which fails
+// closed: a measured check that failed is named as a measured failure, and nothing turns it
+// into ok:true.
 
 /** Exhaust Gate 5 of bug-fix and let `ruling` answer the advantage-evaluator. */
 async function runToGate5Exhaustion({ unmetCriterion, ruling, deterministicChecks }) {
@@ -444,7 +445,7 @@ test('the deterministic-failure log names the gate AND the phase', async () => {
     deterministicChecks: [{ criterion: DEPLOYED_CHECK_LABEL, met: false, evidence: 'observed deployedToDev = false' }],
   })
 
-  const line = (logs || []).find((l) => /Gate 5 .*budget spent/.test(l))
+  const line = (logs || []).find((l) => /Gate 5 .*loops spent/.test(l))
   assert.ok(line, 'the exhaustion path must log the still-unmet checks')
   assert.doesNotMatch(line, /\{PHASE\}/, 'the placeholder must be interpolated, not printed')
   assert.match(line, /Gate 5 \(Deploy to dev \(iteration 1\/3\)\)/, 'the real phase name must appear')
