@@ -1,9 +1,8 @@
 // Phase-level checkpointing behaviours that still exist.
 //
-// bug-fix and task-to-deploy write and resume their own checkpoints. prd-to-spec no longer
-// writes one: its makers save their artifacts into the Epic working directory, the host passes
-// the freshness plan in as `args.resume`, and its checkpoint loader is kept only as a migration
-// reader for directories written before that. What is pinned here is bug-fix resuming from its checkpoint, and every checkpointing composite
+// bug-fix and task-to-deploy write and resume their own checkpoints. prd-to-spec has none: it
+// resumes from the Epic's steps-completed file, which the host reads into `args.resume`. What
+// is pinned here is bug-fix resuming from its checkpoint, and every checkpointing composite
 // declaring a CHECKPOINT_SEMANTICS counter decoupled from the plugin version.
 
 import test from 'node:test'
@@ -11,8 +10,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { beadWriter, lifecycleRunner, TEST_EPIC } from './helpers/bead-writer.mjs'
+import { runWorkflowScript, workflowCalls } from './helpers/run-workflow.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -32,85 +30,11 @@ const PLUGIN_VERSION = JSON.parse(
 ).version
 
 /** The phase-semantics version a composite declares. Hand-bumped; never the plugin's. */
-const CHECKPOINTING_COMPOSITES = ['prd-to-spec.js', 'bug-fix.js', 'task-to-deploy.js']
+const CHECKPOINTING_COMPOSITES = ['bug-fix.js', 'task-to-deploy.js']
 const semanticsOf = (file) => {
   const src = fs.readFileSync(path.join(WF, file), 'utf8')
   const m = src.match(/const CHECKPOINT_SEMANTICS = '([^']*)'/)
   return m ? m[1] : null
-}
-
-// ── prd-to-spec fixture (mirrors standing-rulings' minimal happy path) ─────────
-
-function compositeWorkflows({ failSpec = false, scopingRepos = ['/repos/alpha'], newRepos = [] } = {}) {
-  return (call) => {
-    const name = String(call.name || '')
-    if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
-    if (name.endsWith('prd-reconciliation')) {
-      return {
-        ok: true,
-        requirements: [{ id: 'R1', requirement: 'r', status: 'absent', evidence: ['f.py:1'], surface: 'service', repos: scopingRepos }],
-        conformsCount: 0, contradictsCount: 0, absentCount: 1,
-        removalWork: [], reuseWork: [],
-        repos: scopingRepos, existingRepos: [], spansMultipleRepos: scopingRepos.length > 1,
-        uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
-      }
-    }
-    if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'validated-body' }, findings: [] }
-    if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
-    if (name.endsWith('repo-scoping')) {
-      return { ok: true, repos: scopingRepos, placements: [], newRepos, requiredHumanActions: newRepos.length ? ['create it via the polyrepo-steward'] : [], reclassified: [], blocked: [], spanVerified: true }
-    }
-    if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
-    if (name.endsWith('spec-authoring')) {
-      if (failSpec) return { ok: false, reason: 'spec gate failed' }
-      return { ok: true, story: { key: 'S1', type: 'story', title: 'S', description: 'd', repoPath: scopingRepos[0], parentEpicKey: 'E1' }, outOfRepoFindings: [] }
-    }
-    if (name.endsWith('task-decomposition')) {
-      return { ok: true, beadSet: [{ key: 'T1', type: 'task', parentStoryId: 'S1', title: 't', description: 'd', acceptanceCriteria: ['a'] }] }
-    }
-    return null
-  }
-}
-
-const PRD = { id: 'P1', title: 'P', body: 'R1. thing' }
-
-async function runP2S({ onDisk = null, workflowOpts = {}, args = {} } = {}) {
-  const writer = beadWriter()
-  const lifecycle = lifecycleRunner()
-  const saves = []
-  const result = await runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
-    args: { prd: PRD, repoPath: '/repos/alpha', epic: TEST_EPIC, ...args },
-    workflowImpl: compositeWorkflows(workflowOpts),
-    agentImpl: (call) => {
-      const ran = lifecycle(call)
-      if (ran) return ran
-      const l = String(call.label)
-      // prd-to-spec reads the checkpoint, its write-ahead copy and the standing rulings in
-      // ONE session — a fresh agent session costs its session start, not its work. The
-      // RETIREMENT, by contrast, gets its own session on purpose: folding it into the
-      // journal write handed one agent a verbatim-JSON errand and a JSONL errand at once,
-      // and it blended the two contracts and corrupted real checkpoints.
-      if (l === 'resolve:run-inputs') {
-        return {
-          files: [...(onDisk || []), { name: 'rulings', found: false, content: '' }],
-        }
-      }
-      if (l === 'checkpoint:retire') return { retired: true }
-      if (l.startsWith('checkpoint:save:')) {
-        saves.push(call)
-        return { ok: true }
-      }
-      if (l === 'triage:architecture-needed') return { needed: false, reason: 'no decision', settledBy: 'test' }
-      if (l === 'ledger:persist') return { written: true, path: '/journal', retired: true }
-      return writer(call)
-    },
-  })
-  return { ...result, saves }
-}
-
-/** True when the run retired its checkpoint. */
-function retired(calls) {
-  return agentCalls(calls, 'checkpoint:retire').length > 0
 }
 
 // ── bug-fix ───────────────────────────────────────────────────────────────────

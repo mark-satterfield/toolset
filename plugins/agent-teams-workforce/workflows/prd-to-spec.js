@@ -321,8 +321,7 @@ async function settleAgent(prompt, opts) {
 //   dependencies?: string[],      // upstream contracts/schemas/libs the PRD assumes — fed to reconciliation
 //   maxLoops?: number,            // gate retry-in-phase bound (default 2)
 //   runInputs?: { files: [{ name:string, found:boolean, content?:string }] },
-//                                 // every file in the checkpoint DIRECTORY by bare filename,
-//                                 // the run's two input files, already read by the caller.
+//                                 // the standing-rulings file, already read by the caller.
 //                                 // Supplying them skips the `resolve:run-inputs` session,
 //                                 // which exists only because scripts cannot open a file.
 //   skipArchitecture?: boolean,   // force the Architecture phase on (false) or off (true), skipping triage
@@ -440,19 +439,13 @@ const budgetStop = () => {
 // established before the run — so the caller's PRD identifies it, and every return names
 // it under the same key the code-writing composites use.
 //
-// IT IS ALSO THE CHECKPOINT SUBJECT, WHICH IS WHY THE EPIC ARM MATTERS. `cpInit` refuses a
-// null subject and checkpointing is then off for the WHOLE run: every phase runs at full
-// cost and nothing can be resumed. An Epic-dispatched run supplies no PRD argument at all,
-// and the caller builds its epic argument as `{id, title}` — no `key` — so reading only
-// `a.epic.key` resolved the subject to null and silently disabled checkpointing on every
-// such run. A live run got six phases and 151 minutes into elaboration with no checkpoint
-// directory written, while the PRD-dispatched Epics beside it had one.
+// It is also the Epic key the artifact working directory and the steps-completed file are
+// filed under, which is why the Epic arm matters: an Epic-dispatched run supplies no PRD.
 //
 // So the Epic arm reads the same three fields the rest of this file already reads for the
 // Epic's identity (`a.epic.id || a.epic.beadId`, the pair `epicBeadId` is built from, plus
 // `key`). PRD id and PRD path keep their precedence, and `key` keeps its precedence inside
-// the Epic arm, so no PRD-dispatched run's checkpoint directory name changes and every
-// existing checkpoint stays addressable.
+// the Epic arm.
 const subjectId =
   (a.prd && (a.prd.id || a.prd.path)) ||
   (a.epic && typeof a.epic === 'object' ? a.epic.key || a.epic.id || a.epic.beadId || null : null) ||
@@ -620,422 +613,11 @@ function persistRun(outcome) {
 }
 
 
-// ── Legacy phase checkpoints: a MIGRATION READER ─────────────────────────────────
-// Resume state is the Epic's artifact files (see ARTIFACTS below): each maker saves the
-// document it authored, the artifact recorder records its hashes, and the host passes the
-// freshness plan in as `args.resume`. The per-subject directory under
-// .claude/workflow-runs/checkpoints/ predates that. It is READ when no `args.resume` is
-// supplied, so a subject checkpointed under the old layout can still resume, and it is never
-// written: nothing in this composite writes, rewrites or retires a checkpoint file.
-//
-// STALENESS GUARD for those files: one is honoured only when it was written against the same
-// PRD text and this composite's PHASE SEMANTICS version. A workflow script has no filesystem,
-// so one effort-low reader lists the directory together with the standing rulings.
-// CHECKPOINT SEMANTICS — bumped BY HAND, and only for a real change.
-//
-// Bump this when THIS composite's phase sequence, phase names, artifact shapes, or gate
-// contracts change — anything that makes a checkpoint written by the old script mean
-// something different to the new one. A plugin release is NOT such a change. Neither is
-// a skill edit, an agent-prompt rewording, nor a bump made for one of the other
-// composites. It is a plain monotonic counter, not a semver, because it tracks phase
-// semantics and not releases.
-//
-// It used to be pinned to the plugin version, and the plugin bumps constantly — 23
-// versions sit in the local cache. Every one of those releases discarded EVERY
-// checkpoint in EVERY composite: 6.11.0 was a markdown edit to one skill's SKILL.md and
-// it invalidated every resumable run in all three. That is what made a token-limit death
-// cost a full cold start, and cold-starting a 100-minute composite is exactly what makes
-// the next token-limit death likelier. On one Epic that loop cost 12 dispatches and
-// 176.5 minutes of session time for 1 success. Decoupling the two breaks the loop.
-//
-// '1' -> '2': PRD Reconciliation was REMOVED from the front of this composite and moved
-// inside the per-repo Spec Authoring fan-out. That changes the phase sequence, the phase
-// KEYS (the front-end `reconciliation` key is gone and a per-repo `recon:<repo>` key
-// exists in its place), and what several later phases were derived from — architecture and
-// the TRD no longer read a material inventory at all. A version-1 checkpoint therefore
-// carries a `validation`, `architecture` or `trd-authoring` result that WAS derived from a
-// deployed-state inventory, and resuming onto it would silently reinstate the arrangement
-// this bump exists to retire. The inputHash is over the PRD text, which did not change, so
-// it would not catch any of that; the semantics version is the guard that does, and
-// cpJudge rejects the whole file by name and reason rather than reusing part of it.
-//
-// '2' -> '3': THE CHECKPOINT IS NO LONGER ONE FILE. It is a DIRECTORY — a small
-// `envelope.json` naming the run and the phase files it owns, plus one write-once
-// `<n>-<key>.json` per completed phase. The layout, the paths, and the reader contract
-// all changed, so nothing written under '2' can be read here at all.
-//
-// The reason is a measured data-loss mechanism, not tidiness. The single file was
-// rewritten WHOLE on every save, so the Nth save handed a model all N phases to retype —
-// quadratic, about eight times a run. On 2026-09-08 one of those saves was handed 104,689
-// characters, spent 372 seconds generating them, was refused by the Write tool ("File has
-// not been read yet"), improvised a shell heredoc around the refusal, and left 26,852
-// characters on disk. A quarter of a checkpoint still PARSES, so the loader honoured it
-// and the next dispatch resumed onto a phase result missing its tail. Three checkpoints
-// on disk were destroyed this way.
-//
-// Per-phase files remove the mechanism rather than making it louder:
-//   - each save writes ONE phase, not the accumulated total;
-//   - a phase file is written ONCE and never rewritten, so it never meets the
-//     read-before-overwrite refusal that caused the improvisation;
-//   - a torn or short phase file costs THAT PHASE, not the run, because the envelope
-//     names what it owns and a file that fails its length check is dropped by name.
-const CHECKPOINT_SEMANTICS = '4'
-const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
-// HOW LONG A LEASE IS BELIEVED. A checkpoint is re-written after every phase, so
-// a lease older than this belongs to a run that is not writing any more — dead,
-// killed, or quit out from under. Generous on purpose: the cost of waiting out a
-// stale lease is one run that skips its checkpoint, and the cost of ignoring a
-// LIVE one is two runs overwriting each other's envelope in the same subject-keyed
-// directory.
-const CP_LEASE_STALE_MS = 45 * 60 * 1000
-// Identifies THIS run to the checkpoint, and the clock the lease is denominated in.
-//
-// NEITHER IS COMPUTABLE HERE, and that is the whole reason this block exists. The runner
-// REFUSES a script that reads the wall clock or draws a random number: it rejects the
-// whole file statically, before compiling it, because either would break resume. That
-// refusal stops this composite at load, with zero agents run and no phase reached, if the
-// lease is minted from either of those two things.
-//
-// So both values are OBSERVED rather than computed. The run-inputs reader is a real
-// session with a shell, it already runs before the checkpoint is applied, and it now
-// reports the epoch milliseconds it read and a nonce it drew alongside the files. The
-// clock is then REFRESHED by every checkpoint writer, which is also a real session, so
-// `lease.at` is at worst one phase behind the truth rather than frozen at run start.
-//
-// UNKNOWN IS NOT ZERO. Until some session has reported a clock, this run publishes NO
-// lease and treats ANY foreign lease as live — see cpLiveLease. That is the direction the
-// lease exists to protect: refusing a checkpoint costs one unresumable run, clobbering a
-// live one costs two.
-let cpRunId = null
-let cpClockMs = null
-/**
- * Adopt the clock and the run nonce a real session reported.
- *
- * @param nowMs epoch milliseconds the session read, or anything unusable.
- * @param nonce a per-run string the session drew, or anything unusable.
- */
-function cpAdoptClock(nowMs, nonce) {
-  const t = typeof nowMs === 'string' ? Number(nowMs) : nowMs
-  if (Number.isFinite(t) && t > 0) cpClockMs = Math.floor(t)
-  if (cpRunId === null && hasText(nonce)) {
-    cpRunId = String(nonce).replace(/[^A-Za-z0-9._-]+/g, '').slice(0, 40) || null
-  }
-  // Last resort only. A clock-derived id collides only between two runs that started in
-  // the same millisecond, which is a far smaller hole than publishing no lease at all.
-  if (cpRunId === null && cpClockMs !== null) cpRunId = `t${cpClockMs.toString(36)}`
-}
-const cp = {
-  active: false,
-  dir: null,
-  envPath: null,
-  envWalPath: null,
-  inputHash: null,
-  loaded: null,
-  phases: {},
-  // key -> the phase file that holds it. This is the envelope's MANIFEST, and it is what
-  // makes retirement safe: a retired envelope names no files, so the phase files left
-  // behind are inert. Without it, a fresh run of the same subject would rebuild an
-  // envelope and silently adopt the finished run's orphaned phases.
-  files: {},
-  touched: false,
-  seq: 0,
-}
-/** The file that holds one phase's result. Write-once; the ordinal keeps them readable. */
-function cpPhasePath(key, ordinal) {
-  const safe = String(key).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 80) || 'phase'
-  return `${String(ordinal).padStart(2, '0')}-${safe}.json`
-}
-function cpInit(repo, subject, inputHash) {
-  const r = String(repo == null ? '' : repo)
-  const slug = String(subject == null ? '' : subject).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 120)
-  // Same allowlist argument as every other interpolated path in this workforce: the
-  // value lands verbatim in prompts other agents act on, so it is REFUSED, not cleaned.
-  if (!/^\/[A-Za-z0-9._/-]+$/.test(r) || r.includes('//') || r.split('/').includes('..') || !slug) {
-    // SILENCE HERE IS THE DEFECT THAT HID EVERYTHING ELSE. A run with no checkpoint root
-    // cannot resume and cannot be resumed FROM, and for thirty runs it said nothing at all
-    // while every dispatch paid a full cold start. Whatever the reason, it is now a fact
-    // the journal carries.
-    log(
-      `CHECKPOINTING DISABLED — no usable checkpoint root (repo=${JSON.stringify(r)}, subject=${JSON.stringify(String(subject == null ? '' : subject))}). ` +
-        'This run cannot resume from a previous dispatch and a later dispatch cannot resume from it: every phase will run at full cost.'
-    )
-    runLedger.push({ phase: 'checkpoint', event: 'disabled', repo: r || null, subject: subject || null })
-    return
-  }
-  cp.active = true
-  cp.inputHash = inputHash
-  cp.dir = `${r}/.claude/workflow-runs/checkpoints/${slug}-prd-to-spec`
-  // ── THE WRITE-AHEAD COPY ────────────────────────────────────────────────────
-  // A checkpoint is only worth what it is worth when the run DIED, so the one write
-  // that matters most is the one most likely to be interrupted. The primary file is
-  // REPLACED WHOLE on every save, so an interrupted or malformed replacement destroys
-  // the good checkpoint it was overwriting and the resume it existed for: a file torn
-  // mid-object, one generation followed by the tail of another, resumes nothing.
-  //
-  // A workflow script has no filesystem, and the writing agent has no shell command it
-  // can rely on being approved — five runs once stalled for a combined 37 hours waiting
-  // on an unapproved `mkdir` — so `write temp, then rename` is not available: there is no
-  // rename. What IS available is ordering. The same bytes are written to the write-ahead
-  // copy FIRST and to the primary SECOND, so whichever write is interrupted, the OTHER
-  // file still holds a complete generation:
-  //
-  //   torn WAL write     → primary still holds generation N-1, complete.
-  //   torn primary write → the WAL already holds generation N, complete.
-  //
-  // `seq` then says which of the two survivors is newer, so the loader takes the newest
-  // COMPLETE generation rather than trusting a filename. That is a commit protocol built
-  // out of write ordering, which is all a renameless writer has.
-  cp.envPath = `${cp.dir}/envelope.json`
-  cp.envWalPath = `${cp.dir}/envelope.json.wal`
-}
-/**
- * Judge one candidate ENVELOPE. Returns `{ ok:true, files, seq }` or `{ ok:false, why }`.
- *
- * The envelope is small and carries no phase RESULTS at all — only the run's identity and
- * the manifest of phase files it owns. Everything expensive moved out of it, which is the
- * whole point of the redesign: this is the only file rewritten on every save, and it is
- * now a few hundred characters instead of a hundred thousand.
- */
-/**
- * Report a lease held by a DIFFERENT, still-live run, from whichever envelope copy carries one.
- *
- * Deliberately generous about what it will read: a torn or otherwise unusable envelope can
- * still carry a legible lease, and a lease is the one field where a doubtful reading must be
- * believed. Refusing a checkpoint costs one unresumable run; clobbering a live one costs two.
- *
- * AGE IS MEASURED AGAINST THE CLOCK A SESSION REPORTED, never against one this script
- * read — it cannot read one. Two readings are therefore possible and they resolve in
- * opposite directions on purpose:
- *
- *   age KNOWN   — the existing test applies: only a lease younger than the staleness
- *                 window belongs to a run still working, and an older one is a corpse
- *                 left by a dispatch that died, which is the case resume exists for.
- *   age UNKNOWN — no clock was reported, or the lease carries no readable stamp. The
- *                 lease is then believed LIVE, with `ageMs: null`. Giving up a resume
- *                 costs one cold start; adopting phases a live run is still changing, or
- *                 overwriting its envelope, corrupts both runs.
- *
- * @returns {{runId: string, ageMs: number|null}|null} the live foreign lease, or null.
- */
-function cpLiveLease(texts) {
-  let held = null
-  for (const text of texts || []) {
-    let parsed = null
-    try { parsed = JSON.parse(text) } catch (e) { parsed = null }
-    const lease = parsed && typeof parsed === 'object' ? parsed.lease : null
-    if (!lease || typeof lease !== 'object') continue
-    if (typeof lease.runId !== 'string' || !lease.runId) continue
-    // A lease this run wrote is not a foreign one. Only reachable on a re-read; at load
-    // time nothing on disk can be ours, because no save has happened yet.
-    if (cpRunId !== null && lease.runId === cpRunId) continue
-    const ageMs = cpClockMs !== null && Number.isFinite(lease.at) ? cpClockMs - lease.at : null
-    if (ageMs !== null && (ageMs < 0 || ageMs >= CP_LEASE_STALE_MS)) continue
-    if (!held) { held = { runId: lease.runId, ageMs }; continue }
-    // An unknown age outranks every known one: it is the reading that must be believed.
-    if (held.ageMs !== null && (ageMs === null || ageMs < held.ageMs)) held = { runId: lease.runId, ageMs }
-  }
-  return held
-}
-function cpJudgeEnvelope(text, label) {
-  let parsed = null
-  try { parsed = JSON.parse(text) } catch (e) { parsed = null }
-  const why = !parsed || typeof parsed !== 'object'
-    ? `${label} was unreadable or not JSON (truncated, torn by an interrupted write, or not an envelope at all)`
-    : parsed.composite !== 'prd-to-spec'
-      ? `${label} belongs to composite '${parsed.composite}', not prd-to-spec`
-      : typeof parsed.semanticsVersion !== 'string'
-        ? `${label} predates the phase-semantics guard, so which phase contracts it was written against cannot be established — stale exactly once`
-        : parsed.semanticsVersion !== CHECKPOINT_SEMANTICS
-          ? `${label} was written under phase semantics ${parsed.semanticsVersion} and this composite is at ${CHECKPOINT_SEMANTICS} — the phase sequence, its contracts, or the checkpoint layout changed`
-          : parsed.inputHash !== cp.inputHash
-            ? `${label} was written against a different PRD text (hash ${parsed.inputHash} vs ${cp.inputHash}) — the PRD changed and every downstream result would be stale`
-            : !parsed.files || typeof parsed.files !== 'object'
-              ? `${label} carries no file manifest`
-              : null
-  if (why) return { ok: false, why }
-  const files = {}
-  for (const k of Object.keys(parsed.files)) {
-    const v = parsed.files[k]
-    if (typeof v === 'string' && v) files[k] = v
-  }
-  // A RETIRED envelope names no files, and that is exactly how retirement works now:
-  // one small write empties the manifest, and every phase file on disk becomes an orphan
-  // the loader will not look at. So "no files" is not an error — it is a finished run.
-  if (!Object.keys(files).length) return { ok: false, why: `${label} names no phase files (a retired or empty checkpoint)` }
-  return { ok: true, files, seq: Number.isFinite(parsed.seq) ? parsed.seq : 0 }
-}
-/**
- * Judge ONE phase file. Returns `{ ok:true, payload }` or `{ ok:false, why }`.
- *
- * THE LENGTH CHECK IS THE POINT. A model asked to copy JSON does not usually truncate
- * bytes — a truncated file would not parse. What it does is re-serialize a SUBSET and
- * hand back valid JSON that is missing three quarters of the payload, which is what
- * happened on 2026-09-08. So each phase file carries the character count the script
- * computed for its own payload, and this recomputes it. A writer that dropped fields and
- * copied `chars` across unchanged is caught; a writer that parses at all is not trusted
- * on the strength of parsing.
- */
-function cpJudgePhase(text, key, label) {
-  let parsed = null
-  try { parsed = JSON.parse(text) } catch (e) { parsed = null }
-  if (!parsed || typeof parsed !== 'object') return { ok: false, why: `${label} was unreadable or not JSON` }
-  if (parsed.key !== key) return { ok: false, why: `${label} says it holds phase '${parsed.key}', but the envelope filed it under '${key}'` }
-  if (!parsed.payload || typeof parsed.payload !== 'object') return { ok: false, why: `${label} carries no phase result object` }
-  const measured = JSON.stringify(parsed.payload).length
-  if (typeof parsed.chars !== 'number') return { ok: false, why: `${label} carries no declared length, so a partial copy of it cannot be told from a whole one` }
-  if (parsed.chars !== measured) {
-    return { ok: false, why: `${label} declares ${parsed.chars} characters of payload and holds ${measured} — it is a PARTIAL COPY and is not honoured` }
-  }
-  return { ok: true, payload: parsed.payload }
-}
-/**
- * Apply the checkpoint from the directory listing the reader returned.
- *
- * EVERY OUTCOME IS LOUD, unchanged from the single-file design: a cold start is stated as
- * a cold start and a rejection always names the reason. What is new is that a rejection
- * can now be PARTIAL — one unreadable phase file costs that phase and nothing else, where
- * before one unreadable file cost the run.
- *
- * @param entries `[{ name, found, content }]` — every file in the checkpoint directory.
- */
-function cpApply(entries) {
-  if (!cp.active) return // cpInit already said so, loudly, with the reason
-  const byName = {}
-  for (const e of entries || []) {
-    if (e && typeof e.name === 'string' && e.found === true && hasText(e.content)) byName[e.name] = e.content
-  }
-  const candidates = [
-    { label: 'the envelope', name: 'envelope.json', path: cp.envPath },
-    { label: 'the write-ahead copy of the envelope', name: 'envelope.json.wal', path: cp.envWalPath },
-  ].filter((c) => byName[c.name] !== undefined)
-  if (!candidates.length) {
-    log(`COLD START — no envelope at ${cp.envPath} (nor a write-ahead copy at ${cp.envWalPath}). Every phase will run.`)
-    runLedger.push({ phase: 'checkpoint', event: 'absent', path: cp.envPath })
-    return
-  }
-  cp.touched = true // something exists; a completed run still retires it either way
-  // A LIVE LEASE MEANS ANOTHER RUN OWNS THIS CHECKPOINT. The directory is keyed on
-  // the SUBJECT alone, so two runs of the same PRD share it, and the second used to
-  // adopt the first's phases and then overwrite its envelope mid-flight. Neither is
-  // survivable: the phases belong to a run still changing them. So this run gives the
-  // checkpoint up entirely — it reads nothing and writes nothing — and says so. It
-  // still does its work; it just does it without a shared file it cannot own.
-  const held = cpLiveLease(candidates.map((c) => byName[c.name]))
-  if (held) {
-    cp.active = false
-    log(
-      `CHECKPOINT SURRENDERED — another prd-to-spec run (${held.runId}) holds the lease on ${cp.dir}, ` +
-        `${held.ageMs === null
-          ? 'and how long ago it was last refreshed is UNKNOWN — no session reported a clock, so the lease is believed live'
-          : `last refreshed ${Math.round(held.ageMs / 1000)}s ago`}. That run is still working on this subject. ` +
-        `This run will NOT read or write its checkpoint: adopting phases it is still changing, or overwriting ` +
-        `its envelope, would corrupt both. This run proceeds WITHOUT a checkpoint and cannot be resumed.`,
-    )
-    runLedger.push({ phase: 'checkpoint', event: 'lease-held', path: cp.envPath, holder: held.runId, ageMs: held.ageMs })
-    return
-  }
-  const judged = candidates.map((c) => ({ ...c, verdict: cpJudgeEnvelope(byName[c.name], c.label) }))
-  const usable = judged.filter((j) => j.verdict.ok)
-  if (!usable.length) {
-    for (const j of judged) runLedger.push({ phase: 'checkpoint', event: 'invalidated', path: j.path, reason: j.verdict.why })
-    log(`CHECKPOINT REJECTED — nothing on disk could be resumed from. ${judged.map((j) => j.verdict.why).join('; ')}. COLD START: every phase will run.`)
-    return
-  }
-  // Newest COMPLETE generation wins, whichever file it is in — the same commit protocol
-  // as before, now protecting only the envelope, which is the one file still rewritten.
-  usable.sort((x, y) => y.verdict.seq - x.verdict.seq)
-  const win = usable[0]
-  const loser = judged.find((j) => j !== win)
-  if (win.name === 'envelope.json.wal') {
-    log(
-      `Envelope RECOVERED FROM THE WRITE-AHEAD COPY (${cp.envWalPath}, generation ${win.verdict.seq}) — ` +
-        `the primary at ${cp.envPath} was rejected: ${(loser && loser.verdict.why) || 'absent'}. ` +
-        'This is the write-ahead copy doing exactly what it exists for; the resume is intact.'
-    )
-    runLedger.push({ phase: 'checkpoint', event: 'recovered-from-wal', path: cp.envWalPath, seq: win.verdict.seq, primaryReason: (loser && loser.verdict.why) || 'absent' })
-  } else if (loser && !loser.verdict.ok) {
-    log(`Envelope read from ${cp.envPath} (generation ${win.verdict.seq}); the write-ahead copy was not usable and was not needed: ${loser.verdict.why}`)
-  }
-  // ── LOAD THE PHASES THE MANIFEST NAMES, AND ONLY THOSE ──────────────────────
-  // A file in the directory that the envelope does not name is an ORPHAN — left by a run
-  // that was retired, or by a save whose envelope write never landed — and adopting it
-  // would resume a finished run's work into a fresh one.
-  const loaded = {}
-  const rejected = []
-  for (const key of Object.keys(win.verdict.files)) {
-    const name = win.verdict.files[key]
-    const text = byName[name]
-    if (text === undefined) {
-      rejected.push(`'${key}' (${name} is absent — its write never landed)`)
-      continue
-    }
-    const verdict = cpJudgePhase(text, key, name)
-    if (!verdict.ok) { rejected.push(`'${key}' (${verdict.why})`); continue }
-    loaded[key] = verdict.payload
-    cp.files[key] = name
-  }
-  if (rejected.length) {
-    // NOT fatal, and that is the redesign's whole return. One bad file used to be one
-    // dead checkpoint; it now costs exactly the phase it holds.
-    log(
-      `${rejected.length} phase file(s) were NOT honoured and those phases will RE-RUN: ${rejected.join('; ')}. ` +
-        `The other ${Object.keys(loaded).length} are intact and are still being reused.`
-    )
-    runLedger.push({ phase: 'checkpoint', event: 'phase-files-rejected', rejected })
-  }
-  if (!Object.keys(loaded).length) {
-    log(`CHECKPOINT REJECTED — the envelope is valid but not one phase file could be honoured. COLD START: every phase will run.`)
-    return
-  }
-  cp.loaded = loaded
-  cp.phases = { ...loaded }
-  cp.seq = win.verdict.seq
-  const done = Object.keys(loaded)
-  runLedger.push({ phase: 'checkpoint', event: 'resumed', path: win.path, seq: win.verdict.seq, resumedAfter: done[done.length - 1], reused: done })
-  log(
-    `RESUMED FROM CHECKPOINT ${cp.dir} (generation ${win.verdict.seq}) after '${done[done.length - 1]}' — ` +
-      `${done.length} completed phase(s) reused and SKIPPED: ${done.join(', ')}`
-  )
-}
-function cpGet(key) {
-  if (!cp.loaded || cp.loaded[key] === undefined) return undefined
-  log(`Phase '${key}' SKIPPED — completed result reused from checkpoint`)
-  return cp.loaded[key]
-}
-/**
- * Discard EVERY phase in the loaded checkpoint, not just the one that was found stale.
- *
- * A stale phase is never stale alone. Every phase this composite checkpoints is derived
- * from the phase before it, so a result that no longer means what this file reads it as
- * has already been read by everything downstream of it — a `validation` verdict granted
- * to a narrowed PRD is exactly as wrong as the reconciliation that narrowed it, and the
- * checkpoint's `inputHash` (over the PRD text, which did not change) will not catch it.
- * The normal case is now handled one level up by CHECKPOINT_SEMANTICS, which rejects a
- * whole file written under a different phase sequence. This stays as the backstop for a
- * file that claims the CURRENT semantics and still carries a key the current sequence
- * cannot produce — a mislabelled or hand-edited checkpoint — because reusing part of one
- * is exactly as wrong as reusing all of it.
- *
- * `cp.phases` is cleared too, because the file is rewritten WHOLE from it: leaving the
- * discarded entries there would write them straight back on the next save and hand the
- * next resume the same stale results.
- */
-function cpDiscardAll(key, reason) {
-  const discarded = cp.loaded ? Object.keys(cp.loaded) : []
-  cp.loaded = null
-  cp.phases = {}
-  // The MANIFEST goes with them. Leaving a discarded key in it would have the next
-  // envelope write name a phase file this run has disowned, and the next resume would
-  // pick the stale result straight back up.
-  cp.files = {}
-  cp.touched = true // a file exists; a completed run still cleans it up
-  runLedger.push({ phase: 'checkpoint', event: 'invalidated', key, reason, discarded, discardedAll: true })
-  log(`Checkpoint DISCARDED IN FULL — ${reason}. ${discarded.length} phase(s) dropped: ${discarded.join(', ')}. Starting fresh.`)
-}
 // ── PHASE COMPLETION ─────────────────────────────────────────────────────────────
-// Records in the run record that a phase reached its end, and what it ruled. It writes
-// nothing to disk: the artifacts the makers saved are what a later run resumes from.
-async function cpSave(key, payload, decision) {
+// Records in the run record that a phase reached its end, and what it ruled. The host
+// lists the step in the Epic's steps-completed file (STEPS.md) from the ACCEPTED line
+// acceptPhase logs; that file is the one record a later run resumes from.
+async function recordPhaseDone(key, payload, decision) {
   recRuled(decision, { status: 'done' })
   const entry = recCurrent()
   if (entry) {
@@ -1045,7 +627,6 @@ async function cpSave(key, payload, decision) {
     // No such dispatch exists, so it is 0.
     if (typeof entry.checkpointWrites !== 'number') entry.checkpointWrites = 0
   }
-  if (cp.active) cp.phases[key] = payload
 }
 // ── The meta phase currently in progress ──────────────────────────────────────
 // Every agent() dispatch names the phase it belongs to, and the phase titles are the
@@ -1853,9 +1434,7 @@ recRuled('The caller supplied the ready PRD. This run reads it and never writes 
 // resolved by one cheap agent that reads the file and threads its text back.
 // A PRD ON DISK IS READ WHERE IT IS USED. Every session downstream can open a file, and the
 // minis that take the PRD (repo scoping, reconciliation, TRD authoring) accept its path in
-// place of its text, so the PRD is never retyped into this run to hand it on. The one reader
-// of the text itself is the legacy checkpoint, which is keyed on a hash of it: the text is read
-// only when such a checkpoint is actually on disk (see the checkpoint apply below).
+// place of its text, so the PRD is never retyped into this run to hand it on.
 const PRD_FILE = /^\/[A-Za-z0-9._/-]+\.md$/
 const prdByPath =
   !hasText(prd.body) && !hasText(prd.content) && typeof prd.path === 'string' && PRD_FILE.test(prd.path) &&
@@ -1964,53 +1543,37 @@ if (!hasText(prd.body) && !prdByPath) {
 // real work and still reaches task decomposition — it is simply DISCOVERED at spec time
 // rather than at PRD time.
 //
-// What remains at this point in the run is setup that carries no judgment: the checkpoint
-// identity, the two input files, and the owner's standing rulings.
+// What remains at this point in the run is setup that carries no judgment: the steps this
+// Epic already completed, and the owner's standing rulings.
 //
-// The checkpoint identity is established from the PRD text — a changed PRD is exactly
-// what must invalidate a resume.
-// The checkpoint root is NOT the ruled repo span. prd-to-spec is dispatched with no
-// repoPath on purpose — it rules its own span in the repo-scoping phase — so deriving
-// the checkpoint path from repoPath disabled checkpointing for this composite entirely,
-// silently, on every run. Eighteen consecutive runs of one Epic each started from zero,
-// each cost more than a session allocation, and each died at the limit with its TRD and
-// specs still in memory. `emitTarget` below already resolves the same way; cpInit simply
-// never got the fallback.
-// ── ARTIFACTS: THE FILES THE MAKERS SAVED ARE THE RESUME STATE ─────────────────────
+// ── RESUME: THE STEPS-COMPLETED FILE IS THE ONE RECORD ─────────────────────────────
 //
 // Every maker in this run saves the document it authored into the Epic working directory,
-// <repo>/.claude/workflow-runs/artifacts/<epic-id>/, then runs
-//   python3 <artifactScript> record <file> --epic <id> --phase <phase> --inputs <paths...>
-// which hashes what is on disk into <file>.meta.json. Before the next run launches, the
-// host runs `<artifactScript> plan <epic-id>` and passes the verdict in as `args.resume`:
+// <repo>/.claude/workflow-runs/artifacts/<epic-id>/, and records it
+// (`python3 <artifactScript> record <file> --epic <id> --phase <step> --inputs <paths...>`).
+// When a step passes, `acceptPhase` logs `ACCEPTED {...}` and the host appends the step to
+// that directory's STEPS.md. The host reads STEPS.md, and nothing else, into `args.resume`:
 //
-//   { root?, dir?, epicId?,
-//     phases: { '<phaseId>': { status: 'fresh' | 'stale', reason?, artifacts: [{ name, path, sha256?, data? }] } } }
+//   { root?, dir?, epicId?, completed: ['<step>', ...], names?: { '<step>': ['<file>', ...] } }
 //
-// `data` is the parsed content of a `.json` artifact, when the host inlines one. IT USUALLY
-// CANNOT: the dispatch payload has a byte budget a single parsed repo-scoping ruling exceeds,
-// so a phase whose downstream consumers need structured content — repo-scoping, spec:<slug>
-// (its story-<slug>.json), tasks:<slug> — is resumed from the FILES instead. The plan names
-// the artifacts; this script hands the owning mini their absolute paths as `replay.files`,
-// and the mini reads them itself in ONE read-only session before replaying its own
-// deterministic reduction over them (decision 6: documents pass between agents as paths,
-// never as content). Inlined `data` still wins where it is present, because it costs no
-// session at all. A bare string ('fresh' / 'stale: <why>') is accepted for a phase that
-// needs no content — architecture with its ruling on disk, and trd, both of
-// which hand a path to the phase below them and nothing else.
+// A step in `completed` is not run: its saved files are handed on as PATHS, and the mini that
+// owns them reads them back itself (documents pass between agents as paths). Every other step
+// runs. `names` lists a step's files only where they are not the ones its id determines
+// (`derivedNames`): the architecture step, which may have ruled no decision.
 //
-// Phase ids and the files each one's sessions write:
-//   architecture    architecture-triage.json, architecture-decision.md, architecture-proposal-<dim>.json,
-//                   architecture-analysis.json, architecture-challenges.json, sad-update.json, sad-conformance.json
-//   repo-scoping    repo-scoping.json (the placement, with the inventory it was made against), repo-scoping-shape.json
+// Steps and the files each one's sessions write:
+//   architecture    architecture-decision.md (when a decision was needed), architecture-triage.json, sad-update.json
+//   repo-scoping    repo-scoping.json, repo-scoping-shape.json, repo-scoping-survey.json, repo-scoping-verification.json
 //   trd             trd.md
+//   recon:<slug>    recon-<slug>.json
 //   spec:<slug>     spec-<slug>.md, spec-<slug>.data-model.md, spec-<slug>.criteria.md, story-<slug>.json
 //   tasks:<slug>    tasks-<slug>.json
-// where <slug> is the ruled repository directory's basename. A FRESH phase is skipped and its
-// artifact PATHS are handed to the next phase; a stale or absent one runs and overwrites.
-// The artifact names a phase id alone determines — the same table as the host's
-// artifactio.derived_names. Architecture has none: its proposal set varies.
+//   task-deps       task-deps.json
+// where <slug> is the ruled repository directory's basename. Emit Beads and epic:finish run on
+// every run that reaches them: they write into beads by durable `elab_key`, so a repeat updates
+// in place.
 function derivedNames(id) {
+  if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'sad-update.json']
   if (id === 'trd') return ['trd.md']
   if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json', 'repo-scoping-survey.json', 'repo-scoping-verification.json']
   if (id === 'task-deps') return ['task-deps.json']
@@ -2022,62 +1585,25 @@ function derivedNames(id) {
   return [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`, `story-${slug}.json`]
 }
 function normalizeResume(r) {
-  if (!r || typeof r !== 'object' || !r.phases || typeof r.phases !== 'object') return null
+  if (!r || typeof r !== 'object' || !Array.isArray(r.completed)) return null
+  const names = r.names && typeof r.names === 'object' ? r.names : {}
   const phases = {}
-  for (const id of Object.keys(r.phases)) {
-    const v = r.phases[id]
-    if (typeof v === 'string') {
-      const s = v.trim()
-      const artifacts = {}
-      // A bare 'fresh' is the host's compact form for a phase whose files are exactly the
-      // ones its id determines (artifactio.derived_names): they are named here, so the phase
-      // is reused from its files exactly as the full form would have it.
-      if (s === 'fresh') for (const name of derivedNames(id)) artifacts[name] = { path: null, sha256: null, data: undefined }
-      phases[id] = { fresh: s === 'fresh', reason: s === 'fresh' ? null : s.replace(/^stale:?\s*/, '') || 'stale', artifacts }
-      continue
-    }
-    if (!v || typeof v !== 'object') continue
-    const status = String(v.status || '').trim()
-    const list = Array.isArray(v.artifacts)
-      ? v.artifacts
-      : v.artifacts && typeof v.artifacts === 'object'
-        ? Object.keys(v.artifacts).map((name) => ({ ...v.artifacts[name], name }))
-        : []
+  for (const id of r.completed) {
+    if (typeof id !== 'string' || !id) continue
+    const listed = Array.isArray(names[id]) ? names[id].filter((n) => typeof n === 'string' && n) : derivedNames(id)
     const artifacts = {}
-    for (const x of list) {
-      if (!x || typeof x.name !== 'string' || !x.name) continue
-      artifacts[x.name] = {
-        path: typeof x.path === 'string' ? x.path : null,
-        sha256: typeof x.sha256 === 'string' ? x.sha256 : null,
-        data: x.data === undefined ? undefined : x.data,
-      }
-    }
-    phases[id] = {
-      fresh: status === 'fresh',
-      reason: status === 'fresh' ? null : (typeof v.reason === 'string' && v.reason) || status.replace(/^stale:?\s*/, '') || 'stale',
-      artifacts,
-    }
+    for (const name of listed) artifacts[name] = { path: null, sha256: null, data: undefined }
+    phases[id] = { fresh: true, reason: null, artifacts }
   }
   return { root: r.root, dir: r.dir, epicId: r.epicId, phases }
 }
 const RESUME = normalizeResume(a.resume)
-// A PRD passed by path has no text yet; its hash is taken below, only if a checkpoint is found.
-cpInit(repoPath || a.beadsRepoPath, subjectId, prdByPath ? null : cpHash(prd.body))
-// The legacy checkpoint directory is consulted ONLY when the host sent no artifact plan.
-// The host always sends the plan of which steps succeeded (empty when none has, or when the
-// owner set the Epic `ready` to start over). The legacy checkpoint directory is never read:
-// this run neither resumes from it nor judges it.
-const cpLegacyRead = false
 
-// ── ONE read for both of the run's input files ──────────────────────────────────
-// The checkpoint and the standing rulings are two small files in the same tree, read
-// back to back, neither of which can fail the run. They used to cost two fresh agent
-// sessions, and a fresh session's cost is its SESSION START, not the work it does — so
-// two sessions to read two files was one session more than the work needed. One reader
-// returns both; either half being absent or unreadable is the normal case and is handled
-// exactly as it was when they were separate.
-// Same defect as cpInit above: no repoPath meant the standing rulings never loaded
-// for this composite either, so every prior ruling was re-litigated from scratch.
+// ── The standing-rulings file ───────────────────────────────────────────────────
+// Read once, by the caller when it can, otherwise by one cheap reader session. Absent or
+// unreadable is the normal case and injects nothing.
+// prd-to-spec is dispatched with no repoPath, so the beads repository is the root the
+// standing rulings and the artifact working directory resolve from.
 const ARTIFACT_ROOT = repoPath || a.beadsRepoPath || null
 const RULINGS_PATH = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/.claude/standing-rulings.md` : null
 
@@ -2153,15 +1679,8 @@ const reusedSha = {}
 function resumeFresh(phaseId) {
   if (!RESUME) return null
   const hit = RESUME.phases[phaseId]
-  if (!hit) {
-    log(`Phase '${phaseId}': the artifact plan does not name it — it runs`)
-    return null
-  }
-  if (!hit.fresh) {
-    log(`Phase '${phaseId}' is STALE (${hit.reason}) — it runs and overwrites its artifacts`)
-    return null
-  }
-  return hit
+  if (!hit) log(`Step '${phaseId}' is not in the steps-completed file — it runs`)
+  return hit || null
 }
 function reuseFrom(phaseId, hit, what) {
   for (const name of Object.keys(hit.artifacts)) if (hit.artifacts[name].sha256) reusedSha[name] = hit.artifacts[name].sha256
@@ -2195,9 +1714,8 @@ function artifactMetadata(entries) {
 let runInputs = null
 // A CALLER THAT ALREADY READ THESE FILES HAS ALREADY PAID FOR THEM.
 //
-// The dispatcher is ordinary code with filesystem access and it knows both paths
-// before it spawns anything — the checkpoint is derived from the same beadsRepoPath
-// and subject this composite uses, and the rulings sit at a fixed location beside it.
+// The dispatcher is ordinary code with filesystem access and it knows the rulings path
+// before it spawns anything.
 // When it passes the text inline, this reader has nothing left to discover, and the
 // only reason the session existed was that workflow scripts cannot open a file.
 // Absent, the reader runs exactly as before.
@@ -2208,36 +1726,18 @@ if (a.runInputs && Array.isArray(a.runInputs.files)) {
   // A caller that read the files also knows the time and can mint a run id. When it
   // sends them, no session has to be asked for them; when it does not, this run simply
   // publishes no lease, which is the handled case and not a failure.
-  cpAdoptClock(a.runInputs.nowMs !== undefined ? a.runInputs.nowMs : a.nowMs, a.runInputs.nonce !== undefined ? a.runInputs.nonce : a.runNonce)
-} else if (cpLegacyRead || RULINGS_PATH) {
-  // A host that shed runInputs for size still sends its clock and run nonce at the top level.
-  cpAdoptClock(a.nowMs, a.runNonce)
+} else if (RULINGS_PATH) {
   try {
-    // ── THE CHECKPOINT IS A DIRECTORY NOW, SO THE READ IS A LISTING ─────────────
-    // It used to be two named paths. A per-phase checkpoint has an envelope plus one file
-    // per completed phase, and the reader cannot know how many there are — so it LISTS
-    // the directory and returns every file it finds. `cpApply` decides which of them
-    // count: only the ones the envelope's manifest names.
     runInputs = await settleAgent(
       `Return the contents of the files below, verbatim. Summarize nothing, reformat nothing, add no commentary. Read nothing else and WRITE NOTHING.
-${cpLegacyRead ? `
-A. EVERY FILE IN THIS DIRECTORY, if the directory exists: ${cp.dir}
-   Return one entry per file with \`name\` set to the BARE FILENAME (no path), \`found\`: true, and the file's full text in \`content\`.
-   If the directory does not exist or is empty, return no entries for it — that is the normal case for a first run and is not an error.
-   Do not skip a file for being large, and do not truncate one. If a file is too large to return whole, return it with \`found\`: false and put the reason in \`content\` — a partial file read back as if it were whole is the one outcome that must not happen.
-` : ''}${RULINGS_PATH ? `
+${RULINGS_PATH ? `
 B. THIS ONE FILE, if it exists: ${RULINGS_PATH}
    Return it as an entry with \`name\`: "rulings", \`found\`: true, and its full text in \`content\`. If it does not exist, return \`name\`: "rulings", \`found\`: false, \`content\`: "".
 ` : ''}
-C. TWO VALUES THIS WORKFLOW CANNOT OBSERVE FOR ITSELF. A workflow script may not read the wall clock or draw a random number — the runner refuses to load one that tries — so you read them and report them:
-   \`nowMs\`: the CURRENT time in epoch MILLISECONDS, as an integer (\`date +%s000\` is enough precision).
-   \`nonce\`: a short random string, 8-16 characters of [A-Za-z0-9], different on every run.
-   These identify this run to its resume checkpoint and are compared against the last run's. Guess neither: if you cannot get a value, omit the field rather than inventing one — an omitted value is handled, and a made-up one is believed.
 `,
       {
         label: 'resolve:run-inputs',
-        // PLUMBING — see resolve:prd-text. Lists a directory and reads named files,
-        // returning each one's text verbatim; it decides nothing about any of them.
+        // PLUMBING — see resolve:prd-text. Reads one named file verbatim; it decides nothing.
         model: 'haiku',
         phase: currentPhase || 'PRD',
         effort: 'low',
@@ -2255,9 +1755,6 @@ C. TWO VALUES THIS WORKFLOW CANNOT OBSERVE FOR ITSELF. A workflow script may not
                 properties: { name: { type: 'string' }, found: { type: 'boolean' }, content: { type: 'string' } },
               },
             },
-            // The clock and the nonce this script may not compute — see cpAdoptClock.
-            nowMs: { type: 'number' },
-            nonce: { type: 'string' },
           },
         },
       }
@@ -2267,131 +1764,8 @@ C. TWO VALUES THIS WORKFLOW CANNOT OBSERVE FOR ITSELF. A workflow script may not
   }
 }
 const runFiles = () => (runInputs && Array.isArray(runInputs.files) ? runInputs.files : [])
-// `key` was the old field name and the dispatcher may still be sending it; `name` is the
-// new one. Accepting both costs one `||` and stops a version skew between the dispatcher
-// and this script silently reading no checkpoint at all — which is precisely the class of
-// failure that made checkpointing write-only for thirty dispatches.
+// `key` was the old field name and the dispatcher may still be sending it; `name` is the new one.
 const runInput = (wanted) => runFiles().find((f) => f && (f.name === wanted || f.key === wanted)) || null
-// THE CLOCK ARRIVES BEFORE THE CHECKPOINT IS JUDGED, because judging it is what needs
-// the clock: a foreign lease's age decides whether this run resumes or stands aside.
-cpAdoptClock(runInputs ? runInputs.nowMs : undefined, runInputs ? runInputs.nonce : undefined)
-if (cpLegacyRead && cpClockMs === null) {
-  log(
-    'NO CLOCK REPORTED — no session returned the current time, so a lease on this checkpoint cannot be aged. ' +
-      'Any lease found will be believed live and this run will stand aside rather than risk clobbering another; ' +
-      'it will also publish no lease of its own.'
-  )
-  runLedger.push({ phase: 'checkpoint', event: 'no-clock', path: cp.envPath })
-}
-// ── A FILE REPORTED PRESENT MUST BE THE FILE, NOT A SENTENCE ABOUT IT ──────────
-// The directory reader is told, in its own brief, that a file it cannot return whole
-// must come back `found: false`. On 2026-09-09 it did the one thing that brief forbids:
-// `01-validation.json` (80 KB) came back `{"found": true, "content": "File exists but is
-// too large to include in response"}` — an excuse, flagged as the file. `cpJudgePhase`
-// caught it (the text is not JSON) and correctly refused to resume that phase, so the
-// resume after a session-limit park re-ran PRD Validation from zero: 989 seconds, six
-// agents, ~1M weighted tokens. THE PARK COST NOTHING; BELIEVING THE READER COST ALL OF IT.
-//
-// A session limit is a PAUSE. Its whole price should be the wall-clock the fleet spends
-// waiting, and a phase that completed before the wall went up must not be computed twice.
-// So a checkpoint file whose text cannot be what its name says it is gets ONE more read,
-// on its own, with its size stated and no other task in the brief — the conditions under
-// which a reader declines are exactly the conditions this removes. A file that fails
-// twice is reported absent and its phase re-runs, which is the honest outcome and the
-// one the design already handles.
-const cpSuspect = (entry) => {
-  if (!entry || typeof entry.name !== 'string' || entry.found !== true) return false
-  if (!/\.json$/.test(entry.name)) return false
-  if (!hasText(entry.content)) return true
-  try {
-    JSON.parse(entry.content)
-    return false
-  } catch {
-    return true
-  }
-}
-if (cpLegacyRead) {
-  const suspect = runFiles().map((f) => ({ ...f, name: f.name || f.key })).filter(cpSuspect)
-  if (suspect.length) {
-    const names = suspect.map((f) => f.name)
-    log(
-      `${suspect.length} checkpoint file(s) came back marked found but their text is not JSON ` +
-        `(${suspect.map((f) => `${f.name}: ${JSON.stringify(String(f.content || '').slice(0, 80))}`).join('; ')}). ` +
-        'Re-reading them one at a time before writing their phases off.'
-    )
-    runLedger.push({ phase: 'checkpoint', event: 'readback-suspect', names })
-    try {
-      const repair = await settleAgent(
-        `Return the FULL VERBATIM TEXT of each file listed below. This is your only task.
-
-${names.map((n) => `- ${cp.dir}/${n}`).join('\n')}
-
-These are machine-readable JSON checkpoint files and something downstream parses them, so the text must be byte-for-byte what is on disk. Summarize nothing, reformat nothing, re-indent nothing, add no commentary, and truncate nothing. Read nothing else and WRITE NOTHING.
-
-SIZE IS NOT A REASON TO DECLINE. A previous read of these files answered with a sentence describing one of them instead of its contents, which is worse than useless: it is believed. Return each file with \`name\` set to the BARE FILENAME, \`found\`: true, and its entire text in \`content\`. If you genuinely cannot return one whole, return that one with \`found\`: false and the reason in \`content\` — never a partial file, and never a description of a file, marked as found.`,
-        {
-          label: 'resolve:checkpoint-reread',
-          model: 'haiku',
-          phase: currentPhase || 'PRD',
-          schema: {
-            type: 'object',
-            additionalProperties: false,
-            required: ['files'],
-            properties: {
-              files: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  required: ['name', 'found'],
-                  properties: { name: { type: 'string' }, found: { type: 'boolean' }, content: { type: 'string' } },
-                },
-              },
-            },
-          },
-        }
-      )
-      const recovered = []
-      for (const entry of (repair && Array.isArray(repair.files) ? repair.files : [])) {
-        const fixed = { ...entry, name: entry.name || entry.key }
-        if (!names.includes(fixed.name) || cpSuspect(fixed)) continue
-        const slot = runInputs.files.findIndex((f) => (f.name || f.key) === fixed.name)
-        if (slot >= 0) runInputs.files[slot] = fixed
-        else runInputs.files.push(fixed)
-        recovered.push(fixed.name)
-      }
-      const lost = names.filter((n) => !recovered.includes(n))
-      log(
-        `Checkpoint re-read: ${recovered.length} of ${names.length} recovered${recovered.length ? ` (${recovered.join(', ')})` : ''}` +
-          `${lost.length ? `; still unusable and their phases will re-run: ${lost.join(', ')}` : ''}.`
-      )
-      runLedger.push({ phase: 'checkpoint', event: 'readback-repaired', recovered, lost })
-    } catch (e) {
-      // Never fatal. Failing here leaves exactly the behaviour that shipped before
-      // this block existed: the suspect files are rejected and their phases re-run.
-      log(`checkpoint re-read failed (non-fatal — those phases will re-run): ${(e && e.message) || e}`)
-    }
-  }
-}
-if (RESUME) {
-  const planned = Object.keys(RESUME.phases)
-  log(
-    `Artifact plan supplied by the host (${planned.length} phase(s): ${planned.map((k) => `${k}=${RESUME.phases[k].fresh ? 'fresh' : 'stale'}`).join(', ') || 'none'}) — ` +
-      'the legacy checkpoint directory is not consulted'
-  )
-} else {
-  const cpEntries = runFiles().map((f) => ({ ...f, name: f.name || f.key }))
-  // A legacy checkpoint is keyed on the PRD's TEXT. For a PRD passed by path, the text is read
-  // only when an envelope is actually on disk to be judged against it.
-  if (prdByPath && cp.active && cpEntries.some((e) => e && e.found === true && (e.name === 'envelope.json' || e.name === 'envelope.json.wal'))) {
-    const read = await readPrdText()
-    if (read) cp.inputHash = cpHash(read.body)
-    else log('The legacy checkpoint cannot be matched to this PRD without its text, so it is not resumed')
-  }
-  cpApply(cpEntries)
-}
-
-
 // ── Standing rulings from the project owner ─────────────────────────────────────
 // Unattended multi-day runs mean the project's standing rulings must live in the pipeline's
 // heads, not in a human watcher's: a reconciliation checker once found that a "live
@@ -2419,18 +1793,6 @@ const rulingsBlock = standingRulings
   ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, SAD, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
   : ''
 
-// A checkpoint that claims the CURRENT phase semantics and still carries a front-end
-// `reconciliation` phase cannot have been written by this sequence — there is no such
-// phase any more. CHECKPOINT_SEMANTICS rejects a version-1 file whole, one level up, so
-// reaching here means a mislabelled or hand-edited file, and every later entry in it was
-// derived from a deployed-state inventory that the current architecture and TRD phases
-// never see. Part of such a file is exactly as untrustworthy as all of it.
-if (cpGet('reconciliation') !== undefined) {
-  cpDiscardAll(
-    'reconciliation',
-    'the checkpoint claims the current phase semantics but carries a front-end `reconciliation` phase, which this sequence cannot produce — every later phase in it derived from a deployed-state inventory that architecture and the TRD no longer read'
-  )
-}
 // `prd` is never rebound anywhere in this composite, so this IS the PRD every phase reads.
 // Recorded before the first gate so a run that stops early still shows the journal which
 // PRD it was working on.
@@ -2700,11 +2062,11 @@ if (archHit) {
     log("Phase 'architecture' is fresh but has neither a ruling file nor a saved triage that found no decision — it runs")
   }
 }
-const cpArch = archReuse !== undefined ? archReuse : cpGet('architecture')
+const cpArch = archReuse
 if (cpArch !== undefined) {
   architecture = cpArch.architecture
   archTriage = cpArch.archTriage || null
-  if (archReuse !== undefined) await cpSave('architecture', archReuse, reusedDecision('architecture'))
+  if (archReuse !== undefined) await recordPhaseDone('architecture', archReuse, reusedDecision('architecture'))
 } else {
 if (a.skipArchitecture === true) {
   archNeeded = false
@@ -2977,7 +2339,7 @@ if (!archNeeded) {
 }
 if (architecture.ok) {
   acceptPhase('architecture', 'passed', { gate: 'G2', notNeeded: !!(architecture && architecture.skipped) })
-  await cpSave('architecture', { archTriage, architecture }, architectureRuling(archTriage, architecture))
+  await recordPhaseDone('architecture', { archTriage, architecture }, architectureRuling(archTriage, architecture))
 }
 }
 produced.architecture = withoutSadExtract(architecture.artifact)
@@ -3295,8 +2657,8 @@ function architectureRulingFor(art) {
   return out
 }
 // Returns { pinned: true } when the caller pinned the span, or
-// { scoping, scopeReplay, fromCheckpoint } — the dispatch only. The phase record, the
-// acceptance, the checkpoint, the span itself and every exit are settled after the join.
+// { scoping, scopeReplay, scopeHit } — the dispatch only. The phase record, the
+// acceptance, the span itself and every exit are settled after the join.
 async function runRepoScoping() {
   if (callerRepos.length) {
     // An explicit span is an override for THIS run — an argument the caller passed in band,
@@ -3335,10 +2697,6 @@ async function runRepoScoping() {
       )
     }
   }
-  const cpScope = scopeReplay ? undefined : cpGet('repo-scoping')
-  if (cpScope !== undefined) {
-    return { scoping: cpScope, scopeReplay, fromCheckpoint: true }
-  }
   const ruled = await workflow('agent-teams-workforce:repo-scoping', {
     standingRulings,
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture-triage.json'), artPath('architecture-decision.md')]),
@@ -3360,7 +2718,7 @@ async function runRepoScoping() {
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
-  return { scoping: ruled, scopeReplay, scopeHit, fromCheckpoint: false }
+  return { scoping: ruled, scopeReplay, scopeHit }
 }
 
 // ── TRD Authoring (Gate 2b) ──────────────────────────────────────────────────────
@@ -3378,8 +2736,8 @@ const TRD_INPUTS = [
 ].filter(Boolean)
 // Held across the G2b rework loop so a second TRD pass reuses the first pass's SAD extract.
 let trdSadExtract = null
-// Returns { trdAuthoring, mode } — the dispatch only; mode is 'resumed', 'checkpoint' or
-// 'ran', and the acceptance, the checkpoint write and the exit are settled after the join.
+// Returns { trdAuthoring, mode } — the dispatch only; mode is 'resumed' or 'ran', and the
+// acceptance and the exit are settled after the join.
 async function runTrdAuthoring() {
   const trdHit = resumeFresh('trd')
   if (trdHit && trdHit.artifacts['trd.md']) {
@@ -3400,8 +2758,6 @@ async function runTrdAuthoring() {
     }
   }
   if (trdHit) log("Phase 'trd' is fresh but the plan names no trd.md — it runs")
-  const cpTrd = cpGet('trd-authoring')
-  if (cpTrd !== undefined) return { mode: 'checkpoint', trdAuthoring: cpTrd }
   const ruled = await gateLoop({
     gate: 'G2b', phaseName: 'TRD Authoring',
     // No agent-judged criteria. The TRD is used by spec authoring, which is where a gap in
@@ -3584,7 +2940,7 @@ if (scopeSettled.pinned) {
       ...(scoping && scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: scoping.dispatchFailures || [] } : {}),
     })
   }
-  if (!scopeSettled.fromCheckpoint) {
+  {
     // Reused only when the mini says no session ran: a replay whose read failed ran live.
     const scopeReused = scoping.resumed === true
     if (scopeReused) reuseFrom('repo-scoping', scopeSettled.scopeHit, 'the saved shape and placement were replayed through the reduction')
@@ -3593,7 +2949,7 @@ if (scopeSettled.pinned) {
       log(`Phase 'repo-scoping' was offered its saved outputs but replayed ${got.length ? `only ${got.join(', ')}` : 'none of them'} — the rest ran`)
     }
     acceptPhase('repo-scoping', scopeReused ? 'reused' : 'passed')
-    await cpSave('repo-scoping', scoping, scopeReused ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
+    await recordPhaseDone('repo-scoping', scoping, scopeReused ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
 }
@@ -3711,10 +3067,10 @@ if (!trdSettled || !trdSettled.trdAuthoring) {
 const trdAuthoring = trdSettled.trdAuthoring
 if (trdSettled.mode === 'resumed') {
   acceptPhase('trd', 'reused')
-  await cpSave('trd-authoring', trdAuthoring, reusedDecision('trd'))
+  await recordPhaseDone('trd-authoring', trdAuthoring, reusedDecision('trd'))
 } else if (trdSettled.mode === 'ran' && trdAuthoring.ok) {
   acceptPhase('trd', 'passed', { gate: 'G2b' })
-  await cpSave('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
+  await recordPhaseDone('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
 }
 if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
 produced.trdAuthoring = withoutSadExtract(trdAuthoring.artifact)
@@ -4097,7 +3453,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
       acceptPhase(specPhase, 'reused')
       specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
-      await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
+      await recordPhaseDone(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
     } else {
       log(`Phase '${specPhase}' is fresh but its saved Story could not be read back (${(replayedSpec && replayedSpec.reason) || 'no result'}) — it runs`)
     }
@@ -4122,7 +3478,7 @@ async function authorSpecForRepo(repo, repoIndex) {
         apiSpec: { summary: '' },
       },
     }
-    await cpSave(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
+    await recordPhaseDone(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
   } else if (specHit) {
     log(`Phase '${specPhase}' is fresh but ${storyFile} is neither inlined nor named as a file this run can point at (${specNames.join(', ') || 'no artifact named'}) — it runs`)
   }
@@ -4141,15 +3497,15 @@ async function authorSpecForRepo(repo, repoIndex) {
     log(`Spec Authoring for ${repo}: the spec and its task set are both reused, so the comparison they were made from is not run or read again`)
     return { repo, recon: null, reconReused: true, specAuthoring }
   }
-  let recon = reconReplay ? undefined : cpGet(`recon:${repo}`)
-  if (recon === undefined) {
+  let recon
+  {
     recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
     if (recon && recon.ok !== false) {
       const replayed = !!(reconReplay && recon.resumed === true)
       if (replayed) reuseFrom(reconPhase, reconHit, 'the mini replayed the saved comparison through its reduction')
       else if (reconReplay) log(`Phase '${reconPhase}' is fresh but the mini did not replay it — the comparison ran again`)
       acceptPhase(reconPhase, replayed ? 'reused' : 'passed')
-      await cpSave(`recon:${repo}`, recon, reconRuling(repo, recon))
+      await recordPhaseDone(`recon:${repo}`, recon, reconRuling(repo, recon))
     }
   }
   if (recon && recon.ledger) runLedger.push(recon.ledger)
@@ -4180,7 +3536,6 @@ async function authorSpecForRepo(repo, repoIndex) {
       specAuthoring: null,
     }
   }
-  if (specAuthoring === undefined) specAuthoring = cpGet(`spec:${repo}`)
   if (specAuthoring === undefined) {
   specAuthoring = await gateLoop({
     gate: 'G3', phaseName: repos.length > 1 ? `Spec Authoring — ${repo}` : 'Spec Authoring',
@@ -4215,7 +3570,7 @@ async function authorSpecForRepo(repo, repoIndex) {
   })
   if (specAuthoring.ok) {
     acceptPhase(specPhase, 'passed', { gate: 'G3' })
-    await cpSave(`spec:${repo}`, specAuthoring, specRuling(repo, specAuthoring))
+    await recordPhaseDone(`spec:${repo}`, specAuthoring, specRuling(repo, specAuthoring))
   }
   }
   return { repo, recon, specAuthoring }
@@ -5293,7 +4648,7 @@ async function decomposeStory(pair) {
       )
       acceptPhase(tasksPhase, 'reused')
       decomposition = { ok: true, resumed: true, artifact: replayed }
-      await cpSave(cpDecompKey, decomposition, reusedDecision(tasksPhase))
+      await recordPhaseDone(cpDecompKey, decomposition, reusedDecision(tasksPhase))
     } else {
       log(
         `Phase '${tasksPhase}' is fresh but its replay produced no valid task set (${(replayed && replayed.reason) || 'no result'}) — it runs` +
@@ -5302,7 +4657,6 @@ async function decomposeStory(pair) {
     }
   } else {
     if (tasksHit) log(`Phase '${tasksPhase}' is fresh but ${tasksFile} is neither inlined nor named as a file this run can point at (${tasksNames.join(', ') || 'no artifact named'}) — it runs`)
-    decomposition = cpGet(cpDecompKey)
   }
   if (decomposition === undefined && reconReused.includes(pair.repoPath)) {
     const refused = await reconcileLate(pair)
@@ -5328,7 +4682,7 @@ async function decomposeStory(pair) {
   })
   if (decomposition.ok) {
     acceptPhase(tasksPhase, 'passed', { gate: 'G4' })
-    await cpSave(cpDecompKey, decomposition, decompRuling(pair, decomposition))
+    await recordPhaseDone(cpDecompKey, decomposition, decompRuling(pair, decomposition))
   }
   }
   return { pair, decomposition }
