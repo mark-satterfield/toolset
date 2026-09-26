@@ -614,19 +614,10 @@ function persistRun(outcome) {
 
 
 // ── PHASE COMPLETION ─────────────────────────────────────────────────────────────
-// Records in the run record that a phase reached its end, and what it ruled. The host
-// lists the step in the Epic's steps-completed file (STEPS.md) from the ACCEPTED line
-// acceptPhase logs; that file is the one record a later run resumes from.
+// Records in the run record what a finished phase ruled. It is the run's narrative for the
+// board, not a resume record: acceptPhase writes the step onto STEPS.md.
 async function recordPhaseDone(key, payload, decision) {
   recRuled(decision, { status: 'done' })
-  const entry = recCurrent()
-  if (entry) {
-    if (!Array.isArray(entry.checkpointKeys)) entry.checkpointKeys = []
-    if (!entry.checkpointKeys.includes(key)) entry.checkpointKeys.push(key)
-    // The number of checkpoint-writer dispatches this phase cost, which the host's phase reader reads.
-    // No such dispatch exists, so it is 0.
-    if (typeof entry.checkpointWrites !== 'number') entry.checkpointWrites = 0
-  }
 }
 // ── The meta phase currently in progress ──────────────────────────────────────
 // Every agent() dispatch names the phase it belongs to, and the phase titles are the
@@ -647,7 +638,7 @@ let currentPhase = null
 // `<status>running</status>` and nothing else.
 //
 // So the record travels in the run journal, which persistRun writes on every exit path.
-// It is not written mid-run: no checkpoint envelope is written for it to ride on.
+// It is not written mid-run.
 //
 // TIMES ARE NOT STAMPED HERE. The runner refuses a script that reads the wall clock, so
 // every entry carries what the script knows — order, name, status, ruling, artifacts — and
@@ -1294,7 +1285,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
 // `in_progress` with its owner released, every sweep would elaborate it again at full cost to
 // the same result. So its `elaboration_state` is cleared — the state the sweep
 // and `elaboration-start` both leave alone, and the one a person hands back from by setting
-// `in_progress`, which resumes the run from its persisted checkpoint and artifacts rather than
+// `in_progress`, which resumes the run from its STEPS.md and saved artifacts rather than
 // starting it over — with a cause naming why, and the need itself reaches the human queue through the
 // handback. The write goes through the beads-contract CLI, the channel depscore uses.
 const HOLD_CAUSE = 'awaiting-human-action'
@@ -1537,8 +1528,9 @@ if (!hasText(prd.body) && !prdByPath) {
 // Every maker in this run saves the document it authored into the Epic working directory,
 // <repo>/.claude/workflow-runs/artifacts/<epic-id>/, and records it
 // (`python3 <artifactScript> record <file> --epic <id> --phase <step> --inputs <paths...>`).
-// When a step passes, `acceptPhase` logs `ACCEPTED {...}` and the host appends the step to
-// that directory's STEPS.md. The host reads STEPS.md, and nothing else, into `args.resume`:
+// When a step passes, `acceptPhase` runs `artifactio.py step <epic-id> <step>`, which appends
+// the step to that directory's STEPS.md. The host reads STEPS.md, and nothing else, into
+// `args.resume`:
 //
 //   { root?, dir?, epicId?, completed: ['<step>', ...], names?: { '<step>': ['<file>', ...] } }
 //
@@ -1614,7 +1606,7 @@ const ART_ON = !!(ART_EPIC && safeAbs(ART_DIR) && safeAbs(ART_SCRIPT))
 // A workflow script cannot write a file, so one plumbing session runs the host's one
 // writer of that file (`artifactio.py step <epic-id> <step>`). A reused step is already on
 // the file — that is why it was reused — so nothing is written for it. The `ACCEPTED` log
-// line still travels in the run's record for the cost report.
+// line is narration only; nothing reads it back.
 const STEP_RECORD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1733,9 +1725,6 @@ if (a.runInputs && Array.isArray(a.runInputs.files)) {
   runInputs = a.runInputs
   const found = runInputs.files.filter((f) => f && f.found).map((f) => f.name || f.key)
   log(`Run inputs supplied by the caller (${found.length ? found.join(', ') : 'none present'}) — no reader session needed`)
-  // A caller that read the files also knows the time and can mint a run id. When it
-  // sends them, no session has to be asked for them; when it does not, this run simply
-  // publishes no lease, which is the handled case and not a failure.
 } else if (RULINGS_PATH) {
   try {
     runInputs = await settleAgent(
@@ -2855,7 +2844,7 @@ async function runTrdAuthoring() {
 //
 // WHAT EACH THUNK DOES, AND WHAT IT DELIBERATELY DOES NOT. A thunk performs only its
 // DISPATCH and hands back what came out of it. Every phase record, log ruling,
-// acceptance, checkpoint write, budget rescale and early exit stays SEQUENTIAL, below
+// acceptance, budget rescale and early exit stays SEQUENTIAL, below
 // the join, in the original order — because `recRuled` attaches a ruling to whichever
 // phase was entered LAST, and three concurrent `enterPhase` calls would file all three
 // phases' rulings under whichever one happened to be entered last. A composite that
@@ -3064,7 +3053,7 @@ if (rescaled > MAX_TOTAL_ATTEMPTS) {
 //
 // The dispatch itself ran in the concurrent block far above, alongside Architecture
 // Impact and Repo Scoping. What is left here is what has to stay sequential: the phase
-// record, the acceptance, the checkpoint write and the exit.
+// record, the acceptance and the exit.
 enterPhase('TRD Authoring')
 if (!trdSettled || !trdSettled.trdAuthoring) {
   // A thunk that threw resolves to null in `parallel`'s result array. Spec authoring takes
@@ -3369,7 +3358,7 @@ const outOfSpanFindings = []
 // sessions) plus its G3 gate finished before the next repo started. Repo *i* consumes
 // NOTHING from repo *j* — each iteration reads the PRD, the TRD, the access patterns,
 // the Epic, its own repo path, and a `storyKey` derived from its INDEX rather than from
-// the previous iteration's result. The checkpoint key is per-repo. `specPairs`,
+// the previous iteration's result. The step is per-repo. `specPairs`,
 // `specFailures` and `outOfSpanFindings` are append-only accumulators, and they are
 // filled below in repo order from the settled batch, so the result is identical to the
 // serial one whatever order the batch completes in.
@@ -3433,7 +3422,7 @@ async function authorSpecForRepo(repo, repoIndex) {
   // and a gate here would buy an adjudication of a list at the price of an attempt against
   // the run budget before a single spec exists.
   //
-  // Its own checkpoint key, so a resume that already paid for one repository's inventory
+  // Its own step, so a resume that already paid for one repository's inventory
   // does not pay again — and so a repo whose SPEC failed can be re-run without re-reading
   // the repository.
   //
@@ -4233,7 +4222,7 @@ const specDocUnreadable = (repo, name) => {
 const tasks = []
 // Decomposed CONCURRENTLY, for the same reason and under the same rules as the per-repo
 // spec fan-out above: Story *i* consumes nothing from Story *j* — each reads its own
-// spec, its own Story, and the shared PRD/TRD — the checkpoint key is per-Story, and the
+// spec, its own Story, and the shared PRD/TRD — the step is per-Story, and the
 // task keys are namespaced by Story key during the reduction below, in Story order, so a
 // concurrent batch produces the serial answer. The run-attempt ceiling is checked once
 // for the batch and can be overshot by at most (Stories - 1); see the fan-out above for
