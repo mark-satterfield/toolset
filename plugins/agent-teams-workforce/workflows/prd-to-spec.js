@@ -1204,20 +1204,6 @@ async function ruleExhaustedGate(ctx) {
 // the result on every exit path (see the `finally` below): the working directory, which phases
 // passed their gate or were reused IN THIS RUN, and where the TRD is filed once the run is Done.
 const artPhases = {}
-// ACCEPTANCE IS ANNOUNCED THE MOMENT IT HAPPENS, not only in the final result. The host
-// commits a per-phase acceptance file from durable evidence, and the final result is not
-// always there to read: the harness writes its wf_*.json record only when a workflow
-// completes, so a killed run leaves no result. So every acceptance is also written as one
-// machine-readable log line, `ACCEPTED {json}` — deterministic script code, no agent, no
-// tokens — which the host reads from the harness workflow record when the workflow completes
-// and folds exactly like `artifacts.phases`; for a KILLED run, which leaves no record, the host
-// infers acceptance from the live journal's progress groups and the files the run wrote
-// (artifactio.journal_evidence). Bound to bytes host-side: a phase whose files are rewritten
-// later is not accepted by this line.
-function acceptPhase(phaseId, status, extra) {
-  artPhases[phaseId] = status
-  log(`ACCEPTED ${JSON.stringify({ phase: phaseId, status, ...(extra || {}) })}`)
-}
 const artReport = { dir: null, epicId: null, filing: {} }
 // Every id that leaves this script lands in command text another agent runs verbatim, so
 // an id that is not shaped like one is REFUSED rather than cleaned. The Epic this run
@@ -1624,6 +1610,30 @@ const ART_DIR = (() => {
 })()
 const ART_SCRIPT = typeof a.artifactScript === 'string' ? a.artifactScript : null
 const ART_ON = !!(ART_EPIC && safeAbs(ART_DIR) && safeAbs(ART_SCRIPT))
+// A STEP THAT PASSES IS WRITTEN ONTO THE EPIC'S STEPS-COMPLETED FILE THE MOMENT IT PASSES.
+// A workflow script cannot write a file, so one plumbing session runs the host's one
+// writer of that file (`artifactio.py step <epic-id> <step>`). A reused step is already on
+// the file — that is why it was reused — so nothing is written for it. The `ACCEPTED` log
+// line still travels in the run's record for the cost report.
+const STEP_RECORD_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode'],
+  properties: { exitCode: { type: 'integer' }, output: { type: 'string' } },
+}
+async function acceptPhase(phaseId, status, extra) {
+  artPhases[phaseId] = status
+  log(`ACCEPTED ${JSON.stringify({ phase: phaseId, status, ...(extra || {}) })}`)
+  if (status !== 'passed' || !ART_ON) return
+  const command = `python3 ${shellq(ART_SCRIPT)} step ${shellq(ART_EPIC)} ${shellq(phaseId)}`
+  const wrote = await settleAgent(
+    `Run exactly this one command and report its exit code and its output. Run nothing else, read nothing else, and change nothing else.\n\n${command}`,
+    { label: `steps:record:${phaseId}`, phase: currentPhase || 'PRD', model: 'haiku', effort: 'low', schema: STEP_RECORD_SCHEMA }
+  )
+  if (!wrote || wrote.exitCode !== 0) {
+    log(`Step '${phaseId}' passed but was NOT written to the steps-completed file (${(wrote && wrote.output) || 'no answer'}) — a later run runs it again`)
+  }
+}
 const ART_REL = ART_ON && SS_ROOT && ART_DIR.startsWith(`${SS_ROOT}/`) ? ART_DIR.slice(SS_ROOT.length + 1) : null
 const artPath = (name) => (ART_ON ? `${ART_DIR}/${name}` : null)
 const PRD_INPUTS = prd && hasText(prd.path) ? [prd.path] : []
@@ -1969,7 +1979,7 @@ async function prefetchResumeJson() {
   const arch = RESUME.phases.architecture
   if (arch && arch.fresh) want(arch, arch.artifacts['architecture-decision.md'] ? 'sad-update.json' : 'architecture-triage.json')
   // Only a pinned span skips repo scoping; otherwise its two outputs go to its replay inline.
-  if (!callerRepos.length) for (const name of ['repo-scoping-shape.json', 'repo-scoping.json']) want(RESUME.phases['repo-scoping'], name)
+  if (!callerRepos.length) for (const name of ['repo-scoping-shape.json', 'repo-scoping.json', 'repo-scoping-survey.json']) want(RESUME.phases['repo-scoping'], name)
   for (const id of Object.keys(RESUME.phases)) {
     if (id.startsWith('spec:')) want(RESUME.phases[id], `story-${id.slice('spec:'.length)}.json`)
   }
@@ -2041,7 +2051,7 @@ if (archHit) {
   }
   if (hasRuling || (savedTriage && savedTriage.needed === false)) {
     reuseFrom('architecture', archHit, hasRuling ? 'downstream phases read the ruling from its file' : 'the saved triage found no architecture decision')
-    acceptPhase('architecture', 'reused', { notNeeded: !hasRuling })
+    await acceptPhase('architecture', 'reused', { notNeeded: !hasRuling })
     archReuse = {
       archTriage: savedTriage,
       architecture: hasRuling
@@ -2338,7 +2348,7 @@ if (!archNeeded) {
   })
 }
 if (architecture.ok) {
-  acceptPhase('architecture', 'passed', { gate: 'G2', notNeeded: !!(architecture && architecture.skipped) })
+  await acceptPhase('architecture', 'passed', { gate: 'G2', notNeeded: !!(architecture && architecture.skipped) })
   await recordPhaseDone('architecture', { archTriage, architecture }, architectureRuling(archTriage, architecture))
 }
 }
@@ -2676,7 +2686,7 @@ async function runRepoScoping() {
     if (savedShape && savedRuling) {
       // NOT a stored span. The mini re-runs its deterministic reduction over the saved shape
       // and placement (which carries its own inventory), so the span is recomputed on this run.
-      scopeReplay = { shape: savedShape, ruling: savedRuling }
+      scopeReplay = { shape: savedShape, ruling: savedRuling, survey: artData(scopeHit, 'repo-scoping-survey.json') || null }
     } else if (ART_ON && scopeNeeded.every((n) => scopeNames.indexOf(n) !== -1)) {
       // The plan NAMED the files without inlining them, which is the normal case: the payload
       // cannot carry a parsed ruling. The mini reads them itself and runs the same reduction,
@@ -2906,16 +2916,16 @@ if (impactSettled && impactSettled.ran) {
 // The TRD ran beside repo scoping and does not depend on the span, so a run that stops at repo
 // scoping still records a TRD that passed its gate; the next run reuses it instead of paying
 // for it again.
-const acceptTrdOnExit = () => {
+const acceptTrdOnExit = async () => {
   const t = trdSettled && trdSettled.trdAuthoring
   if (!t || !t.ok) return
-  if (trdSettled.mode === 'resumed') acceptPhase('trd', 'reused')
-  else if (trdSettled.mode === 'ran') acceptPhase('trd', 'passed', { gate: 'G2b' })
+  if (trdSettled.mode === 'resumed') await acceptPhase('trd', 'reused')
+  else if (trdSettled.mode === 'ran') await acceptPhase('trd', 'passed', { gate: 'G2b' })
 }
 enterPhase('Repo Scoping')
 if (!scopeSettled) {
   // The thunk threw. A failed scoping is NOT a single-repo span — see below.
-  acceptTrdOnExit()
+  await acceptTrdOnExit()
   return partial('repo-scoping', {
     reason: 'repo scoping returned nothing at all (it threw or was skipped) — which repositories this PRD lands in could not be established, and the run will not guess.',
   })
@@ -2931,7 +2941,7 @@ if (scopeSettled.pinned) {
     // A failed scoping is NOT a single-repo span. Falling back to the caller's starting
     // point would restore exactly the defect this phase removes, and would do it on the
     // one run where the span was least certain.
-    acceptTrdOnExit()
+    await acceptTrdOnExit()
     return partial('repo-scoping', {
       reason:
         (scoping && scoping.reason) ||
@@ -2948,7 +2958,7 @@ if (scopeSettled.pinned) {
       const got = Array.isArray(scoping.replayed) ? scoping.replayed : []
       log(`Phase 'repo-scoping' was offered its saved outputs but replayed ${got.length ? `only ${got.join(', ')}` : 'none of them'} — the rest ran`)
     }
-    acceptPhase('repo-scoping', scopeReused ? 'reused' : 'passed')
+    await acceptPhase('repo-scoping', scopeReused ? 'reused' : 'passed')
     await recordPhaseDone('repo-scoping', scoping, scopeReused ? `${reusedDecision('repo-scoping')} ${scopingRuling(scoping)}` : scopingRuling(scoping))
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
@@ -3032,7 +3042,7 @@ if (scoping) {
 // reached only through a caller that pinned an empty one — and there is nothing to author a
 // Spec against. It is a failure of the phase, never an action for a person.
 if (!repos.length) {
-  acceptTrdOnExit()
+  await acceptTrdOnExit()
   return partial('repo-scoping', {
     reason: 'the span names no repository — which repositories this PRD lands in could not be established, and the run will not guess.',
   })
@@ -3066,10 +3076,10 @@ if (!trdSettled || !trdSettled.trdAuthoring) {
 }
 const trdAuthoring = trdSettled.trdAuthoring
 if (trdSettled.mode === 'resumed') {
-  acceptPhase('trd', 'reused')
+  await acceptPhase('trd', 'reused')
   await recordPhaseDone('trd-authoring', trdAuthoring, reusedDecision('trd'))
 } else if (trdSettled.mode === 'ran' && trdAuthoring.ok) {
-  acceptPhase('trd', 'passed', { gate: 'G2b' })
+  await acceptPhase('trd', 'passed', { gate: 'G2b' })
   await recordPhaseDone('trd-authoring', trdAuthoring, trdRuling(trdAuthoring))
 }
 if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
@@ -3451,7 +3461,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     })
     if (replayedSpec && replayedSpec.ok && replayedSpec.story && hasText(replayedSpec.story.title)) {
       reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-      acceptPhase(specPhase, 'reused')
+      await acceptPhase(specPhase, 'reused')
       specAuthoring = { ok: true, resumed: true, artifact: replayedSpec }
       await recordPhaseDone(`spec:${repo}`, specAuthoring, reusedDecision(specPhase))
     } else {
@@ -3459,7 +3469,7 @@ async function authorSpecForRepo(repo, repoIndex) {
     }
   } else if (specHit && storyData && typeof storyData === 'object' && hasText(storyData.title)) {
     reuseFrom(specPhase, specHit, 'task decomposition reads the spec from its files')
-    acceptPhase(specPhase, 'reused')
+    await acceptPhase(specPhase, 'reused')
     specAuthoring = {
       ok: true,
       resumed: true,
@@ -3504,7 +3514,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       const replayed = !!(reconReplay && recon.resumed === true)
       if (replayed) reuseFrom(reconPhase, reconHit, 'the mini replayed the saved comparison through its reduction')
       else if (reconReplay) log(`Phase '${reconPhase}' is fresh but the mini did not replay it — the comparison ran again`)
-      acceptPhase(reconPhase, replayed ? 'reused' : 'passed')
+      await acceptPhase(reconPhase, replayed ? 'reused' : 'passed')
       await recordPhaseDone(`recon:${repo}`, recon, reconRuling(repo, recon))
     }
   }
@@ -3569,7 +3579,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       }),
   })
   if (specAuthoring.ok) {
-    acceptPhase(specPhase, 'passed', { gate: 'G3' })
+    await acceptPhase(specPhase, 'passed', { gate: 'G3' })
     await recordPhaseDone(`spec:${repo}`, specAuthoring, specRuling(repo, specAuthoring))
   }
   }
@@ -4592,7 +4602,7 @@ async function reconcileLate(pair) {
       ...(dispatchFailed ? { dispatchFailed: true, dispatchFailures: (recon && Array.isArray(recon.dispatchFailures) && recon.dispatchFailures) || [] } : {}),
     }
   }
-  acceptPhase(`recon:${slug}`, reconReplay && recon.resumed === true ? 'reused' : 'passed')
+  await acceptPhase(`recon:${slug}`, reconReplay && recon.resumed === true ? 'reused' : 'passed')
   reconLate.push(repo)
   let added = 0
   for (const w of Array.isArray(recon.removalWork) ? recon.removalWork : []) {
@@ -4646,7 +4656,7 @@ async function decomposeStory(pair) {
           ? 'the saved decomposition was replayed through the emission step'
           : 'the mini read the saved decomposition from disk and replayed it through the emission step'
       )
-      acceptPhase(tasksPhase, 'reused')
+      await acceptPhase(tasksPhase, 'reused')
       decomposition = { ok: true, resumed: true, artifact: replayed }
       await recordPhaseDone(cpDecompKey, decomposition, reusedDecision(tasksPhase))
     } else {
@@ -4681,7 +4691,7 @@ async function decomposeStory(pair) {
     phaseFn: (feedback) => workflow('agent-teams-workforce:task-decomposition', decompArgs(pair, feedback)),
   })
   if (decomposition.ok) {
-    acceptPhase(tasksPhase, 'passed', { gate: 'G4' })
+    await acceptPhase(tasksPhase, 'passed', { gate: 'G4' })
     await recordPhaseDone(cpDecompKey, decomposition, decompRuling(pair, decomposition))
   }
   }
@@ -5092,7 +5102,7 @@ ${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), depsFile, 'your co
     const t = tasks.find((x) => x.key === e.to)
     t.dependsOn = [...(t.dependsOn || []), e.from]
   }
-  acceptPhase(TASK_DEPS_PHASE, savedDeps ? 'reused' : 'passed')
+  await acceptPhase(TASK_DEPS_PHASE, savedDeps ? 'reused' : 'passed')
   log(
     `Cross-Story Task dependencies: ${crossStory.edges.length} edge(s) across ${taskStories.size} Stories` +
       `${crossStory.rejected.length ? `; ${crossStory.rejected.length} proposed edge(s) not applied — ${crossStory.rejected.map((r) => `${r.from}->${r.to} (${r.reason})`).join(', ')}` : ''}.`

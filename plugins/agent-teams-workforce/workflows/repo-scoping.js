@@ -487,8 +487,19 @@ const isShape = (v) => Array.isArray(v.workUnits) && v.workUnits.length > 0
 // nothing, which drops every placement it makes.
 const isRuling = (v) =>
   Array.isArray(v.placements) && Array.isArray(v.repositories) && v.repositories.some((r) => r && hasText(r.repoPath))
+// A saved placement written before the steward returned its inventory inside it is read with
+// the inventory saved beside it by the same run (the survey), or, with none saved, with the
+// repositories it placed: that is the inventory it was made against.
+function withInventory(ruling, survey) {
+  if (!ruling || typeof ruling !== 'object' || isRuling(ruling) || !Array.isArray(ruling.placements)) return ruling
+  const surveyed = survey && Array.isArray(survey.repositories) ? survey.repositories.filter((r) => r && hasText(r.repoPath)) : []
+  const repositories = surveyed.length
+    ? surveyed
+    : ruling.placements.filter((p) => p && hasText(p.repoPath)).map((p) => ({ repoPath: p.repoPath, name: p.repoName || null }))
+  return { ...ruling, repositories }
+}
 let replayShape = replayed(replay.shape, isShape)
-let replayRuling = replayed(replay.ruling, isRuling)
+let replayRuling = replayed(withInventory(replay.ruling, replay.survey), isRuling)
 
 // ── READING A NAMED ARTIFACT BACK ────────────────────────────────────────────────
 // Same allowlist every path in this file passes through, and for the same reason: the value
@@ -754,27 +765,7 @@ const replayRead = await readReplayFiles(
 )
 if (!replayShape) replayShape = replayed(replayRead.shape, isShape)
 if (!replayRuling) {
-  // A saved placement written before the steward returned its inventory inside it carries
-  // the inventory in the survey saved beside it by the same run. That IS the inventory the
-  // placement was made against, so the placement is replayed over it rather than placed again.
-  const savedRuling = replayRead.ruling
-  const savedSurvey = replayRead.survey
-  if (
-    savedRuling && typeof savedRuling === 'object' && !isRuling(savedRuling) &&
-    Array.isArray(savedRuling.placements) && savedSurvey && Array.isArray(savedSurvey.repositories) &&
-    savedSurvey.repositories.some((r) => r && hasText(r.repoPath))
-  ) {
-    replayRead.ruling = { ...savedRuling, repositories: savedSurvey.repositories }
-    log('Repo scoping: the saved placement records its inventory in the saved survey beside it — replayed over that inventory')
-  } else if (savedRuling && typeof savedRuling === 'object' && !isRuling(savedRuling) && Array.isArray(savedRuling.placements)) {
-    // A saved placement is the result of a step that succeeded, and it is resumed from. With no
-    // inventory saved at all, its own placed repositories stand as the inventory it was made against.
-    replayRead.ruling = {
-      ...savedRuling,
-      repositories: savedRuling.placements.filter((p) => p && hasText(p.repoPath)).map((p) => ({ repoPath: p.repoPath, name: p.repoName || null })),
-    }
-    log('Repo scoping: the saved placement carries no inventory — replayed over the repositories it placed')
-  }
+  replayRead.ruling = withInventory(replayRead.ruling, replayRead.survey || replay.survey)
   replayRuling = replayed(replayRead.ruling, isRuling)
   if (!replayRuling && replayRead.ruling) {
     log('Repo scoping: the saved placement carries no inventory of its own (or an empty one) — the steward places the work again, live')
@@ -1128,21 +1119,21 @@ let reruled = false
 // A placement the reduction dropped, a creation that failed, an empty inventory or a work
 // unit placed nowhere is work specified nowhere. Re-asking the same question has no reason to
 // come out differently; asking it again WITH the faults named does, so the steward is shown
-// what failed and places once more. A saved placement with any fault is placed again live the
-// same way: it was made over an estate that may since have changed.
-function correctionFor(prior, fromReplay) {
+// what failed and places once more. A SAVED placement is a completed step and is used as it
+// stands: its faults are reported, and nothing re-places it.
+function correctionFor(prior) {
   const lines = []
-  if (fromReplay) lines.push('- The placement below was SAVED by an earlier run and could not be used as it stood. Take the inventory live now and place afresh.')
   if (!prior.inventory.length) lines.push('- You returned NO repositories. Return the complete live inventory INLINE — every repository the project has, including any you created. A saved file is not a substitute.')
   for (const b of prior.blocked) lines.push(`- Placement ${JSON.stringify(b.repoPath)} was DROPPED: ${b.reason}. Use a repoPath exactly as your returned inventory records it.`)
   for (const f of prior.creationFailures) lines.push(`- Repository ${JSON.stringify(f.proposedName)} could not be created: ${String(f.error || '').slice(0, 400)}. Fix the cause and create it, or place its units in an existing repository that genuinely serves them.`)
   if (prior.strandedUnits.length) lines.push(`- Work unit(s) placed NOWHERE: ${prior.strandedUnits.map((u) => u.id).join(', ')}. Every unit must appear in exactly one placement.`)
   return lines.length ? `\n=== YOUR PREVIOUS PLACEMENT COULD NOT BE USED AS IT STOOD ===\n${lines.join('\n')}\n` : ''
 }
-if (faultsOf(reduced).length) {
-  const fromReplay = !!replayRuling
-  log(`Repo scoping: the ${fromReplay ? 'saved ' : ''}placement could not be used as it stood (${faultsOf(reduced).join(' | ')}) — the steward places once more, shown what failed`)
-  const again = await placeWork(correctionFor(reduced, fromReplay), 'scope:place-and-provision-corrected')
+if (faultsOf(reduced).length && replayRuling) {
+  log(`Repo scoping: the saved placement is a completed step and is used as it stands; recorded with it: ${faultsOf(reduced).join(' | ')}`)
+} else if (faultsOf(reduced).length) {
+  log(`Repo scoping: the placement could not be used as it stood (${faultsOf(reduced).join(' | ')}) — the steward places once more, shown what failed`)
+  const again = await placeWork(correctionFor(reduced), 'scope:place-and-provision-corrected')
   if (again && Array.isArray(again.placements)) {
     placed = again
     reduced = reducePlacement(again)
@@ -1154,7 +1145,7 @@ if (faultsOf(reduced).length) {
 
 const { inventory, createdRepos, creationFailures, placements, blocked, repos, obsoleteCode, strandedUnits } = reduced
 const remainingFaults = faultsOf(reduced)
-if (remainingFaults.length || !repos.length) {
+if ((remainingFaults.length && !replayRuling) || !repos.length) {
   // Work the steward could not place, even shown the faults, FAILS the run. It is a defect in
   // the placement — a creation that did not work, a path it could not state — and it is
   // reported as one, with every fault named, for the pipeline's failure handling. It is never
