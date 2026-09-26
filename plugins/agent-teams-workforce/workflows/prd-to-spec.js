@@ -2008,6 +2008,19 @@ if (!hasText(prd.body) && !prdByPath) {
 //   tasks:<slug>    tasks-<slug>.json
 // where <slug> is the ruled repository directory's basename. A FRESH phase is skipped and its
 // artifact PATHS are handed to the next phase; a stale or absent one runs and overwrites.
+// The artifact names a phase id alone determines — the same table as the host's
+// artifactio.derived_names. Architecture has none: its proposal set varies.
+function derivedNames(id) {
+  if (id === 'trd') return ['trd.md']
+  if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json', 'repo-scoping-survey.json', 'repo-scoping-verification.json']
+  if (id === 'task-deps') return ['task-deps.json']
+  const m = /^(recon|spec|tasks):([A-Za-z0-9._-]+)$/.exec(id)
+  if (!m) return []
+  const slug = m[2]
+  if (m[1] === 'recon') return [`recon-${slug}.json`]
+  if (m[1] === 'tasks') return [`tasks-${slug}.json`]
+  return [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`, `story-${slug}.json`]
+}
 function normalizeResume(r) {
   if (!r || typeof r !== 'object' || !r.phases || typeof r.phases !== 'object') return null
   const phases = {}
@@ -2015,7 +2028,12 @@ function normalizeResume(r) {
     const v = r.phases[id]
     if (typeof v === 'string') {
       const s = v.trim()
-      phases[id] = { fresh: s === 'fresh', reason: s === 'fresh' ? null : s.replace(/^stale:?\s*/, '') || 'stale', artifacts: {} }
+      const artifacts = {}
+      // A bare 'fresh' is the host's compact form for a phase whose files are exactly the
+      // ones its id determines (artifactio.derived_names): they are named here, so the phase
+      // is reused from its files exactly as the full form would have it.
+      if (s === 'fresh') for (const name of derivedNames(id)) artifacts[name] = { path: null, sha256: null, data: undefined }
+      phases[id] = { fresh: s === 'fresh', reason: s === 'fresh' ? null : s.replace(/^stale:?\s*/, '') || 'stale', artifacts }
       continue
     }
     if (!v || typeof v !== 'object') continue
@@ -2046,7 +2064,10 @@ const RESUME = normalizeResume(a.resume)
 // A PRD passed by path has no text yet; its hash is taken below, only if a checkpoint is found.
 cpInit(repoPath || a.beadsRepoPath, subjectId, prdByPath ? null : cpHash(prd.body))
 // The legacy checkpoint directory is consulted ONLY when the host sent no artifact plan.
-const cpLegacyRead = cp.active && !RESUME
+// The host always sends the plan of which steps succeeded (empty when none has, or when the
+// owner set the Epic `ready` to start over). The legacy checkpoint directory is never read:
+// this run neither resumes from it nor judges it.
+const cpLegacyRead = false
 
 // ── ONE read for both of the run's input files ──────────────────────────────────
 // The checkpoint and the standing rulings are two small files in the same tree, read
@@ -2129,20 +2150,6 @@ function repoSlug(repo) {
 artReport.dir = ART_ON ? ART_REL || ART_DIR : null
 artReport.epicId = ART_EPIC
 const reusedSha = {}
-// The phases each phase consumes, as the host's planner (artifactio.upstream_of) states them.
-// The plan rules a phase fresh against its upstream phases as they stood BEFORE this run; an
-// upstream phase whose reuse failed here and which was produced again has new output, so the
-// saved downstream artifact no longer derives from what this run holds.
-const upstreamPhases = (id) =>
-  id === 'repo-scoping' || id === 'trd'
-    ? ['architecture']
-    : id.startsWith('recon:')
-      ? ['repo-scoping']
-      : id.startsWith('spec:')
-        ? ['trd', 'repo-scoping']
-        : id.startsWith('tasks:')
-          ? [`spec:${id.slice('tasks:'.length)}`]
-          : []
 function resumeFresh(phaseId) {
   if (!RESUME) return null
   const hit = RESUME.phases[phaseId]
@@ -2152,11 +2159,6 @@ function resumeFresh(phaseId) {
   }
   if (!hit.fresh) {
     log(`Phase '${phaseId}' is STALE (${hit.reason}) — it runs and overwrites its artifacts`)
-    return null
-  }
-  const reran = upstreamPhases(phaseId).filter((up) => artPhases[up] === 'passed')
-  if (reran.length) {
-    log(`Phase '${phaseId}' is fresh in the plan, but ${reran.join(' and ')} ran again in this run, so its saved artifacts are not reused — it runs`)
     return null
   }
   return hit
@@ -3321,6 +3323,10 @@ async function runRepoScoping() {
         files: {
           shape: artPath('repo-scoping-shape.json'),
           ruling: artPath('repo-scoping.json'),
+          // The inventory the placement was made against, for a saved placement that
+          // records it only here: the mini reads it to replay that placement rather than
+          // placing the work again.
+          ...(scopeNames.indexOf('repo-scoping-survey.json') !== -1 ? { survey: artPath('repo-scoping-survey.json') } : {}),
         },
       }
     } else {

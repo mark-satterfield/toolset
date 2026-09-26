@@ -439,8 +439,9 @@ const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 // args.replay: { shape?, ruling? } — those same saved outputs, read back by the caller from
 // fresh artifacts. A supplied output replaces its session, and the deterministic reduction
 // below still runs over them, so a replayed span is recomputed from the saved inputs rather
-// than read back as a stored answer. A `survey` slot is ignored: the inventory travels inside
-// the placement, because the steward that placed the work is the one that took it.
+// than read back as a stored answer. The inventory travels inside the placement, because the
+// steward that placed the work is the one that took it; a placement that records it only in
+// the survey saved beside it (`files.survey`) is replayed over that survey.
 //
 // args.replay.files: { shape?, ruling? } — the same outputs named
 // as ABSOLUTE PATHS instead of inlined. Documents pass between agents as paths, not as
@@ -748,11 +749,32 @@ const shaperFiles = [prdPath && !hasText(prdBody) ? 'the PRD file named above' :
 // Epic's own saved placement, which carries the inventory it was made against.
 const replayRead = await readReplayFiles(
   replay.files,
-  [replayShape ? '' : 'shape', replayRuling ? '' : 'ruling'].filter(Boolean),
+  [replayShape ? '' : 'shape', replayRuling ? '' : 'ruling', replayRuling ? '' : 'survey'].filter(Boolean),
   'Shape'
 )
 if (!replayShape) replayShape = replayed(replayRead.shape, isShape)
 if (!replayRuling) {
+  // A saved placement written before the steward returned its inventory inside it carries
+  // the inventory in the survey saved beside it by the same run. That IS the inventory the
+  // placement was made against, so the placement is replayed over it rather than placed again.
+  const savedRuling = replayRead.ruling
+  const savedSurvey = replayRead.survey
+  if (
+    savedRuling && typeof savedRuling === 'object' && !isRuling(savedRuling) &&
+    Array.isArray(savedRuling.placements) && savedSurvey && Array.isArray(savedSurvey.repositories) &&
+    savedSurvey.repositories.some((r) => r && hasText(r.repoPath))
+  ) {
+    replayRead.ruling = { ...savedRuling, repositories: savedSurvey.repositories }
+    log('Repo scoping: the saved placement records its inventory in the saved survey beside it — replayed over that inventory')
+  } else if (savedRuling && typeof savedRuling === 'object' && !isRuling(savedRuling) && Array.isArray(savedRuling.placements)) {
+    // A saved placement is the result of a step that succeeded, and it is resumed from. With no
+    // inventory saved at all, its own placed repositories stand as the inventory it was made against.
+    replayRead.ruling = {
+      ...savedRuling,
+      repositories: savedRuling.placements.filter((p) => p && hasText(p.repoPath)).map((p) => ({ repoPath: p.repoPath, name: p.repoName || null })),
+    }
+    log('Repo scoping: the saved placement carries no inventory — replayed over the repositories it placed')
+  }
   replayRuling = replayed(replayRead.ruling, isRuling)
   if (!replayRuling && replayRead.ruling) {
     log('Repo scoping: the saved placement carries no inventory of its own (or an empty one) — the steward places the work again, live')
