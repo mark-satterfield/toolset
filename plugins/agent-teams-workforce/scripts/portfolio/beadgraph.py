@@ -205,6 +205,9 @@ def _same_value(stored: object, wanted: str) -> bool:
     structured = _structured(stored)
     if structured is not None:
         return structured == _structured(wanted)
+    # `bd` hands a `true`/`false` value back as a JSON boolean.
+    if isinstance(stored, bool):
+        return str(stored).lower() == wanted.strip().lower()
     text = "" if stored is None else str(stored)
     if text == wanted:
         return True
