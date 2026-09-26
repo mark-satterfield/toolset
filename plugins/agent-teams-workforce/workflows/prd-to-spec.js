@@ -1578,8 +1578,13 @@ async function runLifecycle(label, commandArgs, phaseName) {
 
 python3 ${shellq(`${root}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${commandArgs}
 
+Run it in the FOREGROUND with the Bash tool's \`timeout\` parameter set to 600000 (ten minutes). It writes to the tracker, one verified write per bead, and on an Epic with dozens of Tasks it takes longer than the tool's default two minutes. If the tool nevertheless moves it to the background, wait for that background command to finish and read its complete output before you return; never return while it is still running, and never start it a second time.
+
 It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    // PLUMBING — one fixed command, its JSON copied back; see resolve:prd-text.
+    // PLUMBING — one fixed command, its JSON copied back; see resolve:prd-text. The finish
+    // writes a fingerprint and a score per Task and then the Epic's lifecycle, which outruns
+    // the Bash tool's default 120s on a large Epic; a command moved to the background leaves
+    // the runner no JSON to return, and then the Epic is never marked `done`.
     { label, phase: phaseName, model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
   )
   if (!out) return { error: `the ${label} runner returned no result` }
