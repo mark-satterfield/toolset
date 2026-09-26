@@ -1081,7 +1081,7 @@ def _check_local(
                             name,
                             f"folder is {name} but its GitHub repo is {gh_name}",
                             fix=f"rename the GitHub repo {gh_name} to {name} and point origin at it",
-                            action=lambda old=gh_name: _rename_github(st, r, old, name),
+                            action=lambda rec=rec: _execute_rename(st, name, r, rec),
                         )
                     )
                 else:
@@ -1318,15 +1318,6 @@ def _create_on_github(st: State, name: str, r: LocalRepo, has_origin: bool) -> F
     )
 
 
-def _rename_github(st: State, r: LocalRepo, old: str, new: str) -> None:
-    cfg = st.cfg
-    must(
-        run(
-            ["gh", "repo", "rename", new, "--repo", f"{cfg.owner}/{old}", "--yes"],
-            timeout=120,
-        )
-    )
-    must(git(r.path, "remote", "set-url", "origin", cfg.github_url(new)))
 
 
 def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
@@ -2080,7 +2071,12 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
-# deprecate ------------------------------------------------------------------------------------
+# rename ----------------------------------------------------------------------------------------
+#
+# The one rename operation: on GitHub and on disk together, repointing origin. Everything
+# else that renames a repo goes through this — `deprecate` (which always prefixes
+# `deprecated-`) and reconcile --fix's local/GitHub name-parity repair both call it, so
+# there is exactly one place that knows how to rename a repo's git and GitHub sides.
 
 
 def deprecated_name(name: str) -> str:
@@ -2092,25 +2088,24 @@ def deprecated_name(name: str) -> str:
     return "deprecated-" + name.lower()
 
 
-def _deprecate_plan(
-    st: State, name: str
-) -> tuple[str, dict[str, Any] | None, LocalRepo | None, Path | None, list[str]]:
-    """Work out and check a deprecation before anything moves.
+def _rename_plan(
+    st: State, name: str, new: str
+) -> tuple[dict[str, Any] | None, LocalRepo | None, Path | None, list[str]]:
+    """Work out and check a rename before anything moves.
 
     Returns:
-        (new name, GitHub record, local repo, new local path, steps).
+        (GitHub record, local repo, new local path, steps).
 
     Raises:
-        PolyrepoError: when the repo cannot be deprecated as it stands.
+        PolyrepoError: when the rename cannot proceed as it stands.
     """
     cfg = st.cfg
-    if name.startswith("deprecated-"):
-        msg = f"{name} is already deprecated"
+    if name == new:
+        msg = f"{name} is already named {new}"
         raise PolyrepoError(msg)
-    new = deprecated_name(name)
     p = cfg.classify(new)
-    if p is None or p["kind"] != "deprecated":
-        msg = f"{new} matches no deprecated naming pattern"
+    if p is None:
+        msg = f"{new} matches no naming pattern"
         raise PolyrepoError(msg)
     if st.gh.get(new) is not None:
         msg = f"{cfg.owner}/{new} already exists on GitHub"
@@ -2129,33 +2124,130 @@ def _deprecate_plan(
         if r.ahead:
             msg = f"{name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
             raise PolyrepoError(msg)
-        new_path = r.path.with_name(new)
-        if new_path.exists():
+        new_path = r.path if r.path.name == new else r.path.with_name(new)
+        if new_path != r.path and new_path.exists():
             msg = f"{new_path} already exists"
             raise PolyrepoError(msg)
-        steps += [
-            f"move {r.path} to {new_path}",
-            f"point origin at {cfg.github_url(new)}",
-        ]
+        if new_path != r.path:
+            steps.append(f"move {r.path} to {new_path}")
+        steps.append(f"point origin at {cfg.github_url(new)}")
         if (git_out(r.path, "worktree", "list", "--porcelain") or "").count(
             "worktree "
         ) > 1:
             steps.append("repair the repo's linked worktrees")
-    steps.append(
-        f"manifest: rename the entry to {new}, lifecycle deprecated, deprecated_on {today()}"
-    )
-    return new, rec, r, new_path, steps
+    steps.append(f"manifest: rename the entry to {new}")
+    return rec, r, new_path, steps
 
 
-def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it on GitHub and on disk with the deprecated- prefix, and date it.
+def _execute_rename(
+    st: State, new: str, r: LocalRepo | None, rec: dict[str, Any] | None
+) -> list[str]:
+    """Rename a repo's GitHub side and its local clone (moving the folder only if it must).
+
+    Returns:
+        The steps actually done, in order.
+
+    Raises:
+        GitFailedError | OSError: when a step fails part way.
+    """
+    cfg = st.cfg
+    done: list[str] = []
+    if rec:
+        must(
+            run(
+                [
+                    "gh", "repo", "rename", new,
+                    "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
+                ],
+                timeout=120,
+            )
+        )  # fmt: skip
+        done.append(f"GitHub {rec['name']} renamed to {new}")
+    if r:
+        new_path = r.path if r.path.name == new else r.path.with_name(new)
+        if new_path != r.path:
+            r.path.rename(new_path)
+            done.append(f"moved {r.path} to {new_path}")
+        verb = "set-url" if r.origin_url else "add"
+        must(git(new_path, "remote", verb, "origin", cfg.github_url(new)))
+        done.append(f"origin set to {cfg.github_url(new)}")
+        must(git(new_path, "worktree", "repair"))
+    return done
+
+
+def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
+    """Rename a repo: on GitHub and on disk together, repointing origin and the manifest.
+
+    This is a general-purpose rename (unlike `deprecate`, which always prefixes
+    `deprecated-`): the new name must match a naming pattern for its own kind, and the
+    caller is responsible for updating anything outside git/GitHub/the manifest that
+    names the repo by its old name (beads, docs, workflow artifacts, and so on).
 
     Returns:
         0 on success, 1 when a step failed part way.
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
     (name,) = resolve_names(st, [args.repo])
-    new, rec, r, new_path, steps = _deprecate_plan(st, name)
+    new = args.new_name
+    rec, r, _new_path, steps = _rename_plan(st, name, new)
+    res: dict[str, Any] = {
+        "repo": name,
+        "new_name": new,
+        "dry_run": args.dry_run,
+        "steps": steps,
+    }
+    if args.dry_run:
+        emit(
+            args,
+            res,
+            lambda: "\n".join(
+                [f"dry run: rename {name} to {new}"] + [f"  {s}" for s in steps]
+            ),
+        )
+        return 0
+    try:
+        done = _execute_rename(st, new, r, rec)
+    except (GitFailedError, OSError) as exc:
+        res.update(error=str(exc), done=[])
+        emit(args, res, lambda: f"{name}: stopped: {res['error']}")
+        return 1
+    man = st.manifest
+    if name in man.entries():
+        man.rename_entry(name, new)
+    else:
+        man.add_entry(new, {})
+    man.set_field(new, "remote_url", cfg.github_url(new))
+    man.set_field(new, "default_branch", cfg.default_branch)
+    man.save()
+    append_changelog(
+        cfg,
+        f"polyrepo rename {name} to {new}",
+        [*done, f"manifest entry is now {new}"],
+    )
+    st.gh.invalidate()
+    emit(args, res, lambda: f"{name}: renamed to {new}")
+    return 0
+
+
+# deprecate ------------------------------------------------------------------------------------
+
+
+def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
+    """Deprecate a repo: rename it, via `rename`, to the deprecated- prefix, and date it.
+
+    Returns:
+        0 on success, 1 when a step failed part way.
+    """
+    st = gather(cfg, fetch=True, use_cache=not args.no_cache)
+    (name,) = resolve_names(st, [args.repo])
+    if name.startswith("deprecated-"):
+        msg = f"{name} is already deprecated"
+        raise PolyrepoError(msg)
+    new = deprecated_name(name)
+    rec, r, _new_path, steps = _rename_plan(st, name, new)
+    steps[-1] = (
+        f"manifest: rename the entry to {new}, lifecycle deprecated, deprecated_on {today()}"
+    )
     res: dict[str, Any] = {
         "repo": name,
         "new_name": new,
@@ -2171,30 +2263,11 @@ def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
             ),
         )
         return 0
-    done: list[str] = []
     try:
-        if rec:
-            must(
-                run(
-                    [
-                        "gh", "repo", "rename", new,
-                        "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
-                    ],
-                    timeout=120,
-                )
-            )  # fmt: skip
-            done.append(f"GitHub {rec['name']} renamed to {new}")
-        if r and new_path:
-            r.path.rename(new_path)
-            done.append(f"moved {r.path} to {new_path}")
-            verb = "set-url" if r.origin_url else "add"
-            must(git(new_path, "remote", verb, "origin", cfg.github_url(new)))
-            must(git(new_path, "worktree", "repair"))
+        done = _execute_rename(st, new, r, rec)
     except (GitFailedError, OSError) as exc:
-        res.update(error=str(exc), done=done)
-        if done:
-            append_changelog(cfg, f"polyrepo deprecate {name} (stopped)", done)
-        emit(args, res, lambda: f"{name}: stopped after {done}: {res['error']}")
+        res.update(error=str(exc), done=[])
+        emit(args, res, lambda: f"{name}: stopped: {res['error']}")
         return 1
     man = st.manifest
     if name in man.entries():
@@ -2941,6 +3014,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("repo")
     s.add_argument("--dry-run", action="store_true", help="check and plan only")
     s.set_defaults(func=cmd_deprecate)
+
+    s = sub.add_parser(
+        "rename",
+        parents=[common],
+        help="rename a repo, here and on GitHub, and repoint the manifest",
+    )
+    s.add_argument("repo")
+    s.add_argument("new_name")
+    s.add_argument("--dry-run", action="store_true", help="check and plan only")
+    s.set_defaults(func=cmd_rename)
 
     s = sub.add_parser(
         "agents-sync",
