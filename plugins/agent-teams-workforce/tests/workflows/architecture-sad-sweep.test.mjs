@@ -63,7 +63,7 @@ test('the maintainer is ordered to sweep every claim it changes, and their backl
 
 test('a decided question may not be recorded as unresolved', async () => {
   const p = await maintainerPrompt()
-  assert.match(p, /A DECIDED QUESTION IS NOT AN OPEN ONE/)
+  assert.match(p, /The SAD states decided current state and nothing else/)
   assert.match(
     p,
     /If the SAD contradicts the ruling, the SAD is the defect: correct it/,

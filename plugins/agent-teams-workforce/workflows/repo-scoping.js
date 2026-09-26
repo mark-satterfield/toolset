@@ -1107,11 +1107,31 @@ const faultsOf = (x) => {
   return out
 }
 
-let placed = replayRuling || (await placeWork('', 'scope:place-and-provision'))
+// ── A SAVED PLACEMENT IS REPLAYED ONLY WHEN IT REDUCES CLEAN ─────────────────────
+//
+// A saved placement reaches this script through a reader session, and what arrives is not
+// guaranteed to be what the steward wrote: a reader once returned the saved placement at 1,959
+// of its 13,290 bytes and the survey beside it at 483 of 28,965, so the one surviving placement
+// was checked against a one-entry inventory, dropped, and every work unit was stranded without
+// the steward ever running. A replayed placement whose reduction has ANY fault is therefore
+// discarded, logged with its faults, and the steward places the work again, live.
+let placed = null
+let reduced = null
+if (replayRuling) {
+  const replayedReduction = reducePlacement(replayRuling)
+  if (faultsOf(replayedReduction).length) {
+    log(`Repo scoping: the saved placement could not be used as it stands (${faultsOf(replayedReduction).join(' | ')}) — it is discarded and the steward places the work again, live`)
+    replayRuling = null
+  } else {
+    placed = replayRuling
+    reduced = replayedReduction
+  }
+}
+if (!placed) placed = await placeWork('', 'scope:place-and-provision')
 if (!placed || !Array.isArray(placed.placements)) {
   return failDispatch('the polyrepo-steward returned no placement — which repositories this PRD lands in was not established, and the run will not fall back to where it was launched from.', 'Place and provision')
 }
-let reduced = reducePlacement(placed)
+if (!reduced) reduced = reducePlacement(placed)
 let reruled = false
 
 // ── A PLACEMENT THAT CANNOT BE USED AS IT STANDS GETS ONE CORRECTION ─────────────
@@ -1119,8 +1139,8 @@ let reruled = false
 // A placement the reduction dropped, a creation that failed, an empty inventory or a work
 // unit placed nowhere is work specified nowhere. Re-asking the same question has no reason to
 // come out differently; asking it again WITH the faults named does, so the steward is shown
-// what failed and places once more. A SAVED placement is a completed step and is used as it
-// stands: its faults are reported, and nothing re-places it.
+// what failed and places once more. A saved placement only gets this far when it reduced
+// clean, so every placement corrected here is one the steward made in this run.
 function correctionFor(prior) {
   const lines = []
   if (!prior.inventory.length) lines.push('- You returned NO repositories. Return the complete live inventory INLINE — every repository the project has, including any you created. A saved file is not a substitute.')
@@ -1129,9 +1149,7 @@ function correctionFor(prior) {
   if (prior.strandedUnits.length) lines.push(`- Work unit(s) placed NOWHERE: ${prior.strandedUnits.map((u) => u.id).join(', ')}. Every unit must appear in exactly one placement.`)
   return lines.length ? `\n=== YOUR PREVIOUS PLACEMENT COULD NOT BE USED AS IT STOOD ===\n${lines.join('\n')}\n` : ''
 }
-if (faultsOf(reduced).length && replayRuling) {
-  log(`Repo scoping: the saved placement is a completed step and is used as it stands; recorded with it: ${faultsOf(reduced).join(' | ')}`)
-} else if (faultsOf(reduced).length) {
+if (faultsOf(reduced).length) {
   log(`Repo scoping: the placement could not be used as it stood (${faultsOf(reduced).join(' | ')}) — the steward places once more, shown what failed`)
   const again = await placeWork(correctionFor(reduced), 'scope:place-and-provision-corrected')
   if (again && Array.isArray(again.placements)) {
@@ -1145,7 +1163,7 @@ if (faultsOf(reduced).length && replayRuling) {
 
 const { inventory, createdRepos, creationFailures, placements, blocked, repos, obsoleteCode, strandedUnits } = reduced
 const remainingFaults = faultsOf(reduced)
-if ((remainingFaults.length && !replayRuling) || !repos.length) {
+if (remainingFaults.length || !repos.length) {
   // Work the steward could not place, even shown the faults, FAILS the run. It is a defect in
   // the placement — a creation that did not work, a path it could not state — and it is
   // reported as one, with every fault named, for the pipeline's failure handling. It is never
