@@ -96,22 +96,21 @@ test('the shaper runs BEFORE the steward places the work, so nothing about the e
   assert.deepEqual(
     labels,
     ['scope:greenfield-shape', 'scope:place-and-provision'],
-    'the shape, then the steward placement; the placements are checked against the steward inventory in code',
+    'the shape, then the steward placement',
   )
 })
 
 // ── The reduction is where the enforcement lives ───────────────────────────────
 
-test('a placement naming a repository the steward inventory never listed is refused as composed, not ruled', async () => {
+test('the steward placements stand: a placement is kept without any list the steward returned', async () => {
   const { result } = await runWorkflowScript(SCOPING, {
     args: { prd: PRD },
     agentImpl: scopingAgents({
-      placements: [{ repoPath: '/repos/invented', repoName: 'invented', workUnitIds: ['W1'], rationale: 'r' }],
-      inventory: [{ repoPath: '/repos/alpha', name: 'alpha', owns: 'x' }],
+      placements: [{ repoPath: '/repos/beta', repoName: 'beta', workUnitIds: ['W1'], rationale: 'r' }],
+      inventory: [],
     }),
   })
-  assert.deepEqual(result.repos, [])
-  assert.match(result.reason, /inventory/, 'the refusal must say the path was composed rather than surveyed')
+  assert.deepEqual(result.repos, ['/repos/beta'])
 })
 
 test('a ruled path that could reshape a command is refused, never sanitized', async () => {
