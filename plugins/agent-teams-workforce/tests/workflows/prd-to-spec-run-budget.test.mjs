@@ -17,7 +17,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, journalPayload } from './helpers/run-workflow.mjs'
-import { withBeadWriter, TEST_EPIC } from './helpers/bead-writer.mjs'
+import { withBeadWriter, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const prdToSpec = path.resolve(HERE, '..', '..', 'workflows', 'prd-to-spec.js')
@@ -81,7 +81,7 @@ function cleanRun(repos) {
 // against it tests the same accounting through the channel that actually carries it.
 async function runRepos(repos, extraArgs = {}) {
   const run = await runWorkflowScript(prdToSpec, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, epic: TEST_EPIC, ...extraArgs },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: repos[0], repos, epic: TEST_EPIC, ...ARTIFACT_ARGS, ...extraArgs },
     workflowImpl: cleanRun(repos),
     agentImpl: withBeadWriter(),
   })

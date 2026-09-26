@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, workflowCalls, agentCalls } from './helpers/run-workflow.mjs'
-import { withBeadWriter, TEST_EPIC } from './helpers/bead-writer.mjs'
+import { withBeadWriter, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
@@ -336,7 +336,7 @@ async function composite(reconResult, { onCalls, args } = {}) {
   const seen = []
   let storyN = 0
   const { result, calls, logs } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, ...(args || {}) },
+    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, ...ARTIFACT_ARGS, ...(args || {}) },
     workflowImpl: (call) => {
       seen.push(call)
       const name = String(call.name || '')

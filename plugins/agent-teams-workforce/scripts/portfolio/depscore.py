@@ -43,11 +43,16 @@ elaboration (`--task`, `blocks` edges between Tasks). A Task elaboration wrote c
                       judged, score the Epic and its Tasks, and with `--done` set its elaboration to `done`
     elaboration-release clear a run's owner token from an Epic it started and did not
                       finish; the Epic stays `in_progress`
+    elaboration-complete write an Epic's Stories and Tasks into beads from the documents its
+                      elaboration saved (`--dir`), updating by `elab_key` what an earlier run
+                      wrote, then finish it as `elaboration-finish` does, `done` when every
+                      part landed. `--require-complete` refuses, writing nothing, while a
+                      step that needs an agent is missing from the Epic's STEPS.md
 
 Every command prints ONE JSON object on stdout and names the tracker source it read. With
 `--out FILE` the full object is written to FILE and stdout carries only its `summary`.
 
-`apply-edges`, `record`, `score` and the three `elaboration-` commands take `--dry-run`:
+`apply-edges`, `record`, `score` and the four `elaboration-` commands take `--dry-run`:
 the command reads the tracker and computes exactly as it otherwise would, writes nothing,
 and returns every write it would have made, in order, under `planned`.
 """
@@ -77,6 +82,9 @@ from edgeset import (
     withdraw_edge,
 )
 from elaboration import LifecycleError, finish, release, start
+from emitter import complete as complete_elaboration
+from hierarchy import HierarchyError
+from hierarchy import build as build_hierarchy
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 
 #: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
@@ -589,6 +597,51 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _dry_run_flag(efi)
 
+    eco = sub.add_parser(
+        "elaboration-complete",
+        help="write an Epic's hierarchy from its saved documents, then finish it",
+        parents=[common],
+    )
+    eco.add_argument("--epic", required=True, help="the Epic")
+    eco.add_argument(
+        "--dir", required=True, type=Path, help="the Epic's working directory"
+    )
+    eco.add_argument(
+        "--project-root",
+        type=Path,
+        default=None,
+        help="the root spec references are recorded relative to",
+    )
+    eco.add_argument(
+        "--repos",
+        default="",
+        help="the span, comma-separated; absent, the saved ruling's",
+    )
+    eco.add_argument(
+        "--steps",
+        default=None,
+        help="the completed steps, comma-separated; absent, the Epic's STEPS.md",
+    )
+    eco.add_argument(
+        "--extra",
+        type=Path,
+        default=None,
+        help="a saved {tasks: [...]} added beside them",
+    )
+    eco.add_argument(
+        "--hold",
+        default="",
+        help="reasons that hold the Epic short of done, comma-separated",
+    )
+    eco.add_argument("--owner", default=None, help="the owner token the start returned")
+    eco.add_argument("--sad-root", default=None, help="the SAD directory")
+    eco.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="refuse, writing nothing, while a step that needs an agent is missing",
+    )
+    _dry_run_flag(eco)
+
     erl = sub.add_parser(
         "elaboration-release",
         help="clear a run's owner token from an Epic it did not finish",
@@ -611,6 +664,8 @@ def run(args: argparse.Namespace) -> dict:
     Returns:
         The payload to print as JSON.
     """
+    if args.command == "elaboration-complete":
+        return run_complete(args)
     descriptions = args.command in (
         "assess-plan",
         "assess-context",
@@ -737,6 +792,57 @@ def run(args: argparse.Namespace) -> dict:
     return head | score(graph, writer)
 
 
+def run_complete(args: argparse.Namespace) -> dict:
+    """Write an Epic's hierarchy from its saved documents, then finish its elaboration.
+
+    The documents are read before the tracker, so an Epic whose agent steps are not all
+    complete is refused without reading the tracker when `--require-complete` is set.
+
+    Args:
+        args: The parsed command line.
+
+    Returns:
+        The payload to print as JSON.
+    """
+    hier = build_hierarchy(
+        args.dir,
+        args.project_root,
+        repos=split_ids(args.repos) if args.repos else None,
+        steps=[s.strip() for s in args.steps.split(",") if s.strip()]
+        if args.steps is not None
+        else None,
+        extra=args.extra,
+        holds=[h.strip() for h in args.hold.split(",") if h.strip()],
+    )
+    head = {"command": args.command, "epic": args.epic}
+    if args.require_complete and hier.missing_steps:
+        return head | {
+            "ok": False,
+            "refusal": {
+                "code": "steps-missing",
+                "reason": "a step that needs an agent is not on the Epic's STEPS.md",
+                "missing": hier.missing_steps,
+            },
+            "summary": {"ok": False, "refused": "steps-missing"},
+        }
+    graph = beadgraph.load(args.directory, with_description=True)
+    if graph.warnings:
+        msg = f"the tracker was not read through bd, so nothing is written: {graph.warnings}"
+        raise GraphError(msg)
+    writer = Writer(args.directory, dry_run=args.dry_run)
+    result = complete_elaboration(
+        graph,
+        writer,
+        args.epic,
+        hier,
+        args.project_root,
+        owner=args.owner,
+        sad_root=args.sad_root,
+        reload=lambda: beadgraph.load(args.directory, with_description=True),
+    )
+    return {"source": graph.source, "warnings": graph.warnings} | head | result
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point. Prints one JSON object; exit 2 means the command refused.
 
@@ -756,6 +862,7 @@ def main(argv: list[str] | None = None) -> int:
         ScoringError,
         LifecycleError,
         GraphError,
+        HierarchyError,
         rubric.WsjfError,
         json.JSONDecodeError,
         OSError,

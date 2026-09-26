@@ -5340,42 +5340,85 @@ log(
   `Hierarchy ready to write: 1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and sized, ` +
     `${taskEdgeCount} Task dependency edge(s), ${crossStory.edges.length} of them across Stories.`
 )
-// NOTHING IS WRITTEN WITHOUT THE SURVEY. With the Epic's children unlisted, nothing can be
-// matched, so every Story and Task would be written again beside the ones an earlier run
-// wrote, and duplicates are removed only by hand. The decompositions this run produced are
-// accepted and saved, so the next run replays them and costs little more than the survey.
-if (epicChildrenNodes === null) {
-  const surveyDeaths = dispatchDeaths('Task Decomposition').filter((f) => f.label === 'beads:survey-existing')
-  return {
-    ...partial('emit-beads', {
-      reason: `nothing was written: ${reelab.reason}. Writing without that listing would duplicate every Story and Task an earlier run wrote under ${epicId}.`,
-      ...(surveyDeaths.length ? { dispatchFailed: true, dispatchFailures: surveyDeaths } : {}),
-    }),
-    // The same measured handback fields as the exit where nothing durable landed.
-    emissionOk: false,
-    beadsEmitted: 0,
-    tasksEmitted: 0,
-    degraded: true,
-    hierarchy,
-    beadSet,
-    repoSpan: repos,
+// ── EMIT BEADS AND FINISH: ONE COMMAND, THE SAME ONE THE HOST RUNS ──────────────
+// Writing the hierarchy and finishing the Epic need no judgment, so neither is done here by
+// sessions. `depscore.py elaboration-complete` reads the documents this run saved into the
+// Epic working directory — each Story's `story-<slug>.json`, each Story's `tasks-<slug>.json`,
+// the cross-Story `task-deps.json` — and writes them into beads by durable `elab_key`: an
+// earlier run's open Story or Task is updated in place, a started or built one is left alone
+// and any difference becomes a follow-up Task, an open Task the decomposition no longer
+// contains is closed, every Task edge is written as `blocks`, and stand-in Stories are
+// retired. Then it finishes the Epic: its Tasks and itself are scored, and it is set `done`
+// when every part of it landed and nothing below holds it. The host finishes an Epic whose
+// agent steps are all on its STEPS.md with the same command and no session, so the two can
+// never write the hierarchy two different ways.
+//
+// What this run knows and the saved documents do not is handed over as tokens: why the
+// Epic is not done yet, and the knock-on Tasks this run added beside the decompositions,
+// saved first as `knock-on.json`.
+const holdTokens = []
+if (specFailures.length) holdTokens.push('spec-failures')
+if (decompositionFailures.length) holdTokens.push('decomposition-failures')
+if (removalNotEmitted.length) holdTokens.push('removal-not-emitted')
+if (crossStory.degraded) holdTokens.push('cross-story-degraded')
+/** Save the knock-on Tasks for the emission command to read, returning the file or null. */
+async function saveKnockOn(list) {
+  const file = artPath('knock-on.json')
+  const body = JSON.stringify({
+    tasks: list.map((t) => ({
+      key: t.key,
+      parentStoryId: t.parentStoryId,
+      repoPath: t.repoPath || null,
+      title: t.title,
+      description: t.description,
+      acceptanceCriteria: t.acceptanceCriteria || [],
+      definitionOfDone: t.definitionOfDone || [],
+      specPaths: t.specPaths || [],
+      specSections: t.specSections || [],
+      requirementIds: t.requirementIds || [],
+      decisionIds: t.decisionIds || [],
+      surfaces: t.surfaces === undefined ? null : t.surfaces,
+      testStrategy: t.testStrategy || null,
+      dependsOn: t.dependsOn || [],
+      wsjfMetadata: t.wsjfMetadata || null,
+      supersedes: t.supersedes || null,
+      outOfSpanKnockOn: t.outOfSpanKnockOn === true,
+      specPathsVerified: specDocsStatus(t.repoPath).reported ? 'true' : 'unknown',
+    })),
+  })
+  const wrote = await settleAgent(
+    `Write the JSON document below to ${file} with the Write tool, exactly as given, every character, replacing the file if it exists (Read it first if the Write tool asks you to). Write no other file, run nothing else and change nothing else. Return exitCode 0 when the file is written, otherwise 1 with what went wrong in \`output\`.\n\n${body}`,
+    { label: 'beads:save-knock-on', phase: 'Emit Beads', model: 'haiku', effort: 'low', schema: STEP_RECORD_SCHEMA }
+  )
+  return wrote && wrote.exitCode === 0 ? file : null
+}
+let extraPath = null
+if (knockOnTasks.length) {
+  extraPath = ART_ON ? await saveKnockOn(knockOnTasks) : null
+  if (!extraPath) {
+    holdTokens.push('knock-on-unsaved')
+    log(`Knock-on Tasks NOT saved for emission (${knockOnTasks.map((t) => t.key).join(', ')}) — they are not written, and the Epic is not marked done.`)
   }
 }
-
-// ── What emission reports, and why it is counted this way ─────────────────────
-// A caller has to be able to tell three outcomes apart without opening anything:
-// everything landed, some of it landed, none of it landed. So every node of the
-// hierarchy ends in exactly one bucket and the buckets are disjoint:
-//
-//   adopted — the node already carried a tracker id (a caller-supplied Epic is a bead
-//             that exists). Durable, and NOT re-created: writing it again is the
-//             duplicate-Epic defect the pairing rule exists to prevent.
-//   created — written by this run. This is `beadsEmitted`.
-//   failed  — attempted, and the writer did not come back with an id.
-//   skipped — NOT attempted, because its parent is not durable. A child written under a
-//             parent that does not exist is an orphan the router refuses to work, so
-//             parent-before-child is enforced by not trying rather than by hoping.
-const emission = {
+const SAFE_ARG = /^[A-Za-z0-9._/:-]+$/
+const completedSteps = Object.keys(artPhases).filter((k) => (artPhases[k] === 'passed' || artPhases[k] === 'reused') && SAFE_ARG.test(k))
+const spanArg = repos.filter((r) => typeof r === 'string' && SAFE_ARG.test(r))
+const completeArgs = [
+  `elaboration-complete --epic ${epicBeadId}`,
+  `--dir ${shellq(ART_DIR)}`,
+  SS_ROOT ? `--project-root ${shellq(SS_ROOT)}` : '',
+  spanArg.length ? `--repos ${shellq(spanArg.join(','))}` : '',
+  `--steps ${shellq(completedSteps.join(','))}`,
+  `--owner ${lifecycle.owner}`,
+  holdTokens.length ? `--hold ${holdTokens.join(',')}` : '',
+  extraPath ? `--extra ${shellq(extraPath)}` : '',
+  a.sadPath ? `--sad-root ${shellq(a.sadPath)}` : '',
+].filter(Boolean).join(' ')
+const completeOut = ART_ON
+  ? await runLifecycle('epic:complete', completeArgs, 'Emit Beads')
+  : { error: 'no artifact working directory is configured (args.artifactScript, args.projectRoot), so there are no saved documents to write the hierarchy from' }
+const completed = completeOut && !completeOut.error && completeOut.emission ? completeOut : null
+const emission = (completed && completed.emission) || {
   target: emitTarget,
   attempted: 0,
   created: 0,
@@ -5383,568 +5426,16 @@ const emission = {
   written: [],
   failed: [],
   skipped: [],
-  // Tasks written with NO spec reference. The build lane has no contract to build such a
-  // Task against, so each one is named here and the verdict cannot be `complete`.
   specReferenceMissing: [],
-  // Architecture-impact knock-on Tasks for built work in a repository this Epic did not
-  // specify. They carry the built Task they follow instead of a spec, and are named here
-  // rather than in `specReferenceMissing`, because no run of this Epic can give them one.
   knockOnWithoutSpec: [],
   links: { attempted: 0, linked: 0, failed: [] },
-  // The backfill repair, reported SEPARATELY from the verdict below. Retiring a stand-in
-  // parent is housekeeping on beads this run did not author; it can fail without making
-  // this run's own hierarchy any less durable, and it must never be able to turn a
-  // complete emission into a partial one.
-  heal: { ran: false, reason: null, wrappers: 0, reparented: 0, closed: 0, failed: [] },
-  // What a RE-elaboration matched, updated, closed and carried forward as follow-up work.
-  // Reported beside the verdict for the same reason `heal` is: matching existing children is
-  // housekeeping on beads this run did not author, and it never turns a complete emission
-  // into a partial one. Filled in by the re-elaboration block in the write path below.
+  heal: { ran: false, reason: 'the emission command did not run', wrappers: 0, reparented: 0, closed: 0, failed: [] },
   reelaboration: null,
   verdict: 'none',
-  reason: null,
+  reason: `the emission command returned no result: ${(completeOut && completeOut.error) || 'no answer'}`,
 }
-
-/**
- * Write one LEVEL of the hierarchy and return a Map of local key -> real bead id.
- * Ordering across levels is the caller's; ordering within a level is the list's.
- */
-// ── ONE WRITER SESSION CANNOT WRITE AN UNBOUNDED LEVEL ───────────────────────────
-//
-// A bead-writer session runs exactly one `bd create` per bead, one create is one Bash call
-// is one TURN, and the agent carries a hard turn cap. A whole level in one dispatch
-// therefore wrote the first handful of beads, ran out of turns, and every bead past that
-// point was silently never written: settleAgent normalizes the dead session to null, the
-// unreported keys fall through the per-item loop below as `id = null`, and they land in
-// `emission.failed`. The verdict is then never `complete`, so `epicDone` is never true, so
-// NO Epic with more than a handful of Tasks has ever finished elaboration.
-//
-// So a level is written in chunks, one session each. The chunk size is well under the turn
-// cap on purpose — the cap is the wall, not the target, and a session needs turns for its
-// structured reply and for a create that has to be retried. It also bounds the payload and
-// the context each session carries, which raising the cap alone would not.
-//
-// SEQUENTIAL, not concurrent. These are `bd` writes into one local database; running the
-// chunks at once would put several writers on the same tracker for no gain that matters
-// here. Ordering within a level is the list's, and chunking preserves it.
-const WRITE_CHUNK = 8
-const chunked = (list, size) => {
-  const out = []
-  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
-  return out
-}
-async function writeWave(level, items) {
-  const ids = new Map()
-  if (!items.length) return ids
-  emission.attempted += items.length
-  const reported = new Map()
-  // A dispatch failure belongs to the chunk it happened in. Recorded per key so the items in
-  // a surviving chunk are never blamed for a sibling chunk's fault, and the reason a bead is
-  // missing stays the reason it is actually missing.
-  const faultFor = new Map()
-  const batches = chunked(items, WRITE_CHUNK)
-  if (batches.length > 1) log(`Writing ${items.length} ${level}(s) in ${batches.length} chunk(s) of at most ${WRITE_CHUNK} — one writer session each`)
-  for (let b = 0; b < batches.length; b++) {
-    const batch = batches[b]
-    let reply = null
-    let fault = null
-    try {
-      reply = await settleAgent(`${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level, beads: batch, links: [] })}`, {
-        label: batches.length > 1 ? `beads:write-${level} (${b + 1}/${batches.length})` : `beads:write-${level}`,
-        phase: 'Emit Beads',
-        effort: 'low',
-        agentType: 'agent-teams-workforce:bead-writer',
-        schema: WRITE_SCHEMA,
-      })
-    } catch (e) {
-      fault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
-    }
-    for (const r of (reply && Array.isArray(reply.results) ? reply.results : [])) {
-      if (r && r.key != null) reported.set(String(r.key), r)
-    }
-    if (fault) for (const it of batch) faultFor.set(String(it.key), fault)
-  }
-  for (const it of items) {
-    const r = reported.get(String(it.key))
-    const fault = faultFor.get(String(it.key)) || null
-    // An id counts only when the writer says ok AND hands back text. A missing entry, a
-    // null id, or an ok with nothing in it is a bead that was not written — silence is
-    // never read as success here, because the whole point of the phase is durability.
-    const id = r && r.ok === true && typeof r.id === 'string' && r.id.trim() ? r.id.trim() : null
-    if (id) {
-      ids.set(it.key, id)
-      emission.created += 1
-      emission.written.push({ level, key: it.key, id })
-    } else {
-      emission.failed.push({
-        level,
-        key: it.key,
-        reason: (r && r.error) || fault || 'the writer reported no id for this bead',
-        // The writer ANSWERED for this bead and did not write it, as opposed to never running.
-        answered: !!r,
-      })
-    }
-  }
-  return ids
-}
-
-// ── THE TASK CONTRACT, as the build lane reads it ────────────────────────────────
-// Every value is a string, because bd metadata is flat key=value. Lists and the strategy
-// object are compact JSON. `surfaces` and `test_strategy` are the literal `unknown` when
-// nothing was declared — never an empty list standing in for unknown.
-const strItems = (v) => (Array.isArray(v) ? v.map((x) => String(x == null ? '' : x).trim()).filter(Boolean) : [])
-const acText = (x) =>
-  x && typeof x === 'object' && (x.given || x.when || x.then) ? `Given ${x.given || ''} When ${x.when || ''} Then ${x.then || ''}` : String(x == null ? '' : x).trim()
-const TASK_UNKNOWN = 'unknown'
-function taskContract(t) {
-  const specPaths = strItems(t.specPaths)
-  return {
-    specPaths,
-    specSections: strItems(t.specSections),
-    acceptanceCriteria: (Array.isArray(t.acceptanceCriteria) ? t.acceptanceCriteria : []).map(acText).filter(Boolean),
-    definitionOfDone: strItems(t.definitionOfDone),
-    requirementIds: strItems(t.requirementIds),
-    surfaces: Array.isArray(t.surfaces) ? strItems(t.surfaces) : null,
-    testStrategy: t.testStrategy && typeof t.testStrategy === 'object' ? t.testStrategy : null,
-  }
-}
-function taskContractMetadata(t) {
-  const c = taskContract(t)
-  const m = {
-    spec_sections: JSON.stringify(c.specSections),
-    acceptance_criteria: JSON.stringify(c.acceptanceCriteria),
-    definition_of_done: JSON.stringify(c.definitionOfDone),
-    requirement_ids: JSON.stringify(c.requirementIds),
-    surfaces: c.surfaces ? JSON.stringify(c.surfaces) : TASK_UNKNOWN,
-    test_strategy: c.testStrategy ? JSON.stringify(c.testStrategy) : TASK_UNKNOWN,
-  }
-  if (c.specPaths.length) {
-    m.spec_path = c.specPaths[0]
-    m.spec_paths = JSON.stringify(c.specPaths)
-    // Whether those paths were checked against files someone actually opened. `unknown` is a
-    // replayed decomposition whose saved artifact predates the readability report: the refs
-    // are the naming convention again, and a build lane that trusts them may find nothing
-    // there. Written on every Task that carries a ref, so silence is never a quiet yes.
-    m.spec_paths_verified = specDocsStatus(t.repoPath).reported ? 'true' : 'unknown'
-  } else {
-    // Two different causes reach here and they are repaired differently: a document that was
-    // never saved has to be re-authored, while one saved outside the project root only has to
-    // be recorded. Naming the wrong one sends whoever reads this to the wrong place.
-    const unreadableHere = specDocsStatus(t.repoPath).paths
-    if (t.outOfSpanKnockOn === true) {
-      emission.knockOnWithoutSpec.push({ key: t.key, follows: t.supersedes || null, repoPath: t.repoPath || null })
-      return m
-    }
-    emission.specReferenceMissing.push({
-      key: t.key,
-      reason: unreadableHere.length
-        ? `spec-reference-missing: the decomposer could not open its Story's spec document(s) — ${unreadableHere.join(', ')} — so no ref was recorded rather than one pointing at a file that is not there`
-        : 'spec-reference-missing: no project-root-relative spec document is known for its Story ' +
-          `(${SS_ROOT ? `the spec documents were not saved under the project root ${SS_ROOT}` : 'no project root was supplied as args.projectRoot (ATW_PROJECT_ROOT) or args.resume.root'})`,
-    })
-  }
-  return m
-}
-function taskContractBlock(t) {
-  const c = taskContract(t)
-  const list = (xs) => (xs.length ? xs.map((x) => `- ${x}`).join('\n') : '- (none)')
-  const s = c.testStrategy
-  return [
-    '## Spec contract',
-    `Paths are relative to the project root${SS_ROOT ? ` (${SS_ROOT})` : ''}.`,
-    `Spec: ${c.specPaths[0] || 'MISSING — no spec reference could be recorded for this Task'}`,
-    ...(c.specPaths.length > 1 ? [`Spec documents:\n${list(c.specPaths)}`] : []),
-    `Spec sections:\n${list(c.specSections)}`,
-    `Requirement ids: ${c.requirementIds.join(', ') || '(none)'}`,
-    `Surfaces: ${c.surfaces ? c.surfaces.join(', ') || '(declared none — internal-only)' : 'unknown (none declared)'}`,
-    `Test strategy: ${s ? `pyramid=${s.pyramid || 'n/a'}; coverageThreshold=${s.coverageThreshold || 'n/a'}; envMatrix=${strItems(s.envMatrix).join(', ') || 'n/a'}${s.source ? ` (from ${s.source})` : ''}` : 'unknown (the spec states none)'}`,
-    `Definition of Done:\n${list(c.definitionOfDone)}`,
-  ].join('\n')
-}
-
-
-
-// Every metadata key a Task is written with, at its create and when re-elaboration refreshes
-// it: its durable identity and repository, every WSJF component its decomposition computed
-// under the keys `wsjf.py` names, the decisions it builds on, the Task it follows, and its
-// build contract. A Task that could not be scored carries no score key at all.
-const WSJF_SIZE_KEYS = ['wsjf_size_estimate', 'wsjf_size_low', 'wsjf_size_high', 'wsjf_size_confidence']
-const judgedSize = (t) => !!(t.wsjfMetadata && WSJF_SIZE_KEYS.every((k) => hasText(String(t.wsjfMetadata[k] == null ? '' : t.wsjfMetadata[k]))))
-function taskMetadata(t) {
-  const m = { elab_key: taskElabKey(t) }
-  if (t.repoPath) m.repoPath = String(t.repoPath)
-  if (t.wsjfMetadata && typeof t.wsjfMetadata === 'object') {
-    for (const [k, v] of Object.entries(t.wsjfMetadata)) if (/^wsjf(_[a-z_]+)?$/.test(k) && v != null) m[k] = String(v)
-  }
-  // The decisions this Task builds on, and — for a follow-up minted because the Task it
-  // replaces was already built — the Task it follows. Both are fields rather than prose:
-  // the impact pass reads them, and a person reading the notes line would not.
-  const td = Array.isArray(t.decisionIds) ? t.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
-  if (td.length) m.decision_ids = JSON.stringify([...new Set(td)])
-  if (typeof t.supersedes === 'string' && SAFE_BEAD_ID.test(t.supersedes)) m.elab_follows = t.supersedes
-  return Object.assign(m, taskContractMetadata(t))
-}
-
-// 1) THE EPIC is the caller's existing bead (`epicId`, set before decomposition), adopted as
-//    it stands.
-emission.adopted += 1
-
-
-// `close` and `update` are decided HERE, one bead at a time, and handed to the writer as
-// named mutations. The writer picks nothing — see its charter.
-const reelabMutations = []
-
-// STORIES. A Story is matched by the repository it covers. A matched Story is adopted, so
-// the wave below skips it; the only thing that changes on it is prose, and only while it is
-// open. An existing Story this run no longer covers is closed only when it holds no Task at
-// all. A Story holding open, started or finished Tasks stays open whatever the new span
-// says: a Story is not closed because its Tasks are closed, and closing it would hide that
-// work.
-const reelabStoryOf = new Map() // story local key -> matched node
-if (reelab.ran) {
-  const covered = new Set()
-  for (const s of stories) {
-    const key = storyElabKey(s)
-    const match = existingStories.get(key)
-    if (!match) continue
-    covered.add(match.id)
-    reelabStoryOf.set(s.key, match)
-    s.id = match.id
-    reelab.storiesMatched += 1
-    if (match.status === 'open' && (normText(s.title) !== match.title || normText(s.description) !== match.description)) {
-      reelabMutations.push({
-        key: `update:${match.id}`,
-        op: 'update',
-        id: match.id,
-        title: asText(s.title) || String(s.key),
-        description: asText(s.description),
-      })
-    }
-  }
-  for (const node of existingStories.values()) {
-    if (covered.has(node.id) || node.status === 'closed') continue
-    const held = existingByParent.get(node.id) || []
-    if (held.length) {
-      reelab.failed.push({ what: node.id, reason: `left open: this Epic's span no longer covers it, but it holds ${held.length} Task(s)` })
-      continue
-    }
-    reelabMutations.push({
-      key: `close:${node.id}`,
-      op: 'close',
-      id: node.id,
-      reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the repository this Story covered is no longer in the Epic's span, and it holds no Task.`,
-    })
-  }
-}
-
-// TASKS. Matched by the durable key, then by title under the same Story for a Task written
-// before the key existed. What happens next is decided by the Task's STATUS and by nothing
-// else — see the rule at the head of this block.
-const reelabKnockOn = []
-// The matched Tasks still open: refreshed in place, edges included.
-const reelabOpenTasks = []
-// The keys of matched Tasks already started or built, which keep the edges they have.
-const reelabHeldKeys = new Set()
-if (reelab.ran) {
-  const matchedIds = new Set()
-  for (const t of tasks) {
-    const story = reelabStoryOf.get(t.parentStoryId)
-    if (!story) continue
-    const siblings = existingByParent.get(story.id) || []
-    // A decomposed Task that names `reuses` (a validated existing key) is matched on it alone.
-    // Every other Task is matched on the title key it would be minted under, suffixed or not:
-    // a decomposition replayed from its saved file carries the `reuses` of the run that made
-    // it, so a resume after emission was cut short names none of the Tasks that run wrote.
-    // Either falls back to the title for a bead written before keys existed.
-    const reuseKey = t.reuses !== undefined && hasText(t.reuses) ? t.reuses : null
-    const titleKey = baseTaskElabKey(t)
-    const keyMatches = (k) => (reuseKey ? k === reuseKey : k === titleKey || (k.startsWith(`${titleKey}-`) && /^\d+$/.test(k.slice(titleKey.length + 1))))
-    const match =
-      siblings.find((c) => c.type === 'task' && hasText(c.elabKey) && keyMatches(c.elabKey) && !matchedIds.has(c.id)) ||
-      siblings.find((c) => c.type === 'task' && !c.elabKey && c.title === normText(t.title) && !matchedIds.has(c.id)) ||
-      null
-    if (!match) continue
-    // The bead keeps its key; a keyless legacy bead gets one now, written with the update.
-    if (match.elabKey) t.elabKey = match.elabKey
-    matchedIds.add(match.id)
-    reelab.tasksMatched += 1
-    // Compared whitespace-normalised, as the survey reports it; written with its line breaks,
-    // because the contract block is Markdown a person and the build lane read.
-    const wantedText = [asText(t.description), taskContractBlock(t)].filter(Boolean).join('\n\n')
-    const wanted = normText(wantedText)
-    if (match.status === 'open') {
-      // Nothing has been built against it, so the current decomposition simply replaces it:
-      // its text, every WSJF component, its contract and — once every id is known, below —
-      // its edges.
-      t.id = match.id
-      reelab.tasksUpdated += 1
-      reelabOpenTasks.push({ task: t, match })
-      reelabMutations.push({
-        key: `update:${match.id}`,
-        op: 'update',
-        id: match.id,
-        title: asText(t.title) || String(t.key),
-        description: wantedText,
-        metadata: taskMetadata(t),
-      })
-      continue
-    }
-    // Started or built: its text is what somebody worked from, and it is not rewritten, and no
-    // new edge is written onto it — an edge would block work already under way.
-    t.id = match.id
-    reelabHeldKeys.add(t.key)
-    if (normText(t.title) === match.title && wanted === match.description) {
-      reelab.tasksLeftAlone += 1
-      continue
-    }
-    reelabKnockOn.push({ task: t, existing: match, parentId: story.id })
-    reelab.tasksKnockOn += 1
-  }
-  // A follow-up an earlier re-elaboration wrote for the same built Task, still open, is the one
-  // this run's follow-up refreshes. Matched here, before the closing pass, so it is updated in
-  // place instead of being closed as "no longer specified" and written again.
-  for (const k of reelabKnockOn) {
-    k.followKey = `${k.existing.elabKey || baseTaskElabKey(k.task)}:follow-up`
-    k.prior =
-      (existingByParent.get(k.parentId) || []).find(
-        (c) => c.type === 'task' && c.status === 'open' && !matchedIds.has(c.id) && hasText(c.elabKey) && (c.elabKey === k.followKey || c.elabKey.startsWith(`${k.followKey}-`))
-      ) || null
-    if (k.prior) matchedIds.add(k.prior.id)
-  }
-  // A Task the new decomposition no longer contains, closed with a reason that names the run.
-  for (const s of reelabStoryOf.values()) {
-    for (const c of existingByParent.get(s.id) || []) {
-      if (c.type !== 'task' || c.status !== 'open' || matchedIds.has(c.id)) continue
-      reelab.tasksClosed += 1
-      reelabMutations.push({
-        key: `close:${c.id}`,
-        op: 'close',
-        id: c.id,
-        reason: `Closed by prd-to-spec re-elaboration of ${epicId}: the current decomposition of this Story no longer contains this Task, and no work had started on it.`,
-      })
-    }
-  }
-}
-
-// The knock-on Tasks. A change to work that is already built does not edit the built Task —
-// it becomes a NEW Task that fixes the affected feature and cites the one it follows. This is
-// the concrete answer to "I finished my task, but feature XYZ will no longer work".
-for (const k of reelabKnockOn) {
-  const t = k.task
-  // Its own durable key, derived from the Task it follows, so the next re-elaboration finds it.
-  let followKey = k.prior ? k.prior.elabKey : k.followKey
-  for (let n = 2; !k.prior && takenElabKeys.has(followKey); n++) followKey = `${k.followKey}-${n}`
-  const follow = {
-    ...t,
-    id: k.prior ? k.prior.id : null,
-    elabKey: followKey,
-    reuses: null,
-    key: `${t.key}-knockon`,
-    title: `${asText(t.title)} (follow-up to ${k.existing.id})`,
-    description:
-      `${asText(t.description)}\n\n` +
-      `FOLLOW-UP. ${k.existing.id} already covered this work and is ${k.existing.status === 'closed' ? 'built' : 'in progress'}, so it was not rewritten. ` +
-      'This Task carries what the current specification says differently, against the same Story and the same contract.',
-    supersedes: k.existing.id,
-  }
-  tasks.push(follow)
-  if (k.prior) {
-    reelabOpenTasks.push({ task: follow, match: k.prior })
-    reelabMutations.push({
-      key: `update:${k.prior.id}`,
-      op: 'update',
-      id: k.prior.id,
-      title: follow.title,
-      description: [follow.description, taskContractBlock(follow)].join('\n\n'),
-      metadata: taskMetadata(follow),
-    })
-  }
-}
-if (reelab.ran) {
-  log(
-    `Re-elaboration: ${reelab.storiesMatched} Story/Stories matched, ${reelab.tasksMatched} Task(s) matched ` +
-      `(${reelab.tasksUpdated} updated in place, ${reelab.tasksLeftAlone} already built and unchanged, ${reelab.tasksKnockOn} carried as follow-up Tasks), ` +
-      `${reelab.tasksClosed} Task(s) closed as no longer specified` +
-      `${reelab.failed.length ? `, ${reelab.failed.length} left alone` : ''}.`
-  )
-}
-
-// 2) THE STORIES, each under the Epic's REAL id.
-const storyIds = new Map()
-{
-  const pendingStories = []
-  for (const s of stories) {
-    if (s.id) {
-      storyIds.set(s.key, String(s.id))
-      emission.adopted += 1
-      continue
-    }
-    pendingStories.push(s)
-  }
-  const got = await writeWave(
-    'story',
-    pendingStories.map((s) => ({
-      key: s.key,
-      type: 'story',
-      title: asText(s.title) || String(s.key),
-      description: asText(s.description),
-      parentId: epicId,
-      acceptanceCriteria: Array.isArray(s.acceptanceCriteria) && s.acceptanceCriteria.length ? s.acceptanceCriteria : null,
-      notes: s.repoPath ? `repoPath: ${s.repoPath}` : null,
-      labels: null,
-      // Metadata, not only a note — see the task wave below for why the two are not
-      // interchangeable. A Story is scoped to exactly one repo, so its repoPath is a
-      // fact about the bead and belongs in a field.
-      // The spec documents are owned by the Story (decision 6): a Task created under it
-      // finds them with `bd show` on the Story.
-      metadata: (() => {
-        // `elab_key` is what a LATER run matches this Story on. It is written at the
-        // create and never recomputed from the title, which is the field most likely to
-        // be reworded. `decision_ids` is what a changed architecture decision finds it by.
-        const m = { elab_key: storyElabKey(s) }
-        if (s.repoPath) m.repoPath = String(s.repoPath)
-        const sd = Array.isArray(s.decisionIds) ? s.decisionIds.map((x) => String(x || '').trim()).filter(Boolean) : []
-        if (sd.length) m.decision_ids = JSON.stringify([...new Set(sd)])
-        if (s.repoPath) {
-          const slug = repoSlug(s.repoPath)
-          // THE STORY MUST NOT ADVERTISE A DOCUMENT ITS TASKS WERE DENIED. These entries
-          // were built from the naming convention alone, so a Story kept pointing at a
-          // spec that was never saved even after the same document had been stripped from
-          // every Task beneath it — the same wrong-file dispatch one level up, and a
-          // build-lane agent runs `bd show` on the Story as readily as on the Task. The
-          // `story-<slug>.json` entry is this run's own output and is not filtered: the
-          // decomposer is never handed it, so it is never in the report.
-          const specEntries = [
-            ['spec', `spec-${slug}.md`],
-            ['spec_data_model', `spec-${slug}.data-model.md`],
-            ['spec_criteria', `spec-${slug}.criteria.md`],
-          ].filter(([, name]) => !specDocUnreadable(s.repoPath, name))
-          Object.assign(m, artifactMetadata([...specEntries, ['story', `story-${slug}.json`]]))
-          // Says whether the refs above were checked against files someone opened, or are
-          // the naming convention unverified. Written on every Story that carries a spec
-          // ref so its absence is never read as a quiet yes.
-          if (specEntries.length) m.spec_paths_verified = specDocsStatus(s.repoPath).reported ? 'true' : 'unknown'
-        }
-        return Object.keys(m).length ? m : null
-      })(),
-    }))
-  )
-  for (const s of pendingStories) {
-    const id = got.get(s.key)
-    if (id) storyIds.set(s.key, id)
-  }
-}
-
-// 3) THE TASKS, each under its OWN Story's real id. A Task whose Story never landed is
-//    skipped rather than written parentless — see the `skipped` bucket above.
-const taskIds = new Map()
-{
-  const pendingTasks = []
-  for (const t of tasks) {
-    if (t.id) {
-      taskIds.set(t.key, String(t.id))
-      emission.adopted += 1
-      continue
-    }
-    const parentId = storyIds.get(t.parentStoryId) || null
-    if (!parentId) {
-      emission.skipped.push({
-        level: 'task',
-        key: t.key,
-        reason: `its parent Story ${t.parentStoryId} was not written, so this Task would have no Spec to build against`,
-      })
-      continue
-    }
-    pendingTasks.push({ task: t, parentId })
-  }
-  const got = await writeWave(
-    'task',
-    pendingTasks.map(({ task: t, parentId }) => ({
-      key: t.key,
-      type: 'task',
-      title: asText(t.title) || String(t.key),
-      description: [asText(t.description), taskContractBlock(t)].filter(Boolean).join('\n\n'),
-      parentId,
-      acceptanceCriteria: Array.isArray(t.acceptanceCriteria) && t.acceptanceCriteria.length ? t.acceptanceCriteria : null,
-      // ONE MARKER PER LINE. `reposcope.recorded_repo` matches `repoPath:` with a
-      // line-anchored regex, so joining these with '; ' put both on one line and the
-      // capture ran to the end of it: a task carrying a repo AND a score yielded the
-      // path `/Users/.../repo; wsjf: 8`, which no manifest confirms, so the hint was
-      // dropped and the task looked repo-less. EVERY task this composite emits has a
-      // score, so every one of them was affected.
-      notes: [t.repoPath ? `repoPath: ${t.repoPath}` : null, t.wsjf == null ? null : `wsjf: ${t.wsjf}`]
-        .filter(Boolean)
-        .join('\n') || null,
-      labels: null,
-      // Metadata, not prose: the score, its components and the contract are fields a program
-      // reads — the build lane orders Tasks by the `wsjf` key and reads the contract keys.
-      metadata: taskMetadata(t),
-    }))
-  )
-  for (const { task: t } of pendingTasks) {
-    const id = got.get(t.key)
-    if (id) taskIds.set(t.key, id)
-  }
-}
-
-// The re-elaboration mutations, applied in one dispatch now that the creates are done. Each
-// one names a bead and a single thing to do to it; the writer picks nothing. A failure here
-// is recorded and nothing else — an update that did not land leaves the previous run's text
-// on an OPEN bead, which is stale but not wrong, and it never fails a run that emitted.
-//
-// The edges of a refreshed Task are refreshed with it. Every `blocks` edge it carries onto a
-// Task of this Epic that the current decomposition no longer draws is removed; an edge onto
-// anything outside this Epic was not drawn here and is left alone.
-const surveyedEdges = new Set()
-const epicTaskIds = new Set(taskIds.values())
-for (const list of existingByParent.values()) {
-  for (const c of list) {
-    if (c.type !== 'task') continue
-    epicTaskIds.add(c.id)
-    for (const b of c.blockedBy) surveyedEdges.add(`${c.id}->${b}`)
-  }
-}
-for (const { task: t, match } of reelabOpenTasks) {
-  const wantedIds = new Set((t.dependsOn || []).map((d) => taskIds.get(d)).filter(Boolean))
-  for (const b of match.blockedBy) {
-    if (!epicTaskIds.has(b) || wantedIds.has(b)) continue
-    reelabMutations.push({ key: `unlink:${match.id}->${b}`, op: 'unlink', id: match.id, dependsOnId: b })
-    reelab.edgesRemoved += 1
-  }
-}
-const refreshedTaskIds = new Set()
-if (reelabMutations.length) {
-  // One `bd` command per mutation is one turn, so the list is chunked like the create waves:
-  // a re-run that refreshes every Task of a large Epic in one session confirmed only the
-  // first handful and left the rest reported as failed updates.
-  const ok = new Set()
-  const mutationBatches = chunked(reelabMutations, WRITE_CHUNK)
-  for (let b = 0; b < mutationBatches.length; b++) {
-    let applied = null
-    try {
-      applied = await settleAgent(
-        `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'reelaborate', beads: [], links: [], surveys: [], mutations: mutationBatches[b] })}`,
-        {
-          label: mutationBatches.length > 1 ? `beads:reelaborate (${b + 1}/${mutationBatches.length})` : 'beads:reelaborate',
-          phase: 'Emit Beads',
-          effort: 'low',
-          agentType: 'agent-teams-workforce:bead-writer',
-          schema: WRITE_SCHEMA,
-        }
-      )
-    } catch (e) {
-      reelab.failed.push({ what: '(chunk)', reason: `the re-elaboration dispatch failed: ${(e && e.message) || e}` })
-    }
-    for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
-      if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
-    }
-  }
-  for (const m of reelabMutations) {
-    if (!ok.has(m.key)) reelab.failed.push({ what: m.id, reason: `the ${m.op} was not confirmed by the writer` })
-    else if (m.op === 'update' && m.metadata) refreshedTaskIds.add(m.id)
-  }
-}
-emission.reelaboration = reelab
+const storyIds = new Map(Object.entries((completed && completed.stories) || {}))
+const taskIds = new Map(Object.entries((completed && completed.tasks) || {}))
 
 // The hierarchy that goes back carries the REAL ids, so "what was returned" and "what was
 // written" are the same object rather than two accounts of it.
@@ -5962,298 +5453,27 @@ for (const t of tasks) {
   }
 }
 
-// 4) THE TASK DEPENDENCY EDGES, within and across Stories, resolved to ids by the SCRIPT
-//    and written as `blocks` edges. They are the only dependency edges this run writes:
-//    `bd ready` releases a Task when the Tasks it depends on close. An edge with an
-//    unwritten end is recorded, never guessed at; an edge the tracker already holds is
-//    counted as linked and not written again.
-const pendingLinks = []
-for (const n of tasks) {
-  for (const dep of n.dependsOn || []) {
-    const fromId = taskIds.get(n.key) || null
-    const dependsOnId = taskIds.get(dep) || null
-    const standing = !!(fromId && dependsOnId && surveyedEdges.has(`${fromId}->${dependsOnId}`))
-    if (reelabHeldKeys.has(n.key) && !standing) {
-      reelab.edgesWithheld += 1
-      continue
-    }
-    emission.links.attempted += 1
-    if (!fromId || !dependsOnId) emission.links.failed.push({ from: n.key, to: dep, reason: 'one end of the edge was not written' })
-    else if (standing) emission.links.linked += 1
-    else pendingLinks.push({ fromId, dependsOnId, from: n.key, to: dep })
-  }
-}
-if (reelab.edgesWithheld) log(`Re-elaboration: ${reelab.edgesWithheld} new dependency edge(s) onto Tasks already started or built were not written`)
-// CHUNKED FOR THE SAME REASON THE BEAD WAVES ARE — see WRITE_CHUNK above. One `bd dep add`
-// is one turn, so a single dispatch could only ever confirm the first handful of edges and
-// every edge past that came back unconfirmed, filling `emission.links.failed` and holding
-// the verdict short of `complete` exactly as the truncated Task wave did.
-if (pendingLinks.length) {
-  const linked = new Set()
-  const linkFaultFor = new Map()
-  const edgeKey = (e) => `${e.fromId}->${e.dependsOnId}`
-  const linkBatches = chunked(pendingLinks, WRITE_CHUNK)
-  if (linkBatches.length > 1) log(`Linking ${pendingLinks.length} dependency edge(s) in ${linkBatches.length} chunk(s) of at most ${WRITE_CHUNK} — one writer session each`)
-  for (let b = 0; b < linkBatches.length; b++) {
-    const batch = linkBatches[b]
-    let linkReply = null
-    let linkFault = null
-    try {
-      linkReply = await settleAgent(
-        `${writerPreamble}${JSON.stringify({
-          repoPath: emitTarget,
-          level: 'link',
-          beads: [],
-          links: batch.map(({ fromId, dependsOnId }) => ({ fromId, dependsOnId })),
-        })}`,
-        {
-          label: linkBatches.length > 1 ? `beads:link (${b + 1}/${linkBatches.length})` : 'beads:link',
-          phase: 'Emit Beads',
-          effort: 'low',
-          agentType: 'agent-teams-workforce:bead-writer',
-          schema: WRITE_SCHEMA,
-        }
-      )
-    } catch (e) {
-      linkFault = `the bead-writer dispatch failed: ${(e && e.message) || e}`
-    }
-    for (const r of (linkReply && Array.isArray(linkReply.links) ? linkReply.links : [])) {
-      if (r && r.ok === true) linked.add(`${r.fromId}->${r.dependsOnId}`)
-    }
-    if (linkFault) for (const e of batch) linkFaultFor.set(edgeKey(e), linkFault)
-  }
-  for (const e of pendingLinks) {
-    if (linked.has(edgeKey(e))) emission.links.linked += 1
-    else emission.links.failed.push({ from: e.from, to: e.to, reason: linkFaultFor.get(edgeKey(e)) || 'the writer did not confirm this edge' })
-  }
-}
-
-// ── Retire the backfilled roll-up parents this Epic was carrying ──────────────
-// A Task that reached the build lane with no Story got one MINTED for it on the side —
-// a stand-in roll-up parent, labelled `backfill-parent` and described as such, created
-// so the board could nest the Task under its Epic. It was always temporary: the moment
-// this composite authors the Spec-backed Story that Task's work really belongs under,
-// the stand-in is a second Story under the same Epic saying nothing, and its Tasks are
-// filed under a parent with no Spec behind it.
-//
-// So the run that makes the real Story retires the stand-in: its children are RE-PARENTED
-// under a real Story of this run, and it is then CLOSED. Both are decided HERE — which
-// wrapper, which child, which destination, which reason — and handed to the writer as a
-// list of named mutations. The writer picks nothing.
-//
-// It runs at most once per run and only when there is somewhere for the work to go:
-//
-//   * a MINTED Epic is skipped outright — it did not exist a moment ago, so it cannot be
-//     carrying anything, and the survey would cost a session to learn that;
-//   * an Epic whose Stories all failed to land is skipped — re-parenting a Task onto a
-//     Story that was not written is the orphan this phase exists to prevent;
-//   * a failure anywhere in here is RECORDED and nothing else. The repair is not this
-//     composite's product and it never fails the run that carried it.
-const healableStories = stories
-  .filter((x) => storyIds.has(x.key))
-  .map((x) => ({ key: x.key, id: storyIds.get(x.key), repoPath: asText(x.repoPath) }))
-if (!healableStories.length) emission.heal.reason = 'no Story of this run is durable, so there is nowhere to re-parent a stand-in\u2019s Tasks'
-else {
-  emission.heal.ran = true
-  // The re-elaboration survey above listed exactly this — the Epic's children to depth 2 —
-  // and nothing is written without it, so it is reused rather than re-dispatched.
-  const nodes = epicChildrenNodes
-  // Every id that goes back out lands in command text another agent runs verbatim, so an
-  // id that is not shaped like one is REFUSED rather than cleaned — the same argument the
-  // repository path above is held to. Every field beside the id is DATA written by whoever
-  // filed the bead; it is read here and never interpolated anywhere.
-  const seen = new Map()
-  for (const n of nodes) {
-    const id = n && typeof n.id === 'string' ? n.id.trim() : ''
-    if (!SAFE_BEAD_ID.test(id) || seen.has(id)) continue
-    seen.set(id, {
-      id,
-      type: String((n && n.type) || '').toLowerCase(),
-      status: String((n && n.status) || '').toLowerCase(),
-      text: `${(n && n.title) || ''} ${(n && n.description) || ''}`,
-      labels: (Array.isArray(n && n.labels) ? n.labels : []).map((l) => String(l || '').toLowerCase()),
-      parent: n && typeof n.parent === 'string' ? n.parent.trim() : null,
-    })
-  }
-  // What marks a stand-in: the label the healer applies, or the sentence it writes into
-  // the description. Either alone is enough — the label can be dropped by hand and the
-  // description is what a person actually reads.
-  const isStandIn = (n) =>
-    n.labels.includes('backfill-parent') || n.text.toLowerCase().includes('backfilled by the sdlc automation')
-  const ours = new Set(storyIds.values())
-  const wrappers = Array.from(seen.values()).filter(
-    (n) => n.parent === epicId && n.type === 'story' && n.status !== 'closed' && !ours.has(n.id) && isStandIn(n)
-  )
-  emission.heal.wrappers = wrappers.length
-  // Where a stand-in's Task goes — decided PER TASK, not per wrapper. One stand-in can be
-  // holding work for more than one repository (it was minted from a Task's parentage, not
-  // from a repo span), so moving all of its children to one Story would file some of them
-  // against the wrong Spec.
-  //
-  // One real Story is the whole answer. Several means the work spans repositories, and the
-  // TASK's own text is the only evidence available for which one it belongs to. When it
-  // names none, the first Story of this run takes it — under the right EPIC and
-  // under a Story with a Spec behind it, which is the point, and the basis is recorded so
-  // a wrong placement is visible rather than silent.
-  const destinationFor = (node) => {
-    if (healableStories.length === 1) return { story: healableStories[0], basis: 'the sole Story of this run' }
-    const t = node.text.toLowerCase()
-    const matched = healableStories.find((x) => {
-      const repo = x.repoPath.toLowerCase()
-      const base = repo.split('/').filter(Boolean).pop() || ''
-      return (repo && t.includes(repo)) || (base.length > 2 && t.includes(base))
-    })
-    if (matched) return { story: matched, basis: `its text names ${matched.repoPath}` }
-    return { story: healableStories[0], basis: 'the first Story of this run — its text named no repository' }
-  }
-  const mutations = []
-  const plan = []
-  for (const w of wrappers) {
-    const children = Array.from(seen.values()).filter((n) => n.parent === w.id)
-    // A stand-in holds Tasks and Bugs. Anything else under it was not put there by the
-    // healer, so the wrapper is left alone entirely rather than half-moved and closed.
-    const foreign = children.filter((c) => c.type !== 'task' && c.type !== 'bug')
-    if (foreign.length) {
-      emission.heal.failed.push({
-        wrapper: w.id,
-        reason: `left open: it holds ${foreign.length} child(ren) that are not Tasks or Bugs (${foreign.map((c) => `${c.id} [${c.type || 'untyped'}]`).join(', ')})`,
-      })
-      continue
-    }
-    const moves = children.map((c) => ({ child: c, dest: destinationFor(c) }))
-    for (const m of moves) {
-      mutations.push({ key: `reparent:${m.child.id}`, op: 'reparent', id: m.child.id, newParentId: m.dest.story.id })
-    }
-    const destinations = Array.from(new Set(moves.map((m) => m.dest.story.id)))
-    mutations.push({
-      key: `close:${w.id}`,
-      op: 'close',
-      id: w.id,
-      reason:
-        `Retired by prd-to-spec: this was a backfilled roll-up parent standing in for a Story that did not exist yet. ` +
-        (moves.length
-          ? `${moves.length} Task(s) were re-parented onto ${destinations.length === 1 ? `Story ${destinations[0]}` : `Stories ${destinations.join(', ')}`}, ` +
-            `which cover this work with a Spec behind them (${moves.map((m) => `${m.child.id} -> ${m.dest.story.id}: ${m.dest.basis}`).join('; ')}).`
-          : 'It was holding nothing, and the Spec-backed Stories of this Epic now exist.'),
-    })
-    plan.push({ wrapper: w.id, destinations, children: moves.map((m) => ({ id: m.child.id, to: m.dest.story.id, basis: m.dest.basis })) })
-  }
-  if (mutations.length) {
-    // Chunked for the writer's turn cap, as every other wave is. A stand-in's re-parents come
-    // before its close in the list, so a chunk boundary never closes a stand-in whose Tasks
-    // were not offered to the writer first.
-    const ok = new Set()
-    const healBatches = chunked(mutations, WRITE_CHUNK)
-    for (let b = 0; b < healBatches.length; b++) {
-      let applied = null
-      try {
-        applied = await settleAgent(
-          `${writerPreamble}${JSON.stringify({ repoPath: emitTarget, level: 'heal', beads: [], links: [], surveys: [], mutations: healBatches[b] })}`,
-          {
-            label: healBatches.length > 1 ? `beads:heal (${b + 1}/${healBatches.length})` : 'beads:heal',
-            phase: 'Emit Beads',
-            effort: 'low',
-            agentType: 'agent-teams-workforce:bead-writer',
-            schema: WRITE_SCHEMA,
-          }
-        )
-      } catch (e) {
-        emission.heal.failed.push({ wrapper: '(chunk)', reason: `the heal dispatch failed: ${(e && e.message) || e}` })
-      }
-      for (const r of (applied && Array.isArray(applied.mutations) ? applied.mutations : [])) {
-        if (r && r.ok === true && typeof r.key === 'string') ok.add(r.key)
-      }
-    }
-    for (const m of mutations) {
-      if (ok.has(m.key)) {
-        if (m.op === 'reparent') emission.heal.reparented += 1
-        else emission.heal.closed += 1
-      } else {
-        emission.heal.failed.push({ wrapper: m.id, reason: `the ${m.op} was not confirmed by the writer` })
-      }
-    }
-    log(
-      `Backfill heal: ${emission.heal.closed}/${wrappers.length} stand-in Story/Stories retired, ` +
-        `${emission.heal.reparented} Task(s) re-parented onto a Spec-backed Story` +
-        `${emission.heal.failed.length ? `, ${emission.heal.failed.length} not applied` : ''}. ` +
-        plan.map((x) => `${x.wrapper} -> ${x.destinations.join(' + ') || '(nothing to move)'}`).join('; ')
-    )
-  } else if (!emission.heal.reason) {
-    emission.heal.reason = wrappers.length
-      ? 'every stand-in found was left open — see emission.heal.failed'
-      : 'the Epic carried no backfilled roll-up Story'
-  }
-}
-
-// ── The verdict on durability ─────────────────────────────────────────────────
-// Three outcomes, and they are not degrees of the same thing:
-//
-//   complete — every node of this hierarchy is durable and every edge landed.
-//   partial  — some of it is durable. The run is still ok:true, because tasks that
-//              exist are dispatchable and a caller holding them must act on them, not
-//              re-run everything. It is `degraded`, and `emissionOk` is FALSE, and the
-//              nodes that did not land are named — that is what lets a caller finish
-//              the write instead of discovering the hole a week later.
-//   none     — no Story and no Task is durable. That is ok:FALSE at this stage. The composite's
-//              product is a persisted hierarchy, and a run that persisted nothing has
-//              not produced one; returning ok:true here is exactly how a decomposition
-//              that was thrown away got recorded as a completion. The hierarchy still
-//              comes back, so nothing is lost and the write can be retried.
-// The Epic existed before the run, so it is not what the run produced: the verdict is
-// `none` when no Story and no Task beneath it is durable.
 const durable = emission.created + emission.adopted
-// The writer sessions that never ran, for the no-bead exit below.
+// The emission runner that never ran, for the no-bead exit below.
 const emitWriterDeaths = dispatchDeaths('Emit Beads')
-const durableBeneath = storyIds.size + taskIds.size
 const unwritten = emission.failed.length + emission.skipped.length
-if (!durableBeneath) emission.verdict = 'none'
-// `crossStory.degraded` is part of this test because the hierarchy it describes is
-// INCOMPLETE in a way none of the counts above can see: every bead landed and every edge the
-// run knew about was written, but a whole class of edge was never derived. Complete would be
-// a false claim, and it is what marks the Epic done.
-else if (unwritten || emission.links.failed.length || emission.specReferenceMissing.length || crossStory.degraded) emission.verdict = 'partial'
-else emission.verdict = 'complete'
-if (!emission.reason) {
-  emission.reason =
-    emission.verdict === 'complete'
-      ? `all ${durable} bead(s) of this hierarchy are durable`
-      : `${durable} bead(s) durable, ${unwritten} NOT written, ${emission.links.failed.length} dependency edge(s) unlinked, ` +
-        `${emission.specReferenceMissing.length} Task(s) written with no spec reference` +
-        (crossStory.degraded ? `; the cross-Story dependency edges were never derived — ${crossStory.degraded}` : '')
-}
 if (emission.specReferenceMissing.length) {
   log(`SPEC REFERENCE MISSING on ${emission.specReferenceMissing.length} Task(s): ${emission.specReferenceMissing.map((x) => x.key).join(', ')} — ${emission.specReferenceMissing[0].reason}`)
 }
-// ── emissionOk / beadsEmitted: the handback contract, now MEASURED ────────────
-// These two fields already existed — as a self-report the headless session filled in
-// from its own account of the `bd` commands it had typed. That is the weakest possible
-// evidence for the one fact the campaign's healer keys off, and it was collected from
-// the very party whose work it judges. They are still reported, unchanged in meaning
-// and unchanged in name, but they are now COUNTED by the step that did the writing:
-// the caller copies them rather than composing them. The signal is not dropped; it
-// stops being an opinion.
-//
-//   emissionOk   — true only when every bead in the returned hierarchy is durable and
-//                  every dependency edge landed. A partial write is FALSE, deliberately:
-//                  the supervisor demotes an unpersisted run and must keep doing so.
-//   beadsEmitted — how many beads this run actually created. An adopted bead was already
-//                  there and is not counted as emitted, though it does count as durable.
+// emissionOk — true only when every bead in the hierarchy is durable and every dependency
+//   edge landed; a partial write is FALSE, because the supervisor demotes an unpersisted run.
+// beadsEmitted — how many beads were created now. An adopted bead was already there.
+// Both are measured by the command that did the writing; the caller copies them.
 const emissionOk = emission.verdict === 'complete'
 const beadsEmitted = emission.created
 
-// ── FINISH: THE SCORING ARITHMETIC FOR THIS EPIC, AND ITS LIFECYCLE ─────────────
-// Deterministic, one `depscore.py elaboration-finish` call, no judgment. The Tasks whose
-// size this run judged — created now, or refreshed in place — get the fingerprint of the
-// content they now carry, so the scoring pass reads their sizes as current. Then this Epic
-// and every Task beneath it are scored over the whole tracker: the Epic's size becomes the
-// sum of its Tasks' sizes with its estimate kept, the Epic is rescored, and its Tasks are
-// rescored with RR-OE counted over every Task edge, across Stories.
-//
-// The Epic's elaboration_state is set to `done` only when every part of it landed: every bead and edge durable,
-// every repository specified and every Story decomposed. Otherwise it stays `in_progress`
-// and the next run completes it.
-// Removal work settled against what was WRITTEN — see THE LAST LINK IN THE PROXY CHAIN below —
-// before the Epic is judged done, because a removal no durable Task carries is work left undone.
+
+// ── FINISH: THE SCORING ARITHMETIC AND THE LIFECYCLE RAN IN THE SAME COMMAND ────────
+// `elaboration-complete` scored this Epic and its Tasks after the write — the Epic's size
+// is the sum of its Tasks' sizes, and every Task is rescored with RR-OE counted over every
+// Task edge — and set `done` when every part of it landed, promoting the SAD entries this
+// run's architecture step changed. Removal work is settled against what was WRITTEN here.
+
 const writtenTaskKeys = emission.written
   .filter((wr) => wr && wr.level === 'task' && hasText(wr.key))
   .map((wr) => String(wr.key))
@@ -6294,45 +5514,14 @@ for (const r of removalTasks) {
   if (r.placement) lostPlacements.add(r.placement)
   removalNotEmitted.push(entry)
 }
-const createdTaskKeys = new Set(emission.written.filter((w) => w.level === 'task').map((w) => String(w.key)))
-const judgedTaskIds = []
-for (const t of tasks) {
-  const id = taskIds.get(t.key)
-  if (!id || !SAFE_BEAD_ID.test(String(id)) || !judgedSize(t)) continue
-  if (createdTaskKeys.has(String(t.key)) || refreshedTaskIds.has(id)) judgedTaskIds.push(String(id))
-}
-// Not done while removal work reached no durable Task.
-const epicDone =
-  taskIds.size > 0 &&
-  emission.verdict === 'complete' &&
-  specFailures.length === 0 &&
-  decompositionFailures.length === 0 &&
-  removalNotEmitted.length === 0
-// ── THE SAD ENTRIES THIS RUN VETTED BECOME `effective` HERE ────────────────────
-// A SAD entry settles an architecture decision only when its ruling came out of a COMPLETED
-// elaboration. Everything the architecture phase writes lands as `in-review`; this is the
-// one transition that promotes it, and it rides on `--done` so a run that ends with its
-// Tasks unwritten promotes nothing. The predicate is false across the whole SAD until a run
-// makes it true, one Epic at a time, and nobody sets a flag.
-//
-// The files come from the sad-maintainer's own account of what it changed. `depscore.py`
-// holds every one of them to the SAD root before writing, because this rewrites documents
-// in the vault and a wrong path there is not a scoring mistake.
+const epicDone = !!(completed && completed.done)
 const sadChangedFiles = (
   (architecture && architecture.artifact && architecture.artifact.sadUpdate &&
     Array.isArray(architecture.artifact.sadUpdate.changedFiles))
     ? architecture.artifact.sadUpdate.changedFiles
     : []
 ).map((f) => String(f || '').trim()).filter(Boolean)
-const sadPromotionArgs = epicDone && sadChangedFiles.length
-  ? ` --sad-files ${shellq(sadChangedFiles.join(','))}${a.sadPath ? ` --sad-root ${shellq(a.sadPath)}` : ''}`
-  : ''
-// Nothing beneath the Epic is durable when the verdict is `none`, so there is nothing to score.
-const finishOut = emission.verdict === 'none' ? null : await runLifecycle(
-  'epic:finish',
-  `elaboration-finish --epic ${epicBeadId} --owner ${lifecycle.owner}${judgedTaskIds.length ? ` --judged ${judgedTaskIds.join(',')}` : ''}${epicDone ? ' --done' : ''}${sadPromotionArgs}`,
-  'Emit Beads'
-)
+const finishOut = completed ? completed.finish || null : { error: (completeOut && completeOut.error) || 'no result' }
 lifecycle.finish = finishOut
 const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
 const epicMarkedDone = finishOk && !!finishOut.lifecycle
@@ -6511,9 +5700,9 @@ if (emission.verdict === 'none') {
         `${emission.failed.length} write(s) failed, ${emission.skipped.length} were not attempted.`,
       runJournal
     ),
-    // A writer that never ran wrote nothing, and that is the environment's failure, not the
-    // Epic's. Anything the writer did answer, and refused, stays under `emit-beads`.
-    ...(emitWriterDeaths.length && !emission.failed.some((f) => f.answered)
+    // An emission runner that never ran wrote nothing, and that is the environment's
+    // failure, not the Epic's. A command that answered and wrote nothing stays `emit-beads`.
+    ...(emitWriterDeaths.length && !completed
       ? { stage: DISPATCH_FAILED_STAGE, dispatchFailed: true, dispatchFailures: emitWriterDeaths }
       : {}),
     emissionOk: false,

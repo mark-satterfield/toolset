@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { beadWriter, isWriterCall, lifecycleRunner, TEST_EPIC } from './helpers/bead-writer.mjs'
+import { beadWriter, isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -188,7 +188,7 @@ async function runComposite({ found, content = RULINGS }) {
   const writer = beadWriter()
   const lifecycle = lifecycleRunner()
   return runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
-    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha', epic: TEST_EPIC },
+    args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows(),
     agentImpl: (call) => {
       const ran = lifecycle(call)

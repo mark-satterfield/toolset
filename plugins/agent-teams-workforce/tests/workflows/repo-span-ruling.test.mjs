@@ -22,7 +22,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls, journalPayload } from './helpers/run-workflow.mjs'
-import { beadWriter, withBeadWriter, TEST_EPIC } from './helpers/bead-writer.mjs'
+import { beadWriter, withBeadWriter, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -214,7 +214,7 @@ const RULED = (repos, extra = {}) => ({
 test('with no args.repos the composite RULES the span and fans out over what it ruled', async () => {
   const ruled = ['/repos/alpha', '/repos/beta', '/repos/gamma']
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
     agentImpl: withBeadWriter(),
   })
@@ -264,7 +264,7 @@ test('with no args.repos the composite RULES the span and fans out over what it 
 
 test('the launch repository is passed to scoping as a seed, and is NOT the span', async () => {
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
     agentImpl: withBeadWriter(),
   })
@@ -288,7 +288,7 @@ test('the ruling receives NO material inventory — the span is ruled before any
   // "there is nothing there" are different, and only one of them licenses treating every
   // repository as greenfield.
   const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
     agentImpl: withBeadWriter(),
   })
@@ -318,7 +318,7 @@ test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is d
   // The override exists for a deliberate re-run and for tests. It is an argument passed in
   // band, never a stored artifact — which is what keeps the next run scoped afresh.
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha', repos: ['/repos/alpha', '/repos/beta'] },
+    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha', repos: ['/repos/alpha', '/repos/beta'] },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/never-used']) }),
     agentImpl: withBeadWriter(),
   })
@@ -331,7 +331,7 @@ test('a failed ruling STOPS the run — it never falls back to the launch reposi
   // Falling back would restore exactly the defect this phase removes, and would do it on
   // the one run where the span was least certain.
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC },
+    args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: { ok: false, reason: 'could not establish the span' } }),
     agentImpl: withBeadWriter(),
   })
@@ -350,7 +350,7 @@ test('the run attempt ceiling is RESCALED to the ruled span, before the first pe
   // by a ceiling for a span it no longer has.
   const ruled = ['/repos/a', '/repos/b', '/repos/c', '/repos/d']
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a' },
+    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a' },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
     agentImpl: withBeadWriter(),
   })
@@ -369,7 +369,7 @@ test('the run attempt ceiling is RESCALED to the ruled span, before the first pe
 
 test('a caller who PINNED maxTotalAttempts keeps exactly that, rescale or not', async () => {
   const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a', maxTotalAttempts: 99 },
+    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a', maxTotalAttempts: 99 },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/a', '/repos/b', '/repos/c', '/repos/d']) }),
     agentImpl: withBeadWriter(),
   })
@@ -382,7 +382,7 @@ test('spec authoring finding work OUTSIDE the ruled span is surfaced, not droppe
   // scoping phase ruled before any spec existed; a spec author who then needs a contract in
   // a repository outside the span has seen the hole from the one vantage point that could.
   const { result } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha' },
+    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha' },
     workflowImpl: compositeWorkflows({
       scopingResult: RULED(['/repos/alpha']),
       outOfRepoFindings: ['the consumer for order.placed lives in /repos/beta and does not exist'],

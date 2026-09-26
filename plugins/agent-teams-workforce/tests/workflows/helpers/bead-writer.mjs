@@ -65,6 +65,13 @@ export function beadWriter({ failKeys = [], failLinks = false, idFor = (k) => `b
 }
 
 /**
+ * The artifact arguments prd-to-spec writes its hierarchy from: without a working directory
+ * it has no saved documents to emit, so every fixture that expects a written hierarchy
+ * passes these.
+ */
+export const ARTIFACT_ARGS = Object.freeze({ artifactScript: '/opt/sdlc/artifactio.py', projectRoot: '/proj' })
+
+/**
  * The Epic every prd-to-spec fixture elaborates: an existing, scored Epic bead. prd-to-spec
  * refuses at its start without one.
  */
@@ -75,7 +82,7 @@ export const TEST_EPIC_VALUE = Object.freeze({ id: 'bd-E1', userBusinessValue: 8
 
 /**
  * An agentImpl fragment that answers prd-to-spec's Epic lifecycle runners — the start check,
- * the finish (scoring and the `done` write) and the release — as `depscore.py` would for an
+ * the emission and finish (`elaboration-complete`) and the release — as `depscore.py` would for an
  * Epic that may be elaborated, and the cross-Story dependency mapper with no edges.
  *
  * @param {object} [opts]
@@ -95,15 +102,50 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
           : { ok: true, refusal: null, epic: { ...TEST_EPIC_VALUE, title: TEST_EPIC.title }, owner: 'test-owner', previousState: 'ready' },
       }
     }
-    if (call.label === 'epic:finish') {
-      const done = /\s--done\b/.test(String(call.prompt || ''))
+    if (call.label === 'epic:complete') {
+      // `depscore.py elaboration-complete` reads the saved documents and writes them; this stub
+      // answers as it does when every bead landed, for every key a fixture can mint.
+      const done = !/\s--hold\s/.test(String(call.prompt || ''))
+      const tasks = {}
+      const stories = {}
+      for (let s = 1; s <= 10; s++) {
+        stories[`S${s}`] = `bd-S${s}`
+        for (let t = 1; t <= 20; t++) tasks[`S${s}-T${t}`] = `bd-S${s}-T${t}`
+      }
+      for (let n = 1; n <= 20; n++) {
+        tasks[`REMOVAL-${n}`] = `bd-REMOVAL-${n}`
+        tasks[`IMPACT-${n}`] = `bd-IMPACT-${n}`
+      }
       return {
         exitCode: 0,
         output: {
           ok: true,
           epic: TEST_EPIC.id,
-          lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
-          summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
+          emission: {
+            target: '/repo',
+            attempted: 0,
+            created: 0,
+            adopted: 0,
+            written: [],
+            failed: [],
+            skipped: [],
+            specReferenceMissing: [],
+            knockOnWithoutSpec: [],
+            links: { attempted: 0, linked: 0, failed: [] },
+            heal: { ran: false, reason: null, wrappers: 0, reparented: 0, closed: 0, failed: [] },
+            reelaboration: null,
+            verdict: 'complete',
+            reason: 'all bead(s) of this hierarchy are durable',
+          },
+          stories,
+          tasks,
+          done,
+          finish: {
+            ok: true,
+            epic: TEST_EPIC.id,
+            lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
+            summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
+          },
         },
       }
     }
