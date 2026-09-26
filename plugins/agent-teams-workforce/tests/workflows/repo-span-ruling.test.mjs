@@ -15,7 +15,7 @@
 //
 // These tests pin the three things that make that true: the greenfield firewall (the
 // shaper never sees what exists), the refusal to fall back to the launch repository, and
-// the fact that a repository the project does not have is RETURNED, never created.
+// the fact that the polyrepo-steward, not a person, supplies every repository the work needs.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -31,8 +31,8 @@ const PRD_TO_SPEC = path.join(WF, 'prd-to-spec.js')
 
 const PRD = { id: 'PRD-1', title: 'PRD One', body: 'the delta requirements' }
 
-/** A shaper/surveyor/decider fixture that agrees on one repository. */
-function scopingAgents({ placements, newRepos = [], inventory } = {}) {
+/** A shaper/steward fixture that agrees on one repository. */
+function scopingAgents({ placements, createdRepos = [], inventory } = {}) {
   const repos = placements || [{ repoPath: '/repos/alpha', repoName: 'alpha', workUnitIds: ['W1'], rationale: 'owns it' }]
   const inv = inventory || repos.map((p) => ({ repoPath: p.repoPath, name: p.repoName, owns: 'the capability' }))
   return (call) => {
@@ -42,8 +42,9 @@ function scopingAgents({ placements, newRepos = [], inventory } = {}) {
         designSummary: 'one service',
       }
     }
-    if (call.label === 'scope:repository-survey') return { repositories: inv, surveySummary: `${inv.length} repos` }
-    if (call.label === 'scope:rule-span') return { placements: repos, newRepos, reclassified: [], spanRationale: 'ruled' }
+    if (call.label.startsWith('scope:place-and-provision')) {
+      return { repositories: inv, placements: repos, createdRepos, creationFailures: [], reclassified: [], surveySummary: `${inv.length} repos`, spanRationale: 'ruled' }
+    }
     return null
   }
 }
@@ -85,23 +86,23 @@ test('the existing-code evidence DOES reach the ruling step — the firewall is 
     agentImpl: scopingAgents(),
   })
 
-  const [decider] = agentCalls(calls, 'scope:rule-span')
-  assert.ok(decider.prompt.includes('/repos/where-the-code-already-is'), 'the ruling step must see the evidence')
+  const [steward] = agentCalls(calls, 'scope:place-and-provision')
+  assert.ok(steward.prompt.includes('/repos/where-the-code-already-is'), 'the placement step must see the evidence')
 })
 
-test('the shaper and the surveyor run CONCURRENTLY, so neither can influence the other', async () => {
+test('the shaper runs BEFORE the steward places the work, so nothing about the estate reaches the design', async () => {
   const { calls } = await runWorkflowScript(SCOPING, { args: { prd: PRD }, agentImpl: scopingAgents() })
   const labels = calls.filter((c) => c.kind === 'agent').map((c) => c.label)
   assert.deepEqual(
     labels,
-    ['scope:greenfield-shape', 'scope:repository-survey', 'scope:rule-span'],
-    'shape and survey are one parallel pair, then the ruling; the placements are checked against the survey in code',
+    ['scope:greenfield-shape', 'scope:place-and-provision'],
+    'the shape, then the steward placement; the placements are checked against the steward inventory in code',
   )
 })
 
 // ── The reduction is where the enforcement lives ───────────────────────────────
 
-test('a placement naming a repository the survey never listed is refused as composed, not ruled', async () => {
+test('a placement naming a repository the steward inventory never listed is refused as composed, not ruled', async () => {
   const { result } = await runWorkflowScript(SCOPING, {
     args: { prd: PRD },
     agentImpl: scopingAgents({
@@ -137,26 +138,6 @@ test('an empty PRD body is REFUSED rather than returning an empty span', async (
   assert.equal(result.ok, false)
   assert.deepEqual(result.repos, [])
   assert.deepEqual(calls, [], 'refusing after dispatching is not refusing')
-})
-
-// ── A new repository is RETURNED, never created ────────────────────────────────
-
-test('a required NEW repository comes back as a human action and is never in the span', async () => {
-  const { result } = await runWorkflowScript(SCOPING, {
-    args: { prd: PRD },
-    agentImpl: scopingAgents({
-      placements: [],
-      inventory: [{ repoPath: '/repos/alpha', name: 'alpha', owns: 'something else' }],
-      newRepos: [{ proposedName: 'SkillSpoke-newthing', purpose: 'hosts W1', workUnitIds: ['W1'], whyNoExistingRepoFits: 'alpha owns a different context' }],
-    }),
-  })
-  assert.equal(result.ok, true, 'ruling that a repository must be created is a successful ruling')
-  assert.deepEqual(result.repos, [], 'a repository that does not exist is not part of the span')
-  assert.equal(result.newRepos.length, 1)
-  assert.ok(
-    result.requiredHumanActions.some((x) => /polyrepo-steward/.test(x)),
-    'the action must route through the steward, which creates the repository',
-  )
 })
 
 // ── The composite: how the span reaches the per-repo fan-out ───────────────────
@@ -223,8 +204,7 @@ const RULED = (repos, extra = {}) => ({
   ok: true,
   repos,
   placements: repos.map((r) => ({ repoPath: r, repoName: r, workUnitIds: [], rationale: 'ruled', verified: true })),
-  newRepos: [],
-  requiredHumanActions: [],
+  createdRepos: [],
   reclassified: [],
   blocked: [],
   spanVerified: true,
@@ -330,7 +310,7 @@ test('the span ruling gets the honest UNKNOWN, not an all-clear it never earned'
   // evidence.
   const { readWorkflowSource } = await import('./helpers/run-workflow.mjs')
   const src = readWorkflowSource(path.join(WF, 'repo-scoping.js'))
-  assert.match(src, /NO MATERIAL INVENTORY WAS TAKEN before this ruling/)
+  assert.match(src, /NO MATERIAL INVENTORY WAS TAKEN before this placement/)
   assert.match(src, /does NOT mean the repositories are empty or that this is greenfield work/)
 })
 
@@ -358,25 +338,6 @@ test('a failed ruling STOPS the run — it never falls back to the launch reposi
   assert.equal(result.ok, false)
   assert.equal(result.stage, 'repo-scoping')
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:spec-authoring').length, 0, 'nothing may be specified against a guessed span')
-})
-
-test('a span that is entirely NEW repositories hands back the actions and creates nothing', async () => {
-  const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha' },
-    workflowImpl: compositeWorkflows({
-      scopingResult: RULED([], {
-        newRepos: [{ proposedName: 'SkillSpoke-newthing', purpose: 'p', whyNoExistingRepoFits: 'w' }],
-        requiredHumanActions: ['Create SkillSpoke-newthing through the polyrepo-steward'],
-        spanVerified: false,
-      }),
-    }),
-    agentImpl: withBeadWriter(),
-  })
-  assert.equal(result.action, 'create-repos')
-  assert.equal(result.newRepos.length, 1)
-  assert.ok(result.requiredHumanActions.length)
-  assert.equal(workflowCalls(calls, 'agent-teams-workforce:spec-authoring').length, 0, 'there is nothing to author a Spec against')
-  assert.match(result.headline, /re-run/, 'the caller has to be told what closes the loop')
 })
 
 test('the run attempt ceiling is RESCALED to the ruled span, before the first per-repo gate', async () => {

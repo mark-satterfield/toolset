@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite — drives an existing, scored Epic and its ready PRD all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini surveys the repositories that exist, rules which of them this work lands in, and can rule that a repository the project does not have is needed — returned as a required human action, never created here. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget fails when an unmet deterministic check or constitutive criterion remains, and proceeds with the flags recorded when only competitive criteria remain; the script decides this, no agent. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
+    'Composite — drives an existing, scored Epic and its ready PRD all the way to an emitted, WSJF-scored Story → Task hierarchy beneath that Epic in Beads form. IT OWNS THE EPIC\'S ELABORATION LIFECYCLE: at its start it refuses, with a named reason, an Epic that is not open, carries no score, depends on an Epic whose elaboration is not done, or is not ready or in_progress with no other owner, and marks it in_progress; when its Tasks are written it runs the WSJF arithmetic for the Epic — the Epic\'s size becomes the sum of its Tasks\' sizes, the Epic and its Tasks are rescored — and sets its elaboration_state to done; the Epic itself stays open until its work is released. Every door into elaboration passes through these checks. THE THREE DOCUMENT LAYERS ARE BLIND TO DIFFERENT THINGS, ON PURPOSE. A PRD is WHAT, and it never knows or cares what is deployed — deployed state is not a requirements input. The TRD is HOW, derived from the PRD and the SAD by expert architecture and best practice, and it is blind to deployed state too, because a design reverse-engineered from the existing implementation inherits that implementation\'s mistakes and calls them requirements. The SPEC is the ONLY layer where "X is what we want, Y is what we have, how do we turn Y into X" is asked, and it is asked THERE because the spec is the only layer scoped to ONE repository, which is the only scope at which that question has a concrete answer. So current-state reconciliation runs per repo inside spec authoring and nowhere earlier: architecture and TRD authoring see the PRD and the SAD and nothing else. THE PRD STAYS CANONICAL wherever reconciliation runs. Code that already ships is MATERIAL, not authority: every requirement the PRD states stays in scope, and the inventory says only what to do with the material behind each one — REUSE what conforms, REMOVE what contradicts (the PRD wins, and that is settled by definition rather than argued), BUILD what is absent. Removal is real work, it is DISCOVERED AT SPEC TIME, and it reaches task decomposition alongside the build. No PRD is ever closed on the grounds that code exists and no requirement is dropped or narrowed because something was already built. Architecture runs when and only when it is needed, and that judgment is now a read-only triage over THE PRD ITSELF: an architecture decision exists when the PRD forces a choice between options whose consequences outlive the feature. A difference from what is deployed is never one — the PRD wins by definition — and a UI/UX difference never is either, because layout, shells, navigation, components and interaction are settled by the design-system artifacts. Stitches the leaf minis (architecture, REPO SCOPING, TRD authoring, per-repo PRD reconciliation + spec authoring, task decomposition) behind independent gates: G2 constitutional architecture, G2b TRD, G3 spec (once per repo), G4 task decomposition (once per Story). The repo span is an OUTPUT of the run, not an input to it: after the architecture ruling, the repo-scoping mini has the polyrepo-steward map the greenfield work units onto the repositories that exist and CREATE any repository the work needs that the project does not have — a needed repository is never returned as a human action, and work the steward cannot place fails the phase with the faults named. It is recomputed every run and never pre-staged, so a re-run after an adjustment is scoped against the adjustment. An explicit non-empty args.repos still overrides it for that one run. The hierarchy rules bind throughout: a PRD and its Epic are ONE item in two representations and the Epic exists before the run, the TRD is authored once per PRD, a Spec and its Story are created together with one Story per repo the ruled span names, and the SPEC of each Story decomposes into tasks only — nothing decomposes an Epic or a Story itself. The script owns loop (retry-in-phase) and escalate (upstream) control flow; producing minis never judge their own work — the gates do. A gate that spends its retry budget fails when an unmet deterministic check or constitutive criterion remains, and proceeds with the flags recorded when only competitive criteria remain; the script decides this, no agent. One level only: this composite calls minis and gates, never another composite. Build dependencies are Task-to-Task edges only: each Story\'s decomposition draws the edges inside it, and the edges between Stories are derived once every Story is decomposed; a Story only groups Tasks. The hierarchy is then WRITTEN INTO BEADS BY THIS RUN — Stories under the Epic\'s real id, then each Story\'s Tasks carrying every WSJF component, then the Task dependency edges as blocks edges — rather than handed back with an instruction to write it; a child under an unwritten parent is never attempted, and what comes back is what actually landed. The caller receives { ok, stage, beadId, headline, detailPath } plus the hierarchy carrying its real bead ids, the flat bead set, and the measured emissionOk / beadsEmitted / tasksEmitted / emission report: complete, partial (ok, degraded, the unwritten nodes named) or nothing durable (ok:false at emit-beads, with the hierarchy still returned so the write can be retried). tasksEmitted counts the TASKS that became durable, separately from the total, because decomposition into Tasks is what ends a PRD/Epic\'s own life and a run that wrote an Epic and a Story but no Task has decomposed nothing. Existing deployed code NEVER ends a PRD\'s life: no exit here closes or reroutes a PRD on the grounds that something is already built. Every phase artifact goes to the run journal.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'refuse, with a named reason, unless the Epic is open, scored, every Epic it depends on has finished elaboration, and it is ready or in_progress with no other owner; then mark it in_progress' },
     { title: 'PRD', detail: 'read the ready PRD the caller supplied — this run never writes to a PRD' },
@@ -676,7 +676,7 @@ function persistRun(outcome) {
 //     read-before-overwrite refusal that caused the improvisation;
 //   - a torn or short phase file costs THAT PHASE, not the run, because the envelope
 //     names what it owns and a file that fails its length check is dropped by name.
-const CHECKPOINT_SEMANTICS = '3'
+const CHECKPOINT_SEMANTICS = '4'
 const cpHash = (v) => { let h = 0x811c9dc5; const t = String(v == null ? '' : v); for (let i = 0; i < t.length; i++) { h = ((h ^ t.charCodeAt(i)) * 0x01000193) >>> 0 } return h.toString(16) }
 // HOW LONG A LEASE IS BELIEVED. A checkpoint is re-written after every phase, so
 // a lease older than this belongs to a run that is not writing any more — dead,
@@ -1156,14 +1156,11 @@ function architectureRuling(triage, architecture) {
 }
 function scopingRuling(scoping) {
   const repos = (scoping && Array.isArray(scoping.repos) && scoping.repos) || []
-  const newOnes = (scoping && Array.isArray(scoping.newRepos) && scoping.newRepos) || []
+  const created = (scoping && Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
   const obsolete = (scoping && Array.isArray(scoping.obsoleteCode) && scoping.obsoleteCode) || []
-  const actions = (scoping && Array.isArray(scoping.requiredHumanActions) && scoping.requiredHumanActions) || []
   return `Repo span ruled = ${repos.length ? repos.join(', ') : 'no repository at all'}` +
-    (newOnes.length ? `; ${newOnes.length} repository/ies must be CREATED by a person first (${newOnes.map((n) => (n && n.proposedName) || String(n)).join(', ')})` : '') +
-    (obsolete.length ? `; ${obsolete.length} existing item(s) ruled obsolete and to be deleted` : '') +
-    (actions.length ? `; ${actions.length} required human action(s) recorded` : '') +
-    (scoping && scoping.spanVerified === false ? '; the span is incomplete (placements dropped or work units unplaced)' : '') + '.'
+    (created.length ? `; ${created.length} repository/ies CREATED by the polyrepo-steward for this work (${created.map((c) => (c && c.name) || String(c)).join(', ')})` : '') +
+    (obsolete.length ? `; ${obsolete.length} existing item(s) ruled obsolete and to be deleted` : '') + '.'
 }
 function trdRuling(trdAuthoring) {
   // trd-authoring reports the file as `trdPath` at the top of its result.
@@ -1592,9 +1589,9 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
   return out.output
 }
 // ── WORK ONLY A PERSON CAN UNBLOCK TAKES THE EPIC OUT OF THE SWEEP ──────────────
-// Part of the work lands in a repository that does not exist, the ruled span could not place
-// all of the work, or the architecture has no admissible option or its gate sent it back to the
-// PRD author — and only a person can change a repository set, a PRD or a blocking rule. Left
+// The architecture has no admissible option or its gate sent it back to the PRD author — and
+// only a person can change a PRD or a blocking rule. A repository the work needs is NOT one of
+// these: repo-scoping has the polyrepo-steward create it. Left
 // `in_progress` with its owner released, every sweep would elaborate it again at full cost to
 // the same result. So its `elaboration_state` is cleared — the state the sweep
 // and `elaboration-start` both leave alone, and the one a person hands back from by setting
@@ -1602,7 +1599,7 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
 // handback. The write goes through the beads-contract CLI, the channel depscore uses.
 const HOLD_CAUSE = 'awaiting-human-action'
 /** How a person hands a held Epic back, named exactly: the state to set and the command that sets it. */
-function restoreStep(epicId, after = 'the repositories exist') {
+function restoreStep(epicId, after = 'what it names has been settled') {
   const elabmark = typeof a.artifactScript === 'string' && /\/artifactio\.py$/.test(a.artifactScript)
     ? `python3 ${a.artifactScript.replace(/artifactio\.py$/, 'elabmark.py')}`
     : 'elabmark.py (in the SDLC automation directory)'
@@ -1872,7 +1869,7 @@ if (!hasText(prd.body) && !prdByPath) {
 // Phase ids and the files each one's sessions write:
 //   architecture    architecture-triage.json, architecture-decision.md, architecture-proposal-<dim>.json,
 //                   architecture-analysis.json, architecture-challenges.json, sad-update.json, sad-conformance.json
-//   repo-scoping    repo-scoping.json (the ruling), repo-scoping-shape.json, repo-scoping-survey.json
+//   repo-scoping    repo-scoping.json (the placement, with the inventory it was made against), repo-scoping-shape.json
 //   trd             trd.md
 //   spec:<slug>     spec-<slug>.md, spec-<slug>.data-model.md, spec-<slug>.criteria.md, story-<slug>.json
 //   tasks:<slug>    tasks-<slug>.json
@@ -2474,8 +2471,8 @@ async function prefetchResumeJson() {
   }
   const arch = RESUME.phases.architecture
   if (arch && arch.fresh) want(arch, arch.artifacts['architecture-decision.md'] ? 'sad-update.json' : 'architecture-triage.json')
-  // Only a pinned span skips repo scoping; otherwise its three outputs go to its replay inline.
-  if (!callerRepos.length) for (const name of ['repo-scoping-shape.json', 'repo-scoping-survey.json', 'repo-scoping.json']) want(RESUME.phases['repo-scoping'], name)
+  // Only a pinned span skips repo scoping; otherwise its two outputs go to its replay inline.
+  if (!callerRepos.length) for (const name of ['repo-scoping-shape.json', 'repo-scoping.json']) want(RESUME.phases['repo-scoping'], name)
   for (const id of Object.keys(RESUME.phases)) {
     if (id.startsWith('spec:')) want(RESUME.phases[id], `story-${id.slice('spec:'.length)}.json`)
   }
@@ -3115,13 +3112,14 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
 //   AFTER architecture, because the ruling is most of the input. Which services the
 //   design creates, which boundaries it crosses, which surfaces it stands up — those
 //   decide where the work lands, and none of them are known before the decider rules.
-//   The mini also SURVEYS the repositories the project has, which is the other half: a
-//   PRD lands in the repository that already owns the capability far more often than in
-//   a new one.
+//   The polyrepo-steward then maps the work onto the repositories the project has, which
+//   is the other half: a PRD lands in the repository that already owns the capability far
+//   more often than in a new one, and a new one the work needs is created by the steward
+//   in the same step.
 //
-//   THAT SURVEY IS NOT A DEPLOYED-STATE SURVEY, and the distinction is why this phase can
-//   still run before the specs. It asks the polyrepo-steward which repositories EXIST and
-//   what each one OWNS — structural facts about the repositories themselves, which is the
+//   THAT INVENTORY IS NOT A DEPLOYED-STATE SURVEY, and the distinction is why this phase can
+//   still run before the specs. The steward reads which repositories EXIST and what each
+//   one OWNS — structural facts about the repositories themselves, which is the
 //   only kind of fact that can answer "where does this work go". It does not read the
 //   code, does not query the cloud account, and is not shown a material inventory: this
 //   mini used to receive one (existingRepos, removalWork, reuseWork, the rendered
@@ -3139,11 +3137,11 @@ Do not rule on whether the architecture decision was right. It was ruled by the 
 // IT IS NEVER PRE-STAGED. Not a cache file, not a config file, not a side-car: the span
 // is recomputed on every run. That is not fastidiousness — a stored span is an answer
 // computed against a PRD that has since been adjusted, and a run that reads one succeeds
-// against the wrong repositories, silently. Recomputing costs a survey and a ruling.
+// against the wrong repositories, silently. Recomputing costs a live inventory and a placement.
 //
 // It spends NO GATE, for the same reason PRD reconciliation does not. Its output is a
 // short structured list whose placements the mini's own deterministic reduction has
-// already checked against the repositories its survey found. A gate here would buy an
+// already checked against the live inventory the steward returned with them. A gate here would buy an
 // adjudication of a list rather than of a document, at the price of one more attempt
 // against the run budget before a single spec is authored.
 let scoping = null
@@ -3175,14 +3173,13 @@ async function runRepoScoping() {
   let scopeReplay = null
   if (scopeHit) {
     const savedShape = artData(scopeHit, 'repo-scoping-shape.json')
-    const savedSurvey = artData(scopeHit, 'repo-scoping-survey.json')
     const savedRuling = artData(scopeHit, 'repo-scoping.json')
     const scopeNames = Object.keys(scopeHit.artifacts)
-    const scopeNeeded = ['repo-scoping-shape.json', 'repo-scoping-survey.json', 'repo-scoping.json']
-    if (savedShape && savedSurvey && savedRuling) {
-      // NOT a stored span. The mini re-runs its deterministic reduction over the saved shape,
-      // survey and ruling, so the span is recomputed from them on this run.
-      scopeReplay = { shape: savedShape, survey: savedSurvey, ruling: savedRuling }
+    const scopeNeeded = ['repo-scoping-shape.json', 'repo-scoping.json']
+    if (savedShape && savedRuling) {
+      // NOT a stored span. The mini re-runs its deterministic reduction over the saved shape
+      // and placement (which carries its own inventory), so the span is recomputed on this run.
+      scopeReplay = { shape: savedShape, ruling: savedRuling }
     } else if (ART_ON && scopeNeeded.every((n) => scopeNames.indexOf(n) !== -1)) {
       // The plan NAMED the files without inlining them, which is the normal case: the payload
       // cannot carry a parsed ruling. The mini reads them itself and runs the same reduction,
@@ -3190,13 +3187,12 @@ async function runRepoScoping() {
       scopeReplay = {
         files: {
           shape: artPath('repo-scoping-shape.json'),
-          survey: artPath('repo-scoping-survey.json'),
           ruling: artPath('repo-scoping.json'),
         },
       }
     } else {
       log(
-        `Phase 'repo-scoping' is fresh but its shape, survey and ruling are neither inlined nor named as files this run can point at (${scopeNames.join(', ') || 'no artifact named'}) — it runs`
+        `Phase 'repo-scoping' is fresh but its shape and placement are neither inlined nor named as files this run can point at (${scopeNames.join(', ') || 'no artifact named'}) — it runs`
       )
     }
   }
@@ -3218,8 +3214,8 @@ async function runRepoScoping() {
     architecture: architecture.skipped ? { skipped: true } : architectureRulingFor(architecture.artifact),
     // NO `reconciliation` KEY, DELIBERATELY. This is where a material inventory used to be
     // passed as evidence for the ruling step. There is no inventory at this point in the
-    // run any more — it is taken per repository at spec authoring — and the mini's own
-    // repository survey is what recognizes what exists. `repo-scoping` treats the key as
+    // run any more — it is taken per repository at spec authoring — and the polyrepo-
+    // steward's live inventory is what recognizes what exists. `repo-scoping` treats the key as
     // optional and reads an absent one as "no material was found", which is the honest
     // reading here: nobody has looked yet, and the span does not depend on it.
     seedRepos,
@@ -3445,14 +3441,14 @@ if (scopeSettled.pinned) {
       reason:
         (scoping && scoping.reason) ||
         'repo scoping returned nothing — which repositories this PRD lands in could not be established, and the run will not guess.',
-      // A shaper, surveyor or decider that died never ruled the span wanting.
+      // A shaper or steward that died never ruled the span wanting.
       ...(scoping && scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: scoping.dispatchFailures || [] } : {}),
     })
   }
   if (!scopeSettled.fromCheckpoint) {
     // Reused only when the mini says no session ran: a replay whose read failed ran live.
     const scopeReused = scoping.resumed === true
-    if (scopeReused) reuseFrom('repo-scoping', scopeSettled.scopeHit, 'the saved shape, survey and ruling were replayed through the reduction')
+    if (scopeReused) reuseFrom('repo-scoping', scopeSettled.scopeHit, 'the saved shape and placement were replayed through the reduction')
     else if (scopeSettled.scopeReplay) {
       const got = Array.isArray(scoping.replayed) ? scoping.replayed : []
       log(`Phase 'repo-scoping' was offered its saved outputs but replayed ${got.length ? `only ${got.join(', ')}` : 'none of them'} — the rest ran`)
@@ -3462,18 +3458,14 @@ if (scopeSettled.pinned) {
   }
   repos = Array.isArray(scoping.repos) ? scoping.repos : []
 }
-// The span's actions, and the rule challenges an admissible architecture ruling raised for
-// the owner — both are for a person, and both reach the host on every exit below.
+// The rule challenges an admissible architecture ruling raised for the owner — for a person,
+// and they reach the host on every exit below. The span raises none: a repository the work
+// needs is created by the polyrepo-steward inside repo-scoping, and work it could not place
+// failed that phase above rather than arriving here as a person's task.
 const repoActions = [
   ...((architecture.artifact && Array.isArray(architecture.artifact.requiredHumanActions) && architecture.artifact.requiredHumanActions) || []),
-  ...((scoping && scoping.requiredHumanActions) || []),
 ]
-const newRepos = (scoping && scoping.newRepos) || []
-// Work the span ruling could not place — a repository that does not exist, a placement it
-// dropped, a work unit it placed nowhere — is work specified nowhere in this run, and only a
-// person can settle it (repo-scoping has already re-ruled once, shown the faults). The Epic is
-// not done while any of it stands, and it is held for that person rather than re-elaborated.
-const spanNeedsPerson = newRepos.length > 0 || !!(scoping && scoping.spanVerified === false)
+const createdRepos = (scoping && Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
 // ── THE SPAN RULING NAMES DESTRUCTIVE WORK TOO ─────────────────────────────────
 //
 // repo-scoping asks the decider to name existing code the ruled design makes OBSOLETE AND
@@ -3537,31 +3529,18 @@ const targetKey = (t) =>
 if (scoping) {
   log(
     `Span ruled: ${repos.length} repositor(ies) — ${repos.join(', ') || '(none)'}` +
-      `${newRepos.length ? `; ${newRepos.length} repositor(ies) do not exist yet and are returned as human actions` : ''}` +
-      `${scoping.spanVerified === false ? '; the span is incomplete (placements dropped or work units unplaced)' : ''}`
+      `${createdRepos.length ? `; ${createdRepos.length} created by the polyrepo-steward (${createdRepos.map((c) => c.name).join(', ')})` : ''}`
   )
 }
 
-// Every repository the work needs has still to be created. There is nothing to author a
-// Spec against, so the run stops and hands back the actions. It returns ok:true with an
-// `action`, because it is a DEFINITE DECISION the caller acts on rather than a failure —
-// the work is fully understood and it is blocked on one thing a human has to do.
+// No repository in the span. repo-scoping fails rather than return an empty span, so this is
+// reached only through a caller that pinned an empty one — and there is nothing to author a
+// Spec against. It is a failure of the phase, never an action for a person.
 if (!repos.length) {
   acceptTrdOnExit()
-  await holdForPerson(epicBeadId)
-  return {
-    ...handback(
-      true,
-      'repo-scoping',
-      `the work lands in ${newRepos.length} repositor(ies) that do not exist yet, so no Spec or Story could be authored. ` +
-        `Create them — ${newRepos.map((n) => n.proposedName).join(', ') || '(unnamed)'} — through the polyrepo-steward, which creates each one locally and on GitHub, then set elaboration_state=ready on ${epicBeadId}${lifecycle.held ? ' (it has been taken out of the sweep until then)' : ''} and re-run this PRD. ` +
-        'This run created nothing: a repository is an outward-facing, effectively irreversible addition, and a phase that minted one would mint a second on the next pass.',
-      { action: 'create-repos', scoping, prd, epic }
-    ),
-    action: 'create-repos',
-    newRepos,
-    requiredHumanActions: lifecycle.held ? [...repoActions, restoreStep(epicBeadId)] : repoActions,
-  }
+  return partial('repo-scoping', {
+    reason: 'the span names no repository — which repositories this PRD lands in could not be established, and the run will not guess.',
+  })
 }
 
 // Rescale the run budget to the span that was actually ruled, BEFORE the first per-repo
@@ -6830,15 +6809,13 @@ for (const t of tasks) {
   if (!id || !SAFE_BEAD_ID.test(String(id)) || !judgedSize(t)) continue
   if (createdTaskKeys.has(String(t.key)) || refreshedTaskIds.has(id)) judgedTaskIds.push(String(id))
 }
-// Not done while removal work reached no durable Task, nor while part of the work lands in a
-// repository that does not exist yet: that part is specified nowhere.
+// Not done while removal work reached no durable Task.
 const epicDone =
   taskIds.size > 0 &&
   emission.verdict === 'complete' &&
   specFailures.length === 0 &&
   decompositionFailures.length === 0 &&
-  removalNotEmitted.length === 0 &&
-  !spanNeedsPerson
+  removalNotEmitted.length === 0
 // ── THE SAD ENTRIES THIS RUN VETTED BECOME `effective` HERE ────────────────────
 // A SAD entry settles an architecture decision only when its ruling came out of a COMPLETED
 // elaboration. Everything the architecture phase writes lands as `in-review`; this is the
@@ -6865,8 +6842,6 @@ const finishOut = emission.verdict === 'none' ? null : await runLifecycle(
   'Emit Beads'
 )
 lifecycle.finish = finishOut
-// Written, scored, and held out of the sweep until a person settles the span's missing or dropped repositories.
-if (spanNeedsPerson && emission.verdict !== 'none') await holdForPerson(epicBeadId)
 const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
 const epicMarkedDone = finishOk && !!finishOut.lifecycle
 const scoringLine = !finishOut
@@ -6990,7 +6965,6 @@ const degraded =
   removalNotEmitted.length > 0 ||
   removalWeaklyPlaced.length > 0 ||
   removalMalformed.some((m) => !m.taskKey) ||
-  spanNeedsPerson ||
   emission.verdict !== 'complete'
 // Everything the run produced, for the journal. Both exit paths below share it: a run
 // that decomposed and could not persist any of it has produced exactly as much phase
@@ -7058,7 +7032,7 @@ if (emission.verdict === 'none') {
     hierarchy,
     beadSet,
     repoSpan: repos,
-    ...(newRepos.length ? { newRepos } : {}),
+    ...(createdRepos.length ? { createdRepos } : {}),
     ...(repoActions.length ? { requiredHumanActions: repoActions } : {}),
     ...(removalNotEmitted.length ? { removalNotEmitted } : {}),
     ...(removalWeaklyPlaced.length ? { removalWeaklyPlaced } : {}),
@@ -7076,12 +7050,10 @@ if (emission.verdict === 'none') {
 // run had just told it.
 // The rule this trim enforces is that STATE stops crossing the boundary; a deliverable
 // still does.
-// A run whose work partly needs a repository that does not exist reports HUMAN_ACTION_STAGE;
-// everything else it wrote stands.
 return {
   ...handback(
     true,
-    spanNeedsPerson ? HUMAN_ACTION_STAGE : 'emit-beads',
+    'emit-beads',
     `1 epic, ${stories.length} story/stories, ${tasks.length} task(s) — sequenced and WSJF-scored, against the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
       // The comparison is per repository now, so the counts are MERGED across the span by
       // requirement id and not summed — see the merge above. A span where nothing could be
@@ -7145,11 +7117,9 @@ return {
       (scoping
         ? `The repo span was RULED this run (${repos.join(', ')}) — it is recomputed every run and nothing was stored. `
         : `The repo span was PINNED by the caller (${repos.join(', ')}). `) +
-      (newRepos.length
-        ? `REQUIRES A HUMAN: ${newRepos.length} repositor(ies) the work needs do not exist — ${newRepos.map((n) => n.proposedName).join(', ')}. Nothing was created; their work is specified nowhere in this run, so ${epicBeadId} is NOT marked done${lifecycle.held ? ' and is out of the sweep' : ''} — create them, then set elaboration_state=ready on it and re-run this PRD. `
-        : spanNeedsPerson
-          ? `REQUIRES A HUMAN: the ruled span could not place all of the work — ${((scoping && scoping.requiredHumanActions) || []).join(' | ')}. That work is specified nowhere in this run, so ${epicBeadId} is NOT marked done${lifecycle.held ? ' and is out of the sweep' : ''}. `
-          : '') +
+      (createdRepos.length
+        ? `The polyrepo-steward CREATED ${createdRepos.length} repositor(ies) this work needed: ${createdRepos.map((c) => c.name).join(', ')}. `
+        : '') +
       (outOfSpanFindings.length
         ? `THE RULED SPAN MAY BE TOO NARROW: spec authoring found ${outOfSpanFindings.length} piece(s) of implied work OUTSIDE it (${outOfSpanFindings.map((f) => f.finding).join(' | ')}). No Story covers them. Widen the span and re-run, or confirm the work belongs to another PRD. `
         : '') +
@@ -7191,15 +7161,13 @@ return {
   crossStoryDependencies: crossStory,
   hierarchy,
   beadSet,
-  // The ruled span and anything it needs a human for cross the boundary with the
-  // hierarchy rather than going to the journal. They are DECISIONS the caller acts on —
-  // which repositories these Stories are for, and which repository has to be created
-  // before the rest of the work can be specified at all — and both are a handful of
-  // short strings. A required action nobody reads is a required action nobody takes.
+  // The ruled span crosses the boundary with the hierarchy rather than going to the journal:
+  // it says which repositories these Stories are for, including any the polyrepo-steward
+  // created for them, and it is a handful of short strings.
   repoSpan: repos,
-  ...(newRepos.length ? { newRepos } : {}),
+  ...(createdRepos.length ? { createdRepos } : {}),
   ...(repoActions.length || lifecycle.held
-    ? { requiredHumanActions: lifecycle.held ? [...repoActions, restoreStep(epicBeadId, newRepos.length ? 'the repositories exist' : 'the span\u2019s dropped repositories are confirmed')] : repoActions }
+    ? { requiredHumanActions: lifecycle.held ? [...repoActions, restoreStep(epicBeadId)] : repoActions }
     : {}),
   // Removal that reached no Story. It is a DECISION the caller has to act on —
   // contradicting code the PRD requires gone, that this run specified nobody to remove —

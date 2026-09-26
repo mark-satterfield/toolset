@@ -59,8 +59,8 @@ when its Tasks are written it scores the Epic and its Tasks and sets the Epic's
 A PRD is a requirement. It is not scoped to a repository and it may span several. A
 Spec and its Story are scoped to exactly one, and `prd-to-spec` runs spec authoring
 once per repo — but **the span is decided inside the run, not by you.** Its
-`repo-scoping` phase surveys the repositories that exist and rules the span from the
-architecture decision the same run produced.
+`repo-scoping` phase has the `polyrepo-steward` map the work onto the repositories that
+exist, and create any repository the work needs that the project does not have.
 
 So: **pass no `repos`.** Pass `repoPath` — the repository you are standing in — as a
 starting point, and let the run rule the rest.
@@ -75,10 +75,10 @@ inherits it.
 Two results come back that you must not bury:
 
 - `repoSpan` — the repositories that were ruled. Report it.
-- `newRepos` / `requiredHumanActions` — repositories the work needs that the project
-  does not have. The run created nothing, and the work in them is specified nowhere.
-  Surface each one; the fix is to create the repository through the `polyrepo-steward`
-  and re-run.
+- `createdRepos` — repositories the `polyrepo-steward` created for this work during the
+  run. Report each one. A repository the work needs is never a human action: if the
+  steward could not place or create one, the run fails at `repo-scoping` with the faults
+  named.
 
 ## 2. Dispatch
 
@@ -178,8 +178,7 @@ account of what you think landed.
 - PRD: located, or minted from the Epic
 - Repo span: the repositories `repoSpan` names, and whether the run ruled them or a
   human pinned them
-- Repositories still to create: every `newRepos` entry, with why no existing repo fits.
-  Say plainly that their work is specified nowhere until they exist
+- Repositories created: every `createdRepos` entry, with why no existing repo fits
 - Stories: how many, and which repo each covers
 - Tasks: how many, and how many dependency edges cross Stories
 - Emission: `emission.verdict`, `beadsEmitted`, and — when the verdict is not

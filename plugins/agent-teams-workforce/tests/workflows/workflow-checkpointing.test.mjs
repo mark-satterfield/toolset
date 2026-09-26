@@ -3,8 +3,7 @@
 // bug-fix and task-to-deploy write and resume their own checkpoints. prd-to-spec no longer
 // writes one: its makers save their artifacts into the Epic working directory, the host passes
 // the freshness plan in as `args.resume`, and its checkpoint loader is kept only as a migration
-// reader for directories written before that. What is pinned here is the create-repos exit
-// retiring nothing, bug-fix resuming from its checkpoint, and every checkpointing composite
+// reader for directories written before that. What is pinned here is bug-fix resuming from its checkpoint, and every checkpointing composite
 // declaring a CHECKPOINT_SEMANTICS counter decoupled from the plugin version.
 
 import test from 'node:test'
@@ -113,15 +112,6 @@ async function runP2S({ onDisk = null, workflowOpts = {}, args = {} } = {}) {
 function retired(calls) {
   return agentCalls(calls, 'checkpoint:retire').length > 0
 }
-
-test('the create-repos exit keeps the checkpoint — its purpose is a re-run after a human acts', async () => {
-  const { result, calls } = await runP2S({
-    workflowOpts: { scopingRepos: [], newRepos: [{ proposedName: 'SkillSpoke-newthing', purpose: 'p', workUnitIds: ['W1'], whyNoExistingRepoFits: 'none fits' }] },
-  })
-  assert.equal(result.ok, true)
-  assert.equal(result.action, 'create-repos')
-  assert.equal(retired(calls), false)
-})
 
 // ── bug-fix ───────────────────────────────────────────────────────────────────
 
