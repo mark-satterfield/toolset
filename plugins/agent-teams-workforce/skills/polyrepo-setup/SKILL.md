@@ -4,7 +4,7 @@ description: >-
   Bootstrap the polyrepo manifest for the first time. Use when no
   `.polyrepo/manifest.yaml` exists yet and the project's repository map needs to be
   established — the discovery interview, topology inference, the manifest-location
-  decision, and writing the initial manifest, changelog, and pointer breadcrumbs. Not a
+  decision, and writing the initial manifest and changelog. Not a
   CUDLS skill; it runs once to stand the manifest up, then hands ongoing work to
   polyrepo-repo and the other polyrepo skills.
 ---
@@ -16,8 +16,9 @@ exists; your job is to create the one that describes *this* project's actual sha
 
 ## When you run
 
-Only when there is no manifest — walk-up for a `.polyrepo/` folder and a `.polyrepo-pointer.json`
-search both come up empty. If a manifest already exists, stop and hand back to **polyrepo-repo**.
+Only when there is no manifest — the `polyrepo` tool finds no `.polyrepo/config.yaml` (it exits
+2 naming the missing config). If a manifest already exists, stop and hand back to
+**polyrepo-repo**.
 
 ## Two sub-modes
 
@@ -41,8 +42,6 @@ intended shape.
 
 - `.polyrepo/manifest.yaml` (from the template, populated)
 - `.polyrepo/changelog.md` with the first entry
-- a `.polyrepo-pointer.json` breadcrumb in each known repo, so the manifest is findable from
-  inside any of them
 
 Speak in outcomes, not internals. Once the manifest exists, ongoing changes flow through
 **polyrepo-repo** (structure), **polyrepo-info** (knowledge), and **polyrepo-governance**

@@ -123,10 +123,10 @@ ownership:
 governance: [GovernanceEntry]?   # v3 — registry of the project's own
                                  # scripts/tools/procedures/knowledge-base
                                  # locations; see The `.polyrepo/` directory (v3)
-
-drift_log: [DriftEntry]?         # observations that the manifest may
-                                 # be stale; resolved during refresh
 ```
+
+The manifest holds no questions and no open items: there is no `drift_log` and no
+`open_questions`. `reconcile` reports either section as an `open-items` finding.
 
 There is no `topology` section, no top-level `rules`, no `documentation`,
 no `search_recipes`, and `conventions` carries no `naming` subsection —
@@ -258,18 +258,6 @@ The model preserves three things the flat list could not:
 A repo with no gate and no task override is still listed by name; an
 empty wave entry is just `- name: <repo>` with `gate` and `deploy_task`
 omitted.
-
-## DriftEntry schema
-
-```yaml
-- what: string                   # what looks stale
-  evidence: string               # how you noticed
-  status: enum                   # open, resolved, false-alarm
-  resolution: string?            # how it was reconciled
-```
-
-Drift entries are how the steward keeps itself honest. Every reconcile
-pass that turns up something unexpected appends here.
 
 ## Dates and the audit trail
 

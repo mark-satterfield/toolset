@@ -11,8 +11,8 @@ approval step for a manifest change.
 - **The `polyrepo` tool** writes every mechanical fact. `reconcile --fix` adds entries for
   new repos, removes entries whose repo is gone, follows renames, sets `remote_url`,
   `lifecycle`, archived state and `deprecated_on`, and appends the changelog itself.
-  `create`, `deprecate` and `purpose` do the same for their own changes. Never edit a field
-  the tool maintains.
+  `create`, `rename`, `deprecate` and `purpose` do the same for their own changes. Every one
+  of them commits and pushes the steward's files. Never edit a field the tool maintains.
 - **The steward** writes what needs judgment: a purpose (through `purpose <repo> --text`),
   and groups, `owns`, dependencies, `role`, `owner` (by editing the manifest, per the
   `polyrepo-repo` skill). Each such edit gets a changelog entry written by the steward.
@@ -45,21 +45,18 @@ requirements, deployment order) are never stored; see `manifest-schema.md`.
    - **Affected:** repo names or fields touched.
    ```
 
-3. **Resolve related drift.** If the change settles an open `drift_log` entry, set it to
-   `resolved`.
-4. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
-5. **Commit and push** `.polyrepo/manifest.yaml` and `.polyrepo/changelog.md` on `main` in
-   `$SKILLSPOKE_CC`.
-6. **Speak in outcomes.** "Noted — X now depends on Y." Not the file mechanics.
+3. **Verify.** Run `reconcile --json` and confirm the change introduced no finding.
+4. **Commit and push** with `commit --message "<what changed>"`.
+5. **Speak in outcomes.** "Noted — X now depends on Y." Not the file mechanics.
 
 ## Drift
 
 `reconcile` is the drift check, and it runs at the start of every steward invocation. Every
 mechanical finding is repaired by `--fix`. A finding that needs judgment is settled by the
 steward in the same invocation when the request touches that repo, and on every
-`polyrepo-doctor` run. A `drift_log` entry is written only for a disagreement between the
-manifest and another document that the steward cannot settle from the repositories, GitHub
-or the code; the steward names it in its reply. It never invents an answer.
+`polyrepo-doctor` run. A disagreement the steward cannot settle from the repositories,
+GitHub or the code is put to the user as a question in the steward's reply; the manifest
+never records a question or an open item. It never invents an answer.
 
 ## Never destructive
 

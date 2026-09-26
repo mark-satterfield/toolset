@@ -9,7 +9,7 @@ available both inside Claude Code sessions and to automation run outside it.
 
 | Project value | Source |
 |---|---|
-| Fleet directory (parent of the repos) | `ATW_FLEET_DIR` |
+| The repos and their folders | the `polyrepo` tool (`list`, `status <repo>`), every app space |
 | Root / C2 repo (holds real issues + hydration list) | `ATW_CONTROL_REPO` |
 | Shared server port | `ATW_BEADS_PORT` (default `3308`) |
 | Issue prefix | the root repo's `issue_prefix` (`bd config get issue_prefix` there) |

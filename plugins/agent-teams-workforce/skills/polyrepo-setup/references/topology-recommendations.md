@@ -129,8 +129,8 @@ store `.polyrepo/` inside it.
 - A cross-repo SAD or runbooks already exist (or are about to) and
   have no home.
 
-Otherwise, recommend Option A and note in `open_questions` that
-upgrading to a meta repo should be revisited.
+Otherwise, recommend Option A, and tell the human in the reply that
+upgrading to a meta repo is worth revisiting as the project grows.
 
 ### `monorepo_plus_satellites`
 
@@ -264,14 +264,11 @@ Recommended storage: `<C&C-repo>/.polyrepo/`. Reasoning:
   and machine-local — every machine would have to be set up
   independently, and the manifest would silently drift.
 
-Pointer files: drop `.polyrepo-pointer.json` at the root of every
-satellite (and the C&C repo itself) pointing at the C&C
-manifest path. This way, if the agent is invoked from inside any of
-the 63 satellites, it can find the manifest with one read.
-
-Recommend committing the pointer file unless the human prefers to
-gitignore it — at this scale, committing means new clones are
-immediately steward-aware.
+No file in any satellite names the manifest. The `polyrepo` tool finds
+its config through `--config`, `$POLYREPO_CONFIG`, the nearest
+`.polyrepo/config.yaml` above the working directory, or the project's
+command-and-control environment variable, so the steward reaches the
+manifest from inside any satellite.
 
 This example is canonical: any time the human has a single
 coordination hub plus many members, the recommendation is the same.

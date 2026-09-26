@@ -216,30 +216,20 @@ steward can read and write to. Avoid `/tmp`. Avoid putting the
 manifest inside a single member repo unless that repo is explicitly
 the meta-repo or command-and-control repo.
 
-## Dropping pointer files
+## Finding the manifest
 
-After the manifest's location is decided, drop a `.polyrepo-pointer.json`
-file at the root of each repo that has a local clone:
-
-```json
-{
-  "manifest_path": "/abs/path/to/.polyrepo/manifest.yaml",
-  "project": "<project-name>",
-  "this_repo": "<this-repo-name>"
-}
-```
-
-These pointers let the steward find the manifest from inside any repo,
-without the human having to remember where it lives. Add
-`.polyrepo-pointer.json` to each repo's `.gitignore` *unless* the human
-explicitly wants it committed (some teams will, some will not — ask).
+No file outside the steward's folder names the manifest: drop nothing
+into the member repos. The `polyrepo` tool finds its config through
+`--config`, `$POLYREPO_CONFIG`, the nearest `.polyrepo/config.yaml`
+above the working directory, or the command-and-control repo's
+environment variable, so it works from inside any repo.
 
 ## Writing the manifest
 
 Use `assets/manifest-template.yaml` as the starting scaffold. Fill in
 every field you have learned. For fields you do not have answers for
-yet, leave them as empty lists or `unknown`, and add a note to the
-manifest's `open_questions` section so they can be filled in over time.
+yet, leave them as empty lists, and ask the human about them in your
+reply; the manifest itself carries no questions.
 
 ## Initial changelog entry
 
@@ -254,7 +244,6 @@ single initial entry of the form:
 - Topology: <category> — <human's description>
 - Repos captured: <count>
 - Manifest location: <path>
-- Pointers dropped in: <list of repos>
 ```
 
 This is the first entry of the project's living memory. Every learning
@@ -266,12 +255,10 @@ Setup is done when:
 
 - the manifest is written and validates against
   `references/manifest-schema.md`
-- pointer files are dropped (or explicitly skipped per the human's
-  request)
 - the changelog has its initial entry
 - the human has confirmed the topology description matches their
   mental model
 
-If something is genuinely unknown, leave it blank with a note in
-`open_questions`. Do not block setup on perfection — the steward will
-fill gaps over time through the learning flow.
+If something is genuinely unknown, leave it blank and ask the human in
+your reply. Do not block setup on perfection — the steward will fill
+gaps over time through the learning flow.

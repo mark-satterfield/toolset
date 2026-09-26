@@ -178,7 +178,6 @@ The plugin knows nothing about the project it is installed in. Everything projec
 | `ATW_PR_COMMAND` | Absolute path of an executable that, run inside a worktree as `<cmd> --title T --body B`, pushes the current branch and opens its pull request (a PR that already exists for the branch is success) | Yes, for any composite that lands work | `prCommand` on `task-to-deploy`, `bug-fix`, `infra-change` |
 | `ATW_SAD_PATH` | The arc42 Software Architecture Document — a file or a directory of section files | Yes, for elaboration, dependency assessment and scoring | `sadPath` on `prd-to-spec` and `architecture`; `sadPath` on `dependency-assessment`, `seed-portfolio` and `wsjf-scoring`, which `/dependency-assessment`, `/seed-portfolio` and `/wsjf-scoring` refuse to dispatch without |
 | `ATW_PRD_DIR` | The directory PRDs live under | Yes, for `/start-prd` and for elaborating an Epic | read by `commands/start-prd.md`, `commands/work-bead.md` |
-| `ATW_FLEET_DIR` | The directory that holds the project's repositories | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
 | `ATW_CONTROL_REPO` | The root repository that holds the tracker; its beads `issue_prefix` is the project's issue prefix | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
 | `ATW_PROJECT_ROOT` | The directory recorded artifact and spec paths are relative to | No — without it, no root-relative path is recorded on a bead | `projectRoot` on `prd-to-spec` and `task-to-deploy` |
 | `ATW_ARTIFACT_SCRIPT` | Absolute path of the phase-artifact recorder, run as `python3 <script> record <file> --epic <id> --phase <phase> --inputs <paths...>` and `python3 <script> plan <epic-id>` | No — without it, `prd-to-spec` saves no artifacts and `task-to-deploy` saves phase files unhashed | `artifactScript` on `prd-to-spec` and `task-to-deploy` |
@@ -186,8 +185,6 @@ The plugin knows nothing about the project it is installed in. Everything projec
 | `ATW_PRD_EPIC_SYNC` | Command that brings a PRD's Epic into line with the document: `<cmd> --only <slug> --apply` | No — without it, the PRD writer reports the slug needing sync | read by the `prd-writer` agent and skill |
 | `ATW_PRD_EPIC_VERIFY` | Command that checks one PRD against its Epic: `<cmd> <slug> [--apply]` | No | read by the `prd-writer` skill |
 | `ATW_BEADS_PORT` | The shared Dolt server port | No — `3308` | read by `skills/polyrepo-beads/scripts/*.sh` |
-| `ATW_BEADS_REPO_GLOB` | The repositories a fleet audit covers | No — `<control repo basename>-*` | read by `audit-fleet.sh` |
-| `ATW_BEADS_SKIP` | Space-separated repositories a fleet audit skips | No | read by `audit-fleet.sh` |
 
 ### Status
 

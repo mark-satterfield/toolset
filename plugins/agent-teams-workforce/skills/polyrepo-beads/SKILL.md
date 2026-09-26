@@ -28,7 +28,9 @@ mechanic who keeps the tracking machine running across the whole fleet.
 
 - **Audit** — "are all the repos' beads healthy / configured the same?" Before a release,
   after a mass change, after another tool (or another agent) has been fighting with beads, or
-  on request. → `scripts/audit-fleet.sh` (read-only).
+  on request. → `scripts/audit-fleet.sh` (read-only; `--json` for one JSON object). It audits
+  every active repo on disk in every app space, as `polyrepo list` reports them, and
+  `polyrepo doctor` runs it as its `beads` check.
 - **Repair one repo** — a repo whose `bd` commands fail, whose database is stuck, or that
   drifted off the canonical state. → `references/troubleshooting.md` to identify the failure,
   then `scripts/converge-repo.sh` to remediate.
@@ -66,7 +68,7 @@ in automation alike. The bundled scripts read them:
 
 | Value | Variable |
 |---|---|
-| Fleet directory (parent of the repos) | `ATW_FLEET_DIR` (required) |
+| The repos and their folders | the `polyrepo` tool (`list`, `status <repo>`), every app space |
 | Root / command-and-control repo | `ATW_CONTROL_REPO` (required) |
 | Shared server port | `ATW_BEADS_PORT` (default `3308`) |
 | Issue prefix | read from the root repo: `bd config get issue_prefix` |
@@ -100,7 +102,7 @@ table.
 | `references/canonical-repo-state.md` | The full contract + the shared-server architecture, config precedence, project-specific values, and what does **not** belong in a repo |
 | `references/troubleshooting.md` | The repair runbook: every failure mode → its exact signature → why → the fix, with commands |
 | `references/diagnostics.md` | How to see real state without breaking anything, incl. the server-side SQL escape hatch when `bd` won't open the store |
-| `scripts/audit-fleet.sh` | Read-only fleet audit → per-repo truth table + anomaly list |
+| `scripts/audit-fleet.sh` | Read-only fleet audit → per-repo truth table + anomaly list (`--json`: one object) |
 | `scripts/converge-repo.sh` | Bring **one** repo to the canonical state, idempotently (handles dirty/identity/migration/config/push) |
 | `scripts/beads_server.py` | Talk to the running shared Dolt server over SQL (inspect status/identity/prefix; reset a dirty working set) — the only safe way in when `bd` is gated |
 
@@ -120,7 +122,8 @@ table.
 ## Boundaries and coordination
 
 - You own **beads-domain knowledge and repair**. You do not own the manifest or the knowledge
-  store. When **polyrepo-doctor** runs a health check, it calls the beads portion here.
+  store. `polyrepo doctor` runs `scripts/audit-fleet.sh --json` as its `beads` check; its
+  anomalies are repaired here.
 - Durable "how beads works in this project" facts belong in **polyrepo-info** (as a knowledge
   pointer). A registered, reusable script or procedure belongs in **polyrepo-governance**.
 - Record what you changed and why; surface anything ambiguous or destructive to the human

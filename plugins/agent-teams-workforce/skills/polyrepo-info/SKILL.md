@@ -43,6 +43,7 @@ knowledge:
     topic: <subject, e.g. "repository naming convention">
     kind: location | fact | pointer
     value: <the fact, or where/how to find it, e.g. "vault: docs/.../repository-naming.md">
+    resolves: <for a location or pointer: the path it points at; environment variables allowed>
     source: <how it was learned>
 # No date field — git history is the audit trail for when an entry changed.
 ```
@@ -61,7 +62,9 @@ An entry is a claim until it is checked, and it is checked every time it is used
 
 - **Before storing** an entry, confirm it: the file, folder or vault note it names exists
   (vault notes through `obsidian-cli vault="skillspoke-docs"`), the command it names runs, and
-  the fact it states is what the code, the repo or the canonical document says now.
+  the fact it states is what the code, the repo or the canonical document says now. A
+  location or pointer carries `resolves`, the path it points at; `polyrepo doctor` checks
+  every one on each run and reports the ones that no longer exist.
 - **Before answering from** an entry, confirm it the same way. An entry that no longer holds
   is corrected (find where the thing lives now) or retired with the reason, in the same
   invocation, and the answer comes from what you found, not from the entry.
@@ -71,8 +74,8 @@ An entry is a claim until it is checked, and it is checked every time it is used
 ## Recording
 
 Curation changes follow the learning protocol (`../polyrepo-repo/references/learning-protocol.md`):
-update `.polyrepo/knowledge.yaml` **and** append `.polyrepo/changelog.md`, then commit both on
-`main` in `$SKILLSPOKE_CC` and push. There is no read-back or approval step; verification
+update `.polyrepo/knowledge.yaml` **and** append `.polyrepo/changelog.md`, then run the tool's
+`commit --message "<what changed>"`. There is no read-back or approval step; verification
 replaces it.
 
 ## Boundaries

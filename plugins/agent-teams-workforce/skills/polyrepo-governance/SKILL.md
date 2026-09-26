@@ -39,9 +39,13 @@ governance:
 | `polyrepo-tool` | The `polyrepo` tool: live repo facts and every deterministic repository action | `uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command> --json` |
 
 Its commands: `reconcile`, `status`, `list`, `search`, `inventory`, `purpose`, `grep`,
-`rebase`, `create`, `deprecate`, `agents-sync`, `templates-check`, `doctor`. The command reference is
-the **polyrepo-repo** skill; the tool's `--help` is the authority. When the tool gains or
-loses a command, update this list and the `governance` entry together.
+`rebase`, `create`, `rename`, `deprecate`, `agents-sync`, `templates-check`, `doctor`,
+`commit`. The command reference is the **polyrepo-repo** skill; the tool's `--help` is the
+authority. When the tool gains or loses a command, update this list and the `governance`
+entry together.
+
+`polyrepo doctor` checks every entry: its `location` exists, and for a script or tool, its
+`invoke` (up to the first `<placeholder>`) runs with `--help`.
 
 A deterministic job the steward does repeatedly belongs in this tool as a new command, not
 as a hand-run procedure.
@@ -64,7 +68,8 @@ and others can discover and run. Registering it is a governance `create`.
 ## Recording
 
 Changes follow the learning protocol (`../polyrepo-repo/references/learning-protocol.md`):
-update the `governance` section **and** append `.polyrepo/changelog.md`.
+update the `governance` section **and** append `.polyrepo/changelog.md`, then run the tool's
+`commit --message "<what changed>"`.
 
 ## Boundaries
 

@@ -29,26 +29,35 @@ Every command takes `--json` (one JSON object on stdout), `--config`, and `--no-
 facts are always read live. Exit status: 0 clean, 1 findings remain, 2 usage or
 environment error; `grep` follows `rg` (0 match, 1 no match, 2 error).
 
+A command that changes the steward's files (manifest, changelog, knowledge store) commits
+and pushes them itself, on `main` of the repo that holds them, and reports it under
+`records`.
+
 | Command | What it does |
 |---|---|
 | `reconcile [--fix] [--dry-run] [--no-fetch]` | Compare disk, GitHub and the manifest. `--fix` repairs every mechanical finding (manifest, push, GitHub rename, archive) and appends the changelog. |
-| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, `archived`. |
+| `status [repo\|path …] [--no-fetch]` | Live state per repo: branch, `uncommitted` and `uncommitted_files`, `last_commit`, `main.ahead/behind/up_to_date`, GitHub `pushed_at`, `archived`, and dependencies with `confirmed`. |
 | `list [--group G] [--lifecycle L] [--space S]` | Repos, filtered. |
 | `search attr=value [attr~regex …] [--fetch]` | Repos by any record attribute, dotted keys (`github.archived=false`, `main.behind=0`, `space=shared`). |
-| `inventory [--all] [--no-fetch]` | Every repo's full record; `--all` adds GitHub-only repos. |
+| `inventory [--all] [--no-fetch]` | Every repo's full record; `--all` adds every repo the manifest or GitHub has that is not on disk. |
 | `purpose <repo> [--text T]` | Record (`--text`) or confirm the repo's purpose at its current `main`; clears `purpose-recheck`. |
 | `grep <pattern> [--space S] [--repo R …] [-i] [-l] [-F] [-w] [--glob G …]` | `rg` across every in-scope repo on disk. |
 | `rebase <repo …\|--all>` | Fetch and rebase `main` on `origin/main`; stops and reports on a conflict or a dirty tree. |
 | `create <name> --space S --template T --purpose TEXT [--lifecycle L] [--dir D] [--dry-run]` | Validate the name, render the Copier template, create and push the GitHub repo, add the manifest entry. |
-| `deprecate <repo> [--dry-run]` | Rename to the `deprecated-` name on GitHub and locally, repoint `origin`, record `deprecated_on`. |
+| `rename <repo> <new-name> [--dry-run]` | Rename on GitHub and locally together, repoint `origin`, rename the manifest entry. Refuses an invalid or taken name, or a `main` not known to be pushed. |
+| `deprecate <repo> [--dry-run]` | `rename` to the `deprecated-` name, which records `deprecated_on`. |
 | `agents-sync [--check\|--dry-run] [--repo R …]` | Write the shared `AGENTS.md` blocks (the SkillSpoke shared block and the Agent Teams Workforce block, listed under `agents_sync.blocks` in the config) into every repo, committing and pushing each; `--check` reports repos out of date. |
 | `templates-check` | Which templates lag the repos built from them, and which repo kinds have no template. |
-| `doctor` | Runs `reconcile`, `agents-sync --check` and `templates-check` in parallel and checks every `governance` location; one findings list. The launchd agent `com.skillspoke.polyrepo-daily` runs `reconcile --fix` then `doctor` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `doctor [--fix]` | Every health check as one findings list: `reconcile`, `agents-sync --check`, the beads fleet audit, the governance entries, the knowledge-store pointers, and the repository-naming document against the naming patterns. `--fix` first runs `reconcile --fix` and `agents-sync`. The launchd agent `com.skillspoke.polyrepo-daily` runs `doctor --fix` every day, logging under `$SKILLSPOKE_LOGS/polyrepo/`. |
+| `commit --message TEXT` | Commit and push the steward's files after a hand edit. |
 
 A record carries `name`, `space`, `path`, `lifecycle`, `role`, `present` (disk, github,
-manifest), `naming`, `branch`, `uncommitted`, `last_commit`, `main`, `origin_url`, `github`,
-`purpose`, `purpose_head`, `purpose_stale`, `owns`, `groups`, `dependencies`
-(`depends_on`, `depended_on_by`).
+manifest), `naming`, `branch`, `uncommitted`, `uncommitted_files`, `last_commit`, `main`,
+`origin_url`, `github`, `purpose`, `purpose_head`, `purpose_stale`, `owns` (`item`,
+`confirmed`), `groups` (only for a repo that exists and is active), `dependencies`
+(`depends_on`, `depended_on_by`, each `repo`, `kind`, `confirmed`). `confirmed` is read
+live from the dependent repo's tracked files (the other repo's name or the package name it
+publishes); it is null when that repo is not on disk.
 
 ### Reconcile findings
 
@@ -56,14 +65,18 @@ Each finding carries `mechanical` (true when `--fix` repairs it, with the repair
 `fix`), `status` (`open`, `fixed`, `failed`, `planned`) and `error`. Mechanical kinds
 include `untracked-repo`, `untracked-github`, `orphan-entry`, `renamed`, `remote-url`,
 `local-path`, `lifecycle`, `name-mismatch`, `origin-stale`, `no-origin`, `unpushed`,
-`local-only`, `deprecated-undated` and `archive-due`. The rest are left open for the
-steward's judgment, and each has an obvious next step:
+`local-only`, `deprecated-undated`, `archive-due`, `group-member-unknown`,
+`group-member-inactive`, `group-member-renamed`, `dependency-endpoint`, and `open-items`
+once every item in the section is settled. The rest are left open for the steward's
+judgment, and each has an obvious next step:
 
 | Finding | Settle it by |
 |---|---|
 | `purpose-missing`, `purpose-recheck` | Read the repo, then `purpose <repo> --text "<one line>"` (or `purpose <repo>` to confirm the current one). |
 | `deprecation-not-renamed` | `deprecate <repo>` if it is deprecated; otherwise set its `lifecycle` to `active` in the manifest. |
-| `naming-violation`, `space-mismatch` | Choose the correct name or space from the naming patterns; rename on GitHub and locally together (`gh repo rename`, move the folder, repoint `origin`), then `reconcile --fix`. |
+| `naming-violation`, `space-mismatch` | Choose the correct name or space from the naming patterns, then `rename <repo> <new-name>`. |
+| `dependency-unconfirmed`, `owns-unconfirmed` | Read the dependent repo's code; correct the edge or `owns` item, or remove it. |
+| `open-items` with unsettled items | Put each to the user in the reply, record the answer where it belongs, then remove the section. |
 | `diverged`, `fetch-failed`, `no-default-branch`, `foreign-origin`, `github-missing`, `github-only`, `not-cloned`, `duplicate-name` | Inspect with `git` and `gh`, repair, and run `reconcile --fix` again. |
 
 ## Operations (CUDLS)
@@ -75,10 +88,11 @@ steward's judgment, and each has an obvious next step:
 - **update** — Mechanical fields (`remote_url`, `lifecycle`, archived state) are kept true
   by `reconcile --fix`; do not edit them. Purpose: `purpose <repo> --text`. Groups, `owns`,
   dependencies, `role`, `owner`: edit the manifest (below).
+- **rename** — `rename <repo> <new-name>`, on GitHub and locally together.
 - **delete / deprecate** — `deprecate <repo>`. A repository is never deleted. The new name
-  is `deprecated-` plus the old name, with a leading `SkillSpoke-` lowercased to
-  `skillspoke-` (`SkillSpoke-example` → `deprecated-skillspoke-example`). The rename
-  happens on GitHub and locally together, and the folder stays in its app space.
+  is `deprecated-` plus the old name, all lowercase
+  (`SkillSpoke-eventsPublisher-service` → `deprecated-skillspoke-eventspublisher-service`).
+  The rename happens on GitHub and locally together, and the folder stays in its app space.
   `reconcile --fix` archives the repo on GitHub `deprecation.archive_after_days` (60) after
   `deprecated_on`. Deprecated and archived are separate lifecycle states.
 - **list** — `list` or `inventory`: "how many repos", "which repos are deprecated".
@@ -91,7 +105,9 @@ The config's `naming.patterns` are the rule; in summary: `SkillSpoke` and
 `SkillSpoke-{name}` are the personal-agent app; `shared-{name}` is shared or sharable across
 the whole company; `marketing-{name}` is marketing; `employer-{name}` is the employer app;
 `{internal|tool}-skillspoke-{name}` is non-application (GitHub only); `deprecated-{name}` as
-above. Each app space is a subfolder of the repository root.
+above. Each app space is a subfolder of the repository root. The canonical statement is the
+vault's `repository-naming.md` (the config's `naming.document`); `doctor` checks that its
+sections, examples, deprecation examples and archive delay agree with the patterns.
 
 ## Editing the manifest by judgment
 
@@ -103,8 +119,7 @@ For the fields the tool does not write (groups, `owns`, dependencies, `role`, `o
    and may not be stored.
 2. Append a changelog entry (`references/learning-protocol.md`).
 3. Run `reconcile --json` and confirm it reports no new finding.
-4. Commit only `.polyrepo/manifest.yaml` and `.polyrepo/changelog.md` on `main` in
-   `$SKILLSPOKE_CC` after `git pull --rebase --autostash`, and push.
+4. Run `commit --message "<what changed>"`.
 
 Never add `local_path`, deploy waves, or any fact whose canonical home is another document.
 Deployment order lives in `$SKILLSPOKE_CC/deployment/waves*.yaml`, not the manifest.

@@ -26,10 +26,16 @@ Usage:
   polyrepo.py grep <pattern> [--space S] [--repo R ...] [-i] [-l] [-F] [-w] [--glob G ...]
   polyrepo.py rebase <repo ...|--all>
   polyrepo.py create <name> --space S --template T --purpose TEXT [--dry-run]
+  polyrepo.py rename <repo> <new-name> [--dry-run]
   polyrepo.py deprecate <repo> [--dry-run]
   polyrepo.py agents-sync [--check] [--dry-run] [--repo R ...]
   polyrepo.py templates-check
-  polyrepo.py doctor
+  polyrepo.py doctor [--fix]
+  polyrepo.py commit --message TEXT
+
+A command that changes the steward's own files (manifest, changelog, knowledge store) commits
+and pushes them itself, on the default branch of the repo that holds them; `commit` does the
+same after a hand edit.
 
 Every command takes --json (one JSON object on stdout) and --no-cache (ignore the fetch and
 GitHub-listing freshness window). Exit status: 0 success, 1 findings remain (reconcile, a
@@ -48,11 +54,13 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable
+import tomllib
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +74,8 @@ WORKERS = 16
 LIFECYCLES_INACTIVE = ("deprecated", "archived")
 PURPOSE_NEUTRAL_FILES = ("AGENTS.md", "CLAUDE.md")
 ENTRY_LISTS = ("repos", "deprecations")
+OPEN_ITEM_SECTIONS = ("drift_log", "open_questions")
+PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 
 
 class PolyrepoError(Exception):
@@ -120,6 +130,110 @@ def git_out(repo: Path, *args: str) -> str | None:
     return cp.stdout.strip() if cp.returncode == 0 else None
 
 
+def _last_line(cp: subprocess.CompletedProcess[str]) -> str:
+    lines = (cp.stderr or cp.stdout or "").strip().splitlines()
+    return lines[-1] if lines else f"exit {cp.returncode}"
+
+
+def expand_env(text: str, extra: dict[str, str] | None = None) -> str:
+    """Replace $VAR and ${VAR} with the environment's values; unknown names are left as written.
+
+    Returns:
+        The expanded text.
+    """
+    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), **(extra or {})}
+    return re.sub(
+        r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?",
+        lambda m: env.get(m.group(1), m.group(0)),
+        text,
+    )
+
+
+def fetch_origin(repo: Path) -> str | None:
+    """Fetch origin, pruning deleted branches.
+
+    Returns:
+        None on success, else the last line of git's error.
+    """
+    cp = git(repo, "fetch", "--quiet", "--prune", "origin", timeout=FETCH_TIMEOUT)
+    return None if cp.returncode == 0 else _last_line(cp)
+
+
+def main_vs_origin(
+    repo: Path, branch: str
+) -> tuple[str | None, str | None, int | None, int | None]:
+    """Compare the local default branch with its origin copy, as last fetched.
+
+    Returns:
+        (main sha, origin/main sha, commits ahead, commits behind); the counts are None
+        unless both branches exist.
+    """
+    main = git_out(repo, "rev-parse", "--verify", "-q", f"refs/heads/{branch}")
+    om = git_out(repo, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{branch}")
+    if not main or not om:
+        return main, om, None, None
+    counts = git_out(
+        repo,
+        "rev-list",
+        "--left-right",
+        "--count",
+        f"refs/heads/{branch}...refs/remotes/origin/{branch}",
+    )
+    if not counts:
+        return main, om, None, None
+    a, b = counts.split()
+    return main, om, int(a), int(b)
+
+
+def package_names(repo: Path) -> set[str]:
+    """Read the names a repo publishes under: pyproject.toml's project or Poetry name and
+    package.json's name, at the repo's root.
+
+    Returns:
+        The names found (possibly none).
+    """
+    out: set[str] = set()
+    try:
+        py = tomllib.loads((repo / "pyproject.toml").read_text())
+        names = [
+            (py.get("project") or {}).get("name"),
+            ((py.get("tool") or {}).get("poetry") or {}).get("name"),
+        ]
+        out |= {str(n) for n in names if n}
+    except (OSError, tomllib.TOMLDecodeError):
+        pass
+    try:
+        pkg = json.loads((repo / "package.json").read_text())
+        if isinstance(pkg, dict) and pkg.get("name"):
+            out.add(str(pkg["name"]))
+    except (OSError, json.JSONDecodeError):
+        pass
+    return out
+
+
+def mentions(repo: Path, target: str, aliases: Iterable[str] = ()) -> bool:
+    """Tell whether a repo's tracked files name another repo or an item it claims to own.
+
+    The target and each alias (for a repo, the package names it publishes) are matched
+    case-insensitively as written and with `-` as `_`; a repo name is also matched without
+    its application prefix when what is left still has a `-` (`shared-runtime-common` also
+    matches `runtime-common`).
+
+    Returns:
+        True when a tracked file contains one of the forms.
+    """
+    forms: set[str] = set()
+    for t in (target, *aliases):
+        forms |= {t, t.replace("-", "_")}
+    core = re.sub(r"(?i)^(skillspoke|shared|marketing|employer)-", "", target)
+    if core != target and "-" in core:
+        forms |= {core, core.replace("-", "_")}
+    argv = ["grep", "-q", "-i", "-F", "-I"]
+    for f in sorted(forms):
+        argv += ["-e", f]
+    return git(repo, *argv).returncode == 0
+
+
 # --------------------------------------------------------------------------------------------
 # configuration
 
@@ -140,6 +254,7 @@ class Config:
     root: Path
     manifest: Path
     changelog: Path
+    knowledge: Path
     owner: str
     default_branch: str
     max_depth: int
@@ -149,6 +264,7 @@ class Config:
     owned: list[re.Pattern[str]]
     patterns: list[dict[str, Any]]
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
+    changes: list[str] = dataclasses.field(default_factory=list)
 
     def setting_path(self, section: str, key: str, default: str) -> Path:
         """Resolve a path setting, relative to the config file's folder.
@@ -262,6 +378,7 @@ def load_config(explicit: str | None) -> Config:
         root=root,
         manifest=f.parent / raw.get("manifest", "manifest.yaml"),
         changelog=f.parent / raw.get("changelog", "changelog.md"),
+        knowledge=f.parent / raw.get("knowledge", "knowledge.yaml"),
         owner=raw["github_owner"],
         default_branch=raw.get("default_branch", "main"),
         max_depth=int(raw.get("max_depth", 4)),
@@ -288,6 +405,7 @@ class LocalRepo:
     origin_url: str | None = None
     branch: str | None = None
     uncommitted: int = 0
+    uncommitted_files: list[str] = dataclasses.field(default_factory=list)
     head_sha: str | None = None
     head_date: str | None = None
     head_subject: str | None = None
@@ -347,36 +465,26 @@ def collect_local(r: LocalRepo, cfg: Config, fetch: bool, use_cache: bool) -> Lo
     """
     r.origin_url = git_out(r.path, "remote", "get-url", "origin")
     if fetch and r.origin_url and not (use_cache and fetch_is_fresh(r.path, cfg.ttl)):
-        cp = git(r.path, "fetch", "--quiet", "--prune", "origin", timeout=FETCH_TIMEOUT)
-        if cp.returncode != 0:
-            r.fetch_error = (cp.stderr.strip().splitlines() or ["fetch failed"])[-1]
+        r.fetch_error = fetch_origin(r.path)
     fh = r.path / ".git" / "FETCH_HEAD"
     if fh.exists():
         r.fetched_at = dt.datetime.fromtimestamp(fh.stat().st_mtime, dt.UTC).isoformat(
             timespec="seconds"
         )
     r.branch = git_out(r.path, "symbolic-ref", "--short", "-q", "HEAD") or "(detached)"
-    porcelain = git_out(r.path, "status", "--porcelain=v1", "--untracked-files=normal")
-    r.uncommitted = len([ln for ln in (porcelain or "").splitlines() if ln.strip()])
+    porcelain = git(r.path, "status", "--porcelain=v1", "--untracked-files=normal")
+    r.uncommitted_files = [
+        ln[3:]
+        for ln in porcelain.stdout.splitlines()
+        if porcelain.returncode == 0 and ln.strip()
+    ]
+    r.uncommitted = len(r.uncommitted_files)
     log = git_out(r.path, "log", "-1", "--format=%H%x1f%cI%x1f%s")
     if log:
         r.head_sha, r.head_date, r.head_subject = log.split("\x1f", 2)
-    b = cfg.default_branch
-    r.main_sha = git_out(r.path, "rev-parse", "--verify", "-q", f"refs/heads/{b}")
-    r.origin_main_sha = git_out(
-        r.path, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{b}"
+    r.main_sha, r.origin_main_sha, r.ahead, r.behind = main_vs_origin(
+        r.path, cfg.default_branch
     )
-    if r.main_sha and r.origin_main_sha:
-        counts = git_out(
-            r.path,
-            "rev-list",
-            "--left-right",
-            "--count",
-            f"refs/heads/{b}...refs/remotes/origin/{b}",
-        )
-        if counts:
-            a, bh = counts.split()
-            r.ahead, r.behind = int(a), int(bh)
     return r
 
 
@@ -523,10 +631,24 @@ class Manifest:
             if isinstance(e, dict) and e.get("name")
         }
 
-    def _groups(self) -> list[CommentedMap]:
-        return [g for g in self.doc.get("groups") or [] if isinstance(g, dict)]
+    def groups(self) -> list[CommentedMap]:
+        """Return the group mappings.
 
-    def _edges(self) -> list[CommentedMap]:
+        Returns:
+            Every group with a name.
+        """
+        return [
+            g
+            for g in self.doc.get("groups") or []
+            if isinstance(g, dict) and g.get("name")
+        ]
+
+    def edges(self) -> list[CommentedMap]:
+        """Return the dependency edges as written (group references not expanded).
+
+        Returns:
+            The edge mappings.
+        """
         rel = self.doc.get("relationships") or {}
         return [e for e in rel.get("dependencies") or [] if isinstance(e, dict)]
 
@@ -536,12 +658,12 @@ class Manifest:
         Returns:
             Group names.
         """
-        return [g["name"] for g in self._groups() if name in (g.get("members") or [])]
+        return [g["name"] for g in self.groups() if name in (g.get("members") or [])]
 
-    def _expand(self, ref: str) -> list[str]:
+    def expand(self, ref: str) -> list[str]:
         if ref.startswith("group:"):
             gname = ref[len("group:") :]
-            for g in self._groups():
+            for g in self.groups():
                 if g.get("name") == gname:
                     return list(g.get("members") or [])
             return []
@@ -554,11 +676,11 @@ class Manifest:
             {"depends_on": [...], "depended_on_by": [...]}, each item {"repo", "kind"}.
         """
         out: dict[str, list[dict[str, str]]] = {"depends_on": [], "depended_on_by": []}
-        for e in self._edges():
+        for e in self.edges():
             kind = str(e.get("kind", ""))
             src, dst = (
-                self._expand(str(e.get("from", ""))),
-                self._expand(str(e.get("to", ""))),
+                self.expand(str(e.get("from", ""))),
+                self.expand(str(e.get("to", ""))),
             )
             if name in src:
                 out["depends_on"].extend(
@@ -571,13 +693,44 @@ class Manifest:
         return out
 
     def add_entry(self, name: str, fields: dict[str, Any]) -> None:
-        """Append a new repo entry."""
+        """Append a new repo entry; for an entry that exists, fill only the fields it lacks."""
+        e = self.entries().get(name)
+        if e is not None:
+            for k, v in fields.items():
+                if e.get(k) is None:
+                    e[k] = v
+                    self.dirty = True
+            return
         m = CommentedMap()
         m["name"] = name
         for k, v in fields.items():
             m[k] = v
         self.doc["repos"].append(m)
         self.dirty = True
+
+    def set_member(self, group: str, old: str, new: str | None) -> None:
+        """Rename a group member, or remove it when new is None."""
+        for g in self.groups():
+            members = g.get("members")
+            if g["name"] == group and members and old in members:
+                if new is None:
+                    members.remove(old)
+                else:
+                    members[members.index(old)] = new
+                self.dirty = True
+
+    def remove_edge(self, edge: CommentedMap) -> None:
+        """Remove one dependency edge."""
+        deps = (self.doc.get("relationships") or {}).get("dependencies")
+        if deps and edge in deps:
+            deps.remove(edge)
+            self.dirty = True
+
+    def remove_section(self, key: str) -> None:
+        """Remove a top-level section."""
+        if key in self.doc:
+            del self.doc[key]
+            self.dirty = True
 
     def set_field(self, name: str, key: str, value: Any) -> None:  # noqa: ANN401
         """Set one field on an entry; None removes the field."""
@@ -596,7 +749,7 @@ class Manifest:
                 keep = [e for e in items if e.get("name") != name]
                 items.clear()
                 items.extend(keep)
-        for g in self._groups():
+        for g in self.groups():
             members = g.get("members")
             if members and name in members:
                 members.remove(name)
@@ -615,11 +768,11 @@ class Manifest:
     def rename_entry(self, old: str, new: str) -> None:
         """Rename an entry everywhere it is referenced."""
         self.entries()[old]["name"] = new
-        for g in self._groups():
+        for g in self.groups():
             members = g.get("members")
             if members and old in members:
                 members[members.index(old)] = new
-        for e in self._edges():
+        for e in self.edges():
             for k in ("from", "to"):
                 if e.get(k) == old:
                     e[k] = new
@@ -646,6 +799,73 @@ class State:
     duplicates: list[tuple[str, list[Path]]]
     gh: GitHub
     manifest: Manifest
+    confirmed: dict[tuple[str, str], bool] = dataclasses.field(default_factory=dict)
+
+    def resolve(self, wanted: list[str]) -> list[str]:
+        """Resolve repo names or paths given on the command line to tracked repo names.
+
+        Returns:
+            Canonical names.
+        """
+        return resolve_names(self.tracked_names(), self.local, wanted)
+
+    def live_state(self, name: str) -> str:
+        """Say what disk and GitHub know of a name.
+
+        Returns:
+            "active", "inactive" (deprecated or archived), "renamed:<new name>" when GitHub
+            redirects it, or "missing".
+        """
+        if name in self.local or self.gh.get(name):
+            return (
+                "inactive" if self.lifecycle(name) in LIFECYCLES_INACTIVE else "active"
+            )
+        rec = self.gh.resolve(name)
+        return f"renamed:{rec['name']}" if rec else "missing"
+
+    def confirm(self, src: str, target: str) -> bool | None:
+        """Check live whether a repo's code names another repo or an item it owns.
+
+        Returns:
+            True or False from the repo's tracked files; None when src is not on disk.
+        """
+        r = self.local.get(src)
+        if r is None:
+            return None
+        key = (src, target)
+        if key not in self.confirmed:
+            t = self.local.get(target)
+            aliases = package_names(t.path) if t else set()
+            self.confirmed[key] = mentions(r.path, target, aliases)
+        return self.confirmed[key]
+
+    def dependency_pairs(self) -> list[tuple[str, str, str]]:
+        """Return every dependency edge with its group references expanded.
+
+        Returns:
+            (from repo, to repo, kind) triples, without duplicates.
+        """
+        seen: dict[tuple[str, str], str] = {}
+        for e in self.manifest.edges():
+            kind = str(e.get("kind", ""))
+            for s in self.manifest.expand(str(e.get("from", ""))):
+                for d in self.manifest.expand(str(e.get("to", ""))):
+                    if s != d:
+                        seen.setdefault((s, d), kind)
+        return [(s, d, k) for (s, d), k in seen.items()]
+
+    def confirm_all(self, names: set[str] | None = None) -> None:
+        """Run every live dependency and `owns` check touching the names (all when None), in parallel."""
+        pairs = {
+            (s, d)
+            for s, d, _ in self.dependency_pairs()
+            if names is None or s in names or d in names
+        }
+        for n, e in self.manifest.entries().items():
+            if names is None or n in names:
+                pairs |= {(n, str(o)) for o in e.get("owns") or []}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as ex:
+            list(ex.map(lambda p: self.confirm(*p), sorted(pairs)))
 
     def lifecycle(self, name: str) -> str:
         """Derive a repo's lifecycle from reality first, the manifest second.
@@ -696,8 +916,10 @@ class State:
         )
         return cp.returncode != 0
 
-    def tracked_names(self) -> list[str]:
+    def tracked_names(self, all_github: bool = False) -> list[str]:
         """Every repo in scope: on disk, in the manifest, or a deprecated project repo on GitHub.
+
+        With all_github, every project repo on GitHub is added as well.
 
         Returns:
             Sorted names.
@@ -705,12 +927,18 @@ class State:
         names = set(self.local) | set(self.manifest.entries())
         for n in self.gh.repos:
             p = self.cfg.classify(n)
-            if self.cfg.is_owned(n) and p and p["kind"] == "deprecated":
+            if self.cfg.is_owned(n) and (
+                all_github or (p and p["kind"] == "deprecated")
+            ):
                 names.add(n)
         return sorted(names, key=str.lower)
 
-    def record(self, name: str) -> dict[str, Any]:
+    def record(self, name: str, deep: bool = True) -> dict[str, Any]:
         """Build a repo's full record: live facts plus the manifest's purpose, owns, groups, dependencies.
+
+        Groups are reported only for a repo that exists and is active. Each dependency and
+        each `owns` item carries `confirmed`, checked live against the dependent repo's
+        tracked files (None when that repo is not on disk, or when deep is False).
 
         Returns:
             The record.
@@ -720,11 +948,18 @@ class State:
         g = self.gh.get(name)
         pat = self.cfg.classify(name)
         purpose_head = e.get("purpose_head")
+        lifecycle = self.lifecycle(name)
+        deps = self.manifest.dependencies(name)
+        for d in deps["depends_on"]:
+            d["confirmed"] = self.confirm(name, d["repo"]) if deep else None
+        for d in deps["depended_on_by"]:
+            d["confirmed"] = self.confirm(d["repo"], name) if deep else None
+        live = r is not None or g is not None
         rec: dict[str, Any] = {
             "name": name,
             "space": r.space if r else self.cfg.expected_space(name),
             "path": str(r.path) if r else None,
-            "lifecycle": self.lifecycle(name),
+            "lifecycle": lifecycle,
             "role": str(e["role"]) if e.get("role") else None,
             "present": {
                 "disk": r is not None,
@@ -737,6 +972,7 @@ class State:
             },
             "branch": r.branch if r else None,
             "uncommitted": r.uncommitted if r else None,
+            "uncommitted_files": r.uncommitted_files if r else None,
             "last_commit": (
                 {"sha": r.head_sha, "date": r.head_date, "subject": r.head_subject}
                 if r and r.head_sha
@@ -760,9 +996,19 @@ class State:
             "purpose": str(e["purpose"]).strip() if e.get("purpose") else None,
             "purpose_head": purpose_head,
             "purpose_stale": self.purpose_moved(r, purpose_head),
-            "owns": list(e.get("owns") or []),
-            "groups": self.manifest.groups_of(name),
-            "dependencies": self.manifest.dependencies(name),
+            "owns": [
+                {
+                    "item": str(o),
+                    "confirmed": self.confirm(name, str(o)) if deep else None,
+                }
+                for o in e.get("owns") or []
+            ],
+            "groups": (
+                self.manifest.groups_of(name)
+                if live and lifecycle not in LIFECYCLES_INACTIVE
+                else []
+            ),
+            "dependencies": deps,
         }
         if e.get("deprecated_on"):
             rec["deprecated_on"] = str(e["deprecated_on"])
@@ -797,6 +1043,7 @@ class Finding:
     fix: str | None = None
     action: Callable[[], None] | None = dataclasses.field(default=None, repr=False)
     manifest_change: bool = False
+    logged: bool = False
     status: str = "open"
     error: str | None = None
 
@@ -831,6 +1078,48 @@ def must(cp: subprocess.CompletedProcess[str]) -> None:
         raise GitFailedError(
             (cp.stderr or cp.stdout).strip() or f"{cp.args} exited {cp.returncode}"
         )
+
+
+def point_origin(repo: Path, url: str) -> None:
+    """Point the repo's origin remote at a URL, adding the remote when it has none.
+
+    Raises:
+        GitFailedError: when git fails.
+    """
+    verb = "set-url" if git_out(repo, "remote", "get-url", "origin") else "add"
+    must(git(repo, "remote", verb, "origin", url))
+
+
+def create_on_github(cfg: Config, name: str, repo: Path) -> None:
+    """Create the private GitHub repo, point origin at it, and push the default branch.
+
+    Raises:
+        GitFailedError: when gh or git fails.
+    """
+    must(run(["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"], timeout=120))
+    point_origin(repo, cfg.github_url(name))
+    b = cfg.default_branch
+    if git_out(repo, "rev-parse", "--verify", "-q", f"refs/heads/{b}"):
+        must(git(repo, "push", "-u", "origin", b, timeout=120))
+
+
+def entry_fields(
+    cfg: Config, name: str, lifecycle: str, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Return the fields of a new manifest entry: lifecycle, GitHub URL, default branch,
+    and the deprecation date when it is deprecated.
+
+    Returns:
+        The fields, with extra merged over them.
+    """
+    fields: dict[str, Any] = {
+        "lifecycle": lifecycle,
+        "remote_url": cfg.github_url(name),
+        "default_branch": cfg.default_branch,
+    }
+    if lifecycle == "deprecated":
+        fields["deprecated_on"] = today()
+    return {**fields, **(extra or {})}
 
 
 def reconcile(st: State) -> list[Finding]:
@@ -957,16 +1246,178 @@ def reconcile(st: State) -> list[Finding]:
                     f"{lc} repo on GitHub with no manifest entry",
                     fix=f"add a manifest entry (lifecycle {lc})",
                     action=lambda n=name, lc=lc: man.add_entry(
-                        n,
-                        {
-                            "lifecycle": lc,
-                            "remote_url": cfg.github_url(n),
-                            "default_branch": cfg.default_branch,
-                            **(
-                                {"deprecated_on": today()} if lc == "deprecated" else {}
-                            ),
-                        },
+                        n, entry_fields(cfg, n, lc)
                     ),
+                    manifest_change=True,
+                )
+            )
+
+    out.extend(_check_relationships(st))
+    out.extend(_check_open_items(st))
+    return out
+
+
+def _check_relationships(st: State) -> list[Finding]:
+    """Check group members and dependency edges against disk and GitHub, and each
+    dependency and `owns` claim against the dependent repo's code.
+
+    Returns:
+        The findings.
+    """
+    man = st.manifest
+    out: list[Finding] = []
+    states: dict[str, str] = {}
+
+    def live(n: str) -> str:
+        if n not in states:
+            states[n] = st.live_state(n)
+        return states[n]
+
+    for g in man.groups():
+        gname = str(g["name"])
+        for m in [str(x) for x in g.get("members") or []]:
+            s = live(m)
+            if s == "active":
+                continue
+            if s.startswith("renamed:"):
+                new = s.split(":", 1)[1]
+                out.append(
+                    Finding(
+                        "group-member-renamed",
+                        m,
+                        f"member of group {gname}; GitHub renamed it to {new}",
+                        fix=f"rename the member to {new}",
+                        action=lambda gn=gname, o=m, n=new: man.set_member(gn, o, n),
+                        manifest_change=True,
+                    )
+                )
+                continue
+            why = (
+                "on neither disk nor GitHub"
+                if s == "missing"
+                else "deprecated or archived"
+            )
+            out.append(
+                Finding(
+                    f"group-member-{'unknown' if s == 'missing' else 'inactive'}",
+                    m,
+                    f"member of group {gname}, but {why}",
+                    fix=f"remove it from group {gname}",
+                    action=lambda gn=gname, o=m: man.set_member(gn, o, None),
+                    manifest_change=True,
+                )
+            )
+
+    groups = {str(g["name"]) for g in man.groups()}
+    for e in man.edges():
+        ends = {k: str(e.get(k, "")) for k in ("from", "to")}
+        label = f"{ends['from']} -> {ends['to']}"
+        problems: list[str] = []
+        renames: dict[str, str] = {}
+        for k, ref in ends.items():
+            if ref.startswith("group:"):
+                if ref[len("group:") :] not in groups:
+                    problems.append(f"{ref} is not a group")
+                continue
+            s = live(ref)
+            if s.startswith("renamed:"):
+                renames[k] = s.split(":", 1)[1]
+            elif s != "active":
+                problems.append(
+                    f"{ref} is {'on neither disk nor GitHub' if s == 'missing' else 'deprecated or archived'}"
+                )
+        if problems:
+            out.append(
+                Finding(
+                    "dependency-endpoint",
+                    ends["from"],
+                    f"dependency {label}: {'; '.join(problems)}",
+                    fix="remove the edge",
+                    action=lambda e=e: man.remove_edge(e),
+                    manifest_change=True,
+                )
+            )
+        elif renames:
+
+            def act(e: CommentedMap = e, renames: dict[str, str] = renames) -> None:
+                for k, v in renames.items():
+                    e[k] = v
+                man.dirty = True
+
+            out.append(
+                Finding(
+                    "dependency-endpoint",
+                    ends["from"],
+                    f"dependency {label}: GitHub renamed "
+                    + ", ".join(f"{ends[k]} to {v}" for k, v in renames.items()),
+                    fix="point the edge at the current names",
+                    action=act,
+                    manifest_change=True,
+                )
+            )
+
+    st.confirm_all()
+    for s, d, kind in st.dependency_pairs():
+        if live(s) != "active" or live(d) != "active" or st.confirm(s, d) is not False:
+            continue
+        out.append(
+            Finding(
+                "dependency-unconfirmed",
+                s,
+                f"the manifest says {s} depends on {d} ({kind}), but no tracked file in {s} names {d}",
+            )
+        )
+    for n, e in man.entries().items():
+        for o in e.get("owns") or []:
+            if st.confirm(n, str(o)) is False:
+                out.append(
+                    Finding(
+                        "owns-unconfirmed",
+                        n,
+                        f"the manifest says {n} owns {o}, but no tracked file in {n} names it",
+                    )
+                )
+    return out
+
+
+def _check_open_items(st: State) -> list[Finding]:
+    """Find manifest sections that hold questions or open items, which it may not carry.
+
+    Returns:
+        One finding per such section; removing it is mechanical once every entry is settled.
+    """
+    man = st.manifest
+    out: list[Finding] = []
+    for key in OPEN_ITEM_SECTIONS:
+        if key not in man.doc:
+            continue
+        items = man.doc.get(key) or []
+        unsettled = [
+            i
+            for i in items
+            if not (
+                isinstance(i, dict)
+                and str(i.get("status", "")) in {"resolved", "false-alarm"}
+            )
+        ]
+        if unsettled:
+            out.append(
+                Finding(
+                    "open-items",
+                    key,
+                    f"the manifest's {key} holds {len(unsettled)} unsettled item(s); "
+                    "put each to the user in the reply, record the answer where it belongs, "
+                    "then remove the section",
+                )
+            )
+        else:
+            out.append(
+                Finding(
+                    "open-items",
+                    key,
+                    f"the manifest carries a {key} section ({len(items)} settled item(s))",
+                    fix=f"remove the {key} section; git history keeps it",
+                    action=lambda k=key: man.remove_section(k),
                     manifest_change=True,
                 )
             )
@@ -993,15 +1444,7 @@ def _check_local(
                 name,
                 f"repo on disk at {r.path} with no manifest entry",
                 fix=f"add a manifest entry (lifecycle {lc}); its purpose is then a purpose-missing finding",
-                action=lambda: man.add_entry(
-                    name,
-                    {
-                        "lifecycle": lc,
-                        "remote_url": cfg.github_url(name),
-                        "default_branch": b,
-                        **({"deprecated_on": today()} if lc == "deprecated" else {}),
-                    },
-                ),
+                action=lambda: man.add_entry(name, entry_fields(cfg, name, lc)),
                 manifest_change=True,
             )
         )
@@ -1035,19 +1478,11 @@ def _check_local(
                     name,
                     "no origin remote; GitHub has a repo of this name",
                     fix=f"add origin {cfg.github_url(rec['name'])}",
-                    action=lambda: must(
-                        git(
-                            r.path,
-                            "remote",
-                            "add",
-                            "origin",
-                            cfg.github_url(rec["name"]),
-                        )
-                    ),
+                    action=lambda: point_origin(r.path, cfg.github_url(rec["name"])),
                 )
             )
         else:
-            out.append(_create_on_github(st, name, r, has_origin=False))
+            out.append(_local_only(st, name, r))
     elif parsed is None or parsed[0].lower() != cfg.owner.lower():
         out.append(
             Finding(
@@ -1061,7 +1496,7 @@ def _check_local(
         rec = gh.resolve(origin_name)
         if rec is None:
             if origin_name == name:
-                out.append(_create_on_github(st, name, r, has_origin=True))
+                out.append(_local_only(st, name, r))
             else:
                 out.append(
                     Finding(
@@ -1081,7 +1516,8 @@ def _check_local(
                             name,
                             f"folder is {name} but its GitHub repo is {gh_name}",
                             fix=f"rename the GitHub repo {gh_name} to {name} and point origin at it",
-                            action=lambda rec=rec: _execute_rename(st, name, r, rec),
+                            action=lambda o=gh_name: rename(st, o, name),
+                            logged=True,
                         )
                     )
                 else:
@@ -1104,10 +1540,8 @@ def _check_local(
                         name,
                         f"origin names {origin_name}; GitHub now calls it {gh_name}",
                         fix=f"point origin at {cfg.github_url(gh_name)}",
-                        action=lambda n=gh_name: must(
-                            git(
-                                r.path, "remote", "set-url", "origin", cfg.github_url(n)
-                            )
+                        action=lambda n=gh_name: point_origin(
+                            r.path, cfg.github_url(n)
                         ),
                     )
                 )
@@ -1285,39 +1719,21 @@ def _check_deprecation_age(st: State, name: str, e: CommentedMap) -> list[Findin
     ]
 
 
-def _create_on_github(st: State, name: str, r: LocalRepo, has_origin: bool) -> Finding:
+def _local_only(st: State, name: str, r: LocalRepo) -> Finding:
     cfg = st.cfg
-    url = cfg.github_url(name)
     if cfg.classify(name) is None:
         return Finding(
             "local-only",
             name,
             "no GitHub repo; the folder must be renamed to a valid name first",
         )
-
-    def act() -> None:
-        must(
-            run(
-                ["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"],
-                timeout=120,
-            )
-        )
-        if has_origin:
-            must(git(r.path, "remote", "set-url", "origin", url))
-        else:
-            must(git(r.path, "remote", "add", "origin", url))
-        if r.main_sha:
-            must(git(r.path, "push", "-u", "origin", cfg.default_branch, timeout=120))
-
     return Finding(
         "local-only",
         name,
         "no GitHub repo for this folder",
         fix=f"create the private GitHub repo {cfg.owner}/{name}, point origin at it, and push {cfg.default_branch}",
-        action=act,
+        action=lambda: create_on_github(cfg, name, r.path),
     )
-
-
 
 
 def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
@@ -1333,7 +1749,7 @@ def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
         try:
             f.action()  # type: ignore[misc]
             f.status = "fixed"
-        except (GitFailedError, KeyError, ValueError) as exc:
+        except (GitFailedError, PolyrepoError, OSError, KeyError, ValueError) as exc:
             f.status = "failed"
             f.error = str(exc)
     if dry_run:
@@ -1342,10 +1758,12 @@ def apply_fixes(st: State, findings: list[Finding], dry_run: bool) -> None:
     done = [f for f in ordered if f.status == "fixed"]
     if done:
         st.gh.invalidate()
+    unlogged = [f for f in done if not f.logged]
+    if unlogged:
         append_changelog(
             st.cfg,
             "polyrepo reconcile --fix",
-            [f"{f.kind} {f.repo}: {f.fix}" for f in done],
+            [f"{f.kind} {f.repo}: {f.fix}" for f in unlogged],
         )
 
 
@@ -1359,12 +1777,56 @@ def today() -> str:
 
 
 def append_changelog(cfg: Config, title: str, lines: list[str]) -> None:
-    """Append a dated section to the steward's changelog."""
-    today = dt.datetime.now(dt.UTC).astimezone().date().isoformat()
+    """Append a dated section to the steward's changelog, and note it for the commit."""
     body = "\n".join(f"- {ln}" for ln in lines)
-    text = f"\n## {today} — {title}\n{body}\n  - **Source:** `polyrepo`, verified live against disk and GitHub.\n"
+    text = f"\n## {today()} — {title}\n{body}\n  - **Source:** `polyrepo`, verified live against disk and GitHub.\n"
     with cfg.changelog.open("a") as fh:
         fh.write(text)
+    cfg.changes.append(title.removeprefix("polyrepo ").strip())
+
+
+def commit_records(cfg: Config, subject: str) -> dict[str, Any]:
+    """Commit the steward's own files (manifest, changelog, knowledge store) on the default
+    branch of the repo that holds them, then pull --rebase and push.
+
+    Returns:
+        {"status": "clean" | "pushed" | "failed", "files": [...], "error"?: str}.
+    """
+    top = git_out(cfg.file.parent, "rev-parse", "--show-toplevel")
+    if top is None:
+        return {
+            "status": "failed",
+            "files": [],
+            "error": f"{cfg.file.parent} is not in a git repo",
+        }
+    root = Path(top)
+    rels = [
+        p.resolve().relative_to(root.resolve()).as_posix()
+        for p in (cfg.manifest, cfg.changelog, cfg.knowledge)
+        if p.exists()
+    ]
+    changed = git(root, "status", "--porcelain=v1", "--", *rels).stdout
+    files = [ln[3:] for ln in changed.splitlines() if ln.strip()]
+    if not files:
+        return {"status": "clean", "files": []}
+    b = cfg.default_branch
+    branch = git_out(root, "symbolic-ref", "--short", "-q", "HEAD")
+    try:
+        if branch != b:
+            msg = f"{root} is on {branch}, not {b}"
+            raise GitFailedError(msg)
+        _commit_paths(root, files, f"chore(polyrepo): {subject}")
+        must(git(root, "pull", "--rebase", "--autostash", "--quiet", timeout=120))
+        must(git(root, "push", "origin", b, timeout=120))
+    except GitFailedError as exc:
+        return {"status": "failed", "files": files, "error": str(exc)}
+    return {"status": "pushed", "files": files}
+
+
+def finish_records(cfg: Config, data: dict[str, Any]) -> None:
+    """Commit and push the steward's files when this run changed them, reporting it in data."""
+    if cfg.changes:
+        data["records"] = commit_records(cfg, "; ".join(dict.fromkeys(cfg.changes)))
 
 
 # --------------------------------------------------------------------------------------------
@@ -1418,30 +1880,28 @@ def _status_line(rec: dict[str, Any]) -> str:
 # commands
 
 
-def resolve_names(st: State, wanted: list[str]) -> list[str]:
-    """Resolve repo names or paths given on the command line.
+def resolve_names(
+    known: Iterable[str], local: dict[str, LocalRepo], wanted: list[str]
+) -> list[str]:
+    """Resolve repo names (any case) or paths inside a repo to known repo names.
 
     Returns:
-        Canonical names.
+        Canonical names, in the order given.
 
     Raises:
         PolyrepoError: when an argument names no known repo.
     """
-    known = st.tracked_names()
     lower = {n.lower(): n for n in known}
-    by_path = {r.path: n for n, r in st.local.items()}
     out = []
     for w in wanted:
-        p = Path(w).expanduser()
-        if p.exists():
-            p = p.resolve()
-            hit = next(
-                (n for rp, n in by_path.items() if p == rp or rp in p.parents), None
-            )
-            if hit:
-                out.append(hit)
-                continue
         n = lower.get(w.lower())
+        p = Path(w).expanduser()
+        if n is None and p.exists():
+            p = p.resolve()
+            n = next(
+                (k for k, r in local.items() if r.path == p or r.path in p.parents),
+                None,
+            )
         if n is None:
             msg = f"no repo named {w!r}"
             raise PolyrepoError(msg)
@@ -1474,6 +1934,7 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
         "fixed": sum(f.status == "fixed" for f in findings),
         "elapsed_s": round(time.time() - t0, 1),
     }
+    finish_records(cfg, data)
 
     def text() -> str:
         lines = [
@@ -1489,10 +1950,18 @@ def cmd_reconcile(args: argparse.Namespace, cfg: Config) -> int:
             )
             if f.error:
                 lines.append(f"      error: {f.error}")
-        return "\n".join(lines)
+        return "\n".join([*lines, *_records_line(data)])
 
     emit(args, data, text)
     return 1 if open_ else 0
+
+
+def _records_line(data: dict[str, Any]) -> list[str]:
+    rec = data.get("records")
+    if not rec:
+        return []
+    err = f": {rec['error']}" if rec.get("error") else ""
+    return [f"steward files {rec['status']}{err}"]
 
 
 def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
@@ -1502,22 +1971,36 @@ def cmd_status(args: argparse.Namespace, cfg: Config) -> int:
         0.
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
-    names = (
-        resolve_names(st, args.repos) if args.repos else sorted(st.local, key=str.lower)
-    )
+    names = st.resolve(args.repos) if args.repos else sorted(st.local, key=str.lower)
+    st.confirm_all(set(names))
     recs = [st.record(n) for n in names]
-    emit(args, {"repos": recs}, lambda: "\n".join(_status_line(r) for r in recs))
+
+    def text() -> str:
+        lines = []
+        for rec in recs:
+            lines.append(_status_line(rec))
+            if args.repos:
+                lines.extend(f"    {f}" for f in rec["uncommitted_files"] or [])
+        return "\n".join(lines)
+
+    emit(args, {"repos": recs}, text)
     return 0
 
 
 def cmd_inventory(args: argparse.Namespace, cfg: Config) -> int:
-    """Report the full record of every repo on disk; --all adds GitHub-only deprecated repos.
+    """Report the full record of every repo on disk; --all adds every other repo the
+    manifest or GitHub has.
 
     Returns:
         0.
     """
     st = gather(cfg, fetch=not args.no_fetch, use_cache=not args.no_cache)
-    names = st.tracked_names() if args.all else sorted(st.local, key=str.lower)
+    names = (
+        st.tracked_names(all_github=True)
+        if args.all
+        else sorted(st.local, key=str.lower)
+    )
+    st.confirm_all()
     recs = [st.record(n) for n in names]
     data = {
         "root": str(cfg.root),
@@ -1536,7 +2019,7 @@ def cmd_list(args: argparse.Namespace, cfg: Config) -> int:
         0.
     """
     st = gather(cfg, fetch=False, use_cache=not args.no_cache)
-    recs = [st.record(n) for n in st.tracked_names()]
+    recs = [st.record(n, deep=False) for n in st.tracked_names()]
     if args.group:
         recs = [r for r in recs if args.group in r["groups"]]
     if args.lifecycle:
@@ -1602,7 +2085,10 @@ def cmd_search(args: argparse.Namespace, cfg: Config) -> int:
             raise PolyrepoError(msg)
         terms.append(m.groups())
     st = gather(cfg, fetch=args.fetch, use_cache=not args.no_cache)
-    recs = [st.record(n) for n in st.tracked_names()]
+    deep = any(a.split(".")[0] in {"dependencies", "owns"} for a, _, _ in terms)
+    if deep:
+        st.confirm_all()
+    recs = [st.record(n, deep=deep) for n in st.tracked_names()]
     hits = [
         r for r in recs if all(_matches(_lookup(r, a), op, v) for a, op, v in terms)
     ]
@@ -1624,16 +2110,12 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
         PolyrepoError: when the repo is not on disk, has no main, or has no purpose to confirm.
     """
     st = gather(cfg, fetch=False, use_cache=True)
-    (name,) = resolve_names(st, [args.repo])
+    (name,) = st.resolve([args.repo])
     r = st.local.get(name)
     if r is None or not r.main_sha:
         msg = f"{name} has no local {cfg.default_branch} to check a purpose against"
         raise PolyrepoError(msg)
-    entries = st.manifest.entries()
-    if name not in entries:
-        st.manifest.add_entry(
-            name, {"lifecycle": st.lifecycle(name), "remote_url": cfg.github_url(name)}
-        )
+    st.manifest.add_entry(name, entry_fields(cfg, name, st.lifecycle(name)))
     e = st.manifest.entries()[name]
     if args.text:
         st.manifest.set_field(name, "purpose", args.text.strip())
@@ -1653,7 +2135,14 @@ def cmd_purpose(args: argparse.Namespace, cfg: Config) -> int:
         "purpose": str(st.manifest.entries()[name]["purpose"]).strip(),
         "purpose_head": r.main_sha,
     }
-    emit(args, data, lambda: f"{name}: purpose {what} at {r.main_sha[:12]}")
+    finish_records(cfg, data)
+    emit(
+        args,
+        data,
+        lambda: "\n".join(
+            [f"{name}: purpose {what} at {r.main_sha[:12]}", *_records_line(data)]
+        ),
+    )
     return 0
 
 
@@ -1675,31 +2164,14 @@ def _local_repos(
         PolyrepoError: when a name is not a repo on disk.
     """
     local, _ = discover(cfg)
-    lower = {n.lower(): n for n in local}
-    picked: list[LocalRepo] = []
-    for w in names or []:
-        n = lower.get(w.lower())
-        p = Path(w).expanduser()
-        if n is None and p.exists():
-            p = p.resolve()
-            n = next(
-                (k for k, r in local.items() if r.path == p or r.path in p.parents),
-                None,
-            )
-        if n is None:
-            msg = f"no repo named {w!r} on disk"
-            raise PolyrepoError(msg)
-        picked.append(local[n])
-    if not names:
-        picked = list(local.values())
+    picked = (
+        [local[n] for n in resolve_names(local, local, names)]
+        if names
+        else list(local.values())
+    )
     if space:
         picked = [r for r in picked if r.space == space]
     return sorted(picked, key=lambda r: r.name.lower())
-
-
-def _last_line(cp: subprocess.CompletedProcess[str]) -> str:
-    lines = (cp.stderr or cp.stdout or "").strip().splitlines()
-    return lines[-1] if lines else f"exit {cp.returncode}"
 
 
 # grep -----------------------------------------------------------------------------------------
@@ -1799,21 +2271,13 @@ def rebase_one(cfg: Config, r: LocalRepo) -> dict[str, Any]:
     res: dict[str, Any] = {"repo": r.name, "path": str(r.path)}
     if not git_out(r.path, "remote", "get-url", "origin"):
         return {**res, "status": "no-origin"}
-    cp = git(r.path, "fetch", "--quiet", "--prune", "origin", timeout=FETCH_TIMEOUT)
-    if cp.returncode != 0:
-        return {**res, "status": "fetch-failed", "detail": _last_line(cp)}
-    main = git_out(r.path, "rev-parse", "--verify", "-q", f"refs/heads/{b}")
-    om = git_out(r.path, "rev-parse", "--verify", "-q", f"refs/remotes/origin/{b}")
+    err = fetch_origin(r.path)
+    if err:
+        return {**res, "status": "fetch-failed", "detail": err}
+    main, om, a, bh = main_vs_origin(r.path, b)
     if not main or not om:
         return {**res, "status": "no-main", "detail": f"no {b} or no origin/{b}"}
-    counts = git_out(
-        r.path,
-        "rev-list",
-        "--left-right",
-        "--count",
-        f"refs/heads/{b}...refs/remotes/origin/{b}",
-    )
-    ahead, behind = (int(x) for x in (counts or "0 0").split())
+    ahead, behind = a or 0, bh or 0
     res.update(ahead=ahead, behind=behind)
     if behind == 0:
         return {**res, "status": "up-to-date"}
@@ -2033,14 +2497,7 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
                 timeout=300,
             )
         )
-        must(
-            run(
-                ["gh", "repo", "create", f"{cfg.owner}/{name}", "--private"],
-                timeout=120,
-            )
-        )
-        must(git(dest, "remote", "add", "origin", cfg.github_url(name)))
-        must(git(dest, "push", "-u", "origin", b, timeout=120))
+        create_on_github(cfg, name, dest)
     except GitFailedError as exc:
         res["error"] = str(exc)
         emit(
@@ -2050,13 +2507,15 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
     man = Manifest(cfg.manifest)
     man.add_entry(
         name,
-        {
-            "lifecycle": args.lifecycle,
-            "remote_url": cfg.github_url(name),
-            "default_branch": b,
-            "purpose": args.purpose.strip(),
-            "purpose_head": git_out(dest, "rev-parse", "HEAD"),
-        },
+        entry_fields(
+            cfg,
+            name,
+            args.lifecycle,
+            {
+                "purpose": args.purpose.strip(),
+                "purpose_head": git_out(dest, "rev-parse", "HEAD"),
+            },
+        ),
     )
     man.save()
     append_changelog(
@@ -2067,16 +2526,18 @@ def cmd_create(args: argparse.Namespace, cfg: Config) -> int:
         ],
     )
     GitHub(cfg, use_cache=True).invalidate()
-    emit(args, res, lambda: f"{name}: created at {dest} and pushed to GitHub")
+    finish_records(cfg, res)
+    emit(
+        args,
+        res,
+        lambda: "\n".join(
+            [f"{name}: created at {dest} and pushed to GitHub", *_records_line(res)]
+        ),
+    )
     return 0
 
 
 # rename ----------------------------------------------------------------------------------------
-#
-# The one rename operation: on GitHub and on disk together, repointing origin. Everything
-# else that renames a repo goes through this — `deprecate` (which always prefixes
-# `deprecated-`) and reconcile --fix's local/GitHub name-parity repair both call it, so
-# there is exactly one place that knows how to rename a repo's git and GitHub sides.
 
 
 def deprecated_name(name: str) -> str:
@@ -2088,212 +2549,182 @@ def deprecated_name(name: str) -> str:
     return "deprecated-" + name.lower()
 
 
-def _rename_plan(
-    st: State, name: str, new: str
-) -> tuple[dict[str, Any] | None, LocalRepo | None, Path | None, list[str]]:
-    """Work out and check a rename before anything moves.
+def rename(
+    st: State,
+    old: str,
+    new: str,
+    extra_fields: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> list[str]:
+    """Rename a repo on GitHub and on disk together, repoint origin, and rename its manifest entry.
+
+    The one rename operation: `rename`, `deprecate` and reconcile's name-parity repair all
+    run it. It finds the local clone under either name and the GitHub repo through its
+    origin (following GitHub's rename redirects), so it also completes a rename that only
+    one side has made. It refuses when the new name matches no naming pattern, another
+    GitHub repo has it, the target folder exists, or the local default branch is not known
+    to be pushed. A name starting with `deprecated-` makes the entry deprecated, dated
+    today unless it already has a date.
 
     Returns:
-        (GitHub record, local repo, new local path, steps).
+        The steps planned (dry run) or done.
 
     Raises:
         PolyrepoError: when the rename cannot proceed as it stands.
+        GitFailedError: when a step fails part way; the message names the steps done.
     """
-    cfg = st.cfg
-    if name == new:
-        msg = f"{name} is already named {new}"
+    cfg, man = st.cfg, st.manifest
+    if old == new:
+        msg = f"{old} is already named {new}"
         raise PolyrepoError(msg)
-    p = cfg.classify(new)
-    if p is None:
+    if cfg.classify(new) is None:
         msg = f"{new} matches no naming pattern"
         raise PolyrepoError(msg)
-    if st.gh.get(new) is not None:
+    r = st.local.get(old) or st.local.get(new)
+    parsed = parse_github_url(r.origin_url) if r else None
+    rec = st.gh.resolve(parsed[1] if parsed else old)
+    taken = st.gh.resolve(new)
+    if taken is not None and (rec is None or taken["name"] != rec["name"]):
         msg = f"{cfg.owner}/{new} already exists on GitHub"
         raise PolyrepoError(msg)
-    r = st.local.get(name)
-    parsed = parse_github_url(r.origin_url) if r else None
-    rec = st.gh.resolve(parsed[1] if parsed else name)
-    steps = []
-    if rec:
+    url = cfg.github_url(new)
+    steps: list[str] = []
+    if rec and rec["name"] != new:
         steps.append(f"rename the GitHub repo {cfg.owner}/{rec['name']} to {new}")
     new_path = None
     if r:
         if r.fetch_error:
-            msg = f"{name}: git fetch failed ({r.fetch_error}); cannot confirm main is pushed"
+            msg = f"{r.name}: git fetch failed ({r.fetch_error}); cannot confirm {cfg.default_branch} is pushed"
             raise PolyrepoError(msg)
         if r.ahead:
-            msg = f"{name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
+            msg = f"{r.name}: {cfg.default_branch} is {r.ahead} commit(s) ahead of origin; push it first"
             raise PolyrepoError(msg)
-        new_path = r.path if r.path.name == new else r.path.with_name(new)
-        if new_path != r.path and new_path.exists():
-            msg = f"{new_path} already exists"
-            raise PolyrepoError(msg)
+        new_path = r.path.with_name(new)
         if new_path != r.path:
+            if new_path.exists():
+                msg = f"{new_path} already exists"
+                raise PolyrepoError(msg)
             steps.append(f"move {r.path} to {new_path}")
-        steps.append(f"point origin at {cfg.github_url(new)}")
-        if (git_out(r.path, "worktree", "list", "--porcelain") or "").count(
-            "worktree "
-        ) > 1:
-            steps.append("repair the repo's linked worktrees")
-    steps.append(f"manifest: rename the entry to {new}")
-    return rec, r, new_path, steps
+        if r.origin_url != url:
+            steps.append(f"point origin at {url}")
+    entry = man.entries().get(old) or man.entries().get(new) or {}
+    lc = str(entry.get("lifecycle") or "active")
+    if new.startswith("deprecated-"):
+        lc = "deprecated"
+    elif lc in LIFECYCLES_INACTIVE:
+        lc = "active"
+    fields = entry_fields(cfg, new, lc, extra_fields)
+    if entry.get("deprecated_on") and lc == "deprecated":
+        fields["deprecated_on"] = entry["deprecated_on"]
+    steps.append(
+        f"manifest: entry {new}, " + ", ".join(f"{k} {v}" for k, v in fields.items())
+    )
+    if dry_run:
+        return steps
+
+    done: list[str] = []
+    try:
+        if rec and rec["name"] != new:
+            must(
+                run(
+                    [
+                        "gh", "repo", "rename", new,
+                        "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
+                    ],
+                    timeout=120,
+                )
+            )  # fmt: skip
+            done.append(f"GitHub {rec['name']} renamed to {new}")
+        if r and new_path:
+            if new_path != r.path:
+                r.path.rename(new_path)
+                done.append(f"moved {r.path} to {new_path}")
+            point_origin(new_path, url)
+            done.append(f"origin set to {url}")
+            must(git(new_path, "worktree", "repair"))
+    except (GitFailedError, OSError) as exc:
+        so_far = f" (done before it stopped: {'; '.join(done)})" if done else ""
+        raise GitFailedError(f"{exc}{so_far}") from exc
+    if old in man.entries() and new not in man.entries():
+        man.rename_entry(old, new)
+    man.add_entry(new, {})
+    for k, v in fields.items():
+        man.set_field(new, k, v)
+    man.set_field(new, "local_path", None)
+    man.save()
+    append_changelog(
+        cfg, f"polyrepo rename {old} to {new}", [*done, f"manifest entry is now {new}"]
+    )
+    st.gh.invalidate()
+    return done
 
 
-def _execute_rename(
-    st: State, new: str, r: LocalRepo | None, rec: dict[str, Any] | None
-) -> list[str]:
-    """Rename a repo's GitHub side and its local clone (moving the folder only if it must).
+def _run_rename(
+    args: argparse.Namespace, cfg: Config, st: State, name: str, new: str
+) -> int:
+    """Run a rename for a command and report it.
 
     Returns:
-        The steps actually done, in order.
-
-    Raises:
-        GitFailedError | OSError: when a step fails part way.
+        0 on success, 1 when a step failed part way.
     """
-    cfg = st.cfg
-    done: list[str] = []
-    if rec:
-        must(
-            run(
-                [
-                    "gh", "repo", "rename", new,
-                    "--repo", f"{cfg.owner}/{rec['name']}", "--yes",
-                ],
-                timeout=120,
-            )
-        )  # fmt: skip
-        done.append(f"GitHub {rec['name']} renamed to {new}")
-    if r:
-        new_path = r.path if r.path.name == new else r.path.with_name(new)
-        if new_path != r.path:
-            r.path.rename(new_path)
-            done.append(f"moved {r.path} to {new_path}")
-        verb = "set-url" if r.origin_url else "add"
-        must(git(new_path, "remote", verb, "origin", cfg.github_url(new)))
-        done.append(f"origin set to {cfg.github_url(new)}")
-        must(git(new_path, "worktree", "repair"))
-    return done
+    res: dict[str, Any] = {"repo": name, "new_name": new, "dry_run": args.dry_run}
+    try:
+        res["steps"] = rename(st, name, new, dry_run=args.dry_run)
+    except GitFailedError as exc:
+        res["error"] = str(exc)
+        emit(args, res, lambda: f"{name}: stopped: {res['error']}")
+        return 1
+    finish_records(cfg, res)
+    head = (
+        f"dry run: rename {name} to {new}"
+        if args.dry_run
+        else f"{name}: renamed to {new}"
+    )
+    emit(
+        args,
+        res,
+        lambda: "\n".join(
+            [head, *[f"  {s}" for s in res["steps"]], *_records_line(res)]
+        ),
+    )
+    return 0
 
 
 def cmd_rename(args: argparse.Namespace, cfg: Config) -> int:
     """Rename a repo: on GitHub and on disk together, repointing origin and the manifest.
 
-    This is a general-purpose rename (unlike `deprecate`, which always prefixes
-    `deprecated-`): the new name must match a naming pattern for its own kind, and the
-    caller is responsible for updating anything outside git/GitHub/the manifest that
-    names the repo by its old name (beads, docs, workflow artifacts, and so on).
+    The new name must match a naming pattern. Anything outside git, GitHub and the
+    steward's records that names the repo by its old name (beads, docs, workflow
+    artifacts) is the caller's to update.
 
     Returns:
         0 on success, 1 when a step failed part way.
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
-    (name,) = resolve_names(st, [args.repo])
-    new = args.new_name
-    rec, r, _new_path, steps = _rename_plan(st, name, new)
-    res: dict[str, Any] = {
-        "repo": name,
-        "new_name": new,
-        "dry_run": args.dry_run,
-        "steps": steps,
-    }
-    if args.dry_run:
-        emit(
-            args,
-            res,
-            lambda: "\n".join(
-                [f"dry run: rename {name} to {new}"] + [f"  {s}" for s in steps]
-            ),
-        )
-        return 0
-    try:
-        done = _execute_rename(st, new, r, rec)
-    except (GitFailedError, OSError) as exc:
-        res.update(error=str(exc), done=[])
-        emit(args, res, lambda: f"{name}: stopped: {res['error']}")
-        return 1
-    man = st.manifest
-    if name in man.entries():
-        man.rename_entry(name, new)
-    else:
-        man.add_entry(new, {})
-    man.set_field(new, "remote_url", cfg.github_url(new))
-    man.set_field(new, "default_branch", cfg.default_branch)
-    man.save()
-    append_changelog(
-        cfg,
-        f"polyrepo rename {name} to {new}",
-        [*done, f"manifest entry is now {new}"],
-    )
-    st.gh.invalidate()
-    emit(args, res, lambda: f"{name}: renamed to {new}")
-    return 0
-
-
-# deprecate ------------------------------------------------------------------------------------
+    (name,) = st.resolve([args.repo])
+    return _run_rename(args, cfg, st, name, args.new_name)
 
 
 def cmd_deprecate(args: argparse.Namespace, cfg: Config) -> int:
-    """Deprecate a repo: rename it, via `rename`, to the deprecated- prefix, and date it.
+    """Deprecate a repo: rename it to its deprecated- name, which dates the deprecation.
 
     Returns:
         0 on success, 1 when a step failed part way.
+
+    Raises:
+        PolyrepoError: when the repo is already deprecated.
     """
     st = gather(cfg, fetch=True, use_cache=not args.no_cache)
-    (name,) = resolve_names(st, [args.repo])
+    (name,) = st.resolve([args.repo])
     if name.startswith("deprecated-"):
         msg = f"{name} is already deprecated"
         raise PolyrepoError(msg)
-    new = deprecated_name(name)
-    rec, r, _new_path, steps = _rename_plan(st, name, new)
-    steps[-1] = (
-        f"manifest: rename the entry to {new}, lifecycle deprecated, deprecated_on {today()}"
-    )
-    res: dict[str, Any] = {
-        "repo": name,
-        "new_name": new,
-        "dry_run": args.dry_run,
-        "steps": steps,
-    }
-    if args.dry_run:
-        emit(
-            args,
-            res,
-            lambda: "\n".join(
-                [f"dry run: deprecate {name} as {new}"] + [f"  {s}" for s in steps]
-            ),
-        )
-        return 0
-    try:
-        done = _execute_rename(st, new, r, rec)
-    except (GitFailedError, OSError) as exc:
-        res.update(error=str(exc), done=[])
-        emit(args, res, lambda: f"{name}: stopped: {res['error']}")
-        return 1
-    man = st.manifest
-    if name in man.entries():
-        man.rename_entry(name, new)
-    else:
-        man.add_entry(new, {})
-    man.set_field(new, "lifecycle", "deprecated")
-    man.set_field(new, "deprecated_on", today())
-    man.set_field(new, "remote_url", cfg.github_url(new))
-    man.set_field(new, "default_branch", cfg.default_branch)
-    man.set_field(new, "local_path", None)
-    man.save()
-    append_changelog(
-        cfg,
-        f"polyrepo deprecate {name}",
-        [*done, f"manifest entry is now {new}, deprecated on {today()}"],
-    )
-    st.gh.invalidate()
-    emit(args, res, lambda: f"{name}: deprecated as {new}")
-    return 0
+    return _run_rename(args, cfg, st, name, deprecated_name(name))
 
 
 # agents-sync ----------------------------------------------------------------------------------
 
 
-PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 PLUGIN_ROOT_TOKEN = "${CLAUDE_PLUGIN_ROOT}"
 PLUGIN_IMPORT = re.compile(r"^@\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)`?\s*$", re.M)
 
@@ -2759,10 +3190,39 @@ def cmd_templates_check(args: argparse.Namespace, cfg: Config) -> int:
     return 1 if data["lagging_templates"] or no_template else 0
 
 
+BEADS_AUDIT = PLUGIN_ROOT / "skills" / "polyrepo-beads" / "scripts" / "audit-fleet.sh"
+SELF = Path(__file__).resolve()
 DOCTOR_CHECKS: dict[str, list[str]] = {
-    "reconcile": ["reconcile"],
-    "agents-sync": ["agents-sync", "--check"],
+    "reconcile": [sys.executable, str(SELF), "reconcile", "--json"],
+    "agents-sync": [sys.executable, str(SELF), "agents-sync", "--check", "--json"],
+    "beads": ["bash", str(BEADS_AUDIT), "--json"],
 }
+DOCTOR_REPAIRS: dict[str, list[str]] = {
+    "reconcile --fix": [sys.executable, str(SELF), "reconcile", "--fix", "--json"],
+    "agents-sync": [sys.executable, str(SELF), "agents-sync", "--json"],
+}
+
+
+def _finding(check: str, subject: str, kind: str, detail: str) -> dict[str, Any]:
+    return {"check": check, "subject": subject, "kind": kind, "detail": detail}
+
+
+def _run_json(argv: list[str], extra: list[str]) -> tuple[int, dict[str, Any]]:
+    """Run one of the tool's own checks or repairs as a separate process and read its JSON.
+
+    Returns:
+        (exit status, parsed output); unreadable output becomes {"error": ...}.
+    """
+    cp = run([*argv, *extra], timeout=900)
+    try:
+        data = json.loads(cp.stdout) if cp.stdout.strip() else {}
+    except json.JSONDecodeError:
+        data = {"error": f"unreadable output: {cp.stdout[:200]}"}
+    if not isinstance(data, dict):
+        data = {"error": f"unexpected output: {cp.stdout[:200]}"}
+    if cp.returncode == 2 and "error" not in data:  # noqa: PLR2004
+        data["error"] = _last_line(cp) or "exited 2"
+    return cp.returncode, data
 
 
 def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2771,65 +3231,201 @@ def _doctor_findings(check: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     Returns:
         One finding per open problem the check reported.
     """
-    out: list[dict[str, Any]] = []
     if "error" in data:
-        return [
-            {"check": check, "subject": "-", "kind": "error", "detail": data["error"]}
-        ]
+        return [_finding(check, "-", "error", str(data["error"]))]
     if check == "reconcile":
-        out.extend(
-            {
-                "check": check,
-                "subject": f["repo"],
-                "kind": f["kind"],
-                "detail": f["detail"],
-            }
+        return [
+            _finding(check, f["repo"], f["kind"], f["detail"])
             for f in data.get("findings") or []
             if f.get("status") in {"open", "failed", "planned"}
-        )
-    elif check == "agents-sync":
-        out.extend(
-            {
-                "check": check,
-                "subject": r["repo"],
-                "kind": r["state"],
-                "detail": r.get("detail") or "shared AGENTS.md block not current",
-            }
+        ]
+    if check == "agents-sync":
+        return [
+            _finding(
+                check,
+                r["repo"],
+                r["state"],
+                r.get("detail") or "shared AGENTS.md block not current",
+            )
             for r in data.get("repos") or []
             if isinstance(r, dict) and r.get("state") != "current"
-        )
-    return out
+        ]
+    if check == "beads":
+        return [
+            _finding(check, a["repo"], "beads-anomaly", a["detail"])
+            for a in data.get("anomalies") or []
+        ]
+    return []
+
+
+def _resolve_location(cfg: Config, loc: str) -> Path:
+    target = Path(expand_env(loc)).expanduser()
+    return target if target.is_absolute() else cfg.file.parent.parent / target
 
 
 def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
-    """Check that every manifest governance entry's location exists.
+    """Check every governance entry: its location exists, and a script or tool's `invoke`
+    runs (the part before its first `<placeholder>`, with `--help`).
 
     Returns:
-        One finding per entry whose location does not resolve.
+        One finding per entry that does not resolve or does not run.
     """
-    plugin_root = Path(__file__).resolve().parents[3]
-    env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(plugin_root)}
-    doc = Manifest(cfg.manifest).doc
     out = []
-    for e in doc.get("governance") or []:
-        if not isinstance(e, dict) or not e.get("location"):
+    for e in Manifest(cfg.manifest).doc.get("governance") or []:
+        if not isinstance(e, dict):
             continue
-        loc = re.sub(
-            r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?",
-            lambda m: env.get(m.group(1), m.group(0)),
-            str(e["location"]),
-        )
-        target = Path(loc).expanduser()
-        if not target.is_absolute():
-            target = cfg.file.parent.parent / target
-        if not target.exists():
+        subject = str(e.get("id") or e.get("name"))
+        loc = e.get("location")
+        if loc and not _resolve_location(cfg, str(loc)).exists():
             out.append(
-                {
-                    "check": "governance",
-                    "subject": str(e.get("id") or e.get("name")),
-                    "kind": "location-missing",
-                    "detail": f"{e['location']} does not resolve ({target})",
-                }
+                _finding(
+                    "governance",
+                    subject,
+                    "location-missing",
+                    f"{loc} does not resolve ({_resolve_location(cfg, str(loc))})",
+                )
+            )
+        if str(e.get("type")) not in {"script", "tool"}:
+            continue
+        invoke = str(e.get("invoke") or "").split("<", 1)[0].strip()
+        if not invoke:
+            out.append(
+                _finding("governance", subject, "invoke-missing", "no invoke command")
+            )
+            continue
+        try:
+            argv = [*shlex.split(expand_env(invoke)), "--help"]
+        except ValueError as exc:
+            out.append(_finding("governance", subject, "invoke-fails", str(exc)))
+            continue
+        cp = run(argv, timeout=120)
+        if cp.returncode != 0:
+            out.append(
+                _finding(
+                    "governance",
+                    subject,
+                    "invoke-fails",
+                    f"`{shlex.join(argv)}` exited {cp.returncode}: {_last_line(cp)}",
+                )
+            )
+    return out
+
+
+def _knowledge_findings(cfg: Config) -> list[dict[str, Any]]:
+    """Check that every location or pointer in the knowledge store resolves.
+
+    A `location` or `pointer` entry names what it points at in `resolves` (one path or a
+    list; environment variables are expanded); each must exist.
+
+    Returns:
+        One finding per entry with no `resolves`, and per path that does not exist.
+    """
+    doc = (
+        YAML(typ="safe").load(cfg.knowledge.read_text())
+        if cfg.knowledge.exists()
+        else {}
+    )
+    out = []
+    for e in (doc or {}).get("knowledge") or []:
+        if not isinstance(e, dict) or e.get("kind") not in {"location", "pointer"}:
+            continue
+        subject = str(e.get("id"))
+        targets = e.get("resolves")
+        if not targets:
+            out.append(
+                _finding(
+                    "knowledge",
+                    subject,
+                    "pointer-unchecked",
+                    "no `resolves` path, so the pointer cannot be checked",
+                )
+            )
+            continue
+        for t in targets if isinstance(targets, list) else [targets]:
+            p = _resolve_location(cfg, str(t))
+            if not p.exists():
+                out.append(
+                    _finding(
+                        "knowledge",
+                        subject,
+                        "pointer-missing",
+                        f"{t} ({p}) does not exist",
+                    )
+                )
+    return out
+
+
+def _naming_doc_findings(cfg: Config) -> list[dict[str, Any]]:
+    """Check the repository-naming document against the config's naming patterns.
+
+    Every naming pattern has a section in the document (its heading's first word is the
+    pattern's name); every example in a section matches that section's pattern; every
+    "`A` becomes `B`" is the tool's deprecated name of A; and "N days after deprecation"
+    is the configured archive delay.
+
+    Returns:
+        One finding per disagreement.
+    """
+    loc = ((cfg.raw.get("naming") or {}).get("document")) or ""
+    if not loc:
+        return [
+            _finding(
+                "naming-doc", "-", "not-configured", "config naming.document is not set"
+            )
+        ]
+    path = _resolve_location(cfg, str(loc))
+    if not path.is_file():
+        return [_finding("naming-doc", "-", "missing", f"{loc} ({path}) not found")]
+    text = path.read_text()
+    out = []
+    sections = {
+        m.group(1).split()[0].lower(): m.group(2)
+        for m in re.finditer(r"(?m)^### (.+)\n((?:(?!^##).*\n?)*)", text)
+    }
+    for p in cfg.patterns:
+        if p["name"] not in sections:
+            out.append(
+                _finding(
+                    "naming-doc",
+                    p["name"],
+                    "pattern-undocumented",
+                    f"naming pattern {p['name']} has no section in {path.name}",
+                )
+            )
+    for sec, body in sections.items():
+        ex = re.search(r"\*\*Examples:\*\*(.*)", body)
+        for name in re.findall(r"`([^`]+)`", ex.group(1) if ex else ""):
+            got = cfg.classify(name)
+            if got is None or got["name"] != sec:
+                out.append(
+                    _finding(
+                        "naming-doc",
+                        name,
+                        "example-mismatch",
+                        f"{path.name} gives {name} as a {sec} example; the config's patterns "
+                        f"classify it as {got['name'] if got else 'no pattern'}",
+                    )
+                )
+    for a, b in re.findall(r"`([^`]+)` becomes `([^`]+)`", text):
+        if b.startswith("deprecated-") and deprecated_name(a) != b:
+            out.append(
+                _finding(
+                    "naming-doc",
+                    a,
+                    "deprecation-mismatch",
+                    f"{path.name} says {a} becomes {b}; the tool makes it {deprecated_name(a)}",
+                )
+            )
+    days = int((cfg.raw.get("deprecation") or {}).get("archive_after_days", 60))
+    for n in re.findall(r"(\d+) days after deprecation", text):
+        if int(n) != days:
+            out.append(
+                _finding(
+                    "naming-doc",
+                    "-",
+                    "archive-delay-mismatch",
+                    f"{path.name} says {n} days; the config archives after {days}",
+                )
             )
     return out
 
@@ -2837,30 +3433,30 @@ def _governance_findings(cfg: Config) -> list[dict[str, Any]]:
 def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
     """Run every deterministic health check and report one findings list.
 
-    The checks are reconcile and agents-sync --check (run in parallel, each as
-    its own process of this script) and the governance locations. Judgment checks (knowledge-
-    store pointers written as prose) belong to the polyrepo-doctor skill.
+    With --fix, first run the repairs (`reconcile --fix`, then `agents-sync`), each of
+    which commits and pushes its own changes. The checks are reconcile, agents-sync
+    --check and the beads fleet audit (in parallel, each its own process), the governance
+    entries, the knowledge-store pointers and the repository-naming document.
 
     Returns:
         0 when no check reports a finding, else 1.
     """
     t0 = time.time()
-    extra = ["--json", "--config", str(cfg.file)]
-    if args.no_cache:
-        extra.append("--no-cache")
+    extra = ["--config", str(cfg.file)] + (["--no-cache"] if args.no_cache else [])
+    repairs: dict[str, dict[str, Any]] = {}
+    if args.fix:
+        for name, argv in DOCTOR_REPAIRS.items():
+            rc, data = _run_json(argv, extra)
+            repairs[name] = {
+                "exit": rc,
+                "fixed": data.get("fixed"),
+                "records": data.get("records"),
+                "error": data.get("error"),
+            }
 
     def one(item: tuple[str, list[str]]) -> tuple[str, int, dict[str, Any]]:
         name, argv = item
-        cp = run(
-            [sys.executable, str(Path(__file__).resolve()), *argv, *extra], timeout=900
-        )
-        try:
-            data = json.loads(cp.stdout) if cp.stdout.strip() else {}
-        except json.JSONDecodeError:
-            data = {"error": f"unreadable output: {cp.stdout[:200]}"}
-        if cp.returncode == 2 and "error" not in data:  # noqa: PLR2004
-            data["error"] = _last_line(cp) or "exited 2"
-        return name, cp.returncode, data
+        return (name, *_run_json(argv, [] if name == "beads" else extra))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(DOCTOR_CHECKS)) as ex:
         results = list(ex.map(one, DOCTOR_CHECKS.items()))
@@ -2870,10 +3466,15 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
         exits[name] = rc
         findings.extend(_doctor_findings(name, data))
     findings.extend(_governance_findings(cfg))
-    counts: dict[str, int] = {c: 0 for c in [*DOCTOR_CHECKS, "governance"]}
+    findings.extend(_knowledge_findings(cfg))
+    findings.extend(_naming_doc_findings(cfg))
+    counts: dict[str, int] = {
+        c: 0 for c in [*DOCTOR_CHECKS, "governance", "knowledge", "naming-doc"]
+    }
     for f in findings:
         counts[f["check"]] = counts.get(f["check"], 0) + 1
     data = {
+        "repairs": repairs,
         "findings": findings,
         "counts": counts,
         "exit_codes": exits,
@@ -2883,6 +3484,12 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
 
     def text() -> str:
         lines = [f"{len(findings)} findings in {data['elapsed_s']}s"]
+        lines.extend(
+            f"  repair {n}: exit {r['exit']}"
+            + (f", {r['fixed']} fixed" if r.get("fixed") is not None else "")
+            + (f", {r['error']}" if r.get("error") else "")
+            for n, r in repairs.items()
+        )
         lines.extend(f"  {c}: {n}" for c, n in counts.items())
         lines.extend(
             f"  [{f['check']}/{f['kind']}] {f['subject']}: {f['detail']}"
@@ -2892,6 +3499,25 @@ def cmd_doctor(args: argparse.Namespace, cfg: Config) -> int:
 
     emit(args, data, text)
     return 1 if findings else 0
+
+
+def cmd_commit(args: argparse.Namespace, cfg: Config) -> int:
+    """Commit and push the steward's own files after a hand edit.
+
+    Returns:
+        0 when they are committed and pushed or already clean, else 1.
+    """
+    res = commit_records(cfg, args.message.strip())
+    emit(
+        args,
+        res,
+        lambda: (
+            f"steward files {res['status']}"
+            + (f": {', '.join(res['files'])}" if res["files"] else "")
+            + (f"; {res['error']}" if res.get("error") else "")
+        ),
+    )
+    return 0 if res["status"] in {"clean", "pushed"} else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2961,7 +3587,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--all",
         action="store_true",
-        help="also the manifest's and GitHub's repos that are not on disk",
+        help="also every repo the manifest or GitHub has that is not on disk",
     )
     s.set_defaults(func=cmd_inventory)
 
@@ -3045,9 +3671,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser(
         "doctor",
         parents=[common],
-        help="reconcile, agents-sync --check and governance, as one report",
+        help="every health check as one report; --fix runs the repairs first",
+    )
+    s.add_argument(
+        "--fix",
+        action="store_true",
+        help="run reconcile --fix and agents-sync before the checks",
     )
     s.set_defaults(func=cmd_doctor)
+
+    s = sub.add_parser(
+        "commit",
+        parents=[common],
+        help="commit and push the steward's own files after a hand edit",
+    )
+    s.add_argument("--message", "-m", required=True, help="what changed")
+    s.set_defaults(func=cmd_commit)
     return p
 
 

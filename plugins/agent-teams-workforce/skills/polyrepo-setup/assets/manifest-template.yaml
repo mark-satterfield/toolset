@@ -104,14 +104,6 @@ ownership:
   contacts: {}
   codeowners_files: []
 
-# Things the steward does not yet know. Filled in over time through
-# the learning flow.
-open_questions: []
-
-# Observations that the manifest may be stale. Resolved during refresh
-# passes. See references/learning-protocol.md.
-drift_log: []
-
 # Optional: tuning notes for the steward itself, e.g., things the
 # human has asked you to stop doing or always do for this project.
 steward_preferences: []

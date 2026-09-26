@@ -24,9 +24,9 @@ inside a repository's contents:
 - **Answers** from live facts it checks against the repositories and GitHub: which repos
   exist, which repo owns a function, uncommitted files in a repo, when a repo was last
   updated, whether a repo is up to date with GitHub `main`, what depends on what.
-- **Acts**: creates a repo from a template (locally and on GitHub), deprecates and archives
-  repos, rebases repos on `origin/main`, searches across repos, propagates shared
-  `AGENTS.md` content, and keeps the repo templates current.
+- **Acts**: creates a repo from a template (locally and on GitHub), renames, deprecates and
+  archives repos, rebases repos on `origin/main`, searches across repos, and propagates
+  shared `AGENTS.md` content.
 - **Owns its scope**: when a caller needs repository facts in order to do repository work,
   the steward does that work instead of handing the facts back.
 
@@ -42,14 +42,14 @@ uv run "${CLAUDE_PLUGIN_ROOT}/skills/polyrepo-repo/scripts/polyrepo.py" <command
 | Question | Command |
 |---|---|
 | Which repos exist, how many | `list` |
-| A repo's uncommitted count, last commit, whether `main` is up to date with GitHub | `status <repo>` |
+| A repo's uncommitted files, last commit, whether `main` is up to date with GitHub | `status <repo>` |
 | Repos with an attribute | `search attr=value` (dotted keys, e.g. `main.behind=0`, `github.archived=false`) |
 | Every repo's full record (path, purpose, groups, dependencies, live state) | `inventory` |
 | Text across every repo | `grep <pattern>` |
 
 Invoke the tool by that path; a bare `polyrepo` on `PATH` may be an unrelated program.
 Everything else — which repo owns a piece of functionality, any action on a repository
-(create, deprecate, rebase, rename, sync `AGENTS.md`, templates), and anything the commands
+(create, rename, deprecate, rebase, sync `AGENTS.md`), and anything the commands
 above do not answer — goes to the steward.
 
 ## What you receive

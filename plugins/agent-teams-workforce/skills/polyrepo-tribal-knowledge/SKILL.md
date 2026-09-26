@@ -35,7 +35,8 @@ Add or update entries in the knowledge store `.polyrepo/knowledge.yaml` (owned b
 storing it — the path, vault note or command it names exists, and the fact it states is what
 the code or the canonical document says now — as **polyrepo-info** describes. Record through
 the learning protocol (`../polyrepo-repo/references/learning-protocol.md`): update the store
-**and** append `.polyrepo/changelog.md`, then commit and push. There is no read-back step.
+**and** append `.polyrepo/changelog.md`, then run the tool's `commit --message "<what
+changed>"`. There is no read-back step.
 
 ## What you do not do
 

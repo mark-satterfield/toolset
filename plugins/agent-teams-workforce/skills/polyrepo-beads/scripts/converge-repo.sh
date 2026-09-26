@@ -15,8 +15,10 @@
 #   --force-diverged   force-push when histories diverge (DESTRUCTIVE to remote history)
 #   --allow-root       permit converging the root/C2 repo (normally refused)
 #
+# A repo name is resolved to its folder by the polyrepo tool (`polyrepo.py status`), in any
+# app space.
+#
 # Configuration — the plugin's ATW_* contract (AGENT-TEAMS-WORKFORCE.md, "Project configuration"):
-#   ATW_FLEET_DIR     required  the directory that holds the repos
 #   ATW_CONTROL_REPO  required  the root repo; the issue prefix is read from its beads config,
 #                               and it is refused as a target without --allow-root
 #   ATW_BEADS_PORT    optional  the shared Dolt server port (default 3308)
@@ -25,11 +27,10 @@
 
 set -u -o pipefail
 
-: "${ATW_FLEET_DIR:?ATW_FLEET_DIR is not set — the directory that holds the repos}"
 : "${ATW_CONTROL_REPO:?ATW_CONTROL_REPO is not set — the root repo that holds the tracker}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER="$SCRIPT_DIR/beads_server.py"
-BASE_DIR="$ATW_FLEET_DIR"
+POLYREPO="$SCRIPT_DIR/../../polyrepo-repo/scripts/polyrepo.py"
 PORT="${ATW_BEADS_PORT:-3308}"
 PREFIX="$(cd "$ATW_CONTROL_REPO" && bd config get issue_prefix)" || { echo "FATAL: could not read issue_prefix from the beads config in $ATW_CONTROL_REPO" >&2; exit 1; }
 [ -n "$PREFIX" ] || { echo "FATAL: the beads config in $ATW_CONTROL_REPO sets no issue_prefix" >&2; exit 1; }
@@ -53,8 +54,11 @@ done
 
 # Resolve target to an absolute repo path.
 if [ -d "$TARGET/.beads" ]; then REPO_PATH="$(cd "$TARGET" && pwd)"
-elif [ -d "$BASE_DIR/$TARGET/.beads" ]; then REPO_PATH="$(cd "$BASE_DIR/$TARGET" && pwd)"
-else echo "FATAL: no .beads/ found for '$TARGET'" >&2; exit 1; fi
+else
+  REPO_PATH="$(uv run --quiet "$POLYREPO" status "$TARGET" --no-fetch --json \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["repos"][0]["path"] or "")')" || REPO_PATH=""
+  [ -n "$REPO_PATH" ] && [ -d "$REPO_PATH/.beads" ] || { echo "FATAL: no .beads/ found for '$TARGET'" >&2; exit 1; }
+fi
 REPO="$(basename "$REPO_PATH")"
 DB="$(printf '%s' "$REPO" | tr '-' '_')"
 META="$REPO_PATH/.beads/metadata.json"
