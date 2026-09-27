@@ -1255,21 +1255,38 @@ const SAFE_ROOT = /^\/[A-Za-z0-9._/-]+$/
 const safeRoot = (v) => (typeof v === 'string' && SAFE_ROOT.test(v) && !v.split('/').includes('..') ? v.replace(/\/+$/, '') : null)
 const SAFE_TOKEN = /^[A-Za-z0-9._:-]+$/
 const shellq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
+// How many ten-minute waits a lifecycle runner makes before it reports the command as still
+// running. One verified write per bead, plus every Task edge and every Task's score, runs
+// past the Bash tool's ten-minute ceiling on an Epic with a hundred or more Tasks.
+const LIFECYCLE_WAITS = 6
+let lifecycleSeq = 0
 /** Run one `depscore.py` lifecycle command in a runner session and return what it printed. */
 async function runLifecycle(label, commandArgs, phaseName) {
   const root = lifecycle.pluginRoot
+  lifecycleSeq += 1
+  const runKey = `${SAFE_TOKEN.test(String(lifecycle.owner || '')) ? lifecycle.owner : 'run'}-${label}-${lifecycleSeq}`.replace(/[^A-Za-z0-9._-]/g, '_')
+  const dir = shellq(`/tmp/atw-lifecycle/${runKey}`)
+  const command = `python3 ${shellq(`${root}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${commandArgs}`
   const out = await settleAgent(
-    `Run exactly this one shell command, once, and change nothing else:
+    `Run one command to completion and return what it printed. It writes to the tracker, one verified write per bead, and on a large Epic it runs longer than one Bash call may last, so it is started detached and then waited for. Make exactly the Bash calls below, in the FOREGROUND (never set run_in_background), each with the Bash tool's \`timeout\` parameter set to 600000, and change nothing else.
 
-python3 ${shellq(`${root}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${commandArgs}
+STEP 1 — start it, once:
 
-Run it in the FOREGROUND with the Bash tool's \`timeout\` parameter set to 600000 (ten minutes). It writes to the tracker, one verified write per bead, and on an Epic with dozens of Tasks it takes longer than the tool's default two minutes. If the tool nevertheless moves it to the background, wait for that background command to finish and read its complete output before you return; never return while it is still running, and never start it a second time.
+rm -rf ${dir} && mkdir -p ${dir} && nohup sh -c ${shellq(`${command} > ${dir}/stdout 2> ${dir}/stderr; echo $? > ${dir}/exitcode`)} > ${dir}/launch.log 2>&1 < /dev/null & echo started
 
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
-    // PLUMBING — one fixed command, its JSON copied back; see resolve:prd-text. The finish
-    // writes a fingerprint and a score per Task and then the Epic's lifecycle, which outruns
-    // the Bash tool's default 120s on a large Epic; a command moved to the background leaves
-    // the runner no JSON to return, and then the Epic is never marked `done`.
+STEP 2 — wait for it. Run this, and run it again each time it prints RUNNING, at most ${LIFECYCLE_WAITS} times in all:
+
+for i in $(seq 1 110); do [ -s ${dir}/exitcode ] && break; sleep 5; done; if [ -s ${dir}/exitcode ]; then echo FINISHED; else echo RUNNING; fi
+
+STEP 3 — once STEP 2 printed FINISHED, read the result:
+
+cat ${dir}/exitcode; echo ----STDOUT----; cat ${dir}/stdout; echo ----STDERR----; cat ${dir}/stderr
+
+The number before ----STDOUT---- is the exit code; return it as \`exitCode\`. Between the markers is one JSON object; return it, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If that text is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. If STEP 2 printed RUNNING ${LIFECYCLE_WAITS} times, return exitCode -1 and {"error": "the command is still running after ${LIFECYCLE_WAITS} waits; its output will be in ${`/tmp/atw-lifecycle/${runKey}`}"} as \`output\`. Never start the command a second time, never kill it, do not retry, do not repair, do not run any other command.`,
+    // PLUMBING — one fixed command, its JSON copied back; see resolve:prd-text. The command
+    // runs detached and is waited for in bounded calls because the Bash tool ends a call at
+    // ten minutes and moves it to the background, where the runner has no JSON to return and
+    // the session's end kills it part-way through the write.
     { label, phase: phaseName, model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
   )
   if (!out) return { error: `the ${label} runner returned no result` }
