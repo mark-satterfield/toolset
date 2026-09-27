@@ -731,8 +731,13 @@ Return found=true with the digest in \`sha256\` and the text in \`content\`, or 
       log(`Replay: the reader of ${path} reported no usable sha256 (attempt ${attempt}) — its copy cannot be verified and is discarded`)
       continue
     }
-    if (sha256Hex(r.content) === expected) return r.content
-    if (sha256Hex(`${r.content}\n`) === expected) return `${r.content}\n`
+    // A saved JSON file may hold \uXXXX escapes, which the reader's structured output hands back
+    // decoded. Re-escaping them rebuilds the file's own bytes; the digest still decides.
+    const escaped = (hex) => r.content.replace(/[\u0080-\uffff]/g, (c) => `\\u${hex(c.charCodeAt(0).toString(16).padStart(4, '0'))}`)
+    for (const text of [r.content, escaped((h) => h), escaped((h) => h.toUpperCase())]) {
+      if (sha256Hex(text) === expected) return text
+      if (sha256Hex(`${text}\n`) === expected) return `${text}\n`
+    }
     log(`Replay: the copy of ${path} did not match its sha256 (attempt ${attempt}, ${r.content.length} chars returned) — discarded`)
   }
   return null
