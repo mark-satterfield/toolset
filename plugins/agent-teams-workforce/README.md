@@ -20,8 +20,6 @@ Current roster scope:
 
 - 173 SDLC agents across 13 teams (including the cross-cutting Documentation team and the upstream PRD Creation team) plus a governance group
 
-Workforce rules live in `rules/separation-of-duties.md`.
-
 > [!IMPORTANT]
 >
 > `sdlc-worforce.md` has been renamed to `AGENT-TEAMS-WORKFORCE.md`

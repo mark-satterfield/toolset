@@ -132,7 +132,6 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
             specReferenceMissing: [],
             knockOnWithoutSpec: [],
             links: { attempted: 0, linked: 0, failed: [] },
-            heal: { ran: false, reason: null, wrappers: 0, reparented: 0, closed: 0, failed: [] },
             reelaboration: null,
             verdict: 'complete',
             reason: 'all bead(s) of this hierarchy are durable',

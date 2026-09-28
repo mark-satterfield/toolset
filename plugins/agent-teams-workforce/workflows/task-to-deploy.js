@@ -280,17 +280,12 @@ try {
       }
     }
 
-    const satisfied = red.alreadySatisfied === true
-    if (satisfied) {
-      log('Red: the contract is already satisfied by passing tests; nothing is built and the unchanged tree is deployed to dev')
-    } else {
-      const g = await runGreen('')
-      if (g.fail) return g.fail
-      docTrack = Promise.resolve(workflow('agent-teams-workforce:documentation', { contract, green: g.green })).catch((e) => {
-        log(`documentation track failed: ${(e && e.message) || e}`)
-        return null
-      })
-    }
+    const g = await runGreen('')
+    if (g.fail) return g.fail
+    docTrack = Promise.resolve(workflow('agent-teams-workforce:documentation', { contract, green: g.green })).catch((e) => {
+      log(`documentation track failed: ${(e && e.message) || e}`)
+      return null
+    })
 
     const docResult = docTrack ? await docTrack : null
     if (docResult && Array.isArray(docResult.ledgers)) runLedger.push(...docResult.ledgers)
@@ -305,7 +300,7 @@ try {
       log(`Deploy to dev — iteration ${iteration}/${MAX_DEPLOY_ITERATIONS} (stage deploy-to-dev#${iteration})`)
       const d = await workflow('agent-teams-workforce:deploy', {
         contract,
-        ...(green ? { green } : { satisfiedRed: red }),
+        green,
         feedback: smokeFeedback,
         smokeTestFiles: smokeSuite,
         leaseScope,
@@ -365,11 +360,10 @@ try {
       ...handback(
         true,
         'deployed-to-dev',
-        `${bead.id} ${satisfied && !green ? 'was already satisfied by passing tests and was' : 'built and'} DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests passing against the deployed dev endpoints.`,
+        `${bead.id} built and DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests passing against the deployed dev endpoints.`,
         { contract, deployIterations, results: { red, green, deploy: finalDeploy, documentation: docResult } }
       ),
       ...evidence,
-      ...(satisfied && !green ? { alreadySatisfied: true, built: false } : {}),
     }
   })()
 } catch (err) {

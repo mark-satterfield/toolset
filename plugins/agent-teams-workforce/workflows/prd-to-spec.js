@@ -1273,7 +1273,6 @@ const emission = (completed && completed.emission) || {
   specReferenceMissing: [],
   knockOnWithoutSpec: [],
   links: { attempted: 0, linked: 0, failed: [] },
-  heal: { ran: false, reason: 'the emission command did not run', wrappers: 0, reparented: 0, closed: 0, failed: [] },
   reelaboration: null,
   verdict: 'none',
   reason: `the emission command returned no result: ${(completeOut && completeOut.error) || 'no answer'}`,
@@ -1304,9 +1303,6 @@ const scoringLine = finishOk
   : `Scoring did not run for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'}. `
 log(scoringLine)
 const sadPromotion = (finishOut && finishOut.sad) || null
-const healLine = emission.heal && (emission.heal.closed || emission.heal.reparented)
-  ? `Backfill repair: ${emission.heal.closed} stand-in Story/Stories retired, ${emission.heal.reparented} Task(s) re-parented. `
-  : ''
 const emissionLine =
   emission.verdict === 'complete'
     ? `Written to beads: ${emission.created} created, ${emission.adopted} adopted, ${emission.links.linked}/${emission.links.attempted} edge(s) linked. `
@@ -1357,7 +1353,6 @@ return {
       (removalWork.length ? `${removalWork.length} removal item(s) handed to decomposition. ` : '') +
       emissionLine +
       scoringLine +
-      healLine +
       (specFailures.length || decompositionFailures.length
         ? `DEGRADED: ${specFailures.length} repo(s) produced no spec and ${decompositionFailures.length} Story/Stories produced no tasks.`
         : ''),

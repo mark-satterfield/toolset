@@ -141,18 +141,8 @@ What comes back:
   is false the Epic's elaboration stays `in_progress` and the next run completes it.
 - `emissionOk` — true only when every bead and every edge landed.
 - `beadsEmitted` — how many beads this run actually created.
-- `emission` — `{verdict, target, created, adopted, failed[], skipped[], links, heal}`.
+- `emission` — `{verdict, target, created, adopted, failed[], skipped[], links}`.
   `verdict` is `complete`, `partial`, or `none`.
-- `emission.heal` — the BACKFILL REPAIR, reported separately from the verdict.
-  A Task that reached the build lane with no Story got a stand-in roll-up Story minted
-  for it on the side. Once this run authors the Spec-backed Story that work belongs
-  under, the stand-in is a Story under the same Epic saying nothing — so the run
-  re-parents its Tasks onto a real Story and closes it. `{ran, reason, wrappers,
-  reparented, closed, failed[]}`. It runs only for an Epic that already existed, and it
-  can fail without changing `verdict` or `emissionOk`: retiring another run's stand-in
-  is housekeeping, and a failed repair must never make a durable hierarchy report as
-  partial. Report `closed` / `reparented` when they are non-zero, and every entry of
-  `heal.failed` — a stand-in left open is a duplicate Story on the board.
 
 Act on the verdict:
 
@@ -183,9 +173,6 @@ account of what you think landed.
 - Emission: `emission.verdict`, `beadsEmitted`, and — when the verdict is not
   `complete` — every node in `emission.failed` and `emission.skipped` and what
   still has to be written
-- Backfill repair: `emission.heal.closed` / `.reparented` when either is non-zero, and
-  every `heal.failed` entry — each one is a stand-in roll-up Story still sitting on the
-  board beside the real one
 - A run that stopped — the composite's `headline` carries the phase and the reason; every
   phase artifact is in the run journal at `detailPath`, and the composite returns none of
   them. A stopped run names what it DID produce under `partialProduced` — read the journal

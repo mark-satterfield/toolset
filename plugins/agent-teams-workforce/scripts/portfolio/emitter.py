@@ -17,7 +17,7 @@ writes a second Story or Task:
          or closed    something different, that difference becomes a follow-up Task citing it.
          An open Task the decomposition no longer contains is closed, naming this command.
 
-Then every Task edge is written as `blocks`, backfilled stand-in Stories are retired, and the
+Then every Task edge is written as `blocks`, and the
 Epic is finished: its Tasks and itself are scored, and it is set `done` when every part of it
 landed and nothing holds it.
 """
@@ -38,9 +38,6 @@ if TYPE_CHECKING:
 
     from beadgraph import Graph, Writer
 
-#: Marks of a stand-in Story the build lane minted for a Task that had none.
-STAND_IN_LABEL = "backfill-parent"
-STAND_IN_TEXT = "backfilled by the sdlc automation"
 
 #: The value a contract field carries when nothing was declared.
 UNKNOWN = "unknown"
@@ -210,16 +207,6 @@ class Emission:
     links: dict = field(
         default_factory=lambda: {"attempted": 0, "linked": 0, "failed": []}
     )
-    heal: dict = field(
-        default_factory=lambda: {
-            "ran": False,
-            "reason": None,
-            "wrappers": 0,
-            "reparented": 0,
-            "closed": 0,
-            "failed": [],
-        }
-    )
     reelaboration: dict = field(
         default_factory=lambda: {
             "ran": True,
@@ -257,7 +244,6 @@ class Emission:
             "specReferenceMissing": self.spec_reference_missing,
             "knockOnWithoutSpec": self.knock_on_without_spec,
             "links": self.links,
-            "heal": self.heal,
             "reelaboration": self.reelaboration,
             "verdict": self.verdict,
             "reason": self.reason,
@@ -701,8 +687,6 @@ def emit(
                         {"from": t.key, "to": dep, "reason": str(exc)}
                     )
 
-    _heal(tracker, out, nodes, epic_id, hier, story_ids)
-
     beneath = len(story_ids) + len(task_ids)
     unwritten = len(out.failed) + len(out.skipped)
     if not beneath:
@@ -845,109 +829,6 @@ def _apply(
                 {"what": m["id"], "reason": f"the {m['op']} did not land: {exc}"}
             )
     return refreshed
-
-
-def _heal(
-    tracker: _Tracker,
-    out: Emission,
-    nodes: list[Node],
-    epic_id: str,
-    hier: Hierarchy,
-    story_ids: dict[str, str],
-) -> None:  # noqa: PLR0913
-    """Retire the backfilled stand-in Stories, moving their Tasks under a real Story.
-
-    Args:
-        tracker: The tracker.
-        out: The emission; its heal report is filled.
-        nodes: The surveyed nodes.
-        epic_id: The Epic.
-        hier: The hierarchy.
-        story_ids: Story key -> id, for the Stories that are durable.
-    """
-    heal = out.heal
-    real = [(s, story_ids[s.key]) for s in hier.stories if s.key in story_ids]
-    if not real:
-        heal["reason"] = (
-            "no Story of this Epic is durable, so there is nowhere to re-parent a stand-in's Tasks"
-        )
-        return
-    heal["ran"] = True
-    ours = set(story_ids.values())
-    wrappers = [
-        n
-        for n in nodes
-        if n.parent == epic_id
-        and n.kind == "story"
-        and n.status != "closed"
-        and n.id not in ours
-        and (
-            STAND_IN_LABEL in n.labels
-            or STAND_IN_TEXT in f"{n.title} {n.description}".lower()
-        )
-    ]
-    heal["wrappers"] = len(wrappers)
-    if not wrappers:
-        heal["reason"] = "the Epic carried no backfilled roll-up Story"
-        return
-    for w in wrappers:
-        children = [n for n in nodes if n.parent == w.id]
-        foreign = [c for c in children if c.kind not in ("task", "bug")]
-        if foreign:
-            heal["failed"].append(
-                {
-                    "wrapper": w.id,
-                    "reason": f"left open: it holds {len(foreign)} child(ren) that are not Tasks or Bugs",
-                }
-            )
-            continue
-        moved = []
-        for c in children:
-            text = f"{c.title} {c.description}".lower()
-            dest = (
-                real[0][1]
-                if len(real) == 1
-                else next(
-                    (
-                        sid
-                        for s, sid in real
-                        if s.repo_path.lower() in text
-                        or len(s.slug) > 2
-                        and s.slug.lower() in text
-                    ),  # noqa: PLR2004
-                    real[0][1],
-                )
-            )
-            try:
-                tracker.run(["update", c.id, "--parent", dest])
-                heal["reparented"] += 1
-                moved.append(f"{c.id} -> {dest}")
-            except GraphError as exc:
-                heal["failed"].append(
-                    {
-                        "wrapper": w.id,
-                        "reason": f"reparent of {c.id} did not land: {exc}",
-                    }
-                )
-        try:
-            tracker.run(
-                [
-                    "close",
-                    w.id,
-                    "--reason",
-                    "Retired by elaboration: this was a backfilled roll-up parent standing in for a Story that did not exist yet. "
-                    + (
-                        f"Re-parented: {'; '.join(moved)}."
-                        if moved
-                        else "It was holding nothing."
-                    ),
-                ]
-            )
-            heal["closed"] += 1
-        except GraphError as exc:
-            heal["failed"].append(
-                {"wrapper": w.id, "reason": f"the close did not land: {exc}"}
-            )
 
 
 def complete(  # noqa: PLR0913 - the caller's facts, one each

@@ -1,6 +1,6 @@
 # Inside the Agentic SDLC Workforce
 
-167 agents. 14 managers. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
+151 agents. 2 managers. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
 
 The doctrine behind the system is simple to state: the agent is not the unit of trust; the workflow is. Every agent has a narrow purpose, explicit decision boundaries, least-privilege tools, and exactly one task category — *plan*, *orchestrate*, *execute*, *approve*, or *test*. An agent that plans never decides. An agent that builds never approves its own output. An agent that finds a flaw never fixes it. Work moves between agents through explicit artifacts. Where a composite gates a phase, the gate has three possible outcomes: pass, loop with structured feedback, or escalate upstream.
 
@@ -479,11 +479,10 @@ Cross-workflow separated authorities: workflow orchestration, gate refereeing, c
 
 ### PRD Creation — Execution Team
 
-PRD-to-Spec pipeline, phase 0 — creates the PRD from stakeholder intake, personas, and OKRs. 5 agents.
+PRD-to-Spec pipeline, phase 0 — creates the PRD from stakeholder intake, personas, and OKRs. 4 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `prd-creation-lead` | Manager | Delegator, Orchestrator |
 | `stakeholder-request-intake-writer` | Worker | Executor |
 | `prd-writer` | Worker | Executor |
 | `persona-profile-writer` | Worker | Executor |
@@ -491,11 +490,10 @@ PRD-to-Spec pipeline, phase 0 — creates the PRD from stakeholder intake, perso
 
 ### PRD Validation — Execution Team
 
-Not dispatched by `prd-to-spec`, which starts from a ready PRD; the `prd-validation` workflow can still be run on its own. 10 agents.
+Not dispatched by `prd-to-spec`, which starts from a ready PRD; the `prd-validation` workflow can still be run on its own. 9 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `prd-validation-lead` | Manager | Delegator, Orchestrator |
 | `requirements-clarifier` | Worker | Advisor |
 | `ambiguity-detector` | Worker | Validator |
 | `requirements-conflict-detector` | Worker | Validator |
@@ -508,11 +506,10 @@ Not dispatched by `prd-to-spec`, which starts from a ready PRD; the `prd-validat
 
 ### Architecture Analysis — Execution Team
 
-PRD-to-Spec pipeline — the `architecture` mini dispatches the analysts the ruled dimensions select, and their proposals fan in to the `architecture-decider`; the `sad-maintainer` records the ruling. 23 agents.
+PRD-to-Spec pipeline — the `architecture` mini dispatches the analysts the ruled dimensions select, and their proposals fan in to the `architecture-decider`; the `sad-maintainer` records the ruling. 21 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `architecture-decision-workflow-coordinator` | Manager | Delegator, Orchestrator |
 | `integration-pattern-architect` | Worker | Advisor |
 | `persistence-architecture-specialist` | Worker | Advisor |
 | `security-architecture-designer` | Worker | Advisor |
@@ -537,11 +534,10 @@ PRD-to-Spec pipeline — the `architecture` mini dispatches the analysts the rul
 
 ### TRD Authoring — Execution Team
 
-PRD-to-Spec pipeline — the carrier that takes the architecture's obligations into the build chain, bounded by the current arc42 SAD, holding both the PRD requirements needing technical elaboration and the obligations the architecture imposes with no PRD parent; it cites the SAD rather than restating it. `trd-authoring` dispatches `sad-source-extractor` sessions and one `trd-author` pass; no workflow dispatches `trd-authoring-lead`, `trd-validator`, `prd-trd-traceability-verifier` or `trd-decider`. 6 agents.
+PRD-to-Spec pipeline — the carrier that takes the architecture's obligations into the build chain, bounded by the current arc42 SAD, holding both the PRD requirements needing technical elaboration and the obligations the architecture imposes with no PRD parent; it cites the SAD rather than restating it. `trd-authoring` dispatches `sad-source-extractor` sessions and one `trd-author` pass; no workflow dispatches `trd-validator`, `prd-trd-traceability-verifier` or `trd-decider`. 5 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `trd-authoring-lead` | Manager | Delegator, Orchestrator |
 | `sad-source-extractor` | Worker | Executor |
 | `trd-author` | Worker | Executor |
 | `trd-validator` | Worker | Validator |
@@ -550,11 +546,10 @@ PRD-to-Spec pipeline — the carrier that takes the architecture's obligations i
 
 ### Spec Authoring — Execution Team
 
-PRD-to-Spec pipeline — one Spec per repository: `spec-authoring` dispatches `api-specification-author`, `data-model-specification-author` and `acceptance-criteria-writer` in parallel, then `user-story-writer` for the Story. No workflow dispatches `spec-authoring-lead` or the spec reviewers; `prd-creation` dispatches `prd-alignment-verifier` and the `spec-decider` on its PRD draft. 14 agents.
+PRD-to-Spec pipeline — one Spec per repository: `spec-authoring` dispatches `api-specification-author`, `data-model-specification-author` and `acceptance-criteria-writer` in parallel, then `user-story-writer` for the Story. No workflow dispatches the spec reviewers; `prd-creation` dispatches `prd-alignment-verifier` and the `spec-decider` on its PRD draft. 11 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `spec-authoring-lead` | Manager | Delegator, Orchestrator |
 | `acceptance-criteria-writer` | Worker | Executor |
 | `definition-of-done-enforcer` | Worker | Executor |
 | `api-specification-author` | Worker | Executor |
@@ -569,11 +564,10 @@ PRD-to-Spec pipeline — one Spec per repository: `spec-authoring` dispatches `a
 
 ### Task Decomposition — Execution Team
 
-PRD-to-Spec pipeline — `task-decomposer` decomposes a Spec's Story into sized, dependency-mapped Beads tasks, and `task-dependency-mapper` derives the Task dependencies that cross Stories. 8 agents.
+PRD-to-Spec pipeline — `task-decomposer` decomposes a Spec's Story into sized, dependency-mapped Beads tasks, and `task-dependency-mapper` derives the Task dependencies that cross Stories. 7 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `task-decomposition-lead` | Manager | Delegator, Orchestrator |
 | `task-decomposer` | Worker | Executor |
 | `task-dependency-mapper` | Worker | Executor |
 | `wsjf-scorer` | Worker | Executor |
@@ -584,21 +578,19 @@ PRD-to-Spec pipeline — `task-decomposer` decomposes a Spec's Story into sized,
 
 ### Spec Freshness — Execution Team
 
-No workflow dispatches `spec-freshness-lead`, `spec-currency-validator` or `dependency-change-detector`. 3 agents.
+No workflow dispatches `spec-currency-validator` or `dependency-change-detector`. 2 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `spec-freshness-lead` | Manager | Delegator, Orchestrator |
 | `spec-currency-validator` | Worker | Validator |
 | `dependency-change-detector` | Worker | Validator |
 
 ### Test Design — Execution Team
 
-Spec-to-Deploy pipeline, TDD Red — failing tests define done before implementation. `tdd-red` dispatches `tdd-unit-test-generator` and the writers the contract surfaces select. 16 agents.
+Spec-to-Deploy pipeline, TDD Red — failing tests define done before implementation. `tdd-red` dispatches `tdd-unit-test-generator` and the writers the contract surfaces select. 15 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `test-design-lead` | Manager | Delegator, Orchestrator |
 | `tdd-unit-test-generator` | Worker | Executor (test author) |
 | `consumer-driven-contract-test-writer` | Worker | Executor (test author) |
 | `security-test-case-designer` | Worker | Executor (test author) |
@@ -653,11 +645,10 @@ Spec-to-Deploy pipeline, TDD Green — minimum code to pass the failing tests. 2
 
 ### Code Quality — Execution Team
 
-Spec-to-Deploy pipeline, TDD Refactor, run by `bug-fix` — refactor without breaking tests; feeds Gate 2c. 9 agents. `tdd-refactor` dispatches one `code-refactoring-specialist` session. No workflow dispatches `code-quality-lead`, `complexity-analyzer`, the optimizers, `code-correctness-reviewer` or `accessibility-validator`.
+Spec-to-Deploy pipeline, TDD Refactor, run by `bug-fix` — refactor without breaking tests; feeds Gate 2c. 8 agents. `tdd-refactor` dispatches one `code-refactoring-specialist` session. No workflow dispatches `complexity-analyzer`, the optimizers, `code-correctness-reviewer` or `accessibility-validator`.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `code-quality-lead` | Manager | Delegator, Orchestrator |
 | `complexity-analyzer` | Worker | Advisor |
 | `code-refactoring-specialist` | Worker | Executor |
 | `lambda-performance-optimizer` | Worker | Executor |
@@ -685,11 +676,10 @@ Spec-to-Deploy pipeline, run by `bug-fix` — integration, E2E, and contract run
 
 ### Adversarial Validation — Execution Team
 
-Spec-to-Deploy pipeline, run by `bug-fix` — authorized adversarial attack on the project's own code; feeds Gate 4, which counts the open constitutive findings in code. 11 agents.
+Spec-to-Deploy pipeline, run by `bug-fix` — authorized adversarial attack on the project's own code; feeds Gate 4, which counts the open constitutive findings in code. 10 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `adversarial-review-loop-supervisor` | Manager | Delegator, Orchestrator |
 | `injection-attack-tester` | Worker | Adversary |
 | `auth-bypass-tester` | Worker | Adversary |
 | `permission-escalation-tester` | Worker | Adversary |
@@ -703,11 +693,10 @@ Spec-to-Deploy pipeline, run by `bug-fix` — authorized adversarial attack on t
 
 ### Deployment — Execution Team
 
-Spec-to-Deploy pipeline — `deploy` dispatches `smoke-test-author` and `cdk-stack-author`, which rolls out to AWS dev and runs the smoke tests; `workspace` and `settle` dispatch `github-actions-pipeline-implementer` to provision and land the worktree. 11 agents.
+Spec-to-Deploy pipeline — `deploy` dispatches `smoke-test-author` and `cdk-stack-author`, which rolls out to AWS dev and runs the smoke tests; `workspace` and `settle` dispatch `github-actions-pipeline-implementer` to provision and land the worktree. 10 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `deployment-lead` | Manager | Delegator, Orchestrator |
 | `cdk-stack-author` | Worker | Executor |
 | `github-actions-pipeline-implementer` | Worker | Executor |
 | `worktree-independent-verifier` | Worker | Validator |
@@ -721,11 +710,10 @@ Spec-to-Deploy pipeline — `deploy` dispatches `smoke-test-author` and `cdk-sta
 
 ### Documentation — Execution Team
 
-Cross-cutting — runs alongside implementation and deployment; the stale docs are updated in the worktree before the deploy. 7 agents.
+Cross-cutting — runs alongside implementation and deployment; the stale docs are updated in the worktree before the deploy. 6 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
-| `documentation-lead` | Manager | Delegator, Orchestrator |
 | `api-documentation-writer` | Worker | Executor |
 | `readme-writer` | Worker | Executor |
 | `changelog-writer` | Worker | Executor |
@@ -744,12 +732,10 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `constitutional-agent` | Governance | Standalone Specialists | Specialist | Decider | approve | Rules which reading of each contradicted finding stands when `gate-constitutional` receives a self-contradictory adversarial packet | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
 | `advantage-evaluator` | Governance | Standalone Specialists | Specialist | Validator, Decider | approve | Evaluates competitive (non-constitutive) conflicts via speculative execution with rollback: lets the pipeline proceed under a flag, observes the outcome, then commits or reverts | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
 | `context-curator` | Governance | Standalone Specialists | Specialist | Executor | execute | Owns context integrity across the workforce: assembles role-specific context packets per the least-context principle, and guarantees constitutive constraints survive context compaction verbatim — they are never summarized away | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep |
-| `prd-creation-lead` | PRD Creation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes stakeholder requests through intake, persona, OKR, and PRD drafting work, then hands the draft PRD to prd-validation-lead | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `stakeholder-request-intake-writer` | PRD Creation | Execution Team | Worker | Executor | execute | Converts raw stakeholder requests into a structured intake brief: requestor, problem, desired outcome, constraints, urgency. | subagent-contract, validation-protocol, product-discovery | Read, Write, Edit, Glob, Grep, Bash |
 | `prd-writer` | PRD Creation | Execution Team | Worker | Executor | execute | Produces the full PRD from the intake brief, persona profiles, and OKR cascade: feature scope, requirements, success metrics, competitive context. | subagent-contract, validation-protocol, product-discovery | Read, Write, Edit, Glob, Grep, Bash |
 | `persona-profile-writer` | PRD Creation | Execution Team | Worker | Executor | execute | Generates data-driven persona profiles from research inputs: behavioral segments, jobs-to-be-done, empathy maps. | subagent-contract, validation-protocol, product-discovery, product-analytics | Read, Write, Edit, Glob, Grep, Bash |
 | `okr-writer` | PRD Creation | Execution Team | Worker | Executor | execute | Derives the OKR cascade from strategy documents and the intake brief: objectives, measurable key results, leading versus lagging indicators. | subagent-contract, validation-protocol, product-strategist, product-analytics | Read, Write, Edit, Glob, Grep, Bash |
-| `prd-validation-lead` | PRD Validation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the PRD to all analysts concurrently, aggregates findings, and reports to Gate 1 | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, product-discovery, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `requirements-clarifier` | PRD Validation | Execution Team | Worker | Advisor | plan | Identifies ambiguous, incomplete, or conflicting requirements | subagent-contract, product-discovery | Read, Glob, Grep, Write |
 | `ambiguity-detector` | PRD Validation | Execution Team | Worker | Validator | test | Scans the PRD for vague quantifiers, missing boundary conditions, and unstated assumptions | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
 | `requirements-conflict-detector` | PRD Validation | Execution Team | Worker | Validator | test | Identifies requirements that contradict each other | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
@@ -759,7 +745,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `dependency-graph-extractor` | PRD Validation | Execution Team | Worker | Executor | execute | Produces the dependency manifest: services, APIs, events, data contracts | subagent-contract, validation-protocol, product-discovery | Read, Write, Edit, Glob, Grep, Bash |
 | `completeness-checker` | PRD Validation | Execution Team | Worker | Validator | test | Validates each requirement has an actor, an action, an observable outcome, and acceptance criteria. | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
 | `nfr-analyst` | PRD Validation | Execution Team | Worker | Advisor | plan | Extracts non-functional requirements | subagent-contract, product-discovery | Read, Glob, Grep, Write |
-| `architecture-decision-workflow-coordinator` | Architecture Analysis | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes analysis tasks to the proposals sub-team, routes proposals to the challenge sub-team, collects all outputs, and routes them to the Architecture Decider | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `integration-pattern-architect` | Architecture Analysis | Execution Team | Worker | Advisor | plan | Analyzes integration options: event API patterns, API Gateway routes, sync vs | subagent-contract, senior-architect, aws-serverless-eda, step-functions, aws-solution-architect | Read, Glob, Grep, Write |
 | `persistence-architecture-specialist` | Architecture Analysis | Execution Team | Worker | Advisor | plan | Analyzes DynamoDB schema options, GSI/LSI strategies, single vs | subagent-contract, dynamodb, database-schema-designer, rds | Read, Glob, Grep, Write |
 | `security-architecture-designer` | Architecture Analysis | Execution Team | Worker | Advisor | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model | subagent-contract, senior-security, iam, secrets-manager | Read, Glob, Grep, Write |
@@ -781,13 +766,11 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `architecture-diagram-author` | Architecture Analysis | Execution Team | Worker | Executor | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `graphql-schema-designer` | Architecture Analysis | Execution Team | Worker | Executor | execute | Designs GraphQL schema proposals for the AppSync track, parallel to the REST/API Gateway contract track | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `failure-mode-analyst` | Architecture Analysis | Execution Team | Worker | Advisor | plan | Proactively models failure modes for each architecture proposal: DynamoDB throttling, duplicate event delivery, downstream unavailability, partial-batch failures, poison messages | subagent-contract, senior-architect, observability-designer | Read, Glob, Grep, Write |
-| `trd-authoring-lead` | TRD Authoring | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes TRD maker output to checkers and findings back to makers until checkers pass, invokes the decider on deadlock, then assembles the Gate 2b packet; never writes TRD content, only pass/rework signals | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `sad-source-extractor` | TRD Authoring | Execution Team | Worker | Executor | execute | Extracts the SAD's section 2/4/8 source feed — Constraints, Solution Strategy, Cross-cutting Concepts, Architecture Decisions — into one typed, stably-identified packet the TRD author consumes | subagent-contract, validation-protocol, arc42-extract | Read, Write, Edit, Glob, Grep, Bash |
 | `trd-author` | TRD Authoring | Execution Team | Worker | Executor | execute | Authors the TRD — the carrier that takes the architecture's obligations into the build chain — from the PRD requirements needing technical elaboration AND the obligations the architecture imposes that no PRD would state; cites the SAD rather than restating it, so the document is terse by design | subagent-contract, validation-protocol, senior-architect | Read, Write, Edit, Glob, Grep, Bash |
 | `trd-validator` | TRD Authoring | Execution Team | Worker | Validator | test | Validates each TRD requirement is unambiguous, testable, and feasible within the SAD's constraints and decisions, flagging anything that contradicts the architecture | subagent-contract, validation-protocol | Read, Glob, Grep, Bash, Write |
 | `prd-trd-traceability-verifier` | TRD Authoring | Execution Team | Worker | Validator | test | Validates that every TRD technical requirement is anchored to a PRD requirement or a SAD entry, and that every PRD requirement needing technical elaboration is answered; the relation is not 1:1 | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
-| `trd-decider` | TRD Authoring | Execution Team | Worker | Decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts routed by trd-authoring-lead; generates no TRD content or analysis | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
-| `spec-authoring-lead` | Spec Authoring | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes maker output to checkers and checker findings back to makers until checkers pass, then routes to Gate 3 | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
+| `trd-decider` | TRD Authoring | Execution Team | Worker | Decider | approve | Rules on competing TRD approaches, maker-checker deadlocks, and checker conflicts; generates no TRD content or analysis | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
 | `acceptance-criteria-writer` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes testable acceptance criteria per requirement (given/when/then), specific enough for test agents to derive tests from. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `definition-of-done-enforcer` | Spec Authoring | Execution Team | Worker | Executor | execute | Writes the Definition of Done as independently verifiable statements, not checklists. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `api-specification-author` | Spec Authoring | Execution Team | Worker | Executor | execute | Produces detailed API specifications from contract drafts: schemas, error codes, rate limits, examples. | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
@@ -799,7 +782,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `dynamodb-schema-access-pattern-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates the specified access patterns are implementable and performant. | subagent-contract, validation-protocol, dynamodb | Read, Glob, Grep, Bash, Write |
 | `graphql-schema-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. | subagent-contract, validation-protocol, api-design-reviewer | Read, Glob, Grep, Bash, Write |
 | `spec-decider` | Spec Authoring | Execution Team | Worker | Decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back. Dispatched by `prd-creation` on a PRD maker-checker deadlock; `spec-authoring` does not dispatch it. | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
-| `task-decomposition-lead` | Task Decomposition | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `task-decomposer` | Task Decomposition | Execution Team | Worker | Executor | execute | Breaks the spec into tasks: one chassis extension, one endpoint, or one event handler per task. | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |
 | `task-dependency-mapper` | Task Decomposition | Execution Team | Worker | Executor | execute | Derives the Task-to-Task build dependencies that cross Stories of one Epic | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |
 | `wsjf-scorer` | Task Decomposition | Execution Team | Worker | Executor | execute | Judges each task's job size; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF is arithmetic over the size. | subagent-contract, validation-protocol, product-strategist | Read, Write, Edit, Glob, Grep, Bash |
@@ -807,10 +789,8 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `user-story-writer` | Task Decomposition | Execution Team | Worker | Executor | execute | Writes user stories per task with acceptance criteria drawn from the spec. | subagent-contract, validation-protocol, product-discovery | Read, Write, Edit, Glob, Grep, Bash |
 | `user-story-reviewer` | Task Decomposition | Execution Team | Worker | Validator | test | Validates stories are complete, testable, and properly scoped. | subagent-contract, validation-protocol, product-discovery | Read, Glob, Grep, Bash, Write |
 | `beads-format-validator` | Task Decomposition | Execution Team | Worker | Validator | test | Validates Beads issue format: title, acceptance criteria, DoD, dependencies, spec link, and the hierarchy rule. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash, Write |
-| `spec-freshness-lead` | Spec Freshness | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes freshness checks to the validators and aggregates results for the gate. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `spec-currency-validator` | Spec Freshness | Execution Team | Worker | Validator | test | Validates the spec still matches current project reality before implementation begins. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash, Write |
 | `dependency-change-detector` | Spec Freshness | Execution Team | Worker | Validator | test | Detects dependency version or contract changes since the spec was written. | subagent-contract, validation-protocol, dependency-auditor | Read, Glob, Grep, Bash, Write |
-| `test-design-lead` | Test Design | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes spec acceptance criteria to the right test writers, confirms Red (all new tests fail), and reports to Gate 2a. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `tdd-unit-test-generator` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing unit tests from spec acceptance criteria before implementation exists. | subagent-contract, validation-protocol, tdd-guide | Read, Write, Edit, Glob, Grep, Bash |
 | `consumer-driven-contract-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes consumer-driven contract tests ensuring API consumers and providers agree. | subagent-contract, validation-protocol, api-test-suite-builder | Read, Write, Edit, Glob, Grep, Bash |
 | `security-test-case-designer` | Test Design | Execution Team | Worker | Executor (test author) | test | Designs security test cases from the threat model: abuse cases, negative paths, authorization matrices. | subagent-contract, validation-protocol, senior-security | Read, Write, Edit, Glob, Grep, Bash |
@@ -825,7 +805,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `ml-evaluation-tester` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes and runs evaluation suites for ML components: matching quality, recommendation relevance, embedding drift, regression thresholds. | subagent-contract, validation-protocol, senior-ml-engineer, senior-data-scientist | Read, Write, Edit, Glob, Grep, Bash |
 | `data-pipeline-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing tests for data pipelines: ETL correctness, CDC ordering, data quality assertions, replay safety. | subagent-contract, validation-protocol, senior-data-engineer | Read, Write, Edit, Glob, Grep, Bash |
 | `test-isolation-specialist` | Test Design | Execution Team | Worker | Validator | test | Validates test independence: no shared mutable state, order-independent execution, isolated fixtures | subagent-contract, validation-protocol, tdd-guide, test-failure-mindset | Read, Glob, Grep, Bash, Write |
-| `test-strategy-decider` | Test Design | Execution Team | Worker | Decider | approve | Receives test strategy analyses and reviewer findings routed by test-design-lead | subagent-contract, validation-protocol, senior-qa, cove-prompt-design | Read, Glob, Grep, Write |
+| `test-strategy-decider` | Test Design | Execution Team | Worker | Decider | approve | Receives test strategy analyses and reviewer findings | subagent-contract, validation-protocol, senior-qa, cove-prompt-design | Read, Glob, Grep, Write |
 | `implementation-lead` | Implementation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes Beads tasks to the implementer sub-teams the feature requires, carries each Task's build contract — spec documents and SAD decision ids — into every delegation before any file is written, and reports to Gate 2b. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `chassis-extension-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers. | subagent-contract, validation-protocol, lambda, aws-serverless-eda | Read, Write, Edit, Glob, Grep, Bash |
 | `api-gateway-cdk-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements API Gateway resources, methods, and authorizers in CDK Python. | subagent-contract, validation-protocol, api-gateway, aws-cdk-development | Read, Write, Edit, Glob, Grep, Bash |
@@ -855,7 +835,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `payments-integration-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements payment features against Stripe: checkout sessions, webhook handlers, subscription lifecycle, refunds, and idempotent payment operations | subagent-contract, validation-protocol, stripe-integration-expert, secrets-manager | Read, Write, Edit, Glob, Grep, Bash |
 | `email-notification-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements transactional and notification email features: responsive email templates, rendering pipelines, delivery via AWS messaging services, bounce and complaint handling. | subagent-contract, validation-protocol, email-template-builder, sns | Read, Write, Edit, Glob, Grep, Bash |
 | `mcp-server-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements MCP servers hosted on AWS, including AgentCore Gateway-fronted deployments: tool definitions and schemas, authorization, transport configuration, and the CDK wiring to deploy them. | subagent-contract, validation-protocol, mcp-server-builder, aws-agentic-ai, aws-mcp-setup | Read, Write, Edit, Glob, Grep, Bash |
-| `code-quality-lead` | Code Quality | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes refactor work, verifies tests stay green after every change, and reports to Gate 2c. No workflow dispatches it. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `complexity-analyzer` | Code Quality | Execution Team | Worker | Advisor | plan | Analyzes complexity and duplication. No workflow dispatches it. | subagent-contract, tech-debt-tracker | Read, Glob, Grep, Write |
 | `code-refactoring-specialist` | Code Quality | Execution Team | Worker | Executor | execute | Restructures existing code for clarity and cohesion without changing behavior. | subagent-contract, validation-protocol, code-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `lambda-performance-optimizer` | Code Quality | Execution Team | Worker | Executor | execute | Optimizes Lambda cold start, memory sizing, and hot paths without breaking tests. | subagent-contract, validation-protocol, lambda | Read, Write, Edit, Glob, Grep, Bash |
@@ -873,7 +852,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `root-cause-analyst` | Integration Testing | Execution Team | Worker | Advisor | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step. | subagent-contract, find-cause, test-failure-mindset | Read, Glob, Grep, Write |
 | `flaky-test-detector` | Integration Testing | Execution Team | Worker | Validator | test | Identifies intermittent test failures and their root causes | subagent-contract, validation-protocol, test-failure-mindset, find-cause | Read, Glob, Grep, Bash, Write |
 | `cross-repo-integration-test-coordinator` | Integration Testing | Execution Team | Worker | Orchestrator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, SendMessage |
-| `adversarial-review-loop-supervisor` | Adversarial Validation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Sequences the adversarial loop — testers attack, the Adjudicator rules, valid findings route back to implementation — until the Adjudicator passes or the loop limit triggers escalation. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `injection-attack-tester` | Adversarial Validation | Execution Team | Worker | Adversary | test | Probes the project's own endpoints for injection paths (SQL, NoSQL, command, template) | subagent-contract, validation-protocol, senior-secops | Read, Glob, Grep, Bash, Write |
 | `auth-bypass-tester` | Adversarial Validation | Execution Team | Worker | Adversary | test | Attempts authentication bypass against the project's own auth flows in test environments | subagent-contract, validation-protocol, senior-secops, cognito | Read, Glob, Grep, Bash, Write |
 | `permission-escalation-tester` | Adversarial Validation | Execution Team | Worker | Adversary | test | Attempts privilege and permission escalation within the project's own IAM and authorization model | subagent-contract, validation-protocol, senior-secops, iam | Read, Glob, Grep, Bash, Write |
@@ -884,7 +862,6 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `data-exposure-scanner` | Adversarial Validation | Execution Team | Worker | Validator | test | Scans the project's own responses, logs, and storage for unintended data exposure. | subagent-contract, validation-protocol, senior-secops | Read, Glob, Grep, Bash, Write |
 | `infrastructure-security-scanner` | Adversarial Validation | Execution Team | Worker | Validator | test | Scans IaC and deployed test infrastructure for security misconfigurations. | subagent-contract, validation-protocol, senior-secops, aws-cdk-development | Read, Glob, Grep, Bash, Write |
 | `adversarial-critique-adjudicator` | Adversarial Validation | Execution Team | Worker | Decider (Referee) | approve | Decides the severity of each adversarial finding and whether it is constitutive (hard stop) or competitive (plays advantage) | subagent-contract, validation-protocol, senior-security | Read, Glob, Grep, Write |
-| `deployment-lead` | Deployment | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the deployment sequence, validates preconditions at each step, and reports to Gate 5. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `cdk-stack-author` | Deployment | Execution Team | Worker | Executor | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Write, Edit, Glob, Grep, Bash |
 | `github-actions-pipeline-implementer` | Deployment | Execution Team | Worker | Executor | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. | subagent-contract, validation-protocol, senior-devops | Read, Write, Edit, Glob, Grep, Bash |
 | `worktree-independent-verifier` | Workspace | Execution Team | Worker | Validator | test | Independently reports the raw git facts about a provisioned path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — No workflow dispatches it. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash |
@@ -894,8 +871,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `production-readiness-review-facilitator` | Deployment | Execution Team | Worker | Orchestrator | orchestrate | Coordinates the production readiness review: collects required artifacts, routes them to reviewers, and assembles the readiness packet | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, SendMessage |
 | `finops-analyst` | Deployment | Execution Team | Worker | Advisor | plan | Analyzes the cost posture of the feature before deployment: unit economics, scaling cost curves, budget impact | subagent-contract, aws-cost-operations | Read, Glob, Grep, Write |
 | `incident-response-runbook-designer` | Deployment | Execution Team | Worker | Executor | execute | Produces operational runbooks for the deployed feature: incident response, rollback steps, disaster recovery. | subagent-contract, validation-protocol, senior-devops, observability-designer | Read, Write, Edit, Glob, Grep, Bash |
-| `deployment-strategy-decider` | Deployment | Execution Team | Worker | Decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations — routed by deployment-lead | subagent-contract, validation-protocol, senior-devops, cove-prompt-design | Read, Glob, Grep, Write |
-| `documentation-lead` | Documentation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes documentation work triggered by shipped changes, tracks which artifacts lack current documentation, and reports documentation currency to the production readiness review | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
+| `deployment-strategy-decider` | Deployment | Execution Team | Worker | Decider | approve | Receives deployment analyses — rollout strategies, risk assessments, FinOps recommendations | subagent-contract, validation-protocol, senior-devops, cove-prompt-design | Read, Glob, Grep, Write |
 | `api-documentation-writer` | Documentation | Execution Team | Worker | Executor | execute | Generates human-readable API documentation from OpenAPI and GraphQL specs: endpoint guides, examples, SDK snippets. | subagent-contract, validation-protocol, api-design-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `readme-writer` | Documentation | Execution Team | Worker | Executor | execute | Writes and maintains README files for repositories and directories: setup instructions, usage, onboarding flows. | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |
 | `changelog-writer` | Documentation | Execution Team | Worker | Executor | execute | Generates changelog entries from merged work: conventional commit parsing, semantic version notes. | subagent-contract, validation-protocol, changelog-generator | Read, Write, Edit, Glob, Grep, Bash |
@@ -905,7 +881,4 @@ Every agent, with the team it is rostered under, its role, character types, task
 
 ## References
 
-- The **Project Delivery Agentic Workforce Doctrine** and the **separation-of-duties rules** are now consolidated into this document — see [The doctrine, principles, and rules](#the-doctrine-principles-and-rules). The two standalone files linked below are slated for deletion; their content lives here.
-- [Doctrine — Project Delivery Agentic Workforce Doctrine](./Project%20Delivery%20Agentic%20Workforce%20Doctrine.md)
-- [Separation of duties](./rules/separation-of-duties.md)
 - [Agents directory](./AGENT-ROSTER.md)
