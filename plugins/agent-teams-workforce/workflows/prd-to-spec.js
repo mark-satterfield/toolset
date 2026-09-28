@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, rules architecture when the PRD needs a decision, rules the repo span, authors the TRD, reconciles current state and authors one Spec and Story per repo (spec-authoring writes each Story bead), decomposes each Story into Tasks (task-decomposition writes its Task beads and the edges between them), derives the Task edges between Stories and writes them with depscore.py write-task-edges, then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish. Every bead write is keyed by elab_key, so a rerun updates what exists. A failed bead write returns ok:false at stage hierarchy-not-persisted. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, rules architecture when the PRD needs a decision, rules the repo span, authors the TRD, reconciles current state and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes each Task\'s edges with one depscore.py write-task-edges command, one Task at a time), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish. Every bead write is keyed by elab_key, so a rerun updates what exists. A failed bead write returns ok:false at stage hierarchy-not-persisted. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -10,7 +10,7 @@ export const meta = {
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
     { title: 'Spec Authoring', detail: 'per repo: reconcile current state, then author the Spec and write its Story bead' },
-    { title: 'Task Decomposition', detail: 'per Story: decompose into Tasks and write their beads and edges; then derive and write the Task edges between Stories' },
+    { title: 'Task Decomposition', detail: 'per Story: decompose into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them one Task at a time' },
     { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when every part landed' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
@@ -945,7 +945,7 @@ function decompArgs(pair) {
       repoPath: pair.repoPath,
     },
     specDocs: docs,
-    story: { key: pair.story.key, title: pair.story.title },
+    story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
     existingTasks: pair.existingTasks,
     pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor(`tasks:${slug}`, [...docs.map((d) => d.path), artPath(`story-${slug}.json`)], { slug }),
@@ -999,6 +999,7 @@ for (const [pairIndex, pair] of specPairs.entries()) {
       parentStoryId: pair.story.id,
       storyKey: storyKeyForTasks,
       dependsOn: (Array.isArray(t.dependsOn) ? t.dependsOn : []).map((d) => `${storyKeyForTasks}-${d}`),
+      outsideBlockers: Array.isArray(t.outsideBlockers) ? t.outsideBlockers : [],
     })
   }
   recRuled(`Story ${storyKeyForTasks} (${pair.repoPath}) decomposed into ${storyTasks.length} Task(s).`)
@@ -1023,11 +1024,38 @@ if (taskStories.size < 2) {
 } else {
   crossStory.ran = true
   const depsHit = resumeFresh(TASK_DEPS_PHASE)
-  let derived = false
-  if (depsHit && ART_ON && depsHit.names.includes('task-deps.json')) {
+  const depscore = `python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)}`
+  const spanArgs = `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`
+  const standing = tasks.filter((t) => t.outsideBlockers.length).map((t) => t.key)
+  const EDGE_WRITE_BRIEF = `WRITE EACH TASK'S EDGES TO OTHER STORIES, one command per Task:
+1. Run: ${depscore} plan-task-edges ${spanArgs}
+   It prints one JSON object whose "blockers" object names, as its keys, each Task that has blockers in other Stories.
+2. For each key of that "blockers" object${standing.length ? `, and then each of these Tasks that is not a key there: ${standing.join(', ')}` : ''}, in that order, run the command below with <TASK> replaced by that Task:
+   ${depscore} write-task-edges --epic ${shellq(epicBeadId)} --task <TASK> ${spanArgs}
+Run every command in its own Bash call in the FOREGROUND (never set run_in_background, never run two at once) with the Bash tool's \`timeout\` parameter set to 600000. Record every command you ran in \`writes\`, in order, the plan command first: its exit code as \`exitCode\` and its stdout, verbatim, as \`stdout\` (append stderr when the exit code is not 0). Stop after the first command whose exit code is not 0. Do not retry, do not repair, and run no other bd command.`
+  const WRITES_SCHEMA = {
+    type: 'array',
+    items: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['exitCode', 'stdout'],
+      properties: { exitCode: { type: 'integer' }, stdout: { type: 'string' } },
+    },
+  }
+  let ran = null
+  if (!ART_ON) {
+    crossStory.reason = 'no artifact working directory is configured, so there is no saved task-deps.json to write'
+  } else if (depsHit && depsHit.names.includes('task-deps.json')) {
     reuseFrom(TASK_DEPS_PHASE, depsHit)
     await acceptPhase(TASK_DEPS_PHASE, 'reused')
-    derived = true
+    ran = await settleAgent(`${EDGE_WRITE_BRIEF}\n\nChange nothing else.`, {
+      label: 'beads:write-task-edges',
+      phase: 'Task Decomposition',
+      model: 'haiku',
+      effort: 'low',
+      schema: { type: 'object', additionalProperties: false, required: ['writes'], properties: { writes: WRITES_SCHEMA } },
+    })
+    if (!ran) crossStory.reason = 'the session that writes the Task edges between Stories returned nothing'
   } else {
     const byStory = new Map()
     for (const t of tasks) {
@@ -1056,7 +1084,9 @@ The whole Task graph — the edges already drawn plus yours — must be acyclic.
 
 Do NOT add, remove, split or rescope Tasks. Do NOT write code.
 
-${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 'your complete answer (edges, acyclic, cycle) as ONE JSON object')}`,
+${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 'your complete answer (edges, acyclic, cycle) as ONE JSON object')}
+
+Then, once that file is saved and recorded, and before you return — unless you set acyclic=false, in which case return an empty \`writes\`: ${EDGE_WRITE_BRIEF}`,
       {
         label: 'sequence:cross-story-tasks',
         effort: 'medium',
@@ -1065,7 +1095,7 @@ ${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 
         schema: {
           type: 'object',
           additionalProperties: false,
-          required: ['edges', 'acyclic'],
+          required: ['edges', 'acyclic', 'writes'],
           properties: {
             edges: {
               type: 'array',
@@ -1083,6 +1113,7 @@ ${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 
             },
             acyclic: { type: 'boolean' },
             cycle: { type: 'array', items: { type: 'string' } },
+            writes: WRITES_SCHEMA,
           },
         },
       }
@@ -1093,20 +1124,33 @@ ${listing}${persistBrief(artFor(TASK_DEPS_PHASE, depsInputs), 'task-deps.json', 
       crossStory.reason = `the mapper reported a cycle across Stories (${(mapped.cycle || []).join(' -> ') || 'not named'}) and returned no edges`
     } else {
       await acceptPhase(TASK_DEPS_PHASE, 'passed')
-      derived = true
+      ran = mapped
     }
   }
-  if (derived) {
-    const edgesOut = ART_ON
-      ? await runScript('beads:write-task-edges', 'Task Decomposition', `write-task-edges --epic ${shellq(epicBeadId)} --dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`)
-      : { error: 'no artifact working directory is configured, so there is no saved task-deps.json to write' }
-    if (edgesOut.error) {
-      crossStoryWriteFailed = edgesOut.error
-      crossStory.reason = `the Task edges between Stories were not written: ${edgesOut.error}`
+  if (ran) {
+    const writes = Array.isArray(ran.writes) ? ran.writes : []
+    const parsed = writes.map((r) => {
+      try {
+        return JSON.parse(r.stdout)
+      } catch (err) {
+        return null
+      }
+    })
+    const plan = parsed[0] && parsed[0].blockers ? parsed[0] : null
+    const failedAt = writes.findIndex((r, i) => r.exitCode !== 0 || !parsed[i] || parsed[i].error)
+    const expected = plan ? new Set([...Object.keys(plan.blockers), ...standing]).size + 1 : 1
+    if (!plan || failedAt >= 0 || writes.length < expected) {
+      const i = failedAt >= 0 ? failedAt : writes.length
+      const r = writes[i]
+      const why = r ? (parsed[i] && parsed[i].error) || String(r.stdout).slice(0, 300) || `exit ${r.exitCode}` : 'it was not run'
+      crossStoryWriteFailed = `${i === 0 ? 'plan-task-edges' : `write-task-edges command ${i} of ${expected - 1}`} failed: ${why}`
+      crossStory.reason = `the Task edges between Stories were not all written: ${crossStoryWriteFailed}`
     } else {
-      crossStory.edges = Array.isArray(edgesOut.edges) ? edgesOut.edges : []
-      crossStory.rejected = Array.isArray(edgesOut.rejected) ? edgesOut.rejected : []
-      crossStory.written = edgesOut.summary || null
+      crossStory.edges = Array.isArray(plan.edges) ? plan.edges : []
+      crossStory.rejected = Array.isArray(plan.rejected) ? plan.rejected : []
+      const written = { added: 0, removed: 0, standing: 0 }
+      for (const out of parsed.slice(1)) for (const k of Object.keys(written)) written[k] += Number(out.summary && out.summary[k]) || 0
+      crossStory.written = written
       const byKey = new Map(tasks.map((t) => [t.key, t]))
       for (const e of crossStory.edges) {
         const to = byKey.get(e.to)

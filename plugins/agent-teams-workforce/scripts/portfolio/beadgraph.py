@@ -167,13 +167,19 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     return ",".join(sorted(set(ids)))
 
 
-def _bd(args: list[str], repo: Path | None) -> str:
-    """Run `bd` and return stdout, raising GraphError on any failure."""
+def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
+    """Run `bd`, with `stdin` on its standard input, and return stdout.
+
+    Raises:
+        GraphError: `bd` is not on PATH or exited nonzero.
+    """
     command = ["bd", *args]
     if repo is not None:
         command += ["-C", str(repo)]
     try:
-        done = subprocess.run(command, capture_output=True, text=True, check=False)
+        done = subprocess.run(
+            command, input=stdin, capture_output=True, text=True, check=False
+        )
     except FileNotFoundError as exc:  # pragma: no cover - environment, not logic
         msg = "`bd` is not on PATH"
         raise GraphError(msg) from exc
@@ -308,16 +314,17 @@ class Writer:
     dry_run: bool = False
     planned: list[dict] = field(default_factory=list)
 
-    def bd(self, args: list[str]) -> None:
+    def bd(self, args: list[str], stdin: str | None = None) -> None:
         """Run a `bd` command that changes the tracker, or record it in a dry run.
 
         Args:
             args: The `bd` arguments.
+            stdin: The text the command reads on its standard input, or None.
         """
         if self.dry_run:
-            self.planned.append({"op": "bd", "args": list(args)})
+            self.planned.append({"op": "bd", "args": list(args), "stdin": stdin})
             return
-        _bd(args, self.repo)
+        _bd(args, self.repo, stdin)
 
     def create(self, args: list[str], key: str) -> str:
         """Run a `bd create`, or record it in a dry run.
@@ -421,7 +428,29 @@ def _records_from_export(repo: Path | None) -> list[dict]:
     return records
 
 
-def _bead_of(record: dict) -> Bead:
+def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
+    """Return every record of one issue type directly under a parent, from one `bd list` call.
+
+    Args:
+        repo: The repository to run `bd` from, or None for the working directory.
+        parent: The parent id.
+        kind: The issue type.
+
+    Returns:
+        The records, closed ones included, as `bd list --json` returns them.
+
+    Raises:
+        GraphError: `bd` failed or did not return an array.
+    """
+    args = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
+    payload = json.loads(_bd([*args, "--readonly"], repo) or "[]")
+    if not isinstance(payload, list):
+        msg = "`bd list --json` did not return an array"
+        raise GraphError(msg)
+    return payload
+
+
+def bead_of(record: dict) -> Bead:
     """Normalize one tracker record, tolerating every field `bd` omits when unset."""
     metadata = record.get("metadata") or {}
     if isinstance(metadata, str):
@@ -459,6 +488,6 @@ def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
         source = ".beads/issues.jsonl (export)"
     beads = {}
     for record in records:
-        bead = _bead_of(record)
+        bead = bead_of(record)
         beads[bead.id] = bead
     return Graph(beads=beads, source=source, records=records, warnings=warnings)

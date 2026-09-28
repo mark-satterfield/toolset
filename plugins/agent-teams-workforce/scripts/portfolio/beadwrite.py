@@ -1,10 +1,11 @@
-"""Write one Story, one Story's Tasks, or the Task edges between Stories into beads.
+"""Write one Story, one Task, or one Task's edges to Tasks in other Stories into beads.
 
-Each write reads the document its elaboration step saved in the Epic's working directory and
-is keyed by the durable `elab_key`: a Story or Task no bead under its parent carries is
-created, an open one that carries it is updated where it differs, and any other is left as it
-is. A write that fails raises `GraphError` from the writer, and a rerun repairs it, because
-every write is idempotent.
+Each command writes ONE bead. It reads the document its elaboration step saved in the Epic's
+working directory and is keyed by the durable `elab_key`: a Story or Task no bead under its
+parent carries is created, an open one that carries it is updated where it differs, and any
+other is left as it is. The plans (`plan_story_tasks`, `plan_task_edges`) read the saved
+documents only and run no `bd` command. A write that fails raises `GraphError` from the
+writer, and a rerun repairs it, because every write is keyed.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from beadgraph import SCOPE_JUDGING, fingerprints, same_value
+from beadgraph import SCOPE_JUDGING, bead_of, children, fingerprints, same_value
 from hierarchy import (
     SIZE_KEYS,
     HierarchyError,
@@ -27,7 +28,6 @@ from hierarchy import (
 from scoring import JUDGED_HASH_KEY
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
     from beadgraph import Bead, Graph, Writer
@@ -35,8 +35,8 @@ if TYPE_CHECKING:
 #: The one status a matched Story or Task is rewritten in.
 OPEN = "open"
 
-#: The Task actions after which the Task carries this decomposition's content.
-CURRENT = frozenset({"created", "updated", "unchanged"})
+#: The priority `bd create` gives a bead when none is passed.
+DEFAULT_PRIORITY = 2
 
 
 def _norm(text: object) -> str:
@@ -235,27 +235,28 @@ def _create_args(  # noqa: PLR0913 - one `bd create` flag each
 def _refresh(
     writer: Writer, bead: Bead, title: str, text: str, metadata: dict[str, str]
 ) -> bool:
-    """Update an open bead's prose and metadata where they differ.
+    """Update an open bead's prose and metadata where they differ, in one `bd update`.
 
     Args:
         writer: The tracker writer.
         bead: The bead as it stands.
         title: Its title.
         text: Its description.
-        metadata: Its metadata.
+        metadata: Its metadata; each key is merged onto the bead's.
 
     Returns:
         True when anything was written.
     """
-    wrote = False
+    args: list[str] = []
     if _norm(title) != _norm(bead.title) or _norm(text) != _norm(bead.description):
-        writer.bd(["update", bead.id, "--title", title, "--description", text])
-        wrote = True
-    changed = {k: v for k, v in metadata.items() if not _same(bead.metadata.get(k), v)}
-    if changed:
-        writer.metadata(bead.id, changed)
-        wrote = True
-    return wrote
+        args += ["--title", title, "--description", text]
+    for key, value in metadata.items():
+        if not _same(bead.metadata.get(key), value):
+            args += ["--set-metadata", f"{key}={value}"]
+    if not args:
+        return False
+    writer.bd(["update", bead.id, *args])
+    return True
 
 
 def _children(graph: Graph, parent: str, kind: str) -> list[Bead]:
@@ -306,21 +307,19 @@ def _story_of(graph: Graph, epic_id: str, slug: str) -> Bead | None:
     return _keyed(_children(graph, epic_id, "story")).get(f"story:{slug}")
 
 
-def _assign_keys(tasks: list[Task], slug: str, existing: set[str]) -> None:
+def _assign_keys(tasks: list[Task], slug: str) -> None:
     """Give each Task its durable key, in build order.
 
-    A Task keeps the key its `reuses` names when a Task under the Story carries it and no
-    earlier Task took it; otherwise its key is `task:<slug>:<title slug>`, suffixed `-2`,
-    `-3` ... past the keys already taken.
+    A Task keeps the key its `reuses` names when no earlier Task took it; otherwise its key
+    is `task:<slug>:<title slug>`, suffixed `-2`, `-3` ... past the keys already taken.
 
     Args:
         tasks: The Tasks, in build order; each gains its `elab_key`.
         slug: The Story's repository slug.
-        existing: The keys the Tasks under the Story carry.
     """
     taken: set[str] = set()
     for t in tasks:
-        if t.reuses and t.reuses in existing and t.reuses not in taken:
+        if t.reuses and t.reuses not in taken:
             key = t.reuses
         else:
             base = f"task:{slug}:{elab_slug(t.title)}"
@@ -332,25 +331,26 @@ def _assign_keys(tasks: list[Task], slug: str, existing: set[str]) -> None:
         t.elab_key = key
 
 
-def _story_tasks(
-    graph: Graph, story: Bead, directory: Path, rel: str | None, slug: str
-) -> list[Task]:
+def plan_tasks(directory: Path, rel: str | None, slug: str, repo: str) -> list[Task]:
     """Return a Story's saved Tasks, each with its durable key, in build order.
 
+    Reads `story-<slug>.json` and `tasks-<slug>.json` only; runs no `bd` command.
+
     Args:
-        graph: The tracker graph.
-        story: The Story bead.
         directory: The Epic's working directory.
         rel: The directory relative to the project root, or None.
         slug: The Story's repository slug.
+        repo: The Story's repository.
 
     Returns:
         The Tasks.
+
+    Raises:
+        HierarchyError: The file names no Task, or its edges form a cycle.
     """
-    repo = story.metadata.get("repoPath") or ""
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids)
-    _assign_keys(tasks, slug, set(_keyed(_children(graph, story.id, "task"))))
+    _assign_keys(tasks, slug)
     return tasks
 
 
@@ -437,278 +437,256 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
     }
 
 
-def _write_task(
-    writer: Writer, story: Bead, task: Task, bead: Bead | None, root: Path | None
-) -> tuple[str, str]:
-    """Create one Task, or update it when it is open.
-
-    Args:
-        writer: The tracker writer.
-        story: The Story it sits under.
-        task: The Task, with its `elab_key`.
-        bead: The bead carrying its `elab_key`, or None.
-        root: The project root spec paths are relative to.
-
-    Returns:
-        Its id, and `created`, `updated`, `unchanged` or `unchanged-started`.
-    """
-    text = task_text(task, root)
-    meta = task_metadata(task)
-    if bead is None:
-        args = _create_args(
-            "task",
-            title=task.title,
-            text=text,
-            parent=story.id,
-            acceptance=task.acceptance,
-            notes=f"repoPath: {task.repo_path}" if task.repo_path else None,
-            metadata=meta,
-        )
-        return writer.create(args, task.elab_key or task.key), "created"
-    if bead.status != OPEN:
-        return bead.id, "unchanged-started"
-    wrote = _refresh(writer, bead, task.title, text, meta)
-    return bead.id, "updated" if wrote else "unchanged"
-
-
-def _write_story_edges(
-    writer: Writer,
-    graph: Graph,
-    derived: set[tuple[str, str]],
-    refreshed: list[str],
-    keyed: set[str],
-) -> dict[str, int]:
-    """Add the derived edges within a Story and remove the ones no longer derived.
-
-    Args:
-        writer: The tracker writer.
-        graph: The tracker graph.
-        derived: `(blocker id, blocked id)` for every derived edge.
-        refreshed: The open Tasks matched rather than created.
-        keyed: The ids of the keyed Tasks under the Story.
-
-    Returns:
-        The edges added, removed and already standing.
-    """
-    counts = {"added": 0, "removed": 0, "standing": 0}
-    for frm, to in sorted(derived):
-        bead = graph.beads.get(to)
-        if bead is not None and frm in bead.blockers:
-            counts["standing"] += 1
-            continue
-        writer.bd(["dep", "add", to, frm, "--type", "blocks"])
-        counts["added"] += 1
-    for task_id in refreshed:
-        for blocker in graph.beads[task_id].blockers:
-            if blocker in keyed and (blocker, task_id) not in derived:
-                writer.bd(["dep", "remove", task_id, blocker])
-                counts["removed"] += 1
-    return counts
-
-
-def _fingerprint(writer: Writer, graph: Graph, sized: list[str]) -> int:
-    """Write each sized Task's judging fingerprint where it differs.
-
-    Args:
-        writer: The tracker writer.
-        graph: The tracker as it stands after the Task writes.
-        sized: The Tasks whose judged size describes the content they now carry.
-
-    Returns:
-        The number of fingerprints written.
-    """
-    if not sized:
-        return 0
-    prints = fingerprints(graph.records, SCOPE_JUDGING)
-    written = 0
-    for task_id in sized:
-        current = prints.get(task_id, "")
-        bead = graph.beads.get(task_id)
-        if current and bead and bead.metadata.get(JUDGED_HASH_KEY) != current:
-            writer.metadata(task_id, {JUDGED_HASH_KEY: current})
-            written += 1
-    return written
-
-
-def write_tasks(  # noqa: PLR0913 - the caller's facts, one each
-    graph: Graph,
-    writer: Writer,
-    epic_id: str,
-    directory: Path,
-    *,
-    slug: str,
-    root: Path | None,
-    reload: Callable[[], Graph],
+def plan_story_tasks(
+    directory: Path, *, slug: str, repo: str, root: Path | None
 ) -> dict:
-    """Write one Story's Tasks, the edges between them, and their size fingerprints.
-
-    An open Task the decomposition no longer contains is closed; a Task carrying no
-    `elab_key` is never touched.
+    """Return a Story's Tasks in build order with their durable keys; runs no `bd` command.
 
     Args:
-        graph: The tracker graph, read with descriptions.
-        writer: The tracker writer; a dry-run writer records the writes instead.
-        epic_id: The Epic.
         directory: The Epic's working directory.
         slug: The Story's repository slug.
+        repo: The Story's repository.
         root: The project root spec paths are recorded relative to.
-        reload: Reads the tracker again, after the writes.
 
     Returns:
-        Each Task and what was done to it, the Tasks closed, the edge writes, and the
-        number of fingerprints written.
-
-    Raises:
-        HierarchyError: No Story `story:<slug>` is under the Epic.
+        Each Task's local key, `elab_key`, title and the local keys it depends on.
     """
-    story = _story_of(graph, epic_id, slug)
-    if story is None:
-        msg = f"no Story story:{slug} under {epic_id}: a Story is written before its Tasks"
-        raise HierarchyError(msg)
-    tasks = _story_tasks(graph, story, directory, _rel(directory, root), slug)
-    existing = _keyed(_children(graph, story.id, "task"))
-    written = {
-        t.key: _write_task(writer, story, t, existing.get(t.elab_key or ""), root)
-        for t in tasks
-    }
-    wanted = {t.elab_key for t in tasks}
-    closed = [
-        b.id for key, b in existing.items() if key not in wanted and b.status == OPEN
-    ]
-    for bead_id in closed:
-        reason = (
-            f"Closed by elaboration of {epic_id}: the current decomposition of this "
-            "Story no longer contains this Task, and no work had started on it."
-        )
-        writer.bd(["close", bead_id, "--reason", reason])
-    edges = _write_story_edges(
-        writer,
-        graph,
-        {(written[d][0], written[t.key][0]) for t in tasks for d in t.depends_on},
-        [i for i, action in written.values() if action in {"updated", "unchanged"}],
-        {b.id for b in existing.values()},
-    )
-    sized = [
-        written[t.key][0] for t in tasks if t.sizes and written[t.key][1] in CURRENT
-    ]
-    fingerprinted = _fingerprint(
-        writer, graph if writer.dry_run or not sized else reload(), sized
-    )
-    actions = [action for _, action in written.values()]
+    tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
     return {
         "ok": True,
-        "epic": epic_id,
-        "story": {"id": story.id, "elabKey": f"story:{slug}"},
+        "slug": slug,
         "tasks": [
             {
                 "key": t.key,
                 "elabKey": t.elab_key,
-                "id": written[t.key][0],
-                "action": written[t.key][1],
                 "title": t.title,
                 "dependsOn": t.depends_on,
             }
             for t in tasks
         ],
-        "closed": closed,
-        "edges": edges,
-        "fingerprinted": fingerprinted,
-        "dryRun": writer.dry_run,
-        "planned": writer.planned,
-        "summary": {
-            "created": actions.count("created"),
-            "updated": actions.count("updated"),
-            "unchanged": actions.count("unchanged")
-            + actions.count("unchanged-started"),
-            "closed": len(closed),
-        },
+        "summary": {"tasks": len(tasks)},
     }
 
 
-def _resolve_span(
-    graph: Graph, epic_id: str, directory: Path, repos: list[str]
-) -> dict[str, tuple[str, str]]:
-    """Return each written Task of the span by its `S<i>-<local key>` name.
-
-    The Story of the repository at index i of the span is `S<i+1>`.
+def _judged_hash(title: str, text: str, priority: object) -> str:
+    """Return the judging fingerprint of a Task carrying this content.
 
     Args:
-        graph: The tracker graph.
-        epic_id: The Epic.
+        title: Its title.
+        text: Its description.
+        priority: Its priority as `bd` reports it.
+
+    Returns:
+        The fingerprint.
+    """
+    record = {
+        "id": "task",
+        "title": title,
+        "description": text,
+        "issue_type": "task",
+        "priority": priority,
+    }
+    return fingerprints([record], SCOPE_JUDGING).get("task", "")
+
+
+def write_task(  # noqa: PLR0913 - the caller's facts, one each
+    writer: Writer,
+    story_id: str,
+    directory: Path,
+    *,
+    slug: str,
+    repo: str,
+    key: str,
+    root: Path | None,
+) -> dict:
+    """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
+
+    The Task is created, or updated when it is open, keyed by its `elab_key`. Its blockers
+    are the Tasks of the Story it depends on, which are written before it. One `bd list`
+    reads the Story's Tasks; one `bd create`, or one `bd update` plus one `bd dep add`
+    and a `bd dep remove` per blocker it no longer depends on, writes it.
+
+    Args:
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        story_id: The Story the Task sits under.
+        directory: The Epic's working directory.
+        slug: The Story's repository slug.
+        repo: The Story's repository.
+        key: The Task's local key in `tasks-<slug>.json`, as `plan-tasks` returns it.
+        root: The project root spec paths are recorded relative to.
+
+    Returns:
+        The Task, what was done to it, its edge writes, and the blockers it carries
+        outside the Story.
+
+    Raises:
+        HierarchyError: The key names no Task, or a Task it depends on is not written.
+    """
+    tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
+    by_key = {t.key: t for t in tasks}
+    task = by_key.get(key)
+    if task is None:
+        msg = f"tasks-{slug}.json has no Task {key}"
+        raise HierarchyError(msg)
+    records = children(writer.repo, story_id, "task")
+    priority = {str(r["id"]): r.get("priority") for r in records}
+    keyed = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id))
+    blockers: list[str] = []
+    for dep in task.depends_on:
+        blocker = keyed.get(by_key[dep].elab_key or "")
+        if blocker is None:
+            msg = (
+                f"{key} depends on {dep} ({by_key[dep].elab_key}), which is not under "
+                f"{story_id}: a Task is written after the Tasks it depends on"
+            )
+            raise HierarchyError(msg)
+        blockers.append(blocker.id)
+    bead = keyed.get(task.elab_key or "")
+    text = task_text(task, root)
+    meta = task_metadata(task)
+    if task.sizes:
+        meta[JUDGED_HASH_KEY] = _judged_hash(
+            task.title, text, priority.get(bead.id) if bead else DEFAULT_PRIORITY
+        )
+    edges = {"added": 0, "removed": 0, "standing": 0}
+    outside: list[str] = []
+    if bead is None:
+        args = _create_args(
+            "task",
+            title=task.title,
+            text=text,
+            parent=story_id,
+            acceptance=task.acceptance,
+            notes=f"repoPath: {task.repo_path}" if task.repo_path else None,
+            metadata=meta,
+        )
+        if blockers:
+            args += ["--deps", ",".join(f"blocked-by:{b}" for b in blockers)]
+        task_id, action = writer.create(args, task.elab_key or key), "created"
+        edges["added"] = len(blockers)
+    elif bead.status != OPEN:
+        task_id, action = bead.id, "unchanged-started"
+    else:
+        task_id = bead.id
+        action = (
+            "updated" if _refresh(writer, bead, task.title, text, meta) else "unchanged"
+        )
+        story_ids = {b.id for b in keyed.values()}
+        add = [b for b in blockers if b not in bead.blockers]
+        drop = [b for b in bead.blockers if b in story_ids and b not in blockers]
+        if add:
+            lines = [
+                _json({"issue_id": bead.id, "depends_on_id": b, "type": "blocks"})
+                for b in add
+            ]
+            writer.bd(["dep", "add", "--file", "-"], "\n".join(lines) + "\n")
+        for b in drop:
+            writer.bd(["dep", "remove", bead.id, b])
+        edges = {
+            "added": len(add),
+            "removed": len(drop),
+            "standing": len(blockers) - len(add),
+        }
+        outside = [b for b in bead.blockers if b not in story_ids]
+    return {
+        "ok": True,
+        "story": story_id,
+        "task": {
+            "key": task.key,
+            "elabKey": task.elab_key,
+            "id": task_id,
+            "action": action,
+            "title": task.title,
+            "dependsOn": task.depends_on,
+            "outsideBlockers": outside,
+        },
+        "edges": edges,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+        "summary": {"key": task.key, "id": task_id, "action": action, **edges},
+    }
+
+
+def _span_tasks(
+    directory: Path, repos: list[str]
+) -> tuple[dict[str, str], list[tuple[str, str]], dict[str, str]]:
+    """Return every saved Task of the span by its `S<i>-<local key>` name.
+
+    The Story of the repository at index i of the span is `S<i+1>`. Reads the saved
+    documents only; runs no `bd` command.
+
+    Args:
         directory: The Epic's working directory.
         repos: The span, in its ruled order.
 
     Returns:
-        Name -> (Task id, Story id).
+        Name -> the Story's slug, the `(from, to)` edges within each Story by name, and
+        name -> the Task's `elab_key`.
     """
-    resolved: dict[str, tuple[str, str]] = {}
-    for index, (_repo, slug) in enumerate(repo_slugs(repos).items()):
-        story = _story_of(graph, epic_id, slug)
-        if story is None or not (directory / f"tasks-{slug}.json").is_file():
+    slug_of: dict[str, str] = {}
+    intra: list[tuple[str, str]] = []
+    elab: dict[str, str] = {}
+    for index, (repo, slug) in enumerate(repo_slugs(repos).items()):
+        if not (directory / f"tasks-{slug}.json").is_file():
             continue
-        existing = _keyed(_children(graph, story.id, "task"))
-        for t in _story_tasks(graph, story, directory, None, slug):
-            bead = existing.get(t.elab_key or "")
-            if bead is not None:
-                resolved[f"S{index + 1}-{t.key}"] = (bead.id, story.id)
-    return resolved
+        story = f"S{index + 1}"
+        for t in plan_tasks(directory, None, slug, repo):
+            name = f"{story}-{t.key}"
+            slug_of[name] = slug
+            elab[name] = t.elab_key or ""
+            intra += [(f"{story}-{d}", name) for d in t.depends_on]
+    return slug_of, intra, elab
 
 
 def _accept(
-    saved: list[dict], resolved: dict[str, tuple[str, str]]
+    saved: list[dict], slug_of: dict[str, str]
 ) -> tuple[list[dict], list[dict], set[tuple[str, str]]]:
     """Split the saved edges into accepted and rejected ones.
 
     Args:
         saved: The saved edges.
-        resolved: Name -> (Task id, Story id).
+        slug_of: Task name -> its Story's slug.
 
     Returns:
-        The accepted edges, the rejected ones with the reason, and `(blocker id,
-        blocked id)` for each accepted edge.
+        The accepted edges, the rejected ones with the reason, and `(from, to)` by name
+        for each accepted edge.
     """
     accepted: list[dict] = []
     rejected: list[dict] = []
     pairs: set[tuple[str, str]] = set()
     for e in saved:
         frm, to = str(e.get("from") or ""), str(e.get("to") or "")
-        a, b = resolved.get(frm), resolved.get(to)
+        a, b = slug_of.get(frm), slug_of.get(to)
         if a is None or b is None:
             why = "an end is not a Task of this run"
-        elif a[1] == b[1]:
+        elif a == b:
             why = "both ends are in the same Story"
-        elif (a[0], b[0]) in pairs:
+        elif (frm, to) in pairs:
             why = "a duplicate"
         else:
-            pairs.add((a[0], b[0]))
-            accepted.append({
-                "from": frm,
-                "to": to,
-                "kind": e.get("kind"),
-                "reason": e.get("reason"),
-            })
+            pairs.add((frm, to))
+            accepted.append(
+                {
+                    "from": frm,
+                    "to": to,
+                    "kind": e.get("kind"),
+                    "reason": e.get("reason"),
+                }
+            )
             continue
         rejected.append({"from": frm, "to": to, "reason": why})
     return accepted, rejected, pairs
 
 
-def write_task_edges(
-    graph: Graph, writer: Writer, epic_id: str, directory: Path, repos: list[str]
-) -> dict:
-    """Write the saved `blocks` edges between Tasks of different Stories of the Epic.
-
-    An open Task loses each blocker in another of the Epic's Stories that the saved edges
-    no longer name.
+def plan_task_edges(directory: Path, repos: list[str]) -> dict:
+    """Return the saved Task edges between Stories, checked; runs no `bd` command.
 
     Args:
-        graph: The tracker graph, read with descriptions.
-        writer: The tracker writer; a dry-run writer records the writes instead.
-        epic_id: The Epic.
         directory: The Epic's working directory.
         repos: The span, in its ruled order.
 
     Returns:
-        The edges written or standing, the edges rejected, and the counts.
+        The accepted edges, the rejected ones, and each blocked Task's blockers by name.
 
     Raises:
         HierarchyError: The mapper reported a cycle, or the edges close one over the
@@ -718,45 +696,102 @@ def write_task_edges(
     if not acyclic:
         msg = "task-deps.json: the mapper reported the edges between Stories imply a cycle"
         raise HierarchyError(msg)
-    accepted, rejected, pairs = _accept(
-        saved, _resolve_span(graph, epic_id, directory, repos)
-    )
+    slug_of, intra, _elab = _span_tasks(directory, repos)
+    accepted, rejected, pairs = _accept(saved, slug_of)
+    if build_order(sorted(slug_of), [*intra, *sorted(pairs)]) is None:
+        msg = "the saved edges between Stories close a cycle over the Task graph"
+        raise HierarchyError(msg)
+    blockers: dict[str, list[str]] = {}
+    for frm, to in sorted(pairs):
+        blockers.setdefault(to, []).append(frm)
+    return {
+        "ok": True,
+        "edges": accepted,
+        "rejected": rejected,
+        "blockers": blockers,
+        "summary": {"edges": len(accepted), "rejected": len(rejected)},
+    }
+
+
+def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
+    graph: Graph,
+    writer: Writer,
+    epic_id: str,
+    directory: Path,
+    repos: list[str],
+    name: str,
+) -> dict:
+    """Write ONE Task's `blocks` edges to Tasks in the Epic's other Stories.
+
+    The Task gains each saved blocker it lacks, in one `bd dep add`, and, when it is open,
+    loses each blocker in another of the Epic's Stories that the saved edges no longer name.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+        name: The Task, as `S<i>-<local key>`.
+
+    Returns:
+        The Task, its saved edges, and the edges added, removed and standing.
+
+    Raises:
+        HierarchyError: The saved edges are refused, or the Task or a blocker is not
+            written.
+    """
+    plan = plan_task_edges(directory, repos)
+    slug_of, _intra, elab = _span_tasks(directory, repos)
+
+    def bead_named(n: str) -> Bead:
+        story = _story_of(graph, epic_id, slug_of.get(n, ""))
+        bead = (
+            _keyed(_children(graph, story.id, "task")).get(elab.get(n, ""))
+            if story
+            else None
+        )
+        if bead is None:
+            msg = f"Task {n} ({elab.get(n)}) is not written under {epic_id}"
+            raise HierarchyError(msg)
+        return bead
+
+    task = bead_named(name)
+    wanted = [bead_named(n).id for n in plan["blockers"].get(name, [])]
     story_of = {
         bead.id: story.id
         for story in _children(graph, epic_id, "story")
         for bead in _keyed(_children(graph, story.id, "task")).values()
     }
-    intra = [
-        (blocker, task_id)
-        for task_id, story_id in story_of.items()
-        for blocker in graph.beads[task_id].blockers
-        if story_of.get(blocker) == story_id
-    ]
-    if build_order(sorted(story_of), [*intra, *sorted(pairs)]) is None:
-        msg = "the saved edges between Stories close a cycle over the Task graph"
-        raise HierarchyError(msg)
-    counts = {"added": 0, "removed": 0, "standing": 0}
-    for a, b in sorted(pairs):
-        if a in graph.beads[b].blockers:
-            counts["standing"] += 1
-            continue
-        writer.bd(["dep", "add", b, a, "--type", "blocks"])
-        counts["added"] += 1
-    for task_id, story_id in sorted(story_of.items()):
-        bead = graph.beads[task_id]
-        if bead.status != OPEN:
-            continue
-        for blocker in bead.blockers:
-            other = story_of.get(blocker)
-            if other and other != story_id and (blocker, task_id) not in pairs:
-                writer.bd(["dep", "remove", task_id, blocker])
-                counts["removed"] += 1
+    add = [b for b in wanted if b not in task.blockers]
+    drop = (
+        []
+        if task.status != OPEN
+        else [
+            b
+            for b in task.blockers
+            if story_of.get(b) not in {None, task.parent} and b not in wanted
+        ]
+    )
+    if add:
+        lines = [
+            _json({"issue_id": task.id, "depends_on_id": b, "type": "blocks"})
+            for b in add
+        ]
+        writer.bd(["dep", "add", "--file", "-"], "\n".join(lines) + "\n")
+    for b in drop:
+        writer.bd(["dep", "remove", task.id, b])
+    counts = {
+        "added": len(add),
+        "removed": len(drop),
+        "standing": len(wanted) - len(add),
+    }
     return {
         "ok": True,
         "epic": epic_id,
-        "edges": accepted,
-        "rejected": rejected,
+        "task": {"name": name, "id": task.id},
+        "edges": [e for e in plan["edges"] if e["to"] == name],
         "dryRun": writer.dry_run,
         "planned": writer.planned,
-        "summary": counts,
+        "summary": {"name": name, "id": task.id, **counts},
     }

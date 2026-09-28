@@ -16,8 +16,10 @@
     elaboration-finish   score an Epic and its Tasks; `--done` sets it done
     elaboration-release  clear a run's owner token from an Epic
     write-story          write one repository's Story under an Epic from its saved document
-    write-tasks          write one Story's Tasks, their edges and their size fingerprints
-    write-task-edges     write the saved Task edges between an Epic's Stories
+    plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
+    write-task           write ONE Task of a Story and its edges to the Story's Tasks
+    plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
+    write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
 and stdout carries only its `summary`. `--dry-run` computes, writes nothing, and returns the
@@ -47,7 +49,13 @@ from edgeset import (
     validate,
     withdraw_edge,
 )
-from beadwrite import write_story, write_task_edges, write_tasks
+from beadwrite import (
+    plan_story_tasks,
+    plan_task_edges,
+    write_story,
+    write_task,
+    write_task_edges,
+)
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from scoring import ScoringError, judge_input, plan, record, rubric, score
@@ -511,36 +519,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _dry_run_flag(wst)
 
-    wta = sub.add_parser(
-        "write-tasks",
-        help="write one Story's Tasks from its saved tasks-<slug>.json",
+    pta = sub.add_parser(
+        "plan-tasks",
+        help="one Story's saved Tasks in build order with their keys; runs no `bd` command",
         parents=[common],
     )
-    wta.add_argument("--epic", required=True, help="the Epic")
-    wta.add_argument(
-        "--dir", required=True, type=Path, help="the Epic's working directory"
+    wta = sub.add_parser(
+        "write-task",
+        help="write ONE Task of a Story from its saved tasks-<slug>.json",
+        parents=[common],
     )
-    wta.add_argument("--slug", required=True, help="the Story's repository slug")
+    wta.add_argument("--story", required=True, help="the Story the Task sits under")
     wta.add_argument(
-        "--project-root",
-        type=Path,
-        default=None,
-        help="the root spec references are recorded relative to",
+        "--key", required=True, help="the Task's key, as plan-tasks lists it"
     )
+    for task_parser in (pta, wta):
+        task_parser.add_argument(
+            "--dir", required=True, type=Path, help="the Epic's working directory"
+        )
+        task_parser.add_argument(
+            "--slug", required=True, help="the Story's repository slug"
+        )
+        task_parser.add_argument("--repo", required=True, help="the Story's repository")
+        task_parser.add_argument(
+            "--project-root",
+            type=Path,
+            default=None,
+            help="the root spec references are recorded relative to",
+        )
     _dry_run_flag(wta)
 
+    pte = sub.add_parser(
+        "plan-task-edges",
+        help="the saved task-deps.json edges between an Epic's Stories, checked; "
+        "runs no `bd` command",
+        parents=[common],
+    )
     wte = sub.add_parser(
         "write-task-edges",
-        help="write the saved task-deps.json edges between an Epic's Stories",
+        help="write ONE Task's saved task-deps.json edges to Tasks in other Stories",
         parents=[common],
     )
     wte.add_argument("--epic", required=True, help="the Epic")
-    wte.add_argument(
-        "--dir", required=True, type=Path, help="the Epic's working directory"
-    )
-    wte.add_argument(
-        "--repos", required=True, help="the span, comma-separated, in its ruled order"
-    )
+    wte.add_argument("--task", required=True, help="the Task, as S<i>-<local key>")
+    for edge_parser in (pte, wte):
+        edge_parser.add_argument(
+            "--dir", required=True, type=Path, help="the Epic's working directory"
+        )
+        edge_parser.add_argument(
+            "--repos",
+            required=True,
+            help="the span, comma-separated, in its ruled order",
+        )
     _dry_run_flag(wte)
 
     erl = sub.add_parser(
@@ -570,22 +600,35 @@ def run(args: argparse.Namespace) -> dict:
         GraphError: A write command's tracker was not read through `bd`.
     """
     command = args.command
-    writes = command in {"write-story", "write-tasks", "write-task-edges"}
-    descriptions = (
-        writes
-        or command
-        in {
-            "assess-plan",
-            "assess-context",
-            "score-plan",
-            "judge-input",
-            "elaboration-finish",
-        }
-        or getattr(args, "with_description", False)
-    )
+    head = {"command": command}
+    if command == "plan-tasks":
+        return head | plan_story_tasks(
+            args.dir, slug=args.slug, repo=args.repo, root=args.project_root
+        )
+    if command == "plan-task-edges":
+        return head | plan_task_edges(args.dir, split_ids(args.repos))
+    writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
+    if command == "write-task":
+        return head | write_task(
+            writer,
+            args.story,
+            args.dir,
+            slug=args.slug,
+            repo=args.repo,
+            key=args.key,
+            root=args.project_root,
+        )
+    writes = command in {"write-story", "write-task-edges"}
+    descriptions = command in {
+        "write-story",
+        "assess-plan",
+        "assess-context",
+        "score-plan",
+        "judge-input",
+        "elaboration-finish",
+    } or getattr(args, "with_description", False)
     graph = beadgraph.load(args.directory, with_description=descriptions)
     head = {"source": graph.source, "warnings": graph.warnings, "command": command}
-    writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if writes and graph.warnings:
         msg = f"the tracker was not read through bd, so nothing is written: {graph.warnings}"
         raise GraphError(msg)
@@ -599,19 +642,9 @@ def run(args: argparse.Namespace) -> dict:
             repo=args.repo,
             root=args.project_root,
         )
-    if command == "write-tasks":
-        return head | write_tasks(
-            graph,
-            writer,
-            args.epic,
-            args.dir,
-            slug=args.slug,
-            root=args.project_root,
-            reload=lambda: beadgraph.load(args.directory, with_description=True),
-        )
     if command == "write-task-edges":
         return head | write_task_edges(
-            graph, writer, args.epic, args.dir, split_ids(args.repos)
+            graph, writer, args.epic, args.dir, split_ids(args.repos), args.task
         )
     if command == "assess-plan":
         return head | assess_plan(

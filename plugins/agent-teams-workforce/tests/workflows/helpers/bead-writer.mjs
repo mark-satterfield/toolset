@@ -1,10 +1,13 @@
 // Stand-ins for the depscore.py runner sessions prd-to-spec and its minis dispatch.
 //
-// Each bead write is one runner session that runs one `depscore.py` command and returns its
-// JSON output: `beads:write-story` inside spec-authoring, `beads:write-tasks` inside
-// task-decomposition, `beads:write-task-edges` and `epic:finish` in prd-to-spec. A fixture
-// that expects a successful run answers them the way the command answers when every write
-// landed.
+// Each bead is written by the session that authors it: the Story author runs one
+// `depscore.py write-story` and returns its stdout as `write`; the decomposer runs
+// `plan-tasks` and one `write-task` per Task, and the cross-Story mapper runs
+// `plan-task-edges` and one `write-task-edges` per Task, each returning the commands' stdout
+// as `writes`. On a replay a runner session runs the same commands (`beads:write-story`,
+// `beads:write-tasks`, `beads:write-task-edges`). `epic:finish` is a runner session. A
+// fixture that expects a successful run answers them the way the commands answer when every
+// write landed.
 
 /** True for the depscore.py runner sessions: the bead writes and the Epic lifecycle. */
 export function isWriterCall(call) {
@@ -27,6 +30,48 @@ export const TEST_EPIC = Object.freeze({ id: 'bd-E1', key: 'E1', title: 'Test Ep
 /** The Epic's judged values, as the lifecycle check reads them off the Epic bead. */
 export const TEST_EPIC_VALUE = Object.freeze({ id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3, confidence: 80 })
 
+/** The stdout of one successful command, as its session records it. */
+const ran = (out) => ({ exitCode: 0, stdout: JSON.stringify(out) })
+
+/** The `plan-tasks` and `write-task` outputs for a Story's Tasks, as the writing session records them. */
+function taskWrites(slug, keys) {
+  return [
+    ran({ ok: true, slug, tasks: keys.map((key) => ({ key, elabKey: `task:${slug}:${key}`, title: key, dependsOn: [] })), summary: { tasks: keys.length } }),
+    ...keys.map((key) =>
+      ran({
+        ok: true,
+        story: `bd-${slug}`,
+        task: { key, elabKey: `task:${slug}:${key}`, id: `bd-${slug}-${key}`, action: 'created', title: key, dependsOn: [], outsideBlockers: [] },
+        edges: { added: 0, removed: 0, standing: 0 },
+        summary: { key, id: `bd-${slug}-${key}`, action: 'created', added: 0, removed: 0, standing: 0 },
+      })
+    ),
+  ]
+}
+
+/** The `plan-task-edges` and `write-task-edges` outputs for the mapper's edges, as the writing session records them. */
+function edgeWrites(edges) {
+  const blockers = {}
+  for (const e of edges) (blockers[e.to] = blockers[e.to] || []).push(e.from)
+  return [
+    ran({ ok: true, edges, rejected: [], blockers, summary: { edges: edges.length, rejected: 0 } }),
+    ...Object.keys(blockers).map((name) =>
+      ran({ ok: true, epic: TEST_EPIC.id, task: { name, id: `bd-${name}` }, edges: [], summary: { name, id: `bd-${name}`, added: blockers[name].length, removed: 0, standing: 0 } })
+    ),
+  ]
+}
+
+/** The `write-story` output for a Story, as the Story author records it. */
+function storyWrite(slug) {
+  return ran({
+    ok: true,
+    epic: TEST_EPIC.id,
+    story: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', title: `Story ${slug}`, description: 'd', decisionIds: [] },
+    existingTasks: [],
+    summary: { created: 1, updated: 0 },
+  })
+}
+
 /** The `--slug` value of a write command prompt. */
 function slugOf(call) {
   const m = /--slug '([^']*)'/.exec(String(call.prompt || ''))
@@ -41,7 +86,7 @@ function slugOf(call) {
  * @param {object} [opts]
  * @param {object} [opts.refusal] the start check's refusal, `{code, reason}`
  * @param {object[]} [opts.crossStoryEdges] the cross-Story Task edges the mapper returns
- * @param {string[]} [opts.taskKeys] the Task keys `beads:write-tasks` reports as created
+ * @param {string[]} [opts.taskKeys] the Task keys a replayed `beads:write-tasks` reports as created
  * @returns {(call: object) => object|null} the reply, or null when it is not one of those calls
  */
 export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys = ['T1'] } = {}) {
@@ -69,25 +114,8 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
         },
       }
     }
-    if (call.label === 'beads:write-tasks') {
-      const slug = slugOf(call)
-      return {
-        exitCode: 0,
-        output: {
-          ok: true,
-          epic: TEST_EPIC.id,
-          story: { id: `bd-${slug}`, elabKey: `story:${slug}` },
-          tasks: taskKeys.map((key) => ({ key, elabKey: `task:${slug}:${key}`, id: `bd-${slug}-${key}`, action: 'created', title: key, dependsOn: [] })),
-          closed: [],
-          edges: { added: 0, removed: 0, standing: 0 },
-          fingerprinted: taskKeys.length,
-          summary: { created: taskKeys.length, updated: 0, unchanged: 0, closed: 0 },
-        },
-      }
-    }
-    if (call.label === 'beads:write-task-edges') {
-      return { exitCode: 0, output: { ok: true, epic: TEST_EPIC.id, edges: [], rejected: [], summary: { added: 0, removed: 0, standing: 0 } } }
-    }
+    if (call.label === 'beads:write-tasks') return { writes: taskWrites(slugOf(call), taskKeys) }
+    if (call.label === 'beads:write-task-edges') return { writes: edgeWrites([]) }
     if (call.label === 'epic:finish') {
       const done = /\s--done(\s|$)/.test(String(call.prompt || ''))
       return {
@@ -101,9 +129,27 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
       }
     }
     if (call.label === 'epic:release') return { exitCode: 0, output: { ok: true, epic: TEST_EPIC.id, released: true } }
-    if (call.label === 'sequence:cross-story-tasks') return { edges: crossStoryEdges, acyclic: true }
+    if (call.label === 'sequence:cross-story-tasks') return { edges: crossStoryEdges, acyclic: true, writes: edgeWrites(crossStoryEdges) }
     return null
   }
+}
+
+/**
+ * Add the bead writes a test's own answer for an authoring session leaves out: the Story
+ * author's `write`, the decomposer's `writes`, the cross-Story mapper's `writes`.
+ *
+ * @param {object} call the agent call
+ * @param {any} out the test's answer
+ * @returns {any} the answer, with the writes its session records
+ */
+function withWrites(call, out) {
+  if (!out || typeof out !== 'object' || call.kind !== 'agent') return out
+  if (call.label === 'author:story-bead' && !out.write) return { ...out, write: storyWrite(slugOf(call)) }
+  if (call.label === 'decompose:sequence-and-score' && !out.writes && Array.isArray(out.tasks)) {
+    return { ...out, writes: taskWrites(slugOf(call), out.tasks.map((t) => t.key)) }
+  }
+  if (call.label === 'sequence:cross-story-tasks' && !out.writes) return { ...out, writes: edgeWrites(Array.isArray(out.edges) ? out.edges : []) }
+  return out
 }
 
 /**
@@ -117,6 +163,7 @@ export function withLifecycle(inner, opts) {
   return (call, calls) => {
     const answered = runner(call)
     if (answered) return answered
-    return inner ? inner(call, calls) : null
+    const out = inner ? inner(call, calls) : null
+    return withWrites(call, out)
   }
 }
