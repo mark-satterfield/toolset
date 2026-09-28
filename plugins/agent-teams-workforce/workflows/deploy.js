@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy (Gate 5). Authors a smoke suite (or reuses the one passed in), deploys the one repository the contract names to AWS dev, and runs the smoke tests against the deployed endpoints. Opens no pull request; never deploys to qa or prod.',
+    'Shared-tail mini — Deploy. Refuses a contract with no repoPath. The smoke-test-author writes a smoke suite (or the smokeTestFiles passed in are reused), then one cdk-stack-author session deploys the one repository the contract names to AWS dev and runs the smoke tests against the deployed endpoints. Returns { deployedToDev, smokePassed, smokeTestFiles, rollout, cdkSynthOk (= deployedToDev), deployedToProd: false, ledger }, with dispatchFailed when a session returned nothing. Opens no pull request; never deploys to qa or prod.',
   phases: [{ title: 'Deploy-readiness', detail: 'author smoke tests, deploy to AWS dev, run the smoke tests' }],
 }
 const dispatchFailures = []

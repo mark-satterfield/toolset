@@ -1,23 +1,15 @@
 export const meta = {
   name: 'tdd-refactor',
   description:
-    'Shared-tail mini — TDD Refactor. The code-refactoring-specialist refactors the code Green changed for clarity without changing behavior, keeps the suite green, and puts the tree back at its pre-refactor state when it cannot. Returns alreadySatisfied when nothing needed refactoring.',
+    'Shared-tail mini — TDD Refactor. The code-refactoring-specialist refactors the code Green changed for clarity without changing behavior, keeps the suite green, and puts the tree back at its pre-refactor state when it cannot. Returns alreadySatisfied when nothing needed refactoring or the refactor was reverted, and dispatchFailed when the specialist returned nothing.',
   phases: [{ title: 'Refactor', detail: 'behavior-preserving refactor; tests stay green' }],
 }
-const dispatchFailures = []
-// Returns the recorded dispatch failures of the named phases, or all of them when none is named.
-function dispatchDeaths(...phases) {
-  const named = phases.filter(Boolean)
-  if (!named.length) return dispatchFailures.slice()
-  const set = new Set(named)
-  return dispatchFailures.filter((f) => set.has(f.phase))
-}
+// settleAgent(prompt, opts): calls agent(); returns its result, or null when the agent returns nothing or fails deterministically. A transient API failure is retried with capped backoff until it clears.
 const DETERMINISTIC_ERROR_TEXT =
   /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
 const TRANSIENT_ERROR_TEXT =
   /overload|rate[ _-]?limit|too many requests|quota|token limit|capacity|throttl|timed? ?out|timeout|econnreset|econnrefused|etimedout|eai_again|socket hang up|network|temporarily unavailable|service unavailable|upstream connect|bad gateway/i
 const TRANSIENT_STATUS = new Set([408, 425, 429, 500, 502, 503, 504, 529])
-// Returns 'transient' for an API overload, rate limit or network error, otherwise 'deterministic'.
 function failureCause(err) {
   const e = err && typeof err === 'object' ? err : {}
   const text = String((e && e.message) || err || '')
@@ -26,61 +18,35 @@ function failureCause(err) {
     .map((v) => Number(v))
     .find((v) => Number.isFinite(v) && v >= 100 && v < 600)
   if (Number.isFinite(status) && TRANSIENT_STATUS.has(status)) return 'transient'
-  return TRANSIENT_ERROR_TEXT.test(text) ? 'transient' : 'deterministic'
+  if (TRANSIENT_ERROR_TEXT.test(text)) return 'transient'
+  return 'deterministic'
 }
-const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
-const settleSleep = (ms) => (SETTLE_CAN_WAIT ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
-// Returns the wait before retry `attempt`: 5s tripled per attempt, capped at 300s, scaled into [50%, 100%) by a hash of the dispatch.
 function transientWaitMs(name, attempt) {
-  const key = `${name}#${attempt}`
+  const scheduled = Math.min(300000, 5000 * Math.pow(3, Math.max(0, attempt - 1)))
   let h = 2166136261
+  const key = `${name}#${attempt}`
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
-  const scheduled = Math.min(300000, 5000 * Math.pow(3, attempt - 1))
   return Math.round(scheduled * (0.5 + 0.5 * ((h >>> 0) / 4294967296)))
 }
-// Calls agent() and returns its result. A transient failure is retried with backoff until it clears
-// (three attempts when no timer exists); any other failure returns null and is recorded in dispatchFailures.
+const SETTLE_CAN_WAIT = typeof setTimeout === 'function'
 async function settleAgent(prompt, opts) {
   const o = opts && typeof opts === 'object' ? opts : {}
-  const who = { agentType: o.agentType || null, label: o.label || null, phase: o.phase || null }
-  const name = who.label || who.agentType || 'agent'
-  const mine = []
-  let waitedMs = 0
+  const name = o.label || o.agentType || 'agent'
   for (let attempt = 1; ; attempt++) {
-    let out = null
     try {
-      out = await agent(prompt, o)
+      const out = await agent(prompt, o)
+      if (!out) log(`${name}: returned nothing`)
+      return out || null
     } catch (err) {
-      const message = String((err && err.message) || err)
-      const cause = failureCause(err)
-      const entry = {
-        ...who,
-        outcome: 'threw',
-        cause,
-        attempt,
-        message: message.slice(0, 300),
-        note: `${name} ended without a structured result (${cause}): ${message.slice(0, 160)}`,
+      const message = String((err && err.message) || err).slice(0, 300)
+      if (failureCause(err) !== 'transient' || (!SETTLE_CAN_WAIT && attempt >= 3)) {
+        log(`${name}: failed — ${message}`)
+        return null
       }
-      dispatchFailures.push(entry)
-      mine.push(entry)
-      log(entry.note)
-      if (cause !== 'transient' || (!SETTLE_CAN_WAIT && attempt >= 3)) return null
       const wait = transientWaitMs(name, attempt)
-      waitedMs += wait
-      log(`${name}: transient failure on attempt ${attempt}; retrying in ${Math.round(wait / 1000)}s (${Math.round(waitedMs / 1000)}s waited)`)
-      await settleSleep(wait)
-      continue
+      log(`${name}: transient failure on attempt ${attempt}, retrying in ${Math.round(wait / 1000)}s — ${message}`)
+      if (SETTLE_CAN_WAIT) await new Promise((resolve) => setTimeout(resolve, wait))
     }
-    if (out) {
-      for (const entry of mine) {
-        const at = dispatchFailures.indexOf(entry)
-        if (at >= 0) dispatchFailures.splice(at, 1)
-      }
-      return out
-    }
-    dispatchFailures.push({ ...who, outcome: 'skipped', cause: 'deterministic', attempt, message: null, note: `${name} returned nothing` })
-    log(`${name} returned nothing`)
-    return null
   }
 }
 

@@ -48,8 +48,7 @@ bd show <id> --json --readonly \
 
 A candidate with no stored `wsjf` has not been scored. It cannot be ranked, so it
 is left out of the ordering rather than given a fallback position — run
-`/agent-teams-workforce:wsjf-scoring` to score it. The readiness gate does not
-score and never has a number to backfill.
+`/agent-teams-workforce:wsjf-scoring` to score it. `task-ready` does not score.
 
 Order the scored candidates by `wsjf` descending. Break ties by putting a candidate
 whose status is `in_progress` first, then by bead id ascending.
@@ -85,8 +84,7 @@ bd show <id> --json || bd show <id>
 ```
 
 Pull out `id`, `title`, `description`, `issue_type`, `labels`, and the parent
-chain — you need `parentType` and `ancestorTypes` or a Task cannot be judged
-workable.
+chain, as `parentType` and `ancestorTypes`.
 
 ## 3. Route it
 
@@ -101,10 +99,6 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
   args: {bead: {id, type, labels, title, description,
                 parentType, ancestorTypes}}})
 ```
-
-No `humanInitiated` flag: development work on a Task under a Story under an Epic
-was authorised upstream when someone chose to elaborate that Epic. That is exactly
-what lets this run unattended.
 
 | action | What to do |
 | --- | --- |
@@ -121,9 +115,9 @@ and does not belong to this command.
 Do not provision a tree here. **The composite establishes its own worktree.** Its first
 phase is `workspace` (`workflows/workspace.js`): it fetches, fast-forwards, reuses an
 existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
-on a feature branch, verifies the result really is a linked worktree, and returns the path
-that becomes `contract.repoPath` for every writing phase. A run that cannot verify a
-worktree refuses to write.
+on a feature branch, and returns the path that becomes `contract.repoPath` for every
+writing phase. When it establishes no tree, or the tree is on a default branch or a detached
+HEAD, the run stops before any writing phase.
 
 Pass the contract's repository as it stands. The `workspace` phase recognises an existing
 linked worktree on a feature branch for this bead and reuses it, so a later run still finds
@@ -172,15 +166,14 @@ person has triaged a bug and decided it is a fix; the router never names it.)
 
 - the bead claimed, its WSJF score, and how many candidates were considered
 - which composite ran, and the router's reason
-- the phase it reached — it should reach **Deploy-to-dev** and smoke-check, not
-  stop at readiness
-- any gate that blocked it, with its feedback **verbatim**
+- the phase it reached — it should reach **Deploy-to-dev** and smoke-check
+- the `stage` and `headline` of a run that stopped, **verbatim**
 - the worktree and branch the work landed on
 - the PR URL, or the explicit reason there is none
 
 When the result carries `requiredHumanActions`, report each verbatim, run `bd label add <id> human`, and release the claim.
 
-If a gate blocks, report it and stop. Do not work around it, do not edit a
+If the run stops, report it and stop. Do not work around it, do not edit a
 workflow mid-run, and do not fall back to a subagent beside the pipeline. Leave
 the bead claimed so the next run resumes it in the same worktree. The composite's
 settle step has already pushed and PR'd whatever was written — report that PR URL.

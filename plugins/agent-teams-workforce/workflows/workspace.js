@@ -1,7 +1,7 @@
 export const meta = {
   name: 'workspace',
   description:
-    'Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). Returns { ok, repoPath, branch, reused, defaultBranch, verification, blocked }.',
+    'Establishes the git worktree the writing phases work in: reuses the tree already registered for the bead, or cuts one on a feature branch at <worktreeRoot>/<bead>-<repo> (a .worktrees/ directory beside the repository when no root is given). One provisioner session does the git work. Refuses (ok:false with the reason in blocked) when repoPath or beadId is missing, the provisioner returns nothing or ok=false, or the tree is on a default branch or a detached HEAD. Returns { ok, applicable, repoPath, branch, reused, isLinkedWorktree: true, independentlyVerified: true, defaultBranch, verification, blocked, ledger }.',
   phases: [{ title: 'Workspace', detail: 'provision or reuse the linked worktree the writing phases operate in' }],
 }
 

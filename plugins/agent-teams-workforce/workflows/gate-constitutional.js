@@ -1,7 +1,7 @@
 export const meta = {
   name: 'gate-constitutional',
   description:
-    'Constitutional phase gate. The phase-gate-enforcer judges the artifact against constitutive criteria and returns pass, loop or escalate. An artifact whose adversarial adjudication contradicts itself goes to the constitutional-agent instead, which rules each contradicted finding; the gate passes when no constitutive finding remains open and escalates otherwise.',
+    'Constitutional phase gate. The phase-gate-enforcer judges the artifact against constitutive criteria and returns pass, loop or escalate. An artifact whose adversarial adjudication contradicts itself goes to the constitutional-agent instead, which rules each contradicted finding; the gate passes when no constitutive finding remains open and escalates otherwise. A session that returns nothing escalates with dispatchFailed.',
   phases: [{ title: 'Gate (constitutional)', detail: 'one enforcer session, or one constitutional-agent ruling on a self-contradictory packet' }],
 }
 

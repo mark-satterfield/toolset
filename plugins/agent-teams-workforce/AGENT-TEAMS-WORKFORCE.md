@@ -2,13 +2,13 @@
 
 167 agents. 14 managers. Five task categories. Two pipelines, one upstream creation phase, one cross-cutting documentation team, and a governance tier that no one outranks. This is a complete software delivery lifecycle staffed entirely by bounded specialist agents — and the central design bet is that none of them is trusted very much.
 
-The doctrine behind the system is simple to state: the agent is not the unit of trust; the workflow is. Every agent has a narrow purpose, explicit decision boundaries, least-privilege tools, and exactly one task category — *plan*, *orchestrate*, *execute*, *approve*, or *test*. An agent that plans never decides. An agent that builds never approves its own output. An agent that finds a flaw never fixes it. Work moves between agents through explicit artifacts, and every phase ends at a gate with three possible outcomes: pass, loop with structured feedback, or escalate upstream.
+The doctrine behind the system is simple to state: the agent is not the unit of trust; the workflow is. Every agent has a narrow purpose, explicit decision boundaries, least-privilege tools, and exactly one task category — *plan*, *orchestrate*, *execute*, *approve*, or *test*. An agent that plans never decides. An agent that builds never approves its own output. An agent that finds a flaw never fixes it. Work moves between agents through explicit artifacts. Where a composite gates a phase, the gate has three possible outcomes: pass, loop with structured feedback, or escalate upstream.
 
 ## The workflows
 
-The system is a designed thing: two pipelines, a row of gates, a 161-agent doctrine of separated authorities. But doctrine is not what runs. What runs is a set of deterministic `Workflow` scripts that call agents as isolated subagents, judge their output at independent gates, and route the next step. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script calls a different agent — the gate — to make that call, and the script alone owns what happens next.
+The system is a designed thing: two pipelines, a row of gates, a 161-agent doctrine of separated authorities. But doctrine is not what runs. What runs is a set of deterministic `Workflow` scripts that call agents as isolated subagents and route the next step from the facts each phase returns. The agent is not the unit of trust; the script is. An agent produces work; it never decides whether its own work passed. The script reads the phase's reported facts (`greenConfirmed`, `deployedToDev`, `smokePassed`) and, in `bug-fix`, calls a separate gate agent; the script alone owns what happens next.
 
-The two pipelines are conceptual. Their realization is composable: small single-phase **minis** stitched into **composites**, with reusable gates between every phase and Documentation running as a parallel track. The doctrine below describes the shape; the build status below it says how much of that shape is wired.
+The two pipelines are conceptual. Their realization is composable: small single-phase **minis** stitched into **composites**, with Documentation running as a parallel track. The doctrine below describes the shape; the status section says how much of that shape is wired.
 
 ```mermaid
 graph TD
@@ -33,9 +33,9 @@ graph TD
 
 ### Governance — the separated authorities
 
-Above both pipelines sits a small set of standalone specialists, each holding exactly one authority. The `sdlc-pipeline-orchestrator` sequences phases and routes gate outcomes — workflow only, no evaluation. The `phase-gate-enforcer` referees the constitutive criteria at every gate that carries one: constitutive failures are hard stops; competitive criteria never reach it and are recorded as flags by the gate script. Novel conflicts neither can resolve go to the `constitutional-agent`, the appeals court that rules by consulting the system's founding objectives. The `advantage-evaluator` handles speculative execution with rollback, though no workflow currently dispatches it, and the `context-curator` guarantees constitutive constraints survive context compaction verbatim. No agent holds more than one authority.
+Above both pipelines sits a small set of standalone specialists, each holding exactly one authority. The `sdlc-pipeline-orchestrator` sequences phases and routes gate outcomes — workflow only, no evaluation. The `phase-gate-enforcer` referees the constitutive criteria at every gate that carries one: constitutive failures are hard stops; competitive criteria never reach it and are recorded as flags by the gate script. The `constitutional-agent` rules which reading of each contradicted finding stands when `gate-constitutional` receives a self-contradictory adversarial packet. The `advantage-evaluator` rules a gate whose loops are spent when `gate-enforce` runs in `exhaustion` mode, and the `context-curator` guarantees constitutive constraints survive context compaction verbatim. No agent holds more than one authority.
 
-The realized substrate matches this separation. Orchestration is native `Workflow` scripts — no external state machine. Beads holds work state (which bead is ready, which is in progress, what was decided). Agent Mail holds file reservations and build slots so concurrent work does not collide. The script calls the gate agent separately from the producing agent, which is what makes segregation of duties a property of the code rather than a request to a model.
+The realized substrate matches this separation. Orchestration is native `Workflow` scripts — no external state machine. Beads holds work state (which bead is ready, which is in progress, what was decided). Agent Mail holds file reservations and build slots so concurrent work does not collide. Where a gate runs, the script calls the gate agent separately from the producing agent, which makes segregation of duties a property of the code rather than a request to a model.
 
 ### Phase 0 — PRD Creation
 
@@ -43,26 +43,19 @@ Upstream of everything, the PRD Creation team turns raw stakeholder requests int
 
 ### PRD to Spec and Tasks
 
-Four phases, four gates, starting from a ready PRD that the run reads and never writes. Architecture Analysis fans out a proposals sub-team and a challenge sub-team in parallel, then fans everything into a dedicated Decider who produced none of the analysis; the `sad-maintainer` records its ruling in the arc42 SAD under one independent conformance review with at most one fix pass, and Gate 2 is constitutional. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and turns it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself. It is the CARRIER: the single point at which architecture-imposed obligations enter the build chain, since the Specs, Stories and Tasks are built from it and an obligation that does not reach it is built by nobody. Its requirements come from TWO sources and the relation to the PRD is NOT 1:1: the PRD requirements that need technical elaboration, and the obligations the architecture imposes that no PRD would ever state — uptime, latency, maintainability, security, failover, disaster recovery, infrastructure and CDK specifics, which events a new service must emit. It CITES the SAD rather than restating it, so a correct TRD is often very short; the `trd-author` writes it in one pass with no checker or decider, and Gate 2b checks only that a TRD exists. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria — through one independent review, a `spec-decider` ruling on every artifact the reviewer rejects, and one correction by the artifact's maker; Gate 3 checks that a Spec and its Story came back. Task Decomposition breaks each Spec into sized, dependency-mapped tasks in Beads format, checked in code — the graph acyclic, the build order derived from it, every task carrying its required fields — and Gate 4 checks the task set is non-empty; once every Story is decomposed, `task-dependency-mapper` derives the Task-to-Task edges that cross Stories.
+`prd-to-spec` runs its phases in sequence from a ready PRD that the run reads and never writes; no gate agent sits between them. An `architecture-decider` triage session decides whether the PRD needs an architecture decision; when it does, the `architecture` mini takes the analysis dimensions, collects proposals from the selected analysts, has the `architecture-decider` — who produced none of the analysis — rule, and has the `sad-maintainer` write the ruling into the arc42 SAD. `repo-scoping` then rules which repositories the work lands in. TRD Authoring takes the PRD (the *what*) and the ruled architecture decision, bounded by the current arc42 SAD, and turns it into the *how* — engineering requirements and interface/data obligations detailed enough to determine which specialties a build needs (persistence, integration, security, and so on), without yet specifying the build itself. It is the CARRIER: the single point at which architecture-imposed obligations enter the build chain, since the Specs, Stories and Tasks are built from it and an obligation that does not reach it is built by nobody. Its requirements come from TWO sources and the relation to the PRD is NOT 1:1: the PRD requirements that need technical elaboration, and the obligations the architecture imposes that no PRD would ever state — uptime, latency, maintainability, security, failover, disaster recovery, infrastructure and CDK specifics, which events a new service must emit. It CITES the SAD rather than restating it, so a correct TRD is often very short; the `trd-author` writes it in one pass. Spec Authoring turns the TRD into the *specifics* — one Spec per repository, scoped to keep boundaries clean, covering granular functionality, data flow, and testing criteria: per repository, `prd-reconciliation` inventories the material that already exists, then three maker sessions author the spec artifacts in parallel and one more writes the Story the Spec pairs with. Task Decomposition breaks each Spec into sized, dependency-mapped tasks in Beads format: the script makes repeated task keys unique (`K`, `K-2`, `K-3`, applying an edge on `K` to each), drops edges that do not join two known tasks, refuses a cyclic graph and derives the build order from the rest; a Story's decomposition counts only when it returns a non-empty task set. Once every Story is decomposed, `task-dependency-mapper` derives the Task-to-Task edges that cross Stories, and an acyclic result is recorded.
 
-`prd-to-spec` owns the Epic's elaboration lifecycle, and every door into elaboration passes through it. At its start it refuses, with a named reason, an Epic that is not open, carries no WSJF score, depends (through `tracks` edges, which record architecture dependencies: an architecture decision it rests on is established from that Epic's requirements first) on an Epic whose `elaboration_state` is not `done`, or is not `ready` or `in_progress` with no other owner; otherwise it marks the Epic `in_progress` under an owner token. Each Task inherits the Epic's value and time criticality, carries its own judged size, and is written with every WSJF component. Build dependencies are Task-to-Task `blocks` edges only — a Story only groups Tasks. When the Tasks are written, `depscore.py elaboration-finish` runs the WSJF arithmetic for the Epic: its size becomes the plain sum of its Tasks' sizes with its estimate kept, the Epic is rescored, its Tasks are rescored with RR-OE counted across Stories, and the Epic's `elaboration_state` is set to `done` when every part of it landed; the Epic itself stays open until its work is released.
+`prd-to-spec` owns the Epic's elaboration lifecycle, and every door into elaboration passes through it. At its start `depscore.py elaboration-start` refuses, with a named reason, an Epic that is not open, carries no WSJF score, depends (through `tracks` edges, which record architecture dependencies: an architecture decision it rests on is established from that Epic's requirements first) on an Epic whose `elaboration_state` is not `done`, or is not `ready` or `in_progress` with no other owner; otherwise it marks the Epic `in_progress` under an owner token. Each Task inherits the Epic's value and time criticality, carries its own judged size, and is written with every WSJF component. Build dependencies are Task-to-Task `blocks` edges only — a Story only groups Tasks. An architecture or TRD input the run cannot proceed from, or a ruling with no admissible option, holds the Epic for a person with one named command. `depscore.py elaboration-complete` writes the Stories and Tasks from the saved documents, then runs the WSJF arithmetic for the Epic: its size becomes the plain sum of its Tasks' sizes with its estimate kept, the Epic is rescored, its Tasks are rescored with RR-OE counted across Stories, and the Epic's `elaboration_state` is set to `done` when every part of it landed; the Epic itself stays open until its work is released.
 
 ```mermaid
 graph LR
-  P[Ready PRD] --> A[Architecture Analysis] --> G2{Gate 2 — constitutional}
-  G2 --> R[TRD Authoring] --> G2B{Gate 2b}
-  G2B --> S[Spec Authoring] --> G3{Gate 3}
-  G3 --> T[Task Decomposition] --> G4{Gate 4}
-
-  G2 -. loop .-> A
-  G2B -. loop .-> R
-  G3 -. loop .-> S
-  G4 -. loop .-> T
-
-  G2 -. escalate .-> P
-  G2B -. escalate .-> A
-  G3 -. escalate .-> R
-  G4 -. escalate .-> S
+  P[Ready PRD] --> L[elaboration-start]
+  L --> A[Architecture, when needed] --> RS[Repo Scoping]
+  RS --> R[TRD Authoring]
+  R --> S[Reconciliation + Spec Authoring, per repo]
+  S --> T[Task Decomposition, per Story]
+  T --> X[Cross-Story Task edges]
+  X --> E[elaboration-complete]
 ```
 
 ### From artifact to Beads issue
@@ -84,22 +77,21 @@ non-defect. Bugs never have parents. Both routers SKIP a bug and name triage;
 `bug-fix` is reachable only on demand, after a person has triaged one and decided
 it is a fix. See [A Bug is never routed](workflows/ROUTING.md#a-bug-is-never-routed).
 
-**Beads type gap.** `bd`'s installed type enum is `bug|feature|task|epic|chore|decision` — it has no native `story` or `whisp` type today. `story` is already assumed by the routers and `ROUTING.md`, and `task-decomposition.js`'s type enum (`feature|bug|task|chore|epic`) doesn't include it either. Registering `story` and `whisp` as custom types (`types.custom` in `.beads/config.yaml`) and updating those two scripts is required before this mapping is anything more than doctrine — tracked as follow-up, not done as part of this document.
+**Beads types.** `bd`'s installed type enum is `bug|feature|task|epic|chore|decision`; `story` and `whisp` are not native types; a project registers them as custom types (`types.custom` in `.beads/config.yaml`). The routers and `ROUTING.md` route `story`, and `task-decomposition.js` emits only type `task`.
 
 ### Spec to Deployment
 
-The build runs as a TDD red-green-refactor cycle staffed by three teams: Test Design writes failing tests from the spec's acceptance criteria (Gate 2a — Red confirmed), Implementation writes the minimum code to pass them (Gate 2b — Green confirmed), and Code Quality optimizes without breaking them (Gate 2c — still green). Integration Testing validates the event chain end to end (Gate 3, one attempt: failing suites send the code back through Green once, then integration runs again). Adversarial Validation then attacks the project's own code (injection, auth bypass, escalation, race conditions, CVEs, data exposure) with an adjudicator refereeing severity; Gate 4 counts the open constitutive findings in one attempt, and only a self-contradictory adjudication goes to the constitutional gate: security findings are constitutive, and implementers cannot downgrade them. A confirmed finding is fixed in the same run: the code goes back through Green with the adjudicated findings, then Integration and Adversarial run again over the fixed tree, up to `maxSecurityRepairs` (default 2) times before the run ends at the adversarial stage. Deployment closes with CDK authoring, pipelines, a single-repository rollout to dev, and readiness computed in code at Gate 5. Gates 2b, 2c, 3 and 4 are deterministic checks on fields the phases return; no agent judges them.
+`task-to-deploy` builds a Task in a worktree it establishes with `workspace`. Test Design writes failing tests from the Task's acceptance criteria (Red); Implementation writes the minimum code to pass them (Green), re-running Green up to `maxLoops` (default 2) until it reports `greenConfirmed`. When Green reports two contradictory tests or a test that cannot pass, Red re-authors that test, up to `maxEscalations` (default 2) times. Documentation runs beside the build from Green and is awaited before the deploy. `deploy` then rolls the single repository out to AWS dev and runs the smoke tests against the deployed endpoints; a smoke failure re-enters Green and redeploys, up to `maxDeployIterations` (default 3). The run succeeds when `deployedToDev` and `smokePassed` are both true, and `settle` lands the work in git on every exit path. `infra-change` has the same shape with an `infra-intent` front-end and Green accepted only when it reports `greenConfirmed` and `noRegressions`.
+
+`bug-fix` runs the full shared tail — Red, Green, Refactor, Integration, Adversarial, Deploy — with a gate after each phase; it is described under *How the pipeline is built* below.
 
 ```mermaid
 graph LR
-  TDD
-  subgraph TDD[TDD cycle]
-    RED[Red] --> G2A{Gate 2a} --> GRN[Green] --> G2B{Gate 2b} --> REF[Refactor] --> G2C{Gate 2c}
-  end
-
-  G2C --> INT[Integration] --> G3{Gate 3}
-  G3 --> ADV[Adversarial] --> G4{Gate 4}
-  G4 --> DEP[Deployment] --> G5{Gate 5 — readiness}
+  WS[Workspace] --> RED[Red] --> GRN[Green]
+  GRN --> DEP[Deploy to dev + smoke]
+  DEP -. smoke failure, bounded .-> GRN
+  DEP --> SET[Settle]
+  DOC[Documentation — parallel track] -.- GRN
 ```
 
 ### Cross-cutting — Documentation
@@ -110,17 +102,17 @@ The Documentation team runs alongside implementation and deployment rather than 
 
 The doctrine is realized as `Workflow` scripts of two kinds. A **leaf mini** is one phase: it calls `agent()` or `parallel()` and returns an artifact. It does no nesting — a mini that calls `workflow()` throws. A **composite** stitches minis together with `workflow('name', args)`, owns the loop and escalate control flow, and runs Documentation as a parallel track. Nesting is one level deep on purpose: composites stay flat, and a full feature run sequences composites from outside (a router, `/loop`, or an on-demand call), never by nesting one composite inside another.
 
-The build-and-deploy work is a **shared tail** — `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy` — reused by every composite that ends in deployed code. A composite differs from its siblings only in its **front-end**: the mini that turns a request into the contract the tail builds against. `bug-fix` uses `bug-triage`; the PRD-to-Spec composite uses a PRD-validation front-end; an infra change uses an intent front-end. The tail does not change.
+The build-and-deploy work is a **shared tail** of minis — `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy`. `task-to-deploy` and `infra-change` run `tdd-red`, `tdd-green` and `deploy`; `bug-fix` runs all six. A composite also has a **front-end**: the mini that turns a request into the contract the tail builds against. `bug-fix` uses `bug-triage`; `infra-change` uses `infra-intent`; `task-to-deploy` builds from the build contract on the Task.
 
-**Deploying and landing are different things, and they happen in that order.** `deploy` puts the code in the AWS dev environment and smoke-checks the deployed endpoints; it opens no pull request and requires none. Gate 5 asserts `deployedToDev` and `smokePassed` — a pull request is a migration proposed in GitHub and is never evidence that anything was deployed anywhere. The Deploy phase also ITERATES: a smoke failure against the deployed environment re-enters Green to fix, then redeploys and re-smokes, up to `maxDeployIterations` (default 3), because dev is where things are found out and the honest cycle is deploy, test, fix, deploy, test. Only afterwards does the composite's **Settle** step land the work in git — commit, push, PR — on every exit path. The two facts are reported separately and never conflated: `deployedToDev` for AWS truth, `settled` / `prUrl` / `landingStage` for git truth.
+**Deploying and landing are different things, and they happen in that order.** `deploy` puts the code in the AWS dev environment and smoke-checks the deployed endpoints; it opens no pull request and requires none. A run's deploy succeeds when `deployedToDev` and `smokePassed` are both true; a pull request is never evidence that anything was deployed. A smoke failure against the deployed environment re-enters Green, then redeploys and re-smokes, up to `maxDeployIterations` (default 3). Afterwards the composite's **Settle** step lands the work in git — commit, push, PR — on every exit path. The two facts are reported separately: `deployedToDev` for AWS, `settled` / `prUrl` / `landingStage` for git.
 
-The gate is itself a reusable mini. `gate-enforce` takes a phase artifact, a list of pass criteria, and a set of escalate targets, and returns one of three verdicts:
+The gate is itself a reusable mini, dispatched by `bug-fix`. `gate-enforce` takes a phase artifact, a list of pass criteria, deterministic checks, and a set of escalate targets, and returns one of three verdicts:
 
 - **pass** — every criterion holds. Non-blocking quality concerns ride along as flags, and so does every `competitive` criterion: it is recorded as a flag and never adjudicated. Deterministic checks are measured against the artifact first, and only `constitutive` criteria go to the `phase-gate-enforcer`; a gate with none passes on its checks with no agent session.
-- **loop** — a criterion failed and the cause is inside this phase. The gate returns feedback specific enough to retry without interpretation; the composite re-runs the phase, up to `maxLoops`. When the budget is spent, the composite decides in code: it fails while a deterministic check or constitutive criterion is still unmet, and proceeds with the flags recorded when only competitive criteria remain.
+- **loop** — a criterion failed and the cause is inside this phase. The gate returns feedback specific enough to retry without interpretation; the composite re-runs the phase, up to `maxLoops`. With `mode: 'exhaustion'`, `gate-enforce` asks the `advantage-evaluator` to rule a gate whose loops are spent: proceed, or one directed revision.
 - **escalate** — the failure originates upstream (the phase got bad inputs). The gate names which upstream phase it goes back to.
 
-`gate-constitutional` is the same shape with one rule removed: there is no pass-with-flag. A failed constitutive criterion can only loop or escalate, and a producing agent cannot downgrade a finding. A novel conflict between constitutive objectives the enforcer cannot resolve is handed to the `constitutional-agent` for a binding ruling. A self-contradictory adversarial packet skips the enforcer and goes to the `constitutional-agent` alone, which rules which reading of each contradicted finding stands. The gate is never the agent that produced the artifact under review — `gate-enforce` fails closed if invoked with neither criteria nor checks, refusing to green-light unjudged work. That is segregation of duties enforced by the script, not promised by a prompt.
+`gate-constitutional` is the same shape with no pass-with-flag: a failed constitutive criterion can only loop or escalate, and a producing agent cannot downgrade a finding. A self-contradictory adversarial packet skips the enforcer and goes to the `constitutional-agent`, which rules which reading of each contradicted finding stands; the gate passes when no constitutive finding remains open and escalates otherwise. The gate is never the agent that produced the artifact under review.
 
 The composite below is `bug-fix`. Triage runs first and is **not** gated — its read-only contract flows straight into the Red gateLoop, where Gate 2a is the first gate in the composite. Each subsequent phase passes through its own gate. Documentation runs as a parallel track from Green onward and is awaited before the deploy. The run ends at READY — it does not roll out to production.
 
@@ -149,15 +141,19 @@ graph TD
 
 | Script | Kind | Purpose |
 | --- | --- | --- |
-| `gate-enforce` | gate | Deterministic checks first; constitutive criteria to an independent judge, competitive ones recorded as flags; pass / loop / escalate; fails closed with neither criteria nor checks. |
-| `gate-constitutional` | gate | Hard-stop gate (PRD-to-Spec pipeline Gate 2; Spec-to-Deploy pipeline Gate 4 only when the adversarial packet is self-contradictory); no pass-with-flag; appeals novel conflicts to `constitutional-agent`. |
-| `tdd-red` | shared-tail mini | Writes the failing test that encodes the contract; confirms it fails for the intended reason. |
-| `tdd-green` | shared-tail mini | Writes the minimum production code to pass the failing test without regressing others. |
-| `tdd-refactor` | shared-tail mini | Behavior-preserving cleanup plus an independent correctness review — no self-approval. |
-| `integration` | shared-tail mini | Runs integration/E2E/contract suites and returns a top-level `passed` that Gate 3 checks directly. |
-| `adversarial` | shared-tail mini | Two concurrent attack lanes in test environments only; an adjudicator referees severity, and the script counts the open constitutive findings for G4. |
-| `deploy` | shared-tail mini | Validates CDK synth/drift, authors smoke tests, computes readiness from confirmed Green evidence and a valid CDK synth, and on a go ROLLS OUT to AWS dev and smoke-tests the deployed endpoints; a smoke failure re-enters Green, then redeploys and re-smokes, bounded. qa/prod rollout stays human-gated. |
+| `gate-enforce` | gate | Deterministic checks first; constitutive criteria to an independent judge, competitive ones recorded as flags; pass / loop / escalate; `exhaustion` mode asks the `advantage-evaluator` to rule a spent gate. |
+| `gate-constitutional` | gate | Hard-stop gate with no pass-with-flag; a self-contradictory adversarial packet goes to the `constitutional-agent`. |
+| `workspace` | mini | Reuses the worktree registered for the bead or cuts one on a feature branch; refuses a default branch or detached HEAD. |
+| `settle` | mini | Commits, pushes the branch and opens the pull request with the project PR command. |
+| `tdd-red` | shared-tail mini | Test writers derived from the contract surfaces (unit always) write failing tests that encode the acceptance criteria and confirm they fail. |
+| `tdd-green` | shared-tail mini | Writes the minimum production code to pass the failing tests without regressing others; reports `greenConfirmed`. |
+| `tdd-refactor` | shared-tail mini | One `code-refactoring-specialist` session refactors the changed code without changing behavior, keeps the suite green, and reverts the tree when it cannot. |
+| `integration` | shared-tail mini | Runs integration/E2E/contract suites and returns a top-level `passed`. |
+| `adversarial` | shared-tail mini | Attack lanes in test environments only; one adjudicator rules each confirmed finding, and the script returns the count of open constitutive findings as `constitutiveOpen`. |
+| `deploy` | shared-tail mini | Authors a smoke suite (or reuses the one passed in), rolls the one repository out to AWS dev, and runs the smoke tests against the deployed endpoints. Never deploys to qa or prod. |
 | `documentation` | cross-cutting mini | Parallel track: audits doc currency and updates stale docs in the worktree before the deploy, so Settle lands them with the code. |
+| `task-to-deploy` | composite | Workspace, Red, Green, Deploy-to-dev with bounded smoke-repair iterations, Settle. |
+| `infra-change` | composite | Workspace, `infra-intent`, Red, Green, Deploy-to-dev with bounded smoke-repair iterations, Settle. |
 | `bug-triage` | front-end | Read-only: turns a bug bead into a contract — reproduction, root cause, blast radius, acceptance criteria. |
 | `bug-fix` | composite | Stitches `bug-triage` onto the shared tail; owns loop/escalate; ends at readiness, not rollout. |
 
@@ -167,7 +163,7 @@ A composite runs two ways. **On-demand**, a single call drives one unit of work:
 
 ### Safety
 
-`deploy` stops at dev. It validates CDK synth, checks for drift, authors smoke tests, and computes a go/no-go from confirmed Green evidence and a valid CDK synth; on a go it deploys to the AWS dev environment and smoke-tests the deployed endpoints, because dev is where things are found out and deploying there is not human-gated. The pipeline does not run `cdk deploy` to qa or production. Outward-facing rollout is a separate, human-gated action triggered by a person, not by a composite. Adversarial agents operate in designated test environments only; the attack lanes are instructed never to touch production, and the composite ends with `deployedToProd: false`.
+`deploy` stops at dev. It authors smoke tests, deploys to the AWS dev environment and smoke-tests the deployed endpoints; deploying to dev is not human-gated. The pipeline does not run `cdk deploy` to qa or production. Outward-facing rollout is a separate, human-gated action triggered by a person, not by a composite. Adversarial agents operate in designated test environments only; the attack lanes are instructed never to touch production, and the composite ends with `deployedToProd: false`.
 
 ### Project configuration
 
@@ -179,8 +175,8 @@ The plugin knows nothing about the project it is installed in. Everything projec
 | `ATW_SAD_PATH` | The arc42 Software Architecture Document — a file or a directory of section files | Yes, for elaboration, dependency assessment and scoring | `sadPath` on `prd-to-spec` and `architecture`; `sadPath` on `dependency-assessment`, `seed-portfolio` and `wsjf-scoring`, which `/dependency-assessment`, `/seed-portfolio` and `/wsjf-scoring` refuse to dispatch without |
 | `ATW_PRD_DIR` | The directory PRDs live under | Yes, for `/start-prd` and for elaborating an Epic | read by `commands/start-prd.md`, `commands/work-bead.md` |
 | `ATW_CONTROL_REPO` | The root repository that holds the tracker; its beads `issue_prefix` is the project's issue prefix | Yes, for `polyrepo-beads` scripts | read by `skills/polyrepo-beads/scripts/*.sh` |
-| `ATW_PROJECT_ROOT` | The directory recorded artifact and spec paths are relative to | No — without it, no root-relative path is recorded on a bead | `projectRoot` on `prd-to-spec` and `task-to-deploy` |
-| `ATW_ARTIFACT_SCRIPT` | Absolute path of the phase-artifact recorder, run as `python3 <script> record <file> --epic <id> --phase <phase> --inputs <paths...>` and `python3 <script> plan <epic-id>` | No — without it, `prd-to-spec` saves no artifacts and `task-to-deploy` saves phase files unhashed | `artifactScript` on `prd-to-spec` and `task-to-deploy` |
+| `ATW_PROJECT_ROOT` | The directory recorded artifact and spec paths are relative to | No — without it, no root-relative path is recorded on a bead | `projectRoot` on `prd-to-spec` |
+| `ATW_ARTIFACT_SCRIPT` | Absolute path of the phase-artifact recorder, run as `python3 <script> record <file> --epic <id> --phase <phase> --inputs <paths...>` and `python3 <script> plan <epic-id>` | No — without it, `prd-to-spec` saves no artifacts | `artifactScript` on `prd-to-spec` |
 | `ATW_WORKTREE_ROOT` | The directory every agent-cut worktree is placed under | No — without it, a `.worktrees/` directory beside the repository | `worktreeRoot` on the build composites; read by the main-worktree hook |
 | `ATW_PRD_EPIC_SYNC` | Command that brings a PRD's Epic into line with the document: `<cmd> --only <slug> --apply` | No — without it, the PRD writer reports the slug needing sync | read by the `prd-writer` agent and skill |
 | `ATW_PRD_EPIC_VERIFY` | Command that checks one PRD against its Epic: `<cmd> <slug> [--apply]` | No | read by the `prd-writer` skill |
@@ -188,7 +184,7 @@ The plugin knows nothing about the project it is installed in. Everything projec
 
 ### Status
 
-The shared tail and the `bug-fix` composite are built: `tdd-red`, `tdd-green`, `tdd-refactor`, `integration`, `adversarial`, `deploy`, the `documentation` track, both gates, the `bug-triage` front-end, and the composite that stitches them. The PRD-to-Spec pipeline's front-ends and composites now exist as scripts too — `prd-validation`, `architecture`, `trd-authoring`, `spec-authoring`, `task-decomposition`, `infra-intent`, `prd-to-spec`, `task-to-deploy`, `infra-change` all reuse the same shared tail and gates and differ only in their front-ends. Only the `bug-fix` pilot has end-to-end behavior confirmed by a supervised run on one real bug bead; the rest are validated structurally against the `Workflow` tool contract but not yet run end to end. Separately, `story` and `whisp` are not yet registered Beads issue types (see *From artifact to Beads issue* above) — until they are, `task-decomposition.js` and the routers still operate on the old `feature|bug|task|chore|epic` set, so the doctrine described here is ahead of what the scripts actually emit.
+The shared tail, the `documentation` track, both gates, `workspace`, `settle`, the `bug-triage` front-end and the `bug-fix` composite exist as scripts. The elaboration scripts — `prd-to-spec`, `architecture`, `repo-scoping`, `trd-authoring`, `prd-reconciliation`, `spec-authoring`, `task-decomposition`, `prd-validation` — and the build composites `task-to-deploy` and `infra-change` (with its `infra-intent` front-end) exist as scripts too. `prd-validation` is not dispatched by `prd-to-spec` and runs only on its own.
 
 ## The doctrine, principles, and rules
 
@@ -311,9 +307,9 @@ Every unit of work belongs to exactly one of five categories:
 
 **Task atomicity is scoped.** A task is atomic for the receiving agent. A manager's atomic task may be "coordinate architecture analysis," which it decomposes by routing to workers; a worker's atomic task may be "analyze DynamoDB access patterns." The hierarchy handles decomposition.
 
-**Separation of analysis and decision.** Providing analysis is one task; making a decision from that analysis is a separate task; the two are performed by different agents. No agent both analyzes options and decides among them. In the PRD-to-Spec pipeline this separation is enforced in Architecture Analysis, where analysts propose and the `architecture-decider` rules. The arc42 SAD is a current-state record produced by an execute-category agent (`sad-maintainer`), never a decision artifact; one `sad-conformance-reviewer` review judges each edit, a reject gets one maintainer fix pass that is then accepted, and no SAD decider exists.
+**Separation of analysis and decision.** Providing analysis is one task; making a decision from that analysis is a separate task; the two are performed by different agents. No agent both analyzes options and decides among them. In the PRD-to-Spec pipeline this separation is enforced in Architecture Analysis, where analysts propose and the `architecture-decider` rules. The arc42 SAD is a current-state record produced by an execute-category agent (`sad-maintainer`), never a decision artifact; the `sad-maintainer` writes the ruling in one pass, resumed once when that pass returns nothing.
 
-**Gate iteration limits.** A gate runs its phase at most `maxLoops` times — default 2, one rework round — in every composite (`prd-to-spec`, `task-to-deploy`, `bug-fix`, `infra-change`), overridable per run with `args.maxLoops`. In the build composites (`task-to-deploy`, `bug-fix`, `infra-change`) only Red (Gate 2a) and Green (Gate 2b) take that budget; Gates 2c, 3, 4 and 5 make one attempt and never retry through the gate, because a retry would re-run a phase over an unchanged tree. A failed refactor (Gate 2c) is restored to the Green state and the run carries on as Green left it, since cleanup is not a correctness gate; only a failed restore stops the run. A failed integration run (Gate 3) sends the code back through Green once with the failures, then integration runs again — or, when the test environment was not ready, the suites simply run again. Re-running the attack wave (Gate 4) over the same code cannot close a finding, so a confirmed finding sends the code back through Green with the adjudicated findings and Integration and Adversarial run again over the fix; and every Gate 5 attempt is a real AWS rollout. When the budget is spent the composite decides in code: it fails while a deterministic check or constitutive criterion is unmet, and proceeds with the flags recorded when only competitive criteria remain. The other loops carry their own bounds: `maxDeployIterations` (default 3) deploy → smoke → Green-repair cycles, `maxSecurityRepairs` (default 2) Gate 4 finding → Green-repair cycles per run, `maxEscalations` (default 2) Green-to-Red escalations, and in `prd-to-spec` a run-wide attempt ceiling, `maxTotalAttempts`, of 2 + 2 per repository + 3 headroom. (The three gate outcomes — pass, loop, escalate — and the constitutive-versus-competitive distinction are described under *How the pipeline is built* above.)
+**Iteration limits.** Every loop in the composites is bounded by an argument with a default. `task-to-deploy`: `maxLoops` (default 2) Green attempts per Red, `maxEscalations` (default 2) Green-to-Red re-authors, `maxDeployIterations` (default 3) deploy → smoke → Green-repair cycles. `infra-change`: `maxDeployIterations` (default 3). `bug-fix`: `maxLoops` (default 2) runs of a gated phase, `maxEscalations`, `maxDeployIterations` (default 3) and `maxSecurityRepairs` (default 2) Gate 4 finding → Green-repair cycles. `prd-to-spec` runs each phase once. (The three gate outcomes — pass, loop, escalate — and the constitutive-versus-competitive distinction are described under *How the pipeline is built* above.)
 
 ### Workforce creation rules
 
@@ -323,7 +319,7 @@ Every unit of work belongs to exactly one of five categories:
 
 **Rule 3 — a defined output.** Every worker agent produces a defined output (recommendation memo, architecture option analysis, OpenAPI fragment, documentation draft, schema proposal, implementation patch, review findings, test plan, risk register entry, handoff packet). If an agent produces no defined output, its role should be questioned.
 
-**Rule 4 — independent review only where its verdict can change what gets built.** An output gets an independent reviewer when that reviewer's verdict can change what gets built — send the artifact back, stop the run, or change what the next phase receives. It never gets a second review of a question already decided: a property a deterministic check measures is decided by the check, and no agent re-judges it; a question an earlier reviewer ruled on is not reviewed again downstream. An output no verdict could change has no reviewer, and is still not approved by its author — it is judged where it is used. So the `trd-author` writes the TRD in one pass with no checker, because spec authoring consumes it and the spec review is where a TRD defect surfaces; the Documentation writers have no accuracy reviewer, because nothing that gets built depends on the docs; each SAD edit gets one `sad-conformance-reviewer` review and at most one fix pass; Gates 2b, 2c, 3 and 5 are deterministic checks on fields the phases return; and Gate 4 counts the adjudicator's open constitutive findings rather than judging them again. A review whose verdict nothing reads, or that repeats a decided question, is removed rather than kept as advisory (Rule 12).
+**Rule 4 — independent review only where its verdict can change what gets built.** An output gets an independent reviewer when that reviewer's verdict can change what gets built — send the artifact back, stop the run, or change what the next phase receives. It never gets a second review of a question already decided: a property a deterministic check measures is decided by the check, and no agent re-judges it; a question an earlier reviewer ruled on is not reviewed again downstream. An output no verdict could change has no reviewer, and is still not approved by its author — it is judged where it is used. So the `trd-author` writes the TRD in one pass with no checker; the spec makers author with no reviewer; the Documentation writers have no accuracy reviewer; the `sad-maintainer` writes the SAD edit with no reviewer; `task-to-deploy` and `infra-change` decide each phase from the facts it returns (`greenConfirmed`, `deployedToDev`, `smokePassed`) with no gate agent; and Gate 4 in `bug-fix` counts the adjudicator's open constitutive findings rather than judging them again. A review whose verdict nothing reads, or that repeats a decided question, does not exist (Rule 12).
 
 **Rule 5 — agents must state assumptions.** Every substantive output includes Assumptions, Open Questions, Constraints Followed, Constraints at Risk, and Scope Exceptions. This protects against silent ambiguity resolution.
 
@@ -340,8 +336,6 @@ Every unit of work belongs to exactly one of five categories:
 **Rule 11 — consolidation must preserve control boundaries.** Agents must not be consolidated if doing so removes an independent review Rule 4 requires, separation of concerns, conflict visibility, authority boundaries, least-privilege tool access, or meaningful escalation points. It may be reasonable to consolidate API Documentation Writer and API Example Generator; it is not reasonable to consolidate API Contract Designer and API Contract Reviewer.
 
 **Rule 12 — contracts are consumer-defined.** A consumer declares the schema it needs; a producer produces to that schema. A producer never invents a requirement and never decides unilaterally what must be produced. Every required field, section, or artifact must therefore **name the consumer that reads it**, in the form `Consumed by: <workflow/agent/script> — <what it does with it>`. If nothing downstream consumes it, **the requirement does not exist** — it is deleted, not softened to optional or advisory. Advisory ceremony still costs the reader's attention and still shows up as a finding, so demoting an unread requirement does not retire it. The same test governs gate criteria: a criterion asserts a property, and something downstream must depend on that property holding. A criterion no step reads, checks, or branches on is ceremony, not rigor.
-
-The rule is written down because the inversion happened here and was expensive. `skills/task-review/SKILL.md` (then named `issue-review`) demanded of every work item two dependency graphs, a three-environment deployment sequence (Local / AWS staging / Production), Serenity BDD scenarios, and a test plan. No workflow, gate, agent, or script anywhere in the plugin read any of that off a work item — meanwhile `workflows/deploy.js` derives its own rollout and targets exactly one environment (`const targetEnv = (a.env || c.env || 'dev')`, its header stating that qa/prod "never happens from here"), and `workflows/tdd-red.js` writes the tests from the acceptance criteria. Every one of those sections was a producer's invention with no consumer, and the rubric held 106 beads blocked for two months.
 
 ### Team and specialist charters
 
@@ -473,7 +467,7 @@ Each delivery team below is an Execution Team: a Manager lead plus Workers. The 
 
 ### Governance — Standalone Specialists
 
-Cross-workflow separated authorities: workflow orchestration, gate refereeing, constitutional appeals, advantage evaluation, context integrity. 5 agents.
+Cross-workflow separated authorities: workflow orchestration, gate refereeing, constitutional rulings, advantage evaluation, context integrity. 5 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -514,7 +508,7 @@ Not dispatched by `prd-to-spec`, which starts from a ready PRD; the `prd-validat
 
 ### Architecture Analysis — Execution Team
 
-PRD-to-Spec pipeline, phase 2 — proposals and challenges fan in to a Decider; feeds the constitutional Gate 2. 23 agents.
+PRD-to-Spec pipeline — the `architecture` mini dispatches the analysts the ruled dimensions select, and their proposals fan in to the `architecture-decider`; the `sad-maintainer` records the ruling. 23 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -543,7 +537,7 @@ PRD-to-Spec pipeline, phase 2 — proposals and challenges fan in to a Decider; 
 
 ### TRD Authoring — Execution Team
 
-PRD-to-Spec pipeline, phase 2b — the carrier that takes the architecture's obligations into the build chain, bounded by the current arc42 SAD, holding both the PRD requirements needing technical elaboration and the obligations the architecture imposes with no PRD parent; it cites the SAD rather than restating it, so the document is terse by design; one `trd-author` pass, with no checker or decider, feeds Gate 2b, which checks only that a TRD exists. 6 agents.
+PRD-to-Spec pipeline — the carrier that takes the architecture's obligations into the build chain, bounded by the current arc42 SAD, holding both the PRD requirements needing technical elaboration and the obligations the architecture imposes with no PRD parent; it cites the SAD rather than restating it. `trd-authoring` dispatches `sad-source-extractor` sessions and one `trd-author` pass; no workflow dispatches `trd-authoring-lead`, `trd-validator`, `prd-trd-traceability-verifier` or `trd-decider`. 6 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -556,7 +550,7 @@ PRD-to-Spec pipeline, phase 2b — the carrier that takes the architecture's obl
 
 ### Spec Authoring — Execution Team
 
-PRD-to-Spec pipeline, phase 3 — makers author the feature specification, one Spec per repository; one independent review judges it, the `spec-decider` rules on every rejected artifact, and its maker corrects it once; feeds Gate 3. 14 agents.
+PRD-to-Spec pipeline — one Spec per repository: `spec-authoring` dispatches `api-specification-author`, `data-model-specification-author` and `acceptance-criteria-writer` in parallel, then `user-story-writer` for the Story. No workflow dispatches `spec-authoring-lead` or the spec reviewers; `prd-creation` dispatches `prd-alignment-verifier` and the `spec-decider` on its PRD draft. 14 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -575,7 +569,7 @@ PRD-to-Spec pipeline, phase 3 — makers author the feature specification, one S
 
 ### Task Decomposition — Execution Team
 
-PRD-to-Spec pipeline, phase 4 — decomposes a Spec's Story into sized, dependency-mapped Beads tasks, and derives the Task dependencies that cross Stories; feeds Gate 4. 8 agents.
+PRD-to-Spec pipeline — `task-decomposer` decomposes a Spec's Story into sized, dependency-mapped Beads tasks, and `task-dependency-mapper` derives the Task dependencies that cross Stories. 8 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -600,7 +594,7 @@ No workflow dispatches `spec-freshness-lead`, `spec-currency-validator` or `depe
 
 ### Test Design — Execution Team
 
-Spec-to-Deploy pipeline, TDD Red — failing tests define done before implementation; feeds Gate 2a. 16 agents.
+Spec-to-Deploy pipeline, TDD Red — failing tests define done before implementation. `tdd-red` dispatches `tdd-unit-test-generator` and the writers the contract surfaces select. 16 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -623,7 +617,7 @@ Spec-to-Deploy pipeline, TDD Red — failing tests define done before implementa
 
 ### Implementation — Execution Team
 
-Spec-to-Deploy pipeline, TDD Green — minimum code to pass the failing tests; feeds Gate 2b. 29 agents.
+Spec-to-Deploy pipeline, TDD Green — minimum code to pass the failing tests. 29 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -659,7 +653,7 @@ Spec-to-Deploy pipeline, TDD Green — minimum code to pass the failing tests; f
 
 ### Code Quality — Execution Team
 
-Spec-to-Deploy pipeline, TDD Refactor — optimize without breaking tests; feeds Gate 2c. 9 agents. `tdd-refactor` dispatches `complexity-analyzer`, which also names the optimizers to run and their order (from `lambda-performance-optimizer`, `dynamodb-cost-optimizer`, `frontend-performance-optimizer` and `code-style-and-linting-enforcer`); then `code-refactoring-specialist`, the named optimizers one at a time, and `code-correctness-reviewer`. No workflow dispatches `code-quality-lead` or `accessibility-validator`; the validator reports and never edits, so it is not a refactor optimizer.
+Spec-to-Deploy pipeline, TDD Refactor, run by `bug-fix` — refactor without breaking tests; feeds Gate 2c. 9 agents. `tdd-refactor` dispatches one `code-refactoring-specialist` session. No workflow dispatches `code-quality-lead`, `complexity-analyzer`, the optimizers, `code-correctness-reviewer` or `accessibility-validator`.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -675,7 +669,7 @@ Spec-to-Deploy pipeline, TDD Refactor — optimize without breaking tests; feeds
 
 ### Integration Testing — Execution Team
 
-Spec-to-Deploy pipeline, phase 5 — integration, E2E, and contract runs across the event chain; feeds Gate 3. 9 agents.
+Spec-to-Deploy pipeline, run by `bug-fix` — integration, E2E, and contract runs across the event chain; feeds Gate 3. 9 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -691,7 +685,7 @@ Spec-to-Deploy pipeline, phase 5 — integration, E2E, and contract runs across 
 
 ### Adversarial Validation — Execution Team
 
-Spec-to-Deploy pipeline, phase 6 — authorized adversarial attack on the project's own code; feeds Gate 4, which counts the open constitutive findings in code. 11 agents.
+Spec-to-Deploy pipeline, run by `bug-fix` — authorized adversarial attack on the project's own code; feeds Gate 4, which counts the open constitutive findings in code. 11 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -709,7 +703,7 @@ Spec-to-Deploy pipeline, phase 6 — authorized adversarial attack on the projec
 
 ### Deployment — Execution Team
 
-Spec-to-Deploy pipeline, phase 7 — CDK, pipeline, rollout, readiness; feeds Gate 5. 11 agents.
+Spec-to-Deploy pipeline — `deploy` dispatches `smoke-test-author` and `cdk-stack-author`, which rolls out to AWS dev and runs the smoke tests; `workspace` and `settle` dispatch `github-actions-pipeline-implementer` to provision and land the worktree. 11 agents.
 
 | Agent | Role | Character Types |
 | --- | --- | --- |
@@ -747,7 +741,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `sdlc-pipeline-orchestrator` | Governance | Standalone Specialists | Specialist | Delegator, Orchestrator | orchestrate | Top-level workflow-only orchestrator for both SDLC pipelines (PRD-to-Spec and Spec-to-Deployment) | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage, Bash |
 | `phase-gate-enforcer` | Governance | Standalone Specialists | Specialist | Validator, Decider (Referee) | approve | Referee for every phase gate in both workflows | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
-| `constitutional-agent` | Governance | Standalone Specialists | Specialist | Decider | approve | Appeals court for novel conflicts the Phase Gate Enforcer cannot resolve from existing rules | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
+| `constitutional-agent` | Governance | Standalone Specialists | Specialist | Decider | approve | Rules which reading of each contradicted finding stands when `gate-constitutional` receives a self-contradictory adversarial packet | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
 | `advantage-evaluator` | Governance | Standalone Specialists | Specialist | Validator, Decider | approve | Evaluates competitive (non-constitutive) conflicts via speculative execution with rollback: lets the pipeline proceed under a flag, observes the outcome, then commits or reverts | subagent-contract, validation-protocol | Read, Glob, Grep, Write |
 | `context-curator` | Governance | Standalone Specialists | Specialist | Executor | execute | Owns context integrity across the workforce: assembles role-specific context packets per the least-context principle, and guarantees constitutive constraints survive context compaction verbatim — they are never summarized away | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep |
 | `prd-creation-lead` | PRD Creation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes stakeholder requests through intake, persona, OKR, and PRD drafting work, then hands the draft PRD to prd-validation-lead | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
@@ -804,7 +798,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `event-schema-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates event schemas conform to the event API envelope format. | subagent-contract, validation-protocol, aws-serverless-eda | Read, Glob, Grep, Bash, Write |
 | `dynamodb-schema-access-pattern-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates the specified access patterns are implementable and performant. | subagent-contract, validation-protocol, dynamodb | Read, Glob, Grep, Bash, Write |
 | `graphql-schema-reviewer` | Spec Authoring | Execution Team | Worker | Validator | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. | subagent-contract, validation-protocol, api-design-reviewer | Read, Glob, Grep, Bash, Write |
-| `spec-decider` | Spec Authoring | Execution Team | Worker | Decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
+| `spec-decider` | Spec Authoring | Execution Team | Worker | Decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back. Dispatched by `prd-creation` on a PRD maker-checker deadlock; `spec-authoring` does not dispatch it. | subagent-contract, validation-protocol, senior-architect, cove-prompt-design | Read, Glob, Grep, Write |
 | `task-decomposition-lead` | Task Decomposition | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `task-decomposer` | Task Decomposition | Execution Team | Worker | Executor | execute | Breaks the spec into tasks: one chassis extension, one endpoint, or one event handler per task. | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |
 | `task-dependency-mapper` | Task Decomposition | Execution Team | Worker | Executor | execute | Derives the Task-to-Task build dependencies that cross Stories of one Epic | subagent-contract, validation-protocol | Read, Write, Edit, Glob, Grep, Bash |
@@ -824,7 +818,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `playwright-e2e-web-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes Playwright end-to-end web tests for UI and API flows. | subagent-contract, validation-protocol, senior-qa, a11y-audit | Read, Write, Edit, Glob, Grep, Bash |
 | `performance-benchmark-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes performance benchmarks with explicit budgets derived from the NFRs. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
 | `test-plan-strategy-reviewer` | Test Design | Execution Team | Worker | Validator | test | Reviews the test plan strategy: pyramid balance, risk coverage, environment needs. | subagent-contract, validation-protocol, senior-qa | Read, Glob, Grep, Bash, Write |
-| `test-coverage-gap-reviewer` | Test Design | Execution Team | Worker | Validator | test | Before Red authors anything, names which acceptance criteria existing tests already encode and which are gaps; when none is a gap, runs only those tests and rules red / already-satisfied / not-encoded. Dispatched by tdd-red. | subagent-contract, validation-protocol, senior-qa | Read, Glob, Grep, Bash, Write |
+| `test-coverage-gap-reviewer` | Test Design | Execution Team | Worker | Validator | test | Before Red authors anything, names which acceptance criteria existing tests already encode and which are gaps; when none is a gap, runs only those tests and rules red / already-satisfied / not-encoded. No workflow dispatches it. | subagent-contract, validation-protocol, senior-qa | Read, Glob, Grep, Bash, Write |
 | `xcuitest-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing XCUITest suites for iOS features from spec acceptance criteria. | subagent-contract, validation-protocol, senior-qa, tdd-guide | Read, Write, Edit, Glob, Grep, Bash |
 | `espresso-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing Espresso test suites for Android features from spec acceptance criteria. | subagent-contract, validation-protocol, senior-qa, tdd-guide | Read, Write, Edit, Glob, Grep, Bash |
 | `mobile-e2e-test-writer` | Test Design | Execution Team | Worker | Executor (test author) | test | Writes failing Detox and Maestro end-to-end tests for React Native and cross-platform mobile flows. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |
@@ -861,13 +855,13 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `payments-integration-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements payment features against Stripe: checkout sessions, webhook handlers, subscription lifecycle, refunds, and idempotent payment operations | subagent-contract, validation-protocol, stripe-integration-expert, secrets-manager | Read, Write, Edit, Glob, Grep, Bash |
 | `email-notification-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements transactional and notification email features: responsive email templates, rendering pipelines, delivery via AWS messaging services, bounce and complaint handling. | subagent-contract, validation-protocol, email-template-builder, sns | Read, Write, Edit, Glob, Grep, Bash |
 | `mcp-server-implementer` | Implementation | Execution Team | Worker | Executor | execute | Implements MCP servers hosted on AWS, including AgentCore Gateway-fronted deployments: tool definitions and schemas, authorization, transport configuration, and the CDK wiring to deploy them. | subagent-contract, validation-protocol, mcp-server-builder, aws-agentic-ai, aws-mcp-setup | Read, Write, Edit, Glob, Grep, Bash |
-| `code-quality-lead` | Code Quality | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes refactor work, verifies tests stay green after every change, and reports to Gate 2c. No workflow currently dispatches it: tdd-refactor takes the optimizer selection from complexity-analyzer. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
-| `complexity-analyzer` | Code Quality | Execution Team | Worker | Advisor | plan | Analyzes complexity and duplication | subagent-contract, tech-debt-tracker | Read, Glob, Grep, Write |
+| `code-quality-lead` | Code Quality | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes refactor work, verifies tests stay green after every change, and reports to Gate 2c. No workflow dispatches it. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
+| `complexity-analyzer` | Code Quality | Execution Team | Worker | Advisor | plan | Analyzes complexity and duplication. No workflow dispatches it. | subagent-contract, tech-debt-tracker | Read, Glob, Grep, Write |
 | `code-refactoring-specialist` | Code Quality | Execution Team | Worker | Executor | execute | Restructures existing code for clarity and cohesion without changing behavior. | subagent-contract, validation-protocol, code-reviewer | Read, Write, Edit, Glob, Grep, Bash |
 | `lambda-performance-optimizer` | Code Quality | Execution Team | Worker | Executor | execute | Optimizes Lambda cold start, memory sizing, and hot paths without breaking tests. | subagent-contract, validation-protocol, lambda | Read, Write, Edit, Glob, Grep, Bash |
 | `dynamodb-cost-optimizer` | Code Quality | Execution Team | Worker | Executor | execute | Optimizes DynamoDB capacity, access patterns, and cost without changing behavior. | subagent-contract, validation-protocol, dynamodb, aws-cost-operations | Read, Write, Edit, Glob, Grep, Bash |
 | `code-style-and-linting-enforcer` | Code Quality | Execution Team | Worker | Executor | execute | Runs the project linters and applies formatting and style fixes. | subagent-contract, validation-protocol, code-reviewer | Read, Write, Edit, Glob, Grep, Bash |
-| `code-correctness-reviewer` | Code Quality | Execution Team | Worker | Validator | test | Reviews refactored code for correctness regressions and behavioral drift. | subagent-contract, validation-protocol, code-reviewer | Read, Glob, Grep, Bash, Write |
+| `code-correctness-reviewer` | Code Quality | Execution Team | Worker | Validator | test | Reviews refactored code for correctness regressions and behavioral drift. No workflow dispatches it. | subagent-contract, validation-protocol, code-reviewer | Read, Glob, Grep, Bash, Write |
 | `frontend-performance-optimizer` | Code Quality | Execution Team | Worker | Executor | execute | Optimizes frontend performance without breaking tests: bundle size, rendering paths, Core Web Vitals. | subagent-contract, validation-protocol, senior-frontend | Read, Write, Edit, Glob, Grep, Bash |
 | `accessibility-validator` | Code Quality | Execution Team | Worker | Validator | test | Validates UI changes against WCAG 2.2 Level A and AA: automated scans plus heuristics for contrast, keyboard navigation, ARIA semantics, focus management, and screen-reader flows. No workflow currently dispatches it; it reports and never edits, so it is not a refactor optimizer | subagent-contract, validation-protocol, a11y-audit, senior-frontend | Read, Glob, Grep, Bash, Write |
 | `integration-testing-lead` | Integration Testing | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes test runs, aggregates results, reports to Gate 3, and routes escalations to the target the Root Cause Analyst identifies. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
@@ -876,7 +870,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `data-consistency-checker` | Integration Testing | Execution Team | Worker | Validator | test | Verifies data consistency across services and stores after test runs. | subagent-contract, validation-protocol, dynamodb | Read, Glob, Grep, Bash, Write |
 | `cross-service-contract-tester` | Integration Testing | Execution Team | Worker | Validator | test | Runs contract tests across service and repository boundaries. | subagent-contract, validation-protocol, api-test-suite-builder | Read, Glob, Grep, Bash, Write |
 | `test-environment-orchestrator` | Integration Testing | Execution Team | Worker | Executor | execute | Provisions and resets the integration test environments. | subagent-contract, validation-protocol, senior-devops, aws-mcp-setup | Read, Write, Edit, Glob, Grep, Bash |
-| `root-cause-analyst` | Integration Testing | Execution Team | Worker | Advisor | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step; integration no longer dispatches it. | subagent-contract, find-cause, test-failure-mindset | Read, Glob, Grep, Write |
+| `root-cause-analyst` | Integration Testing | Execution Team | Worker | Advisor | plan | Diagnoses a bug bead read-only — reproduction, root cause, enumerated defects, affected files, blast radius, touched surfaces, repository. Dispatched by bug-triage as its diagnosis step. | subagent-contract, find-cause, test-failure-mindset | Read, Glob, Grep, Write |
 | `flaky-test-detector` | Integration Testing | Execution Team | Worker | Validator | test | Identifies intermittent test failures and their root causes | subagent-contract, validation-protocol, test-failure-mindset, find-cause | Read, Glob, Grep, Bash, Write |
 | `cross-repo-integration-test-coordinator` | Integration Testing | Execution Team | Worker | Orchestrator | orchestrate | Coordinates integration testing across repository boundaries: sequences cross-repo test runs over the event chain, aligns environment state between repos, and routes results back to integration-testing-lead | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, SendMessage |
 | `adversarial-review-loop-supervisor` | Adversarial Validation | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Sequences the adversarial loop — testers attack, the Adjudicator rules, valid findings route back to implementation — until the Adjudicator passes or the loop limit triggers escalation. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
@@ -893,7 +887,7 @@ Every agent, with the team it is rostered under, its role, character types, task
 | `deployment-lead` | Deployment | Execution Team | Manager | Delegator, Orchestrator | orchestrate | Routes the deployment sequence, validates preconditions at each step, and reports to Gate 5. | subagent-contract, agent-orchestration, how-to-delegate, delegate, orchestrator-discipline, polyrepo-router | Read, Glob, Grep, Agent, SendMessage |
 | `cdk-stack-author` | Deployment | Execution Team | Worker | Executor | execute | Authors AWS CDK stacks in Python for the feature's infrastructure. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Write, Edit, Glob, Grep, Bash |
 | `github-actions-pipeline-implementer` | Deployment | Execution Team | Worker | Executor | execute | Implements GitHub Actions workflows: OIDC auth, caching, build, test, and deploy stages. | subagent-contract, validation-protocol, senior-devops | Read, Write, Edit, Glob, Grep, Bash |
-| `worktree-independent-verifier` | Workspace | Execution Team | Worker | Validator | test | Independently reports the raw git facts about a provisioned path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — so workspace.js can rule on two separately-obtained accounts rather than trusting one. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash |
+| `worktree-independent-verifier` | Workspace | Execution Team | Worker | Validator | test | Independently reports the raw git facts about a provisioned path — git-dir, git-common-dir, branch, and the caller repo's common-dir and default branch — No workflow dispatches it. | subagent-contract, validation-protocol | Read, Glob, Grep, Bash |
 | `cdk-infrastructure-drift-detector` | Deployment | Execution Team | Worker | Validator | test | Detects drift between deployed infrastructure and the CDK stacks. | subagent-contract, validation-protocol, aws-cdk-development, cloudformation | Read, Glob, Grep, Bash, Write |
 | `slo-error-budget-designer` | Deployment | Execution Team | Worker | Advisor | plan | Designs SLOs and error budgets for the deployed feature. | subagent-contract, observability-designer, cloudwatch | Read, Glob, Grep, Write |
 | `smoke-test-author` | Deployment | Execution Team | Worker | Executor (test author) | test | Writes post-deployment smoke tests. | subagent-contract, validation-protocol, senior-qa | Read, Write, Edit, Glob, Grep, Bash |

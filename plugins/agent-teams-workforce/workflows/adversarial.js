@@ -1,7 +1,7 @@
 export const meta = {
   name: 'adversarial',
   description:
-    'Shared-tail mini — Adversarial Validation (feeds Gate 4). Attack lanes derived from the declared surfaces and the changed files (or the caller\'s trimmedScope) run concurrently in designated test environments only; one adjudicator rules each confirmed finding constitutive or competitive, and the script returns the count of open constitutive findings as `constitutiveOpen`. When no lane applies the phase reports alreadySatisfied.',
+    'Shared-tail mini — Adversarial Validation. Attack lanes run concurrently in designated test environments only: the caller\'s trimmedScope when given, otherwise lanes derived from the declared surfaces plus a data-exposure and dependency-CVE baseline conditioned on the changed files, otherwise every lane. One adversarial-critique-adjudicator rules each confirmed finding constitutive or competitive (skipped when there are no findings), and the script returns the count of open constitutive findings as `constitutiveOpen`; `selfContradictory` is always false. A lane or the adjudicator returning nothing reports dispatchFailed. When no lane applies the phase reports alreadySatisfied.',
   phases: [
     { title: 'Attack', detail: 'access-control + data-integrity and infra + exposure lanes (concurrent)' },
     { title: 'Adjudicate', detail: 'referee severity; classify constitutive vs competitive' },

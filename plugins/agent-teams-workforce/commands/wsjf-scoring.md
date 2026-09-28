@@ -69,7 +69,8 @@ From the workflow's result:
   the rubric's scale, an item judged twice, or an item the plan did not name — with its
   reason from `<workDir>/record.json`; `unreadable`, each judgment file that could not be
   read, with its reason; and `missing`, what the plan asked for and no session returned.
-  A rejected, unreadable or missing item fails the run (`ok: false`) and keeps no new value.
+  A rejected, unreadable or missing item keeps no new value; the run still records and
+  scores the rest, and `ok` is unaffected.
 - `score` — Epics and Tasks scored and written, and the counts of unscored, incomplete and
   outside-range items. Name them from `<workDir>/score.json`: a Task with no inherited value
   sits under an unscored Epic or under no Epic; an `incomplete` Epic has Tasks with no size.

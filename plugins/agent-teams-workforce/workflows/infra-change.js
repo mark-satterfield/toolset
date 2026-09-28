@@ -1,7 +1,7 @@
 export const meta = {
   name: 'infra-change',
   description:
-    'Composite — provisions or changes infrastructure for a Task: establishes a worktree, authors the provisioning intent, writes the failing synth assertions (Red), writes the CDK that passes them (Green), deploys to AWS dev and smoke-tests there (a smoke failure re-enters Green and redeploys, bounded), then lands the work in git. Returns { ok, stage, beadId, headline, detailPath, deployedToDev, smokePassed, deployIteration } plus the landing verdict.',
+    'Composite — provisions or changes infrastructure for a Task: establishes a worktree, authors the provisioning intent, writes the failing synth assertions (Red), has the cdk-stack-author write the CDK that passes them (Green; a run that stays red stops there), runs Documentation beside the build and awaits it before each deploy, deploys to AWS dev and smoke-tests there (a smoke failure re-enters Green and redeploys, bounded), then lands the work in git. Returns { ok, stage, beadId, headline, detailPath, deployedToDev, smokePassed, deployIteration } plus the landing verdict.',
   phases: [
     { title: 'Workspace', detail: 'establishes the worktree every writing phase operates in' },
     { title: 'Infra Intent' },

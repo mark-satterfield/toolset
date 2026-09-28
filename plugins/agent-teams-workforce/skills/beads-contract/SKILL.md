@@ -14,18 +14,11 @@ allowed-tools: [Bash]
 
 # Beads Contract
 
-Two defects reached production because agents each guessed how beads stores things.
-
-1. **The content-hash recipe was written twice** — once as `jq` prose in
-   `skills/task-ready/SKILL.md`, once in a host readiness gate. The two copies
-   disagreed about `labels`, so they disagreed about exactly the beads the rule existed for.
-2. **Two work packages assumed acceptance criteria are a metadata key.** They are PROSE. They
-   may live in the issue's own description, or in its parent Story or Epic. The requirement is
-   that they EXIST somewhere — not that they occupy a field.
-
-Prose read by a model is not deterministic. A script is. So the recipes live in
-`scripts/beads-contract.py` and this document does not restate them — restating is what caused
-defect 1. Where a fact has a canonical implementation, this document names it and stops.
+The recipes for how beads stores work live in `scripts/beads-contract.py`, and this document
+does not restate them. Acceptance criteria are PROSE: they may live in the issue's own
+description, or in its parent Story or Epic, and the requirement is that they EXIST somewhere,
+not that they occupy a field. Where a fact has a canonical implementation, this document names
+it and stops.
 
 ## Run it
 
@@ -66,10 +59,8 @@ Stdout carries `fingerprints` — a plain `{id: fingerprint}` map — alongside 
 `results` (`found`, `fingerprint`, `stored`, `fresh`), `missing`, and `trackerCalls`. Naming ids
 as arguments narrows it to those beads; naming none fingerprints every record supplied.
 
-**Feeding the caller's own records back in is the correctness argument, not just the cheap one.**
 A caller holding `bd list` records hashes those; a re-fetch inside this script would hash `bd show`
-records instead. Those payloads differ in exactly the fields that caused defect 1, so re-fetching
-would reintroduce a second source of truth by the back door. Batch mode calls the same
+records instead, which differ in some fields. Batch mode calls the same
 `content_hash` as `fingerprint`, through the same `fingerprint_of` entry point — there is no
 parallel implementation and no second recipe.
 
@@ -143,7 +134,7 @@ Build contract, written by the decomposition phase onto each Task and read back 
 | `spec_paths` | JSON array of paths | as above |
 | `spec_sections` | JSON array of strings | navigation |
 | `acceptance_criteria` | JSON array of strings | one home among several; never required, see above |
-| `definition_of_done` | JSON array of strings | judged at the gates, which read the spec |
+| `definition_of_done` | JSON array of strings | passed to the Red and Green phases |
 | `requirement_ids` | JSON array of strings | traceability |
 | `decision_ids` | JSON array of SAD entry tags | the architecture the Task was designed against; every phase that writes code receives it |
 | `surfaces` | JSON array, **or the literal `unknown`** | never required |
@@ -154,9 +145,9 @@ ruled, and the phase falls back to its own lead; `[]` means somebody checked and
 no boundary, which SKIPS the phase outright. Handing `[]` to a Task whose spec never settled the
 question skips a phase on a statement no one made. The exact literal, and only it, becomes null.
 
-Readiness gate, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
+Readiness verdict, written by `task-ready`: `review_status`, `review_missing`, `reviewed_at`,
 `ready_content_hash`. Scoring, written by `prd-to-spec` when it writes a Task and scores its
-Epic, and by the `wsjf-scoring` workflow, never by the readiness gate: `wsjf`,
+Epic, and by the `wsjf-scoring` workflow, never by `task-ready`: `wsjf`,
 `wsjf_calculated_at` and the dimensions below. Build lane: `build_state`. Elaboration:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
 `elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
@@ -209,10 +200,9 @@ time its assessment applies. A Task elaboration wrote carries none of the six: i
 elaboration's. `depscore.py apply-edges` writes all six keys, and `depscore.py
 withdraw-edge` writes the records for the one edge it withdraws; nothing else does.
 
-The script is the list: `metadata set` names every key it accepts when it refuses one.
-
-`metadata set` refuses any key outside that namespace. A typo'd key is not a small mistake — it
-is silently invisible to every reader, and the bead looks unset forever.
+`metadata get` lists every key outside that namespace under `unrecognized`. `metadata set`
+writes whatever `key=value` pairs it is given and refuses only an argument with no `=`; a
+typo'd key is written as given and is invisible to every reader, so name keys exactly.
 
 **Always `--set-metadata` (merges), never `--metadata` (replaces the whole object and drops every
 key the write did not name).** `metadata set` uses the right one and reads back to verify.
@@ -225,7 +215,7 @@ Both scopes have ONE implementation, `content_hash` in `scripts/beads-contract.p
 `fingerprint <id> --scope <scope> --explain` prints the exact object hashed. Do not reproduce
 either recipe in prose, in `jq`, or in a second language.
 
-**`--scope readiness`** (the default) is what the READINESS GATE rules on, stored as
+**`--scope readiness`** (the default) is what `task-ready` rules on, stored as
 `ready_content_hash`. **`--scope judging`** is what a WSJF judging session is handed, stored as
 `wsjf_content_hash`; the SEQUENCING assessment shares it, stored as `seq_content_hash`, because
 it reads the same PRD corpus. **Pass the scope that matches the key you store the answer under**,
@@ -244,21 +234,17 @@ What matters to a caller:
   value, time criticality or size — re-judging on one would pay full price for the same answer.
 - In both, three record keys (`acceptance`, `deps`, `type`) are null on every bead because `bd`
   does not use those names; they stay in the object because the digest is over its shape.
-- **`labels` and `dependencies` are nulled deliberately**, as are the gate's own keys, the WSJF
-  keys, the lane keys and the sequencing keys. The pipeline writes `needs-correction` onto every
-  held bead, writes its own edges and writes its own scores. If any of those were hashed,
-  RECORDING the pipeline's verdict would change the fingerprint, the bead would read as stale on
-  the very next pass, and the sweep would re-buy the review it just held to avoid.
+- **`labels` and `dependencies` are nulled**, as are the gate's own keys, the WSJF keys, the
+  lane keys and the sequencing keys, so writing a label, an edge, a score or a verdict never
+  changes the fingerprint.
 - Timestamps, status and comments are outside it, so storing a verdict never invalidates it.
 - Criteria in the Task's OWN description ARE covered, because `description` is. Criteria on a
   PARENT are NOT — the fingerprint is over this bead's own record. Editing a parent's criteria
   does not make this Task stale; that is a real limitation, and it is about where the prose sits.
 
-A host that fingerprints beads calls this script rather than carrying its own recipe.
-`fingerprint-batch` is what makes that practical for a gate that runs per bead over an index
-built from one `bd list` sweep: per-bead `fingerprint` would add a subprocess and a `bd show`
-round-trip per bead to a pass that makes one tracker call. Batch mode takes that sweep on stdin
-and answers for every bead at once.
+Anything that fingerprints beads calls this script rather than carrying its own recipe.
+`fingerprint-batch` takes a `bd list` sweep on stdin and answers for every bead in one
+invocation.
 
 ## Resolving a parent
 
@@ -280,7 +266,7 @@ a verdict, never the verdict.
 - **A bug is triaged by a PERSON** into an Epic, a Task, or a closure. That is a judgment call, not
   a routing rule, and no agent makes it. There is no triage composite to hand it to.
 
-An agent that sends a bug to a readiness gate, a decomposition pass, or a build lane is itself the
+An agent that sends a bug to `task-ready`, a decomposition pass, or a build lane is itself the
 defect. Report it and stop.
 
 ## Rules for the agent using this skill

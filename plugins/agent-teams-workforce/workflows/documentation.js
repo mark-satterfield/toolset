@@ -1,7 +1,7 @@
 export const meta = {
   name: 'documentation',
   description:
-    'Cross-cutting mini — Documentation. One read-only auditor names the docs the change leaves stale and the writer that owns each; the writers update them in parallel in the worktree. A change confined to tests and fixtures skips the audit.',
+    'Cross-cutting mini — Documentation. One read-only auditor names the docs the change leaves stale and the writer that owns each (a doc with no usable writer is assigned by its path); the writers update them in parallel in the worktree. A change confined to tests and fixtures skips the audit.',
   phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes' }],
 }
 const dispatchFailures = []

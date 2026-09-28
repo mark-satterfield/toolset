@@ -1,7 +1,7 @@
 export const meta = {
   name: 'repo-scoping',
   description:
-    'Leaf mini — rules the repository span of a PRD. A shaper decomposes the PRD and the architecture ruling into work units without being shown any repository; then the polyrepo-steward places each unit in an existing repository or a new one it creates, and names existing code the design makes obsolete.',
+    'Leaf mini — rules the repository span of a PRD. A shaper decomposes the PRD and the architecture ruling into work units without being shown any repository; then the polyrepo-steward places each unit in an existing repository or a new one it creates, and names existing code the design makes obsolete. The run fails when no placement names a repository.',
   phases: [
     { title: 'Shape', detail: 'the shaper decomposes the PRD into work units and the kind of home each needs, shown no repository' },
     { title: 'Place and provision', detail: 'the polyrepo-steward maps each work unit to an existing or new repository and creates the new ones' },

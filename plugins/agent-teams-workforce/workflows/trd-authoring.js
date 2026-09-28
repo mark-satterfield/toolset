@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the arc42 SAD. Read-only extractor sessions pull SAD sections 2, 4 and 8 into a typed packet in concurrent shards (or a packet the caller supplies is reused), then one trd-author session writes the TRD in one pass: PRD requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD or SAD source.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the arc42 SAD. Read-only extractor sessions pull SAD sections 2, 4 and 8 into a typed packet in concurrent shards (or a packet the caller supplies is reused), a filing-clerk session names the TRD file when the caller gives no path, then one trd-author session writes the TRD in one pass: PRD requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD or SAD source.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract, one pass' },

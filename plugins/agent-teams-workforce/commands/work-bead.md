@@ -40,28 +40,22 @@ Workflow({scriptPath: "$ROOT/workflows/route-build.js",
                 parentType, ancestorTypes}}})
 ```
 
-Supply `parentType` and `ancestorTypes` from the parent chain. Without them a Task
-cannot be judged workable and will skip. There is no `humanInitiated` flag here and
-that is deliberate: a Task under a Story under an Epic was already authorised when
-someone chose to elaborate that Epic. This is what lets an unattended build loop run.
+Supply `parentType` and `ancestorTypes` from the parent chain. A Task is routed to
+`task-to-deploy` (or `infra-change` for an infrastructure Task) with or without them;
+they only change the router's `reason`. A bead labelled `human` is skipped.
 
 **Epic, Story, or Feature — ELABORATION work:**
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/route-elaboration.js",
   args: {bead: {id, type, labels, title, description,
-                parentType, ancestorTypes},
-         humanInitiated: true}})
+                parentType, parentId, ancestorTypes}}})
 ```
 
 **Bug — neither.** A bug is a reporting mechanism, not work. It is TRIAGED by a
 person into an Epic, a Task, or a closure. Both routers skip it, naming triage;
 there is no triage composite to dispatch. Hand a bug to `route-build.js` and
 report the skip — do not force it into `bug-fix`.
-
-`humanInitiated: true` is correct here and **only** here: a person typed this command.
-Existence is not readiness — an Epic sitting there is not a request to elaborate it.
-An unattended sweep must leave the flag unset and take the skip.
 
 Do **not** pass `childCount`. Neither router reads it. An Epic that already has
 Stories can still need working, because its PRD may have moved on and the beads
@@ -83,9 +77,9 @@ a skip's reason names what the bead needs, and a new label is never it.
 Skip any thought of provisioning a tree here. **The composite establishes its own
 worktree.** Its first phase is `workspace`, which fetches, fast-forwards, reuses an
 existing tree for this bead or cuts a new one at `$ATW_WORKTREE_ROOT/<bead>-<repo>` (at `<repo parent>/.worktrees/<bead>-<repo>` when `ATW_WORKTREE_ROOT` is unset)
-on a feature branch, and verifies the result really is a linked worktree before any phase
-writes a line. Its return value is the sole source of `contract.repoPath`, and every
-writing phase inherits it. A run that cannot verify a worktree refuses to write.
+on a feature branch. Its return value is the sole source of `contract.repoPath`, and every
+writing phase inherits it. When it establishes no tree, or the tree is on a default branch
+or a detached HEAD, the run stops before any writing phase.
 
 **So pass the contract's repository as it stands.** `repoPath` is the repository the
 Task's contract names, not a worktree you built. A resumed run finds its earlier tree
@@ -175,11 +169,11 @@ One line each, no more:
 
 - which composite ran, and why the router chose it
 - the phase it reached
-- deploy result (it should reach **Deploy-to-dev** and smoke-check, not stop at readiness)
-- any gate that blocked it, with its feedback **verbatim**
+- deploy result (it should reach **Deploy-to-dev** and smoke-check)
+- the `stage` and `headline` of a run that stopped, **verbatim**
 - what you did NOT do
 - the worktree and branch the work landed on
 - the PR URL, or the explicit reason there is none
 
-If a gate blocks you, report it. Do not work around it, do not edit the workflow
+If the run stops, report it. Do not work around it, do not edit the workflow
 mid-run, and do not fall back to a subagent beside the pipeline.

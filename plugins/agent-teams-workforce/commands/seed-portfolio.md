@@ -104,7 +104,7 @@ From the seeding result:
 - `LEFT`, when it is not empty.
 - `scoring` — the `wsjf-scoring` result the seeding returned, reported as
   `/agent-teams-workforce:wsjf-scoring` reports it; when it is null, say that nothing was
-  scored and why (the seeding stopped).
+  scored and why (`apply: false`, or the `error` naming the scoring failure).
 - `dispatchFailures`, verbatim, when present.
 
 ## Never

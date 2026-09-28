@@ -1,7 +1,7 @@
 export const meta = {
   name: 'route-build',
   description:
-    'Routes a bead to the build composite that works it. A Task goes to task-to-deploy (infra-change when it is an infrastructure change); every other kind is skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
+    'Routes a bead to the build composite that works it, deterministically from its type and labels. A Task goes to task-to-deploy (infra-change when it carries an infrastructure type or label) and an infrastructure bead goes to infra-change; a bug, a bead labelled `human`, an Epic, Story or feature, and every other kind are skipped with a reason. Returns { bead, action, composite, reason, ruledBy }: action is "work" or "skip".',
   phases: [{ title: 'Classify', detail: 'maps the bead type and labels to a composite or a skip' }],
 }
 

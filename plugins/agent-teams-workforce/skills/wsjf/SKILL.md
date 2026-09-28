@@ -139,8 +139,8 @@ reaches(X) = the number of DISTINCT items reachable from X by following edges
 Transitive, because an item reaching one item that reaches six reaches seven. The script
 walks it and bands the count.
 
-The graph must be acyclic. When it is not, the count is undefined: the script reports the
-cycle and scores nothing.
+The walk visits each item once, so a cycle in the graph does not stop scoring; every item
+on a cycle counts the others it reaches. `cycle` in the output is always null.
 
 **Do not judge RR-OE from prose in any circumstance, including when the count feels
 wrong.** A count that feels wrong is a missing or reversed edge, and the edge is where it
@@ -238,7 +238,8 @@ with `aboveScale: true`; report it against the decomposition.
 
 An Epic's estimate is made before the work is known. Once its Tasks exist and every one of
 them carries a size, pass those sizes as `childSizes` with the Epic's estimate and its range:
-the Epic's size becomes the **plain sum** of its distinct Tasks' sizes, which need not be a
+the Epic's size becomes the **plain sum** of its distinct Tasks' positive sizes (a
+missing or non-positive size is left out of the sum), which need not be a
 Fibonacci number, and the score is recomputed from it. Closed Tasks count — the cost is the
 whole job, not what is left. The original estimate stays in `wsjf_size_estimate`.
 

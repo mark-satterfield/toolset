@@ -1,7 +1,7 @@
 export const meta = {
   name: 'integration',
   description:
-    'Shared-tail mini — Integration Testing. Picks the integration suites from the caller, from the surfaces the contract declares, or from a read-only integration-testing-lead, provisions the test environment when needed, runs the suites in parallel, and returns a top-level `passed`. A contract declaring no cross-boundary surface skips the phase.',
+    'Shared-tail mini — Integration Testing. Picks the integration suites from the caller, from the surfaces the contract declares, or from a read-only integration-testing-lead, provisions the test environment when needed, runs the suites in parallel, and returns a top-level `passed`; a suite that returns nothing reports dispatchFailed. A contract declaring no cross-boundary surface skips the phase.',
   phases: [{ title: 'Integration', detail: 'select + run suites' }],
 }
 const dispatchFailures = []

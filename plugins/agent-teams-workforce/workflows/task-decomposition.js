@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task; the script derives the build order from the edges, refuses a cyclic graph, and computes each task\'s WSJF with the wsjf rubric script (value and time criticality inherited from the parent Epic). A saved maker output can be replayed instead of the maker session.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task; the script makes repeated task keys unique (K, K-2, K-3, applying an edge on K to each), drops edges that do not join two known tasks, derives the build order from the edges, refuses a cyclic graph, and computes each task\'s WSJF with the wsjf rubric script (value and time criticality inherited from the parent Epic). A saved maker output can be replayed instead of the maker session.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + dependency edges + job sizes' },
     { title: 'Validate & emit', detail: 'derive the build order, compute WSJF from the sizes, emit the bead set' },
@@ -389,8 +389,54 @@ if (!maker || !Array.isArray(maker.tasks) || !maker.tasks.length) {
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
   }
 }
+/**
+ * Makes task keys unique: the first task carrying key K keeps it; the n-th (n >= 2) becomes K-n, or the next K-m no task carries.
+ * The n-th score carrying K goes to the n-th task carrying K; a task left without one takes the first.
+ * An edge naming a repeated key is applied to every task that carried that key.
+ * Returns { tasks, edges, scores }.
+ */
+function uniqueKeys(rawTasks, rawEdges, rawScores) {
+  const baseOf = (t) => (t && typeof t.key === 'string' && t.key.trim() ? t.key.trim() : 'T')
+  const taken = new Set(rawTasks.map(baseOf))
+  const copies = new Map()
+  const renamed = rawTasks.map((t) => {
+    const base = baseOf(t)
+    let key = base
+    if (copies.has(base)) {
+      let n = copies.get(base).length + 1
+      while (taken.has(`${base}-${n}`)) n++
+      key = `${base}-${n}`
+      taken.add(key)
+    }
+    copies.set(base, [...(copies.get(base) || []), key])
+    return { ...t, key }
+  })
+  const scoresByBase = new Map()
+  for (const s of Array.isArray(rawScores) ? rawScores : []) {
+    if (!s || typeof s.key !== 'string') continue
+    const k = s.key.trim()
+    scoresByBase.set(k, [...(scoresByBase.get(k) || []), s])
+  }
+  const scores = []
+  for (const [base, keys] of copies) {
+    const list = scoresByBase.get(base) || []
+    keys.forEach((key, i) => {
+      const s = list[i] || list[0]
+      if (s) scores.push({ ...s, key })
+    })
+  }
+  const expand = (k) => (typeof k === 'string' && copies.has(k.trim()) ? copies.get(k.trim()) : [k])
+  const edges = []
+  for (const e of Array.isArray(rawEdges) ? rawEdges : []) {
+    if (!e) continue
+    for (const from of expand(e.from)) for (const to of expand(e.to)) edges.push({ from, to })
+  }
+  return { tasks: renamed, edges, scores }
+}
+const keyed = uniqueKeys(maker.tasks, maker.edges, maker.scores)
+
 const reused = new Set()
-const tasks = maker.tasks.map((t) => {
+const tasks = keyed.tasks.map((t) => {
   const r = t && typeof t.reuses === 'string' ? t.reuses.trim() : ''
   const keep = r && existingKeys.has(r) && !reused.has(r)
   if (keep) reused.add(r)
@@ -438,7 +484,7 @@ function sequence(taskSet, rawEdges, preferred) {
   return { edges, buildOrder: cycle.length ? [] : buildOrder, acyclic: cycle.length === 0, cycle }
 }
 
-const dag = sequence(tasks, maker.edges, maker.buildOrder)
+const dag = sequence(tasks, keyed.edges, maker.buildOrder)
 if (!dag.acyclic) {
   return {
     ok: false,
@@ -450,7 +496,7 @@ if (!dag.acyclic) {
   }
 }
 
-const wsjfScores = await applyTaskWsjf({ scores: maker.scores || [], notes: maker.notes }, tasks, dag.edges)
+const wsjfScores = await applyTaskWsjf({ scores: keyed.scores, notes: maker.notes }, tasks, dag.edges)
 const wsjfByKey = {}
 for (const s of wsjfScores.scores) wsjfByKey[s.key] = s
 const orderIndex = {}

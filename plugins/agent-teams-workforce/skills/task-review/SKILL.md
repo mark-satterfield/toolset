@@ -16,15 +16,10 @@ Contracts are consumer-defined: a consumer declares the schema it needs, and the
 produces to it. This review is a producer. It may therefore demand **only** what something
 downstream actually reads off the work item, and every dimension below names its consumer.
 
-That test removed four dimensions this rubric used to carry. It demanded two dependency
-graphs, a three-environment deployment sequence (Local / AWS staging / Production), a test
-plan, and INVEST / IEEE 830 conformance — and nothing anywhere in the pipeline read any of
-them off a work item. `workflows/deploy.js` derives its own rollout and deploys to exactly
-one environment; `workflows/tdd-red.js` writes the tests from the acceptance criteria. Those
-sections were this skill's own invention, they refused well-specified work for lacking a
-document nobody read, and they held 106 beads blocked for two months. They are gone — not
-demoted to advisory, because advisory ceremony still costs the reader's attention and still
-comes back as a finding.
+The review does not ask for dependency graphs, a deployment sequence, a test plan, or
+INVEST / IEEE 830 conformance: nothing in the pipeline reads them off a work item.
+`workflows/deploy.js` deploys to AWS dev on its own, and `workflows/tdd-red.js` writes the
+tests from the acceptance criteria.
 
 If a future consumer starts reading something new off a work item, add the dimension then,
 and name that consumer beside it.
@@ -98,8 +93,7 @@ asking questions?
 ### Acceptance Criteria
 
 Consumed by: `workflows/tdd-red.js` — it reads `contract.acceptanceCriteria` and derives
-the failing tests from it, and Gate 2a judges whether the authored tests encode those same
-criteria. `workflows/task-to-deploy.js` carries them onto the
+the failing tests from it. `workflows/task-to-deploy.js` carries them onto the
 contract; `workflows/bug-triage.js` authors the equivalent contract for a bug. An item with
 no verifiable pass condition gives the Red phase nothing to encode.
 
@@ -146,8 +140,7 @@ catch, and neither is excused by a small scope:
 2. **No verifiable pass condition.** An item nobody can prove finished. Acceptance
    Criteria is ❌ and the item is refused, at every class.
 
-Under-specified work is still refused. What is no longer refused is well-specified work
-that lacks ceremony.
+Under-specified work is refused. Well-specified work that lacks ceremony is not.
 
 ## Step 4 — Sufficient to Size
 

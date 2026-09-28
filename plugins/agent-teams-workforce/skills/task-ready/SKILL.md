@@ -136,37 +136,24 @@ Two consequences follow, and neither is a defect to be fixed here:
   nothing about whether criteria are covered.
 
   Criteria written in the issue's OWN description are inside `description`, which IS hashed.
-  Editing them changes the fingerprint and DOES release
-  a hold: a Task held on an INCOMPLETE verdict leaves the hold on that edit alone, with no
-  title touch needed.
+  Editing them changes the fingerprint, so the next run reviews the Task again.
 
   Criteria that live ONLY on the parent Story or Epic are NOT covered, because the
   fingerprint is computed over this issue's own record and nothing else. Editing a parent's
-  criteria does not make this issue stale. That is the real limitation, and it is about where
-  the prose sits rather than about the tracker lacking a field — to release such a hold, edit
-  this issue's own description or remove the `needs-correction` label.
+  criteria does not make this issue stale; to have it reviewed again, edit this issue's own
+  description.
 
   Criteria mirrored into an `acceptance_criteria` METADATA key are not covered either, for
   the separate reason that metadata is outside the fingerprint entirely (which is what lets
   this skill store its own verdict without invalidating it). That key is a convenience for
   the build lane, never the evidence that criteria exist.
-- **`labels` is nulled ON PURPOSE.** The pipeline itself writes a `needs-correction` label onto
-  every held bead. If labels were hashed, the act of RECORDING a hold would change the
-  fingerprint, the bead would read as stale on the very next pass, and the skill would re-buy
-  the full review it just held to avoid — a fresh session per sweep, forever.
+- **`labels` is nulled.** Adding or removing a label never changes the fingerprint.
 
 Never metadata, timestamps, status, or comments — so storing a verdict never invalidates it.
 
 **THE RECIPE HAS ONE IMPLEMENTATION: `content_hash` in the `agent-teams-workforce:beads-contract`
-skill.** This file carries no copy, and neither does anything else: a host that compares
-fingerprints shells out to `beads-contract.py`. Change the recipe in the one place that
-implements it.
-
-A recipe stated twice re-invokes this skill forever on every affected bead: the Python reads a
-watermark it cannot reproduce, calls the bead stale, and the skill rewrites the same watermark the
-Python will reject again on the next pass. That is not hypothetical — it is what the `labels`
-disagreement did, on precisely the held beads the rule exists for, and it is why there is now one
-implementation and no copies.
+skill.** This file carries no copy; anything that compares fingerprints runs
+`beads-contract.py`. Change the recipe in the one place that implements it.
 
 - **Fresh** — `ready_content_hash` exists and equals the current content hash → reuse the
   stored verdict; rerun nothing; post nothing.
@@ -250,14 +237,11 @@ different length, never hash a different field set.
    `Pipeline result` is then `READY` if `review_status=COMPLETE`, otherwise `INCOMPLETE`.
    Post the ready-declaration comment only when the review was COMPLETE.
 
-   **An INCOMPLETE verdict MUST carry what is missing, in `review_missing`.** This is not
-   bookkeeping. The pipeline no longer re-buys an INCOMPLETE verdict: on the next pass it
-   reads the stored verdict, sees the content hash unchanged, and HOLDS the bead rather than
-   spending a session to reach the identical conclusion. Nothing downstream regenerates the
-   reason, so if this write does not carry it, the only record of what to fix is a prose
-   comment, and a person is told a Task is blocked without being told why. Summarize the
-   review's findings in one line — the missing acceptance criteria, the unresolved
-   dependency, the absent scope — and write it. On a COMPLETE review write it empty.
+   **An INCOMPLETE verdict MUST carry what is missing, in `review_missing`.** While the
+   content hash is unchanged, step 5 reuses the stored verdict and reruns nothing, and the
+   stored `review_missing` is the only record of what to fix. Summarize the review's
+   findings in one line — the missing acceptance criteria, the unresolved dependency, the
+   absent scope — and write it. On a COMPLETE review write it empty.
 7. **Verify the write landed.** Read the attributes back (the verify recipe) and confirm
    `ready_content_hash` is present and equals `$H`, alongside `review_status` /
    `reviewed_at`. If the hash is absent or different, the write did not land: redo it and
@@ -313,11 +297,8 @@ H=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.
       fingerprint <id> | jq -r .fingerprint)
 ```
 
-**THE RECIPE IS NOT WRITTEN DOWN HERE, AND THAT IS THE POINT.** A recipe stated twice drifts
-in whichever copy is wrong, and a drift on the `labels` line disagrees about precisely the beads
-this rule exists for: every bead the pipeline has held carries `needs-correction`.
-
-So `content_hash` in `beads-contract.py` is the single implementation, the
+The recipe is not written down here. `content_hash` in `beads-contract.py` is the single
+implementation, the
 `agent-teams-workforce:beads-contract` skill documents what it covers and why, and
 `fingerprint <id> --explain` prints the exact object hashed when you need to see it. Do not
 reconstruct the pipeline from this file, and do not paste a `jq` version back in.
@@ -326,8 +307,7 @@ The same command also reports the stored watermark and whether it is still fresh
 comparison can read `.stored` and `.fresh` from one invocation rather than re-deriving them.
 
 **Content hash (GitHub):** GitHub is the BACKUP tracker with a different record shape, and
-nothing downstream reproduces this digest — `readiness.py` reads beads only. So this one stays
-inline; it is not half of a joint contract and has nothing to drift against.
+nothing else computes this digest, so it is stated inline:
 ```
 H=$(gh issue view <n> --json title,body,labels \
   | jq -S '{title,body,labels:[.labels[].name]}' \
@@ -397,9 +377,9 @@ bd update <id> \
 ```
 
 `review_missing` is REQUIRED on an INCOMPLETE review and must name what to fix — not the word
-INCOMPLETE, not a dimension count. It is the only machine-readable record of the gap: the
-pipeline HOLDS a bead against an unchanged INCOMPLETE verdict instead of re-running this
-skill, so no later run regenerates the reason. Keep it to one line and avoid newlines and
+INCOMPLETE, not a dimension count. It is the only machine-readable record of the gap: while
+the content hash is unchanged the stored verdict is reused and no later run regenerates the
+reason. Keep it to one line and avoid newlines and
 quotes, which do not survive the attribute round-trip. Metadata is outside the content hash,
 so writing it never invalidates the watermark.
 

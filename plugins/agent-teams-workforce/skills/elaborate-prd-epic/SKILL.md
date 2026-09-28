@@ -76,9 +76,8 @@ Two results come back that you must not bury:
 
 - `repoSpan` — the repositories that were ruled. Report it.
 - `createdRepos` — repositories the `polyrepo-steward` created for this work during the
-  run. Report each one. A repository the work needs is never a human action: if the
-  steward could not place or create one, the run fails at `repo-scoping` with the faults
-  named.
+  run. Report each one. When the shaper returns nothing, the steward returns no placement,
+  or the placements name no repository, the run fails at `repo-scoping` with that reason.
 
 ## 2. Dispatch
 
@@ -187,10 +186,9 @@ account of what you think landed.
 - Backfill repair: `emission.heal.closed` / `.reparented` when either is non-zero, and
   every `heal.failed` entry — each one is a stand-in roll-up Story still sitting on the
   board beside the real one
-- Any gate that blocked — the composite's `headline` carries the phase, the reason and
-  the first unmet criterion; the full gate feedback and every phase artifact are in the
-  run journal at `detailPath`; the composite returns no phase artifacts, because they
-  are too large for the dispatching session to hold. A blocked run also names what it DID produce under `partialProduced` — read the journal
+- A run that stopped — the composite's `headline` carries the phase and the reason; every
+  phase artifact is in the run journal at `detailPath`, and the composite returns none of
+  them. A stopped run names what it DID produce under `partialProduced` — read the journal
   before re-running, because a fresh run reproduces exactly that work.
 - The exact next command: `/agent-teams-workforce:next-task`, which claims the
   highest-WSJF Task that is ready

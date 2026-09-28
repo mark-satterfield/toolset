@@ -48,8 +48,8 @@ Report it. Four cases, and they lead to different places:
   anything else — see "Landing an unlanded tree" below. Do **not** resume on top of it and
   do **not** report the run as done.
 - **Uncommitted TEST files** — Red got partway. Do **not** delete them. The Red
-  phase now surveys existing tests and reuses ones that still fail, so a resume
-  will pick them up rather than re-author them.
+  writers add to the existing test files and keep a test that already encodes a
+  criterion, so a resume builds on them.
 - **Uncommitted PRODUCTION code** — Green got partway. This is the one to look at
   closely: a half-applied fix may leave the repo in a state where the tests pass
   for the wrong reason. Report exactly which files, and do not resume until the
@@ -57,13 +57,12 @@ Report it. Four cases, and they lead to different places:
 
 ### Landing an unlanded tree
 
-`settle` is the same step every build composite runs on its way out. It is handed the facts
-it would otherwise receive from the composite's `workspace` step, so read them from git
-rather than assuming them. `$ROOT` is the plugin root (`${CLAUDE_PLUGIN_ROOT}`); if
-`ATW_PR_COMMAND` is unset, report `ATW_PR_COMMAND is unset` and stop.
+`settle` is the same step every build composite runs on its way out. `$ROOT` is the plugin
+root (`${CLAUDE_PLUGIN_ROOT}`); if `ATW_PR_COMMAND` is unset, report `ATW_PR_COMMAND is
+unset` and stop. Read the tree's facts from git:
 
 ```bash
-git -C "<worktree>" rev-parse --path-format=absolute --git-dir --git-common-dir   # must differ: a linked worktree
+git -C "<worktree>" rev-parse --path-format=absolute --git-dir --git-common-dir   # differ for a linked worktree
 git -C "<worktree>" branch --show-current
 git -C "<worktree>" symbolic-ref --short refs/remotes/origin/HEAD                  # the default branch, after origin/
 ```
@@ -71,13 +70,14 @@ git -C "<worktree>" symbolic-ref --short refs/remotes/origin/HEAD               
 ```
 Workflow({scriptPath: "$ROOT/workflows/settle.js",
   args: {repoPath: "<worktree>", prCommand: "$ATW_PR_COMMAND", branch: "<its branch>",
-         isLinkedWorktree: <true only when the two dirs differ>, defaultBranch: "<default branch>"}})
+         defaultBranch: "<default branch>"}})
 ```
 
-It returns `{ status }`: `reported` with `treeClean`, `hasWork`, `branch` and `prUrl`;
-`blocked` with the `reason` it refused (a main working tree, a default or detached branch,
-no usable PR command); or `error`. Never land a MAIN working tree this way — `settle`
-refuses it, and so should you.
+It returns `{ status }`: `reported` with `treeClean`, `hasWork`, `branch`, `prUrl` and
+`blocked`; `blocked` with the `reason` when no PR command was supplied; `not-applicable`
+when no `repoPath` was supplied; or `error`. `settle` does not check the tree it is given:
+land only a linked worktree on a feature branch — never a MAIN working tree, and never a
+tree on the default branch or a detached HEAD.
 
 ## 2. Decide resume versus restart
 
@@ -98,7 +98,7 @@ ls -d ~/.claude/plugins/cache/mark-satterfield/agent-teams-workforce/*/ | sort -
 
 There is a second trap worth naming: **a bead's description is embedded in every
 agent prompt.** Editing it — even one word — invalidates the cache, so phases
-RESTART instead of resuming. To resume past a fixed gate, keep the description
+RESTART instead of resuming. To resume past a fixed phase, keep the description
 byte-identical and change only the script.
 
 ## 3. Resume
@@ -126,7 +126,7 @@ Restart, and say why, when any of these holds:
 
 1. The plugin version changed, or the script was edited.
 2. The work already on disk is known to be **wrong** — a resumed Red will survey
-   those tests and may accept them. Clean the tree first; no run argument makes Red
+   those tests and may keep them. Clean the tree first; no run argument makes Red
    ignore tests that are already there.
 3. The run died in Green with production code half-applied and no one has looked
    at the diff.

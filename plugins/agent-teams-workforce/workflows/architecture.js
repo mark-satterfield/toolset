@@ -1,7 +1,7 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8, sizes the analyst panel (from the caller or a triage session), collects proposals, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD.',
+    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
   phases: [
     { title: 'Extract SAD', detail: 'inventory the SAD files holding §2/§4/§8 and extract them in concurrent shards' },
     { title: 'Triage', detail: 'classify the decision and select the analysis dimensions, unless the caller supplied them' },
