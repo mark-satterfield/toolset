@@ -29,8 +29,6 @@ const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
 const routeBuild = path.join(WORKFLOWS, 'route-build.js')
 const routeElaboration = path.join(WORKFLOWS, 'route-elaboration.js')
 const taskDecomposition = path.join(WORKFLOWS, 'task-decomposition.js')
-// The scored parent Epic and the plugin root every task-decomposition run is handed.
-const SCORED = { epic: { id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3 }, pluginRoot: '/opt/plugins/agent-teams-workforce' }
 
 /**
  * Runs the BUILD router deterministically (no classifier agent). Development
@@ -162,18 +160,6 @@ for (const kind of ['chore', 'docs', 'research', 'spike']) {
   })
 }
 
-// The decompose/sequence/score maker is ONE session (ssbd-qrpf0), and no checker session
-// follows it: the Beads format and the build order are checked in code.
-const score = (key) => ({ key, userBusinessValue: 5, timeCriticality: 3, riskReductionOpportunityEnablement: 2, jobSize: 2, wsjf: 5, rationale: 'r' })
-function decompStub({ tasks, buildOrder }) {
-  return (call) => {
-    if (call.label === 'decompose:sequence-and-score') {
-      return { tasks, rationale: 'r', edges: [], buildOrder, acyclic: true, scores: buildOrder.map(score) }
-    }
-    return null
-  }
-}
-
 // ── Decomposition: tasks only ─────────────────────────────────────────────────
 
 test('task-decomposition can only ever emit type "task"', () => {
@@ -189,104 +175,6 @@ test('task-decomposition can only ever emit type "task"', () => {
       `decomposing a Story yields tasks and nothing else, but the schema admits [${e}]. An Epic is created with its PRD and a Story with its Spec — neither is ever minted by decomposition.`,
     )
   }
-})
-
-test('task-decomposition emits tasks parented to the Story it was given', async () => {
-  const decomposed = [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }]
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: {
-      ...SCORED,
-      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
-      story: { id: 'ssbd-story-1', title: 'the story' },
-    },
-    agentImpl: decompStub({ tasks: decomposed, buildOrder: ['T1'] }),
-  })
-
-  assert.equal(result.ok, true, `decomposition failed: ${result.reason || ''}`)
-  assert.ok(result.beadSet.length > 0)
-  for (const bead of result.beadSet) {
-    assert.equal(bead.type, 'task', 'every emitted bead must be a task')
-    assert.equal(
-      bead.parentStoryId,
-      'ssbd-story-1',
-      'every emitted task must be parented to the Story — the roll-up parent it reports under',
-    )
-  }
-})
-
-test('a Story identified only by `key` still parents its tasks', async () => {
-  // Before bd writes them, a Story has no id — only the local key the composite
-  // assigned. Reading `story.id` alone yields parentStoryId: null on every task,
-  // and every one of them would then report under no Story at all.
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: {
-      ...SCORED,
-      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repo' },
-      story: { key: 'S2', title: 'keyed but not yet written to bd' },
-    },
-    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }], buildOrder: ['T1'] }),
-  })
-
-  assert.equal(result.ok, true)
-  for (const bead of result.beadSet) {
-    assert.equal(
-      bead.parentStoryId,
-      'S2',
-      'a Story that exists only as a local key must still parent its tasks — otherwise every task is unroutable',
-    )
-  }
-})
-
-// ── A Task RECORDS the repository it belongs to ───────────────────────────────
-//
-// The repo is RULED on the Story — one Spec+Story per repository — and that stays
-// true. But a Task that only inherits it is not self-describing: dispatching one
-// meant walking up to its Story first, and a Task whose ancestor carried no repo was
-// undispatchable even though the repository was known when it was decomposed. The
-// field is `repoPath` because that is what every code-writing composite reads off
-// the bead.
-
-test('every emitted task carries the repository, copied from the Spec it decomposed', async () => {
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: {
-      ...SCORED,
-      spec: { id: 'SPEC-1', title: 'spec', repoPath: '/repos/service-a' },
-      story: { key: 'S1', title: 'the story' },
-    },
-    agentImpl: decompStub({
-      tasks: [
-        { key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] },
-        { key: 'T2', title: 'a2', description: 'b2', type: 'task', acceptanceCriteria: ['c2'], definitionOfDone: ['d2'] },
-      ],
-      buildOrder: ['T1', 'T2'],
-    }),
-  })
-
-  assert.equal(result.ok, true, `decomposition failed: ${result.reason || ''}`)
-  assert.equal(result.repoPath, '/repos/service-a', 'the run must report the repository it decomposed against')
-  assert.equal(result.beadSet.length, 2)
-  for (const bead of result.beadSet) {
-    assert.equal(
-      bead.repoPath,
-      '/repos/service-a',
-      'a Task must record its own repository — a consumer should not have to walk up to the Story to find it',
-    )
-  }
-})
-
-test('the repository may also arrive as args.repoPath', async () => {
-  const { result } = await runWorkflowScript(taskDecomposition, {
-    args: {
-      ...SCORED,
-      spec: { id: 'SPEC-1', title: 'spec' },
-      story: { key: 'S1' },
-      repoPath: '/repos/service-b',
-    },
-    agentImpl: decompStub({ tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'], definitionOfDone: ['d'] }], buildOrder: ['T1'] }),
-  })
-
-  assert.equal(result.ok, true)
-  assert.equal(result.beadSet[0].repoPath, '/repos/service-b')
 })
 
 test('task-decomposition tells the decomposer it may not mint a container', () => {

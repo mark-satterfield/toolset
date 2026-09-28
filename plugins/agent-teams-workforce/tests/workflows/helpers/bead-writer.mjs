@@ -1,73 +1,20 @@
-// A stand-in for the `bead-writer` agent, for tests that run prd-to-spec.
+// Stand-ins for the depscore.py runner sessions prd-to-spec and its minis dispatch.
 //
-// prd-to-spec WRITES its hierarchy now — it does not hand it back with an instruction to
-// write it — so a fixture whose agentImpl answers null for the write waves is modelling a
-// run in which nothing was persisted, and that run is correctly ok:false. Every fixture
-// that expects a successful composite therefore has to answer the writer, exactly as it
-// already answers the minis and the gates.
-//
-// The stub is deliberately faithful in the one way that matters: it reports back ONLY the
-// keys it was handed, so a composite that forgets to include a bead in a wave, or that
-// asks for a bead twice, shows up as a discrepancy rather than being papered over.
+// Each bead write is one runner session that runs one `depscore.py` command and returns its
+// JSON output: `beads:write-story` inside spec-authoring, `beads:write-tasks` inside
+// task-decomposition, `beads:write-task-edges` and `epic:finish` in prd-to-spec. A fixture
+// that expects a successful run answers them the way the command answers when every write
+// landed.
 
-/** Pull the JSON payload out of a bead-writer prompt. */
-export function writerPayload(call) {
-  const marker = 'JSON payload:\n'
-  const i = String(call.prompt || '').indexOf(marker)
-  if (i < 0) return null
-  try {
-    return JSON.parse(String(call.prompt).slice(i + marker.length))
-  } catch {
-    return null
-  }
-}
-
-/** True for the write/link/survey/heal dispatches this composite makes. */
+/** True for the depscore.py runner sessions: the bead writes and the Epic lifecycle. */
 export function isWriterCall(call) {
-  return call.kind === 'agent' && /^beads:(write-|link|survey|heal)/.test(String(call.label || ''))
+  return call.kind === 'agent' && /^(beads:write-|epic:)/.test(String(call.label || ''))
 }
 
 /**
- * An agentImpl fragment that answers the bead-writer waves and nothing else.
- *
- * @param {object} [opts]
- * @param {string[]} [opts.failKeys]  local keys whose create must come back failed
- * @param {boolean}  [opts.failLinks] refuse every dependency edge
- * @param {(key: string) => string} [opts.idFor] id minting, default `bd-<key>`
- * @param {(parentId: string) => object[]} [opts.nodesFor] survey answer, default no children
- * @param {string[]} [opts.failMutations] mutation keys whose apply must come back failed
- * @returns {(call: object) => object|null} the reply, or null when it is not a writer call
- */
-export function beadWriter({ failKeys = [], failLinks = false, idFor = (k) => `bd-${k}`, nodesFor = () => [], failMutations = [] } = {}) {
-  const fail = new Set(failKeys)
-  const failMut = new Set(failMutations)
-  return (call) => {
-    if (!isWriterCall(call)) return null
-    const payload = writerPayload(call) || { beads: [], links: [] }
-    return {
-      surveys: (payload.surveys || []).map((s) => ({ key: s.key, ok: true, nodes: nodesFor(s.parentId) })),
-      mutations: (payload.mutations || []).map((m) =>
-        failMut.has(m.key) ? { key: m.key, ok: false, error: 'scripted failure' } : { key: m.key, ok: true },
-      ),
-      results: (payload.beads || []).map((b) =>
-        fail.has(b.key)
-          ? { key: b.key, id: null, ok: false, error: 'scripted failure' }
-          : { key: b.key, id: idFor(b.key), ok: true },
-      ),
-      links: (payload.links || []).map((l) => ({
-        fromId: l.fromId,
-        dependsOnId: l.dependsOnId,
-        ok: !failLinks,
-        ...(failLinks ? { error: 'scripted failure' } : {}),
-      })),
-    }
-  }
-}
-
-/**
- * The artifact arguments prd-to-spec writes its hierarchy from: without a working directory
- * it has no saved documents to emit, so every fixture that expects a written hierarchy
- * passes these.
+ * The artifact arguments prd-to-spec saves its documents under: without a working directory
+ * there is no saved document for a write command to read, so every fixture that expects a
+ * written hierarchy passes these.
  */
 export const ARTIFACT_ARGS = Object.freeze({ artifactScript: '/opt/sdlc/artifactio.py', projectRoot: '/proj' })
 
@@ -80,17 +27,24 @@ export const TEST_EPIC = Object.freeze({ id: 'bd-E1', key: 'E1', title: 'Test Ep
 /** The Epic's judged values, as the lifecycle check reads them off the Epic bead. */
 export const TEST_EPIC_VALUE = Object.freeze({ id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3, confidence: 80 })
 
+/** The `--slug` value of a write command prompt. */
+function slugOf(call) {
+  const m = /--slug '([^']*)'/.exec(String(call.prompt || ''))
+  return m ? m[1] : 'repo'
+}
+
 /**
- * An agentImpl fragment that answers prd-to-spec's Epic lifecycle runners — the start check,
- * the emission and finish (`elaboration-complete`) and the release — as `depscore.py` would for an
- * Epic that may be elaborated, and the cross-Story dependency mapper with no edges.
+ * An agentImpl fragment that answers the depscore.py runner sessions — the start check, the
+ * bead writes, the finish and the release — as `depscore.py` does for an Epic that may be
+ * elaborated and a write that landed, and the cross-Story dependency mapper with no edges.
  *
  * @param {object} [opts]
  * @param {object} [opts.refusal] the start check's refusal, `{code, reason}`
  * @param {object[]} [opts.crossStoryEdges] the cross-Story Task edges the mapper returns
- * @returns {(call: object) => object|null} the reply, or null when it is not a lifecycle call
+ * @param {string[]} [opts.taskKeys] the Task keys `beads:write-tasks` reports as created
+ * @returns {(call: object) => object|null} the reply, or null when it is not one of those calls
  */
-export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
+export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys = ['T1'] } = {}) {
   return (call) => {
     if (call.kind !== 'agent') return null
     if (call.label === 'epic:start') {
@@ -102,49 +56,47 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
           : { ok: true, refusal: null, epic: { ...TEST_EPIC_VALUE, title: TEST_EPIC.title }, owner: 'test-owner', previousState: 'ready' },
       }
     }
-    if (call.label === 'epic:complete') {
-      // `depscore.py elaboration-complete` reads the saved documents and writes them; this stub
-      // answers as it does when every bead landed, for every key a fixture can mint.
-      const done = !/\s--hold\s/.test(String(call.prompt || ''))
-      const tasks = {}
-      const stories = {}
-      for (let s = 1; s <= 10; s++) {
-        stories[`S${s}`] = `bd-S${s}`
-        for (let t = 1; t <= 20; t++) tasks[`S${s}-T${t}`] = `bd-S${s}-T${t}`
-      }
-      for (let n = 1; n <= 20; n++) {
-        tasks[`REMOVAL-${n}`] = `bd-REMOVAL-${n}`
-        tasks[`IMPACT-${n}`] = `bd-IMPACT-${n}`
-      }
+    if (call.label === 'beads:write-story') {
+      const slug = slugOf(call)
       return {
         exitCode: 0,
         output: {
           ok: true,
           epic: TEST_EPIC.id,
-          emission: {
-            target: '/repo',
-            attempted: 0,
-            created: 0,
-            adopted: 0,
-            written: [],
-            failed: [],
-            skipped: [],
-            specReferenceMissing: [],
-            knockOnWithoutSpec: [],
-            links: { attempted: 0, linked: 0, failed: [] },
-            reelaboration: null,
-            verdict: 'complete',
-            reason: 'all bead(s) of this hierarchy are durable',
-          },
-          stories,
-          tasks,
-          done,
-          finish: {
-            ok: true,
-            epic: TEST_EPIC.id,
-            lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
-            summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
-          },
+          story: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', title: `Story ${slug}`, description: 'd', decisionIds: [] },
+          existingTasks: [],
+          summary: { created: 1, updated: 0 },
+        },
+      }
+    }
+    if (call.label === 'beads:write-tasks') {
+      const slug = slugOf(call)
+      return {
+        exitCode: 0,
+        output: {
+          ok: true,
+          epic: TEST_EPIC.id,
+          story: { id: `bd-${slug}`, elabKey: `story:${slug}` },
+          tasks: taskKeys.map((key) => ({ key, elabKey: `task:${slug}:${key}`, id: `bd-${slug}-${key}`, action: 'created', title: key, dependsOn: [] })),
+          closed: [],
+          edges: { added: 0, removed: 0, standing: 0 },
+          fingerprinted: taskKeys.length,
+          summary: { created: taskKeys.length, updated: 0, unchanged: 0, closed: 0 },
+        },
+      }
+    }
+    if (call.label === 'beads:write-task-edges') {
+      return { exitCode: 0, output: { ok: true, epic: TEST_EPIC.id, edges: [], rejected: [], summary: { added: 0, removed: 0, standing: 0 } } }
+    }
+    if (call.label === 'epic:finish') {
+      const done = /\s--done(\s|$)/.test(String(call.prompt || ''))
+      return {
+        exitCode: 0,
+        output: {
+          ok: true,
+          epic: TEST_EPIC.id,
+          lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
+          summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
         },
       }
     }
@@ -155,7 +107,7 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [] } = {}) {
 }
 
 /**
- * Compose the lifecycle stub in front of a test's own agentImpl.
+ * Compose the runner stub in front of a test's own agentImpl.
  *
  * @param {(call: object, calls: object[]) => any} [inner] the test's own agent answers
  * @param {object} [opts] passed to `lifecycleRunner`
@@ -167,19 +119,4 @@ export function withLifecycle(inner, opts) {
     if (answered) return answered
     return inner ? inner(call, calls) : null
   }
-}
-
-/**
- * Compose the writer stub and the lifecycle stub in front of a test's own agentImpl.
- *
- * @param {(call: object, calls: object[]) => any} [inner] the test's own agent answers
- * @param {object} [opts] passed to `beadWriter`
- */
-export function withBeadWriter(inner, opts) {
-  const writer = beadWriter(opts)
-  return withLifecycle((call, calls) => {
-    const written = writer(call)
-    if (written) return written
-    return inner ? inner(call, calls) : null
-  })
 }

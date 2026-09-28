@@ -15,7 +15,9 @@
     elaboration-start    mark one Epic `in_progress` when it may be elaborated
     elaboration-finish   score an Epic and its Tasks; `--done` sets it done
     elaboration-release  clear a run's owner token from an Epic
-    elaboration-complete write an Epic's Stories and Tasks from its saved documents, then finish it
+    write-story          write one repository's Story under an Epic from its saved document
+    write-tasks          write one Story's Tasks, their edges and their size fingerprints
+    write-task-edges     write the saved Task edges between an Epic's Stories
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
 and stdout carries only its `summary`. `--dry-run` computes, writes nothing, and returns the
@@ -45,10 +47,9 @@ from edgeset import (
     validate,
     withdraw_edge,
 )
+from beadwrite import write_story, write_task_edges, write_tasks
 from elaboration import LifecycleError, finish, release, start
-from emitter import complete as complete_elaboration
 from hierarchy import HierarchyError
-from hierarchy import build as build_hierarchy
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 
 ELAB_KEY = "elaboration_state"
@@ -466,15 +467,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     efi = sub.add_parser(
         "elaboration-finish",
-        help="fingerprint judged Task sizes, score the Epic and its Tasks, mark it done",
+        help="score the Epic and its Tasks; `--done` marks it done",
         parents=[common],
     )
     efi.add_argument("--epic", required=True, help="the Epic whose Tasks were written")
-    efi.add_argument(
-        "--judged",
-        default="",
-        help="the Tasks whose size this run judged from their current content",
-    )
     efi.add_argument("--owner", default=None, help="the owner token the start returned")
     efi.add_argument(
         "--done",
@@ -496,50 +492,56 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _dry_run_flag(efi)
 
-    eco = sub.add_parser(
-        "elaboration-complete",
-        help="write an Epic's hierarchy from its saved documents, then finish it",
+    wst = sub.add_parser(
+        "write-story",
+        help="write one repository's Story under an Epic from its saved story-<slug>.json",
         parents=[common],
     )
-    eco.add_argument("--epic", required=True, help="the Epic")
-    eco.add_argument(
+    wst.add_argument("--epic", required=True, help="the Epic")
+    wst.add_argument(
         "--dir", required=True, type=Path, help="the Epic's working directory"
     )
-    eco.add_argument(
+    wst.add_argument("--slug", required=True, help="the repository's artifact slug")
+    wst.add_argument("--repo", required=True, help="the repository the Story covers")
+    wst.add_argument(
+        "--project-root",
+        type=Path,
+        default=None,
+        help="the root artifact paths are recorded relative to",
+    )
+    _dry_run_flag(wst)
+
+    wta = sub.add_parser(
+        "write-tasks",
+        help="write one Story's Tasks from its saved tasks-<slug>.json",
+        parents=[common],
+    )
+    wta.add_argument("--epic", required=True, help="the Epic")
+    wta.add_argument(
+        "--dir", required=True, type=Path, help="the Epic's working directory"
+    )
+    wta.add_argument("--slug", required=True, help="the Story's repository slug")
+    wta.add_argument(
         "--project-root",
         type=Path,
         default=None,
         help="the root spec references are recorded relative to",
     )
-    eco.add_argument(
-        "--repos",
-        default="",
-        help="the span, comma-separated; absent, the saved ruling's",
+    _dry_run_flag(wta)
+
+    wte = sub.add_parser(
+        "write-task-edges",
+        help="write the saved task-deps.json edges between an Epic's Stories",
+        parents=[common],
     )
-    eco.add_argument(
-        "--steps",
-        default=None,
-        help="the completed steps, comma-separated; absent, the Epic's STEPS.md",
+    wte.add_argument("--epic", required=True, help="the Epic")
+    wte.add_argument(
+        "--dir", required=True, type=Path, help="the Epic's working directory"
     )
-    eco.add_argument(
-        "--extra",
-        type=Path,
-        default=None,
-        help="a saved {tasks: [...]} added beside them",
+    wte.add_argument(
+        "--repos", required=True, help="the span, comma-separated, in its ruled order"
     )
-    eco.add_argument(
-        "--hold",
-        default="",
-        help="reasons that hold the Epic short of done, comma-separated",
-    )
-    eco.add_argument("--owner", default=None, help="the owner token the start returned")
-    eco.add_argument("--sad-root", default=None, help="the SAD directory")
-    eco.add_argument(
-        "--require-complete",
-        action="store_true",
-        help="refuse, writing nothing, while a step that needs an agent is missing",
-    )
-    _dry_run_flag(eco)
+    _dry_run_flag(wte)
 
     erl = sub.add_parser(
         "elaboration-release",
@@ -565,20 +567,52 @@ def run(args: argparse.Namespace) -> dict:
 
     Raises:
         SequencingError: An edge proposal names neither or both of `--epic` and `--task`.
+        GraphError: A write command's tracker was not read through `bd`.
     """
-    if args.command == "elaboration-complete":
-        return run_complete(args)
-    descriptions = args.command in (
-        "assess-plan",
-        "assess-context",
-        "score-plan",
-        "judge-input",
-        "elaboration-finish",
-    ) or getattr(args, "with_description", False)
-    graph = beadgraph.load(args.directory, with_description=descriptions)
-    head = {"source": graph.source, "warnings": graph.warnings, "command": args.command}
-    writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     command = args.command
+    writes = command in {"write-story", "write-tasks", "write-task-edges"}
+    descriptions = (
+        writes
+        or command
+        in {
+            "assess-plan",
+            "assess-context",
+            "score-plan",
+            "judge-input",
+            "elaboration-finish",
+        }
+        or getattr(args, "with_description", False)
+    )
+    graph = beadgraph.load(args.directory, with_description=descriptions)
+    head = {"source": graph.source, "warnings": graph.warnings, "command": command}
+    writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
+    if writes and graph.warnings:
+        msg = f"the tracker was not read through bd, so nothing is written: {graph.warnings}"
+        raise GraphError(msg)
+    if command == "write-story":
+        return head | write_story(
+            graph,
+            writer,
+            args.epic,
+            args.dir,
+            slug=args.slug,
+            repo=args.repo,
+            root=args.project_root,
+        )
+    if command == "write-tasks":
+        return head | write_tasks(
+            graph,
+            writer,
+            args.epic,
+            args.dir,
+            slug=args.slug,
+            root=args.project_root,
+            reload=lambda: beadgraph.load(args.directory, with_description=True),
+        )
+    if command == "write-task-edges":
+        return head | write_task_edges(
+            graph, writer, args.epic, args.dir, split_ids(args.repos)
+        )
     if command == "assess-plan":
         return head | assess_plan(
             graph, epic=args.epic, since=args.since, level=args.level, task=args.task
@@ -676,7 +710,6 @@ def run(args: argparse.Namespace) -> dict:
             graph,
             writer,
             args.epic,
-            judged=split_ids(args.judged),
             owner=args.owner,
             done=args.done,
             sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
@@ -685,61 +718,6 @@ def run(args: argparse.Namespace) -> dict:
     if command == "elaboration-release":
         return head | release(graph, writer, args.epic, owner=args.owner)
     return head | score(graph, writer)
-
-
-def run_complete(args: argparse.Namespace) -> dict:
-    """Write an Epic's hierarchy from its saved documents, then finish its elaboration.
-
-    With `--require-complete`, returns a `steps-missing` refusal and writes nothing while a
-    step that needs an agent is missing. Writes nothing when the tracker was not read
-    through `bd`.
-
-    Args:
-        args: The parsed command line.
-
-    Returns:
-        The payload to print as JSON.
-
-    Raises:
-        GraphError: The tracker was not read through `bd`.
-    """
-    hier = build_hierarchy(
-        args.dir,
-        args.project_root,
-        repos=split_ids(args.repos) if args.repos else None,
-        steps=[s.strip() for s in args.steps.split(",") if s.strip()]
-        if args.steps is not None
-        else None,
-        extra=args.extra,
-        holds=[h.strip() for h in args.hold.split(",") if h.strip()],
-    )
-    head = {"command": args.command, "epic": args.epic}
-    if args.require_complete and hier.missing_steps:
-        return head | {
-            "ok": False,
-            "refusal": {
-                "code": "steps-missing",
-                "reason": "a step that needs an agent is not on the Epic's STEPS.md",
-                "missing": hier.missing_steps,
-            },
-            "summary": {"ok": False, "refused": "steps-missing"},
-        }
-    graph = beadgraph.load(args.directory, with_description=True)
-    if graph.warnings:
-        msg = f"the tracker was not read through bd, so nothing is written: {graph.warnings}"
-        raise GraphError(msg)
-    writer = Writer(args.directory, dry_run=args.dry_run)
-    result = complete_elaboration(
-        graph,
-        writer,
-        args.epic,
-        hier,
-        args.project_root,
-        owner=args.owner,
-        sad_root=args.sad_root,
-        reload=lambda: beadgraph.load(args.directory, with_description=True),
-    )
-    return {"source": graph.source, "warnings": graph.warnings} | head | result
 
 
 def main(argv: list[str] | None = None) -> int:

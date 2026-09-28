@@ -64,8 +64,7 @@ records instead, which differ in some fields. Batch mode calls the same
 `content_hash` as `fingerprint`, through the same `fingerprint_of` entry point — there is no
 parallel implementation and no second recipe.
 
-Because this is a command, it works for an agent with `tools: Bash` and no `Read` — `bead-writer`
-is exactly that agent. **No agent should need to read a file or hand-roll `jq` to learn any of
+Because this is a command, it works for an agent with `tools: Bash` and no `Read`. **No agent should need to read a file or hand-roll `jq` to learn any of
 this.**
 
 ## What `bd show --json` returns

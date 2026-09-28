@@ -8,14 +8,14 @@
 // have no filesystem), cap it at 8KB, and thread the text to the minis, which
 // prepend a delimited, outranking, cite-when-applied block to JUDGMENT prompts only.
 // A missing file injects nothing — zero behavior change — and mechanical agents
-// (bead-writer, ledger plumbing) never receive it.
+// (the depscore.py runner sessions, ledger plumbing) never receive it.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls } from './helpers/run-workflow.mjs'
-import { beadWriter, isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
+import { isWriterCall, lifecycleRunner, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 
@@ -164,17 +164,16 @@ function compositeWorkflows() {
     }
     if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
     if (name.endsWith('spec-authoring')) {
-      return { ok: true, story: { key: 'S1', type: 'story', title: 'S', description: 'd', repoPath: '/repos/alpha', parentEpicKey: 'E1' }, outOfRepoFindings: [] }
+      return { ok: true, story: { key: 'S1', type: 'story', id: 'bd-S1', elabKey: 'story:alpha', title: 'S', description: 'd', repoPath: '/repos/alpha', parentEpicKey: 'E1' }, outOfRepoFindings: [] }
     }
     if (name.endsWith('task-decomposition')) {
-      return { ok: true, beadSet: [{ key: 'T1', type: 'task', parentStoryId: 'S1', title: 't', description: 'd', acceptanceCriteria: ['a'] }] }
+      return { ok: true, tasks: [{ key: 'T1', id: 'bd-S1-T1', elabKey: 'task:S1:t', action: 'created', title: 't', dependsOn: [] }], summary: { created: 1, updated: 0 } }
     }
     return null
   }
 }
 
 async function runComposite({ found, content = RULINGS }) {
-  const writer = beadWriter()
   const lifecycle = lifecycleRunner()
   return runWorkflowScript(path.join(WF, 'prd-to-spec.js'), {
     args: { prd: { id: 'P1', title: 'P', body: 'R1. thing' }, repoPath: '/repos/alpha', epic: TEST_EPIC, ...ARTIFACT_ARGS },
@@ -195,7 +194,7 @@ async function runComposite({ found, content = RULINGS }) {
       }
       if (call.label === 'resolve:standing-rulings') return { found, content: found ? content : '' }
       if (call.label === 'triage:architecture-needed') return { needed: true, reason: 'open', decisions: [], dimensions: ['integration'] }
-      return writer(call)
+      return null
     },
   })
 }

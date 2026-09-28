@@ -29,8 +29,6 @@ on it as `elaboration_state_owner`. The token is the caller's, or a fresh one. A
 
 At the FINISH, after the Tasks are written:
 
-* each Task whose size this run judged from the content it now carries gets that content's
-  fingerprint as `wsjf_content_hash`, so the scoring pass reads the size as current;
 * the WSJF arithmetic runs over the whole tracker and writes only this Epic and the Tasks
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
@@ -48,9 +46,9 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from beadgraph import SCOPE_JUDGING, fingerprints, now_iso
+from beadgraph import now_iso
 from sadstate import promote as promote_sad
-from scoring import JUDGED_HASH_KEY, SIZE_JUDGED_KEYS, score
+from scoring import score
 
 if TYPE_CHECKING:
     from beadgraph import Bead, Graph, Writer
@@ -190,13 +188,11 @@ def start(
         else:
             satisfied = bead.closed
         if not satisfied:
-            waiting.append(
-                {
-                    "id": upstream,
-                    "title": bead.title if bead else None,
-                    "elaborationState": state,
-                }
-            )
+            waiting.append({
+                "id": upstream,
+                "title": bead.title if bead else None,
+                "elaborationState": state,
+            })
     if waiting:
         return _refusal(
             "upstream-not-elaborated",
@@ -282,19 +278,17 @@ def finish(
     writer: Writer,
     epic_id: str,
     *,
-    judged: list[str],
     owner: str | None,
     done: bool,
     sad_files: list[str] | None = None,
     sad_root: str | None = None,
 ) -> dict:
-    """Fingerprint the judged Task sizes, score this Epic and its Tasks, and mark it done.
+    """Score this Epic and its Tasks, and mark it done.
 
     Args:
         graph: The tracker graph, read with descriptions.
         writer: The tracker writer; a dry-run writer records the writes instead.
         epic_id: The Epic.
-        judged: The Tasks whose size this run judged from the content they now carry.
         owner: The owner token `start` returned.
         done: Set the Epic's `elaboration_state` to `done`.
         sad_files: The SAD files this run's architecture phase changed. They are promoted
@@ -303,12 +297,12 @@ def finish(
         sad_root: The SAD directory every one of those files must sit under.
 
     Returns:
-        The fingerprints written, the scoring result, the lifecycle write, and — when the
-        Epic was marked done — the SAD promotion report.
+        The scoring result, the lifecycle write, and — when the Epic was marked done —
+        the SAD promotion report.
 
     Raises:
-        LifecycleError: The Epic is not an open Epic, a judged id is not a Task beneath
-            it or carries no judged size, or the Epic is owned by another run.
+        LifecycleError: The Epic is not an open Epic, is owned by another run, or is
+            marked done with no Task beneath it.
     """
     epic = graph.beads.get(epic_id)
     if epic is None or epic.kind != "epic" or epic.closed:
@@ -323,25 +317,6 @@ def finish(
     if done and not under:
         msg = f"{epic_id} has no Tasks beneath it, so its elaboration is not done"
         raise LifecycleError(msg)
-    stray = sorted(set(judged) - under)
-    if stray:
-        msg = f"not Tasks beneath {epic_id}: {', '.join(stray)}"
-        raise LifecycleError(msg)
-    unsized = sorted(
-        t
-        for t in judged
-        if any(graph.beads[t].metadata.get(k) in (None, "") for k in SIZE_JUDGED_KEYS)
-    )
-    if unsized:
-        msg = f"judged Tasks carrying no judged size: {', '.join(unsized)}"
-        raise LifecycleError(msg)
-    prints = fingerprints(graph.records, SCOPE_JUDGING)
-    stamped = []
-    for task_id in sorted(set(judged)):
-        current = prints.get(task_id, "")
-        if current and graph.beads[task_id].metadata.get(JUDGED_HASH_KEY) != current:
-            writer.metadata(task_id, {JUDGED_HASH_KEY: current})
-            stamped.append(task_id)
     scored = score(graph, writer, scope={epic.id} | under)
     lifecycle = None
     sad = None
@@ -363,7 +338,6 @@ def finish(
     return {
         "ok": True,
         "epic": epic.id,
-        "fingerprinted": stamped,
         "score": {
             key: scored[key]
             for key in (
@@ -383,7 +357,6 @@ def finish(
         "summary": {
             "ok": True,
             "epic": epic.id,
-            "fingerprinted": len(stamped),
             "epicsWritten": scored["summary"]["epicsWritten"],
             "tasksScored": scored["summary"]["tasksScored"],
             "tasksWritten": scored["summary"]["tasksWritten"],

@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript } from './helpers/run-workflow.mjs'
+import { withLifecycle } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const specAuthoring = path.resolve(HERE, '..', '..', 'workflows', 'spec-authoring.js')
@@ -43,8 +44,14 @@ function agentImpl(call) {
   return { approved: true, accepted: true, findings: [] }
 }
 
+/** The working directory the Story is saved in, and the tracker `depscore.py write-story` writes it to. */
+const WRITE_ARGS = {
+  artifacts: { dir: '/proj/art/E1', epicId: 'E1', script: '/opt/sdlc/artifactio.py', phase: 'spec:repo-a', slug: 'repo-a' },
+  beads: { script: '/opt/plugins/agent-teams-workforce/scripts/portfolio/depscore.py', repo: '/proj', epicId: 'bd-E1', projectRoot: '/proj' },
+}
+
 async function run(args) {
-  return runWorkflowScript(specAuthoring, { args, agentImpl, workflowImpl: () => null })
+  return runWorkflowScript(specAuthoring, { args: { ...WRITE_ARGS, ...args }, agentImpl: withLifecycle(agentImpl), workflowImpl: () => null })
 }
 
 test('the mini returns a result at all — not undefined', async () => {

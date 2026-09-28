@@ -122,44 +122,34 @@ from a BRD, and a run without one is in no way diminished.
 
 ## 3. Check what the run wrote — do NOT write it yourself
 
-**The composite writes the hierarchy into beads itself.** Its Emit Beads phase
-creates the Stories under the Epic's real id, then each Story's Tasks under their own
-Story's real id, each carrying every WSJF component, then the Task dependency edges as
-`blocks` edges — within each Story and across Stories — parent before child, with a
-child of an unwritten parent never attempted. Writing any of it again creates
-duplicates. It then scores the Epic and its Tasks and, when every part landed, sets
-the Epic's `elaboration_state` to `done`; the Epic itself stays open.
+**The composite writes the hierarchy into beads itself**, each part in the step that
+authors it: spec authoring writes each Story under the Epic, task decomposition writes
+each Story's Tasks with their judged sizes and the `blocks` edges between them, and the
+cross-Story step writes the `blocks` edges between Stories. Every write is keyed by the
+durable `elab_key`, so a Story or Task that already exists is updated, never duplicated.
+Writing any of it again yourself creates duplicates. The final step scores the Epic and
+its Tasks and, when every part landed, sets the Epic's `elaboration_state` to `done`; the
+Epic itself stays open.
 
 What comes back:
 
-- `hierarchy: {epic, stories, tasks}` — the same tree, with each node now carrying the
-  real `id` it was written under. A Task's `dependsOn` lists the Tasks it depends on.
+- `hierarchy: {epic, stories, tasks}` — each Story and Task with the `id` and `elabKey`
+  it was written under. A Task's `dependsOn` lists the Tasks it depends on.
 - `crossStoryDependencies` — `{ran, reason, edges[], rejected[]}`: the Task edges that
   cross Stories, each typed and justified, and any proposed edge not applied.
 - `lifecycle` — `{owner, start, finish, done}`: the start check, the scoring result for
   the Epic and its Tasks, and whether the Epic's elaboration is now `done`. When `done`
   is false the Epic's elaboration stays `in_progress` and the next run completes it.
-- `emissionOk` — true only when every bead and every edge landed.
-- `beadsEmitted` — how many beads this run actually created.
-- `emission` — `{verdict, target, created, adopted, failed[], skipped[], links}`.
-  `verdict` is `complete`, `partial`, or `none`.
+- `beadsEmitted` — how many Stories and Tasks this run created or updated.
 
-Act on the verdict:
+A write that failed returns `ok: false` at stage `hierarchy-not-persisted`, and the
+`headline` names each failed write and its error. Fix the cause (usually the repository
+path or the tracker itself) and re-dispatch: the rerun replays every saved step, and each
+write updates what landed and creates what did not.
 
-- **complete** — nothing to do. Report the ids.
-- **partial** — some beads did not land, and `emission.failed` / `emission.skipped`
-  name every one with its reason. The hierarchy is returned in full, so the
-  remainder can be written with `bd` without re-running the pipeline: create each
-  named node under the real parent id already recorded on the tree, parent before
-  child. A `skipped` node was not attempted because its parent is missing — write
-  the parent first or the child is an orphan the router refuses to work.
-- **none** — the run comes back `ok: false` at stage `emit-beads`. Nothing is durable
-  and nothing was lost: read `emission.reason`, fix the cause (usually the repository
-  path or the tracker itself), and write the returned hierarchy or re-dispatch.
-
-Report `emissionOk` and `beadsEmitted` exactly as the composite returned them. They
-are measured by the step that did the writing; never compose them from your own
-account of what you think landed.
+Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them. They
+are measured by the steps that did the writing; never compose them from your own account
+of what you think landed.
 
 ## 4. Report
 
@@ -170,9 +160,8 @@ account of what you think landed.
 - Repositories created: every `createdRepos` entry, with why no existing repo fits
 - Stories: how many, and which repo each covers
 - Tasks: how many, and how many dependency edges cross Stories
-- Emission: `emission.verdict`, `beadsEmitted`, and — when the verdict is not
-  `complete` — every node in `emission.failed` and `emission.skipped` and what
-  still has to be written
+- Beads: `beadsEmitted`, and — when the run stopped at `hierarchy-not-persisted` —
+  each failed write the `headline` names
 - A run that stopped — the composite's `headline` carries the phase and the reason; every
   phase artifact is in the run journal at `detailPath`, and the composite returns none of
   them. A stopped run names what it DID produce under `partialProduced` — read the journal

@@ -1,14 +1,10 @@
-"""An Epic's Story -> Task hierarchy, rebuilt from the documents its elaboration saved.
+"""Readers for the Story and Task documents an Epic's elaboration saves.
 
-prd-to-spec saves every step it completes into the Epic's working directory and lists the
-step in that directory's `STEPS.md`. Emission needs no agent: the Stories are the saved
-`story-<slug>.json` of each `spec:<slug>` step, the Tasks are the saved `tasks-<slug>.json`
-of each `tasks:<slug>` step, and the edges between Stories are the saved `task-deps.json`.
-This module reads those files and returns the hierarchy prd-to-spec writes into beads, so
-the workflow and the host that finishes an Epic without a session build it the same way.
-
-Keys follow prd-to-spec: the Story of the repository at index i of the span is `S<i+1>`,
-and a Task keeps its decomposition key under its Story's key (`S1-T3`).
+prd-to-spec saves each step's output into the Epic's working directory: `story-<slug>.json`
+for a repository's Story, `tasks-<slug>.json` for that Story's decomposition, and
+`task-deps.json` for the Task edges between Stories. These readers turn those files into the
+Stories and Tasks `beadwrite` writes into beads. A Task's `key` is its local decomposition
+key (`T3`); `depends_on` holds local keys of the same Story.
 """
 
 from __future__ import annotations
@@ -16,12 +12,8 @@ from __future__ import annotations
 import ast
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-
-#: The steps-completed file of an Epic's working directory.
-STEPS_FILE = "STEPS.md"
-_STEP_LINE = re.compile(r"^\s*\d+\.\s+(\S+)\s*$")
 
 #: The surfaces a Task may declare; anything else is dropped.
 SURFACES = (
@@ -45,50 +37,13 @@ SIZE_KEYS = (
     "wsjf_size_confidence",
 )
 
-#: The steps every elaboration completes before its Stories exist.
-LEADING_STEPS = ("architecture", "repo-scoping", "trd")
-
-#: The step that derives the Task edges between Stories.
-TASK_DEPS_STEP = "task-deps"
-
-#: Reasons a caller may pass for holding the Epic short of `done`. Tokens, so they cross a
-#: command line intact.
-HOLD_REASONS = {
-    "spec-failures": "a repository in the span produced no Spec",
-    "decomposition-failures": "a Story produced no Tasks",
-    "removal-not-emitted": "removal work the PRD requires reached no Task",
-    "cross-story-degraded": "the Task edges between Stories were not derived",
-    "knock-on-unsaved": "knock-on Tasks this run added could not be saved for emission",
-}
-
 
 class HierarchyError(ValueError):
-    """The saved documents do not describe a hierarchy that can be written."""
-
-
-def read_steps(directory: Path) -> list[str]:
-    """The steps an Epic's steps-completed file lists, in its order.
-
-    Args:
-        directory: The Epic's working directory.
-
-    Returns:
-        The step names; empty when there is no file.
-    """
-    try:
-        text = (directory / STEPS_FILE).read_text(encoding="utf-8")
-    except OSError:
-        return []
-    steps: list[str] = []
-    for line in text.splitlines():
-        found = _STEP_LINE.match(line)
-        if found and found.group(1) not in steps:
-            steps.append(found.group(1))
-    return steps
+    """The saved documents do not describe a Story or Tasks that can be written."""
 
 
 def repo_slugs(repos: list[str]) -> dict[str, str]:
-    """Each repository's artifact slug: its directory name, suffixed on a collision.
+    """Return each repository's artifact slug: its directory name, suffixed on a collision.
 
     Args:
         repos: The span, in its ruled order.
@@ -112,7 +67,7 @@ def repo_slugs(repos: list[str]) -> dict[str, str]:
 
 
 def elab_slug(text: object) -> str:
-    """The title slug a Task's durable key is built from.
+    """Return the title slug a Task's durable key is built from.
 
     Args:
         text: The title.
@@ -124,7 +79,7 @@ def elab_slug(text: object) -> str:
 
 
 def str_list(value: object) -> list[str]:
-    """A list of non-empty, trimmed strings; anything that is not a list is empty.
+    """Return a list of non-empty, trimmed strings; anything but a list is empty.
 
     Args:
         value: The value.
@@ -138,7 +93,7 @@ def str_list(value: object) -> list[str]:
 
 
 def _loose_list(value: object) -> list[str]:
-    """A list saved either as a list or as the text of one.
+    """Return a list saved either as a list or as the text of one.
 
     Args:
         value: A list, or a string holding a JSON or Python list.
@@ -156,7 +111,7 @@ def _loose_list(value: object) -> list[str]:
 
 
 def ac_text(item: object) -> str:
-    """One acceptance criterion as text; a given/when/then object is joined.
+    """Return one acceptance criterion as text; a given/when/then object is joined.
 
     Args:
         item: The criterion.
@@ -167,12 +122,15 @@ def ac_text(item: object) -> str:
     if isinstance(item, dict) and (
         item.get("given") or item.get("when") or item.get("then")
     ):
-        return f"Given {item.get('given') or ''} When {item.get('when') or ''} Then {item.get('then') or ''}"
+        return (
+            f"Given {item.get('given') or ''} When {item.get('when') or ''} "
+            f"Then {item.get('then') or ''}"
+        )
     return str(item if item is not None else "").strip()
 
 
 def _read_json(path: Path) -> dict:
-    """A saved JSON object.
+    """Return a saved JSON object.
 
     Args:
         path: The file.
@@ -195,7 +153,7 @@ def _read_json(path: Path) -> dict:
 
 
 def _meta_sha(path: Path) -> str | None:
-    """The sha256 the recorder wrote beside an artifact, when there is one.
+    """Return the sha256 the recorder wrote beside an artifact, when there is one.
 
     Args:
         path: The artifact.
@@ -215,7 +173,6 @@ def _meta_sha(path: Path) -> str | None:
 class Story:
     """One Story: the container of one repository's Spec."""
 
-    key: str
     repo_path: str
     slug: str
     title: str
@@ -227,10 +184,9 @@ class Story:
 
 @dataclass
 class Task:
-    """One Task as prd-to-spec writes it."""
+    """One Task of a Story's decomposition."""
 
     key: str
-    story_key: str
     repo_path: str
     title: str
     description: str
@@ -246,62 +202,11 @@ class Task:
     sizes: dict[str, str] | None
     verified: str
     reuses: str | None = None
-    supersedes: str | None = None
-    out_of_span: bool = False
-
-
-@dataclass
-class Hierarchy:
-    """The Stories and Tasks one Epic's saved documents describe."""
-
-    repos: list[str]
-    steps: list[str]
-    stories: list[Story] = field(default_factory=list)
-    tasks: list[Task] = field(default_factory=list)
-    missing_steps: list[str] = field(default_factory=list)
-    holds: list[str] = field(default_factory=list)
-    cross_story: dict = field(default_factory=dict)
-    sad_files: list[str] = field(default_factory=list)
-
-
-def span_of(directory: Path) -> list[str]:
-    """The repository span the saved repo-scoping ruling placed work in, in order.
-
-    Args:
-        directory: The Epic's working directory.
-
-    Returns:
-        The repository paths.
-    """
-    ruling = _read_json(directory / "repo-scoping.json")
-    repos: list[str] = []
-    for placement in ruling.get("placements") or []:
-        path = str((placement or {}).get("repoPath") or "").strip()
-        if path and path not in repos:
-            repos.append(path)
-    return repos
-
-
-def expected_steps(repos: list[str]) -> list[str]:
-    """Every step that needs an agent before an Epic's hierarchy is whole.
-
-    Args:
-        repos: The span.
-
-    Returns:
-        The step names.
-    """
-    slugs = repo_slugs(repos)
-    steps = list(LEADING_STEPS)
-    for repo in repos:
-        steps += [f"spec:{slugs[repo]}", f"tasks:{slugs[repo]}"]
-    if len(repos) > 1:
-        steps.append(TASK_DEPS_STEP)
-    return steps
+    elab_key: str | None = None
 
 
 def _sizes(score: dict | None) -> dict[str, str] | None:
-    """A judged size as the metadata the Task carries, or None when it is unusable.
+    """Return a judged size as the metadata the Task carries, or None when unusable.
 
     Args:
         score: The decomposition's score entry for the Task.
@@ -332,7 +237,7 @@ def _sizes(score: dict | None) -> dict[str, str] | None:
 
 
 def _num(value: float) -> str:
-    """A number as the text JavaScript would print for it.
+    """Return a number as the text JavaScript would print for it.
 
     Args:
         value: The number.
@@ -343,8 +248,8 @@ def _num(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else str(value)
 
 
-def _order(keys: list[str], edges: list[tuple[str, str]]) -> list[str] | None:
-    """A build order over the keys, ties in their given order; None on a cycle.
+def build_order(keys: list[str], edges: list[tuple[str, str]]) -> list[str] | None:
+    """Return a build order over the keys, ties in their given order; None on a cycle.
 
     Args:
         keys: The Task keys.
@@ -372,18 +277,17 @@ def _order(keys: list[str], edges: list[tuple[str, str]]) -> list[str] | None:
     return order if len(order) == len(keys) else None
 
 
-def _story(directory: Path, rel: str | None, index: int, repo: str, slug: str) -> Story:
-    """The Story a repository's saved spec step carries.
+def read_story(directory: Path, rel: str | None, repo: str, slug: str) -> Story:
+    """Return the Story a repository's saved `story-<slug>.json` carries.
 
     Args:
         directory: The Epic's working directory.
         rel: The directory, relative to the project root, or None.
-        index: The repository's place in the span.
         repo: The repository.
         slug: Its artifact slug.
 
     Returns:
-        The Story.
+        The Story, with the metadata it is written with.
     """
     saved = _read_json(directory / f"story-{slug}.json")
     metadata = {"elab_key": f"story:{slug}", "repoPath": repo}
@@ -407,87 +311,204 @@ def _story(directory: Path, rel: str | None, index: int, repo: str, slug: str) -
             sha = _meta_sha(directory / name)
             if sha:
                 metadata[f"artifact_{key}_sha256"] = sha
+    criteria = saved.get("acceptanceCriteria")
     return Story(
-        key=f"S{index + 1}",
         repo_path=repo,
         slug=slug,
-        title=str(saved.get("title") or "").strip() or f"S{index + 1}",
+        title=str(saved.get("title") or "").strip() or slug,
         description=str(saved.get("description") or "").strip(),
-        acceptance=[
-            ac_text(x) for x in saved.get("acceptanceCriteria") or [] if ac_text(x)
-        ]
-        if isinstance(saved.get("acceptanceCriteria"), list)
+        acceptance=[ac_text(x) for x in criteria if ac_text(x)]
+        if isinstance(criteria, list)
         else [],
         decision_ids=decisions,
         metadata=metadata,
     )
 
 
-def _tasks(directory: Path, rel: str | None, story: Story) -> list[Task]:
-    """The Tasks a Story's saved decomposition carries, in build order.
+def _unique_tasks(raw: list[dict]) -> tuple[list[dict], dict[str, list[str]]]:
+    """Return the Tasks with unique keys, and each saved key's copies.
+
+    The first Task carrying key K keeps it; the n-th (n >= 2) becomes K-n, or the next K-m
+    no Task carries.
+
+    Args:
+        raw: The Tasks as saved.
+
+    Returns:
+        The Tasks, and saved key -> the keys its Tasks now carry.
+    """
+
+    def base_of(t: dict) -> str:
+        return str(t.get("key") or "").strip() or "T"
+
+    taken = {base_of(t) for t in raw}
+    copies: dict[str, list[str]] = {}
+    tasks = []
+    for t in raw:
+        base = base_of(t)
+        key = base
+        if base in copies:
+            n = len(copies[base]) + 1
+            while f"{base}-{n}" in taken:
+                n += 1
+            key = f"{base}-{n}"
+            taken.add(key)
+        copies.setdefault(base, []).append(key)
+        tasks.append({**t, "key": key})
+    return tasks, copies
+
+
+def _unique_scores(raw_scores: object, copies: dict[str, list[str]]) -> dict[str, dict]:
+    """Return each Task's score: the n-th score carrying K goes to the n-th copy of K.
+
+    A copy left without one takes the first score carrying K.
+
+    Args:
+        raw_scores: The saved scores.
+        copies: Saved key -> the keys its Tasks now carry.
+
+    Returns:
+        Task key -> score.
+    """
+    by_base: dict[str, list[dict]] = {}
+    for s in raw_scores if isinstance(raw_scores, list) else []:
+        if isinstance(s, dict) and isinstance(s.get("key"), str):
+            by_base.setdefault(s["key"].strip(), []).append(s)
+    scores: dict[str, dict] = {}
+    for base, keys in copies.items():
+        listed = by_base.get(base) or []
+        for i, key in enumerate(keys):
+            if listed:
+                scores[key] = listed[i] if i < len(listed) else listed[0]
+    return scores
+
+
+def _unique_edges(
+    raw_edges: object, copies: dict[str, list[str]]
+) -> list[tuple[str, str]]:
+    """Return the edges joining two distinct known Tasks, once each.
+
+    An edge naming a repeated key applies to every Task that carried it.
+
+    Args:
+        raw_edges: The saved edges.
+        copies: Saved key -> the keys its Tasks now carry.
+
+    Returns:
+        The `(from, to)` edges.
+    """
+    known = {k for keys in copies.values() for k in keys}
+
+    def expand(k: object) -> list[str]:
+        k = str(k or "").strip()
+        return copies.get(k, [k])
+
+    edges: list[tuple[str, str]] = []
+    for e in raw_edges if isinstance(raw_edges, list) else []:
+        if not isinstance(e, dict):
+            continue
+        for frm in expand(e.get("from")):
+            for to in expand(e.get("to")):
+                pair = (frm, to)
+                if frm in known and to in known and frm != to and pair not in edges:
+                    edges.append(pair)
+    return edges
+
+
+def _surfaces(value: object) -> list[str] | None:
+    """Return the known surfaces a Task declares, or None when it declares no list.
+
+    Args:
+        value: The saved `surfaces`.
+
+    Returns:
+        The surfaces, lowercased, once each.
+    """
+    if not isinstance(value, list):
+        return None
+    return list(
+        dict.fromkeys(s.lower() for s in str_list(value) if s.lower() in SURFACES)
+    )
+
+
+def _spec_refs(directory: Path, rel: str | None, slug: str, saved: dict) -> list[str]:
+    """Return the Story's spec documents a Task may cite, relative to the project root.
 
     Args:
         directory: The Epic's working directory.
         rel: The directory, relative to the project root, or None.
-        story: The Story.
+        slug: The Story's repository slug.
+        saved: The saved decomposition, whose `specDocsUnreadable` are left out.
 
     Returns:
-        The Tasks.
-
-    Raises:
-        HierarchyError: The decomposition names no Task, or its edges form a cycle.
+        The references.
     """
-    saved = _read_json(directory / f"tasks-{story.slug}.json")
-    raw = [
-        t
-        for t in saved.get("tasks") or []
-        if isinstance(t, dict) and str(t.get("key") or "").strip()
-    ]
-    if not raw:
-        msg = f"tasks-{story.slug}.json names no Task"
-        raise HierarchyError(msg)
-    keys = [str(t["key"]).strip() for t in raw]
-    known = set(keys)
-    edges: list[tuple[str, str]] = []
-    for e in saved.get("edges") or []:
-        frm, to = str((e or {}).get("from") or ""), str((e or {}).get("to") or "")
-        if frm in known and to in known and frm != to and (frm, to) not in edges:
-            edges.append((frm, to))
-    order = _order(keys, edges)
-    if order is None:
-        msg = f"tasks-{story.slug}.json: the Task edges form a cycle"
-        raise HierarchyError(msg)
-    reported = isinstance(saved.get("specDocsUnreadable"), list)
     unreadable = set(str_list(saved.get("specDocsUnreadable")))
     refs = []
     for name in (
-        f"spec-{story.slug}.md",
-        f"spec-{story.slug}.data-model.md",
-        f"spec-{story.slug}.criteria.md",
+        f"spec-{slug}.md",
+        f"spec-{slug}.data-model.md",
+        f"spec-{slug}.criteria.md",
     ):
         ref = f"{rel}/{name}" if rel else None
         if ref and str(directory / name) not in unreadable and ref not in unreadable:
             refs.append(ref)
-    scores = {
-        str(s.get("key")): s for s in saved.get("scores") or [] if isinstance(s, dict)
-    }
+    return refs
+
+
+def read_tasks(
+    directory: Path,
+    rel: str | None,
+    slug: str,
+    repo: str,
+    story_decision_ids: list[str],
+) -> list[Task]:
+    """Return the Tasks a Story's saved `tasks-<slug>.json` carries, in build order.
+
+    Args:
+        directory: The Epic's working directory.
+        rel: The directory, relative to the project root, or None.
+        slug: The Story's repository slug.
+        repo: The Story's repository.
+        story_decision_ids: The Story's decision ids, which a Task citing none inherits.
+
+    Returns:
+        The Tasks, with `depends_on` holding local keys.
+
+    Raises:
+        HierarchyError: The file names no Task, or its edges form a cycle.
+    """
+    saved = _read_json(directory / f"tasks-{slug}.json")
+    raw = [t for t in saved.get("tasks") or [] if isinstance(t, dict)]
+    if not raw:
+        msg = f"tasks-{slug}.json names no Task"
+        raise HierarchyError(msg)
+    unique, copies = _unique_tasks(raw)
+    edges = _unique_edges(saved.get("edges"), copies)
+    scores = _unique_scores(saved.get("scores"), copies)
+    order = build_order([t["key"] for t in unique], edges)
+    if order is None:
+        msg = f"tasks-{slug}.json: the Task edges form a cycle"
+        raise HierarchyError(msg)
+    refs = _spec_refs(directory, rel, slug, saved)
+    verified = (
+        "true" if isinstance(saved.get("specDocsUnreadable"), list) else "unknown"
+    )
     strategy = (
         saved.get("testStrategy")
         if isinstance(saved.get("testStrategy"), dict)
         else None
     )
-    by_key = dict(zip(keys, raw, strict=True))
+    by_key = {t["key"]: t for t in unique}
     tasks = []
     for key in order:
         t = by_key[key]
         cited = [p for p in str_list(t.get("specPaths")) if p in refs]
-        surfaces = t.get("surfaces")
         tasks.append(
             Task(
-                key=f"{story.key}-{key}",
-                story_key=story.key,
-                repo_path=story.repo_path,
-                title=str(t.get("title") or "").strip() or f"{story.key}-{key}",
+                key=key,
+                repo_path=repo,
+                title=str(t.get("title") or "").strip() or key,
                 description=str(t.get("description") or "").strip(),
                 acceptance=[
                     ac_text(x) for x in t.get("acceptanceCriteria") or [] if ac_text(x)
@@ -496,218 +517,30 @@ def _tasks(directory: Path, rel: str | None, story: Story) -> list[Task]:
                 spec_paths=list(dict.fromkeys(cited)) or list(refs),
                 spec_sections=str_list(t.get("specSections")),
                 requirement_ids=str_list(t.get("requirementIds")),
-                decision_ids=str_list(t.get("decisionIds")) or list(story.decision_ids),
-                surfaces=list(
-                    dict.fromkeys(
-                        s.lower() for s in str_list(surfaces) if s.lower() in SURFACES
-                    )
-                )
-                if isinstance(surfaces, list)
-                else None,
+                decision_ids=str_list(t.get("decisionIds")) or list(story_decision_ids),
+                surfaces=_surfaces(t.get("surfaces")),
                 test_strategy=strategy,
-                depends_on=[f"{story.key}-{frm}" for frm, to in edges if to == key],
+                depends_on=[frm for frm, to in edges if to == key],
                 sizes=_sizes(scores.get(key)),
-                verified="true" if reported else "unknown",
-                reuses=str(t.get("reuses")).strip()
-                if isinstance(t.get("reuses"), str) and t["reuses"].strip()
+                verified=verified,
+                reuses=next(iter(str_list([t.get("reuses")])), None)
+                if isinstance(t.get("reuses"), str)
                 else None,
             )
         )
     return tasks
 
 
-def _extra_task(entry: dict) -> Task:
-    """One Task the workflow added beside the decompositions (a knock-on or a removal).
-
-    Args:
-        entry: The Task as the workflow saved it.
-
-    Returns:
-        The Task.
-    """
-    sizes = entry.get("wsjfMetadata")
-    sizes = (
-        {k: str(sizes[k]) for k in SIZE_KEYS if sizes.get(k) not in (None, "")}
-        if isinstance(sizes, dict)
-        else None
-    )
-    surfaces = entry.get("surfaces")
-    return Task(
-        key=str(entry["key"]),
-        story_key=str(entry.get("parentStoryId") or ""),
-        repo_path=str(entry.get("repoPath") or ""),
-        title=str(entry.get("title") or "").strip() or str(entry["key"]),
-        description=str(entry.get("description") or "").strip(),
-        acceptance=[
-            ac_text(x) for x in entry.get("acceptanceCriteria") or [] if ac_text(x)
-        ],
-        definition_of_done=str_list(entry.get("definitionOfDone")),
-        spec_paths=str_list(entry.get("specPaths")),
-        spec_sections=str_list(entry.get("specSections")),
-        requirement_ids=str_list(entry.get("requirementIds")),
-        decision_ids=str_list(entry.get("decisionIds")),
-        surfaces=str_list(surfaces) if isinstance(surfaces, list) else None,
-        test_strategy=entry.get("testStrategy")
-        if isinstance(entry.get("testStrategy"), dict)
-        else None,
-        depends_on=str_list(entry.get("dependsOn")),
-        sizes=sizes if sizes and len(sizes) == len(SIZE_KEYS) else None,
-        verified=str(entry.get("specPathsVerified") or "unknown"),
-        supersedes=str(entry["supersedes"])
-        if isinstance(entry.get("supersedes"), str)
-        else None,
-        out_of_span=entry.get("outOfSpanKnockOn") is True,
-    )
-
-
-def _cross_story(directory: Path, hier: Hierarchy) -> None:
-    """Apply the saved Task edges between Stories, or record why none were applied.
+def read_task_deps(directory: Path) -> tuple[bool, list[dict]]:
+    """Return the saved Task edges between Stories.
 
     Args:
         directory: The Epic's working directory.
-        hier: The hierarchy; its Tasks gain the edges.
+
+    Returns:
+        Whether the mapper reported the edges acyclic, and the edges as saved
+        (`from`, `to`, `kind`, `reason`; ends are `S<i>-<local key>`).
     """
-    story_of = {t.key: t.story_key for t in hier.tasks}
-    report: dict = {
-        "ran": False,
-        "reason": None,
-        "degraded": None,
-        "edges": [],
-        "rejected": [],
-    }
-    hier.cross_story = report
-    if len({t.story_key for t in hier.tasks}) < 2:  # noqa: PLR2004 - two Stories
-        report["reason"] = (
-            "the Tasks sit in one Story, so no dependency crosses Stories"
-        )
-        return
-    report["ran"] = True
-    if TASK_DEPS_STEP not in hier.steps:
-        report["degraded"] = (
-            "the task-deps step is not complete, so no Task edge between Stories was derived"
-        )
-        return
     saved = _read_json(directory / "task-deps.json")
-    if saved.get("acyclic") is False:
-        report["degraded"] = (
-            "the mapper reported that the edges between Stories imply a cycle"
-        )
-        return
-    seen: set[tuple[str, str]] = set()
-    for e in saved.get("edges") or []:
-        frm, to = str((e or {}).get("from") or ""), str((e or {}).get("to") or "")
-        why = (
-            "an end is not a Task of this run"
-            if frm not in story_of or to not in story_of
-            else "both ends are in the same Story"
-            if story_of[frm] == story_of[to]
-            else "a duplicate"
-            if (frm, to) in seen
-            else None
-        )
-        if why:
-            report["rejected"].append({"from": frm, "to": to, "reason": why})
-            continue
-        seen.add((frm, to))
-        report["edges"].append(
-            {"from": frm, "to": to, "kind": e.get("kind"), "reason": e.get("reason")}
-        )
-    pairs = [(d, t.key) for t in hier.tasks for d in t.depends_on] + [
-        (e["from"], e["to"]) for e in report["edges"]
-    ]
-    if (
-        _order([t.key for t in hier.tasks], [p for p in pairs if p[0] in story_of])
-        is None
-    ):
-        report["rejected"] += [
-            {**e, "reason": "dropped: the edge set closes a cycle"}
-            for e in report["edges"]
-        ]
-        report["edges"] = []
-        report["degraded"] = (
-            "the saved edges between Stories close a cycle over the Task graph, so none was applied"
-        )
-        return
-    by_key = {t.key: t for t in hier.tasks}
-    for e in report["edges"]:
-        by_key[e["to"]].depends_on.append(e["from"])
-
-
-def build(  # noqa: PLR0913 - the caller's facts, one each
-    directory: Path,
-    project_root: Path | None,
-    *,
-    repos: list[str] | None = None,
-    steps: list[str] | None = None,
-    extra: Path | None = None,
-    holds: list[str] | None = None,
-) -> Hierarchy:
-    """Rebuild an Epic's hierarchy from its working directory.
-
-    Args:
-        directory: The Epic's working directory.
-        project_root: The root spec references are recorded relative to, or None.
-        repos: The span; absent, the saved repo-scoping ruling's.
-        steps: The completed steps; absent, the steps-completed file's.
-        extra: A saved `{"tasks": [...]}` of Tasks added beside the decompositions.
-        holds: Reasons, from `HOLD_REASONS`, that hold the Epic short of done.
-
-    Returns:
-        The hierarchy, with every step it is missing and every reason it is held.
-
-    Raises:
-        HierarchyError: A hold reason is unknown, or a saved document is unusable.
-    """
-    directory = directory.resolve()
-    unknown = [h for h in holds or [] if h not in HOLD_REASONS]
-    if unknown:
-        msg = f"unknown hold reason(s): {', '.join(unknown)}"
-        raise HierarchyError(msg)
-    done_steps = list(steps) if steps is not None else read_steps(directory)
-    # No span is ruled until repo scoping passes, and then its saved ruling names it.
-    span = (
-        list(repos)
-        if repos
-        else span_of(directory)
-        if "repo-scoping" in done_steps
-        else []
-    )
-    hier = Hierarchy(repos=span, steps=done_steps)
-    hier.missing_steps = [s for s in expected_steps(span) if s not in done_steps]
-    if not span and "repo-scoping" not in hier.missing_steps:
-        hier.missing_steps.append("repo-scoping")
-    hier.holds = [HOLD_REASONS[h] for h in holds or []]
-    rel = None
-    if project_root is not None:
-        try:
-            rel = str(directory.relative_to(project_root.resolve()))
-        except ValueError:
-            rel = None
-    slugs = repo_slugs(span)
-    for index, repo in enumerate(span):
-        slug = slugs[repo]
-        if f"spec:{slug}" not in done_steps:
-            hier.holds.append(f"{repo} has no completed Spec")
-            continue
-        story = _story(directory, rel, index, repo, slug)
-        hier.stories.append(story)
-        if f"tasks:{slug}" not in done_steps:
-            hier.holds.append(
-                f"Story {story.key} ({repo}) has no completed decomposition"
-            )
-            continue
-        hier.tasks += _tasks(directory, rel, story)
-    _cross_story(directory, hier)
-    if hier.cross_story.get("degraded"):
-        hier.holds.append(hier.cross_story["degraded"])
-    if extra is not None:
-        hier.tasks += [
-            _extra_task(t)
-            for t in _read_json(extra).get("tasks") or []
-            if isinstance(t, dict) and t.get("key")
-        ]
-    if "architecture" in done_steps and (directory / "sad-update.json").is_file():
-        hier.sad_files = str_list(
-            _read_json(directory / "sad-update.json").get("changedFiles")
-        )
-    return hier
+    edges = [e for e in saved.get("edges") or [] if isinstance(e, dict)]
+    return saved.get("acyclic") is not False, edges

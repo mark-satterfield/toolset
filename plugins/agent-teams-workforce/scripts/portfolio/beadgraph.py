@@ -188,7 +188,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _same_value(stored: object, wanted: str) -> bool:
+def same_value(stored: object, wanted: str) -> bool:
     """Whether a value read back from the tracker is the value that was written.
 
     `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
@@ -285,7 +285,7 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
     wrong = {
         key: verified.get(key)
         for key, value in pairs.items()
-        if not _same_value(verified.get(key), value)
+        if not same_value(verified.get(key), value)
     }
     if wrong:
         msg = (
@@ -318,6 +318,21 @@ class Writer:
             self.planned.append({"op": "bd", "args": list(args)})
             return
         _bd(args, self.repo)
+
+    def create(self, args: list[str], key: str) -> str:
+        """Run a `bd create`, or record it in a dry run.
+
+        Args:
+            args: The `bd create` arguments.
+            key: The name a dry run gives the bead it would create.
+
+        Returns:
+            The new bead's id, or `(new:<key>)` in a dry run.
+        """
+        if self.dry_run:
+            self.planned.append({"op": "bd", "args": list(args)})
+            return f"(new:{key})"
+        return _bd(args, self.repo).strip().splitlines()[-1].strip()
 
     def metadata(self, bead_id: str, pairs: dict[str, str]) -> None:
         """Write pipeline metadata onto one bead, or record it in a dry run.

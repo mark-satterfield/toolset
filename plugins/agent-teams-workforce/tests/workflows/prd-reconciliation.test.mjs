@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, workflowCalls, agentCalls } from './helpers/run-workflow.mjs'
-import { withBeadWriter, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
+import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
@@ -290,17 +290,17 @@ async function composite(reconResult, { onCalls, args } = {}) {
         return {
           ok: true,
           specSet: { apiSpec: {} },
-          story: { key: `S${storyN}`, type: 'story', title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
+          story: { key: `S${storyN}`, type: 'story', id: `bd-S${storyN}`, elabKey: `story:S${storyN}`, title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
           outOfRepoFindings: [],
         }
       }
       if (name.endsWith('task-decomposition')) {
         const sk = ((call.payload && call.payload.story) || {}).key || 'S?'
-        return { ok: true, beadSet: [{ key: 'T1', type: 'task', parentStoryId: sk, title: 't', description: 'd', acceptanceCriteria: ['a'] }] }
+        return { ok: true, tasks: [{ key: 'T1', id: `bd-${sk}-T1`, elabKey: `task:${sk}:t`, action: 'created', title: 't', dependsOn: [] }], summary: { created: 1, updated: 0 } }
       }
       return null
     },
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
   if (onCalls) onCalls(calls)
   return { result, seen, calls, logs }

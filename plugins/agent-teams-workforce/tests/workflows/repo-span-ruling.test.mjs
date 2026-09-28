@@ -22,7 +22,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, agentCalls, workflowCalls, journalPayload } from './helpers/run-workflow.mjs'
-import { beadWriter, withBeadWriter, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
+import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WF = path.resolve(HERE, '..', '..', 'workflows')
@@ -161,13 +161,13 @@ function compositeWorkflows({ scopingResult, outOfRepoFindings = [] }) {
       return {
         ok: true,
         specSet: { apiSpec: {} },
-        story: { key: `S${storyN}`, type: 'story', title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
+        story: { key: `S${storyN}`, type: 'story', id: `bd-S${storyN}`, elabKey: `story:S${storyN}`, title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
         outOfRepoFindings,
       }
     }
     if (name.endsWith('task-decomposition')) {
       const sk = ((call.payload && call.payload.story) || {}).key || 'S?'
-      return { ok: true, beadSet: [{ key: `${sk}-T1`, type: 'task', parentStoryId: sk, title: 't', description: 'd', acceptanceCriteria: ['a'] }] }
+      return { ok: true, tasks: [{ key: 'T1', id: `bd-${sk}-T1`, elabKey: `task:${sk}:t`, action: 'created', title: 't', dependsOn: [] }], summary: { created: 1, updated: 0 } }
     }
     return null
   }
@@ -189,7 +189,7 @@ test('with no args.repos the composite RULES the span and fans out over what it 
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
 
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
@@ -239,7 +239,7 @@ test('the launch repository is passed to scoping as a seed, and is NOT the span'
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
   const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
   assert.deepEqual(scoping.payload.seedRepos, ['/repos/where-the-human-stood'], 'the seed travels as a seed')
@@ -263,7 +263,7 @@ test('the ruling receives NO material inventory — the span is ruled before any
   const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/alpha']) }),
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
   const [scoping] = workflowCalls(calls, 'agent-teams-workforce:repo-scoping')
   assert.equal(scoping.payload.reconciliation, undefined, 'no deployed-state inventory reaches the span ruling')
@@ -282,7 +282,7 @@ test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is d
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha', repos: ['/repos/alpha', '/repos/beta'] },
     workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/never-used']) }),
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
   assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:repo-scoping').length, 0, 'a pinned span spends nothing')
@@ -295,7 +295,7 @@ test('a failed ruling STOPS the run — it never falls back to the launch reposi
   const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
     args: { prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/where-the-human-stood', epic: TEST_EPIC, ...ARTIFACT_ARGS },
     workflowImpl: compositeWorkflows({ scopingResult: { ok: false, reason: 'could not establish the span' } }),
-    agentImpl: withBeadWriter(),
+    agentImpl: withLifecycle(),
   })
   assert.equal(result.ok, false)
   assert.equal(result.stage, 'repo-scoping')
