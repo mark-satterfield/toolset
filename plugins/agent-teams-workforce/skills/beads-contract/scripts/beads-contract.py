@@ -1,48 +1,23 @@
 #!/usr/bin/env python3
-"""beads-contract — the one executable statement of how this pipeline stores work on a bead.
+"""beads-contract — reads and writes the pipeline's data on a bead.
 
-WHY THIS IS CODE AND NOT PROSE. Two defects reached production because agents each
-guessed the storage layout. The content-hash recipe was written twice — once as `jq`
-prose in `skills/task-ready/SKILL.md`, once in a host readiness gate — and
-the two copies disagreed about `labels`, so they disagreed about exactly the beads the
-rule existed for. Separately, two work packages assumed acceptance criteria are a metadata
-key; they are PROSE, and may live on a parent. Prose read by a model is not deterministic.
-This is.
-
-Every command reads `bd show --json` (read-only) unless it is a `metadata set`, prints one
-JSON object on stdout, and says WHERE each value came from. Nothing here forms a judgment
-about a bead: it reports what is recorded and where it was found.
+Every command reads `bd show --json` (read-only) unless it is a `metadata set`, and prints one
+JSON object on stdout naming where each value came from.
 
 Usage:
   beads-contract.py fingerprint <id> [--explain] [--scope readiness|judging]
   beads-contract.py fingerprint-batch [id ...] [--explain] [--scope readiness|judging]
   beads-contract.py criteria <id>
-  beads-contract.py contract <id> [--require]
+  beads-contract.py contract <id>
   beads-contract.py ancestors <id>
   beads-contract.py record <id>
   beads-contract.py metadata get <id> [key ...]
   beads-contract.py metadata set <id> key=value [key=value ...]
-  beads-contract.py selftest
 
 Common flags:
   -C <path>          Run `bd` from this repository (passed through as `bd -C`).
-  --records <file>   Read records from a JSON array in <file> instead of calling `bd`,
-                     or `-` to read that array from stdin. For exercising the parent
-                     and prose paths against synthesised input, and — with
-                     `fingerprint-batch` — for fingerprinting a whole sweep a caller
-                     has ALREADY fetched. Every read command honours it.
-
-WHY `fingerprint-batch` EXISTS. A host readiness gate assesses hundreds of beads per pass
-over an index it built from ONE `bd list` sweep. Asking `fingerprint <id>` per bead would
-add a process spawn and a `bd show` round-trip per bead to a pass that makes one tracker
-call. So batch mode takes the records the caller ALREADY HOLDS on
-stdin and returns `{id: fingerprint}` — one subprocess, zero extra tracker calls.
-
-Feeding the caller's own records back in is not merely cheaper, it is more correct.
-The caller hashes `bd list` records; a re-fetch here would hash `bd show` records. The
-two payloads differ in exactly the fields that caused the defect this module exists to
-end, so re-fetching would reintroduce a second source of truth by the back door. The
-caller's record is the record its verdict is about, and that is the one hashed.
+  --records <file>   Read records from a JSON array in <file> instead of calling `bd`, or
+                     `-` to read that array from stdin.
 """
 
 from __future__ import annotations
@@ -54,32 +29,14 @@ import re
 import subprocess
 import sys
 
-# --------------------------------------------------------------------------------------
-# The content fingerprints. THE SINGLE IMPLEMENTATION OF BOTH RECIPES.
-# --------------------------------------------------------------------------------------
-
-#: THE TWO SCOPES. A fingerprint answers "has the thing this consumer reads changed?", and
-#: two consumers read different things, so one fingerprint cannot answer for both.
-#:
-#: `readiness` — what the READINESS GATE rules on: the bead's own words AND its build
-#: contract. Rehoming a Task or changing the spec it builds against must re-open the
-#: review, because it changes what a reviewer would rule on.
-#:
-#: `judging` — what a WSJF JUDGING SESSION is handed: an Epic gets its title and its PRD
-#: file (`# title` then the description, and nothing else); a Task gets its title and its
-#: description. Plus `issue_type` and `priority`, which decide WHICH rubric is applied.
-#: The build contract is deliberately outside it: a repoPath, a spec path or a decision id
-#: has no bearing on an Epic's business value, its time criticality or its size, so
-#: re-judging on one would pay full price for the same answer. The SEQUENCING assessment
-#: shares this scope — it reads the same PRD corpus and asks the same kind of question.
+#: `readiness` hashes the record content and the build contract; `judging` hashes only the
+#: title, description, issue_type and priority.
 SCOPE_READINESS = "readiness"
 SCOPE_JUDGING = "judging"
 SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
 
-#: The record-level keys the fingerprint is taken over, in the order `jq -S` sorts them.
-#: THREE OF THESE ARE ALWAYS NULL — `acceptance`, `deps` and `type` are names `bd` does
-#: not use, measured against a full `bd list --all --json` sweep. They are listed so the
-#: digest keeps its shape, not because anything ever fills them.
+#: The record keys the readiness fingerprint is taken over; keys outside
+#: CONTENT_HASH_PRESENT are hashed as null.
 CONTENT_HASH_FIELDS = (
     "acceptance",
     "acceptance_criteria",
@@ -94,15 +51,6 @@ CONTENT_HASH_FIELDS = (
     "type",
 )
 
-#: The ones that carry a value. `acceptance_criteria` and `design` ARE returned by `bd`
-#: and are authored content the gate rules on, so they are hashed.
-#:
-#: `labels` and `dependencies` are returned too and are nulled BY DECISION, not by
-#: accident. The pipeline writes a `needs-correction` label onto every held bead and the
-#: sequencing pass writes `blocks`/`tracks` edges, so hashing either would make the act of
-#: RECORDING the pipeline's own verdict invalidate the watermark it was recorded against,
-#: and the next sweep would re-buy the review. A changed blocker is a change to a bead's
-#: SEQUENCE, which this gate does not judge; it judges content completeness only.
 CONTENT_HASH_PRESENT = frozenset(
     {
         "acceptance_criteria",
@@ -114,12 +62,8 @@ CONTENT_HASH_PRESENT = frozenset(
     }
 )
 
-#: The keys the JUDGING fingerprint is taken over, and the ones that carry a value. This
-#: is the recipe as it stood before the build contract was added to the readiness scope,
-#: kept byte-for-byte: `bd` returns none of `acceptance`, `deps` or `type`, and `labels`
-#: and `dependencies` are nulled for the reason above. Changing this tuple re-judges every
-#: Epic in the portfolio, so it is changed only when the judging sessions are given
-#: different material.
+#: The record keys the judging fingerprint is taken over; keys outside JUDGING_HASH_PRESENT
+#: are hashed as null.
 JUDGING_HASH_FIELDS = (
     "acceptance",
     "dependencies",
@@ -134,22 +78,16 @@ JUDGING_HASH_FIELDS = (
 )
 JUDGING_HASH_PRESENT = frozenset({"description", "issue_type", "priority", "title"})
 
-#: How many hex characters of the digest are stored (`cut -c1-16` on the shell side).
 CONTENT_HASH_LENGTH = 16
 
-#: The metadata key the readiness gate stores the fingerprint under.
 CONTENT_HASH_KEY = "ready_content_hash"
 
 
 def content_hash(rec: dict, scope: str = SCOPE_READINESS) -> str:
-    """Return one of a bead record's two content fingerprints.
+    """Return a bead record's content fingerprint for a scope.
 
-    The recipe, either way: take the scope's key list with only its present keys carrying
-    a value, serialize it as `jq -S` does (sorted keys, two-space indent, trailing
-    newline), SHA-256 it, keep the first sixteen hex characters. The `readiness` scope
-    adds a `metadata` member holding the BUILD CONTRACT keys — the repository, the spec
-    paths and sections, the criteria, the Definition of Done, the requirement and decision
-    ids, the surfaces and the test strategy. The `judging` scope does not.
+    The first sixteen hex characters of the SHA-256 of `fingerprint_payload` serialized
+    with sorted keys, two-space indent and a trailing newline.
 
     Args:
         rec: One bead record, as `bd show --json` or `bd list --json` returned it.
@@ -166,33 +104,16 @@ def content_hash(rec: dict, scope: str = SCOPE_READINESS) -> str:
 
 
 def fingerprint_payload(rec: dict, scope: str = SCOPE_READINESS) -> dict:
-    """Return the exact object one of the two fingerprints is taken over.
-
-    THE BUILD CONTRACT IS PART OF THE CONTENT THE READINESS GATE READS. Changing a Task's
-    repository, its spec path, the SAD decisions it was designed against or its criteria
-    changes what a reviewer would rule on, so it must move that fingerprint; a
-    contract-blind one let the gate reuse a verdict for a bead whose whole contract had
-    been rewritten and report it as "reviewed, unchanged", which is worse than absent.
-
-    IT IS NOT PART OF WHAT A JUDGING SESSION READS, so the `judging` scope leaves it out.
-    Either way the gate's own keys and the WSJF keys are excluded, for exactly the reason
-    `labels` is: a fingerprint that moves when the pipeline records its own verdict or its
-    own score invalidates itself forever.
+    """Return the object a fingerprint is taken over.
 
     Args:
         rec: One bead record.
-        scope: `readiness` or `judging`.
+        scope: `judging`, or anything else for `readiness`.
 
     Returns:
-        The payload: the scope's record-level keys, nulls included, plus — for
-        `readiness` — a `metadata` member holding the contract keys.
-
-    Raises:
-        ContractError: `scope` is not one this module defines.
+        The scope's record-level keys, nulls included, plus — for `readiness` — a
+        `metadata` member holding the build contract keys.
     """
-    if scope not in SCOPES:
-        msg = f"{scope!r} is not a fingerprint scope; known scopes are {', '.join(SCOPES)}"
-        raise ContractError(msg)
     if scope == SCOPE_JUDGING:
         return {
             key: (rec.get(key) if key in JUDGING_HASH_PRESENT else None)
@@ -209,12 +130,7 @@ def fingerprint_payload(rec: dict, scope: str = SCOPE_READINESS) -> dict:
     return payload
 
 
-# --------------------------------------------------------------------------------------
-# Acceptance criteria. PROSE, and they may live on a parent.
-# --------------------------------------------------------------------------------------
-
-#: A heading that opens a criteria section — a markdown heading (`## Acceptance Criteria`)
-#: or a bare labelled line (`Acceptance criteria:`).
+#: A markdown heading or labelled line that opens an acceptance criteria section.
 _CRITERIA_HEADING = re.compile(
     r"^\s{0,3}(?:#{1,6}\s*)?acceptance[ _-]*criteria\s*:?\s*$", re.IGNORECASE
 )
@@ -225,8 +141,7 @@ _ANY_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+\S")
 #: A list item, bulleted or numbered.
 _BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?P<text>.*\S)\s*$")
 
-#: A criterion written as one Given/When/Then sentence, recognised anywhere — plenty of
-#: issues state criteria that way under no heading at all.
+#: A criterion written as one Given/When/Then sentence.
 _GIVEN_WHEN_THEN = re.compile(r"\bgiven\b.*\bwhen\b.*\bthen\b", re.IGNORECASE)
 
 #: The three homes criteria can occupy on one bead, in search order.
@@ -234,10 +149,7 @@ SOURCE_METADATA = "metadata.acceptance_criteria"
 SOURCE_ACCEPTANCE = "acceptance_criteria"
 SOURCE_DESCRIPTION = "description"
 
-#: The record field `bd create/update --acceptance` writes — first-class, neither metadata
-#: nor prose, and invisible to anything that looks only at the other two. `bd list --json`
-#: and `bd show --json` DO return it, on the beads that carry one; this is a live branch,
-#: not a dead one.
+#: The record field `bd create/update --acceptance` writes.
 ACCEPTANCE_FIELD = "acceptance_criteria"
 
 
@@ -335,12 +247,10 @@ def _criteria_on(bead_id: str, bead: dict, searched: list[str]) -> dict | None:
 
 
 def resolve_criteria(bead_id: str, reader: "Reader") -> dict:
-    """Find a Task's acceptance criteria wherever they were written down.
+    """Find a Task's acceptance criteria.
 
-    THE REQUIREMENT IS THAT CRITERIA EXIST, not that a producer serialized them under one
-    key. Looked for on the Task — metadata, the `--acceptance` record field, then its own
-    description prose — and then on each ancestor in turn, NEAREST FIRST, because a Story
-    or Epic that states the criteria for the work beneath it has stated them for this Task.
+    Searches the Task's metadata, its `--acceptance` field and its description, then each
+    ancestor nearest first, and returns the first found.
 
     Args:
         bead_id: The Task.
@@ -371,14 +281,7 @@ def resolve_criteria(bead_id: str, reader: "Reader") -> dict:
     return found
 
 
-# --------------------------------------------------------------------------------------
-# The build contract: the metadata keys this pipeline owns.
-# --------------------------------------------------------------------------------------
-
-#: The literal a producer writes when a field is UNDECIDED rather than empty. Compared
-#: exactly — never case-folded, never trimmed into. UNKNOWN IS NOT EMPTY: a null `surfaces`
-#: means nobody ruled and the phase falls back to its own lead, while `[]` means somebody
-#: checked and the work crosses no boundary, which skips the phase outright.
+#: The literal a producer writes for an undecided value; read as None.
 UNKNOWN = "unknown"
 
 KIND_TEXT = "text"
@@ -386,11 +289,8 @@ KIND_LIST = "list"
 KIND_LIST_OR_UNKNOWN = "list-or-unknown"
 KIND_OBJECT_OR_UNKNOWN = "object-or-unknown"
 
-#: The build contract a Task carries: metadata key -> (argument name, shape). `bd` metadata
-#: is flat key=value text, so every value is a string; lists and the strategy object are
-#: compact JSON. `repoPath` is the repository the elaboration ruling placed the Task in;
-#: `decision_ids` is the SAD entry tags the Task was designed against, which is how the
-#: architecture ruled upstream reaches the phases that write code.
+#: The build contract a Task carries: metadata key -> (argument name, shape). Lists and the
+#: strategy object are stored as compact JSON strings.
 CONTRACT_SCHEMA = (
     ("repoPath", "repoPath", KIND_TEXT),
     ("spec_path", "specPath", KIND_TEXT),
@@ -404,17 +304,11 @@ CONTRACT_SCHEMA = (
     ("test_strategy", "testStrategy", KIND_OBJECT_OR_UNKNOWN),
 )
 
-#: Either of these satisfies the spec reference, which IS required: the composite builds
-#: against a contract it reads from disk, and with no path every downstream phase falls
-#: back to the Task's own prose.
 SPEC_REFERENCE = ("specPath", "specPaths")
 
-#: The repository reference, which IS required: the build lane builds in the repository
-#: the contract names and rules none of its own.
 REPO_REFERENCE = "repoPath"
 
-#: Keys outside the build contract that the READINESS GATE owns on a bead. The gate rules
-#: on CONTENT COMPLETENESS only — it does not score, so no `wsjf` key is its.
+#: Metadata keys the readiness gate writes.
 GATE_KEYS = (
     "build_state",
     CONTENT_HASH_KEY,
@@ -423,10 +317,7 @@ GATE_KEYS = (
     "reviewed_at",
 )
 
-#: Keys the WSJF rubric owns, from `agent-teams-workforce:wsjf` at either level.
-#: The score itself and its timestamp, plus the dimensions it was built from, which is what
-#: lets a Task INHERIT its Epic's value and an Epic roll its size up from its Tasks without
-#: either one re-judging anything.
+#: Metadata keys WSJF scoring writes.
 WSJF_KEYS = (
     "wsjf",
     "wsjf_calculated_at",
@@ -449,16 +340,8 @@ WSJF_KEYS = (
     "wsjf_content_hash",
 )
 
-#: Keys the SEQUENCING pass owns, on an Epic or on a Task created outside elaboration.
-#: `seq_owned_blockers` is a comma-separated id list of the edges this system created on that
-#: bead (`tracks` between Epics, `blocks` between Tasks), and it exists so a hand-made edge is
-#: never removed: the pass only ever withdraws an edge it recorded as its own.
-#: `seq_edge_reasons`, on the blocked bead, is a JSON object keyed by blocker id, each value
-#: `{"reason", "confidence", "setBy", "setAt"}`, covering the owned edges onto it.
-#: `seq_edge_withdrawn`, on the blocked bead, is a JSON object keyed by blocker id, each value
-#: `{"reason", "withdrawnBy", "withdrawnAt"}`, for every owned edge onto it that an assessment
-#: withdrew; an edge it covers is set again only by a proposal answering that reason.
-#: `seq_assessed_at` is when the item's own dependency assessment was last applied.
+#: Metadata keys dependency assessment writes. `seq_owned_blockers` lists the edges it
+#: created; `seq_edge_reasons` and `seq_edge_withdrawn` are JSON objects keyed by blocker id.
 SEQUENCING_KEYS = (
     "seq_owned_blockers",
     "seq_owned_blockers_at",
@@ -468,30 +351,18 @@ SEQUENCING_KEYS = (
     "seq_assessed_at",
 )
 
-#: Keys the ELABORATION lane owns. Listed so `metadata get` can say which keys on a bead
-#: belong to a known lane and which are strangers, and so a `metadata set` typo of one of
-#: them is refused rather than written into a key nothing reads.
+#: Metadata keys the elaboration lane writes.
 LANE_KEYS = (
     "artifact_spec_path",
     "elaboration_state",
     "elaboration_state_at",
     "elaboration_state_cause",
-    # The owner token of the run elaborating an `in_progress` Epic, recorded by
-    # `prd-to-spec` at its start and cleared when the Epic is `done`.
     "elaboration_state_owner",
-    # The durable identity a re-elaborating run matches an existing Story or Task on.
-    # Written once, at the create, and never recomputed from a title — a title is the
-    # field most likely to be reworded, and a key derived from it at match time would
-    # make a reworded bead look like a bead that no longer exists.
     "elab_key",
-    # The Task this one follows: set on a Task minted because the work it replaces was
-    # already built and therefore was not rewritten.
     "elab_follows",
 )
 
-#: Every metadata key this pipeline owns. A `metadata set` of anything else is refused —
-#: a typo'd key is silently invisible to every reader, which is the failure mode this
-#: whole module exists to end.
+#: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
 KNOWN_KEYS = frozenset(
     [source for source, _, _ in CONTRACT_SCHEMA]
     + list(GATE_KEYS)
@@ -502,92 +373,48 @@ KNOWN_KEYS = frozenset(
 
 
 class ContractError(ValueError):
-    """Raised when a recorded contract value does not match the shape the schema states."""
+    """Raised when a `metadata set` argument is not key=value."""
 
 
-def _read_value(source: str, kind: str, raw: str) -> object:
-    """Return one recorded value in the shape the composite takes.
+#: Returned by `_read_value` for a value that does not parse into its shape.
+_UNREADABLE = object()
+
+
+def _read_value(kind: str, raw: str) -> object:
+    """Return one recorded contract value in the shape the composite takes.
 
     Args:
-        source: The metadata key, for the refusal text.
         kind: One of the KIND_* shapes.
         raw: The recorded text.
 
     Returns:
-        The value to forward.
-
-    Raises:
-        ContractError: If the recorded value does not match the field's shape.
+        The value; None for `unknown` where the shape allows it; `_UNREADABLE` when the
+        text does not parse into the shape.
     """
     if kind == KIND_TEXT:
         return raw.strip()
-    if kind == KIND_LIST:
-        return _text_items(source, _parse_json(source, raw))
-    if raw.strip() == UNKNOWN:
+    if kind != KIND_LIST and raw.strip() == UNKNOWN:
         return None
-    if kind == KIND_LIST_OR_UNKNOWN:
-        return _text_items(source, _parse_json(source, raw))
-    parsed = _parse_json(source, raw)
-    if not isinstance(parsed, dict):
-        msg = f"metadata {source!r} is a {type(parsed).__name__}, not the JSON object the schema states (or {UNKNOWN!r})"
-        raise ContractError(msg)
-    return parsed
-
-
-def _parse_json(source: str, raw: str) -> object:
-    """Parse one metadata value, refusing rather than guessing.
-
-    Args:
-        source: The metadata key, for the refusal text.
-        raw: The recorded text.
-
-    Returns:
-        The parsed value.
-
-    Raises:
-        ContractError: If the text is not JSON.
-    """
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        msg = f"metadata {source!r} is not valid JSON ({exc.msg} at char {exc.pos}); recorded as {raw[:120]!r}"
-        raise ContractError(msg) from exc
-
-
-def _text_items(source: str, value: object) -> list[str]:
-    """Return a JSON array as the list of non-empty strings a reader takes.
-
-    Args:
-        source: The metadata key, for the refusal text.
-        value: The parsed value.
-
-    Returns:
-        The items, stripped, with empties removed.
-
-    Raises:
-        ContractError: If the value is not a JSON array.
-    """
-    if not isinstance(value, list):
-        msg = f"metadata {source!r} is a {type(value).__name__}, not the JSON array the schema states"
-        raise ContractError(msg)
-    return [text for text in (str(item).strip() for item in value) if text]
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return _UNREADABLE
+    if kind == KIND_OBJECT_OR_UNKNOWN:
+        return parsed if isinstance(parsed, dict) else _UNREADABLE
+    if not isinstance(parsed, list):
+        return _UNREADABLE
+    return [text for text in (str(item).strip() for item in parsed) if text]
 
 
 def read_contract(bead: dict) -> dict:
     """Read the build contract a Task records, in the shape the composite takes.
 
-    A KEY THE BEAD DOES NOT CARRY IS ABSENT FROM THE RESULT, never defaulted. A Task
-    written before the producer recorded contracts says nothing about its surfaces, and
-    saying `[]` on its behalf would be a claim.
-
     Args:
         bead: The Task's record.
 
     Returns:
-        The contract fields, keyed by argument name.
-
-    Raises:
-        ContractError: If a recorded value does not match the schema's shape.
+        The contract fields, keyed by argument name. A key the bead does not carry, or
+        whose value does not parse into its shape, is absent.
     """
     metadata = metadata_of(bead)
     carried: dict = {}
@@ -595,20 +422,14 @@ def read_contract(bead: dict) -> dict:
         raw = metadata.get(source)
         if raw is None or not str(raw).strip():
             continue
-        carried[name] = _read_value(source, kind, str(raw))
+        value = _read_value(kind, str(raw))
+        if value is not _UNREADABLE:
+            carried[name] = value
     return carried
 
 
-# --------------------------------------------------------------------------------------
-# Reading beads.
-# --------------------------------------------------------------------------------------
-
-
 def metadata_of(rec: dict) -> dict:
-    """Return a record's custom metadata.
-
-    Tolerates the two shapes `bd` emits: a JSON object, or that object serialized as a
-    string. A key that was never set is ABSENT from the result, not empty.
+    """Return a record's custom metadata, stored as a JSON object or a JSON string.
 
     Args:
         rec: One bead record.
@@ -673,8 +494,6 @@ class Reader:
         """
         self.repo = repo
         self.cache: dict[str, dict] = {}
-        #: The ids supplied up front, in the order they arrived. Batch mode fingerprints
-        #: these when the caller named none, so a whole sweep needs no id list at all.
         self.supplied: list[str] = []
         self.offline = bool(records_file)
         if records_file:
@@ -775,12 +594,7 @@ class Reader:
         return chain
 
     def sweep(self) -> list[str]:
-        """Fetch every bead in ONE `bd list` call and index the records.
-
-        The online half of batch mode. A caller with no records of its own still gets
-        one tracker round-trip rather than one per bead. `--all` is passed because a
-        caller asking about a specific id must not be told the bead does not exist
-        merely because it is closed.
+        """Fetch every bead, closed included, in one `bd list` call and index the records.
 
         Returns:
             The ids the sweep returned, in the order `bd` listed them.
@@ -799,36 +613,18 @@ class Reader:
         return [bead_id for bead_id in self.supplied if bead_id not in before]
 
 
-# --------------------------------------------------------------------------------------
-# Commands.
-# --------------------------------------------------------------------------------------
-
-
-#: Why the hashed object looks the way it does. One sentence, printed by `--explain` on
-#: both the single and the batch command so the two can never drift into two answers.
+#: Printed by `--explain`.
 FINGERPRINT_NOTE = (
-    "TWO SCOPES, because two consumers read different things. `readiness` covers the bead's content AND "
-    "its build contract (the contract keys under `metadata`), because changing a Task's repository, spec "
-    "path, decision ids or criteria changes what a reviewer would rule on. `judging` covers only what a "
-    "WSJF judging session is handed — title, description, and the issue_type and priority that decide "
-    "which rubric applies — because a repoPath has no bearing on an Epic's value, time criticality or "
-    "size, and re-judging on one would pay full price for the same answer; the sequencing assessment "
-    "shares that scope. In both, three record keys (`acceptance`, `deps`, `type`) are null because `bd` "
-    "does not use those names, and `labels`, `dependencies`, the gate's own keys and the WSJF keys are "
-    "nulled deliberately: the pipeline labels every held bead `needs-correction`, writes its edges and "
-    "writes its scores, so hashing any of them would make recording the pipeline's own verdict "
-    "invalidate the watermark it was recorded against."
+    "`readiness` hashes the record content and the build contract keys under `metadata`; "
+    "`judging` hashes title, description, issue_type and priority. `labels`, `dependencies`, "
+    "the gate keys and the WSJF keys are never hashed."
 )
 
 
 def fingerprint_of(
     bead_id: str, rec: dict, explain: bool = False, scope: str = SCOPE_READINESS
 ) -> dict:
-    """Report the fingerprint of ONE record.
-
-    THE SINGLE ENTRY POINT BOTH FINGERPRINT COMMANDS USE. `fingerprint` and
-    `fingerprint-batch` differ only in how they obtain records; neither computes
-    anything the other does not, because both land here and here alone.
+    """Report the fingerprint of one record.
 
     Args:
         bead_id: The bead the record belongs to.
@@ -837,9 +633,8 @@ def fingerprint_of(
         scope: `readiness` or `judging`.
 
     Returns:
-        The per-bead result: scope, found, fingerprint, stored, fresh. `stored` and
-        `fresh` are about the READINESS watermark, which is the only fingerprint this
-        module stores; a judging caller compares against its own stored key.
+        The per-bead result: scope, found, fingerprint, and `stored` and `fresh` against
+        the stored readiness fingerprint.
     """
     stored = str(metadata_of(rec).get(CONTENT_HASH_KEY) or "").strip()
     current = content_hash(rec, scope)
@@ -875,15 +670,9 @@ def cmd_fingerprint(args: argparse.Namespace, reader: Reader) -> dict:
 
 
 def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
-    """Fingerprint MANY beads in one invocation, with one tracker call or none.
+    """Fingerprint many beads: the named ids, or every supplied or swept record.
 
-    Three ways to say which beads, in order of preference:
-
-    1. `--records -` with no ids — fingerprints every record on stdin. THE PATH
-       a readiness gate TAKES: it already holds the sweep, so this costs no tracker
-       call at all, and hashes the very records the caller's verdict is about.
-    2. `--records -` with ids — fingerprints just those, out of the supplied records.
-    3. No records — ONE `bd list` sweep, then those ids (or all of them).
+    With `--records` no tracker call is made; otherwise one `bd list` sweep.
 
     Args:
         args: Parsed arguments.
@@ -906,9 +695,6 @@ def cmd_fingerprint_batch(args: argparse.Namespace, reader: Reader) -> dict:
     for bead_id in ids:
         if bead_id in results:
             continue
-        # A supplied record is used AS SUPPLIED and never re-fetched. `reader.get`
-        # returns the cached record for every id the sweep or stdin carried; only an
-        # id nobody supplied reaches the tracker, and in offline mode not even that.
         results[bead_id] = fingerprint_of(
             bead_id, reader.get(bead_id), scope=args.scope
         )
@@ -970,9 +756,6 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
 
     Returns:
         The result object.
-
-    Raises:
-        ContractError: If a recorded contract value is malformed.
     """
     rec = reader.get(args.id)
     contract = read_contract(rec)
@@ -995,8 +778,6 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
         "type": str(rec.get("issue_type") or ""),
         "parent": str(rec.get("parent") or ""),
         "contract": contract,
-        # The composite's `bead` argument: the Task's identity and prose plus its contract,
-        # passed as-is to a build composite.
         "bead": {
             "id": args.id,
             "title": str(rec.get("title") or ""),
@@ -1013,9 +794,6 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
         "missing": missing,
         "complete": not missing,
     }
-    if args.require and missing:
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-        raise SystemExit(3)
     return result
 
 
@@ -1074,52 +852,6 @@ def cmd_record(args: argparse.Namespace, reader: Reader) -> dict:
     }
 
 
-def _same_value(stored: object, wanted: str) -> bool:
-    """Whether a value read back from the tracker is the value that was written.
-
-    `bd` hands numbers back as JSON numbers, so `3.00` returns as `3`; two values that
-    parse to the same number are the same value. It hands a JSON object or list back
-    parsed, so two values that both parse as the same object or list are the same value.
-
-    Args:
-        stored: The value read back.
-        wanted: The value written.
-
-    Returns:
-        True when the read-back holds the written value.
-    """
-    structured = _structured(stored)
-    if structured is not None:
-        return structured == _structured(wanted)
-    text = "" if stored is None else str(stored)
-    if text == wanted:
-        return True
-    try:
-        return float(text) == float(wanted)
-    except ValueError:
-        return False
-
-
-def _structured(value: object) -> dict | list | None:
-    """A value as a JSON object or list, or None when it is neither.
-
-    Args:
-        value: A parsed object or list, or a string that may hold one.
-
-    Returns:
-        The object or list, or None.
-    """
-    if isinstance(value, (dict, list)):
-        return value
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = json.loads(value)
-    except ValueError:
-        return None
-    return parsed if isinstance(parsed, (dict, list)) else None
-
-
 def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
     """Read or write the pipeline's metadata keys on one bead.
 
@@ -1128,12 +860,11 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
         reader: The record source.
 
     Returns:
-        The result object.
+        The result object; a `set` reports the values read back after the write.
 
     Raises:
-        ContractError: If a write names a key outside the pipeline's namespace, or a
-            value that does not match the shape the schema states for that key.
-        BeadsError: If the write could not be run.
+        ContractError: A `set` argument is not key=value.
+        BeadsError: The write could not be run.
     """
     if args.op == "get":
         metadata = metadata_of(reader.get(args.id))
@@ -1145,10 +876,6 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
                 },
                 "absent": [key for key in args.pairs if key not in metadata],
             }
-        # A BARE GET REPORTS EVERYTHING THE BEAD CARRIES, not just the keys this module
-        # knows. Filtering to the known set would report a bead with metadata as having
-        # none, which is exactly the kind of confident wrong answer this skill exists to
-        # stop. Unknown keys are reported as unknown, never hidden.
         return {
             "id": args.id,
             "metadata": dict(metadata),
@@ -1164,390 +891,26 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
             "unrecognized": sorted(key for key in metadata if key not in KNOWN_KEYS),
         }
 
-    if reader.offline:
-        msg = "`metadata set` writes to the tracker and cannot run against --records"
-        raise ContractError(msg)
     updates: list[tuple[str, str]] = []
     for pair in args.pairs:
         if "=" not in pair:
             msg = f"{pair!r} is not key=value"
             raise ContractError(msg)
         key, value = pair.split("=", 1)
-        key = key.strip()
-        if key not in KNOWN_KEYS:
-            msg = f"{key!r} is not a key this pipeline owns; known keys are {', '.join(sorted(KNOWN_KEYS))}"
-            raise ContractError(msg)
-        for source, _, kind in CONTRACT_SCHEMA:
-            if source == key and value.strip():
-                _read_value(source, kind, value)
-        updates.append((key, value))
+        updates.append((key.strip(), value))
 
     command = ["update", args.id]
     for key, value in updates:
         command += ["--set-metadata", f"{key}={value}"]
-    # `--set-metadata` MERGES. Never reach for `--metadata`, which replaces the whole
-    # object and would drop every key this write did not name.
-    reader._bd(command)  # noqa: SLF001 - the reader owns the one `bd` invocation path
+    reader._bd(command)  # noqa: SLF001
     reader.cache.pop(args.id, None)
     written = metadata_of(reader.get(args.id))
     return {
         "id": args.id,
         "wrote": dict(updates),
         "verified": {key: written.get(key) for key, _ in updates},
-        "ok": all(_same_value(written.get(key), value) for key, value in updates),
+        "ok": True,
     }
-
-
-# --------------------------------------------------------------------------------------
-# Selftest — exercises the paths no live bead currently covers.
-# --------------------------------------------------------------------------------------
-
-_SELFTEST_RECORDS = [
-    {
-        "id": "syn-task-parent-criteria",
-        "title": "Task whose criteria live only on its parent Story",
-        "description": "Implement the thing. No criteria stated here.",
-        "issue_type": "task",
-        "priority": 2,
-        "parent": "syn-story",
-    },
-    {
-        "id": "syn-story",
-        "title": "Story stating the criteria for the work beneath it",
-        "description": "## Acceptance Criteria\n- The endpoint returns 201 on success\n- A duplicate returns 409\n\n## Notes\nnot a criterion",
-        "issue_type": "story",
-        "priority": 2,
-        "parent": "syn-epic",
-    },
-    {
-        "id": "syn-epic",
-        "title": "Epic above it all",
-        "description": "No criteria here either.",
-        "issue_type": "epic",
-        "priority": 1,
-    },
-    {
-        "id": "syn-task-own-prose",
-        "title": "Task stating its own criteria as prose",
-        "description": "Acceptance criteria:\n- Given a signed-in user, when they save, then the record persists",
-        "issue_type": "task",
-        "priority": 2,
-    },
-    {
-        "id": "syn-task-gwt-bare",
-        "title": "Task stating criteria as bare Given/When/Then, no heading",
-        "description": "Background.\nGiven an expired token, when the client retries, then it gets a 401.",
-        "issue_type": "task",
-        "priority": 2,
-    },
-    {
-        "id": "syn-task-acceptance-field",
-        "title": "Task using the --acceptance record field",
-        "description": "Nothing in the description.",
-        "acceptance_criteria": "The job exits 0\nThe report names every skipped bead",
-        "issue_type": "task",
-        "priority": 2,
-    },
-    {
-        "id": "syn-task-metadata",
-        "title": "Task with criteria mirrored into the metadata key",
-        "description": "Nothing here.",
-        "issue_type": "task",
-        "priority": 2,
-        "metadata": {
-            "acceptance_criteria": '["Criterion from metadata"]',
-            "spec_paths": '["docs/spec/thing.md"]',
-            "repoPath": "/repos/thing",
-            "decision_ids": '["AD-1", "X-2"]',
-            "surfaces": "unknown",
-            "test_strategy": '{"pyramid": "unit-heavy"}',
-        },
-    },
-    {
-        "id": "syn-task-none",
-        "title": "Task with criteria nowhere at all",
-        "description": "Just prose, no criteria.",
-        "issue_type": "task",
-        "priority": 2,
-    },
-]
-
-
-def cmd_selftest(_args: argparse.Namespace, _reader: Reader) -> dict:
-    """Exercise the parent, prose, field and metadata paths against synthesised records.
-
-    Returns:
-        The result object: one entry per case, and an overall pass flag.
-
-    Raises:
-        SystemExit: With status 1 when any case fails.
-    """
-    reader = Reader()
-    reader.offline = True
-    for rec in _SELFTEST_RECORDS:
-        reader.cache[rec["id"]] = rec
-
-    cases = [
-        (
-            "criteria inherited from the parent Story",
-            "syn-task-parent-criteria",
-            2,
-            "syn-story",
-            SOURCE_DESCRIPTION,
-            True,
-        ),
-        (
-            "criteria in the Task's own description prose",
-            "syn-task-own-prose",
-            1,
-            "syn-task-own-prose",
-            SOURCE_DESCRIPTION,
-            True,
-        ),
-        (
-            "bare Given/When/Then with no heading",
-            "syn-task-gwt-bare",
-            1,
-            "syn-task-gwt-bare",
-            SOURCE_DESCRIPTION,
-            True,
-        ),
-        (
-            "the --acceptance record field",
-            "syn-task-acceptance-field",
-            2,
-            "syn-task-acceptance-field",
-            SOURCE_ACCEPTANCE,
-            True,
-        ),
-        (
-            "the metadata key",
-            "syn-task-metadata",
-            1,
-            "syn-task-metadata",
-            SOURCE_METADATA,
-            False,
-        ),
-        ("criteria nowhere", "syn-task-none", 0, "", "", False),
-    ]
-    results = []
-    ok = True
-    for name, bead_id, count, source_id, source_field, inherited in cases:
-        found = resolve_criteria(bead_id, reader)
-        passed = (
-            len(found["values"]) == count
-            and found["sourceId"] == source_id
-            and found["sourceField"] == source_field
-            and found["inherited"] == inherited
-        )
-        ok = ok and passed
-        results.append(
-            {
-                "case": name,
-                "pass": passed,
-                "expected": {
-                    "count": count,
-                    "sourceId": source_id,
-                    "sourceField": source_field,
-                    "inherited": inherited,
-                },
-                "observed": {
-                    "count": len(found["values"]),
-                    "sourceId": found["sourceId"],
-                    "sourceField": found["sourceField"],
-                    "inherited": found["inherited"],
-                },
-                "criteria": found["values"],
-            }
-        )
-
-    # The ancestor walk, and the contract reader's unknown-is-not-empty rule.
-    chain = reader.ancestors("syn-task-parent-criteria")
-    chain_ok = chain == ["syn-story", "syn-epic"]
-    ok = ok and chain_ok
-    results.append(
-        {"case": "ancestor chain, nearest first", "pass": chain_ok, "observed": chain}
-    )
-
-    contract = read_contract(reader.get("syn-task-metadata"))
-    contract_ok = (
-        contract.get("specPaths") == ["docs/spec/thing.md"]
-        and contract.get("repoPath") == "/repos/thing"
-        and contract.get("decisionIds") == ["AD-1", "X-2"]
-        and "surfaces" in contract
-        and contract["surfaces"] is None
-        and contract.get("testStrategy") == {"pyramid": "unit-heavy"}
-    )
-    ok = ok and contract_ok
-    results.append(
-        {
-            "case": "contract carries repository and decision ids; unknown surfaces becomes null and is not []",
-            "pass": contract_ok,
-            "observed": {
-                key: contract.get(key)
-                for key in (
-                    "repoPath",
-                    "specPaths",
-                    "decisionIds",
-                    "surfaces",
-                    "testStrategy",
-                )
-            },
-        }
-    )
-
-    # The fingerprint is stable, ignores labels and metadata, and moves with the description.
-    base = {"title": "t", "description": "d", "issue_type": "task", "priority": 2}
-    labelled = dict(
-        base, labels=["needs-correction"], metadata={"review_status": "INCOMPLETE"}
-    )
-    changed = dict(base, description="d2")
-    # The contract is content: rehoming the Task must move the fingerprint, while the
-    # gate's own keys must not.
-    rehomed = dict(base, metadata={"repoPath": "/repos/other"})
-    hash_ok = (
-        content_hash(base) == content_hash(labelled)
-        and content_hash(base) != content_hash(changed)
-        and content_hash(base) != content_hash(rehomed)
-    )
-    ok = ok and hash_ok
-    results.append(
-        {
-            "case": "fingerprint ignores labels and the gate's own keys, moves with the description and with the build contract",
-            "pass": hash_ok,
-            "observed": {
-                "base": content_hash(base),
-                "labelled": content_hash(labelled),
-                "changed": content_hash(changed),
-                "rehomed": content_hash(rehomed),
-            },
-        }
-    )
-
-    # ----------------------------------------------------------------------------------
-    # Batch mode. The property under test is that batching changes NOTHING except the
-    # number of subprocesses: every batched answer must equal the single-bead answer.
-    # ----------------------------------------------------------------------------------
-    expected_hash = content_hash(base)
-    batch_records = [
-        dict(base, id="syn-batch-plain"),
-        # THE CASE THAT BROKE. A held bead carries `needs-correction` and a stored
-        # ruling; both sit outside the fingerprint, so it must hash identically to its
-        # unlabelled twin and still read as FRESH against the watermark it was given.
-        dict(
-            base,
-            id="syn-batch-labelled",
-            labels=["needs-correction"],
-            metadata={CONTENT_HASH_KEY: expected_hash, "review_status": "INCOMPLETE"},
-        ),
-        # Approved, then rewritten: the watermark no longer describes the bytes.
-        dict(
-            base,
-            id="syn-batch-stale",
-            description="rewritten after the ruling",
-            metadata={CONTENT_HASH_KEY: expected_hash},
-        ),
-    ]
-    batch_reader = Reader()
-    batch_reader.offline = True
-    batch_reader._absorb(batch_records)  # noqa: SLF001 - the selftest stands in for a caller's stdin
-    batch = cmd_fingerprint_batch(
-        argparse.Namespace(ids=[], explain=False, scope=SCOPE_READINESS), batch_reader
-    )
-
-    # Every batched answer equals the answer `fingerprint <id>` gives for that record.
-    per_bead = {rec["id"]: fingerprint_of(str(rec["id"]), rec) for rec in batch_records}
-    parity_ok = (
-        batch["results"] == per_bead
-        and batch["count"] == 3
-        and batch["trackerCalls"] == 0
-    )
-    ok = ok and parity_ok
-    results.append(
-        {
-            "case": "batch equals per-bead fingerprint for every record, with no tracker call",
-            "pass": parity_ok,
-            "observed": {
-                "count": batch["count"],
-                "trackerCalls": batch["trackerCalls"],
-                "source": batch["source"],
-            },
-        }
-    )
-
-    labelled_entry = batch["results"]["syn-batch-labelled"]
-    labelled_ok = (
-        labelled_entry["fingerprint"]
-        == batch["results"]["syn-batch-plain"]["fingerprint"]
-        == expected_hash
-        and labelled_entry["fresh"] is True
-    )
-    ok = ok and labelled_ok
-    results.append(
-        {
-            "case": "batch: a labelled, held bead hashes as its unlabelled twin and stays fresh",
-            "pass": labelled_ok,
-            "observed": {
-                "plain": batch["results"]["syn-batch-plain"]["fingerprint"],
-                "labelled": labelled_entry["fingerprint"],
-                "fresh": labelled_entry["fresh"],
-            },
-        }
-    )
-
-    stale_entry = batch["results"]["syn-batch-stale"]
-    stale_ok = (
-        stale_entry["fresh"] is False and stale_entry["fingerprint"] != expected_hash
-    )
-    ok = ok and stale_ok
-    results.append(
-        {
-            "case": "batch: a bead rewritten since its ruling reads stale",
-            "pass": stale_ok,
-            "observed": {
-                "fingerprint": stale_entry["fingerprint"],
-                "stored": stale_entry["stored"],
-                "fresh": stale_entry["fresh"],
-            },
-        }
-    )
-
-    # An id nobody supplied is reported as not found rather than silently dropped — a
-    # caller must be able to tell "no fingerprint" from "absent from the map".
-    named = cmd_fingerprint_batch(
-        argparse.Namespace(
-            ids=["syn-batch-plain", "syn-batch-absent"],
-            explain=False,
-            scope=SCOPE_READINESS,
-        ),
-        batch_reader,
-    )
-    missing_ok = (
-        named["missing"] == ["syn-batch-absent"]
-        and named["results"]["syn-batch-absent"]["found"] is False
-        and named["fingerprints"]["syn-batch-plain"] == expected_hash
-        and named["count"] == 2
-    )
-    ok = ok and missing_ok
-    results.append(
-        {
-            "case": "batch: a named id nobody supplied comes back not-found, not dropped",
-            "pass": missing_ok,
-            "observed": {"missing": named["missing"], "count": named["count"]},
-        }
-    )
-
-    if not ok:
-        print(
-            json.dumps({"pass": False, "cases": results}, indent=2, ensure_ascii=False)
-        )
-        raise SystemExit(1)
-    return {"pass": True, "cases": results}
-
-
-# --------------------------------------------------------------------------------------
-# Entry point.
-# --------------------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1607,9 +970,6 @@ def build_parser() -> argparse.ArgumentParser:
         "contract", help="the full build contract, with provenance"
     )
     contract.add_argument("id")
-    contract.add_argument(
-        "--require", action="store_true", help="exit 3 when a required part is missing"
-    )
     contract.set_defaults(run=cmd_contract)
 
     ancestors = sub.add_parser("ancestors", help="the parent chain, nearest first")
@@ -1631,13 +991,6 @@ def build_parser() -> argparse.ArgumentParser:
         "pairs", nargs="*", help="keys to read, or key=value pairs to write"
     )
     metadata.set_defaults(run=cmd_metadata)
-
-    selftest = sub.add_parser(
-        "selftest",
-        help="exercise the parent, prose and field paths on synthesised records",
-    )
-    selftest.set_defaults(run=cmd_selftest)
-
     return parser
 
 

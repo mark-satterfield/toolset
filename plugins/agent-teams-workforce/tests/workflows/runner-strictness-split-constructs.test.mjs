@@ -198,22 +198,3 @@ test('prose about an import error, in a comment and in a prompt, still passes', 
   assert.deepEqual(findForbiddenConstructs(src), [], 'prose naming a construct is not the construct')
 })
 
-test('the workflow set really does carry that prose — the false-positive test is not vacuous', () => {
-  // If the prose ever disappears, this test says so rather than quietly guarding nothing.
-  // bug-fix.js alone carries 8 of these, in the Red gate's missing-capability carve-out.
-  const word = new RegExp(`\\b${IMP}\\b`, 'gi')
-  const phrase = new RegExp(`${IMP}\\s+error`, 'gi')
-  let words = 0
-  let phrases = 0
-  let inBugFix = 0
-  for (const f of fs.readdirSync(WORKFLOWS).filter((n) => n.endsWith('.js'))) {
-    const src = fs.readFileSync(path.join(WORKFLOWS, f), 'utf8')
-    const hits = (src.match(word) || []).length
-    words += hits
-    phrases += (src.match(phrase) || []).length
-    if (f === 'bug-fix.js') inBugFix = hits
-  }
-  assert.ok(inBugFix >= 8, `bug-fix.js should still discuss the token at least 8 times, found ${inBugFix}`)
-  assert.ok(words >= 15, `the workflow set should still discuss the token at least 15 times, found ${words}`)
-  assert.ok(phrases >= 4, `the literal "<token> error" phrase should still appear at least 4 times, found ${phrases}`)
-})

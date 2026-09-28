@@ -1,60 +1,25 @@
 #!/usr/bin/env python3
-"""The Epic portfolio — the deterministic half, over the tracker graph.
+"""The deterministic Epic-portfolio commands over the beads graph.
 
-The `dependency-assessment`, `task-dependency-assessment`, `wsjf-scoring` and `prd-to-spec`
-workflows run these. Every judged step between them is an agent; everything here is code.
+    assess-plan          fingerprints of the open Epics (or Tasks with no `elab_key`) and
+                         those not assessed as they stand, or not since `--since`
+    assess-context       one Epic's or Task's corpus, index and standing edges
+    snapshot             the tracker as a graph
+    validate             check one Epic's or Task's edge proposal
+    withdraw-edge        withdraw one owned edge, recording the reason
+    apply-edges          apply one Epic's or Task's edge diff through `bd dep`
+    score-plan           what a scoring run judges
+    judge-input          the items one level judges, and its judging sessions
+    record               write judged values with their fingerprints
+    score                recompute every WSJF and write what changed
+    elaboration-start    mark one Epic `in_progress` when it may be elaborated
+    elaboration-finish   score an Epic and its Tasks; `--done` sets it done
+    elaboration-release  clear a run's owner token from an Epic
+    elaboration-complete write an Epic's Stories and Tasks from its saved documents, then finish it
 
-Dependency assessment has two scopes, and each command that takes a proposal covers exactly
-one item: ONE Epic (`--epic`, `tracks` edges between Epics), or ONE Task created outside
-elaboration (`--task`, `blocks` edges between Tasks). A Task elaboration wrote carries
-`elab_key`, and its edges are elaboration's.
-
-    assess-plan       the fingerprint of every open item of a level (`--level epic`, the
-                      default, or `--level task`: the open Tasks with no `elab_key`), and
-                      those not assessed as they stand (with `--since`, also those not
-                      assessed since that instant)
-    assess-context    one item's assessment material. `--epic`: every open Epic's PRD as a
-                      file and an index of them. `--task`: every open Task as a file and an
-                      index of them. Either way, every edge standing between the item and
-                      another open bead of its level, with its recorded reason
-    snapshot          the tracker as a graph
-    validate          prove one item's edge proposal (`--edges` with `--epic` or `--task`)
-                      is applicable before anything is written: every edge joins two beads
-                      of the level, touches the item and carries a reason, and every owned
-                      edge standing on it is kept or withdrawn with a reason
-    withdraw-edge     withdraw one standing owned edge, recording why, so no later
-                      assessment sets it again without answering that reason
-    apply-edges       apply one item's edge DIFF (`--edges` with `--epic` or `--task`)
-                      through `bd dep` as the level's type, never touching a hand-made edge
-                      or an edge that does not touch the item, converting any owned edge
-                      stored as the other level's type, recording each owned edge's reason
-                      and the item content the assessment read. `--owned` proposes the owned
-                      Epic edge set back, which only adds and converts, and proposes no edge
-    score-plan        what this scoring run judges, with the fingerprints that decide it
-    judge-input       the items one level judges, with the PRD of each Epic to judge as a
-                      file, and the sessions: one Epic each, or one Epic's Tasks each
-    record            write judged values with the fingerprint they were judged from, from
-                      every judgment file in `--epics-dir` and `--tasks-dir`
-    score             recompute every Epic's and Task's WSJF and write what changed
-    elaboration-start whether one Epic may be elaborated now: open, scored, every Epic it
-                      depends on elaborated, and ready or in progress with no other
-                      owner. When it may, mark it `in_progress` under an owner token
-    elaboration-finish after an Epic's Tasks are written: fingerprint the Task sizes the run
-                      judged, score the Epic and its Tasks, and with `--done` set its elaboration to `done`
-    elaboration-release clear a run's owner token from an Epic it started and did not
-                      finish; the Epic stays `in_progress`
-    elaboration-complete write an Epic's Stories and Tasks into beads from the documents its
-                      elaboration saved (`--dir`), updating by `elab_key` what an earlier run
-                      wrote, then finish it as `elaboration-finish` does, `done` when every
-                      part landed. `--require-complete` refuses, writing nothing, while a
-                      step that needs an agent is missing from the Epic's STEPS.md
-
-Every command prints ONE JSON object on stdout and names the tracker source it read. With
-`--out FILE` the full object is written to FILE and stdout carries only its `summary`.
-
-`apply-edges`, `record`, `score` and the four `elaboration-` commands take `--dry-run`:
-the command reads the tracker and computes exactly as it otherwise would, writes nothing,
-and returns every write it would have made, in order, under `planned`.
+Every command prints one JSON object. With `--out FILE` the full object is written to FILE
+and stdout carries only its `summary`. `--dry-run` computes, writes nothing, and returns the
+writes under `planned`.
 """
 
 from __future__ import annotations
@@ -77,7 +42,6 @@ from edgeset import (
     owned_edges,
     read_edges,
     read_withdrawn,
-    scope_defect,
     validate,
     withdraw_edge,
 )
@@ -87,8 +51,6 @@ from hierarchy import HierarchyError
 from hierarchy import build as build_hierarchy
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 
-#: Set on an Epic by the elaboration pipeline. Carried in the snapshot because the
-#: sequencer reads it.
 ELAB_KEY = "elaboration_state"
 
 
@@ -100,10 +62,6 @@ def snapshot(
     epics: list[str] | None,
 ) -> dict:
     """Every bead of the wanted kinds with its lineage, dependencies and elaboration state.
-
-    `blockers` lists what each bead depends on, read from the edge type of its level:
-    `tracks` edges for an Epic, `blocks` edges for a Task. A Story only groups Tasks and
-    carries no dependency edge of its own.
 
     Args:
         graph: The tracker graph.
@@ -171,47 +129,27 @@ def assess_plan(
 ) -> dict:
     """Every candidate's fingerprint at a level, and those not assessed as they now stand.
 
-    At Epic level the candidates are the open Epics; at Task level, the open Tasks with no
-    `elab_key`, because a Task elaboration wrote has its edges from elaboration. An item
-    has been assessed as it stands when the `seq_content_hash` recorded on it matches its
-    fingerprint. With `since`, an item whose `seq_assessed_at` is absent or earlier than
-    that instant is unassessed too. The fingerprints are what `apply-edges --plan`
-    records.
+    Candidates are the open Epics, or the open Tasks with no `elab_key`. An item is
+    unassessed when its `seq_content_hash` differs from its fingerprint or, with `since`,
+    when its `seq_assessed_at` is absent or earlier than `since`.
 
     Args:
         graph: The tracker graph, read with descriptions.
         epic: The one Epic to be assessed, or None. Epic level only.
-        since: An ISO 8601 instant, or None.
+        since: An ISO 8601 instant, or None; an unparseable value is ignored.
         level: `epic` or `task`.
         task: The one Task to be assessed, or None. Task level only.
 
     Returns:
         The level, the fingerprints, the unassessed items, the scope, and a summary.
-
-    Raises:
-        SequencingError: A scope was given for the other level, the scope is not a
-            candidate of its level, or `since` is not an ISO 8601 instant.
     """
-    if level == "epic" and task is not None:
-        msg = "--task needs --level task"
-        raise SequencingError(msg)
-    if level == "task" and epic is not None:
-        msg = "--epic needs --level epic"
-        raise SequencingError(msg)
     item = epic if level == "epic" else task
-    if item is not None:
-        defect = scope_defect(graph, item, level)
-        if defect:
-            raise SequencingError(defect)
     candidates = [
         b
         for b in graph.of_kind(level)
         if not b.closed and not (level == "task" and b.metadata.get(ELAB_IDENTITY_KEY))
     ]
     cutoff = _instant(since) if since is not None else None
-    if since is not None and cutoff is None:
-        msg = f"--since {since!r} is not an ISO 8601 instant"
-        raise SequencingError(msg)
     prints = beadgraph.fingerprints(graph.records, beadgraph.SCOPE_JUDGING)
 
     def assessed(bead: Bead) -> bool:
@@ -251,41 +189,20 @@ def _read_json(path: Path) -> dict:
 
     Returns:
         The object.
-
-    Raises:
-        ScoringError: The file does not hold a JSON object.
     """
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        msg = f"{path} does not hold a JSON object"
-        raise ScoringError(msg)
-    return payload
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _plan_fingerprints(path: Path) -> dict:
     """The fingerprint map an `assess-plan` output records.
 
-    A bare `["fingerprints"]` raised KeyError, which is outside the refusal tuple `main`
-    catches, so a malformed plan exited 1 with a traceback instead of the documented
-    exit-2 JSON refusal.
-
     Args:
         path: The plan file.
 
     Returns:
-        Bead id -> the fingerprint the plan was made at.
-
-    Raises:
-        ScoringError: The file is not an `assess-plan` output.
+        Bead id -> the fingerprint the plan was made at; empty when the file has none.
     """
-    payload = _read_json(path)
-    seen = payload.get("fingerprints")
-    if not isinstance(seen, dict):
-        msg = (
-            f"{path} is not an `assess-plan` output: it holds no `fingerprints` object"
-        )
-        raise ScoringError(msg)
-    return seen
+    return _read_json(path).get("fingerprints") or {}
 
 
 def _entries(path: Path | None, key: str) -> list[dict]:
@@ -297,30 +214,17 @@ def _entries(path: Path | None, key: str) -> list[dict]:
 
     Returns:
         The records.
-
-    Raises:
-        ScoringError: The file holds no `key` list. A typo'd top-level key used to yield
-            zero records, and the items then surfaced in `record`'s `missing` list — the
-            effect visible, the cause not.
     """
     if path is None:
         return []
-    payload = _read_json(path)
-    if key not in payload:
-        msg = f"{path} holds no {key!r} list; its top-level keys are {', '.join(sorted(payload)) or 'none'}"
-        raise ScoringError(msg)
-    entries = payload.get(key) or []
+    entries = _read_json(path).get(key) or []
     return [e for e in entries if isinstance(e, dict)]
 
 
 def _dir_entries(
     directory: Path | None, key: str, unreadable: list[dict]
 ) -> list[dict]:
-    """The per-item records from every output file in a directory.
-
-    Each file is one judging session's output. A file that is not JSON, or holds no
-    `key` list, costs only that session's items: it is listed in `unreadable` with the
-    reason, its items surface in `record`'s `missing`, and every other file is read.
+    """The per-item records from every `*.json` file in a directory.
 
     Args:
         directory: The directory of session output files, or None when there is none.
@@ -332,14 +236,11 @@ def _dir_entries(
     """
     if directory is None:
         return []
-    if not directory.is_dir():
-        unreadable.append({"file": str(directory), "reason": "not a directory"})
-        return []
     records: list[dict] = []
     for path in sorted(directory.glob("*.json")):
         try:
             records += _entries(path, key)
-        except (ScoringError, json.JSONDecodeError, OSError) as exc:
+        except (AttributeError, json.JSONDecodeError, OSError) as exc:
             unreadable.append({"file": str(path), "reason": str(exc)})
     return records
 
@@ -363,7 +264,6 @@ def build_parser() -> argparse.ArgumentParser:
     Returns:
         The parser.
     """
-    # `-C` and `--out` are accepted on either side of the subcommand.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
         "-C",
@@ -585,9 +485,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--sad-files",
         default="",
         help=(
-            "the SAD files this run's architecture phase changed, comma-separated. With "
-            "`--done` they are promoted to `lifecycle_state: effective`; without it they "
-            "are ignored, because only a completed elaboration vouches for a SAD entry"
+            "the SAD files this run's architecture phase changed, comma-separated; with "
+            "`--done` they are promoted to `lifecycle_state: effective`"
         ),
     )
     efi.add_argument(
@@ -663,6 +562,9 @@ def run(args: argparse.Namespace) -> dict:
 
     Returns:
         The payload to print as JSON.
+
+    Raises:
+        SequencingError: An edge proposal names neither or both of `--epic` and `--task`.
     """
     if args.command == "elaboration-complete":
         return run_complete(args)
@@ -682,9 +584,6 @@ def run(args: argparse.Namespace) -> dict:
             graph, epic=args.epic, since=args.since, level=args.level, task=args.task
         )
     if command == "assess-context":
-        if (args.epic is None) == (args.task is None):
-            msg = "assess-context covers exactly one Epic or one Task: pass --epic or --task"
-            raise SequencingError(msg)
         if args.task is not None:
             return head | task_context(graph, args.task, args.dir)
         return head | assess_context(
@@ -712,9 +611,6 @@ def run(args: argparse.Namespace) -> dict:
                 "pass --epic or --task"
             )
             raise SequencingError(msg)
-    if command == "apply-edges" and args.owned and args.task:
-        msg = "--owned repairs the owned Epic edges; it takes no --task"
-        raise SequencingError(msg)
     level = "task" if getattr(args, "task", None) else "epic"
     item = args.task if level == "task" else getattr(args, "epic", None)
     if command == "validate":
@@ -783,7 +679,6 @@ def run(args: argparse.Namespace) -> dict:
             judged=split_ids(args.judged),
             owner=args.owner,
             done=args.done,
-            # Paths, not bead ids, so they are split here rather than by `split_ids`.
             sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
             sad_root=args.sad_root,
         )
@@ -795,14 +690,18 @@ def run(args: argparse.Namespace) -> dict:
 def run_complete(args: argparse.Namespace) -> dict:
     """Write an Epic's hierarchy from its saved documents, then finish its elaboration.
 
-    The documents are read before the tracker, so an Epic whose agent steps are not all
-    complete is refused without reading the tracker when `--require-complete` is set.
+    With `--require-complete`, returns a `steps-missing` refusal and writes nothing while a
+    step that needs an agent is missing. Writes nothing when the tracker was not read
+    through `bd`.
 
     Args:
         args: The parsed command line.
 
     Returns:
         The payload to print as JSON.
+
+    Raises:
+        GraphError: The tracker was not read through `bd`.
     """
     hier = build_hierarchy(
         args.dir,

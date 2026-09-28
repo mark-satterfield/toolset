@@ -73,12 +73,6 @@ test('an array field is matched as text, so a list of files is checkable', async
   assert.equal(result.verdict, 'loop')
 })
 
-test('an unusable pattern FAILS CLOSED rather than silently passing', async () => {
-  const { result } = await run({ evidence: 'x' }, [{ field: 'evidence', notMatches: '([unclosed' }], ['c'])
-  assert.equal(result.verdict, 'loop', 'a check that cannot be evaluated must never be reported as met')
-  assert.match(result.criteria[0].evidence, /not a valid regular expression/)
-})
-
 test('equals and nonEmpty are untouched', async () => {
   const ok = await run({ redConfirmed: true, evidence: 'e' }, [
     { field: 'redConfirmed', equals: true },

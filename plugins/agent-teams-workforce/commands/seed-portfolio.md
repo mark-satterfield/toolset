@@ -17,8 +17,8 @@ sees every edge the earlier ones set. When every Epic is assessed and applied, i
 `wsjf-scoring` itself, once: missing values are judged, and the arithmetic recomputes RR-OE
 from the new edges and every WSJF over every open item.
 
-An assessment whose edge proposal does not validate stops the seeding at that Epic, writes
-nothing for it, and nothing is scored. An edge between two Epics is an architecture dependency
+An assessment whose edge proposal does not validate writes nothing for that Epic; the seeding
+continues with the other Epics and still scores. An edge between two Epics is an architecture dependency
 (`agent-teams-workforce:epic-sequencing`).
 
 - `--since <iso>` resumes an interrupted seeding: pass the `since` the interrupted run
@@ -69,10 +69,9 @@ Workflow({name: "agent-teams-workforce:seed-portfolio", args: {
 }})
 ```
 
-`ok` is false: stop and report `stage` and `headline`. The seeding either refused its
-arguments (`stage: input` — correct the dispatch; nothing ran), stopped at an Epic
-(`stoppedAt`) and scored nothing, or assessed every Epic and scoring failed (`scoring`). In
-the last two a resume with `--since <SINCE>` finishes it; `stage: agent-dispatch-failed`
+`ok` is false: stop and report `stage` and `headline`. An Epic failed (`failed`,
+`stoppedAt`, `remaining`; the other Epics were still assessed and scoring still ran), or
+scoring failed (`scoring`). A resume with `--since <SINCE>` finishes it; `stage: agent-dispatch-failed`
 means the sessions died rather than the work failing, and the same resume applies once the
 API is back.
 
@@ -97,7 +96,7 @@ From the seeding result:
 - `assessed` — per Epic: edges added, converted and withdrawn, and the `unchanged` count;
   every added edge as `blocker -> blocked` with its reason, from the Epic's `edgesFile` and
   `resultFile`; every withdrawal as `blocker -> blocked` with its reason.
-- `stoppedAt` — when the seeding stopped: the Epic, its `error` and `dispatchFailures`,
+- `failed` / `stoppedAt` — each Epic that failed: its `error` and `dispatchFailures`,
   verbatim, and the `remaining` Epics. When its edge proposal did not validate, also every
   finding in `findings`, with the `edgesFile` and `validationFile`, and what a person does:
   correct the PRD, or the hand-made edge a cycle runs through, then resume with

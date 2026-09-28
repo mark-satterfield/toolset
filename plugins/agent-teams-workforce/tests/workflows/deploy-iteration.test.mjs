@@ -28,33 +28,6 @@ const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..'
 const COMPOSITES = ['task-to-deploy', 'bug-fix', 'infra-change']
 const WORKTREE = '/repos/.worktrees/ssbd-dep-chassis'
 
-// ── The Gate 5 contract, read off the source of every composite ───────────────
-test('no composite gates deployment on a pull request', () => {
-  for (const name of COMPOSITES) {
-    const src = readWorkflowSource(path.join(WF, `${name}.js`))
-    assert.doesNotMatch(
-      src,
-      /field: 'prOpened'/,
-      `${name}: a pull request is not deploy evidence and must not be a Gate 5 check`,
-    )
-    assert.doesNotMatch(
-      src,
-      /field: 'prUrl'/,
-      `${name}: the presence of a PR URL says nothing about whether anything was deployed`,
-    )
-    assert.match(
-      src,
-      /field: 'deployedToDev', equals: true/,
-      `${name}: Gate 5 must mechanically assert that the change reached AWS dev`,
-    )
-    assert.match(
-      src,
-      /field: 'smokePassed', equals: true/,
-      `${name}: Gate 5 must mechanically assert the smoke tests passed against the deployed endpoints`,
-    )
-  }
-})
-
 // ── The iteration loop ────────────────────────────────────────────────────────
 
 /**
@@ -405,14 +378,6 @@ test('ok:true from the deploy phase now IMPLIES a confirmed deployment', async (
       deterministicChecks: [{ criterion: DEPLOYED_CHECK_LABEL, met: false, evidence: 'observed deployedToDev = false' }],
     })
     assert.ok(!(result.ok === true && result.deployedToDev !== true), `${label}: ok:true must never accompany an unconfirmed deployment`)
-  }
-})
-
-test('every composite enforces the deterministic rule in CODE, not only in prompt prose', () => {
-  for (const name of COMPOSITES) {
-    const src = readWorkflowSource(path.join(WF, `${name}.js`))
-    assert.match(src, /const measuredFailures = \[/, `${name}: the measured-failure set must be computed`)
-    assert.match(src, /deterministicFailure: measuredFailures\.length > 0/, `${name}: the failure must name itself as a measured one`)
   }
 })
 

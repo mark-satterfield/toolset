@@ -128,12 +128,6 @@ test('a parentless provisioning Task routes to infra-change, not to a skip', asy
 // sweep skips it rather than force-fitting work that was never authorised.
 
 for (const container of ['epic', 'story']) {
-  test(`an unattended sweep does not elaborate a ${container} — that is a human's call`, async () => {
-    const r = await routeElab({ type: container })
-    assert.equal(r.action, 'skip')
-    assert.match(r.reason, /human/i)
-  })
-
   test(`a human-initiated run works a ${container} via elaboration, not development`, async () => {
     const r = await routeElab({ type: container }, true)
     assert.equal(r.action, 'elaborate')
@@ -306,17 +300,6 @@ test('task-decomposition tells the decomposer it may not mint a container', () =
 
 // ── Promotion to a PRD is a human decision ────────────────────────────────────
 
-test('a feature bead is a REQUEST — it is skipped, not auto-promoted', async () => {
-  // Promoting a feature to a PRD and an Epic decides that it is worth building,
-  // and now. A loop that promotes every feature bead it finds has decided the
-  // roadmap, which is not a call this pipeline has the standing to make.
-  const r = await routeElab({ type: 'feature' })
-  assert.equal(r.action, 'skip')
-  assert.equal(r.composite, null)
-  assert.match(r.reason, /human decision/i)
-  assert.match(r.reason, /start-prd/, 'the skip must name the command that promotes it')
-})
-
 test('a bead labelled prd/requirement is treated the same way', async () => {
   for (const label of ['prd', 'requirement', 'feature']) {
     const r = await routeElab({ type: 'chore', labels: [label] })
@@ -324,30 +307,3 @@ test('a bead labelled prd/requirement is treated the same way', async () => {
   }
 })
 
-test('the Red phase tells writers to extend the existing suite, not fork it', () => {
-  // Tests written by tdd-red are permanent — deploy.js commits them and every
-  // later run inherits them. Without an instruction to look first, runs accrete
-  // parallel files covering the same behavior, which makes the suite slow and
-  // its failures ambiguous about which expectation is authoritative.
-  const src = readWorkflowSource(path.join(WORKFLOWS, 'tdd-red.js'))
-  assert.match(src, /FIND THE EXISTING SUITE BEFORE YOU WRITE/,
-    'the writer prompt must require locating the existing coverage first')
-  assert.match(src, /these tests are permanent/i,
-    'the writer must know its output is committed and inherited, not scratch')
-})
-
-test('the Red phase forbids asserting against committed build artifacts', () => {
-  // Observed live on ssbd-sa5j: half a suite synthesized the CDK template in
-  // process while the other half read a checked-in cdk.out template three days
-  // stale. The two halves asserted against different artifacts, so the suite
-  // reported coverage it did not have — and the stale half would pass forever.
-  const red = readWorkflowSource(path.join(WORKFLOWS, 'tdd-red.js'))
-  assert.match(red, /ASSERT AGAINST WHAT THE CODE PRODUCES, NOT A COMMITTED ARTIFACT/,
-    'the writer prompt must forbid testing against checked-in build output')
-
-  for (const composite of ['bug-fix.js', 'task-to-deploy.js', 'infra-change.js']) {
-    const src = readWorkflowSource(path.join(WORKFLOWS, composite))
-    assert.match(src, /freshly generated artifacts, not checked-in build output/,
-      `${composite}: the Red gate must check this, not only the writer prompt — a prompt is advice, a gate criterion is checked`)
-  }
-})

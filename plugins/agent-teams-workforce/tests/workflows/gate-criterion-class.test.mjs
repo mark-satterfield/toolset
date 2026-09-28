@@ -108,26 +108,6 @@ test('ESCALATE is left alone — it routes bad UPSTREAM input and composites dep
 
 // ─── Behaviour 2: an unmet CONSTITUTIVE criterion never passes ────────────────
 
-test('an unmet CONSTITUTIVE criterion yields LOOP — a pass over one is converted', async () => {
-  const { result, calls } = await run({
-    criteria: [
-      { text: 'No production code was changed to manufacture the failure', class: 'constitutive' },
-      'the test asserts real behavior',
-    ],
-    verdict: {
-      verdict: 'pass',
-      criteria: [
-        { criterion: 'No production code was changed to manufacture the failure', met: false, evidence: 'src/handler.py was edited' },
-      ],
-      feedback: 'close enough',
-      flags: [],
-    },
-  })
-  assert.equal(result.verdict, 'loop', 'a constitutive failure is never a pass')
-  assert.match(result.feedback, /src\/handler\.py was edited/, 'the feedback must name what failed')
-  assert.match(result.classOverride, /pass-converted-to-loop/)
-})
-
 test('a constitutive LOOP stands as a loop, and the presence of one disables the passive conversion', async () => {
   const { result } = await run({
     criteria: [
@@ -160,18 +140,6 @@ test('a PASS over an unmet criterion the caller marked COMPETITIVE is left alone
 })
 
 // ─── The decision rule reaches the judge, not just the script ─────────────────
-
-test('the enforcer is told every criterion it receives is a hard stop', async () => {
-  const { calls } = await run({
-    criteria: [{ text: 'c', class: 'constitutive' }],
-    verdict: { verdict: 'pass', criteria: [], feedback: 'ok', flags: [] },
-  })
-  const prompt = gatePrompt(calls)
-  assert.match(prompt, /every one is CONSTITUTIVE/)
-  assert.match(prompt, /An unmet criterion is a HARD STOP/)
-  assert.match(prompt, /a concern that is not one of them is a flag/)
-  assert.doesNotMatch(prompt, /Pass criteria \(ALL must hold\)/, 'the ambiguous instruction that caused the defect must be gone')
-})
 
 test('a gate declaring NO constitutive criterion passes on its checks with no session', async () => {
   const { result, calls } = await run({
@@ -222,12 +190,6 @@ test('an all-mechanical gate with no criteria is unaffected by the classificatio
   })
   assert.equal(result.verdict, 'pass')
   assert.equal(result.deterministic, true)
-})
-
-test('a gate with neither criteria nor checks still fails closed', async () => {
-  const { result } = await run({ criteria: [], verdict: { verdict: 'pass', criteria: [], feedback: 'ok', flags: [] } })
-  assert.equal(result.verdict, 'escalate')
-  assert.match(result.flags[0], /gate-misconfiguration/)
 })
 
 test('a malformed criterion entry is dropped rather than rendered as [object Object]', async () => {

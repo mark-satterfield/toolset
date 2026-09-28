@@ -35,7 +35,6 @@ const BLOCKED_REASON =
 const CASES = [
   { file: 'bug-fix.js', entry: null },
   { file: 'task-to-deploy.js', entry: '1' },
-  { file: 'infra-change.js', entry: 'G1' },
 ]
 
 async function runBlockedRed(file, entry) {

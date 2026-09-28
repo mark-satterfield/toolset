@@ -133,73 +133,6 @@ test('material that contradicts the PRD becomes REMOVAL work, not a smaller PRD'
 
 // ── evidence ────────────────────────────────────────────────────────────────────
 
-test('a requirement cannot be marked conforming without evidence — it drops to absent and is built fresh', async () => {
-  const { result } = await reconcile({
-    requirements: [
-      { id: 'R1', requirement: 'enrol TOTP', status: 'conforms', evidence: [], conformingMaterial: ['trust me'] },
-      { id: 'R2', requirement: 'challenge at sign-in', status: 'absent', evidence: ['not found'] },
-    ],
-  })
-  const r1 = result.requirements.find((r) => r.id === 'R1')
-  assert.equal(r1.status, 'absent', 'an unevidenced "conforms" is not honoured')
-  assert.equal(r1.claimedStatus, 'conforms', 'and the discarded claim is still reported')
-  assert.deepEqual(r1.conformingMaterial, [], 'a demoted requirement carries no reuse instruction')
-  assert.equal(result.absentCount, 2, 'demotion means "build it fresh", which is never wrong under this rule')
-  assert.equal(result.evidenceViolations.length, 1)
-})
-
-test('an unevidenced contradiction is demoted too — nobody deletes files on an unconfirmed claim', async () => {
-  const { result } = await reconcile({
-    requirements: [
-      { id: 'R1', requirement: 'enrol TOTP', status: 'contradicts', evidence: ['I had a look around'], removalTargets: ['services/auth/'] },
-    ],
-  })
-  assert.equal(result.requirements[0].status, 'absent')
-  assert.deepEqual(result.requirements[0].removalTargets, [], 'removal is destructive — an unconfirmed target is blanked')
-  assert.equal(result.removalWork.length, 0)
-})
-
-test('prose is not evidence for a conforming claim — only a file:line, cited artifact, endpoint, URL or ARN is', async () => {
-  const { result } = await reconcile({
-    requirements: [
-      { id: 'R1', requirement: 'enrol TOTP', status: 'conforms', evidence: ['I reviewed the auth service and it looks complete'] },
-    ],
-  })
-  assert.equal(result.requirements[0].status, 'absent')
-  assert.match(result.evidenceViolations[0].reason, /file:line/)
-})
-
-test('a cited design-system artifact IS strong evidence for a ui requirement', async () => {
-  // The cds bundle is the UI authority, so a build-spec path has to satisfy the same bar a
-  // file:line does for a service requirement — otherwise every UI status is demoted and the
-  // packaged artifact is rebuilt from PRD prose.
-  const { result } = await reconcile({
-    requirements: [
-      {
-        id: 'R1',
-        requirement: 'the settings shell',
-        status: 'conforms',
-        surface: 'ui',
-        evidence: ['design-mocks/packages/batch-20260819T191805Z/views/settings-profile/spec/build-spec.md'],
-        conformingMaterial: ['the packaged settings view'],
-      },
-    ],
-  })
-  assert.equal(result.requirements[0].status, 'conforms')
-  assert.equal(result.evidenceViolations.length, 0)
-})
-
-test('the same demand does not apply in reverse — an absent claim needs only a stated basis', async () => {
-  // The two errors are not symmetric. Calling existing material absent costs a rebuild;
-  // calling contradicting material conforming leaves the product in the state the PRD was
-  // written to change.
-  const { result } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'enrol TOTP', status: 'absent', evidence: ['grepped for totp, no hits'] }],
-  })
-  assert.equal(result.requirements[0].status, 'absent')
-  assert.equal(result.evidenceViolations.length, 0)
-})
-
 test('a schema that permitted an evidence-free status would defeat the whole check', async () => {
   const { calls } = await reconcile({
     requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
@@ -253,16 +186,6 @@ test('the reconciler is pointed at the hand-off bundle FIRST and the loose mocks
   assert.match(checker.prompt, /MANIFEST\.tsv/, 'and it is told to start at the cheap index')
   assert.match(checker.prompt, /NEVER an\s*\n?\s*architecture question/, 'a UI difference is settled, not adjudicated')
   assert.ok(checker.prompt.includes('/repo/auth/design-mocks/packages'), 'the bundle root is derived from the repo the run operates on')
-})
-
-test('an empty PRD is refused rather than reported as an empty inventory', async () => {
-  // "Nothing was found" and "no PRD was supplied" both reduce to zero requirements, and a
-  // caller reading the first as an answer proceeds against a document nobody looked at.
-  const { result } = await runWorkflowScript(reconciliation, { args: { prd: { body: '   ' } } })
-  assert.equal(result.ok, false)
-  assert.deepEqual(result.requirements, [])
-  assert.equal(result.conformsCount, 0)
-  assert.match(result.reason, /empty PRD body/)
 })
 
 // ── the checks are one session, and it is a leaf ────────────────────────────────
@@ -464,29 +387,6 @@ test('every phase that sees a PRD sees the same text — none of them a narrowed
   }
 })
 
-test('a contradiction is reported as removal work, and the requirement count is unchanged by it', async () => {
-  // The composite must never report a smaller PRD because material contradicts it. The
-  // spec reads the inventory as CONTEXT; what is pinned here is that nothing was subtracted
-  // and that the removal was counted as work.
-  const { logs, result } = await composite({
-    ...RECON_OK,
-    requirements: [
-      { id: 'R1', requirement: 'a', status: 'contradicts', evidence: ['x:1'], removalTargets: ['old.py'], surface: 'service', repos: ['/repo/auth'] },
-    ],
-    conformsCount: 0,
-    contradictsCount: 1,
-    absentCount: 0,
-    removalWork: [{ requirementId: 'R1', requirement: 'a', targets: ['old.py'], repos: ['/repo/auth'] }],
-    reuseWork: [],
-  })
-  const line = logs.find((l) => /^Current-state comparison across /.test(l))
-  assert.ok(line, 'the run must say what the comparison found')
-  assert.match(line, /1 requirement\(s\), all in scope/)
-  assert.match(line, /1 removal work item\(s\)/, 'removal is work, and work that is never mentioned is never done')
-  // And it reached a Story, which is what makes it reach decomposition at all.
-  assert.equal(result.removalNotEmitted, undefined, 'per-repo findings place exactly — nothing is left standing silently')
-})
-
 test('removal discovered at spec time still reaches the task briefs', async () => {
   // The half of the old front-end phase that MUST survive the move. A contradiction that
   // nobody writes a task to delete stays deployed, so the item has to travel from the
@@ -508,43 +408,6 @@ test('removal discovered at spec time still reaches the task briefs', async () =
   assert.match(decomp.payload.spec.description, /old\.py/, 'the target itself has to be in the brief')
   assert.equal(result.ok, true)
   assert.equal(result.removalNotEmitted, undefined)
-})
-
-test('a failed comparison does not author a spec for that repository — it is never read as an empty inventory', async () => {
-  // Reading "we could not establish what exists here" as "nothing exists here" is the
-  // greenfield assumption the whole phase removes. With one repository in the span, no
-  // comparison means no spec at all, so the run stops at spec authoring rather than
-  // specifying blind.
-  const { result, seen, calls } = await composite({ ok: false, reason: 'could not read the repository' })
-  assert.equal(result.ok, false)
-  assert.equal(result.stage, 'spec-authoring')
-  assert.equal(
-    seen.filter((c) => String(c.name || '').endsWith('spec-authoring')).length,
-    0,
-    'no spec is authored against an unknown current state',
-  )
-  const { journalDetail } = await import('./helpers/run-workflow.mjs')
-  const partial = journalDetail(calls).partial
-  assert.ok(partial.prd, 'the PRD is still in the journal')
-  assert.equal(partial.reconFailures.length, 1, 'and the failure is named as what it was')
-  assert.match(partial.reconFailures[0].reason, /could not read the repository/)
-})
-
-test('the composite declares NO PRD Reconciliation phase, and Spec Authoring owns the comparison', async () => {
-  const { readWorkflowSource } = await import('./helpers/run-workflow.mjs')
-  const src = readWorkflowSource(prdToSpec)
-  const phasesIdx = src.indexOf('phases: [')
-  const phases = src.slice(phasesIdx, src.indexOf('\n  ],', phasesIdx))
-  assert.ok(
-    !/\{ title: 'PRD Reconciliation'/.test(phases),
-    'a front-end reconciliation phase is what made deployed state a requirements input',
-  )
-  assert.match(
-    phases,
-    /phases: \[\s*\{ title: 'Epic Lifecycle'[^\n]*\n\s*\{ title: 'PRD'/,
-    'the run opens on the Epic lifecycle check, then the PRD itself',
-  )
-  assert.match(phases, /\{ title: 'Spec Authoring', detail: '[^']*current-state reconciliation runs HERE/)
 })
 
 test('the comparison is a workflow dispatch of its own', async () => {

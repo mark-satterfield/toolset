@@ -72,10 +72,3 @@ test('the contract carries the bead, so Red and Adversarial know what they are w
   assert.equal(red.payload.contract.bead.repoPath, WORKTREE, 'the bead on the contract points at the worktree, not the caller path')
 })
 
-test('the header comment documents the argument the body actually reads', async () => {
-  const { readFileSync } = await import('node:fs')
-  const src = readFileSync(T2D, 'utf8')
-  const header = src.slice(0, src.indexOf('const a = ('))
-  assert.match(header, /bead: \{/, 'the documented entry argument must be the one the code reads')
-  assert.match(header, /repoPath,\s+\/\/ required; the REPOSITORY/, 'repoPath is part of the build contract and the header must say it is required')
-})

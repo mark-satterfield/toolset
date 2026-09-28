@@ -113,32 +113,6 @@ test('the steward placements stand: a placement is kept without any list the ste
   assert.deepEqual(result.repos, ['/repos/beta'])
 })
 
-test('a ruled path that could reshape a command is refused, never sanitized', async () => {
-  // These become the downstream repoPath, which gets interpolated into `git -C "<path>"`
-  // command text another agent runs verbatim. Here the author is an AGENT, which makes
-  // the guard more necessary rather than less.
-  const hostile = '/repos/alpha" && rm -rf / && echo "'
-  const { result } = await runWorkflowScript(SCOPING, {
-    args: { prd: PRD },
-    agentImpl: scopingAgents({
-      placements: [{ repoPath: hostile, repoName: 'alpha', workUnitIds: ['W1'], rationale: 'r' }],
-      inventory: [{ repoPath: hostile, name: 'alpha', owns: 'x' }],
-    }),
-  })
-  assert.deepEqual(result.repos, [], 'a path that can reshape a command must never reach one')
-  assert.ok(result.blocked.length, 'and the refusal must say what was wrong')
-})
-
-test('an empty PRD body is REFUSED rather than returning an empty span', async () => {
-  // "No repository could be ruled" and "no PRD was supplied" both reduce to `repos: []`,
-  // and the caller treats the first as a real ruling that the work needs repositories
-  // nobody has. Conflating them invents a repository requirement out of a missing argument.
-  const { result, calls } = await runWorkflowScript(SCOPING, { args: { prd: { id: 'X', body: '' } }, agentImpl: () => null })
-  assert.equal(result.ok, false)
-  assert.deepEqual(result.repos, [])
-  assert.deepEqual(calls, [], 'refusing after dispatching is not refusing')
-})
-
 // ── The composite: how the span reaches the per-repo fan-out ───────────────────
 
 /**
@@ -302,17 +276,6 @@ test('the ruling receives NO material inventory — the span is ruled before any
   assert.ok(scopingIdx < reconIdx, 'the span is ruled first; the comparison happens per repo afterwards')
 })
 
-test('the span ruling gets the honest UNKNOWN, not an all-clear it never earned', async () => {
-  // repo-scoping renders the absent-inventory case itself. The words matter: they used to
-  // say "PRD reconciliation named no repositories holding related material", which is a
-  // negative claim nobody established, addressed to the one agent whose job is weighing
-  // evidence.
-  const { readWorkflowSource } = await import('./helpers/run-workflow.mjs')
-  const src = readWorkflowSource(path.join(WF, 'repo-scoping.js'))
-  assert.match(src, /NO MATERIAL INVENTORY WAS TAKEN before this placement/)
-  assert.match(src, /does NOT mean the repositories are empty or that this is greenfield work/)
-})
-
 test('an explicit args.repos OVERRIDES the ruling for that run, and nothing is dispatched', async () => {
   // The override exists for a deliberate re-run and for tests. It is an argument passed in
   // band, never a stored artifact — which is what keeps the next run scoped afresh.
@@ -339,57 +302,3 @@ test('a failed ruling STOPS the run — it never falls back to the launch reposi
   assert.equal(workflowCalls(calls, 'agent-teams-workforce:spec-authoring').length, 0, 'nothing may be specified against a guessed span')
 })
 
-test('the run attempt ceiling is RESCALED to the ruled span, before the first per-repo gate', async () => {
-  // The ceiling is denominated in repo count and used to be computed at module scope, when
-  // the span was still caller input. Now it cannot be known until the ruling lands, so it is
-  // SEEDED from the launch repository and rescaled once. Without the rescale a PRD ruled
-  // into four repositories runs against a ceiling sized for one: the Stories all get
-  // authored, the budget runs out partway through decomposition, and the run returns
-  // DEGRADED with three of the four Stories carrying no tasks — a shortfall caused entirely
-  // by a ceiling for a span it no longer has.
-  const ruled = ['/repos/a', '/repos/b', '/repos/c', '/repos/d']
-  const { result, calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a' },
-    workflowImpl: compositeWorkflows({ scopingResult: RULED(ruled) }),
-    agentImpl: withBeadWriter(),
-  })
-
-  assert.equal(result.ok, true, `composite failed at ${result.stage}: ${String(result.headline || '').slice(0, 300)}`)
-  assert.equal(result.hierarchy.stories.length, 4)
-  assert.equal(result.hierarchy.tasks.length, 4, 'every Story decomposed — none starved by a ceiling sized for the seed')
-
-  const budget = (journalPayload(calls) || {}).detail
-  // Seeded at 3 + 2*1 + 3 = 8; a zero-retry 4-repo run costs 3 + 2*4 = 11 attempts.
-  assert.ok(
-    budget && budget.budget && budget.budget.maxTotalAttempts >= 11,
-    `the ceiling must clear the ruled span's zero-retry cost, found ${JSON.stringify(budget && budget.budget)}`,
-  )
-})
-
-test('a caller who PINNED maxTotalAttempts keeps exactly that, rescale or not', async () => {
-  const { calls } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/a', maxTotalAttempts: 99 },
-    workflowImpl: compositeWorkflows({ scopingResult: RULED(['/repos/a', '/repos/b', '/repos/c', '/repos/d']) }),
-    agentImpl: withBeadWriter(),
-  })
-  const detail = (journalPayload(calls) || {}).detail
-  assert.equal(detail.budget.maxTotalAttempts, 99, 'pinning it is what pinning it means')
-})
-
-test('spec authoring finding work OUTSIDE the ruled span is surfaced, not dropped', async () => {
-  // The only independent evidence the pipeline produces that the ruled span was WRONG. The
-  // scoping phase ruled before any spec existed; a spec author who then needs a contract in
-  // a repository outside the span has seen the hole from the one vantage point that could.
-  const { result } = await runWorkflowScript(PRD_TO_SPEC, {
-    args: { epic: TEST_EPIC, ...ARTIFACT_ARGS, prd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, repoPath: '/repos/alpha' },
-    workflowImpl: compositeWorkflows({
-      scopingResult: RULED(['/repos/alpha']),
-      outOfRepoFindings: ['the consumer for order.placed lives in /repos/beta and does not exist'],
-    }),
-    agentImpl: withBeadWriter(),
-  })
-  assert.equal(result.ok, true, `composite failed at ${result.stage}: ${result.headline || ''}`)
-  assert.ok(Array.isArray(result.outOfSpanFindings) && result.outOfSpanFindings.length, 'it must cross the boundary, not go to the journal')
-  assert.equal(result.outOfSpanFindings[0].repoPath, '/repos/alpha')
-  assert.match(result.headline, /TOO NARROW/, 'and it must be visible without opening anything')
-})

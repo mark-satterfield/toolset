@@ -35,20 +35,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" 
 
 Every command prints ONE JSON object on stdout and reads `bd show --json --readonly` unless it
 is a `metadata set`. `-C <repoPath>` runs `bd` from another repository. Exit status: `0` fine,
-`2` the command refused (the object carries `error`), `3` only for `contract --require` when a
-required part is missing.
+`2` the command refused (the object carries `error`).
 
 | Command | Answers |
 | --- | --- |
-| `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description and the contract — passed as-is. Add `--require` to exit 3 rather than report. |
+| `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description and the contract — passed as-is. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
 | `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--scope judging` returns the judging fingerprint instead; `--explain` prints the exact object hashed. |
 | `fingerprint-batch [id ...]` | The same answer, in either `--scope`, for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |
 | `ancestors <id>` | The parent chain, nearest first, cycle-safe. |
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
-| `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, refusing an unknown key or a malformed value, then reads back to verify. |
-| `selftest` | Exercises the parent, prose, `--acceptance`-field and metadata paths against synthesised records. Changes nothing. |
+| `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, then reads the values back into `verified`. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
 tracker — how the parent and prose paths are exercised when no live bead has them. `--records -`

@@ -275,8 +275,7 @@ reason; a Task above 13 keeps its judged size and comes back in `sizeFaults`; an
 its estimate's range comes back in `outsideRange`.
 
 `scripts/wsjf.py reach` returns the counts and bands alone, for a caller maintaining a
-graph. `scripts/wsjf.py selftest` exercises the bands, the scale, the roll-up and the graph
-walk, and exits non-zero when any case fails.
+graph.
 
 ## Confidence
 

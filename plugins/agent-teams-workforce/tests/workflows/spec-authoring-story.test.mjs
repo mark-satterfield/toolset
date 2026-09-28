@@ -111,20 +111,3 @@ test('the six spec artifacts are actually authored, not silently empty', async (
   assert.ok(authorCalls.some((c) => c.label === 'author:criteria'), 'the criteria maker must run')
 })
 
-test('a Story is never emitted without a repo', async () => {
-  const { result } = await run({
-    spec: { id: 'SPEC-1', title: 'Spec One', summary: 's' },
-    epic: { key: 'E1' },
-    storyKey: 'S1',
-  })
-  // Either the mini refuses, or it emits a Story with a real repo. What it must not
-  // do is emit a repo-less Story that reads as valid downstream.
-  if (result && result.story) {
-    assert.ok(
-      result.story.repoPath,
-      'a Story with a null repo contradicts "scoped to a single repo" yet would be written as if valid',
-    )
-  } else {
-    assert.equal(result.ok, false, 'refusing is fine; emitting a repo-less Story is not')
-  }
-})

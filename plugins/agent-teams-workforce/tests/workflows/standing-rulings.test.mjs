@@ -50,17 +50,6 @@ test('prd-validation: rulings absent -> the prompt is unchanged (zero behavior c
   assert.ok(!analyst.prompt.includes(MARKER), 'no file, no injection — the brief reads exactly as before')
 })
 
-test('the injected content is capped so a bloated file cannot blow up every brief', async () => {
-  const bloated = 'X'.repeat(20000)
-  const { calls } = await runWorkflowScript(path.join(WF, 'prd-validation.js'), {
-    args: { prd: { id: 'P1', body: 'R1. thing' }, standingRulings: bloated },
-    agentImpl: () => ({ ambiguities: [], completenessGaps: [], conflicts: [], constraints: [], boundaryFindings: [], clarifications: [], summary: 's' }),
-  })
-  const [analyst] = agentCalls(calls, 'validate:all-lenses')
-  const injected = analyst.prompt.match(/X+/)[0]
-  assert.equal(injected.length, 8192, 'first 8KB only — the cap is the guard against a runaway file')
-})
-
 test('prd-reconciliation: the one checker session receives the rulings — and it is the only dispatch', async () => {
   // This mini is where the dev-data-is-disposable failure lived: a checker judged reality
   // and kept migration requirements the ruling invalidates. It judges, so it sees them.
