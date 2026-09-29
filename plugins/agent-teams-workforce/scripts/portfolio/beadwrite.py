@@ -799,3 +799,53 @@ def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
         "planned": writer.planned,
         "summary": {"name": name, "id": task.id, **counts},
     }
+
+
+def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
+    graph: Graph,
+    writer: Writer,
+    epic_id: str,
+    directory: Path,
+    repos: list[str],
+    also: list[str],
+) -> dict:
+    """Write the saved edges to other Stories of every Task that has them, one Task at a time.
+
+    Args:
+        graph: The tracker graph.
+        writer: The tracker writer; a dry-run writer records the writes instead.
+        epic_id: The Epic.
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+        also: Tasks, as `S<i>-<local key>`, whose edges to other Stories are
+            written even when the saved edges name no blocker for them.
+
+    Returns:
+        Each Task written with its counts, and a summary carrying the blockers by
+        name, the totals and the Tasks written.
+
+    Raises:
+        HierarchyError: The saved edges are refused, or a Task or a blocker is not
+            written.
+    """
+    plan = plan_task_edges(directory, repos)
+    names = list(dict.fromkeys([*plan["blockers"], *also]))
+    tasks = [
+        write_task_edges(graph, writer, epic_id, directory, repos, name)["summary"]
+        for name in names
+    ]
+    totals = {k: sum(t[k] for t in tasks) for k in ("added", "removed", "standing")}
+    return {
+        "ok": True,
+        "epic": epic_id,
+        "tasks": tasks,
+        "dryRun": writer.dry_run,
+        "planned": writer.planned,
+        "summary": {
+            "edges": plan["summary"]["edges"],
+            "rejected": plan["summary"]["rejected"],
+            "blockers": plan["blockers"],
+            "written": names,
+            **totals,
+        },
+    }

@@ -2,10 +2,10 @@
 //
 // Each bead is written by the session that authors it: the Story author runs one
 // `depscore.py write-story` and returns its stdout as `write`; the decomposer runs
-// `plan-tasks` and one `write-task` per Task, and the cross-Story mapper runs
-// `plan-task-edges` and one `write-task-edges` per Task, each returning the commands' stdout
-// as `writes`. On a replay a runner session runs the same commands (`beads:write-story`,
-// `beads:write-tasks`, `beads:write-task-edges`). `epic:finish` is a runner session. A
+// `plan-tasks` and one `write-task` per Task, and the cross-Story mapper runs one
+// `write-all-task-edges`, each returning the commands' stdout as `writes`. On a replay a
+// runner session runs the same commands (`beads:write-story`, `beads:write-tasks`,
+// `beads:write-all-task-edges`). `epic:finish` is a runner session. A
 // fixture that expects a successful run answers them the way the commands answer when every
 // write landed.
 
@@ -49,15 +49,12 @@ function taskWrites(slug, keys) {
   ]
 }
 
-/** The `plan-task-edges` and `write-task-edges` outputs for the mapper's edges, as the writing session records them. */
+/** The `write-all-task-edges` output for the mapper's edges, as the writing session records it. */
 function edgeWrites(edges) {
   const blockers = {}
   for (const e of edges) (blockers[e.to] = blockers[e.to] || []).push(e.from)
   return [
-    ran({ command: 'plan-task-edges', out: 'plan.json', warnings: [], summary: { edges: edges.length, rejected: 0, blockers } }),
-    ...Object.keys(blockers).map((name) =>
-      ran({ ok: true, epic: TEST_EPIC.id, task: { name, id: `bd-${name}` }, edges: [], summary: { name, id: `bd-${name}`, added: blockers[name].length, removed: 0, standing: 0 } })
-    ),
+    ran({ command: 'write-all-task-edges', out: 'all.json', warnings: [], summary: { edges: edges.length, rejected: 0, blockers, written: Object.keys(blockers), added: edges.length, removed: 0, standing: 0 } }),
   ]
 }
 
@@ -115,7 +112,7 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
       }
     }
     if (call.label === 'beads:write-tasks') return { writes: taskWrites(slugOf(call), taskKeys) }
-    if (call.label === 'beads:write-task-edges') return { writes: edgeWrites([]) }
+    if (call.label === 'beads:write-all-task-edges') return { writes: edgeWrites([]) }
     if (call.label === 'epic:finish') {
       const done = /\s--done(\s|$)/.test(String(call.prompt || ''))
       return {

@@ -20,6 +20,7 @@
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
+    write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
     story-edges          derive and write each repository's Story -> Story `blocks` edges from
                          Epic order and Task edges; refuses, writing nothing, on a contradiction.
                          `elaboration-finish` and a Task-level `apply-edges` run it after they write
@@ -57,6 +58,7 @@ from beadwrite import (
     plan_task_edges,
     write_story,
     write_task,
+    write_all_task_edges,
     write_task_edges,
 )
 from elaboration import LifecycleError, finish, release, start
@@ -566,7 +568,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     wte.add_argument("--epic", required=True, help="the Epic")
     wte.add_argument("--task", required=True, help="the Task, as S<i>-<local key>")
-    for edge_parser in (pte, wte):
+    wae = sub.add_parser(
+        "write-all-task-edges",
+        help="write every Task's saved task-deps.json edges to Tasks in other Stories",
+        parents=[common],
+    )
+    wae.add_argument("--epic", required=True, help="the Epic")
+    wae.add_argument(
+        "--also",
+        default="",
+        help="Tasks, as S<i>-<local key>, comma-separated, written even with no saved blocker",
+    )
+    for edge_parser in (pte, wte, wae):
         edge_parser.add_argument(
             "--dir", required=True, type=Path, help="the Epic's working directory"
         )
@@ -576,6 +589,7 @@ def build_parser() -> argparse.ArgumentParser:
             help="the span, comma-separated, in its ruled order",
         )
     _dry_run_flag(wte)
+    _dry_run_flag(wae)
 
     sed = sub.add_parser(
         "story-edges",
@@ -629,7 +643,12 @@ def run(args: argparse.Namespace) -> dict:
             key=args.key,
             root=args.project_root,
         )
-    writes = command in {"write-story", "write-task-edges", "story-edges"}
+    writes = command in {
+        "write-story",
+        "write-task-edges",
+        "write-all-task-edges",
+        "story-edges",
+    }
     descriptions = command in {
         "write-story",
         "assess-plan",
@@ -656,6 +675,15 @@ def run(args: argparse.Namespace) -> dict:
     if command == "write-task-edges":
         return head | write_task_edges(
             graph, writer, args.epic, args.dir, split_ids(args.repos), args.task
+        )
+    if command == "write-all-task-edges":
+        return head | write_all_task_edges(
+            graph,
+            writer,
+            args.epic,
+            args.dir,
+            split_ids(args.repos),
+            split_ids(args.also) if args.also else [],
         )
     if command == "story-edges":
         return head | story_edges(graph, writer)
