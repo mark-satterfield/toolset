@@ -95,7 +95,17 @@
           },
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start-sync-user-agents.cjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-user-agents.cjs\""
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/sync-user-agents.cjs\""
           }
         ]
       }

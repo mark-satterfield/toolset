@@ -2,8 +2,8 @@
 'use strict';
 
 /**
- * SessionStart hook — keeps the user-level copies of this plugin's MCP agents
- * identical to the installed plugin.
+ * SessionStart and FileChanged hook — keeps the user-level copies of this
+ * plugin's MCP agents identical to the newest installed release of the plugin.
  *
  * Every agents/*.md with an `mcpServers:` entry runs from its copy in the
  * user-level agents directory (see lib/user-level-agents.cjs). This hook copies
@@ -13,9 +13,12 @@
  * writes or removes any other file: a same-named file it does not own is left
  * as it is and reported.
  *
- * It runs in every session, whatever the repository, so a plugin release
- * reaches the copies at the next session start after the plugin updates. It
- * never fails the session.
+ * Claude Code has no hook event for a plugin install, update or reload. So the
+ * hook runs at SessionStart in every session, whatever the repository, and its
+ * SessionStart output asks Claude Code to watch installed_plugins.json, which
+ * Claude Code rewrites when it installs or updates a plugin. When that file
+ * changes, FileChanged runs the hook again, which copies from the newest
+ * install path the file records. It never fails the session.
  */
 
 const fs = require('node:fs');
@@ -23,6 +26,8 @@ const path = require('node:path');
 const {
   OWNED_MANIFEST,
   PLUGIN_ROOT,
+  installedPluginsPath,
+  newestPluginRoot,
   userAgentsDir,
   userLevelAgentNames,
 } = require('./lib/user-level-agents.cjs');
@@ -37,6 +42,15 @@ function readOwned(manifestPath) {
   }
 }
 
+/** Reads the hook input from stdin; an empty object when absent or malformed. */
+function readInput() {
+  try {
+    return JSON.parse(fs.readFileSync(0, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
 /** Reads a file as bytes, or null when absent. */
 function readBytes(filePath) {
   try {
@@ -47,7 +61,7 @@ function readBytes(filePath) {
 }
 
 function sync() {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT;
+  const pluginRoot = newestPluginRoot(process.env.CLAUDE_PLUGIN_ROOT || PLUGIN_ROOT);
   const destDir = userAgentsDir();
   const manifestPath = path.join(destDir, OWNED_MANIFEST);
   const previouslyOwned = new Set(readOwned(manifestPath));
@@ -106,9 +120,21 @@ function sync() {
   }
 }
 
-try {
-  sync();
-} catch (error) {
-  process.stderr.write(`agent-teams-workforce: user-level agent sync failed — ${error.message}\n`);
+const input = readInput();
+const watched = installedPluginsPath();
+const isFileChange = input.hook_event_name === 'FileChanged';
+
+if (!isFileChange || path.resolve(String(input.file_path || '')) === watched) {
+  try {
+    sync();
+  } catch (error) {
+    process.stderr.write(`agent-teams-workforce: user-level agent sync failed — ${error.message}\n`);
+  }
+}
+
+if (!isFileChange) {
+  process.stdout.write(
+    `${JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', watchPaths: [watched] } })}\n`
+  );
 }
 process.exit(0);
