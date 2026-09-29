@@ -5,8 +5,10 @@ description: >-
   and layer packaging; returns tradeoffs, never a decision. Use for
   Architecture Analysis work requiring CDK construct
   analysis, Lambda packaging strategy, and topology tradeoffs.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+mcpServers:
+  - aws-mcp
 model: fable
 permissionMode: acceptEdits
 maxTurns: 40
@@ -15,6 +17,12 @@ effort: medium
 isolation: worktree
 color: cyan
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): For every CDK construct, Lambda boundary or layer-packaging option you analyze, check the AWS CDK and Lambda documentation for the recommended construct and its limits, and retrieve the `aws-well-architected-review` skill with `aws___retrieve_skill`. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

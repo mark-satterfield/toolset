@@ -4,8 +4,10 @@ description: >-
   Writes DynamoDB table specifications: key design, GSI/LSI definitions,
   access patterns, and capacity estimates. Use for Spec Authoring work requiring DynamoDB data modeling and access-pattern
   specification.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_modeling, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_converter, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - awslabs-dynamodb-mcp-server
 model: fable
 permissionMode: acceptEdits
 maxTurns: 50
@@ -14,6 +16,12 @@ effort: medium
 isolation: worktree
 color: purple
 ---
+
+## AWS guidance sources
+
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): For every table specification: follow the data modeling method from `dynamodb_data_modeling`; validate every access pattern against DynamoDB Local with `dynamodb_data_model_validation`; compute capacity and monthly cost with `compute_performances_and_costs`; and convert the model to schema.json with `dynamodb_data_model_schema_converter` and check it with `dynamodb_data_model_schema_validator`.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

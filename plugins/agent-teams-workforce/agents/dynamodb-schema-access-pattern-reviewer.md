@@ -5,8 +5,10 @@ description: >-
   performant given key design, indexes, and capacity estimates. Use for Spec
   Authoring work requiring access-pattern validation,
   key/index review, and performance risk detection.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs
 disallowedTools: AskUserQuestion, Edit, Agent
+mcpServers:
+  - awslabs-dynamodb-mcp-server
 model: opus
 permissionMode: acceptEdits
 maxTurns: 45
@@ -15,6 +17,12 @@ effort: low
 isolation: worktree
 color: purple
 ---
+
+## AWS guidance sources
+
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): For every specification you review, run its access patterns against DynamoDB Local with `dynamodb_data_model_validation`, check its schema.json with `dynamodb_data_model_schema_validator` when one exists, and check the stated capacity estimates with `compute_performances_and_costs`.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

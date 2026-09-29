@@ -5,8 +5,11 @@ description: >-
   option breaks first. Use for Architecture Analysis
   work requiring adversarial cost modeling, scale stress-testing, and
   bottleneck identification.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs
 disallowedTools: AskUserQuestion, Edit, Agent
+mcpServers:
+  - aws-mcp
+  - awslabs-dynamodb-mcp-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
@@ -15,6 +18,13 @@ effort: medium
 isolation: worktree
 color: cyan
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): For every scale point you stress, confirm the pricing dimensions, quotas and service limits in the AWS documentation, and retrieve the `aws-billing-and-cost-management` skill with `aws___retrieve_skill`. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): For every option that stores data in DynamoDB, run `compute_performances_and_costs` at each scale point (10x, 100x, 1000x the stated request rate and item counts) to find where the cost breaks.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

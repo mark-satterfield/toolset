@@ -5,8 +5,10 @@ description: >-
   architecture decision with per-choice rationale — decides only, never
   analyzes. Use for Architecture Analysis work requiring
   decision adjudication, evidence weighing, and rationale recording.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+mcpServers:
+  - aws-mcp
 model: opus
 permissionMode: acceptEdits
 maxTurns: 30
@@ -15,6 +17,12 @@ effort: high
 isolation: worktree
 color: cyan
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): Before ruling on any AWS service, pattern or configuration choice, check the chosen option against the AWS documentation and the six Well-Architected pillars (operational excellence, security, reliability, performance efficiency, cost optimization, sustainability), and retrieve the `aws-well-architected-review` skill with `aws___retrieve_skill`. When the ruling weighs cost, also retrieve the `aws-billing-and-cost-management` skill with `aws___retrieve_skill`. This applies equally when you rule whether a PRD needs an architecture phase: an existing SAD choice settles the question only while it still matches current AWS guidance. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

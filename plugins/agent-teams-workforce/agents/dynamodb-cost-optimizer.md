@@ -4,8 +4,10 @@ description: >-
   Optimizes DynamoDB capacity, access patterns, and cost without changing
   behavior or breaking tests. Use for Code Quality work
   requiring capacity-mode tuning, query efficiency, and index cost reduction.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_validation
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - awslabs-dynamodb-mcp-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 50
@@ -13,6 +15,12 @@ skills: [agent-teams-workforce:subagent-contract, agent-teams-workforce:validati
 effort: medium
 color: purple
 ---
+
+## AWS guidance sources
+
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): Compute the cost of the current model and of each change you make with `compute_performances_and_costs`, and confirm with `dynamodb_data_model_validation` that every access pattern still works after the change.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

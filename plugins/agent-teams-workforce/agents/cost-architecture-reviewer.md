@@ -5,8 +5,11 @@ description: >-
   chooses an option. Use for Architecture Analysis
   work requiring AWS cost estimation, cost-cliff identification, and
   per-option comparison.
-tools: Read, Glob, Grep, Bash, Write
+tools: Read, Glob, Grep, Bash, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs
 disallowedTools: AskUserQuestion, Edit, Agent, NotebookEdit
+mcpServers:
+  - aws-mcp
+  - awslabs-dynamodb-mcp-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 40
@@ -15,6 +18,13 @@ effort: medium
 isolation: worktree
 color: cyan
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): For every option you cost, confirm each pricing dimension in the AWS documentation, check the option against the Well-Architected cost optimization pillar, and retrieve the `aws-billing-and-cost-management` skill with `aws___retrieve_skill`. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): For every option that stores data in DynamoDB, compute its capacity units and monthly cost with `compute_performances_and_costs` from the option's access patterns and table sizes, instead of estimating them by hand.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

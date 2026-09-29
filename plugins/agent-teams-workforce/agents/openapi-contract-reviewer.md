@@ -7,8 +7,11 @@ description: >-
   Authoring work requiring contract conformance review, data-model and
   event-schema review, acceptance-criteria review, pattern consistency, and
   decision-drift detection.
-tools: Read, Glob, Grep, Write
+tools: Read, Glob, Grep, Write, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability, mcp__awslabs-dynamodb-mcp-server__dynamodb_data_model_schema_validator, mcp__awslabs-dynamodb-mcp-server__compute_performances_and_costs
 disallowedTools: AskUserQuestion, Edit, Agent, Bash
+mcpServers:
+  - aws-mcp
+  - awslabs-dynamodb-mcp-server
 model: sonnet
 permissionMode: acceptEdits
 maxTurns: 45
@@ -17,6 +20,13 @@ effort: low
 isolation: worktree
 color: purple
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): When a contract or data model you review claims AWS behaviour (API Gateway REST API limits and errors, EventBridge event rules, DynamoDB limits), confirm it in the AWS documentation. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+- **`awslabs-dynamodb-mcp-server`** (DynamoDB data modeling, validation and cost): When you review a DynamoDB data model, check its schema.json with `dynamodb_data_model_schema_validator` when one exists, and check the capacity and cost the model states with `compute_performances_and_costs`.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.

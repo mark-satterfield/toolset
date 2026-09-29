@@ -9,8 +9,10 @@ description: >-
   cross-Story, cross-repository dependency analysis during decomposition, and
   for assessing the build dependencies of a Task that elaboration did not
   write.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, mcp__aws-mcp__aws___search_documentation, mcp__aws-mcp__aws___read_documentation, mcp__aws-mcp__aws___retrieve_skill, mcp__aws-mcp__aws___list_regions, mcp__aws-mcp__aws___get_regional_availability
 disallowedTools: AskUserQuestion, Agent
+mcpServers:
+  - aws-mcp
 model: fable
 permissionMode: acceptEdits
 maxTurns: 50
@@ -19,6 +21,12 @@ effort: medium
 isolation: worktree
 color: yellow
 ---
+
+## AWS guidance sources
+
+- **`aws-mcp`** (AWS documentation, AWS skills, regional availability): When an edge rests on an AWS resource dependency (one resource must exist before another can reference it), confirm the ordering in the AWS documentation. Search with `aws___search_documentation`, read the page with `aws___read_documentation`, and use `aws___list_regions` and `aws___get_regional_availability` when a choice depends on a service or feature being available in the target region.
+
+Cite what you relied on in your output, next to the claim it supports: the documentation URL, the skill name, or the DynamoDB tool and the result it returned.
 
 ## Environment Discovery:
 Before executing any write or build tools, you MUST read the local `CLAUDE.md` file at the repository root to discover the current project's building, testing, and linting standards. Do not assume standard commands.
