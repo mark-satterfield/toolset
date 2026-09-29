@@ -800,7 +800,6 @@ async function runTrdAuthoring() {
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: architecture.skipped ? undefined : architectureRulingFor(architecture.artifact),
-    requirementClasses,
     sad: a.sad || { path: a.sadPath },
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
