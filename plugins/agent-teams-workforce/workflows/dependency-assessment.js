@@ -104,6 +104,11 @@ async function settleAgent(prompt, opts) {
 //            stop, error?, dispatchFailed, dispatchFailures }
 const given = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
+// The environment variable that supplies each path arg the caller leaves out. pluginRoot has none of
+// its own: it is the agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json
+// records. workDir has none either: a run without one gets a new directory from mkdtemp.
+const ENV_OF = { repoPath: 'ATW_CONTROL_REPO', sadPath: 'ATW_SAD_PATH', projectRoot: 'ATW_PROJECT_ROOT' }
+const OPTIONAL_PATH_ARGS = ['sadPath', 'projectRoot']
 const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
 const RESOLVE_SCHEMA = {
   type: 'object',
@@ -111,63 +116,77 @@ const RESOLVE_SCHEMA = {
   required: ['exitCode', 'output'],
   properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
 }
-const RESOLVE_PY = `import json, os, subprocess, sys, tempfile, time
+const RESOLVE_PY = `import json, os, sys, tempfile, time
 from pathlib import Path
-problems = {}
-cwd = Path.cwd().resolve()
-p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True)
-repo = str(Path(p.stdout.strip()).resolve().parent) if p.returncode == 0 and p.stdout.strip() else ""
-if not repo:
-    problems["repoPath"] = f"{cwd} is not inside a git repository: {p.stderr.strip()}"
-marker = ("scripts", "portfolio", "depscore.py")
-plugin = ""
-env_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-if env_root and Path(env_root, *marker).is_file():
-    plugin = str(Path(env_root).resolve())
-reg = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "plugins" / "installed_plugins.json"
-if not plugin:
+name, wanted = sys.argv[1], json.loads(sys.argv[2])
+env_of = {"repoPath": "ATW_CONTROL_REPO", "sadPath": "ATW_SAD_PATH", "projectRoot": "ATW_PROJECT_ROOT"}
+out, problems = {}, {}
+def from_env(key):
+    var = env_of[key]
+    value = os.environ.get(var, "").strip()
+    if not value:
+        return f"\${var} is not set"
+    if not Path(value).is_absolute() or not Path(value).exists():
+        return f"\${var} is {value!r}, which is not an existing absolute path"
+    out[key] = os.path.normpath(value)
+    return ""
+for key in ("repoPath", "sadPath", "projectRoot"):
+    if key in wanted:
+        why = from_env(key)
+        if why:
+            problems[key] = why
+if "pluginRoot" in wanted:
+    marker = ("scripts", "portfolio", "depscore.py")
+    config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
+    reg = Path(config) / "plugins" / "installed_plugins.json"
+    control = os.environ.get("ATW_CONTROL_REPO", "").strip()
+    control = os.path.normpath(control) if control else ""
     try:
         plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
     except (OSError, ValueError) as exc:
-        plugins = {}
+        plugins = None
         problems["pluginRoot"] = f"{reg} is unreadable: {exc}"
-    ranked = []
-    for key, entries in plugins.items():
-        if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
-            continue
-        for e in entries:
-            path = e.get("installPath") if isinstance(e, dict) else None
-            if not isinstance(path, str) or not Path(path, *marker).is_file():
+    if plugins is not None:
+        ranked = []
+        for key, entries in plugins.items():
+            if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
                 continue
-            if e.get("scope") in ("local", "project") and e.get("projectPath") in (str(cwd), repo):
-                ranked.append((0, path))
-            elif e.get("scope") == "user":
-                ranked.append((1, path))
-    if ranked:
-        plugin = sorted(ranked)[0][1]
-    elif "pluginRoot" not in problems:
-        problems["pluginRoot"] = f"{reg} lists no agent-teams-workforce install for {repo or cwd}, or for the user, that ships scripts/portfolio/depscore.py"
-work = Path(tempfile.gettempdir()).resolve() / "agent-teams-workforce" / sys.argv[1] / (time.strftime("%Y%m%dT%H%M%S") + "-" + str(os.getpid()))
-work.mkdir(parents=True, exist_ok=True)
-since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-print(json.dumps({"repoPath": repo, "pluginRoot": plugin, "workDir": str(work), "since": since, "cwd": str(cwd), "problems": problems}))`
-// Fills the path args the caller left out — repoPath (the main repository of the session's working
-// directory), pluginRoot (the installed plugin the registry names for that repository, else the
-// user-scope install) and workDir (a new temporary directory) — in one runner session, dispatched only
-// when one of them is missing. Returns { args, missing, problems }: `missing` names every required arg
-// still without a value, and the caller refuses before dispatching any other agent.
+            for e in entries:
+                path = e.get("installPath") if isinstance(e, dict) else None
+                if not isinstance(path, str) or not Path(path, *marker).is_file():
+                    continue
+                if control and e.get("scope") in ("local", "project") and e.get("projectPath") == control:
+                    ranked.append((0, path))
+                elif e.get("scope") == "user":
+                    ranked.append((1, path))
+        if ranked:
+            out["pluginRoot"] = os.path.normpath(sorted(ranked)[0][1])
+        else:
+            problems["pluginRoot"] = f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/depscore.py at user scope" + (f" or for $ATW_CONTROL_REPO ({control})" if control else "")
+if "workDir" in wanted:
+    out["workDir"] = os.path.realpath(tempfile.mkdtemp(prefix=f"{name}-"))
+out["since"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+out["problems"] = problems
+print(json.dumps(out))`
+// Fills each path arg the caller left out, and only from the environment: repoPath from
+// $ATW_CONTROL_REPO, sadPath from $ATW_SAD_PATH, projectRoot from $ATW_PROJECT_ROOT, pluginRoot from the
+// agent-teams-workforce install that $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the
+// install for $ATW_CONTROL_REPO first, else the user-scope one), and workDir from mkdtemp. One runner
+// session reads them, dispatched only when an arg is missing. Returns { args, missing, problems }:
+// `missing` names every required arg still without a value, and the caller refuses before dispatching
+// any other agent. An optional path arg the environment does not supply stays absent.
 async function resolveArgs(given, name, required) {
   const out = { ...given }
-  const lacking = PATH_ARGS.filter((k) => !isAbsolute(out[k]))
+  const lacking = [...PATH_ARGS, ...OPTIONAL_PATH_ARGS].filter((k) => !isAbsolute(out[k]))
   const problems = {}
   if (lacking.length) {
     const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`
     const got = await settleAgent(
-      `Run this shell command exactly once, from the session's working directory (do not cd anywhere first), and change nothing else:
+      `Run this shell command exactly once and change nothing else:
 
-python3 -c ${q(RESOLVE_PY)} ${q(name)}
+python3 -c ${q(RESOLVE_PY)} ${q(name)} ${q(JSON.stringify(lacking))}
 
-It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not set any variable, do not run any other command.`,
       { label: 'resolve-paths', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }
     )
     const found = (got && got.output) || {}
@@ -177,7 +196,7 @@ It prints one JSON object on stdout. Return its process exit code as \`exitCode\
     for (const k of lacking) {
       if (isAbsolute(found[k])) {
         out[k] = found[k].trim()
-        log(`${k} was not passed; derived ${out[k]}`)
+        log(`${k} was not passed; ${ENV_OF[k] ? `$${ENV_OF[k]} gives` : k === 'workDir' ? 'mkdtemp made' : 'the plugin registry gives'} ${out[k]}`)
       }
     }
     if (!(typeof out.since === 'string' && out.since.trim()) && typeof found.since === 'string') out.since = found.since
@@ -185,11 +204,19 @@ It prints one JSON object on stdout. Return its process exit code as \`exitCode\
   const missing = required.filter((k) => (PATH_ARGS.includes(k) ? !isAbsolute(out[k]) : !(typeof out[k] === 'string' && out[k].trim())))
   return { args: out, missing, problems }
 }
+// Names what satisfies `k`: the Workflow arg, or the environment that supplies it.
+function remedy(k) {
+  if (ENV_OF[k]) return `pass ${k} in the Workflow args or set $${ENV_OF[k]}`
+  if (k === 'pluginRoot') return 'pass pluginRoot in the Workflow args or install agent-teams-workforce so $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json (default ~/.claude) records it'
+  return `pass ${k} in the Workflow args`
+}
 // Returns the refusal a workflow gives when a required arg has no value; no other agent has been dispatched.
 function refuseArgs(resolved, name) {
-  const why = resolved.missing.map((k) => (resolved.problems[k] ? `${k} (${resolved.problems[k]})` : k)).join('; ')
+  const why = resolved.missing
+    .map((k) => `${k} has no value${resolved.problems[k] ? ` (${resolved.problems[k]})` : ''}: ${remedy(k)}`)
+    .join('; ')
   const extra = resolved.problems.resolver ? `; resolver: ${resolved.problems.resolver}` : ''
-  const error = `${name} refused before dispatching any agent: no usable ${why}${extra}. Pass ${resolved.missing.join(', ')} explicitly in the Workflow args.`
+  const error = `${name} refused before dispatching any agent: ${why}${extra}.`
   log(error)
   return {
     ok: false,
