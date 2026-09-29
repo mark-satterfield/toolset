@@ -101,7 +101,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | Agent | Category | Purpose |
 | --- | --- | --- |
 | task-decomposition-lead | orchestrate | Routes the decomposition pipeline: decompose, size, map, sequence, score, validate. No workflow currently dispatches it. |
-| task-decomposer | execute | Breaks the spec into tasks: one chassis extension, one endpoint, or one event handler per task. |
+| task-decomposer | execute | Breaks the spec into tasks, each a coherent piece of the Story's work one agent can test and build in one session. |
 | task-dependency-mapper | execute | Identifies inter-task dependencies |
 | wsjf-scorer | execute | Judges the job size of Tasks on the WSJF rubric's Fibonacci scale — the one judged input; value and time criticality are inherited from the Epic and RR-OE is computed, so the WSJF itself is arithmetic. Dispatched by prd-to-spec to size the knock-on Tasks an architecture change adds to an Epic; task-decomposer sizes the Tasks it decomposes. |
 | wsjf-scoring-reviewer | test | Validates WSJF scores are consistent and defensible. No workflow currently dispatches it. |

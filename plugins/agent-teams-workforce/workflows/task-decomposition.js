@@ -3,7 +3,7 @@ export const meta = {
   description:
     'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json.',
   phases: [
-    { title: 'Decompose', detail: 'one maker session: Spec -> atomic tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
+    { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
   ],
 }
 const dispatchFailures = []
@@ -186,7 +186,7 @@ if (replayed) log(`Decompose replayed: the Tasks are written from the saved task
 const maker = replayed ? null : await settleAgent(
   `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code.
 
-JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into ATOMIC TASKS. Each task is scoped to ONE agent's work within the single repository named below, small enough to implement and ship on its own, with a single clear outcome and testable acceptance criteria. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
+JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into TASKS. Each task is a coherent piece of the Story's work within the single repository named below that one agent can test and build in one session, with testable acceptance criteria. A small Story may be one task. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
 
 Every task also carries its CONTRACT, taken from the spec documents listed below:
 - \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each. At least one.

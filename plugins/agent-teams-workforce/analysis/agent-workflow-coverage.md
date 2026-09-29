@@ -171,7 +171,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | spec-decider | spec-authoring | authoring deadlock | Rules spec maker-checker deadlock |
 | spec-freshness-lead | — (no workflow) | — | Aggregates freshness verdicts |
 | stakeholder-request-intake-writer | prd-creation | intake | Captures raw stakeholder request |
-| task-decomposer | task-decomposition | decompose | Breaks spec into atomic tasks |
+| task-decomposer | task-decomposition | decompose | Breaks spec into tasks |
 | task-dependency-mapper | task-decomposition | sequence | Builds dependency DAG |
 | tdd-unit-test-generator | tdd-red | Red *(writer roster, always)* | Failing unit tests (always included) |
 | test-coverage-gap-reviewer | tdd-red | Red | Independent coverage review vs acceptance criteria |
