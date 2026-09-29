@@ -739,6 +739,7 @@ if (!architecture) {
       sadPath: a.sadPath,
       artifacts: artFor('architecture', PRD_INPUTS, { beadId: epicBeadId }),
       dimensions: callerDimensions || triageDimensions || undefined,
+      reviewFiles: reliedDocs(archTriage).filter((r) => r.state !== 'effective').map((r) => r.file),
       forceFullPanel: a.forceFullPanel === true ? true : undefined,
     })
     const changed = r && r.sadUpdate && Array.isArray(r.sadUpdate.changedFiles) ? r.sadUpdate.changedFiles.filter(hasText) : []
@@ -764,8 +765,6 @@ if (architecture.ok && !architecture.skipped) {
   const listed = (x) => (Array.isArray(x) ? x.filter(hasText).map((f) => f.trim()) : [])
   const su = art.sadUpdate || {}
   const sadFiles = [...new Set([...listed(su.changedFiles), ...listed(su.approvedFiles), ...listed(art.approvedFiles)])]
-  const unreviewed = reliedDocs(archTriage).filter((r) => r.state !== 'effective' && !sadFiles.includes(r.file)).map((r) => r.file)
-  if (unreviewed.length) log(`SAD approval: the ruling did not account for ${unreviewed.length} relied-on document(s) triage named; they stay as they are: ${unreviewed.join(', ')}`)
   if (sadFiles.length) {
     const approveArgs = [`sad-approve --sad-files ${shellq(sadFiles.join(','))}`, hasText(a.sadPath) ? `--sad-root ${shellq(a.sadPath)}` : ''].filter(Boolean).join(' ')
     const out = await runScript('sad:approve', 'Architecture', approveArgs)
@@ -776,7 +775,7 @@ if (architecture.ok && !architecture.skipped) {
         reason: `the ${sadFiles.length} SAD file(s) the architecture ruling covers were not set to lifecycle_state: effective — ${(out && out.error) || 'no result'}`,
       })
     }
-    sadApproval = unreviewed.length ? { ...out, unreviewed } : out
+    sadApproval = out
     const n = out.summary || {}
     log(`SAD approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
     const approved = new Set([...(out.promoted || []), ...(out.unchanged || [])])

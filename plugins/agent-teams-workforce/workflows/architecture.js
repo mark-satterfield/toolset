@@ -1,7 +1,7 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). lifecycle_state is per document: an entry in an effective document is used as given and never re-decided; an entry in any other state is best-effort evidence the decider reviews and approves as it stands, updates or replaces. Triage rules the question settled only when every SAD document it relies on is effective. The decider names every entry the ruling relies on (reliedOn); returns approvedFiles, the SAD files holding them, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
+    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). lifecycle_state is per document: an entry in an effective document is used as given and never re-decided; an entry in any other state is best-effort evidence the decider reviews and approves as it stands, updates or replaces. Triage rules the question settled only when every SAD document it relies on is effective. The decider names every entry the ruling relies on (reliedOn); a reviewFiles document the caller names and the ruling omits gets one more decider pass naming it, and a second omission fails the run with omittedFiles; returns approvedFiles, the SAD files holding them, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
   phases: [
     { title: 'Extract SAD', detail: 'inventory the SAD files holding §2/§4/§8 and extract them in concurrent shards' },
     { title: 'Triage', detail: 'classify the decision and select the analysis dimensions, unless the caller supplied them' },
@@ -642,22 +642,62 @@ ACCOUNT FOR EVERY SECURITY AND DATA-ISOLATION FINDING raised in the evidence, it
 
 EVERY POINT ENDS RULED, OUT OF SCOPE (naming the requirement that owns it), or BLOCKING (admissible=false). Never write "referred", "to be determined", "pending" or "open question": your ruling is written into the SAD, which holds decided current state only. A rule challenge goes in ruleChallenges, never into the ruling, the chosen approach or the imposed constraints.`
 
-const decision = await run(
-  `${rulingsBlock}${DECIDER_CHARTER}
+const decisionPrompt = (brief) => `${rulingsBlock}${DECIDER_CHARTER}
 
 ${decisionHeader}
 
 ${sadBlock}
 
-${evidenceBlock}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every SAD entry it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
-  { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA }
-)
+${evidenceBlock}${brief}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every SAD entry it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`
+let decision = await run(decisionPrompt(''), { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA })
+
+const sadParts = String(sadHome || '').split('/').filter(Boolean)
+if (sadParts.length && sadParts[sadParts.length - 1].endsWith('.md')) sadParts.pop()
+const sadBase = sadParts.length ? sadParts[sadParts.length - 1] : ''
+const sadKey = (f) => {
+  const p = String(f || '').trim()
+  const cut = sadBase ? p.split(`/${sadBase}/`) : [p]
+  return cut.length > 1 ? cut.pop() : p
+}
+const reviewFiles = Array.isArray(a.reviewFiles) ? [...new Set(a.reviewFiles.filter((f) => typeof f === 'string' && f.trim()).map((f) => f.trim()))] : []
+const idFile = new Map()
+for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrategy || []), ...(sadExtract.crosscuttingConcepts || [])]) {
+  const f = sourceFile(e)
+  if (e && e.id && f && !idFile.has(e.id)) idFile.set(e.id, f)
+}
+const omittedBy = (dec) => {
+  const got = new Set(
+    (dec && Array.isArray(dec.reliedOn) ? dec.reliedOn : [])
+      .filter((x) => x && typeof x === 'object')
+      .map((x) => sadKey(idFile.get(String(x.id || '').trim()) || (typeof x.file === 'string' && x.file) || ''))
+  )
+  return reviewFiles.filter((f) => !got.has(sadKey(f)))
+}
+if (decision && decision.admissible === true && omittedBy(decision).length) {
+  const omitted = omittedBy(decision)
+  log(`Decide: the ruling omitted ${omitted.length} relied-on SAD document(s) the caller named for review; the decider rules again`)
+  const again = await run(
+    decisionPrompt(`
+
+YOUR PREVIOUS RULING OMITTED RELIED-ON SAD DOCUMENTS. The PRD relies on these documents, which are not effective, and your ruling did not account for them:
+${omitted.map((f) => `- ${f}`).join('\n')}
+Review each one in full: approve its entries as they stand, or update or replace them in the ruling. Return your COMPLETE ruling again, with every entry of these documents in \`reliedOn\` beside the entries you already relied on.`),
+    { label: 'decide:ruling-omitted', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA }
+  )
+  if (again) decision = again
+}
 
 if (!decision) {
   return { ok: false, stage: 'decide', error: 'the architecture-decider returned nothing', ...died('Decide'), proposals, sadExtract }
 }
 
 const admissible = decision.admissible === true
+const stillOmitted = admissible ? omittedBy(decision) : []
+if (stillOmitted.length) {
+  const why = `the ruling did not review ${stillOmitted.length} relied-on SAD document(s) that are not effective: ${stillOmitted.join(', ')}`
+  log(`Decide: ${why}`)
+  return { ok: false, stage: 'decide', reason: why, error: why, omittedFiles: stillOmitted, panelDimensions: activeDimensions, sadExtract, proposals, decision }
+}
 const ruleChallenges = decision.ruleChallenges || []
 const decisionName = d.id || d.title
 const humanActions = ruleChallenges
