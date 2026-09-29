@@ -197,7 +197,7 @@ ${surfaces}`,
       {
         label: 'integration:provision-env',
         phase: 'Integration',
-        agentType: 'agent-teams-workforce:test-environment-orchestrator',
+        agentType: 'test-environment-orchestrator',
         schema: {
           type: 'object',
           additionalProperties: false,

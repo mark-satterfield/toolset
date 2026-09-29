@@ -784,7 +784,7 @@ Decide exactly one verdict:
       label: 'prd:deadlock-ruling',
       effort: 'high',
       phase: 'PRD Draft',
-      agentType: 'agent-teams-workforce:spec-decider',
+      agentType: 'spec-decider',
       schema: {
         type: 'object',
         additionalProperties: false,

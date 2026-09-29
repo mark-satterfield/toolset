@@ -142,6 +142,8 @@ const infraLane = [
   'infrastructure-security-scanner',
 ]
 const allAttackers = [...accessLane, ...infraLane]
+// Attackers that run from the user-level agents directory, dispatched by their plain name.
+const USER_LEVEL_AGENTS = new Set(['infrastructure-security-scanner'])
 const requested = Array.isArray(a.trimmedScope) ? allAttackers.filter((n) => a.trimmedScope.includes(n)) : []
 
 const changedFiles = Array.isArray(green.changedFiles) && green.changedFiles.length ? green.changedFiles : null
@@ -204,7 +206,7 @@ const results = await parallel(
     settleAgent(`Attempt your attack class against the change. Report only confirmed findings with a minimal reproduction. ${target}${feedback}`, {
       label: `attack:${name}`,
       phase: 'Attack',
-      agentType: `agent-teams-workforce:${name}`,
+      agentType: USER_LEVEL_AGENTS.has(name) ? name : `agent-teams-workforce:${name}`,
       schema: FINDINGS_SCHEMA,
     })
   )

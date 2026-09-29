@@ -170,7 +170,7 @@ const assessed = await settleAgent(assessPrompt, {
   label: `task-dependency-mapper:${target}`,
   phase: 'Assess',
   effort: 'medium',
-  agentType: 'agent-teams-workforce:task-dependency-mapper',
+  agentType: 'task-dependency-mapper',
   schema: ASSESS_SCHEMA,
 })
 const printed = (assessed && assessed.applySummary) || {}

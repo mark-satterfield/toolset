@@ -35,7 +35,15 @@
 // skill and ignoring it, which is the most expensive kind of silence. It is the identical defect
 // class this file already guards for `agentType`, so it is checked the identical way, with the
 // identical exemption: a name outside this plugin's prefix is REPORTED, never failed.
+//
+// USER-LEVEL AGENTS. Claude Code ignores `mcpServers` on a plugin agent, so every agents/*.md whose
+// frontmatter has an `mcpServers:` entry runs from its copy in ~/.claude/agents/ and is dispatched by
+// its plain name. A plain name of one of them resolves; the same name under this plugin's prefix
+// FAILS, because it runs the plugin copy without its MCP servers. A script that builds the prefix at
+// runtime (`agent-teams-workforce:${x}`) must list, in its USER_LEVEL_AGENTS set, every user-level
+// agent it names other than by a literal agentType, and nothing else.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -44,10 +52,15 @@ const root = process.argv[2] || path.join(here, '..')
 const workflowsDir = path.join(root, 'workflows')
 const agentsDir = path.join(root, 'agents')
 const skillsDir = path.join(root, 'skills')
+const { userLevelAgentNames } = createRequire(import.meta.url)('../hooks/lib/user-level-agents.cjs')
+const userLevel = new Set(userLevelAgentNames(root))
 
 const PREFIX = 'agent-teams-workforce:'
 const LITERAL = /agentType:\s*(['"])([^'"]+)\1/g
 const COMPUTED = /agentType:\s*(?!['"])[A-Za-z_$][\w$.[\]']*/g
+const PREFIXED_AT_RUNTIME = '`' + PREFIX + '${'
+const USER_LEVEL_SET = /USER_LEVEL_AGENTS\s*=\s*new Set\(\[([^\]]*)\]\)/
+const QUOTED = /(['"])([a-z0-9-]+)\1/g
 
 const files = readdirSync(workflowsDir)
   .filter((f) => f.endsWith('.js'))
@@ -86,6 +99,8 @@ function declaredSkills(raw) {
 }
 
 const missing = []
+const prefixedUserLevel = []
+const rosterGaps = []
 const external = []
 const missingSkills = []
 const externalSkills = []
@@ -101,13 +116,24 @@ for (const file of files) {
     const name = m[2]
     const where = { file, line: lineOf(m.index), name }
     if (!name.startsWith(PREFIX)) {
-      external.push(where)
+      if (!userLevel.has(name)) external.push(where)
       continue
     }
     const bare = name.slice(PREFIX.length)
-    if (!defined.has(bare) || !existsSync(path.join(agentsDir, `${bare}.md`))) missing.push(where)
+    if (userLevel.has(bare)) prefixedUserLevel.push(where)
+    else if (!defined.has(bare) || !existsSync(path.join(agentsDir, `${bare}.md`))) missing.push(where)
   }
   computed += [...raw.matchAll(COMPUTED)].length
+  if (raw.includes(PREFIXED_AT_RUNTIME)) {
+    const setMatch = raw.match(USER_LEVEL_SET)
+    const listed = new Set(setMatch ? [...setMatch[1].matchAll(QUOTED)].map((q) => q[2]) : [])
+    const literal = new Set([...raw.matchAll(LITERAL)].map((m) => m[2]))
+    const named = new Set(
+      [...raw.matchAll(QUOTED)].map((q) => q[2]).filter((n) => userLevel.has(n) && !literal.has(n))
+    )
+    for (const n of named) if (!listed.has(n)) rosterGaps.push({ file, name: n, why: 'is missing from USER_LEVEL_AGENTS' })
+    for (const n of listed) if (!userLevel.has(n)) rosterGaps.push({ file, name: n, why: 'is in USER_LEVEL_AGENTS but declares no mcpServers' })
+  }
 }
 
 for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
@@ -129,6 +155,17 @@ for (const { file, line, name } of missing) {
       `Expected agents/${name.slice(PREFIX.length)}.md. A dispatch that cannot resolve produces nothing, ` +
       `and the run only finds out afterwards.`
   )
+}
+
+for (const { file, line, name } of prefixedUserLevel) {
+  console.log(
+    `FAIL  workflows/${file}:${line}  —  agentType '${name}' names a user-level agent under the plugin prefix. ` +
+      `Dispatch it as '${name.slice(PREFIX.length)}': the plugin copy runs without its MCP servers.`
+  )
+}
+
+for (const { file, name, why } of rosterGaps) {
+  console.log(`FAIL  workflows/${file}  —  '${name}' ${why}; the runtime-prefixed dispatch would name it wrongly.`)
 }
 
 for (const { file, line, name } of external) {
@@ -168,4 +205,8 @@ console.log(
         `${externalSkills.length ? ` (plus ${externalSkills.length} out-of-plugin name(s) listed above)` : ''}`
 )
 
-process.exit(missing.length || missingSkills.length ? 1 : 0)
+if (prefixedUserLevel.length || rosterGaps.length) {
+  console.log(`${prefixedUserLevel.length + rosterGaps.length} dispatch(es) name a user-level agent wrongly`)
+}
+
+process.exit(missing.length || missingSkills.length || prefixedUserLevel.length || rosterGaps.length ? 1 : 0)

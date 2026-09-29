@@ -83,6 +83,16 @@ const IMPLEMENTER_ROSTER = [
   'cdk-stack-author',
 ]
 
+// Implementers that run from the user-level agents directory, dispatched by their plain name.
+const USER_LEVEL_AGENTS = new Set([
+  'api-gateway-cdk-implementer',
+  'cdk-stack-author',
+  'chassis-extension-implementer',
+  'dynamodb-access-layer-implementer',
+  'dynamodb-streams-cdc-implementer',
+  'event-driven-consumer-implementer',
+])
+
 // args: { contract, red, implementer?: string, implementers?: string[], feedback?: string }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
@@ -217,7 +227,7 @@ Build to the contract above; do not modify the tests. Deliver the changed files,
     {
       label: `green:${impl}`,
       phase: 'Green',
-      agentType: `agent-teams-workforce:${impl}`,
+      agentType: USER_LEVEL_AGENTS.has(impl) ? impl : `agent-teams-workforce:${impl}`,
       schema: GREEN_SCHEMA,
     }
   )

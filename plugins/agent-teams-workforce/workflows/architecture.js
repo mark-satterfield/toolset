@@ -413,7 +413,7 @@ if (a.forceFullPanel !== true && forcedDimensions.length) {
 Return settled=true when the SAD already answers this question, or when it is a routine variation on a settled pattern; otherwise settled=false. An entry whose frontmatter reads \`lifecycle_state: ${APPROVED_STATE}\` is approved: it answers what it states, as given — open the entry and read that field. An entry in any other state answers nothing until the architecture-decider reviews it, so a question that rests on such an entry is settled=false. Cite in relevantDecisions the SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)}.
 
 ${decisionHeader}`,
-    { label: 'triage:classify', effort: 'low', phase: 'Triage', agentType: 'agent-teams-workforce:architecture-boundary-guardian', schema: TRIAGE_SCHEMA }
+    { label: 'triage:classify', effort: 'low', phase: 'Triage', agentType: 'architecture-boundary-guardian', schema: TRIAGE_SCHEMA }
   )
   const picked = triage && Array.isArray(triage.dimensions) ? triage.dimensions.filter((x) => ALL_DIMENSIONS.includes(x)) : []
   if (picked.length) activeDimensions = picked
@@ -434,31 +434,31 @@ Return at most 3 options with honest tradeoffs. Keep every tradeoff, failure mod
 
 const makers = [
   {
-    agentType: 'agent-teams-workforce:integration-pattern-architect',
+    agentType: 'integration-pattern-architect',
     dim: 'integration',
     lens: 'integration/decomposition',
     ask: 'Propose the integration and service-decomposition approach: event-driven flows, service boundaries, and the tradeoffs of each option. Honor the platform constraints (event-driven only — no Step Functions; service isolation; SSM for cross-stack refs).',
   },
   {
-    agentType: 'agent-teams-workforce:security-architecture-designer',
+    agentType: 'security-architecture-designer',
     dim: 'security',
     lens: 'security',
     ask: 'Propose the security architecture: trust boundaries, authn/authz placement, data protection, and surface the security tradeoffs of each option.',
   },
   {
-    agentType: 'agent-teams-workforce:cost-architecture-reviewer',
+    agentType: 'cost-architecture-reviewer',
     dim: 'cost',
     lens: 'cost',
     ask: 'Assess the cost-architecture tradeoffs of each option: cost drivers, scaling cost shape, and which option is most cost-efficient for the stated drivers.',
   },
   {
-    agentType: 'agent-teams-workforce:persistence-architecture-specialist',
+    agentType: 'persistence-architecture-specialist',
     dim: 'persistence',
     lens: 'persistence',
     ask: 'Propose the persistence approach: DynamoDB single- vs multi-table design, key schema, GSI/LSI strategy, and the access-pattern tradeoffs of each option.',
   },
   {
-    agentType: 'agent-teams-workforce:cdk-infrastructure-designer',
+    agentType: 'cdk-infrastructure-designer',
     dim: 'cdk',
     lens: 'cdk-infrastructure',
     ask: 'Propose the CDK construct topology: Lambda boundaries within the chassis, layer/packaging strategy, and the infrastructure tradeoffs of each option.',
@@ -505,7 +505,7 @@ ${SURVEY_BOUND}`,
           label: 'proposals:analysis-advisors',
           phase: 'Proposals',
           effort: 'low',
-          agentType: wantsContextMap ? 'agent-teams-workforce:bounded-context-mapper' : 'agent-teams-workforce:failure-mode-analyst',
+          agentType: wantsContextMap ? 'bounded-context-mapper' : 'failure-mode-analyst',
           schema: {
             type: 'object',
             additionalProperties: false,
@@ -624,7 +624,7 @@ ${decisionHeader}
 ${sadBlock}
 
 ${evidenceBlock}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, the entries it approves as they stand, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
-  { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'agent-teams-workforce:architecture-decider', schema: DECISION_SCHEMA }
+  { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA }
 )
 
 if (!decision) {
@@ -764,7 +764,7 @@ If a \`derived_from\` entry asserts a state this ruling overturns, append a supe
 ${rulingLines}
 
 Deliver: which §2/§4/§8 sections you changed, the file paths edited, every entry tag you minted, preserved or superseded, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
-  { label: 'sad:maintain', effort: 'medium', phase: 'Update SAD', agentType: 'agent-teams-workforce:sad-maintainer', schema: SAD_UPDATE_SCHEMA }
+  { label: 'sad:maintain', effort: 'medium', phase: 'Update SAD', agentType: 'sad-maintainer', schema: SAD_UPDATE_SCHEMA }
 )
 if (!sadUpdate) {
   sadUpdate = await run(
@@ -778,7 +778,7 @@ ${APPROVED_FILES_BRIEF}
 ${rulingLines}
 
 Deliver: which §2/§4/§8 sections were changed (by either pass), the file paths edited, every entry tag minted, preserved or superseded, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', SAD_SAVE_WHAT, SAD_SAVE_OPTS)}`,
-    { label: 'sad:maintain-resume', effort: 'medium', phase: 'Update SAD', agentType: 'agent-teams-workforce:sad-maintainer', schema: SAD_UPDATE_SCHEMA }
+    { label: 'sad:maintain-resume', effort: 'medium', phase: 'Update SAD', agentType: 'sad-maintainer', schema: SAD_UPDATE_SCHEMA }
   )
 }
 

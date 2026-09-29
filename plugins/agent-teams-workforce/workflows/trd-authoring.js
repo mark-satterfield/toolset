@@ -433,7 +433,7 @@ CITE THE DECISIONS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter a
     label: 'author:trd',
     phase: 'Author TRD',
     effort: 'medium',
-    agentType: 'agent-teams-workforce:trd-author',
+    agentType: 'trd-author',
     schema: {
       type: 'object',
       additionalProperties: false,

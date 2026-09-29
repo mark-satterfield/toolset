@@ -74,7 +74,7 @@ Size every resource for the load the change and the project state; prefer per-re
   {
     label: 'intent:author',
     phase: 'Provisioning intent',
-    agentType: 'agent-teams-workforce:cdk-infrastructure-designer',
+    agentType: 'cdk-infrastructure-designer',
     schema: {
       type: 'object',
       additionalProperties: false,

@@ -132,7 +132,7 @@ Draw the smallest number of boundaries the design honestly needs. Every boundary
     label: 'scope:greenfield-shape',
     effort: 'medium',
     phase: 'Shape',
-    agentType: 'agent-teams-workforce:bounded-context-mapper',
+    agentType: 'bounded-context-mapper',
     schema: {
       type: 'object',
       additionalProperties: false,

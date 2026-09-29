@@ -168,7 +168,7 @@ HARD LIMITS: dev ONLY — never qa, never prod. Do not delete or replace data. I
   {
     label: 'deploy:rollout-dev',
     phase: 'Deploy-readiness',
-    agentType: 'agent-teams-workforce:cdk-stack-author',
+    agentType: 'cdk-stack-author',
     schema: {
       type: 'object',
       additionalProperties: false,

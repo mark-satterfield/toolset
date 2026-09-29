@@ -199,7 +199,7 @@ test('reality and dependency currency are both checked by ONE checker session', 
   })
   const combined = agentCalls(calls, 'reconcile:reality-and-dependencies')
   assert.equal(combined.length, 1, 'exactly one checker session runs both checks')
-  assert.equal(combined[0].opts.agentType, 'agent-teams-workforce:prd-reality-reconciler')
+  assert.equal(combined[0].opts.agentType, 'prd-reality-reconciler')
   assert.match(combined[0].prompt, /CHECK 2/, 'the dependency check is part of the same dispatch')
   assert.ok(result.dependencyChanges, 'the dependency-change verdict still crosses back to the caller')
 })

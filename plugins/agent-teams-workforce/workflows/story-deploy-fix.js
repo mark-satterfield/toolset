@@ -88,7 +88,7 @@ Report the cause, the files you changed, whether the synth assertion tests pass,
   {
     label: 'story-deploy:fix',
     phase: 'Fix',
-    agentType: 'agent-teams-workforce:cdk-stack-author',
+    agentType: 'cdk-stack-author',
     schema: {
       type: 'object',
       additionalProperties: false,

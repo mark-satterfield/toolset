@@ -22,17 +22,19 @@
  *   1. unparseable input                      -> exit 0
  *   2. subagent session                       -> exit 0
  *   3. non-Agent/Task tool                    -> exit 0
- *   4. roster agent (namespaced)              -> exit 0
+ *   4. roster agent (namespaced or user-level) -> exit 0
  *   5. generic type + no domain/analysis hit  -> exit 0
  *   6. generic type + domain/analysis hit     -> exit 2
  */
 
 const fs = require('node:fs');
 const { guardsApplyHere } = require('./lib/plugin-scope.cjs');
+const { userLevelAgentNames } = require('./lib/user-level-agents.cjs');
 
 /**
  * Agent types that carry no roster charter. Anything lacking a plugin
- * namespace (`plugin:agent`) is treated as generic too.
+ * namespace (`plugin:agent`) is treated as generic too, except this plugin's
+ * agents that run by their plain name from the user-level agents directory.
  */
 const GENERIC_TYPES = new Set([
   'Explore',
@@ -54,9 +56,9 @@ const DOMAIN_ROUTES = [
       /\b(architect|architecture|architectural|adr|trade-?off|design decision|system design|bounded context|c4|arc42|sad)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/architecture.js" }) — the full decide-and-record path',
-      'agent-teams-workforce:architecture-decider — rules on options (never analyzes)',
-      'agent-teams-workforce:integration-pattern-architect — integration options and tradeoffs',
-      'agent-teams-workforce:security-architecture-designer — threat model, IAM, encryption',
+      'architecture-decider — rules on options (never analyzes)',
+      'integration-pattern-architect — integration options and tradeoffs',
+      'security-architecture-designer — threat model, IAM, encryption',
     ],
   },
   {
@@ -73,7 +75,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(trd|technical requirement|nfr|non-functional)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/trd-authoring.js" })',
-      'agent-teams-workforce:trd-author — writes the TRD in one pass; spec authoring is where it is judged',
+      'trd-author — writes the TRD in one pass; spec authoring is where it is judged',
     ],
   },
   {
@@ -82,8 +84,8 @@ const DOMAIN_ROUTES = [
       /\b(spec|specification|openapi|graphql schema|api contract|acceptance criteri|definition of done|data model)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/spec-authoring.js" })',
-      'agent-teams-workforce:api-specification-author',
-      'agent-teams-workforce:acceptance-criteria-writer',
+      'api-specification-author',
+      'acceptance-criteria-writer',
     ],
   },
   {
@@ -91,7 +93,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(decompos|task breakdown|backlog|wsjf|story|stories|dependency dag|beads?)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/task-decomposition.js" })',
-      'agent-teams-workforce:task-decomposer / agent-teams-workforce:wsjf-scorer',
+      'task-decomposer / agent-teams-workforce:wsjf-scorer',
     ],
   },
   {
@@ -125,7 +127,7 @@ const DOMAIN_ROUTES = [
       /\b(security|vulnerab|injection|auth bypass|privilege escalation|threat|cve|exploit|pen ?test)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/adversarial.js" })',
-      'agent-teams-workforce:infrastructure-security-scanner',
+      'infrastructure-security-scanner',
       'agent-teams-workforce:dependency-cve-auditor',
     ],
   },
@@ -134,7 +136,7 @@ const DOMAIN_ROUTES = [
     pattern: /\b(deploy|rollout|runbook|slo|error budget|cdk|pipeline|finops|drift)\b/i,
     route: [
       'Workflow({ scriptPath: ".../workflows/deploy.js" })',
-      'agent-teams-workforce:cdk-stack-author — the CDK stacks a deploy rolls out',
+      'cdk-stack-author — the CDK stacks a deploy rolls out',
       'agent-teams-workforce:cdk-infrastructure-drift-detector — drift between deployed and CDK state',
     ],
   },
@@ -232,8 +234,11 @@ function main() {
   const toolInput = event.tool_input ?? {};
   const subagentType = String(toolInput.subagent_type ?? '');
 
-  // A namespaced roster agent carries its charter — allow it.
-  const isGeneric = GENERIC_TYPES.has(subagentType) || !subagentType.includes(':');
+  // A roster agent carries its charter — allow it: a namespaced agent, or one of
+  // this plugin's agents dispatched by its plain name from the user-level directory.
+  const isGeneric =
+    GENERIC_TYPES.has(subagentType) ||
+    (!subagentType.includes(':') && !userLevelAgentNames().includes(subagentType));
   if (!isGeneric) {
     process.exit(0);
   }

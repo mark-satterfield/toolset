@@ -527,7 +527,7 @@ Blast radius: ${analysis.blastRadius}`,
   {
     label: 'triage:sizing',
     phase: 'Triage',
-    agentType: 'agent-teams-workforce:architecture-boundary-guardian',
+    agentType: 'architecture-boundary-guardian',
     schema: {
       type: 'object',
       additionalProperties: false,
@@ -646,7 +646,7 @@ ${defects.map((d) => `- ${d.id}: ${d.mechanism}${d.file ? ` [${d.file}${d.line ?
   {
     label: 'triage:expected-behavior',
     phase: 'Triage',
-    agentType: 'agent-teams-workforce:acceptance-criteria-writer',
+    agentType: 'acceptance-criteria-writer',
     schema: contractSchema(defectIds),
   }
 )
@@ -675,7 +675,7 @@ ${defects.filter((d) => firstUncovered.includes(String(d.id))).map((d) => `- ${d
     {
       label: 'triage:expected-behavior-uncovered',
       phase: 'Triage',
-      agentType: 'agent-teams-workforce:acceptance-criteria-writer',
+      agentType: 'acceptance-criteria-writer',
       schema: contractSchema(firstUncovered),
     }
   )

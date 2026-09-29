@@ -636,7 +636,7 @@ if (!architecture) {
         label: 'triage:architecture-needed',
         effort: 'low',
         phase: 'Architecture',
-        agentType: 'agent-teams-workforce:architecture-decider',
+        agentType: 'architecture-decider',
         schema: {
           type: 'object',
           additionalProperties: false,
@@ -1299,7 +1299,7 @@ Then, once that file is saved and recorded, and before you return — unless you
         label: 'sequence:cross-story-tasks',
         effort: 'medium',
         phase: 'Task Decomposition',
-        agentType: 'agent-teams-workforce:task-dependency-mapper',
+        agentType: 'task-dependency-mapper',
         schema: {
           type: 'object',
           additionalProperties: false,

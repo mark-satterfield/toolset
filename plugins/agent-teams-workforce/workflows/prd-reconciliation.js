@@ -293,7 +293,7 @@ Determine whether any upstream contract, shared schema, event, library version, 
     label: 'reconcile:reality-and-dependencies',
     phase: 'Reconciliation checks',
     effort: 'medium',
-    agentType: 'agent-teams-workforce:prd-reality-reconciler',
+    agentType: 'prd-reality-reconciler',
     schema: {
       type: 'object',
       additionalProperties: false,

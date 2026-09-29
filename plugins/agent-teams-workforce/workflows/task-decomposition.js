@@ -204,7 +204,7 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
     label: 'decompose:sequence-and-score',
     effort: 'medium',
     phase: 'Decompose',
-    agentType: 'agent-teams-workforce:task-decomposer',
+    agentType: 'task-decomposer',
     schema: {
       type: 'object',
       additionalProperties: false,
