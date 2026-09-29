@@ -17,7 +17,8 @@
                          every Story, Task and edge the span's saved documents name
     elaboration-release  clear a run's owner token from an Epic
     sad-approve          set `lifecycle_state: effective` on the SAD files an architecture
-                         ruling created, changed or approved as they stand; no `bd` call
+                         step covers: every file the PRD relies on, changes or creates; no `bd` call
+    sad-state            read the `lifecycle_state` of the SAD files a PRD relies on; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -69,6 +70,7 @@ from beadwrite import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from sadstate import promote as approve_sad
+from sadstate import states as sad_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from storyedges import story_edges
 
@@ -625,7 +627,7 @@ def build_parser() -> argparse.ArgumentParser:
     sap.add_argument(
         "--sad-files",
         required=True,
-        help="the SAD files the ruling created, changed or approved as they stand, "
+        help="the SAD files the PRD relies on, and those the ruling changed or created, "
         "comma-separated",
     )
     sap.add_argument(
@@ -634,6 +636,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="the SAD directory every `--sad-files` path must sit under",
     )
     _dry_run_flag(sap)
+
+    sst = sub.add_parser(
+        "sad-state",
+        help="read the `lifecycle_state` of SAD files; writes nothing, runs no `bd` command",
+        parents=[common],
+    )
+    sst.add_argument(
+        "--sad-files", required=True, help="the SAD files to read, comma-separated"
+    )
+    sst.add_argument(
+        "--sad-root",
+        default=None,
+        help="the SAD directory every `--sad-files` path must sit under",
+    )
     return parser
 
 
@@ -667,6 +683,8 @@ def run(args: argparse.Namespace) -> dict:
                 "summary": {"dryRun": True, "files": len(files)},
             }
         return head | approve_sad(files, sad_root=args.sad_root)
+    if command == "sad-state":
+        return head | sad_states(split_ids(args.sad_files), sad_root=args.sad_root)
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(

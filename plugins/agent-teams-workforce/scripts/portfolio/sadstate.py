@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""The one place that writes `lifecycle_state: effective` onto an arc42 SAD entry.
+"""The one place that reads and writes `lifecycle_state` on arc42 SAD files for the pipeline.
 
-`effective` is the approved state of the vault's document-classification vocabulary, and a
-SAD entry settles an architecture decision only in that state. An entry becomes `effective`
-when the architecture step of a prd-to-spec elaboration rules on it: the entries that
-ruling creates, the entries it changes, and the existing entries it reviews and approves as
-they stand. `depscore.py sad-approve` runs this module at that step, over exactly the files
-holding those entries. Setting a file that is already `effective` changes nothing, so the
-step can run again on resume.
+`effective` is per document: it means that document was reviewed and approved, nothing
+about any other. A PRD's architecture relies on several documents; the architecture step
+of a prd-to-spec elaboration reviews every relied-on document that is not `effective`
+(approves it as it stands, updates it, or replaces it), and then every document the PRD
+relies on, changes or creates becomes `effective`. `depscore.py sad-approve` runs
+`promote` at that step over exactly those files; setting a file that is already
+`effective` changes nothing, so the step can run again on resume. `depscore.py sad-state`
+runs `states`, which reads the relied-on files' states so the step skips its analysts only
+when every one is already `effective`.
 
 Entries are approved by FILE, because the vault's classification vocabulary lives in each
 file's frontmatter. Section 8 carries one concept per file, so approval there is per
@@ -78,6 +80,87 @@ def _promote_one(path: Path) -> str:
     return "promoted"
 
 
+def _state_of(path: Path) -> str:
+    """Read one file's top-level `lifecycle_state`.
+
+    Args:
+        path: The SAD file.
+
+    Returns:
+        The value, or an empty string when the file has no frontmatter or no such key.
+    """
+    split = _split_frontmatter(path.read_text(encoding="utf-8"))
+    if split is None:
+        return ""
+    lines, start, close = split
+    for idx in range(start, close):
+        if lines[idx].startswith(f"{STATE_KEY}:"):
+            return lines[idx][len(STATE_KEY) + 1 :].strip()
+    return ""
+
+
+def _sad_root(sad_root: str | None) -> Path | None:
+    """Resolve the SAD directory a caller names, which may be its index file.
+
+    Args:
+        sad_root: The SAD directory or index file, or None.
+
+    Returns:
+        The directory, or None when no root was given.
+    """
+    if not sad_root:
+        return None
+    root = Path(sad_root).resolve()
+    return root.parent if root.is_file() else root
+
+
+def states(files: list[str], *, sad_root: str | None) -> dict:
+    """Read the `lifecycle_state` of the SAD files a PRD relies on; writes nothing.
+
+    Args:
+        files: The SAD files, as absolute paths.
+        sad_root: The SAD directory every file must sit under, or None to skip the check.
+
+    Returns:
+        A report: each readable file's state, the files not at `effective` (a file with
+        no state counts as not effective), and the files refused or unreadable.
+    """
+    root = _sad_root(sad_root)
+    report: dict = {"states": {}, "notEffective": [], "refused": [], "failed": []}
+    for raw in files:
+        name = str(raw).strip()
+        if not name:
+            continue
+        try:
+            resolved = Path(name).resolve()
+        except OSError as exc:
+            report["failed"].append({"path": name, "reason": str(exc)})
+            continue
+        if root is not None and not resolved.is_relative_to(root):
+            report["refused"].append(
+                {"path": name, "reason": f"outside the SAD at {root}"}
+            )
+            continue
+        if not resolved.is_file():
+            report["failed"].append({"path": name, "reason": "not a file"})
+            continue
+        try:
+            state = _state_of(resolved)
+        except OSError as exc:
+            report["failed"].append({"path": name, "reason": str(exc)})
+            continue
+        report["states"][str(resolved)] = state
+        if state != EFFECTIVE:
+            report["notEffective"].append({"path": str(resolved), "state": state})
+    report["summary"] = {
+        "files": len(report["states"]),
+        "notEffective": len(report["notEffective"]),
+        "refused": len(report["refused"]),
+        "failed": len(report["failed"]),
+    }
+    return report
+
+
 def promote(files: list[str], *, sad_root: str | None) -> dict:
     """Set the SAD files an architecture ruling covers to `effective`.
 
@@ -86,8 +169,8 @@ def promote(files: list[str], *, sad_root: str | None) -> dict:
     rewrites documents, and the blast radius of a bad path is the vault.
 
     Args:
-        files: The SAD files the ruling created, changed or approved as they stand, as
-            absolute paths.
+        files: The SAD files the PRD relies on and those the ruling changed or created,
+            as absolute paths.
         sad_root: The SAD directory every file must sit under, or None to skip the check.
 
     Returns:
@@ -101,14 +184,7 @@ def promote(files: list[str], *, sad_root: str | None) -> dict:
         "refused": [],
         "failed": [],
     }
-    # The SAD location a caller holds may name the document's index file rather than the
-    # directory it lives in. Both mean the same tree, and a file as the root would refuse
-    # every path under it.
-    root = None
-    if sad_root:
-        root = Path(sad_root).resolve()
-        if root.is_file():
-            root = root.parent
+    root = _sad_root(sad_root)
     for raw in files:
         name = str(raw).strip()
         if not name:

@@ -50,9 +50,10 @@ NOTHING, however normatively it is worded and whatever date it carries.
 
 Read the state; never infer it. A dated ruling, a MUST, a table of values and a confident
 tone are all properties of the wording, and the wording is what an unvetted entry has most
-of. The only entries marked `effective` are those the architecture step of a `prd-to-spec`
-elaboration created, changed, or reviewed and approved as they stand — that step is the
-sole writer of the value.
+of. `lifecycle_state` is per document, and the only documents marked `effective` are those
+the architecture step of a `prd-to-spec` elaboration covered: every SAD document that PRD
+relies on (reviewed and approved as it stands, or updated), changes or creates — that step
+is the sole writer of the value.
 
 So when an entry that bears on a decision is not `effective`, the SAD does not settle that
 decision, and the edge test proceeds as though the entry were absent. Record the state you

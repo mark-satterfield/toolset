@@ -1,12 +1,12 @@
 export const meta = {
   name: 'architecture',
   description:
-    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). An entry at lifecycle_state: effective, the approved state, is used as given and never re-decided; the decider reviews every other entry the ruling relies on and names those it approves as they stand. Returns approvedFiles, the SAD files holding those entries, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
+    'Leaf mini — turns an architecture question into a ruled decision and an updated arc42 SAD. It extracts SAD §2/§4/§8 (or reuses the extract the caller passes), takes the analysis dimensions from the caller or from a read-only triage session, collects proposals from the selected analysts unless triage rules the question settled, has the architecture-decider rule, and has the sad-maintainer write the ruling into the SAD (resuming once when the first pass returns nothing). lifecycle_state is per document: an entry in an effective document is used as given and never re-decided; an entry in any other state is best-effort evidence the decider reviews and approves as it stands, updates or replaces. Triage rules the question settled only when every SAD document it relies on is effective. The decider names every entry the ruling relies on (reliedOn); returns approvedFiles, the SAD files holding them, beside sadUpdate.changedFiles; the caller sets both to effective. A ruling with no admissible option writes nothing to the SAD and returns ok:false with the blocking rules as requiredHumanActions.',
   phases: [
     { title: 'Extract SAD', detail: 'inventory the SAD files holding §2/§4/§8 and extract them in concurrent shards' },
     { title: 'Triage', detail: 'classify the decision and select the analysis dimensions, unless the caller supplied them' },
     { title: 'Proposals', detail: 'the selected analysts propose options concurrently; skipped when triage rules the question settled' },
-    { title: 'Decide', detail: 'the architecture-decider rules on the proposals, or by citing the SAD when the question is settled, and names the entries in review it approves as they stand' },
+    { title: 'Decide', detail: 'the architecture-decider rules on the proposals, or by citing the SAD when the question is settled, and names every SAD entry the ruling relies on: effective ones used as given, the others reviewed and approved as they stand or changed' },
     { title: 'Update SAD', detail: 'the sad-maintainer writes the ruling into §2/§4/§8' },
   ],
 }
@@ -138,12 +138,21 @@ const ALL_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk',
 const TRIAGE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['settled', 'rationale', 'relevantDecisions', 'dimensions'],
+  required: ['settled', 'rationale', 'relevantDecisions', 'dimensions', 'reliedOn'],
   properties: {
     settled: { type: 'boolean' },
     rationale: { type: 'string' },
     relevantDecisions: { type: 'array', items: { type: 'string' } },
     dimensions: { type: 'array', items: { type: 'string' } },
+    reliedOn: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['file', 'state'],
+        properties: { file: { type: 'string' }, state: { type: 'string' } },
+      },
+    },
   },
 }
 
@@ -343,7 +352,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
 const sadHome = sadExtract.sadLocation || sadPath
 const APPROVED_STATE = 'effective'
 const stateOf = (e) => (e && typeof e.lifecycleState === 'string' && e.lifecycleState.trim()) || 'state not extracted'
-const APPROVAL_RULE = `APPROVED ENTRIES ARE SETTLED. \`lifecycle_state: ${APPROVED_STATE}\` is the approved state: an entry whose file's frontmatter reads it has been vetted and approved, is used as given, and is never re-decided. Only an entry in any other state is open to review. The state shown beside each entry is its file's \`lifecycle_state\`; for an entry you open, read that field in the file.`
+const APPROVAL_RULE = `\`lifecycle_state\` IS PER DOCUMENT. A file whose frontmatter reads \`${APPROVED_STATE}\` has itself been reviewed and approved: its entries are used as given and never re-decided. That says nothing about any other file. A file in any other state (\`in-review\`, \`draft\`) is not yet trusted: its entries are best-effort evidence, may well be correct, and are reviewed before anything rests on them. The state shown beside each entry is its file's \`lifecycle_state\`; for an entry you open, read that field in the file.`
 const renderFeed = (title, entries) =>
   `${title} (${entries.length}):\n` +
   (entries.length ? entries.map((e) => `- [${e.id}] (${stateOf(e)}) ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
@@ -410,13 +419,25 @@ if (a.forceFullPanel !== true && forcedDimensions.length) {
   triage = await run(
     `${rulingsBlock}You are the architecture-boundary-guardian acting as the READ-ONLY triage step. Classify this decision against the existing arc42 SAD — do NOT rule on it, do NOT author options, do NOT edit anything. SAD location: ${sadPath}.
 
-Return settled=true when the SAD already answers this question, or when it is a routine variation on a settled pattern; otherwise settled=false. An entry whose frontmatter reads \`lifecycle_state: ${APPROVED_STATE}\` is approved: it answers what it states, as given — open the entry and read that field. An entry in any other state answers nothing until the architecture-decider reviews it, so a question that rests on such an entry is settled=false. Cite in relevantDecisions the SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)}.
+List in reliedOn every SAD file whose entries this question rests on, with the \`lifecycle_state\` its frontmatter reads (open the file and copy the field exactly; an empty string when it has none). Return settled=true ONLY when every file in reliedOn reads \`${APPROVED_STATE}\` and those files answer the question as given; otherwise settled=false. A file in any other state answers nothing until the architecture-decider reviews it, however well it is worded, and a question the SAD does not cover at all is not settled. Cite in relevantDecisions the SAD sections that bear on it, and explain the classification in rationale. In dimensions, name ONLY the axes that genuinely bear on the choice, drawn from ${JSON.stringify(ALL_DIMENSIONS)}.
 
 ${decisionHeader}`,
     { label: 'triage:classify', effort: 'low', phase: 'Triage', agentType: 'architecture-boundary-guardian', schema: TRIAGE_SCHEMA }
   )
   const picked = triage && Array.isArray(triage.dimensions) ? triage.dimensions.filter((x) => ALL_DIMENSIONS.includes(x)) : []
   if (picked.length) activeDimensions = picked
+}
+const extractState = new Map()
+for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrategy || []), ...(sadExtract.crosscuttingConcepts || [])]) {
+  const f = sourceFile(e)
+  if (f && typeof e.lifecycleState === 'string') extractState.set(f, e.lifecycleState.trim())
+}
+const triageRelied = triage && Array.isArray(triage.reliedOn) ? triage.reliedOn.filter((r) => r && typeof r.file === 'string' && r.file.trim()) : []
+const unsettledBy = triageRelied.filter((r) => String(r.state || '').trim() !== APPROVED_STATE || (extractState.has(r.file.trim()) && extractState.get(r.file.trim()) !== APPROVED_STATE))
+if (triage && triage.settled === true && (!triageRelied.length || unsettledBy.length)) {
+  triage.settled = false
+  triage.rationale = `${triage.rationale || ''} — not settled: ${triageRelied.length ? `it relies on SAD file(s) not at ${APPROVED_STATE}: ${unsettledBy.map((r) => r.file).join(', ')}` : 'triage named no SAD file it relies on'}`
+  log(`Triage: overruled to not settled — ${triage.rationale}`)
 }
 const settled = !!(triage && triage.settled === true)
 if (settled) {
@@ -545,16 +566,20 @@ ${JSON.stringify({ contextMap, failureModes }, null, 2)}`
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'blockingRules', 'ruleChallenges', 'approvedEntries'],
+  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'blockingRules', 'ruleChallenges', 'reliedOn'],
   properties: {
     admissible: { type: 'boolean' },
-    approvedEntries: {
+    reliedOn: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'file'],
-        properties: { id: { type: 'string' }, file: { type: 'string' } },
+        required: ['id', 'file', 'disposition'],
+        properties: {
+          id: { type: 'string' },
+          file: { type: 'string' },
+          disposition: { type: 'string', enum: ['used-as-given', 'approved', 'changed'] },
+        },
       },
     },
     ruling: { type: 'string' },
@@ -596,10 +621,11 @@ const DECIDER_CHARTER = `You are the architecture-decider. Rule on the architect
 
 YOU HAVE THE SAD. Its source feed is below — §2 and §4 in full, and §8 as an index of every entry with where to read it. Your ruling is written back into those sections and becomes effective architecture, so rule AGAINST what they already state: an option that contradicts a standing entry in review is either wrong or is a deliberate supersession you must say you are making, naming the entry id. Open the §8 entries this ruling touches; do not survey the rest of the SAD.
 
-APPROVED ENTRIES ARE SETTLED; THE REST THIS RULING RELIES ON, YOU REVIEW.
-- An entry whose file reads \`lifecycle_state: ${APPROVED_STATE}\` is approved. Rule with it as given; this ruling never re-decides it. Where the PRD cannot be served without changing one, record a ruleChallenge naming it.
-- Every entry in any other state that this ruling relies on, you review, reading it in full: approve it as it stands and list it in \`approvedEntries\` with its id and the absolute path of the SAD file that holds it, or change it in the ruling.
-- The SAD files holding every entry this ruling creates, changes or approves are set to \`lifecycle_state: ${APPROVED_STATE}\` once the SAD is written.
+EFFECTIVE DOCUMENTS ARE USED AS GIVEN; EVERY OTHER DOCUMENT THIS RULING RELIES ON, YOU REVIEW.
+- \`lifecycle_state\` is per document. An entry whose file reads \`${APPROVED_STATE}\` is approved: rule with it as given (disposition \`used-as-given\`); this ruling never re-decides it. Where the PRD cannot be served without changing one, record a ruleChallenge naming it.
+- An entry whose file is in any other state (\`in-review\`, \`draft\`) is not yet trusted, but it is evidence, not something to discard, and it may already be right. Every such entry this ruling relies on, you review, reading it in full, against AWS best practice, the AWS Well-Architected Framework and price (use the AWS MCP Server documentation tools where the entry names an AWS service): approve it as it stands (disposition \`approved\`), or update or replace it in the ruling (disposition \`changed\`). "It already answers the PRD" is a reason to approve it, never a reason to leave it unreviewed.
+- List in \`reliedOn\` EVERY SAD entry this ruling relies on, in any state, with its id, the absolute path of the SAD file that holds it, and its disposition. This list is the record of the architecture the PRD rests on.
+- Once the SAD is written, every SAD file in \`reliedOn\` and every file the ruling changes or creates is set to \`lifecycle_state: ${APPROVED_STATE}\`.
 
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
@@ -623,7 +649,7 @@ ${decisionHeader}
 
 ${sadBlock}
 
-${evidenceBlock}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, the entries it approves as they stand, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
+${evidenceBlock}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every SAD entry it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`,
   { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA }
 )
 
@@ -669,13 +695,11 @@ for (const e of [...(sadExtract.constraints || []), ...(sadExtract.solutionStrat
   const f = sourceFile(e)
   if (e && e.id && f && !entryFiles.has(e.id)) entryFiles.set(e.id, f)
 }
-const approvedFiles = []
-for (const x of Array.isArray(decision.approvedEntries) ? decision.approvedEntries : []) {
-  if (!x || typeof x !== 'object') continue
-  const f = entryFiles.get(String(x.id || '').trim()) || (typeof x.file === 'string' && x.file.trim().startsWith('/') ? x.file.trim() : '')
-  if (f && !approvedFiles.includes(f)) approvedFiles.push(f)
-}
-log(`Decide: ${approvedFiles.length} SAD file(s) hold entries the ruling approves as they stand`)
+const reliedOn = (Array.isArray(decision.reliedOn) ? decision.reliedOn : [])
+  .filter((x) => x && typeof x === 'object')
+  .map((x) => ({ ...x, file: entryFiles.get(String(x.id || '').trim()) || (typeof x.file === 'string' && x.file.trim().startsWith('/') ? x.file.trim() : '') }))
+const approvedFiles = [...new Set(reliedOn.map((x) => x.file).filter(Boolean))]
+log(`Decide: the ruling relies on ${reliedOn.length} SAD entr(ies) in ${approvedFiles.length} file(s)`)
 
 const SAD_UPDATE_SCHEMA = {
   type: 'object',
@@ -734,7 +758,7 @@ AN EARLIER PASS OF THIS SAME RULING MAY ALREADY BE IN THE SAD. Before you write,
 
 const SAD_SAVE_WHAT = 'your complete structured result (updatedSections, changedFiles, approvedFiles, entryTags, openItems, summary — exactly as you return them) as ONE JSON object'
 const APPROVED_FILES_BRIEF = `
-THE RULING APPROVES THESE SAD FILES AS THEY STAND. Return this list, exactly as written, as \`approvedFiles\`:
+THE RULING RELIES ON THESE SAD FILES; EACH IS APPROVED ONCE THE SAD IS WRITTEN. Return this list, exactly as written, as \`approvedFiles\`:
 ${approvedFiles.length ? approvedFiles.map((f) => `- ${f}`).join('\n') : '- (none: return an empty list)'}
 Leave the \`lifecycle_state\` frontmatter field of every SAD file as you find it: the run sets it on the files this ruling covers after you return.`
 const SAD_SAVE_OPTS = { extraInputs: 'the absolute path of EVERY SAD file changed, each in single quotes' }
@@ -800,5 +824,6 @@ return {
   decisionPath: ART ? `${ART.dir}/architecture-decision.md` : null,
   sadUpdate,
   entryTags: sadUpdate && Array.isArray(sadUpdate.entryTags) ? sadUpdate.entryTags : [],
+  reliedOn,
   approvedFiles,
 }
