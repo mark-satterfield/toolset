@@ -175,7 +175,7 @@ function makerRules({ cites }) {
   return [
     'READING SCOPE: the packet above is your source, and the repository named above is the ONLY repository you may read — never survey other repositories. Prefer one targeted search over a directory walk, and never re-open a file you have already read.',
     cites
-      ? 'CITE THE DECISIONS YOU DESIGNED AGAINST. Return `decisionIds` on every artifact you author: the SAD entry ids it depends on, written exactly as the TRD and the SAD tag them (`C-…`, `S-…`, `X-…`, `AD-…`), and carry the same list in YAML frontmatter as `decisionIds:` at the top of the markdown document you save. Never invent or paraphrase an id, and never cite a section number in place of one.'
+      ? 'CITE THE DECISIONS YOU DESIGNED AGAINST. Return `decisionIds` on every artifact you author: the SAD entry ids it depends on, written exactly as the TRD and the SAD tag them (`C-…`, `S-…`, `X-…`, `AD-…`), and carry the same list in YAML frontmatter as `decisionIds:` at the top of the markdown document you save. Never invent or paraphrase an id, and never cite a section number in place of one.\n\nAPPROVED SAD ENTRIES ARE SETTLED. A SAD entry whose file\'s frontmatter reads `lifecycle_state: effective` has been vetted and approved: design against it as given and never re-decide it. Only an entry in any other state is open to review: before your design rests on one, check it against the TRD, and where they disagree the TRD governs.'
       : '',
   ]
     .filter(Boolean)

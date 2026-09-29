@@ -115,11 +115,12 @@ const feedSchema = () => ({
   items: {
     type: 'object',
     additionalProperties: false,
-    required: ['id', 'statement', 'source'],
+    required: ['id', 'statement', 'source', 'lifecycleState'],
     properties: {
       id: { type: 'string' },
       statement: { type: 'string' },
       source: { type: 'string' },
+      lifecycleState: { type: 'string' },
     },
   },
 })
@@ -154,7 +155,7 @@ ${readingRule}
 
 Other sessions are extracting the rest of this SAD concurrently. Extract ONLY the sections assigned to you, from ONLY the files assigned to you, and return the feeds you were not assigned as empty arrays.
 
-For every entry: set its ID, capture the verbatim-grounded statement, and note its source location (file:section/anchor). If an assigned section is absent from your files, return it as an empty array.
+For every entry: set its ID, capture the verbatim-grounded statement, note its source location (file:section/anchor) starting with the file's absolute path, and set \`lifecycleState\` to the \`lifecycle_state\` value in the YAML frontmatter of the file that holds it, copied exactly (an empty string when the file has none). If an assigned section is absent from your files, return it as an empty array.
 
 THE ID IS THE SAD'S OWN TAG, COPIED EXACTLY. Most entries open with a backticked tag such as \`C-apigw-construct\`, \`S-…\`, \`X-uniform-zero-egress\` or \`AD-…\`; that tag, character for character, is the entry's ID. Only an entry with no tag gets a made-up ID: \`<file name without .md>--<kebab-case of the nearest heading>\`, with \`-2\`, \`-3\` appended in document order when one heading holds several untagged entries.
 Return every entry your files state; never consolidate, trim or omit an entry.`,
@@ -290,7 +291,7 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
         let n = 2
         while (seen[feed.key].has(id)) id = `${id.replace(/#\d+$/, '')}#${n++}`
         seen[feed.key].add(id)
-        merged[feed.key].push({ id, statement: String(entry.statement || ''), source: String(entry.source || '') })
+        merged[feed.key].push({ id, statement: String(entry.statement || ''), source: String(entry.source || ''), lifecycleState: String(entry.lifecycleState || '').trim() })
       })
     }
   })
@@ -307,9 +308,10 @@ A section held in a DIRECTORY is listed as all of its content files, recursively
   )
 }
 
+const stateOf = (e) => (e && typeof e.lifecycleState === 'string' && e.lifecycleState.trim()) || 'state not extracted'
 const renderFeed = (title, entries) =>
   `${title} (${entries.length}):\n` +
-  (entries.length ? entries.map((e) => `- [${e.id}] ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
+  (entries.length ? entries.map((e) => `- [${e.id}] (${stateOf(e)}) ${e.statement}${e.source ? ` (${e.source})` : ''}`).join('\n') : '- (the SAD states none)')
 const INDEX_SNIPPET_CHARS = 40
 /** Renders §8 entries as an id index grouped by source file. */
 function crosscuttingIndex(entries, sadHome) {
@@ -327,9 +329,9 @@ function crosscuttingIndex(entries, sadHome) {
   }
   const groups = [...byFile.entries()].map(
     ([f, es]) =>
-      `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`}\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
+      `${f || `(no source file recorded — find these by id under the §8 section at ${sadHome})`} (${stateOf(es[0])})\n${es.map((e) => `  - [${e.id}] ${snip(e.statement)}`).join('\n')}`
   )
-  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it.
+  return `§8 Crosscutting Concepts (${Array.isArray(entries) ? entries.length : 0}) — an INDEX, not the text: each line is an entry's id and the opening of its statement, grouped by the SAD file that states it, with that file's \`lifecycle_state\`.
 READ IN FULL, in the SAD file it is listed under, every entry this TRD touches before you rely on it.
 ${groups.join('\n') || '- (the SAD states none)'}`
 }
@@ -407,6 +409,8 @@ THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 The SAD extract below gives §2 and §4 in full and §8 as an INDEX. Open in full every §8 entry whose obligation could apply to anything this PRD builds — each service, store, API, event, data flow and boundary — and ask what it demands.
 
 A SAD RULE BINDS ONLY WHAT THE DESIGN HAS. A SAD rule about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where this PRD's design — the PRD and the architecture ruling below — has that thing, and the requirement names it: "the design has bucket <name>, so <name> is versioned and SSE-S3 encrypted [C-…]". A design with no bucket carries no bucket rule, and a rule is never a reason to add the thing it governs: things are added by the design, where things of one kind are shared whenever the design allows. Set \`appliesTo\` on every requirement to the design element it governs, named as the design names it (for a PRD elaboration, the service, store or interface that satisfies it).
+
+APPROVED SAD ENTRIES ARE SETTLED. \`lifecycle_state: effective\` is the approved state: an entry whose file reads it has been vetted and approved. Use it as given and cite it; never re-decide, reinterpret or narrow it. Only an entry in any other state is open to review: before a requirement rests on one, check it against the PRD and the architecture ruling below, and name each such entry you rely on in your \`summary\`. The state shown beside each entry in the extract is its file's \`lifecycle_state\`; for an entry you open, read that field in the file.
 
 CITE THE SAD; DO NOT RESTATE IT. A requirement that names the obligation and cites the SAD entry that defines it is complete and is the preferred shape. Where the SAD already settles a point a PRD requirement raises, cite that decision. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
 

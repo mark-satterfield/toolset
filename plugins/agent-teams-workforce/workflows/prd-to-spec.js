@@ -1,13 +1,13 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture when the PRD needs a decision or states a technical rule SAD §2/§8 lacks (the SAD gains the rule; the PRD is never edited), rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture when the PRD needs a decision or states a technical rule SAD §2/§8 lacks (the SAD gains the rule; the PRD is never edited) — a SAD entry at lifecycle_state: effective is approved and used as given, the ruling reviews the others it relies on, and depscore.py sad-approve sets the SAD files holding every entry the ruling created, changed or approved as it stands to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
     { title: 'PRD Validation', detail: 'classify each PRD requirement as business or technical, and whether SAD §2/§8 holds each technical rule' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
-    { title: 'Architecture', detail: 'triage the PRD; run the architecture mini when a decision is needed' },
+    { title: 'Architecture', detail: 'triage the PRD; run the architecture mini when a decision is needed, then depscore.py sad-approve sets the SAD files the ruling created, changed or approved as they stand to lifecycle_state: effective' },
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
     { title: 'Spec Authoring', detail: 'per repo: reconcile the requirements that govern what the repo owns or changes, then author the Spec and write its Story bead' },
@@ -624,7 +624,7 @@ if (!architecture) {
       `${rulingsBlock}Decide whether this PRD requires an ARCHITECTURE DECISION phase, or whether it can go straight to TRD authoring.\n\n` +
         `An architecture decision exists when the PRD forces a CHOICE BETWEEN OPTIONS whose consequences outlive the feature: a new datastore or access pattern, a new service or service boundary, a new integration or transport, a new trust boundary, or a change to a crosscutting concern. It does NOT exist merely because the work is hard, security-adjacent or user-facing.\n\n` +
         `These are never an architecture decision: a difference between this PRD and what is built or deployed (the PRD wins); any UI or UX difference (settled by the design-system artifacts); a question an existing recorded decision or established codebase pattern already answers. Do not survey what is deployed.\n\n` +
-        `A SAD entry settles a choice only when its frontmatter reads \`lifecycle_state: effective\`.\n` +
+        `A SAD entry whose frontmatter reads \`lifecycle_state: effective\` is approved: it settles the choice it states, as given, and is never re-decided. An entry in any other state settles nothing until the architecture phase reviews it, so a choice that rests on one is an unsettled choice.\n` +
         `Answer needed:false when there is no such choice, or every choice falls under the list above, or the SAD settles every choice (name the sections). Answer needed:true when an unsettled choice remains, and name each one in \`decisions\`.\n\n` +
         `Repositories the run was launched from: ${seedRepos.join(', ') || '(none named)'}. This is a starting point, not the span.\n` +
         `SAD location: ${a.sadPath || '(not supplied)'}\n\n` +
@@ -705,7 +705,40 @@ if (!architecture) {
   }
   if (architecture.ok) await acceptPhase('architecture', 'passed')
 }
+let sadApproval = null
+if (architecture.ok && !architecture.skipped) {
+  const art = architecture.artifact || {}
+  const listed = (x) => (Array.isArray(x) ? x.filter(hasText).map((f) => f.trim()) : [])
+  const su = art.sadUpdate || {}
+  const sadFiles = [...new Set([...listed(su.changedFiles), ...listed(su.approvedFiles), ...listed(art.approvedFiles)])]
+  if (sadFiles.length) {
+    const approveArgs = [`sad-approve --sad-files ${shellq(sadFiles.join(','))}`, hasText(a.sadPath) ? `--sad-root ${shellq(a.sadPath)}` : ''].filter(Boolean).join(' ')
+    const out = await runScript('sad:approve', 'Architecture', approveArgs)
+    if (!out || out.error) {
+      return partial('architecture', {
+        ok: false,
+        artifact: art,
+        reason: `the ${sadFiles.length} SAD file(s) the architecture ruling covers were not set to lifecycle_state: effective — ${(out && out.error) || 'no result'}`,
+      })
+    }
+    sadApproval = out
+    const n = out.summary || {}
+    log(`SAD approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
+    const approved = new Set([...(out.promoted || []), ...(out.unchanged || [])])
+    if (archSadExtract && approved.size) {
+      const fileOf = (e) => (String((e && e.source) || '').trim().match(/^\/[^\s:#]+/) || [''])[0]
+      const mark = (list) => (Array.isArray(list) ? list.map((e) => (approved.has(fileOf(e)) ? { ...e, lifecycleState: 'effective' } : e)) : list)
+      archSadExtract = {
+        ...archSadExtract,
+        constraints: mark(archSadExtract.constraints),
+        solutionStrategy: mark(archSadExtract.solutionStrategy),
+        crosscuttingConcepts: mark(archSadExtract.crosscuttingConcepts),
+      }
+    }
+  }
+}
 produced.architecture = withoutSadExtract(architecture.artifact)
+if (sadApproval) produced.sadApproval = sadApproval
 if (!architecture.ok) {
   const art = architecture.artifact || {}
   if (art.stage === 'input') {
@@ -1331,15 +1364,10 @@ recRuled(`${tasks.length} Task(s) across ${decompositions.length} Story/Stories;
 
 enterPhase('Finish')
 const done = !specFailures.length && !decompositionFailures.length && !crossStory.reason
-const changedSad = architecture.artifact && architecture.artifact.sadUpdate && Array.isArray(architecture.artifact.sadUpdate.changedFiles)
-  ? architecture.artifact.sadUpdate.changedFiles.filter(hasText)
-  : []
 const finishArgs = [
   `elaboration-finish --epic ${shellq(epicBeadId)}`,
   lifecycle.owner ? `--owner ${shellq(lifecycle.owner)}` : '',
   done ? '--done' : '',
-  done && changedSad.length ? `--sad-files ${shellq(changedSad.join(','))}` : '',
-  done && a.sadPath ? `--sad-root ${shellq(a.sadPath)}` : '',
   ART_ON ? `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}` : '',
 ].filter(Boolean).join(' ')
 const finishOut = await runScript('epic:finish', 'Finish', finishArgs)
@@ -1360,7 +1388,6 @@ const storyEdgeLine = !storyEdges
     : `Story edges: ${(storyEdges.added || []).length} added, ${(storyEdges.removed || []).length} removed, ${storyEdges.unchanged || 0} unchanged. ` +
       (storyEdges.ok ? '' : `Not written for ${(storyEdges.refusedStories || []).join(', ')} — ${storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `)
 if (storyEdgeLine) log(storyEdgeLine)
-const sadPromotion = (finishOut && finishOut.sad) || null
 const counted = (x) => (x && typeof x === 'object' ? (Number(x.created) || 0) + (Number(x.updated) || 0) : 0)
 const beadsEmitted =
   specPairs.reduce((n, p) => n + counted(p.spec && p.spec.summary), 0) +
@@ -1394,7 +1421,7 @@ const common = {
   beadsEmitted,
   lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
   ...(storyEdges ? { storyEdges } : {}),
-  ...(sadPromotion ? { sadPromotion } : {}),
+  ...(sadApproval ? { sadApproval } : {}),
   crossStoryDependencies: crossStory,
   hierarchy,
   repoSpan: repos,

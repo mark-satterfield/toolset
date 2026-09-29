@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """The one place that writes `lifecycle_state: effective` onto an arc42 SAD entry.
 
-A SAD entry settles an architecture decision only when its ruling came out of a COMPLETED
-prd-to-spec run. Nothing else vouches for a SAD entry: an entry written by an ad-hoc
-architecture pass, or by a run that ended before its Tasks landed, has no provenance behind
-it, and a downstream reader that treats it as settled is trusting a claim nobody checked.
+`effective` is the approved state of the vault's document-classification vocabulary, and a
+SAD entry settles an architecture decision only in that state. An entry becomes `effective`
+when the architecture step of a prd-to-spec elaboration rules on it: the entries that
+ruling creates, the entries it changes, and the existing entries it reviews and approves as
+they stand. `depscore.py sad-approve` runs this module at that step, over exactly the files
+holding those entries. Setting a file that is already `effective` changes nothing, so the
+step can run again on resume.
 
-So every entry sits at `in-review` until an elaboration finishes, and this module runs on
-that one transition — `elaboration-finish --done`, the same call that marks the Epic
-`done`. The predicate is false everywhere until a run makes it true, one Epic at a time,
-and there is no flag to set.
-
-Entries are promoted by FILE, because the vault's classification vocabulary lives in each
-file's frontmatter. Section 8 carries one concept per file, so promotion there is per
-decision; sections 2 and 4 are coarser, and promoting one of those files promotes
+Entries are approved by FILE, because the vault's classification vocabulary lives in each
+file's frontmatter. Section 8 carries one concept per file, so approval there is per
+decision; sections 2 and 4 are coarser, and approving one of those files approves
 everything in it. That is a property of how the SAD is laid out, not a choice made here.
 """
 
@@ -71,9 +69,9 @@ def _promote_one(path: Path) -> str:
         lines[idx] = f"{STATE_KEY}: {EFFECTIVE}"
         break
     else:
-        # The field is required core on every managed document. A SAD file that reaches a
-        # completed elaboration without one is missing its classification, not exempt from
-        # it, so the key is added rather than the file skipped.
+        # The field is required core on every managed document. A SAD file a ruling
+        # covers without one is missing its classification, not exempt from it, so the
+        # key is added rather than the file skipped.
         lines.insert(close, f"{STATE_KEY}: {EFFECTIVE}")
     trailing = "\n" if text.endswith("\n") else ""
     path.write_text("\n".join(lines) + trailing, encoding="utf-8")
@@ -81,14 +79,15 @@ def _promote_one(path: Path) -> str:
 
 
 def promote(files: list[str], *, sad_root: str | None) -> dict:
-    """Promote the SAD files a completed elaboration vetted.
+    """Set the SAD files an architecture ruling covers to `effective`.
 
     Every path is held to `sad_root` when one is given. A changed-file list is reported by
     an agent, so a path outside the SAD is refused rather than written — this function
     rewrites documents, and the blast radius of a bad path is the vault.
 
     Args:
-        files: The SAD files the run's architecture phase changed, as absolute paths.
+        files: The SAD files the ruling created, changed or approved as they stand, as
+            absolute paths.
         sad_root: The SAD directory every file must sit under, or None to skip the check.
 
     Returns:

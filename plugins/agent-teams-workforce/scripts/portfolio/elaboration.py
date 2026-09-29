@@ -49,7 +49,6 @@ import uuid
 from typing import TYPE_CHECKING
 
 from beadgraph import now_iso
-from sadstate import promote as promote_sad
 from scoring import score
 
 if TYPE_CHECKING:
@@ -284,8 +283,6 @@ def finish(
     *,
     owner: str | None,
     done: bool,
-    sad_files: list[str] | None = None,
-    sad_root: str | None = None,
     missing: list[str] | None = None,
 ) -> dict:
     """Score this Epic and its Tasks, and mark it done when beads holds its hierarchy.
@@ -296,16 +293,11 @@ def finish(
         epic_id: The Epic.
         owner: The owner token `start` returned.
         done: Set the Epic's `elaboration_state` to `done`.
-        sad_files: The SAD files this run's architecture phase changed. They are promoted
-            to `lifecycle_state: effective` on the `done` transition and at no other time,
-            because a completed elaboration is the only thing that vouches for a SAD entry.
-        sad_root: The SAD directory every one of those files must sit under.
         missing: What the span's saved documents name that beads does not hold, or None
             when no span was given. Anything in it keeps the Epic from being marked done.
 
     Returns:
-        The scoring result, the lifecycle write, and — when the Epic was marked done —
-        the SAD promotion report.
+        The scoring result and the lifecycle write.
 
     Raises:
         LifecycleError: The Epic is owned by another run.
@@ -318,7 +310,6 @@ def finish(
     under = _task_ids_under(graph, epic)
     scored = score(graph, writer, scope={epic.id} | under)
     lifecycle = None
-    sad = None
     persisted = not missing
     if done and persisted:
         lifecycle = {
@@ -328,13 +319,6 @@ def finish(
             OWNER_KEY: "",
         }
         writer.metadata(epic.id, lifecycle)
-        # The SAD entries this elaboration vetted become `effective` here and nowhere
-        # else. A dry run must not touch the vault, so it reports the promotion it would
-        # have made instead of making it.
-        if sad_files and not writer.dry_run:
-            sad = promote_sad(list(sad_files), sad_root=sad_root)
-        elif sad_files:
-            sad = {"dryRun": True, "wouldPromote": list(sad_files)}
     return {
         "ok": True,
         "epic": epic.id,
@@ -352,7 +336,6 @@ def finish(
         },
         "lifecycle": lifecycle,
         "missing": list(missing or []),
-        "sad": sad,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
@@ -365,7 +348,6 @@ def finish(
             "done": lifecycle is not None,
             "persisted": persisted,
             "missing": list(missing or []),
-            "sadPromoted": (sad or {}).get("summary", {}).get("promoted", 0),
         },
     }
 

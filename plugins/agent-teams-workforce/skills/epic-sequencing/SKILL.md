@@ -2,9 +2,10 @@
 name: epic-sequencing
 description: >-
   The edge test for Epic-to-Epic dependency edges, and how to apply it to ONE Epic: read its
-  full PRD, name the architecture decisions it drives and rests on, check the SAD, search
-  the other Epics' PRDs for the related ones, read those in full, and apply the test in
-  both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
+  full PRD, answer the foundation-layer checklist (drives, rests on or not touched for each
+  of nine layers) and name the other architecture decisions it drives and rests on, check
+  the SAD, find the related Epics by the checklist, read their PRDs in full, and apply the
+  test in both directions. An Epic is a PRD, a business requirement, and an edge is an ARCHITECTURE
   dependency, a judgment about the order in which architecture is established: it exists
   exactly where an architecture decision one Epic rests on should be designed from another
   Epic's requirements first, and the SAD does not already settle it. Edges decide
@@ -29,9 +30,8 @@ architecture decision be designed from first?**
 
 The judgment is made before the architecture exists. It takes intuition about what the
 architecture could be — which decisions a requirement will force, and whose requirements
-are the fuller statement of what each decision must serve. One requirement touching a
-decision does not make it that decision's driver: a PRD that stores a single value does not
-dictate the database schema.
+are the fuller statement of what each decision must serve. An Epic rests on a decision as
+soon as its design will be built on it, however little of the decision it uses.
 
 Build facts are Task dependencies, and they never make an Epic edge. That something must
 exist, be built, be deployed or be testable first; that one requirement presumes a user or a
@@ -50,18 +50,15 @@ NOTHING, however normatively it is worded and whatever date it carries.
 
 Read the state; never infer it. A dated ruling, a MUST, a table of values and a confident
 tone are all properties of the wording, and the wording is what an unvetted entry has most
-of. The only entries marked `effective` are those a completed `prd-to-spec` elaboration
-vetted and approved — that transition is the sole writer of the value, and it runs when an
-Epic's Tasks land.
+of. The only entries marked `effective` are those the architecture step of a `prd-to-spec`
+elaboration created, changed, or reviewed and approved as they stand — that step is the
+sole writer of the value.
 
 So when an entry that bears on a decision is not `effective`, the SAD does not settle that
 decision, and the edge test proceeds as though the entry were absent. Record the state you
 read in the entry's `sadCheck`, so a later reader can tell an entry that settled the
-question from one that only sounded like it did.
-
-This is why the check exists at all. Every entry in the SAD today is `in-review`: no Epic
-has yet completed elaboration, so nothing in it has provenance. An assessment that drops an
-edge by citing an `in-review` entry has ordered the portfolio on an unchecked claim.
+question from one that only sounded like it did. An assessment that drops an edge by citing
+an entry that is not `effective` has ordered the portfolio on an unchecked claim.
 
 ## What an edge decides
 
@@ -97,6 +94,34 @@ were designed on it.
 Never draw an edge that fails the test. Judge each candidate on the test alone and let the
 count come out wherever it comes out.
 
+**When unsure, draw the edge at `low` confidence.** A missing edge costs more than an extra
+one: a missing edge lets an Epic's architecture be designed from the wrong requirements,
+while an extra one only delays an Epic until its blocker is elaborated.
+
+### Foundation Epics
+
+A foundation Epic is one whose requirements drive a foundation layer — networking, the
+chassis, identity, the event platform, or any other layer on the checklist below. It is
+upstream of every Epic that rests on that layer, unless an `effective` SAD entry already
+settles the layer. Those Epics are found by the checklist, not by text search: an Epic that
+answers "rests on" for a layer has an edge from each Epic that answers "drives" for it.
+
+### The foundation checklist
+
+Every Epic is answered against each of these layers, and every layer gets one answer:
+**drives** (its requirements are the fuller statement of what the layer must serve),
+**rests on** (its design will be built on the layer), or **not touched**.
+
+1. Network and egress
+2. Identity and authorization
+3. Data stores and data residency
+4. Event platform
+5. API shape
+6. Chassis and runtime
+7. Configuration and secrets
+8. Observability
+9. Environments
+
 A requirements document's own dependency table names Epics that are related; it does not
 say which way. Direction comes from the test.
 
@@ -108,14 +133,20 @@ it decides every edge to or from that Epic, including each one an earlier assess
 another Epic set.
 
 1. Read the Epic's full PRD.
-2. Name the architecture decisions its requirements should drive, and the architecture
-   decisions it rests on.
-3. Check each against the SAD, and drop every decision the SAD already settles. An entry
-   settles a decision only when its frontmatter reads `lifecycle_state: effective` — read
-   that field on every entry you rely on, and treat an entry in any other state as absent.
-4. For each remaining decision, search the other Epics' PRDs — Grep the PRD directory, and
-   use the index for titles and section headings — for the PRDs whose requirements drive or
-   rest on it. Read no PRD the search did not find related.
+2. Answer the foundation checklist: for each of the nine layers, "drives", "rests on" or
+   "not touched", with the requirement that decides the answer. No layer is skipped, and
+   every answer goes in the written reasoning. Then name every other architecture decision
+   the Epic's requirements should drive or that it rests on.
+3. Check each layer and decision against the SAD, and drop every one the SAD already
+   settles. An entry settles a decision only when its frontmatter reads
+   `lifecycle_state: effective` — read that field on every entry you rely on, and treat an
+   entry in any other state as absent.
+4. Find the related Epics by the checklist. For each layer the Epic rests on, the related
+   Epics are those whose requirements drive that layer; for each layer it drives, every
+   Epic that rests on it. Answer the checklist for those Epics from the index and their
+   PRDs. For each other remaining decision, search the other Epics' PRDs — Grep the PRD
+   directory, and use the index for titles and section headings — for the PRDs whose
+   requirements drive or rest on it.
 5. Read in full every related PRD, and the PRD at the other end of every edge standing on
    the Epic.
 6. Apply the test in both directions: an edge from another Epic to this one where an
@@ -161,8 +192,9 @@ each with a reason that answers the reason recorded for it. An edge drawn by han
 in either list and is never withdrawn. Both ends of every edge are Epics; validation refuses
 any other edge.
 
-Alongside the file, write the reasoning in prose: the decisions named, the SAD check on
-each, the PRDs found related, and the test applied to each edge and each withdrawal. The
+Alongside the file, write the reasoning in prose: the foundation checklist with an answer
+for every layer, the other decisions named, the SAD check on each, the PRDs found related,
+and the test applied to each edge and each withdrawal. The
 edges are the residue of that reasoning, and the reasoning is what the next assessment
 revises.
 
@@ -175,6 +207,9 @@ revises.
 - No cycle. A cycle is a wrong edge, not a tie to break — find whose requirements should
   actually drive the decision.
 - No edge onto a closed Epic, and none out of one.
+- The foundation checklist is complete: every layer has an answer, and every layer the Epic
+  rests on has an edge from the Epic that drives it, or cites an `effective` SAD entry that
+  settles it.
 - Every edge survives the test stated out loud. If the reason does not name an architecture
   decision that should be designed from the upstream Epic's requirements and that the SAD
   does not already settle, delete the edge. A reason about something existing, being built,
@@ -195,6 +230,6 @@ revises.
   unvetted entry is not evidence that the decision was made, and this is the error that
   most easily ships as a confident reason nobody re-reads.
 - Withdrawing a standing edge without a reason that answers the reason recorded for it.
-- Reading PRDs that the search did not find related.
+- Leaving out an edge because you are unsure of it. Draw it at `low` confidence.
 - Scoring anything. Value and size belong to the `wsjf` rubric, and RR-OE is computed from
   the edges.
