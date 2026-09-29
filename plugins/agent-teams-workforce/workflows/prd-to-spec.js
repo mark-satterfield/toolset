@@ -174,6 +174,40 @@ const LIFECYCLE_RUN_SCHEMA = {
     output: { type: 'object' },
   },
 }
+const RESOLVE_PLUGIN_ROOT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
+}
+const RESOLVE_PLUGIN_ROOT_PY = `import json, os, sys
+from pathlib import Path
+repo = os.path.normpath(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1] else ""
+control = os.environ.get("ATW_CONTROL_REPO", "").strip()
+projects = {p for p in (repo, os.path.normpath(control) if control else "") if p}
+config = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or str(Path.home() / ".claude")
+reg = Path(config) / "plugins" / "installed_plugins.json"
+try:
+    plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
+except (OSError, ValueError) as exc:
+    print(json.dumps({"pluginRoot": None, "problem": f"{reg} is unreadable: {exc}"}))
+    sys.exit(0)
+ranked = []
+for key, entries in plugins.items():
+    if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
+        continue
+    for e in entries:
+        path = e.get("installPath") if isinstance(e, dict) else None
+        if not isinstance(path, str) or not Path(path, "scripts", "portfolio", "depscore.py").is_file():
+            continue
+        if e.get("scope") in ("local", "project") and e.get("projectPath") in projects:
+            ranked.append((0, path))
+        elif e.get("scope") == "user":
+            ranked.append((1, path))
+if ranked:
+    print(json.dumps({"pluginRoot": os.path.normpath(sorted(ranked)[0][1]), "problem": None}))
+else:
+    print(json.dumps({"pluginRoot": None, "problem": f"{reg} lists no agent-teams-workforce install shipping scripts/portfolio/depscore.py at user scope or for {sorted(projects)}"}))`
 /** Runs one depscore.py command in a runner session, in the foreground; returns its JSON output or { error }. */
 async function runScript(label, phaseName, commandArgs) {
   const command = `python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${commandArgs}`
@@ -234,16 +268,46 @@ if (!hasText(emitTarget)) {
   return handback(false, 'epic-lifecycle', 'refused: no-tracker — no repository path was supplied, and beads cannot be written without one')
 }
 const startArgs = `elaboration-start --epic ${shellq(epicBeadId)}${hasText(a.owner) ? ` --owner ${shellq(a.owner)}` : ''}${a.reclaim === true ? ' --reclaim' : ''}`
+// pluginRoot comes from the Workflow args, else from the agent-teams-workforce install that
+// $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json records (the install for the beads repository or
+// $ATW_CONTROL_REPO first, else the user-scope one); with neither, the run refuses before any other agent.
+let pluginRootProblem = ''
+if (hasText(a.pluginRoot) && a.pluginRoot.trim().startsWith('/')) {
+  lifecycle.pluginRoot = a.pluginRoot.trim().replace(/\/+$/, '')
+} else {
+  const found = await settleAgent(
+    `Run this shell command exactly once and change nothing else:
+
+python3 -c ${shellq(RESOLVE_PLUGIN_ROOT_PY)} ${shellq(emitTarget)}
+
+It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not set any variable, do not run any other command.`,
+    { label: 'resolve-plugin-root', phase: 'Epic Lifecycle', model: 'haiku', effort: 'low', schema: RESOLVE_PLUGIN_ROOT_SCHEMA }
+  )
+  if (!found) {
+    return {
+      ...handback(false, 'epic-lifecycle', `the plugin-root resolver for ${epicBeadId} returned no result`),
+      stage: DISPATCH_FAILED_STAGE,
+      dispatchFailed: true,
+      dispatchFailures: dispatchDeaths('Epic Lifecycle'),
+    }
+  }
+  const o = found.output || {}
+  if (hasText(o.pluginRoot) && o.pluginRoot.trim().startsWith('/')) {
+    lifecycle.pluginRoot = o.pluginRoot.trim().replace(/\/+$/, '')
+    log(`pluginRoot was not passed; the plugin registry gives ${lifecycle.pluginRoot}`)
+  } else {
+    pluginRootProblem = String(o.problem || o.error || 'the resolver printed no pluginRoot').slice(0, 500)
+  }
+}
+if (!lifecycle.pluginRoot) {
+  return handback(false, 'epic-lifecycle', `refused: no-plugin-root — pluginRoot has no value (${pluginRootProblem}): pass pluginRoot in the Workflow args or install agent-teams-workforce so $CLAUDE_CONFIG_DIR/plugins/installed_plugins.json (default ~/.claude) records it`)
+}
 const started = await settleAgent(
-  `Two steps, in order, and change nothing else.
+  `Run exactly this one shell command, once, and change nothing else:
 
-1. Find this plugin's root. Load the skill \`agent-teams-workforce:beads-contract\` with the Skill tool: the command it shows names its CLI by absolute path, \`<root>/skills/beads-contract/scripts/beads-contract.py\`. The root is that path with \`/skills/beads-contract/scripts/beads-contract.py\` removed. Return it as \`pluginRoot\`.
+python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)} ${startArgs}
 
-2. Run exactly this one shell command, once, with <root> replaced by that root:
-
-python3 '<root>/scripts/portfolio/depscore.py' -C ${shellq(emitTarget)} ${startArgs}
-
-It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout. Return the process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`; leave \`pluginRoot\` null. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
   { label: 'epic:start', phase: 'Epic Lifecycle', model: 'haiku', effort: 'low', schema: LIFECYCLE_RUN_SCHEMA }
 )
 if (!started) {
@@ -255,10 +319,6 @@ if (!started) {
   }
 }
 lifecycle.start = started.output || null
-lifecycle.pluginRoot = hasText(started.pluginRoot) ? started.pluginRoot.trim().replace(/\/+$/, '') : null
-if (!lifecycle.pluginRoot) {
-  return handback(false, 'epic-lifecycle', `this plugin's root could not be resolved: ${(started.output && started.output.error) || 'no root was returned'}`)
-}
 const startOut = started.output || {}
 if (started.exitCode !== 0 || startOut.error) {
   return handback(false, 'epic-lifecycle', `the Epic lifecycle check for ${epicBeadId} failed: ${startOut.error || `depscore.py exited ${started.exitCode}`}`)
