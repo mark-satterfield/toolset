@@ -139,7 +139,8 @@ const artifactText =
   typeof a.artifact === 'string' ? capForPrompt(a.artifact, 0) : JSON.stringify(capForPrompt(a.artifact ?? {}, 0), null, 2)
 
 // args (mode 'exhaustion'): { mode, gate, phaseName, criteria, checks, artifact,
-//   attempts: [{attempt, feedback, unmetCriteria}], unmetCriteria: [{criterion, evidence}], final?, gateWorkflow? }
+//   attempts: [{attempt, feedback, unmetCriteria}], unmetCriteria: [{criterion, evidence}], final?, gateWorkflow?,
+//   noProceed? (a deterministic check failed: proceed is never offered) }
 if (a.mode === 'exhaustion') {
   phase('Gate')
   const history = (Array.isArray(a.attempts) ? a.attempts : [])
@@ -157,7 +158,12 @@ if (a.mode === 'exhaustion') {
     .map((c, i) => `${i + 1}. ${typeof c === 'string' ? c : (c && c.text) || ''}${c && c.class ? ` [${c.class}]` : ''}`)
     .join('\n')
   const final = a.final === true
-  const rulings = final ? ['proceed'] : ['proceed', 'revise']
+  const noProceed = a.noProceed === true
+  const rulings = noProceed ? (final ? [] : ['revise']) : final ? ['proceed'] : ['proceed', 'revise']
+  if (!rulings.length) {
+    log(`${where}: a deterministic check still fails after the directed revision; it is never ruled through`)
+    return { verdict: 'ruled', ruling: 'none', directive: null, rationale: 'a deterministic check still fails', residuals: [], decidedBy: null, flags: [] }
+  }
   const ruling = await settleAgent(
     `You are the advantage-evaluator, ruling on an EXHAUSTED GATE. You did not produce this work and you did not judge it at the gate. Your ruling decides how the run continues.
 
@@ -215,7 +221,7 @@ Do not modify any artifact and do not dispatch any work.`,
     return { ...failDispatch(why, 'Gate'), exhaustionRuling: null }
   }
   const directive = String(ruling.directive || '').trim()
-  const decided = ruling.ruling === 'revise' && directive ? 'revise' : 'proceed'
+  const decided = ruling.ruling === 'revise' && directive ? 'revise' : noProceed ? 'none' : 'proceed'
   log(`${where}: exhausted gate ruled ${decided.toUpperCase()} by the advantage-evaluator — ${String(ruling.rationale).slice(0, 400)}`)
   return {
     verdict: 'ruled',

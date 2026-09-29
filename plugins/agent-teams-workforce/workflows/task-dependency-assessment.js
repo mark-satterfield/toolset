@@ -143,7 +143,10 @@ const ASSESS_SCHEMA = {
 }
 const THE_TEST = `THE TEST. An edge from A to B says B cannot be built until A is built, because B consumes something A provides — an API, an event contract, a table, an IAM grant, a deployed resource. Sharing a domain, a vocabulary, a repository or an Epic is not an edge. Both ends are Tasks: no end is a Story or an Epic. When in doubt an edge is left out, because a false edge serializes work that could run in parallel.`
 const applyCmd = `set -o pipefail; ${cmd('apply-edges', `--edges ${shq(edgesFile)} --plan ${shq(planFile)} ${scope}${applies ? '' : ' --dry-run'}`)} | tee ${shq(applyFile)}`
-const assessPrompt = `Assess the build dependencies of ONE Task, ${target}, which was created outside elaboration. ${target} is new or has changed.
+const priorBlock = typeof a.priorFailure === 'string' && a.priorFailure.trim()
+  ? `THE PREVIOUS ASSESSMENT OF THIS ITEM FAILED, on this same content: ${a.priorFailure.trim().slice(0, 2000)}\nWork out why before you start, and do not repeat it.\n\n`
+  : ''
+const assessPrompt = `${priorBlock}Assess the build dependencies of ONE Task, ${target}, which was created outside elaboration. ${target} is new or has changed.
 
 ${THE_TEST}
 

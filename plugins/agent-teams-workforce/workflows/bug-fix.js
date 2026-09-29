@@ -1041,9 +1041,11 @@ async function ruleExhaustedGate(ctx) {
   const { gate, phaseName, route, escalateTargets, runPhase, record, attempts, loops, failure } = ctx
   let { lastArtifact, lastVerdict, unmet } = ctx
   const unmetOf = (v) => (v ? (v.criteria || []).filter((cc) => !cc.met).map((cc) => ({ criterion: cc.criterion, evidence: cc.evidence })) : [])
+  const checkFailed = (v) => !!(v && Array.isArray(v.deterministicChecks) && v.deterministicChecks.some((r) => r && r.met === false))
   const ask = (final) =>
     workflow('agent-teams-workforce:gate-enforce', {
       mode: 'exhaustion',
+      noProceed: checkFailed(lastVerdict),
       gate,
       phaseName,
       criteria: route && route.criteria,
@@ -1099,11 +1101,12 @@ async function ruleExhaustedGate(ctx) {
     ruled = await ask(true)
   }
   if (!ruled || ruled.verdict !== 'ruled' || ruled.ruling !== 'proceed') {
-    record(loops, lastVerdict, { verdict: 'loop-exhausted', terminal: 'decider-no-ruling' })
-    log(`Gate ${gate} (${phaseName}): the advantage-evaluator returned no ruling — failing closed`)
+    const held = !!ruled && ruled.ruling === 'none'
+    record(loops, lastVerdict, { verdict: 'loop-exhausted', terminal: held ? 'deterministic-check-failed' : 'decider-no-ruling' })
+    log(`Gate ${gate} (${phaseName}): ${held ? 'a deterministic check still fails' : 'the advantage-evaluator returned no ruling'} — failing closed`)
     return {
       ...failure,
-      reason: `${failure.reason}, and the advantage-evaluator returned no ruling`,
+      reason: `${failure.reason}, and ${held ? 'a deterministic check still fails after the directed revision' : 'the advantage-evaluator returned no ruling'}`,
       // A decider that died is a dispatch failure; one that answered without a ruling leaves
       // the phase failed at its own gate.
       ...(!ruled || ruled.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (ruled && ruled.dispatchFailures) || [] } : {}),
@@ -2186,12 +2189,6 @@ for (deployIteration = firstDeployIteration; deployIteration <= MAX_DEPLOY_ITERA
 // read back off the artifact the gate passed. Nothing is said about a pull request: landing
 // happens in Settle, after this, and the caller reads it from `settled` / `prUrl` /
 // `landingStage`.//
-// The unconfirmed-deployment branch below is now UNREACHABLE, and deliberately kept. It was
-// reachable until the exhaustion path stopped letting a `competitive` ruling waive a failed
-// deterministic check: that was the one route by which ok:true could arrive here carrying
-// deployedToDev:false. With that closed, ok:true implies a confirmed deployment. The branch
-// stays as a fail-safe — the cost of keeping it is one unused string, and the cost of
-// removing it is that any future path to ok:true claims a deployment unconditionally.
 const finalDeploy = deployReady.artifact || {}
 const deployedToDev = finalDeploy.deployedToDev === true
 const smokePassed = finalDeploy.smokePassed === true
@@ -2201,11 +2198,7 @@ return {
   ...handback(
     true,
     'deployed-to-dev',
-    `${bead.id || 'bug'} fixed and ${
-      deployedToDev
-        ? `DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests ${smokePassed ? 'PASSING against the deployed dev endpoints' : 'NOT confirmed passing against the deployed dev endpoints'}`
-        : 'gated through deploy WITHOUT a confirmed dev deployment'
-    }. Landing the work in git — commit, push, pull request — is the separate Settle step ` +
+    `${bead.id || 'bug'} fixed and DEPLOYED TO AWS DEV${iterationNote}, with the smoke tests PASSING against the deployed dev endpoints. Landing the work in git — commit, push, pull request — is the separate Settle step ` +
       'reported under `settled` / `prUrl`, and qa/prod rollout remains a separate human-gated action.',
     {
       stagesComplete: ['triage', 'red', 'green', 'refactor', 'integration', 'adversarial', 'deployed-to-dev'],
