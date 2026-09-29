@@ -1,7 +1,7 @@
 // Stand-ins for the depscore.py runner sessions prd-to-spec and its minis dispatch.
 //
 // Each bead is written by the session that authors it: the Story author runs one
-// `depscore.py write-story` and returns its stdout as `write`; the decomposer runs
+// `depscore.py write-story --out` and returns its short stdout as `write`; the decomposer runs
 // `plan-tasks` and one `write-task` per Task, and the cross-Story mapper runs one
 // `write-all-task-edges`, each returning the commands' stdout as `writes`. On a replay a
 // runner session runs the same commands (`beads:write-story`, `beads:write-tasks`,
@@ -60,13 +60,7 @@ function edgeWrites(edges) {
 
 /** The `write-story` output for a Story, as the Story author records it. */
 function storyWrite(slug) {
-  return ran({
-    ok: true,
-    epic: TEST_EPIC.id,
-    story: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', title: `Story ${slug}`, description: 'd', decisionIds: [] },
-    existingTasks: [],
-    summary: { created: 1, updated: 0 },
-  })
+  return ran({ command: 'write-story', out: `story-${slug}.written.json`, warnings: [], summary: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', created: 1, updated: 0 } })
 }
 
 /** The `--slug` value of a write command prompt. */
@@ -102,13 +96,7 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
       const slug = slugOf(call)
       return {
         exitCode: 0,
-        output: {
-          ok: true,
-          epic: TEST_EPIC.id,
-          story: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', title: `Story ${slug}`, description: 'd', decisionIds: [] },
-          existingTasks: [],
-          summary: { created: 1, updated: 0 },
-        },
+        output: { command: 'write-story', out: `story-${slug}.written.json`, warnings: [], summary: { id: `bd-${slug}`, elabKey: `story:${slug}`, action: 'created', created: 1, updated: 0 } },
       }
     }
     if (call.label === 'beads:write-tasks') return { writes: taskWrites(slugOf(call), taskKeys) }
@@ -121,7 +109,8 @@ export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys
           ok: true,
           epic: TEST_EPIC.id,
           lifecycle: done ? { elaboration_state: 'done', elaboration_state_cause: 'decomposed-into-tasks' } : null,
-          summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done },
+          missing: [],
+          summary: { ok: true, epic: TEST_EPIC.id, tasksScored: 0, unscored: 0, done, persisted: true, missing: [] },
         },
       }
     }

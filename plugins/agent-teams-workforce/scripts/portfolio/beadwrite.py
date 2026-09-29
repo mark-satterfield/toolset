@@ -431,6 +431,9 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
+            "id": story_id,
+            "elabKey": story.metadata["elab_key"],
+            "action": action,
             "created": int(action == "created"),
             "updated": int(action == "updated"),
         },
@@ -491,7 +494,7 @@ def _judged_hash(title: str, text: str, priority: object) -> str:
 
 def write_task(  # noqa: PLR0913 - the caller's facts, one each
     writer: Writer,
-    story_id: str,
+    epic_id: str,
     directory: Path,
     *,
     slug: str,
@@ -501,14 +504,15 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
 ) -> dict:
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
+    The Task sits under the Epic's Story whose `elab_key` is `story:<slug>`, found in beads.
     The Task is created, or updated when it is open, keyed by its `elab_key`. Its blockers
     are the Tasks of the Story it depends on, which are written before it. One `bd list`
-    reads the Story's Tasks; one `bd create`, or one `bd update` plus one `bd dep add`
-    and a `bd dep remove` per blocker it no longer depends on, writes it.
+    finds the Story and one reads its Tasks; one `bd create`, or one `bd update` plus one
+    `bd dep add` and a `bd dep remove` per blocker it no longer depends on, writes it.
 
     Args:
         writer: The tracker writer; a dry-run writer records the writes instead.
-        story_id: The Story the Task sits under.
+        epic_id: The Epic whose Story the Task sits under.
         directory: The Epic's working directory.
         slug: The Story's repository slug.
         repo: The Story's repository.
@@ -520,7 +524,8 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         outside the Story.
 
     Raises:
-        HierarchyError: The key names no Task, or a Task it depends on is not written.
+        HierarchyError: The key names no Task, the Epic has no Story for the slug, or a
+            Task it depends on is not written.
     """
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
     by_key = {t.key: t for t in tasks}
@@ -528,6 +533,17 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     if task is None:
         msg = f"tasks-{slug}.json has no Task {key}"
         raise HierarchyError(msg)
+    stories = _keyed(
+        sorted(
+            (bead_of(r) for r in children(writer.repo, epic_id, "story")),
+            key=lambda b: b.id,
+        )
+    )
+    story = stories.get(f"story:{slug}")
+    if story is None:
+        msg = f"{epic_id} has no Story story:{slug}: its Story is written before its Tasks"
+        raise HierarchyError(msg)
+    story_id = story.id
     records = children(writer.repo, story_id, "task")
     priority = {str(r["id"]): r.get("priority") for r in records}
     keyed = _keyed(sorted((bead_of(r) for r in records), key=lambda b: b.id))
@@ -801,6 +817,122 @@ def write_task_edges(  # noqa: PLR0913 - the caller's facts, one each
     }
 
 
+def _task_beads(
+    graph: Graph, epic_id: str, directory: Path, repos: list[str]
+) -> dict[str, Bead]:
+    """Return the bead of every saved Task of the span that beads holds, by its name.
+
+    Args:
+        graph: The tracker graph.
+        epic_id: The Epic.
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+
+    Returns:
+        `S<i>-<local key>` -> the Task's bead.
+    """
+    slug_of, _intra, elab = _span_tasks(directory, repos)
+    out: dict[str, Bead] = {}
+    for name, slug in slug_of.items():
+        story = _story_of(graph, epic_id, slug)
+        bead = (
+            _keyed(_children(graph, story.id, "task")).get(elab[name])
+            if story
+            else None
+        )
+        if bead is not None:
+            out[name] = bead
+    return out
+
+
+def _carrying(
+    graph: Graph, epic_id: str, directory: Path, repos: list[str]
+) -> list[str]:
+    """Return the saved Tasks whose open bead carries a blocker in another of the Epic's Stories.
+
+    Args:
+        graph: The tracker graph.
+        epic_id: The Epic.
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+
+    Returns:
+        The Tasks, as `S<i>-<local key>`.
+    """
+    story_of = {
+        bead.id: story.id
+        for story in _children(graph, epic_id, "story")
+        for bead in _children(graph, story.id, "task")
+    }
+    return [
+        name
+        for name, bead in _task_beads(graph, epic_id, directory, repos).items()
+        if bead.status == OPEN
+        and any(story_of.get(b) not in {None, bead.parent} for b in bead.blockers)
+    ]
+
+
+def unpersisted(
+    graph: Graph, epic_id: str, directory: Path, repos: list[str]
+) -> list[str]:
+    """Return what the span's saved documents name that beads does not hold.
+
+    Every repository of the span has its saved `story-<slug>.json` and `tasks-<slug>.json`,
+    its Story under the Epic, and a Task bead under that Story for every saved Task; every
+    open Task carries its saved blockers in its own Story, and, when `task-deps.json` is
+    saved, its blockers in other Stories. Reads the documents and the graph only.
+
+    Args:
+        graph: The tracker graph.
+        epic_id: The Epic.
+        directory: The Epic's working directory.
+        repos: The span, in its ruled order.
+
+    Returns:
+        One line per missing document, Story, Task or edge; empty when all are held.
+    """
+    missing: list[str] = []
+    for repo, slug in repo_slugs(repos).items():
+        for name in (f"story-{slug}.json", f"tasks-{slug}.json"):
+            if not (directory / name).is_file():
+                missing.append(f"{name} is not saved")
+        story = _story_of(graph, epic_id, slug)
+        if story is None:
+            missing.append(f"Story story:{slug} is not under {epic_id}")
+            continue
+        if not (directory / f"tasks-{slug}.json").is_file():
+            continue
+        try:
+            tasks = plan_tasks(directory, None, slug, repo)
+        except HierarchyError as exc:
+            missing.append(str(exc))
+            continue
+        keyed = _keyed(_children(graph, story.id, "task"))
+        for t in tasks:
+            bead = keyed.get(t.elab_key or "")
+            if bead is None:
+                missing.append(f"Task {t.elab_key} is not under {story.id}")
+                continue
+            if bead.status != OPEN:
+                continue
+            for dep in t.depends_on:
+                blocker = next((x for x in tasks if x.key == dep), None)
+                held = keyed.get(blocker.elab_key or "") if blocker else None
+                if held is None or held.id not in bead.blockers:
+                    missing.append(f"edge {dep} -> {t.key} in story:{slug}")
+    if not missing and (directory / "task-deps.json").is_file():
+        try:
+            blockers = plan_task_edges(directory, repos)["blockers"]
+        except HierarchyError as exc:
+            return [str(exc)]
+        beads = _task_beads(graph, epic_id, directory, repos)
+        for to, froms in blockers.items():
+            for frm in froms:
+                if beads[frm].id not in beads[to].blockers:
+                    missing.append(f"edge {frm} -> {to} between Stories")
+    return missing
+
+
 def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
     graph: Graph,
     writer: Writer,
@@ -810,6 +942,10 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
     also: list[str],
 ) -> dict:
     """Write the saved edges to other Stories of every Task that has them, one Task at a time.
+
+    A Task the saved edges name no blocker for is written too when its bead carries a
+    blocker in another of the Epic's Stories, so an edge the saved edges no longer name
+    is removed.
 
     Args:
         graph: The tracker graph.
@@ -829,7 +965,11 @@ def write_all_task_edges(  # noqa: PLR0913 - the caller's facts, one each
             written.
     """
     plan = plan_task_edges(directory, repos)
-    names = list(dict.fromkeys([*plan["blockers"], *also]))
+    names = list(
+        dict.fromkeys(
+            [*plan["blockers"], *also, *_carrying(graph, epic_id, directory, repos)]
+        )
+    )
     tasks = [
         write_task_edges(graph, writer, epic_id, directory, repos, name)["summary"]
         for name in names

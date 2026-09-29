@@ -142,14 +142,15 @@ What comes back:
   is false the Epic's elaboration stays `in_progress` and the next run completes it.
 - `beadsEmitted` — how many Stories and Tasks this run created or updated.
 
-A write that failed returns `ok: false` at stage `hierarchy-not-persisted`, and the
-`headline` names each failed write and its error. Fix the cause (usually the repository
-path or the tracker itself) and re-dispatch: the rerun replays every saved step, and each
-write updates what landed and creates what did not.
+`depscore.py elaboration-finish` reads beads: when beads does not hold every Story, Task
+and edge the span's saved documents name, it leaves the Epic `in_progress` and the run
+returns `ok: false` at stage `hierarchy-not-persisted`, its `headline` naming what is
+missing. Re-dispatch: the rerun replays every saved step, and each write updates what
+landed and creates what did not.
 
-Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them. They
-are measured by the steps that did the writing; never compose them from your own account
-of what you think landed.
+Report `beadsEmitted` and `lifecycle.done` exactly as the composite returned them; never
+compose them from your own account of what you think landed. `beadsEmitted` counts the
+writes whose results were relayed; beads itself is what `lifecycle.done` was decided on.
 
 ## 4. Report
 
@@ -161,7 +162,7 @@ of what you think landed.
 - Stories: how many, and which repo each covers
 - Tasks: how many, and how many dependency edges cross Stories
 - Beads: `beadsEmitted`, and — when the run stopped at `hierarchy-not-persisted` —
-  each failed write the `headline` names
+  each missing Story, Task or edge the `headline` names
 - A run that stopped — the composite's `headline` carries the phase and the reason; every
   phase artifact is in the run journal at `detailPath`, and the composite returns none of
   them. A stopped run names what it DID produce under `partialProduced` — read the journal

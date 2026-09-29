@@ -13,7 +13,8 @@
     record               write judged values with their fingerprints
     score                recompute every WSJF and write what changed
     elaboration-start    mark one Epic `in_progress` when it may be elaborated
-    elaboration-finish   score an Epic and its Tasks; `--done` sets it done
+    elaboration-finish   score an Epic and its Tasks; `--done` sets it done when beads holds
+                         every Story, Task and edge the span's saved documents name
     elaboration-release  clear a run's owner token from an Epic
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
@@ -56,6 +57,7 @@ from edgeset import (
 from beadwrite import (
     plan_story_tasks,
     plan_task_edges,
+    unpersisted,
     write_story,
     write_task,
     write_all_task_edges,
@@ -504,6 +506,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="the SAD directory every `--sad-files` path must sit under",
     )
+    efi.add_argument(
+        "--dir",
+        type=Path,
+        default=None,
+        help="the Epic's working directory; with `--repos`, `--done` holds unless beads "
+        "holds every Story, Task and edge its saved documents name",
+    )
+    efi.add_argument(
+        "--repos", default="", help="the span, comma-separated, in its ruled order"
+    )
     _dry_run_flag(efi)
 
     wst = sub.add_parser(
@@ -535,7 +547,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="write ONE Task of a Story from its saved tasks-<slug>.json",
         parents=[common],
     )
-    wta.add_argument("--story", required=True, help="the Story the Task sits under")
+    wta.add_argument(
+        "--epic",
+        required=True,
+        help="the Epic whose `story:<slug>` Story it sits under",
+    )
     wta.add_argument(
         "--key", required=True, help="the Task's key, as plan-tasks lists it"
     )
@@ -636,7 +652,7 @@ def run(args: argparse.Namespace) -> dict:
     if command == "write-task":
         return head | write_task(
             writer,
-            args.story,
+            args.epic,
             args.dir,
             slug=args.slug,
             repo=args.repo,
@@ -783,6 +799,11 @@ def run(args: argparse.Namespace) -> dict:
             graph, writer, args.epic, owner=args.owner, reclaim=args.reclaim
         )
     if command == "elaboration-finish":
+        missing = (
+            unpersisted(graph, args.epic, args.dir, split_ids(args.repos))
+            if args.dir is not None and args.repos
+            else None
+        )
         finished = finish(
             graph,
             writer,
@@ -791,6 +812,7 @@ def run(args: argparse.Namespace) -> dict:
             done=args.done,
             sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
             sad_root=args.sad_root,
+            missing=missing,
         )
         if not writer.dry_run:
             finished["storyEdges"] = _story_edges_after(args.directory)

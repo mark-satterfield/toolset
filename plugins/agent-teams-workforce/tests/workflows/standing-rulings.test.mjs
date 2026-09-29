@@ -106,7 +106,11 @@ test('architecture: triage, analysts, advisors, and the decider get the rulings 
 
 test('task-decomposition: the maker gets the rulings', async () => {
   const { calls } = await runWorkflowScript(path.join(WF, 'task-decomposition.js'), {
-    args: { spec: { id: 'S1', title: 't', repoPath: '/r' }, story: { key: 'S1' }, standingRulings: RULINGS, epic: { id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3 }, pluginRoot: '/opt/plugins/agent-teams-workforce' },
+    args: {
+      spec: { id: 'S1', title: 't', repoPath: '/r' }, story: { key: 'S1' }, standingRulings: RULINGS, epic: { id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3 }, pluginRoot: '/opt/plugins/agent-teams-workforce',
+      artifacts: { dir: '/art/bd-E1', script: '/ops/artifactio.py', epicId: 'bd-E1', phase: 'tasks:r', slug: 'r' },
+      beads: { script: '/opt/plugins/agent-teams-workforce/scripts/portfolio/depscore.py', repo: '/r', epicId: 'bd-E1' },
+    },
     agentImpl: (call) => {
       if (call.label === 'decompose:sequence-and-score') {
         return { tasks: [{ key: 'T1', title: 'a', description: 'b', type: 'task', acceptanceCriteria: ['c'] }], rationale: 'r', edges: [], buildOrder: ['T1'], acyclic: true, scores: [{ key: 'T1', userBusinessValue: 1, timeCriticality: 1, riskReductionOpportunityEnablement: 1, jobSize: 1, wsjf: 3, rationale: 'r' }] }

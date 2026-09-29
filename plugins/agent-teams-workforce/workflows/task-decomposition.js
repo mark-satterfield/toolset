@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
   ],
@@ -30,14 +30,14 @@ async function settleAgent(prompt, opts) {
 }
 
 // args: {
-//   spec: { id?, title?, description?, source?, repoPath? }, story: { id, key?, title? },
+//   spec: { id?, title?, description?, source?, repoPath? }, story: { id?, key?, title? },
 //   specDocs?: [{ path, ref }], repoPath?, pluginRoot, standingRulings?,
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
-//   existingTasks?: [{ elabKey, title, description }],
 //   replay?: true
 // }
-// returns { ok, resumed?, spec, repoPath, story: { id, elabKey }, tasks, edges, summary },
+// returns { ok, resumed?, spec, repoPath, story: { id, elabKey }, tasks, edges, summary }; tasks, edges and
+//           summary carry what the writing session relayed, and are empty or null where it relayed nothing,
 //           or { ok: false, stage, reason, dispatchFailed? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -86,17 +86,9 @@ const docsBlock = specDocs.length
       .join('\n')}`
   : '\n\nSPEC DOCUMENTS: none were supplied, so the text above is all there is.'
 
-const existingTasks = (Array.isArray(a.existingTasks) ? a.existingTasks : [])
-  .filter((t) => t && typeof t.elabKey === 'string' && t.elabKey.trim())
-  .map((t) => ({
-    elabKey: t.elabKey.trim(),
-    title: typeof t.title === 'string' ? t.title : '',
-    description: typeof t.description === 'string' ? t.description : '',
-  }))
-const existingBlock = existingTasks.length
-  ? `\n\nEXISTING TASKS under this Story. When a task you write covers the same work as one of these, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.\n${existingTasks
-      .map((t) => `- ${t.elabKey}: ${t.title}${t.description ? ` — ${t.description.slice(0, 300)}` : ''}`)
-      .join('\n')}`
+const writtenPath = ART ? `${ART.dir}/story-${artSlug}.written.json` : null
+const existingBlock = writtenPath
+  ? `\n\nEXISTING TASKS under this Story: read the file ${writtenPath} — the result of writing this Story — and take its "existingTasks" list (none when the file or the list is absent or empty). When a task you write covers the same work as one of them, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.`
   : '\n\nEXISTING TASKS: none. Set every task\'s `reuses` to null.'
 
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
@@ -139,18 +131,18 @@ const testStrategySchema = {
   },
 }
 
-const writable = !!(ART && BEADS && hasText(story.id) && hasText(repoPath))
+const writable = !!(ART && BEADS && hasText(repoPath))
 const taskArgs = writable
   ? [`--dir ${shq(ART.dir)} --slug ${shq(artSlug)} --repo ${shq(repoPath)}`, hasText(BEADS.projectRoot) ? `--project-root ${shq(BEADS.projectRoot)}` : ''].filter(Boolean).join(' ')
   : ''
 const planCommand = writable ? `python3 ${shq(BEADS.script)} plan-tasks ${taskArgs}` : ''
-const writeCommand = writable ? `python3 ${shq(BEADS.script)} -C ${shq(BEADS.repo)} write-task --story ${shq(story.id)} --key <KEY> ${taskArgs}` : ''
+const writeCommand = writable ? `python3 ${shq(BEADS.script)} -C ${shq(BEADS.repo)} write-task --epic ${shq(BEADS.epicId)} --key <KEY> ${taskArgs}` : ''
 const WRITE_BRIEF = `WRITE EACH TASK BEAD, one command per Task:
 1. Run: ${planCommand}
    It prints one JSON object whose "tasks" list holds the tasks in build order, each with its "key".
 2. For each entry of that "tasks" list, in that order, run the command below with <KEY> replaced by the entry's "key":
    ${writeCommand}
-Run every command in its own Bash call in the FOREGROUND (never set run_in_background, never run two at once) with the Bash tool's \`timeout\` parameter set to 600000. Record every command you ran in \`writes\`, in order, the plan command first: its exit code as \`exitCode\` and its stdout, verbatim, as \`stdout\` (append stderr when the exit code is not 0). Stop after the first command whose exit code is not 0. Do not retry, do not repair, and run no other bd command.`
+Run every command in its own Bash call in the FOREGROUND (never set run_in_background, never run two at once) with the Bash tool's \`timeout\` parameter set to 600000. Record every command you ran in \`writes\`, in order, the plan command first: its exit code as \`exitCode\` and its stdout as \`stdout\` (append stderr when the exit code is not 0). Stop after the first command whose exit code is not 0. Do not retry, do not repair, and run no other bd command.`
 const WRITES_SCHEMA = {
   type: 'array',
   items: {
@@ -181,6 +173,9 @@ const wsjfTaskSchema = {
 const WSJF_SKILL_DIR = typeof a.pluginRoot === 'string' && a.pluginRoot.startsWith('/') ? `${a.pluginRoot.replace(/\/+$/, '')}/skills/wsjf` : null
 const JOB_SIZE_BRIEF = `Size each task under "Job Size" in the \`agent-teams-workforce:wsjf\` rubric${WSJF_SKILL_DIR ? ` (${WSJF_SKILL_DIR}/SKILL.md)` : ''}: the relative amount of work to deliver the task's outcome, judged against the agent pipeline as the reference capability — not calendar time and not human effort. Weigh volume, complexity, knowledge and uncertainty together to place it. The scale is Fibonacci (1, 2, 3, 5, 8, 13, 21, and upward); compare with the rubric's reference jobs. Every size carries \`sizeLow\` and \`sizeHigh\`, the plausible range with the size inside it, and \`sizeConfidence\`, an integer percent. Value, time criticality and risk reduction are inherited from the parent Epic and computed from the dependency graph, and are NOT yours to assign. A Task above 13 should have been split: say so in your notes, and record the size you judged.`
 
+if (!writable) {
+  return { ok: false, stage: 'input', reason: 'no artifact directory, beads target or repository was supplied, so the Task beads cannot be written', spec: specRef }
+}
 const replayed = a.replay === true
 if (replayed) log(`Decompose replayed: the Tasks are written from the saved tasks-${artSlug}.json`)
 const maker = replayed ? null : await settleAgent(
@@ -244,9 +239,6 @@ if (!replayed && (!maker || !Array.isArray(maker.tasks) || !maker.tasks.length))
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
   }
 }
-if (!writable) {
-  return { ok: false, stage: 'write-tasks', reason: 'no artifact directory, beads target, Story id or repository was supplied, so the Task beads cannot be written', spec: specRef }
-}
 const ran = replayed
   ? await settleAgent(`${WRITE_BRIEF}\n\nChange nothing else.`, {
       label: 'beads:write-tasks',
@@ -265,39 +257,30 @@ const parsed = writes.map((r) => {
   }
 })
 const plan = parsed[0] && Array.isArray(parsed[0].tasks) ? parsed[0] : null
-const failedAt = writes.findIndex((r, i) => r.exitCode !== 0 || !parsed[i] || parsed[i].error)
-if (!plan || failedAt >= 0 || writes.length < plan.tasks.length + 1) {
-  const i = failedAt >= 0 ? failedAt : writes.length
-  const r = writes[i]
-  const which = i === 0 ? 'plan-tasks' : plan && plan.tasks[i - 1] ? `write-task ${plan.tasks[i - 1].key}` : `command ${i + 1}`
-  const why = r ? (parsed[i] && parsed[i].error) || String(r.stdout).slice(0, 300) || `exit ${r.exitCode}` : ran ? 'it was not run' : 'the session that writes the Task beads returned no result'
-  const deaths = dispatchDeaths('Decompose')
-  return {
-    ok: false,
-    stage: 'write-tasks',
-    reason: `the Task beads were not all written: ${which} failed: ${why}`,
-    spec: specRef,
-    ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
-  }
-}
-const written = parsed.slice(1, plan.tasks.length + 1)
-const writtenTasks = written.map((w) => w.task)
+const written = parsed.slice(1).filter((w) => w && w.task)
+const writtenTasks = written.length
+  ? written.map((w) => w.task)
+  : plan
+    ? plan.tasks.map((t) => ({ key: t.key, elabKey: t.elabKey, id: null, action: null, title: t.title, dependsOn: t.dependsOn, outsideBlockers: [] }))
+    : (maker && Array.isArray(maker.tasks) ? maker.tasks : []).map((t) => ({ key: t.key, elabKey: null, id: null, action: null, title: t.title, dependsOn: [], outsideBlockers: [] }))
 const edges = { added: 0, removed: 0, standing: 0 }
 for (const w of written) for (const k of Object.keys(edges)) edges[k] += Number(w.edges && w.edges[k]) || 0
-const actions = writtenTasks.map((t) => t.action)
-const summary = {
-  created: actions.filter((x) => x === 'created').length,
-  updated: actions.filter((x) => x === 'updated').length,
-  unchanged: actions.filter((x) => x === 'unchanged' || x === 'unchanged-started').length,
-}
-log(`Story ${story.id}: ${JSON.stringify(summary)}`)
+const actions = written.map((w) => w.task.action)
+const summary = written.length
+  ? {
+      created: actions.filter((x) => x === 'created').length,
+      updated: actions.filter((x) => x === 'updated').length,
+      unchanged: actions.filter((x) => x === 'unchanged' || x === 'unchanged-started').length,
+    }
+  : null
+log(`Story story:${artSlug}: ${written.length} write-task result(s) relayed${summary ? ` ${JSON.stringify(summary)}` : ''}; beads is read at finish`)
 
 return {
   ok: true,
   ...(replayed ? { resumed: true } : {}),
   spec: specRef,
   repoPath,
-  story: { id: story.id, elabKey: `story:${artSlug}` },
+  story: { id: story.id || null, elabKey: `story:${artSlug}` },
   tasks: writtenTasks,
   edges,
   summary,

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, which returns the keyed Tasks already under it. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json.',
+    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Author specs', detail: 'three maker sessions author the spec artifacts in parallel' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
@@ -38,8 +38,8 @@ async function settleAgent(prompt, opts) {
 //   replay?: true
 // }
 // returns { ok, resumed?, unresolvedArtifacts, story: { key, type, id, elabKey, title, description, repoPath, parentEpicKey },
-//           existingTasks, spec, apiSpec, dataModelSpec, eventContracts, errorSpec, decisionIds, outOfRepoFindings, note },
-//           or { ok: false, stage, reason, dispatchFailed? }
+//           writtenPath, spec, apiSpec, dataModelSpec, eventContracts, errorSpec, decisionIds, outOfRepoFindings, note },
+//           or { ok: false, stage, reason, dispatchFailed? }; story.id is null when the write-story summary was not relayed
 
 const CRITERIA_MAX = 120
 const DOD_MAX = 30
@@ -199,55 +199,50 @@ async function main(a) {
     : []
 
   if (!ART || !beads) {
-    return { ok: false, stage: 'write-story', reason: 'no artifact directory or beads target was supplied, so the Story bead cannot be written' }
+    return { ok: false, stage: 'input', reason: 'no artifact directory or beads target was supplied, so the Story bead cannot be written' }
   }
+  const writtenPath = `${ART.dir}/story-${artSlug}.written.json`
   const storyCommand = [
     `python3 ${shq(beads.script)} -C ${shq(beads.repo)} write-story`,
     `--epic ${shq(beads.epicId)} --dir ${shq(ART.dir)} --slug ${shq(artSlug)} --repo ${shq(repoPath)}`,
     hasText(beads.projectRoot) ? `--project-root ${shq(beads.projectRoot)}` : '',
+    `--out ${shq(writtenPath)}`,
   ].filter(Boolean).join(' ')
 
-  /** Returns the spec-authoring result for a write-story output `w`, or { ok: false, stage: 'write-story' }. */
-  function storyResult(authored, w) {
-    if (w.error || !w.story) {
-      const deaths = dispatchDeaths('Emit story')
-      return {
-        ok: false,
-        stage: 'write-story',
-        reason: `the Story bead was not written: ${w.error || 'write-story returned no story'}`,
-        ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
-      }
-    }
-    log(`Story ${w.story.id} (${w.story.elabKey}) ${w.story.action}`)
+  /** Returns the spec-authoring result; `summary` is write-story's relayed summary, or null. */
+  function storyResult(authored, summary, draft) {
+    const w = summary && typeof summary === 'object' ? summary : {}
+    log(hasText(w.id) ? `Story ${w.id} (story:${artSlug}) ${w.action || ''}` : `Story story:${artSlug}: write-story summary not relayed; beads is read at finish`)
     return {
       ok: true,
       ...authored,
       story: {
         key: (a && a.storyKey) || 'S1',
         type: 'story',
-        id: w.story.id,
-        elabKey: w.story.elabKey,
-        title: w.story.title,
-        description: w.story.description,
+        id: hasText(w.id) ? w.id : null,
+        elabKey: `story:${artSlug}`,
+        title: (draft && draft.title) || null,
+        description: (draft && draft.description) || null,
         repoPath,
         parentEpicKey,
       },
-      decisionIds: Array.isArray(w.story.decisionIds) ? w.story.decisionIds : [],
-      existingTasks: Array.isArray(w.existingTasks) ? w.existingTasks : [],
-      summary: w.summary || null,
+      writtenPath,
+      summary: hasText(w.id) ? { created: Number(w.created) || 0, updated: Number(w.updated) || 0 } : null,
     }
   }
 
   if (a && a.replay === true) {
     log(`Spec authoring replayed: the Story is written from the saved story-${artSlug}.json`)
+    const w = await runWrite('beads:write-story', 'Emit story', storyCommand)
     return storyResult({
       resumed: true,
       spec: { id: s.id || null, title: s.title || null, service: s.service || null, repoPath },
       specPaths: specDocPaths,
       outOfRepoFindings: [],
       apiSpec: { summary: '' },
+      decisionIds: [],
       note: 'Replayed: the spec documents on disk are handed downstream as paths.',
-    }, await runWrite('beads:write-story', 'Emit story', storyCommand))
+    }, w && w.summary, null)
   }
 
   const ctx = ctxBlock(s, trd, constraints)
@@ -356,7 +351,7 @@ Then, once that file is saved and recorded, and before you return, write the Sto
 
 ${storyCommand}
 
-Return its exit code as \`write.exitCode\` and its stdout, verbatim, as \`write.stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`,
+It prints one short JSON object. Return its exit code as \`write.exitCode\` and its stdout as \`write.stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`,
     {
       label: 'author:story-bead',
       phase: 'Emit story',
@@ -376,14 +371,11 @@ Return its exit code as \`write.exitCode\` and its stdout, verbatim, as \`write.
     }
   }
 
-  let written = { error: 'the Story writer ran no write-story command' }
-  if (storyDraft.write) {
-    try {
-      const out = JSON.parse(storyDraft.write.stdout)
-      written = storyDraft.write.exitCode === 0 && out && !out.error ? out : { error: (out && out.error) || `write-story exited ${storyDraft.write.exitCode}` }
-    } catch (err) {
-      written = { error: String(storyDraft.write.stdout).slice(0, 300) || `write-story exited ${storyDraft.write.exitCode}` }
-    }
+  let relayed = null
+  try {
+    relayed = storyDraft.write ? JSON.parse(storyDraft.write.stdout).summary : null
+  } catch (err) {
+    relayed = null
   }
   return storyResult({
     unresolvedArtifacts: [],
@@ -397,9 +389,10 @@ Return its exit code as \`write.exitCode\` and its stdout, verbatim, as \`write.
     dataModelSpec,
     eventContracts,
     errorSpec,
+    decisionIds,
     outOfRepoFindings: [],
-    note: 'The Story is a CONTAINER (no tasks, no WSJF) covering exactly one repo; depscore.py write-story wrote its bead.',
-  }, written)
+    note: 'The Story is a CONTAINER (no tasks, no WSJF) covering exactly one repo; depscore.py write-story writes its bead.',
+  }, relayed, storyDraft)
 }
 
 return await main(typeof args === 'string' ? JSON.parse(args) : (args || {}))

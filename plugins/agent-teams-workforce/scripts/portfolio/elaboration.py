@@ -33,7 +33,8 @@ At the FINISH, after the Tasks are written:
   beneath it: the Epic's size becomes the sum of its Tasks' sizes with its estimate kept, the
   Epic is rescored, and its Tasks are rescored with value inherited from it and RR-OE counted
   over every Task edge, across Stories;
-* with `done`, the Epic's `elaboration_state` is set to `done` with the cause
+* with `done`, and when beads holds every Story, Task and edge the span's saved documents
+  name, the Epic's `elaboration_state` is set to `done` with the cause
   `decomposed-into-tasks` and its owner token is cleared. The Epic stays open; it closes
   only when its work is released.
 
@@ -188,11 +189,13 @@ def start(
         else:
             satisfied = bead.closed
         if not satisfied:
-            waiting.append({
-                "id": upstream,
-                "title": bead.title if bead else None,
-                "elaborationState": state,
-            })
+            waiting.append(
+                {
+                    "id": upstream,
+                    "title": bead.title if bead else None,
+                    "elaborationState": state,
+                }
+            )
     if waiting:
         return _refusal(
             "upstream-not-elaborated",
@@ -282,8 +285,9 @@ def finish(
     done: bool,
     sad_files: list[str] | None = None,
     sad_root: str | None = None,
+    missing: list[str] | None = None,
 ) -> dict:
-    """Score this Epic and its Tasks, and mark it done.
+    """Score this Epic and its Tasks, and mark it done when beads holds its hierarchy.
 
     Args:
         graph: The tracker graph, read with descriptions.
@@ -295,6 +299,8 @@ def finish(
             to `lifecycle_state: effective` on the `done` transition and at no other time,
             because a completed elaboration is the only thing that vouches for a SAD entry.
         sad_root: The SAD directory every one of those files must sit under.
+        missing: What the span's saved documents name that beads does not hold, or None
+            when no span was given. Anything in it keeps the Epic from being marked done.
 
     Returns:
         The scoring result, the lifecycle write, and — when the Epic was marked done —
@@ -320,7 +326,8 @@ def finish(
     scored = score(graph, writer, scope={epic.id} | under)
     lifecycle = None
     sad = None
-    if done:
+    persisted = not missing
+    if done and persisted:
         lifecycle = {
             STATE_KEY: DONE,
             STATE_AT_KEY: now_iso(),
@@ -351,6 +358,7 @@ def finish(
             )
         },
         "lifecycle": lifecycle,
+        "missing": list(missing or []),
         "sad": sad,
         "dryRun": writer.dry_run,
         "planned": writer.planned,
@@ -361,7 +369,9 @@ def finish(
             "tasksScored": scored["summary"]["tasksScored"],
             "tasksWritten": scored["summary"]["tasksWritten"],
             "unscored": scored["summary"]["unscored"],
-            "done": done,
+            "done": lifecycle is not None,
+            "persisted": persisted,
+            "missing": list(missing or []),
             "sadPromoted": (sad or {}).get("summary", {}).get("promoted", 0),
         },
     }

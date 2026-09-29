@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, rules architecture when the PRD needs a decision, rules the repo span, authors the TRD, reconciles current state and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish. Every bead write is keyed by elab_key, so a rerun updates what exists. A failed bead write returns ok:false at stage hierarchy-not-persisted. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, rules architecture when the PRD needs a decision, rules the repo span, authors the TRD, reconciles current state and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
@@ -11,7 +11,7 @@ export const meta = {
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
     { title: 'Spec Authoring', detail: 'per repo: reconcile current state, then author the Spec and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
-    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when every part landed' },
+    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when beads holds every Story, Task and edge the saved documents name' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
@@ -328,7 +328,6 @@ const PRD_INPUTS = hasText(prd.path) ? [prd.path] : []
 const specFiles = (slug) => [`spec-${slug}.md`, `spec-${slug}.data-model.md`, `spec-${slug}.criteria.md`]
 const TASK_DEPS_PHASE = 'task-deps'
 const beadsArgs = { script: `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`, repo: emitTarget, epicId: epicBeadId, ...(SS_ROOT ? { projectRoot: SS_ROOT } : {}) }
-const WRITE_STAGES = new Set(['write-story', 'write-tasks'])
 const UNPERSISTED_STAGE = 'hierarchy-not-persisted'
 artReport.dir = ART_ON ? ART_REL || ART_DIR : null
 artReport.epicId = ART_EPIC
@@ -940,7 +939,6 @@ for (const [repoIndex, repo] of repos.entries()) {
     repoPath: repo,
     spec: art,
     story: { ...art.story, decisionIds: Array.isArray(art.decisionIds) ? art.decisionIds : [] },
-    existingTasks: Array.isArray(art.existingTasks) ? art.existingTasks : [],
   })
   recRuled(`Spec and Story ${art.story.key || art.story.title} for ${repo}.`)
 }
@@ -953,7 +951,7 @@ produced.reconciliationByRepo = Array.from(reconByRepo, ([rp, recon]) => ({ repo
 produced.specPairs = specPairs
 produced.specFailures = specFailures
 if (!specPairs.length) {
-  return partial(specFailures.some((x) => WRITE_STAGES.has(x.stage)) ? UNPERSISTED_STAGE : 'spec-authoring', {
+  return partial('spec-authoring', {
     reason: `no repo produced a spec — ${specFailures.map((x) => `${x.repoPath}: ${x.reason}`).join('; ')}`,
     specFailures,
     ...(specFailures.every((x) => x.dispatchFailed) ? { dispatchFailed: true, dispatchFailures: specFailures.flatMap((x) => x.dispatchFailures) } : {}),
@@ -1010,7 +1008,6 @@ function decompArgs(pair) {
     },
     specDocs: docs,
     story: { id: pair.story.id, key: pair.story.key, title: pair.story.title },
-    existingTasks: pair.existingTasks,
     pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor(`tasks:${slug}`, [...docs.map((d) => d.path), artPath(`story-${slug}.json`)], { slug }),
     beads: beadsArgs,
@@ -1023,7 +1020,7 @@ async function decomposeStory(pair) {
   const tasksHit = resumeFresh(tasksPhase)
   const replay = !!(tasksHit && ART_ON && tasksHit.names.includes(`tasks-${slug}.json`))
   const r = await workflow('agent-teams-workforce:task-decomposition', replay ? { ...decompArgs(pair), replay: true } : decompArgs(pair))
-  if (r && r.ok === true && Array.isArray(r.tasks) && r.tasks.length) {
+  if (r && r.ok === true) {
     if (replay) reuseFrom(tasksPhase, tasksHit)
     await acceptPhase(tasksPhase, replay ? 'reused' : 'passed')
     return { ok: true, artifact: r }
@@ -1063,7 +1060,6 @@ for (const [pairIndex, pair] of specPairs.entries()) {
       parentStoryId: pair.story.id,
       storyKey: storyKeyForTasks,
       dependsOn: (Array.isArray(t.dependsOn) ? t.dependsOn : []).map((d) => `${storyKeyForTasks}-${d}`),
-      outsideBlockers: Array.isArray(t.outsideBlockers) ? t.outsideBlockers : [],
     })
   }
   recRuled(`Story ${storyKeyForTasks} (${pair.repoPath}) decomposed into ${storyTasks.length} Task(s).`)
@@ -1073,17 +1069,15 @@ produced.decompositions = decompositions
 produced.decompositionFailures = decompositionFailures
 produced.tasks = tasks
 if (!decompositions.length) {
-  return partial(decompositionFailures.some((x) => WRITE_STAGES.has(x.stage)) ? UNPERSISTED_STAGE : 'task-decomposition', {
+  return partial('task-decomposition', {
     reason: `no Story produced tasks — ${decompositionFailures.map((x) => `${x.storyKey || x.repoPath}: ${x.reason}`).join('; ')}`,
     decompositionFailures,
     ...(decompositionFailures.every((x) => x.dispatchFailed) ? { dispatchFailed: true, dispatchFailures: decompositionFailures.flatMap((x) => x.dispatchFailures) } : {}),
   })
 }
 
-const taskStories = new Set(tasks.map((t) => t.storyKey))
 const crossStory = { ran: false, reason: null, edges: [], rejected: 0, written: null }
-let crossStoryWriteFailed = null
-if (taskStories.size < 2) {
+if (decompositions.length < 2) {
   crossStory.reason = 'the Tasks sit in one Story'
 } else {
   crossStory.ran = true
@@ -1091,10 +1085,9 @@ if (taskStories.size < 2) {
   const depscore = `python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)}`
   const spanArgs = `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`
   const edgeOut = (name) => `--out ${shellq(`${ART_DIR}/task-edges/${name}.json`)}`
-  const standing = tasks.filter((t) => t.outsideBlockers.length).map((t) => t.key)
   const EDGE_WRITE_BRIEF = `WRITE THE TASK EDGES TO OTHER STORIES with exactly this one command:
-   ${depscore} write-all-task-edges --epic ${shellq(epicBeadId)}${standing.length ? ` --also ${shellq(standing.join(','))}` : ''} ${spanArgs} ${edgeOut('all')}
-Run it in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000. It prints one short JSON object. Return ONE entry in \`writes\`: its exit code as \`exitCode\` and its stdout, verbatim, as \`stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`
+   ${depscore} write-all-task-edges --epic ${shellq(epicBeadId)} ${spanArgs} ${edgeOut('all')}
+Run it in the FOREGROUND (never set run_in_background) with the Bash tool's \`timeout\` parameter set to 600000. It prints one short JSON object. Return ONE entry in \`writes\`: its exit code as \`exitCode\` and its stdout as \`stdout\` (append stderr when the exit code is not 0). Do not retry, do not repair, and run no other bd command.`
   const WRITES_SCHEMA = {
     type: 'array',
     items: {
@@ -1190,27 +1183,15 @@ Then, once that file is saved and recorded, and before you return — unless you
     }
   }
   if (ran) {
-    const writes = Array.isArray(ran.writes) ? ran.writes : []
-    const parsed = writes.map((r) => {
-      try {
-        return JSON.parse(r.stdout)
-      } catch (err) {
-        return null
-      }
-    })
-    const plan = parsed[0] && parsed[0].summary && parsed[0].summary.blockers ? parsed[0].summary : null
-    const wanted = plan ? [...new Set([...Object.keys(plan.blockers), ...standing])] : []
-    const missing = plan ? wanted.filter((n) => !(Array.isArray(plan.written) && plan.written.includes(n))) : []
-    if (!plan || writes[0].exitCode !== 0 || parsed[0].error || missing.length) {
-      const r = writes[0]
-      const why = !r
-        ? 'it was not run'
-        : missing.length && plan
-          ? `it did not write ${missing.join(', ')}`
-          : (parsed[0] && parsed[0].error) || String(r.stdout).slice(0, 300) || `exit ${r.exitCode}`
-      crossStoryWriteFailed = `write-all-task-edges failed: ${why}`
-      crossStory.reason = `the Task edges between Stories were not all written: ${crossStoryWriteFailed}`
-    } else {
+    const first = Array.isArray(ran.writes) && ran.writes[0] ? ran.writes[0] : null
+    let plan = null
+    try {
+      const out = first ? JSON.parse(first.stdout) : null
+      plan = out && out.summary && out.summary.blockers ? out.summary : null
+    } catch (err) {
+      plan = null
+    }
+    if (plan) {
       crossStory.edges = Object.entries(plan.blockers).flatMap(([to, froms]) => (Array.isArray(froms) ? froms : []).map((from) => ({ from, to })))
       crossStory.rejected = Number(plan.rejected) || 0
       crossStory.written = { added: Number(plan.added) || 0, removed: Number(plan.removed) || 0, standing: Number(plan.standing) || 0 }
@@ -1219,6 +1200,8 @@ Then, once that file is saved and recorded, and before you return — unless you
         const to = byKey.get(e.to)
         if (to) to.dependsOn = [...to.dependsOn, e.from]
       }
+    } else {
+      log('Cross-Story Task dependencies: the write-all-task-edges summary was not relayed; beads is read at finish')
     }
   }
   if (crossStory.reason) log(`Cross-Story Task dependencies: ${crossStory.reason}`)
@@ -1227,11 +1210,6 @@ produced.crossStoryDependencies = crossStory
 recRuled(`${tasks.length} Task(s) across ${decompositions.length} Story/Stories; ${crossStory.edges.length} edge(s) across Stories.`, { status: 'done' })
 
 enterPhase('Finish')
-const writeFailures = [
-  ...specFailures.filter((x) => WRITE_STAGES.has(x.stage)).map((x) => `write-story for ${x.repoPath}: ${x.reason}`),
-  ...decompositionFailures.filter((x) => WRITE_STAGES.has(x.stage)).map((x) => `write-tasks for ${x.storyKey || x.repoPath}: ${x.reason}`),
-  ...(crossStoryWriteFailed ? [`write-all-task-edges: ${crossStoryWriteFailed}`] : []),
-]
 const done = !specFailures.length && !decompositionFailures.length && !crossStory.reason
 const changedSad = architecture.artifact && architecture.artifact.sadUpdate && Array.isArray(architecture.artifact.sadUpdate.changedFiles)
   ? architecture.artifact.sadUpdate.changedFiles.filter(hasText)
@@ -1242,11 +1220,13 @@ const finishArgs = [
   done ? '--done' : '',
   done && changedSad.length ? `--sad-files ${shellq(changedSad.join(','))}` : '',
   done && a.sadPath ? `--sad-root ${shellq(a.sadPath)}` : '',
+  ART_ON ? `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}` : '',
 ].filter(Boolean).join(' ')
 const finishOut = await runScript('epic:finish', 'Finish', finishArgs)
 lifecycle.finish = finishOut
 const finishOk = !!(finishOut && !finishOut.error && finishOut.ok === true)
 const epicMarkedDone = finishOk && !!finishOut.lifecycle
+const unheld = finishOk && Array.isArray(finishOut.missing) ? finishOut.missing.filter(hasText) : []
 const scoringLine = finishOk
   ? `Epic ${epicBeadId} and ${(finishOut.summary && finishOut.summary.tasksScored) || 0} Task(s) scored; Epic ${epicMarkedDone ? 'is elaboration_state=done' : 'stays in_progress'}. `
   : `Scoring did not run for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'}. `
@@ -1287,7 +1267,7 @@ const runJournal = {
     decomposition: decompositions,
   },
 }
-recRuled(writeLine + scoringLine, { status: writeFailures.length ? 'failed' : 'done' })
+recRuled(writeLine + scoringLine, { status: unheld.length ? 'failed' : 'done' })
 const common = {
   degraded,
   beadsEmitted,
@@ -1300,9 +1280,9 @@ const common = {
   ...(createdRepos.length ? { createdRepos } : {}),
   ...(repoActions.length ? { requiredHumanActions: repoActions } : {}),
 }
-if (writeFailures.length) {
+if (unheld.length) {
   return {
-    ...handback(false, UNPERSISTED_STAGE, `decomposed but NOT all written to beads — ${writeFailures.join('; ')}. Re-dispatch the Epic: every write is keyed by elab_key, so the rerun updates what landed.`, runJournal),
+    ...handback(false, UNPERSISTED_STAGE, `decomposed but beads does not hold all of it — ${unheld.slice(0, 20).join('; ')}${unheld.length > 20 ? `; and ${unheld.length - 20} more` : ''}. Re-dispatch the Epic: every write is keyed by elab_key, so the rerun updates what landed.`, runJournal),
     ...common,
   }
 }
