@@ -22,8 +22,9 @@
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
     write-all-task-edges write every Task's edges to Tasks in the Epic's other Stories
-    story-edges          derive and write each repository's Story -> Story `blocks` edges from
-                         Epic order and Task edges; refuses, writing nothing, on a contradiction.
+    story-edges          derive and write the Story -> Story `blocks` edges from Epic order within
+                         a repository and from Task edges between Stories in any repository;
+                         a Story whose order is contradictory gets no edge written
                          `elaboration-finish` and a Task-level `apply-edges` run it after they write
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
@@ -609,7 +610,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sed = sub.add_parser(
         "story-edges",
-        help="derive and write each repository's Story -> Story `blocks` edges",
+        help="derive and write the Story -> Story `blocks` edges",
         parents=[common],
     )
     _dry_run_flag(sed)

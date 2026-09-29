@@ -1,8 +1,8 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through six lenses (ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding.',
-  phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
+    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and, given args.sadPath, whether SAD §2/§8 already holds each technical rule; a technical requirement is a major finding, since a PRD keeps business requirements only. With classifyOnly: true the session applies the requirement-class lens alone and the run returns the classification without a verdict.',
+  phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens, or through the requirement-class lens alone' }],
 }
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
@@ -27,8 +27,8 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// args: { prd: { id?, title?, body, repoPath?, brd? } | string, context?, brd?, standingRulings?,
-//         artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
+// args: { prd: { id?, title?, body?, path?, repoPath?, brd? } | string, context?, brd?, standingRulings?,
+//         sadPath?, classifyOnly?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
 function artifactsFrom(x) {
@@ -63,8 +63,14 @@ END STANDING RULINGS
 `
   : ''
 
+const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
+const sadPath = typeof a.sadPath === 'string' ? a.sadPath.trim() : ''
+const classifyOnly = a.classifyOnly === true
+
 const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
-const prdBlock = `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
+const prdBlock = prdBody.trim() || !prdPath
+  ? `${prdHeader ? prdHeader + '\n\n' : ''}${prdBody}`
+  : `${prdHeader ? prdHeader + '\n\n' : ''}The PRD is the document at ${prdPath}. Read it in full before you apply any lens.`
 
 const findingItems = {
   type: 'array',
@@ -82,6 +88,98 @@ const findingItems = {
 }
 
 phase('Validate')
+
+const requirementClassItems = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['id', 'requirement', 'class', 'reason', 'governs', 'rule', 'sadCoverage', 'sadRefs'],
+    properties: {
+      id: { type: 'string' },
+      requirement: { type: 'string' },
+      class: { type: 'string', enum: ['business', 'technical'] },
+      reason: { type: 'string' },
+      governs: { type: 'string' },
+      rule: { type: 'string' },
+      sadCoverage: { type: 'string', enum: ['covered', 'absent', 'unchecked', 'n/a'] },
+      sadRefs: { type: 'array', items: { type: 'string' } },
+    },
+  },
+}
+
+const classLens = `REQUIREMENT CLASS (return in \`requirementClasses\`): classify EVERY requirement the PRD states, once each, as \`business\` or \`technical\`, with a one-line \`reason\`.
+- business: what a user, the business or a regulation needs, stated as an outcome that holds however the system is built ("a job seeker's data is stored only in the EU" is business).
+- technical: a rule about HOW the system is built — a named technology, resource, configuration, construct, network path or engineering standard ("every S3 bucket is versioned and SSE-S3 encrypted", "PII traffic uses VPC endpoints"). A technical requirement belongs in the SAD — §2 constraints or §8 crosscutting concepts — not in a PRD.
+A requirement that states both is recorded as two entries with the same \`id\`: the business outcome and the technical rule.
+For a technical requirement, name in \`governs\` the kind of thing the rule governs ("S3 bucket", "Lambda function", "VPC endpoint"), and state it in \`rule\` as a condition on that thing: "where the design has an S3 bucket, the bucket is versioned and SSE-S3 encrypted". ${sadPath
+  ? `Then look for the rule in the SAD at ${sadPath}: §2 is the 02-* section and §8 the 08-* section. Search for it and read only the entries a search points at. Set \`sadCoverage\` to "covered", with the SAD's own entry ids (\`C-…\`, \`X-…\`, \`AD-…\`) in \`sadRefs\`, when an entry already states the rule; "absent" when none does.`
+  : 'No SAD location was supplied: set `sadCoverage` to "unchecked" on every technical requirement.'}
+For a business requirement set \`governs\` and \`rule\` to "", \`sadCoverage\` to "n/a" and \`sadRefs\` to [].
+Use each requirement's id as the PRD writes it; where the PRD gives none, number them R1, R2, … in document order.`
+
+/** Returns the classification entries of a structured result, each with its fields normalized. */
+function classesOf(result) {
+  const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : [])
+  return (result && Array.isArray(result.requirementClasses) ? result.requirementClasses : [])
+    .filter((r) => r && typeof r.id === 'string' && r.id.trim())
+    .map((r) => {
+      const technical = r.class === 'technical'
+      return {
+        id: r.id.trim(),
+        requirement: r.requirement || '',
+        class: technical ? 'technical' : 'business',
+        reason: r.reason || '',
+        governs: technical ? r.governs || '' : '',
+        rule: technical ? r.rule || '' : '',
+        sadCoverage: technical ? (['covered', 'absent'].includes(r.sadCoverage) ? r.sadCoverage : 'unchecked') : 'n/a',
+        sadRefs: technical ? list(r.sadRefs) : [],
+      }
+    })
+}
+
+if (classifyOnly) {
+  const classified = await settleAgent(
+    `${rulingsBlock}You are an INDEPENDENT PRD analyst. You did not author this PRD and you never rewrite it. Apply ONE lens, and keep every reason under 30 words.
+
+${classLens}
+
+Also return \`summary\`: how many requirements are business and how many technical, and which technical ones the SAD lacks, in under 80 words.
+
+PRD:
+${prdBlock}
+
+READING BUDGET: the PRD${prdBody.trim() ? ', quoted above,' : ''} and the SAD entries your searches point at. Read nothing else.${persistBrief(ART, 'prd-classification.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
+    {
+      label: 'validate:requirement-class',
+      effort: 'medium',
+      phase: 'Validate',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['requirementClasses', 'summary'],
+        properties: { requirementClasses: requirementClassItems, summary: { type: 'string' } },
+      },
+    }
+  )
+  if (!classified) {
+    const why = 'the classification session returned nothing; the PRD requirements were not classified'
+    return { ok: false, stage: 'agent-dispatch-failed', error: why, headline: why, reason: why, dispatchFailed: true, dispatchFailures: dispatchDeaths('Validate'), requirementClasses: [] }
+  }
+  const requirementClasses = classesOf(classified)
+  const technical = requirementClasses.filter((r) => r.class === 'technical')
+  const sadGaps = technical.filter((r) => r.sadCoverage === 'absent')
+  return {
+    ok: true,
+    stage: 'done',
+    headline: `${requirementClasses.length} requirement(s) classified: ${requirementClasses.length - technical.length} business, ${technical.length} technical (${sadGaps.length} the SAD lacks)`,
+    summary: classified.summary,
+    requirementClasses,
+    technical,
+    sadGaps,
+    ledger: { phase: 'prd-validation', beadId: null, subject: prdId || null, chosen: ['validation-analyst-requirement-class'], mode: 'classify-only', ok: true },
+  }
+}
 
 const traceabilitySchema = {
   type: 'object',
@@ -109,8 +207,9 @@ const traceabilitySchema = {
 const analysisSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'summary'],
+  required: ['requirementClasses', 'ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'summary'],
   properties: {
+    requirementClasses: requirementClassItems,
     ambiguities: findingItems,
     completenessGaps: findingItems,
     conflicts: {
@@ -170,7 +269,7 @@ const analysisSchema = {
     ...(brd ? { traceability: traceabilitySchema } : {}),
     summary: { type: 'string' },
   },
-  ...(brd ? { required: ['ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'traceability', 'summary'] } : {}),
+  ...(brd ? { required: ['requirementClasses', 'ambiguities', 'completenessGaps', 'conflicts', 'constraints', 'boundaryFindings', 'clarifications', 'traceability', 'summary'] } : {}),
 }
 
 const analysis = await settleAgent(
@@ -180,6 +279,7 @@ const analysis = await settleAgent(
 - The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.
 - Keep every issue/question/detail field under 40 words. Report findings, not essays, and do not restate one finding as several.
 
+Lens 0 — ${classLens}
 Lens 1 — AMBIGUITY (return in \`ambiguities\`): requirements whose intended user-observable behavior is genuinely unclear, internally contradictory, or open to two incompatible readings, each with a concrete clarification.
 Lens 2 — COMPLETENESS (return in \`completenessGaps\`): each requirement should name an actor, a trigger, and an observable user outcome, with acceptance criteria as observable behavior; flag missing user-observable paths (cancel, error, empty/limit states) described as behavior.
 Lens 3 — CONFLICT (return in \`conflicts\`): pairs (or sets) of requirements whose WHAT cannot both hold, citing the requirements in tension.
@@ -203,7 +303,7 @@ Repository under consideration: ${repo}
 PRD under validation:
 ${prdBlock}
 
-READING BUDGET: the PRD is quoted in full above and it is the entire object of every lens. Read nothing unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document. Do not survey the repository or the polyrepo.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
+READING BUDGET: the PRD is the entire object of every lens. Read nothing else unless a lens turns on a specific sibling PRD named in \`Specified Elsewhere\`, and then read only that document, or Lens 0 checks the SAD, and then read only the entries its searches point at. Do not survey the repository or the polyrepo.${persistBrief(ART, 'prd-validation.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
   {
     label: 'validate:all-lenses',
     effort: 'low',
@@ -224,6 +324,7 @@ if (!analysis) {
     dispatchFailures: dispatchDeaths('Validate'),
     validatedPrd: null,
     findings: [],
+    requirementClasses: [],
     ambiguities: [],
     conflicts: [],
     completenessGaps: [],
@@ -239,8 +340,15 @@ const constraints = analysis.constraints || []
 const boundaryFindings = analysis.boundaryFindings || []
 const clarifications = analysis.clarifications || []
 const traceability = (brd && analysis.traceability) || { traceable: false, matrix: [], orphanRequirements: [], unimplementedObjectives: [] }
+const requirementClasses = classesOf(analysis)
+const technical = requirementClasses.filter((r) => r.class === 'technical')
+const sadGaps = technical.filter((r) => r.sadCoverage === 'absent')
 
 const findings = []
+for (const r of technical) {
+  const home = r.sadCoverage === 'covered' ? `the SAD holds it as ${r.sadRefs.join(', ') || 'an entry'}` : r.sadCoverage === 'absent' ? 'the SAD lacks it and must gain it in §2 or §8' : 'the SAD was not checked'
+  findings.push({ source: 'requirement-class', requirement: r.id, issue: `technical requirement (${r.governs || 'unnamed subject'}): ${home}; a PRD keeps business requirements only`, severity: 'major' })
+}
 for (const f of ambiguities) findings.push({ source: 'ambiguity', requirement: f.requirement, issue: f.issue, severity: f.severity })
 for (const f of completenessGaps) findings.push({ source: 'completeness', requirement: f.requirement, issue: f.issue, severity: f.severity })
 for (const f of conflicts) findings.push({ source: 'conflict', requirement: (f.requirements || []).join(' + '), issue: f.contradiction, severity: f.severity })
@@ -266,6 +374,9 @@ return {
     verdict: validationVerdict,
   },
   findings,
+  requirementClasses,
+  technical,
+  sadGaps,
   ambiguities,
   conflicts,
   completenessGaps,

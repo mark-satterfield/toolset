@@ -346,7 +346,7 @@ def plan_tasks(directory: Path, rel: str | None, slug: str, repo: str) -> list[T
         The Tasks.
 
     Raises:
-        HierarchyError: The file names no Task, or its edges form a cycle.
+        HierarchyError: The file holds no `tasks` list, or its edges form a cycle.
     """
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids)

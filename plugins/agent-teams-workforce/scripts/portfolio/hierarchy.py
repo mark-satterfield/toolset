@@ -471,16 +471,16 @@ def read_tasks(
         story_decision_ids: The Story's decision ids, which a Task citing none inherits.
 
     Returns:
-        The Tasks, with `depends_on` holding local keys.
+        The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.
 
     Raises:
-        HierarchyError: The file names no Task, or its edges form a cycle.
+        HierarchyError: The file holds no `tasks` list, or its edges form a cycle.
     """
     saved = _read_json(directory / f"tasks-{slug}.json")
-    raw = [t for t in saved.get("tasks") or [] if isinstance(t, dict)]
-    if not raw:
-        msg = f"tasks-{slug}.json names no Task"
+    if not isinstance(saved.get("tasks"), list):
+        msg = f"tasks-{slug}.json holds no `tasks` list"
         raise HierarchyError(msg)
+    raw = [t for t in saved["tasks"] if isinstance(t, dict)]
     unique, copies = _unique_tasks(raw)
     edges = _unique_edges(saved.get("edges"), copies)
     scores = _unique_scores(saved.get("scores"), copies)

@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests, and a requirement whose material conforms or that does not apply to the repository gets no Task; a Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
   ],
@@ -181,7 +181,10 @@ if (replayed) log(`Decompose replayed: the Tasks are written from the saved task
 const maker = replayed ? null : await settleAgent(
   `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code.
 
-JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into TASKS. Each task is a coherent piece of the Story's work within the single repository named below that one agent can test and build in one session, with testable acceptance criteria. A small Story may be one task. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
+JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into TASKS. Each task is a coherent piece of the Story's work within the single repository named below that one agent can test and build in one session, with testable acceptance criteria. A small Story may be one task.
+- A task is BUILD work: it changes code, infrastructure or documentation. The Spec's acceptance criteria are the tests of the build tasks: each build task carries in \`acceptanceCriteria\` the criteria it satisfies, and its Red step writes those tests before it builds. A task whose only work is writing or running tests is never emitted.
+- A requirement the material inventory marks \`conforms\` (it exists and matches) or \`not-applicable\` gets no task. Only \`absent\` (build it) and \`contradicts\` (remove or replace it) make work, together with any removal work named below.
+- When nothing needs building, return an empty \`tasks\` list with empty \`edges\` and \`scores\`, and say why in \`rationale\`. The Story then has no Tasks and goes straight to deploy and verify. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
 
 Every task also carries its CONTRACT, taken from the spec documents listed below:
 - \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each. At least one.
@@ -229,12 +232,12 @@ ${specBlock}${persistBrief(ART, `tasks-${artSlug}.json`, 'your complete structur
     },
   }
 )
-if (!replayed && (!maker || !Array.isArray(maker.tasks) || !maker.tasks.length)) {
+if (!replayed && (!maker || !Array.isArray(maker.tasks))) {
   const deaths = dispatchDeaths('Decompose')
   return {
     ok: false,
     stage: 'decompose',
-    reason: 'decomposition produced no tasks',
+    reason: 'the decomposition returned no task list',
     spec: specRef,
     ...(deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}),
   }
@@ -273,6 +276,7 @@ const summary = written.length
       unchanged: actions.filter((x) => x === 'unchanged' || x === 'unchanged-started').length,
     }
   : null
+if (maker && !maker.tasks.length) log(`Story story:${artSlug}: no Tasks — ${String(maker.rationale || 'nothing to build').slice(0, 300)}`)
 log(`Story story:${artSlug}: ${written.length} write-task result(s) relayed${summary ? ` ${JSON.stringify(summary)}` : ''}; beads is read at finish`)
 
 return {

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""The Story -> Story `blocks` edges of each repository, derived in code and never judged.
+"""The Story -> Story `blocks` edges, derived in code and never judged.
 
-A Story is scoped to one repository, and a repository has at most one Story in progress: a
-later Story's branch is cut from a `main` that already holds the earlier Story's code, and
-both deploy the same stacks. So within one repository the Stories are ordered, from two
-sources:
+A Story is scoped to one repository, its Tasks commit to the Story's branch, and that code
+reaches anything else only when the Story's pull request merges to `main`. So the Stories
+are ordered from two sources:
 
-1. Epic order. The Story of the earlier Epic goes first, where one Epic reaches the other
-   through `tracks` edges.
-2. Task edges between two Stories of the repository. The Story holding the depended-on Task
-   goes first: that Task's code reaches the other Story's branch only through `main`.
+1. Epic order, within one repository. A repository has at most one Story in progress, and a
+   later Story's branch is cut from a `main` that already holds the earlier Story's code.
+   The Story of the earlier Epic goes first, where one Epic reaches the other through
+   `tracks` edges.
+2. Task edges between two Stories, in the same repository or in different ones. The Story
+   holding the depended-on Task goes first: that Task's code is usable by the other Story
+   only once the Story holding it has merged.
 
 The order is written as a `blocks` edge on the later Story, `bd dep add <later> <earlier>
 --type blocks`. A blocked Story holds back every Task beneath it in `bd ready`, and the edge
@@ -18,11 +20,11 @@ releases when the earlier Story closes, which it does when its pull request merg
 When the sources disagree about a pair of Stories, or the Story graph holds a cycle together
 with the hand-made Story edges and the hold an in-progress Story has on its repository (every
 other Story of that repository waits for it), nothing is written for the Stories involved and
-they and their Tasks are named; every other Story's edges are written as usual. Beads' own cycle detection does not catch this: a Story edge against a Task edge
-freezes both Stories without any single edge closing a loop.
+they and their Tasks are named; every other Story's edges are written as usual. Beads' own
+cycle detection does not catch this: a Story edge against a Task edge freezes both Stories
+without any single edge closing a loop.
 
-Stories in different repositories never get an edge. Ownership is recorded on the later
-Story as `story_owned_blockers`, with the reasons as `story_edge_reasons`, so an edge drawn
+Ownership is recorded on the later Story as `story_owned_blockers`, with the reasons as `story_edge_reasons`, so an edge drawn
 by hand is never removed and an edge the sources no longer derive is.
 """
 
@@ -108,7 +110,7 @@ def _story_of(graph: Graph, bead_id: str) -> str | None:
 
 
 def derive(graph: Graph) -> dict:
-    """The Story edges each repository's Epic order and Task edges require.
+    """The Story edges Epic order within a repository and Task edges between Stories require.
 
     Args:
         graph: The tracker graph.
@@ -149,12 +151,7 @@ def derive(graph: Graph) -> dict:
             continue
         for blocker in task.blockers:
             first = _story_of(graph, blocker)
-            if (
-                first is None
-                or first == later
-                or first not in repos
-                or repos[first] != repos[later]
-            ):
+            if first is None or first == later or first not in repos:
                 continue
             required.setdefault((later, first), []).append(
                 {
@@ -266,7 +263,7 @@ def _reasons_text(reasons: list[dict]) -> str:
 
 
 def story_edges(graph: Graph, writer: Writer) -> dict:
-    """Derive every repository's Story edges and write the difference, except for refused Stories.
+    """Derive every Story edge and write the difference, except for refused Stories.
 
     Args:
         graph: The tracker graph, read after the Task edges were written.

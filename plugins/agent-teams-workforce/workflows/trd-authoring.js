@@ -1,7 +1,7 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the arc42 SAD. Read-only extractor sessions pull SAD sections 2, 4 and 8 into a typed packet in concurrent shards (or a packet the caller supplies is reused), a filing-clerk session names the TRD file when the caller gives no path, then one trd-author session writes the TRD in one pass: PRD requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD or SAD source.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the arc42 SAD. Read-only extractor sessions pull SAD sections 2, 4 and 8 into a typed packet in concurrent shards (or a packet the caller supplies is reused), a filing-clerk session names the TRD file when the caller gives no path, then one trd-author session writes the TRD in one pass: PRD business requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD or SAD source and naming the design element it applies to. A SAD rule is stated only where the design has the thing it governs; a PRD requirement the caller classifies technical is carried as the SAD rule it is, on the same condition.',
   phases: [
     { title: 'Extract SAD', detail: 'read-only extraction of the arc42 source feeds into a typed packet' },
     { title: 'Author TRD', detail: 'author the TRD from the PRD + SAD extract, one pass' },
@@ -34,6 +34,8 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },
 //   sad: { path?, sectionLayout? }, sadExtract?: { constraints, solutionStrategy, crosscuttingConcepts },
 //   trdPath?, repoPath?, feedback?, standingRulings?,
+//   architecture?: { decision?, decisionPath?, sadUpdate? } (the ruling this PRD's design rests on),
+//   requirementClasses?: [{ id, class, governs?, rule?, sadRefs? }],
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? }
 // }
 // returns { ok, trdPath, filingPath, sadExtract, trd, decisionIds } or { ok: false, stage, reason, ... }
@@ -345,6 +347,16 @@ const prdText = prdContent
   ? prd.content
   : `PRD ${prd.id || ''}${prd.title ? `: ${prd.title}` : ''}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you author anything; every requirement in it is in scope.`
 
+const hasText = (v) => typeof v === 'string' && v.trim().length > 0
+const ruling = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
+const rulingBlock = ruling
+  ? `\nArchitecture ruling this PRD's design rests on:\n${JSON.stringify({ decision: ruling.decision, sadUpdate: ruling.sadUpdate }, null, 2)}${hasText(ruling.decisionPath) ? `\nThe ruling itself is the document at ${ruling.decisionPath}. Read it.` : ''}\n`
+  : '\nNo architecture ruling was made for this PRD: the design is the one the PRD and the SAD already imply.\n'
+const technicalReqs = (Array.isArray(a.requirementClasses) ? a.requirementClasses : []).filter((r) => r && r.class === 'technical' && hasText(r.id))
+const technicalBlock = technicalReqs.length
+  ? `\nPRD REQUIREMENTS THAT ARE TECHNICAL RULES. These are SAD rules the PRD restates, not product requirements. Do not elaborate them as PRD requirements: carry each as the SAD rule it is, under the condition below, citing the SAD entry that holds it:\n${technicalReqs.map((r) => `- ${r.id}: ${r.rule || r.requirement || ''}${hasText(r.governs) ? ` (governs: ${r.governs})` : ''}${Array.isArray(r.sadRefs) && r.sadRefs.length ? ` [${r.sadRefs.join(', ')}]` : ''}`).join('\n')}\n`
+  : ''
+
 const feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
 phase('Author TRD')
@@ -394,24 +406,27 @@ WHAT THIS DOCUMENT IS FOR. The TRD is the single point at which the obligations 
 
 THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 
-1. PRD REQUIREMENTS THAT NEED TECHNICAL ELABORATION. One PRD requirement may need several technical requirements, and several may be answered by one.
+1. PRD BUSINESS REQUIREMENTS THAT NEED TECHNICAL ELABORATION. One PRD requirement may need several technical requirements, and several may be answered by one.
 
 2. THE OBLIGATIONS THE ARCHITECTURE IMPOSES, WHICH NO PRD WOULD EVER STATE. These have NO PRD parent. System uptime, latency, maintainability, security, failover, disaster recovery, specific infrastructure and CDK instructions, and observability: this system uses EVENTS as its observability mechanism, so if this PRD results in a service being built, the TRD says WHICH EVENTS that service must emit. The same class covers throughput and latency budgets, data modelling, API contracts, encryption, retention and auth protocols, and monitoring and alerting. The SAD is the authority on what belongs.
 
 The SAD extract below gives §2 and §4 in full and §8 as an INDEX. Open in full every §8 entry whose obligation could apply to anything this PRD builds — each service, store, API, event, data flow and boundary — and ask what it demands.
+
+A SAD RULE BINDS ONLY WHAT THE DESIGN HAS. A SAD rule about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where this PRD's design — the PRD and the architecture ruling below — has that thing, and the requirement names it: "the design has bucket <name>, so <name> is versioned and SSE-S3 encrypted [C-…]". A design with no bucket carries no bucket rule, and a rule is never a reason to add the thing it governs: things are added by the design, where things of one kind are shared whenever the design allows. Set \`appliesTo\` on every requirement to the design element it governs, named as the design names it (for a PRD elaboration, the service, store or interface that satisfies it).
 
 CITE THE SAD; DO NOT RESTATE IT. A requirement that names the obligation and cites the SAD entry that defines it is complete and is the preferred shape. Where the SAD already settles a point a PRD requirement raises, cite that decision. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
 
 ${writeBrief}
 PRD (source of product requirements):
 ${prdText}
+${technicalBlock}${rulingBlock}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
 SAD extract (cite each entry by the id in brackets):
 ${extractText}
 ${feedback ? `\nFeedback on the previous version from the gate — address every point:\n${feedback}` : ''}
 
-Each technical requirement has a stable ID, NAMES ITS SOURCE, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR a SAD entry (in \`sadRefs\`); a SAD-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the SAD.
+Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design element it applies to, and is verifiable. The source is EITHER a PRD requirement (in \`prdRefs\`) OR a SAD entry (in \`sadRefs\`); a SAD-sourced requirement carries an empty \`prdRefs\`. A requirement must not contradict the SAD.
 
 Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every SAD entry a requirement rests on in \`sadRefs\`.
 
@@ -433,10 +448,11 @@ CITE THE DECISIONS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter a
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'requirement', 'prdRefs', 'sadRefs', 'verification'],
+            required: ['id', 'requirement', 'appliesTo', 'prdRefs', 'sadRefs', 'verification'],
             properties: {
               id: { type: 'string' },
               requirement: { type: 'string' },
+              appliesTo: { type: 'string' },
               prdRefs: { type: 'array', items: { type: 'string' } },
               sadRefs: { type: 'array', items: { type: 'string' } },
               verification: { type: 'string' },

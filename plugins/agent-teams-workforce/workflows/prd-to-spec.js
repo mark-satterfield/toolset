@@ -1,15 +1,16 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, rules architecture when the PRD needs a decision, rules the repo span, authors the TRD, reconciles current state and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture when the PRD needs a decision or states a technical rule SAD §2/§8 lacks (the SAD gains the rule; the PRD is never edited), rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
+    { title: 'PRD Validation', detail: 'classify each PRD requirement as business or technical, and whether SAD §2/§8 holds each technical rule' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'triage the PRD; run the architecture mini when a decision is needed' },
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
     { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
-    { title: 'Spec Authoring', detail: 'per repo: reconcile current state, then author the Spec and write its Story bead' },
+    { title: 'Spec Authoring', detail: 'per repo: reconcile the requirements that govern what the repo owns or changes, then author the Spec and write its Story bead' },
     { title: 'Task Decomposition', detail: 'per Story: decompose into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
     { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when beads holds every Story, Task and edge the saved documents name' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
@@ -67,6 +68,7 @@ const EXPECTED_PHASES = [
   'Epic Lifecycle',
   'PRD',
   'Epic',
+  'PRD Validation',
   'Architecture',
   'Repo Scoping',
   'TRD Authoring',
@@ -285,6 +287,7 @@ recRuled(prdByPath ? `PRD read from its file by each session: ${prd.path}` : 'PR
 produced.prd = prd
 
 function derivedNames(id) {
+  if (id === 'prd-validation') return ['prd-classification.json']
   if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'sad-update.json']
   if (id === 'trd') return ['trd.md']
   if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json']
@@ -447,8 +450,13 @@ const SAVED_SPAN_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'homeKind'],
-        properties: { id: { type: 'string' }, homeKind: { type: ['string', 'null'] } },
+        required: ['id', 'homeKind', 'summary', 'requirementIds'],
+        properties: {
+          id: { type: 'string' },
+          homeKind: { type: ['string', 'null'] },
+          summary: { type: ['string', 'null'] },
+          requirementIds: { type: 'array', items: { type: 'string' } },
+        },
       },
     },
     designSummary: { type: ['string', 'null'] },
@@ -460,7 +468,7 @@ const SPAN_PROJECTION = [
   "r = json.load(open(d + '/repo-scoping.json'))",
   "s = json.load(open(d + '/repo-scoping-shape.json'))",
   "t = lambda v: v if isinstance(v, str) else json.dumps(v)",
-  "print(json.dumps({'placements': [{'repoPath': p.get('repoPath') or '', 'workUnitIds': [t(x) for x in p.get('workUnitIds') or []], 'obsoletes': [t(x) for x in p.get('obsoletes') or []]} for p in r.get('placements') or []], 'spanRationale': r.get('spanRationale'), 'workUnits': [{'id': t(u.get('id')), 'homeKind': u.get('homeKind')} for u in s.get('workUnits') or []], 'designSummary': s.get('designSummary')}, indent=1))",
+  "print(json.dumps({'placements': [{'repoPath': p.get('repoPath') or '', 'workUnitIds': [t(x) for x in p.get('workUnitIds') or []], 'obsoletes': [t(x) for x in p.get('obsoletes') or []]} for p in r.get('placements') or []], 'spanRationale': r.get('spanRationale'), 'workUnits': [{'id': t(u.get('id')), 'homeKind': u.get('homeKind'), 'summary': u.get('summary'), 'requirementIds': [t(x) for x in u.get('requirementIds') or []]} for u in s.get('workUnits') or []], 'designSummary': s.get('designSummary')}, indent=1))",
 ].join('; ')
 /** Returns the saved span ruling a resumed run replays, printed by a script, or null when it cannot be read. */
 async function readSavedSpan() {
@@ -519,6 +527,71 @@ const epic = { key: epicRef.key || epicBeadId, ...epicRef, id: epicBeadId, type:
 produced.epic = epic
 recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
 
+enterPhase('PRD Validation')
+/** Returns the classification entries a prd-validation result or its saved file carries. */
+function classesFrom(list) {
+  const strs = (v) => (Array.isArray(v) ? v.filter(hasText).map((x) => x.trim()) : [])
+  return (Array.isArray(list) ? list : [])
+    .filter((r) => r && hasText(r.id))
+    .map((r) => {
+      const technical = r.class === 'technical'
+      return {
+        id: r.id.trim(),
+        requirement: r.requirement || '',
+        class: technical ? 'technical' : 'business',
+        governs: technical ? r.governs || '' : '',
+        rule: technical ? r.rule || '' : '',
+        sadCoverage: technical ? (['covered', 'absent'].includes(r.sadCoverage) ? r.sadCoverage : 'unchecked') : 'n/a',
+        sadRefs: technical ? strs(r.sadRefs) : [],
+      }
+    })
+}
+let requirementClasses = null
+const classHit = resumeFresh('prd-validation')
+if (classHit && ART_ON && classHit.names.includes('prd-classification.json')) {
+  const text = await readSavedText(artPath('prd-classification.json'), 'replay:read-prd-classification', 'PRD Validation')
+  try {
+    const parsed = text ? JSON.parse(text) : null
+    if (parsed && Array.isArray(parsed.requirementClasses)) requirementClasses = classesFrom(parsed.requirementClasses)
+  } catch (err) {
+    log(`Replay: prd-classification.json is not valid JSON (${String((err && err.message) || err).slice(0, 120)})`)
+  }
+  if (requirementClasses) {
+    reuseFrom('prd-validation', classHit)
+    await acceptPhase('prd-validation', 'reused')
+  } else {
+    log(`PRD Validation: the saved classification in ${ART_DIR} was not read back; the PRD is classified again`)
+  }
+}
+if (!requirementClasses) {
+  const v = await workflow('agent-teams-workforce:prd-validation', {
+    prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
+    sadPath: a.sadPath,
+    classifyOnly: true,
+    standingRulings,
+    artifacts: artFor('prd-validation', PRD_INPUTS),
+  })
+  if (v && v.ledger) runLedger.push(v.ledger)
+  if (!v || v.ok !== true) {
+    return partial('prd-validation', {
+      reason: (v && (v.reason || v.error)) || 'prd-validation returned nothing',
+      ...(!v || v.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (v && v.dispatchFailures) || dispatchDeaths('PRD Validation') } : {}),
+    })
+  }
+  requirementClasses = classesFrom(v.requirementClasses)
+  await acceptPhase('prd-validation', 'passed')
+}
+const technicalReqs = requirementClasses.filter((r) => r.class === 'technical')
+const businessIds = new Set(requirementClasses.filter((r) => r.class === 'business').map((r) => r.id))
+const technicalOnlyIds = [...new Set(technicalReqs.map((r) => r.id))].filter((id) => !businessIds.has(id))
+const sadGaps = technicalReqs.filter((r) => r.sadCoverage === 'absent')
+produced.requirementClasses = requirementClasses
+recRuled(
+  `${requirementClasses.length} requirement(s) classified: ${businessIds.size} business, ${technicalReqs.length} technical` +
+    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; SAD lacks ${sadGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
+  { status: 'done' }
+)
+
 enterPhase('Architecture')
 const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk', 'bounded-context', 'failure-mode']
 let archTriage = null
@@ -529,7 +602,7 @@ const archHit = resumeFresh('architecture')
 if (archHit) {
   const hasRuling = archHit.names.includes('architecture-decision.md')
   const savedTriage = artData(archHit, 'architecture-triage.json') || null
-  if (hasRuling || (savedTriage && savedTriage.needed === false)) {
+  if (hasRuling || (savedTriage && savedTriage.needed === false && !sadGaps.length)) {
     reuseFrom('architecture', archHit)
     await acceptPhase('architecture', 'reused')
     archTriage = savedTriage
@@ -581,6 +654,13 @@ if (!architecture) {
       }
     )
   }
+  if (sadGaps.length && archTriage && archTriage.needed === false) {
+    archTriage = {
+      ...archTriage,
+      needed: true,
+      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${sadGaps.length} technical rule(s) SAD §2/§8 does not hold (${sadGaps.map((r) => r.id).join(', ')})`,
+    }
+  }
   if (archTriage && archTriage.needed === false) {
     architecture = { ok: true, skipped: true, artifact: { skipped: true, triage: archTriage } }
     recRuled(`Architecture convened no panel: ${archTriage.reason || 'no architecture decision in this PRD'}.`, { status: 'skipped', skipReason: archTriage.reason || 'no architecture decision' })
@@ -597,6 +677,9 @@ if (!architecture) {
         drivers: [
           'The PRD is CANONICAL. Where it changes or contradicts what is already built, the PRD wins; that is not an option to weigh. Your inputs are this PRD and the SAD. A UI/UX difference is settled by the design-system artifacts and is never an architecture decision.',
           ...(archQuestions.length ? [`Triage found these choices open in the PRD: ${archQuestions.join(' | ')}`] : []),
+          ...(sadGaps.length
+            ? [`The PRD states technical rules that SAD §2/§8 does not hold. Record each in the SAD, as a constraint in §2 or a crosscutting concept in §8, stated as a rule on the kind of thing it governs so that it binds only a design that has that thing: ${sadGaps.map((r) => `${r.id}: ${r.rule || r.requirement}${r.governs ? ` (governs: ${r.governs})` : ''}`).join(' | ')}`]
+            : []),
         ],
         repoPath,
       },
@@ -687,6 +770,7 @@ async function runRepoScoping() {
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture-triage.json'), artPath('architecture-decision.md')]),
     prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
     architecture: architecture.skipped ? { skipped: true } : architectureRulingFor(architecture.artifact),
+    requirementClasses,
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
@@ -715,6 +799,8 @@ async function runTrdAuthoring() {
     sadExtract: archSadExtract || undefined,
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
+    architecture: architecture.skipped ? undefined : architectureRulingFor(architecture.artifact),
+    requirementClasses,
     sad: a.sad || { path: a.sadPath },
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
@@ -790,16 +876,21 @@ const inventoryLine = (r) => {
   if (r.status === 'conforms' && Array.isArray(r.conformingMaterial) && r.conformingMaterial.length) bits.push(`    REUSE (do not rebuild): ${r.conformingMaterial.join('; ')}`)
   if (r.status === 'contradicts' && Array.isArray(r.removalTargets) && r.removalTargets.length) bits.push(`    REMOVE (the PRD wins): ${r.removalTargets.join('; ')}`)
   if (r.status === 'absent' && hasText(r.missing)) bits.push(`    ABSENT: ${r.missing}`)
+  if (r.status === 'conforms') bits.push('    NO NEW WORK: it exists and matches.')
   if (Array.isArray(r.evidence) && r.evidence.length) bits.push(`    evidence: ${r.evidence.join('; ')}`)
   return bits.join('\n')
 }
+const inScope = (recon) => (Array.isArray(recon && recon.requirements) ? recon.requirements : []).filter((r) => r && r.status !== 'not-applicable')
 const renderInventory = (recon, repo) => {
-  const reqs = Array.isArray(recon && recon.requirements) ? recon.requirements : []
-  if (!reqs.length) return ''
+  if (!recon || !Array.isArray(recon.requirements)) return ''
+  const reqs = inScope(recon)
+  if (!reqs.length) {
+    return `SCOPE OF ${repo}: no PRD or TRD requirement governs anything this repository owns or changes. Specify only the removal work named for it, if any, and nothing else.`
+  }
   return (
-    `MATERIAL INVENTORY FOR ${repo} — what already exists in THIS repository for this PRD. It is context, not scope: every requirement the PRD states is in scope.\n` +
-    '  conforms    — exists and matches the PRD: REUSE it.\n' +
-    '  contradicts — exists and differs from the PRD: the PRD wins; specify its REMOVAL or replacement.\n' +
+    `SCOPE AND MATERIAL INVENTORY FOR ${repo} — the requirements below are this repository's, and only these. A PRD or TRD requirement not listed here is carried by another repository's Story or governs nothing this repository has: do not specify it.\n` +
+    '  conforms    — exists and matches: REUSE it; it needs no new work.\n' +
+    '  contradicts — exists and differs: the requirement wins; specify its REMOVAL or replacement.\n' +
     '  absent      — nothing exists: build it.\n\n' +
     reqs.map(inventoryLine).join('\n')
   ).slice(0, INVENTORY_CAP)
@@ -843,9 +934,34 @@ const uiRepos = (() => {
   )
   return held.size ? held : null
 })()
+/** Returns the work units repo scoping placed in one repository, or null when the caller pinned the span. */
+function unitsPlacedIn(repo) {
+  if (!scoping) return null
+  const here = String(repo).trim()
+  const ids = new Set(
+    (Array.isArray(scoping.placements) ? scoping.placements : [])
+      .filter((p) => p && hasText(p.repoPath) && p.repoPath.trim() === here)
+      .flatMap((p) => (Array.isArray(p.workUnitIds) ? p.workUnitIds : []))
+  )
+  return (Array.isArray(scoping.workUnits) ? scoping.workUnits : [])
+    .filter((u) => u && ids.has(u.id))
+    .map((u) => ({ id: u.id, summary: u.summary || '', requirementIds: Array.isArray(u.requirementIds) ? u.requirementIds : [] }))
+}
+/** Returns the TRD reference prd-reconciliation reads the TRD requirements from. */
+function trdRef() {
+  const reqs = trd && Array.isArray(trd.requirements) ? trd.requirements : []
+  return {
+    path: trdAuthoring.artifact.trdPath || (trd && trd.trdPath) || null,
+    requirements: reqs.map((r) => ({ id: r.id, requirement: r.requirement, appliesTo: r.appliesTo || '' })),
+  }
+}
 /** Returns the prd-reconciliation arguments for one repository. */
 function reconArgs(repo, slug, reconReplay) {
+  const units = unitsPlacedIn(repo)
   return {
+    ...(units ? { scope: { workUnits: units } } : {}),
+    technicalIds: technicalOnlyIds,
+    trd: trdRef(),
     artifacts: artFor(`recon:${slug}`, PRD_INPUTS, { slug }),
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { ...prd, repoPath: repo },
@@ -961,6 +1077,19 @@ const removalBrief = (repo) => {
     mine.map((w) => `- ${w.requirementId || '(unidentified)'}: ${w.requirement || ''}\n    remove: ${w.targets.filter(hasText).join('; ')}`).join('\n')
   )
 }
+const inventoryBrief = (repo) => {
+  const recon = reconByRepo.get(repo)
+  const reqs = Array.isArray(recon && recon.requirements) ? recon.requirements : []
+  if (!reqs.length) return ''
+  const line = (status) => reqs.filter((r) => r.status === status).map((r) => r.id)
+  const work = [...line('absent'), ...line('contradicts')]
+  const none = [...line('conforms'), ...line('not-applicable')]
+  return (
+    '\n\n=== MATERIAL INVENTORY — what needs a Task ===\n' +
+    `Needs work (absent: build; contradicts: remove or replace): ${work.join(', ') || 'none'}\n` +
+    `No Task (conforms, or not applicable to this repository): ${none.join(', ') || 'none'}`
+  )
+}
 const stories = specPairs.map((p) => p.story)
 const decompositions = []
 const decompositionFailures = []
@@ -994,7 +1123,7 @@ function decompArgs(pair) {
     spec: {
       id: prd.id,
       title: prd.title,
-      description: `SUMMARY (navigation aid only — the contract is in the spec documents):\n${summary}` + removalBrief(pair.repoPath),
+      description: `SUMMARY (navigation aid only — the contract is in the spec documents):\n${summary}` + inventoryBrief(pair.repoPath) + removalBrief(pair.repoPath),
       source: 'spec-authoring output',
       repoPath: pair.repoPath,
     },
@@ -1068,9 +1197,9 @@ if (!decompositions.length) {
   })
 }
 
-const crossStory = { ran: false, reason: null, edges: [], rejected: 0, written: null }
-if (decompositions.length < 2) {
-  crossStory.reason = 'the Tasks sit in one Story'
+const crossStory = { ran: false, reason: null, note: null, edges: [], rejected: 0, written: null }
+if (decompositions.filter((d) => Array.isArray(d.artifact.tasks) && d.artifact.tasks.length).length < 2) {
+  crossStory.note = 'the Tasks sit in one Story or none'
 } else {
   crossStory.ran = true
   const depsHit = resumeFresh(TASK_DEPS_PHASE)

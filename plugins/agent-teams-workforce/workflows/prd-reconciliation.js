@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. One read-only session inventories, for one repository, the material that already exists for every requirement of a PRD (conforms: reuse, contradicts: remove, absent: build), resolves UI requirements against the cds design artifacts, and reports upstream dependency changes. The PRD is canonical: no requirement is dropped because code exists. A saved result can be replayed instead of dispatching the session; when it is not read back, the session takes the inventory again.',
+    'Leaf mini — PRD Reconciliation. One read-only session inventories, for one repository, the material that already exists for each requirement that governs something the repository owns or changes (conforms: reuse, contradicts: remove, absent: build, not-applicable: it governs nothing here), resolves UI requirements against the cds design artifacts, and reports upstream dependency changes. The requirements follow the work units repo-scoping placed in the repository, plus the TRD requirements on what those units build; a PRD requirement classified technical reaches a repository only through the TRD. The PRD is canonical: no requirement is dropped because code exists. A saved result can be replayed instead of dispatching the session; when it is not read back, the session takes the inventory again.',
   phases: [{ title: 'Reconciliation checks', detail: 'one read-only session inventories the material and checks upstream dependencies' }],
 }
 const dispatchFailures = []
@@ -31,6 +31,9 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, body?, path?, repoPath? },
 //   repos?: string[], mocksDir?, packagesDir?, dependencies?: string[], awsProfile? ('dev'),
 //   uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
+//   scope?: { workUnits: [{ id, summary?, requirementIds? }] } (the units repo-scoping placed in this repository),
+//   technicalIds?: string[] (PRD requirement ids classified technical),
+//   trd?: { path?, requirements?: [{ id, requirement, appliesTo? }] },
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, slug },
 //   replay?: { files: { recon: <absolute path of a saved result> } }
 // }
@@ -63,8 +66,34 @@ END STANDING RULINGS
 const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
 const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 const prdBlock = prdPath.startsWith('/')
-  ? `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read it in full before you start: every requirement it states is in scope.`
+  ? `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read it in full before you start.`
   : `${prdHeader}\n\n${prdBody}`
+const scope = a.scope && typeof a.scope === 'object' && Array.isArray(a.scope.workUnits) ? a.scope : null
+const scopeUnits = scope ? scope.workUnits.filter((u) => u && hasText(u.id)) : []
+const technicalIds = (Array.isArray(a.technicalIds) ? a.technicalIds : []).filter((x) => hasText(x)).map((x) => x.trim())
+const trdIn = a.trd && typeof a.trd === 'object' ? a.trd : null
+const trdPath = trdIn && hasText(trdIn.path) ? trdIn.path.trim() : ''
+const trdReqs = (trdIn && Array.isArray(trdIn.requirements) ? trdIn.requirements : []).filter((r) => r && hasText(r.id))
+const unitLine = (u) => {
+  const ids = (Array.isArray(u.requirementIds) ? u.requirementIds : []).filter((x) => hasText(x))
+  return `- ${u.id}${hasText(u.summary) ? `: ${u.summary.trim()}` : ''}${ids.length ? `\n    PRD requirements: ${ids.join(', ')}` : ''}`
+}
+const requirementScopeBlock = [
+  'A requirement is THIS REPOSITORY\'S when it governs something this repository owns or changes. Inventory those, and only those.',
+  scope
+    ? scopeUnits.length
+      ? `Repository scoping placed these work units in this repository:\n${scopeUnits.map(unitLine).join('\n')}\nThe PRD requirements these units carry are this repository's. Every other PRD requirement is carried by a work unit in another repository and inventoried there: leave it out.`
+      : 'Repository scoping placed no work unit in this repository: no PRD requirement is carried here. Inventory only the TRD requirements below that govern something this repository owns.'
+    : 'No work units were placed for this run. Decide from the repository itself which PRD requirements govern something it owns or changes, and leave the others out.',
+  technicalIds.length
+    ? `PRD requirements ${technicalIds.join(', ')} are TECHNICAL rules — SAD rules, not product requirements. Leave them out as PRD requirements: they reach a repository only through the TRD requirements below.`
+    : '',
+  trdPath || trdReqs.length
+    ? `The TRD${trdPath ? ` at ${trdPath}` : ''} states technical requirements, each on the design element it governs (\`appliesTo\`). A TRD requirement is this repository's when that element is one this repository owns or one of its work units builds:${trdReqs.length ? `\n${trdReqs.map((r) => `- ${r.id}${hasText(r.appliesTo) ? ` [${r.appliesTo.trim()}]` : ''} ${r.requirement || ''}`).join('\n')}` : ' read the TRD for the list.'}`
+    : '',
+  'Give each inventoried requirement its id as its source writes it and set `source` to "prd" or "trd".',
+].filter(hasText).join('\n\n')
+
 const repoBlock = repos.length
   ? repos.map((r, i) => `${i + 1}. ${r}`).join('\n')
   : '(no repo paths supplied — discover the repositories this PRD touches from the PRD text)'
@@ -77,8 +106,7 @@ ${repoBlock}
 
 Search THIS repository. Do not survey the other repositories in the project, and do not go
 looking for a requirement's implementation elsewhere: another repository's copy of this run
-covers it. A requirement whose material is not in this repository is \`absent\` here, and it
-still appears in the inventory.`
+covers it. A requirement that is this repository's but whose material is not here is \`absent\`.`
   : `Repositories in scope:
 ${repoBlock}`
 
@@ -151,8 +179,9 @@ MATERIAL, not authority:
   - material that CONTRADICTS the PRD is removed;
   - where nothing exists, it gets built.
 
-EVERY requirement the PRD states comes back in your inventory with a status. You never drop
-one, never narrow one, never defer one, and never mark one no longer applicable.
+Every requirement that is this repository's comes back in your inventory with a status. What
+exists never subtracts from it: you never drop one because code exists, never narrow one, and
+never defer one.
 
 WHEN THE PRD AND THE DEPLOYED SYSTEM DISAGREE, THE PRD WINS. That produces one thing: removal
 work, named precisely.
@@ -163,14 +192,20 @@ ${prdBlock}
 
 ${scopeBlock}
 
-Enumerate EVERY requirement the PRD states, and for each one classify the MATERIAL — what
-exists today relative to what the PRD asks for:
+${requirementScopeBlock}
+
+Enumerate every requirement that is this repository's, and for each one classify the MATERIAL
+— what exists today relative to what the requirement asks for:
 
 - conforms    — an implementation exists and it MATCHES what the PRD asks for. Name what to
                 reuse in \`conformingMaterial\`.
 - contradicts — an implementation exists but it DIFFERS from what the PRD asks for. Name
                 exactly what must be deleted or replaced in \`removalTargets\`.
 - absent      — nothing exists. Say what is missing in \`missing\`.
+- not-applicable — the requirement governs a kind of thing this repository neither has nor
+                gets from its work units (a bucket rule, where the repository has no bucket and
+                its work units build none). Say in \`reason\` what it governs and cite what the
+                repository does own. Never use it for a requirement whose subject is here.
 
 Also classify the SURFACE each requirement lives on, in \`surface\`: ui | service | infra | data | unknown.
 
@@ -273,12 +308,14 @@ Determine whether any upstream contract, shared schema, event, library version, 
             properties: {
               id: { type: 'string' },
               requirement: { type: 'string' },
-              status: { type: 'string', enum: ['conforms', 'contradicts', 'absent'] },
+              source: { type: 'string', enum: ['prd', 'trd'] },
+              status: { type: 'string', enum: ['conforms', 'contradicts', 'absent', 'not-applicable'] },
               evidence: { type: 'array', items: { type: 'string' } },
               surface: { type: 'string', enum: ['ui', 'service', 'infra', 'data', 'unknown'] },
               conformingMaterial: { type: 'array', items: { type: 'string' } },
               removalTargets: { type: 'array', items: { type: 'string' } },
               missing: { type: 'string' },
+              reason: { type: 'string' },
             },
           },
         },
@@ -333,6 +370,7 @@ if (!reality) {
     conformsCount: 0,
     contradictsCount: 0,
     absentCount: 0,
+    notApplicableCount: 0,
     removalWork: [],
     reuseWork: [],
     uiAuthority: { bundlePath: null, mocksDir: mocksDir || null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
@@ -341,15 +379,17 @@ if (!reality) {
 
 const list = (v) => (Array.isArray(v) ? v.filter((x) => hasText(x)).map((x) => x.trim()) : [])
 const requirements = (Array.isArray(reality.requirements) ? reality.requirements : []).map((r, i) => {
-  const status = r && (r.status === 'conforms' || r.status === 'contradicts') ? r.status : 'absent'
+  const status = r && ['conforms', 'contradicts', 'not-applicable'].includes(r.status) ? r.status : 'absent'
   return {
     id: hasText(r && r.id) ? r.id : `R${i + 1}`,
+    source: r && r.source === 'trd' ? 'trd' : 'prd',
     requirement: (r && r.requirement) || '',
     status,
     evidence: list(r && r.evidence),
     conformingMaterial: status === 'conforms' ? list(r && r.conformingMaterial) : [],
     removalTargets: status === 'contradicts' ? list(r && r.removalTargets) : [],
     missing: status === 'absent' ? (r && r.missing) || null : null,
+    reason: status === 'not-applicable' ? (r && r.reason) || null : null,
     surface: (r && r.surface) || 'unknown',
   }
 })
@@ -357,6 +397,7 @@ const dependencyChanges = reality.dependencyChanges || null
 const conformsCount = requirements.filter((r) => r.status === 'conforms').length
 const contradictsCount = requirements.filter((r) => r.status === 'contradicts').length
 const absentCount = requirements.filter((r) => r.status === 'absent').length
+const notApplicableCount = requirements.filter((r) => r.status === 'not-applicable').length
 const removalWork = requirements
   .filter((r) => r.status === 'contradicts' && r.removalTargets.length)
   .map((r) => ({ requirementId: r.id, requirement: r.requirement, targets: r.removalTargets }))
@@ -374,7 +415,7 @@ const uiAuthority = {
 
 log(
   `Reconciliation: ${requirements.length} requirement(s) inventoried — ${conformsCount} conform (reuse), ` +
-    `${contradictsCount} contradict (remove), ${absentCount} absent (build).`
+    `${contradictsCount} contradict (remove), ${absentCount} absent (build), ${notApplicableCount} not applicable.`
 )
 
 return {
@@ -384,6 +425,7 @@ return {
   conformsCount,
   contradictsCount,
   absentCount,
+  notApplicableCount,
   removalWork,
   reuseWork,
   uiAuthority,
@@ -401,6 +443,7 @@ return {
     conformsCount,
     contradictsCount,
     absentCount,
+    notApplicableCount,
     removalWork: removalWork.length,
     ok: true,
   },

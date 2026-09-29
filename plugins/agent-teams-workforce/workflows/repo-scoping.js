@@ -24,7 +24,7 @@ async function run(prompt, opts) {
 }
 
 // args: { prd: { id?, title?, body?, path? } | string, architecture?, reconciliation?: { existingRepos?, removalWork?, materialInventory? },
-//   seedRepos?, epic?: { key?, title? }, standingRulings?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
+//   seedRepos?, epic?: { key?, title? }, standingRulings?, requirementClasses?: [{ id, class, governs?, rule? }], artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 // returns: { ok, reason?, repos, placements, createdRepos, creationFailures, obsoleteCode, workUnits, designSummary, spanRationale, surveySummary, ledger }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
@@ -56,6 +56,10 @@ const removalWork = (Array.isArray(reconciliation.removalWork) ? reconciliation.
 )
 const materialInventory = hasText(reconciliation.materialInventory) ? reconciliation.materialInventory.trim() : ''
 const architecture = a.architecture || null
+const technicalReqs = (Array.isArray(a.requirementClasses) ? a.requirementClasses : []).filter((r) => r && r.class === 'technical' && hasText(r.id))
+const technicalBlock = technicalReqs.length
+  ? `\n\nTECHNICAL RULES IN THE PRD. These requirements are rules about how the system is built, recorded in the SAD, not product requirements:\n${technicalReqs.map((r) => `- ${r.id}: ${r.rule || r.requirement || ''}${hasText(r.governs) ? ` (governs: ${r.governs})` : ''}`).join('\n')}\nA technical rule makes no work unit of its own. A unit lists one in requirementIds only when the unit builds the kind of thing the rule governs; the rule then binds that thing and nothing else.`
+  : ''
 const architectureSkipped = !architecture || architecture.skipped === true
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
@@ -106,7 +110,7 @@ ASSUME GREENFIELD. Nothing has been built. No repository exists. Decide what SHO
 You are not told which repositories this project has; do not ask for them or guess at them. A later step maps your design onto what exists.
 
 The PRD — every requirement it states, which is ALL the work there is:
-${prdBlock}
+${prdBlock}${technicalBlock}
 
 Architecture ruling for this work:
 ${architectureBlock}
@@ -114,7 +118,7 @@ ${architectureBlock}
 For each work unit return:
 - id — a short stable identifier (W1, W2, ...).
 - summary — what this unit builds, in one or two sentences.
-- requirementIds — the PRD requirements it satisfies.
+- requirementIds — the PRD requirements it satisfies, by the ids the PRD writes. Every business requirement of the PRD appears in at least one unit.
 - homeKind — one of "service", "infrastructure", "shared-library", "frontend", "data-pipeline", "tooling", "documentation".
 - boundaryRationale — the boundary you are drawing and what it protects.
 - couplesWith — the ids of other units it is tightly coupled to.
@@ -139,7 +143,7 @@ Draw the smallest number of boundaries the design honestly needs. Every boundary
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'summary', 'homeKind', 'boundaryRationale'],
+            required: ['id', 'summary', 'requirementIds', 'homeKind', 'boundaryRationale'],
             properties: {
               id: { type: 'string' },
               summary: { type: 'string' },

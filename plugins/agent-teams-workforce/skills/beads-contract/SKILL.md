@@ -206,11 +206,11 @@ time its assessment applies. A Task elaboration wrote carries none of the six: i
 elaboration's. `depscore.py apply-edges` writes all six keys, and `depscore.py
 withdraw-edge` writes the records for the one edge it withdraws; nothing else does.
 On a Story, `depscore.py story-edges` (also run by `elaboration-finish` and by a Task-level
-`apply-edges`) writes `story_owned_blockers`, the comma-separated Stories of the same
-repository this Story is ordered after by a `blocks` edge the script created,
+`apply-edges`) writes `story_owned_blockers`, the comma-separated Stories this Story is
+ordered after by a `blocks` edge the script created,
 `story_owned_blockers_at`, and `story_edge_reasons`, a JSON object keyed by blocker id whose
-value is why the edge stands (Epic order by `tracks` edges, or a Task edge between the two
-Stories). The host records the Story's deploy as `story_deploy_state`, `story_deploy_attempt`,
+value is why the edge stands (Epic order by `tracks` edges within one repository, or a Task
+edge between the two Stories in any repository). The host records the Story's deploy as `story_deploy_state`, `story_deploy_attempt`,
 `story_deploy_error`, `story_ssm_missing` (the SSM parameters its stacks read that AWS dev does
 not hold) and `story_pr_url`.
 
