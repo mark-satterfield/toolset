@@ -1,7 +1,7 @@
 export const meta = {
   name: 'seed-portfolio',
   description:
-    "Seeds the Epic portfolio: runs dependency-assessment (with `score: false`) for every Epic in `epics`, one after another in the order given, then runs wsjf-scoring once. An Epic whose assessment fails is reported in `stoppedAt` and `remaining` and the seeding continues. With `apply: false` every assessment proposes only and nothing is scored.",
+    "Seeds the Epic portfolio: runs dependency-assessment (with `score: false`) for every Epic in `epics`, one after another in the order given, then runs wsjf-scoring once. An Epic whose assessment fails is reported in `stoppedAt` and `remaining` and the seeding continues. With `apply: false` every assessment proposes only and nothing is scored. `repoPath`, `pluginRoot` and `workDir` default to the main repository of the session's working directory, the installed plugin and a new temporary directory; when one cannot be derived the run refuses before dispatching any agent.",
   whenToUse: 'The Epic portfolio is seeded once: every open Epic gets its architecture dependencies assessed before every Epic and Task is scored by wsjf-scoring.',
   phases: [
     { title: 'Assess', detail: 'dependency-assessment for each Epic, one after another, with score: false' },
@@ -104,7 +104,108 @@ async function settleAgent(prompt, opts) {
 //   failed:     [{ id, error, findings, edgesFile, validationFile, dispatchFailures }], one per failed Epic
 //   stoppedAt:  the first entry of `failed`, or null
 //   remaining:  the ids of the failed Epics
-const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const given = (typeof args === 'string' ? JSON.parse(args) : args) || {}
+const PATH_ARGS = ['repoPath', 'pluginRoot', 'workDir']
+const isAbsolute = (v) => typeof v === 'string' && v.trim().startsWith('/')
+const RESOLVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'output'],
+  properties: { exitCode: { type: 'integer' }, output: { type: 'object' } },
+}
+const RESOLVE_PY = `import json, os, subprocess, sys, tempfile, time
+from pathlib import Path
+problems = {}
+cwd = Path.cwd().resolve()
+p = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True)
+repo = str(Path(p.stdout.strip()).resolve().parent) if p.returncode == 0 and p.stdout.strip() else ""
+if not repo:
+    problems["repoPath"] = f"{cwd} is not inside a git repository: {p.stderr.strip()}"
+marker = ("scripts", "portfolio", "depscore.py")
+plugin = ""
+env_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
+if env_root and Path(env_root, *marker).is_file():
+    plugin = str(Path(env_root).resolve())
+reg = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "plugins" / "installed_plugins.json"
+if not plugin:
+    try:
+        plugins = json.loads(reg.read_text(encoding="utf-8")).get("plugins", {})
+    except (OSError, ValueError) as exc:
+        plugins = {}
+        problems["pluginRoot"] = f"{reg} is unreadable: {exc}"
+    ranked = []
+    for key, entries in plugins.items():
+        if not key.startswith("agent-teams-workforce@") or not isinstance(entries, list):
+            continue
+        for e in entries:
+            path = e.get("installPath") if isinstance(e, dict) else None
+            if not isinstance(path, str) or not Path(path, *marker).is_file():
+                continue
+            if e.get("scope") in ("local", "project") and e.get("projectPath") in (str(cwd), repo):
+                ranked.append((0, path))
+            elif e.get("scope") == "user":
+                ranked.append((1, path))
+    if ranked:
+        plugin = sorted(ranked)[0][1]
+    elif "pluginRoot" not in problems:
+        problems["pluginRoot"] = f"{reg} lists no agent-teams-workforce install for {repo or cwd}, or for the user, that ships scripts/portfolio/depscore.py"
+work = Path(tempfile.gettempdir()).resolve() / "agent-teams-workforce" / sys.argv[1] / (time.strftime("%Y%m%dT%H%M%S") + "-" + str(os.getpid()))
+work.mkdir(parents=True, exist_ok=True)
+since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+print(json.dumps({"repoPath": repo, "pluginRoot": plugin, "workDir": str(work), "since": since, "cwd": str(cwd), "problems": problems}))`
+// Fills the path args the caller left out — repoPath (the main repository of the session's working
+// directory), pluginRoot (the installed plugin the registry names for that repository, else the
+// user-scope install) and workDir (a new temporary directory) — in one runner session, dispatched only
+// when one of them is missing. Returns { args, missing, problems }: `missing` names every required arg
+// still without a value, and the caller refuses before dispatching any other agent.
+async function resolveArgs(given, name, required) {
+  const out = { ...given }
+  const lacking = PATH_ARGS.filter((k) => !isAbsolute(out[k]))
+  const problems = {}
+  if (lacking.length) {
+    const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`
+    const got = await settleAgent(
+      `Run this shell command exactly once, from the session's working directory (do not cd anywhere first), and change nothing else:
+
+python3 -c ${q(RESOLVE_PY)} ${q(name)}
+
+It prints one JSON object on stdout. Return its process exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+      { label: 'resolve-paths', model: 'haiku', effort: 'low', schema: RESOLVE_SCHEMA }
+    )
+    const found = (got && got.output) || {}
+    if (!got) problems.resolver = 'the path resolver returned no result'
+    else if (found.error) problems.resolver = String(found.error).slice(0, 500)
+    Object.assign(problems, found.problems && typeof found.problems === 'object' ? found.problems : {})
+    for (const k of lacking) {
+      if (isAbsolute(found[k])) {
+        out[k] = found[k].trim()
+        log(`${k} was not passed; derived ${out[k]}`)
+      }
+    }
+    if (!(typeof out.since === 'string' && out.since.trim()) && typeof found.since === 'string') out.since = found.since
+  }
+  const missing = required.filter((k) => (PATH_ARGS.includes(k) ? !isAbsolute(out[k]) : !(typeof out[k] === 'string' && out[k].trim())))
+  return { args: out, missing, problems }
+}
+// Returns the refusal a workflow gives when a required arg has no value; no other agent has been dispatched.
+function refuseArgs(resolved, name) {
+  const why = resolved.missing.map((k) => (resolved.problems[k] ? `${k} (${resolved.problems[k]})` : k)).join('; ')
+  const extra = resolved.problems.resolver ? `; resolver: ${resolved.problems.resolver}` : ''
+  const error = `${name} refused before dispatching any agent: no usable ${why}${extra}. Pass ${resolved.missing.join(', ')} explicitly in the Workflow args.`
+  log(error)
+  return {
+    ok: false,
+    stage: 'args',
+    headline: error,
+    error,
+    missing: resolved.missing,
+    dispatchFailed: dispatchDeaths().length > 0,
+    dispatchFailures: dispatchDeaths(),
+  }
+}
+const resolved = await resolveArgs(given, 'seed-portfolio', [...PATH_ARGS])
+if (resolved.missing.length) return refuseArgs(resolved, 'seed-portfolio')
+const a = resolved.args
 const work = String(a.workDir || '').replace(/\/+$/, '')
 const file = (name) => `${work}/${name}`
 const contextDir = file('context')
