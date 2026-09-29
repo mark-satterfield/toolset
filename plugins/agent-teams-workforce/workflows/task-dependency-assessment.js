@@ -172,13 +172,13 @@ const assessed = await settleAgent(assessPrompt, {
 })
 const printed = (assessed && assessed.applySummary) || {}
 const summary = printed.command === 'apply-edges' && printed.summary && typeof printed.summary === 'object' ? printed.summary : printed
-const settled = !!assessed && assessed.applyExitCode === 0 && !summary.validation && (applies ? summary.applied === true : true)
+const settled = !!assessed && assessed.applyExitCode === 0 && !summary.validation && summary.applied !== false
 const stop = assessed && !settled && !assessed.error
   ? { task: target, findings: assessed.findings || summary.validation || {}, edgesFile, validationFile, reasoning: reasoningFile }
   : null
 const edges = {
   ...summary,
-  applied: applies && summary.applied === true,
+  applied: applies && settled,
   proposed: !applies && settled,
   resultFile: applyFile,
   edgesFile,
@@ -194,7 +194,7 @@ const edges = {
             : `the edge proposal was not applied (exit ${assessed.applyExitCode}); the tracker keeps its current edges`,
       }),
 }
-if (settled) log(`Edges (${target})${applies ? '' : ', proposed'}: ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged`)
+if (settled) log(`Edges (${target})${applies ? '' : ', proposed'}: ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged`)
 else log(`${target}: ${edges.reason}`)
 
 let scoring = null
@@ -229,7 +229,7 @@ return {
   ok: settled && scoredOk,
   stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}${storyEdgeLine}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added ?? '?'} added, ${summary.converted ?? '?'} converted, ${summary.removed ?? '?'} withdrawn, ${summary.unchanged ?? '?'} unchanged${scores ? ', and rescored' : ''}${storyEdgeLine}`,
   apply: applies,
   settled,
   workDir: work,

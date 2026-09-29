@@ -263,7 +263,7 @@ async function composite(reconResult, { onCalls, args } = {}) {
     workflowImpl: (call) => {
       seen.push(call)
       const name = String(call.name || '')
-      if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) {
+      if (name.endsWith('gate-enforce')) {
         return { verdict: 'pass', criteria: [], flags: [] }
       }
       if (name.endsWith('prd-reconciliation')) return reconResult

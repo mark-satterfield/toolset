@@ -45,10 +45,10 @@ function run(file, { workspace, args } = {}) {
       // the Commit phase. bug-fix's gates escalate after its first writing phase.
       if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, noRegressions: true, evidence: 'e', changedFiles: [] }
       if (call.name === 'agent-teams-workforce:tdd-refactor') return { testsGreen: true }
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
       }
-      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true, changedFiles: [] }
+      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', changedFiles: [] }
     },
   })
 }

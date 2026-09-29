@@ -40,11 +40,11 @@ function runSpecSide(file, { bead } = {}) {
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') return okWorkspace(call.payload.repoPath)
       if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         if (call.payload.gate === '1') return { verdict: 'pass', criteria: [], flags: [] }
         return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
       }
-      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true, changedFiles: [] }
+      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', changedFiles: [] }
     },
   })
 }
@@ -88,8 +88,8 @@ function runBugFix({ bead, triage } = {}) {
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:bug-triage') return triage(call)
       if (call.name === 'agent-teams-workforce:workspace') return okWorkspace(call.payload.repoPath)
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
-      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true, changedFiles: [] }
+      if (call.name.endsWith('gate-enforce')) return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
+      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', changedFiles: [] }
     },
   })
 }

@@ -5,13 +5,6 @@ export const meta = {
   phases: [{ title: 'Documentation', detail: 'currency audit + assigned writes' }],
 }
 const dispatchFailures = []
-// Returns the recorded dispatch failures of the named phases, or all of them when none is named.
-function dispatchDeaths(...phases) {
-  const named = phases.filter(Boolean)
-  if (!named.length) return dispatchFailures.slice()
-  const set = new Set(named)
-  return dispatchFailures.filter((f) => set.has(f.phase))
-}
 const DETERMINISTIC_ERROR_TEXT =
   /completed without calling structuredoutput|structured ?output|schema|validation|does not match|required property|additionalproperties|unsatisfiable|invalid argument/i
 const TRANSIENT_ERROR_TEXT =
@@ -228,7 +221,6 @@ for (const r of writerResults) {
 }
 const update = needsWork ? { updatedDocs: allUpdatedDocs, writers: writerResults } : null
 const docsCurrent = !!(audit && (!needsWork || writerResults.length === writersChosen.length))
-const docsUnjudged = !audit || writerResults.length < writersChosen.length
 
 const ledger = {
   phase: 'documentation',
@@ -243,13 +235,4 @@ return {
   audit,
   update,
   ledger,
-  ...(docsUnjudged
-    ? {
-        dispatchFailed: true,
-        dispatchFailures: dispatchDeaths('Documentation'),
-        reason: !audit
-          ? 'the documentation auditor returned nothing'
-          : `${writersChosen.length - writerResults.length} of ${writersChosen.length} documentation writer(s) returned nothing`,
-      }
-    : {}),
 }

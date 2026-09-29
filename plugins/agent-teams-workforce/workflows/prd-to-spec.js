@@ -538,7 +538,7 @@ if (archHit) {
       : { ok: true, skipped: true, resumed: true, artifact: { skipped: true, triage: savedTriage } }
     recRuled('Architecture reused from saved artifacts.', { status: 'done' })
   } else if (archHit.names.includes('architecture-triage.json') && !savedTriage) {
-    return partial('architecture', { reason: `the completed architecture step's saved triage in ${ART_DIR} could not be read back, so it is not triaged again` })
+    log(`Architecture: the saved triage in ${ART_DIR} was not read back; the PRD is triaged again`)
   }
 }
 if (!architecture) {
@@ -657,12 +657,7 @@ async function runRepoScoping() {
   if (callerRepos.length) return { pinned: true }
   const scopeHit = resumeFresh('repo-scoping')
   const saved = scopeHit && ART_ON ? await readSavedSpan() : null
-  if (scopeHit && !saved) {
-    return {
-      scopeHit,
-      scoping: { ok: false, reason: `the completed repo-scoping step's saved ruling in ${ART_DIR} could not be read back, so it is not ruled again` },
-    }
-  }
+  if (scopeHit && !saved) log(`Repo Scoping: the saved ruling in ${ART_DIR} was not read back; the span is ruled again`)
   if (saved) {
     const shape = saved
     const placements = saved.placements
@@ -893,9 +888,6 @@ async function authorSpecForRepo(repo, repoIndex) {
     const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
     recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
     if (recon && recon.ledger) runLedger.push(recon.ledger)
-    if (recon && recon.stage === 'replay') {
-      return { repo, recon: null, specAuthoring: { ok: false, stage: 'recon-replay', reason: recon.reason || 'the saved reconciliation could not be read back' } }
-    }
     reconOk = !!(recon && recon.ok !== false)
     if (reconOk) await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
     else log(`Spec Authoring for ${repo}: the current-state comparison returned no inventory (${(recon && recon.reason) || 'no result'}) — the spec is authored without one`)

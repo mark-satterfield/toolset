@@ -29,7 +29,7 @@ function run(args) {
       if (call.name === 'agent-teams-workforce:workspace') {
         return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
-      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e' }
     },
   })
 }

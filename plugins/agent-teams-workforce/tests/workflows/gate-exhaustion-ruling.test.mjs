@@ -22,7 +22,7 @@ const LOOP_VERDICT = {
   deterministicChecks: [{ criterion: 'the phase reports Red confirmed', met: true, evidence: 'observed redConfirmed = true' }],
 }
 
-const RED_ARTIFACT = { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+const RED_ARTIFACT = { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e' }
 
 /** Exhaust the Red gate of bug-fix; every later gate is scripted to pass. */
 async function runToExhaustion(ruling = { verdict: 'ruled', ruling: 'proceed', rationale: 'AC5 residual is covered downstream', residuals: [{ criterion: 'Every acceptance criterion is covered', reason: 'two clauses are exercised by integration', mitigation: 'integration suite asserts AC5' }], decidedBy: 'agent-teams-workforce:advantage-evaluator', flags: ['residual accepted on exhausted gate 2a: Every acceptance criterion is covered — integration suite asserts AC5'] }) {
@@ -41,7 +41,7 @@ async function runToExhaustion(ruling = { verdict: 'ruled', ruling: 'proceed', r
         return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
       }
       if (call.name.endsWith('gate-enforce') && call.payload.mode === 'exhaustion') return ruling
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         // Only the Red gate misbehaves; every later gate passes so the run can finish.
         return call.payload.gate === '2a' ? LOOP_VERDICT : { verdict: 'pass', criteria: [], flags: [] }
       }

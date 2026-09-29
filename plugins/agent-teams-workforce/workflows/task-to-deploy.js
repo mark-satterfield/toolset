@@ -24,15 +24,12 @@ const bead = a.bead || {}
 const spec = a.spec || bead
 const story = bead.story && typeof bead.story === 'object' ? bead.story : {}
 const MAX_LOOPS = a.maxLoops || 2
-const MAX_ESCALATIONS = a.maxEscalations || 2
 const DISPATCH_FAILED_STAGE = 'agent-dispatch-failed'
-const HUMAN_ACTION_STAGE = 'requires-human-action'
 
 if (!bead.id) return { ok: false, stage: 'input', error: 'no bead.id supplied' }
 
 const runLedger = []
 let runDetail = null
-let escalations = 0
 let workspaceOut = null
 
 // Logs the journal payload as `RUN-JOURNAL {json}`, or as `RUN-JOURNAL-PART i/n <chunk>` lines when
@@ -81,14 +78,11 @@ function handback(ok, stage, headline, detail) {
     headline: String(headline || ''),
     branch: (workspaceOut && workspaceOut.branch) || null,
     worktree: (workspaceOut && workspaceOut.repoPath) || null,
-    ...(stage === HUMAN_ACTION_STAGE
-      ? { requiredHumanActions: [`look at ${bead.id} and re-scope, re-route or clear what stopped it before it is dispatched again: ${String(headline || '').slice(0, 600)}`] }
-      : {}),
   }
 }
 
-// Returns the stage for a failed phase result: dispatch failure, a stop that needs a person, or `stage`.
-const stageOf = (stage, r) => (!r || r.dispatchFailed ? DISPATCH_FAILED_STAGE : r.phaseBlocked === true ? HUMAN_ACTION_STAGE : stage)
+// Returns the stage for a failed phase result: dispatch failure, or `stage`.
+const stageOf = (stage, r) => (!r || r.dispatchFailed ? DISPATCH_FAILED_STAGE : stage)
 
 function implementersOf(artifact) {
   const l = artifact && artifact.ledger
@@ -156,15 +150,14 @@ try {
     }
 
     enterPhase('Red')
-    let red = await workflow('agent-teams-workforce:tdd-red', { contract, feedback: '' })
+    const red = await workflow('agent-teams-workforce:tdd-red', { contract, feedback: '' })
     if (red && red.ledger) runLedger.push(red.ledger)
-    if (!red || red.dispatchFailed || red.phaseBlocked === true) {
-      return handback(false, stageOf('red', red), `red: ${(red && (red.blockedReason || red.reason)) || 'the Red phase returned nothing'}`, { red })
+    if (!red || red.dispatchFailed) {
+      return handback(false, stageOf('red', red), `red: ${(red && red.reason) || 'the Red phase returned nothing'}`, { red })
     }
 
     let green = null
-    // Runs tdd-green until it reports greenConfirmed, up to MAX_LOOPS attempts per Red; a reported
-    // contradiction or defective test re-authors Red (bounded by MAX_ESCALATIONS) and starts again.
+    // Runs tdd-green until it reports greenConfirmed, up to MAX_LOOPS attempts.
     // Returns { green } or { fail: <handback> }.
     async function runGreen() {
       let feedback = ''
@@ -180,30 +173,11 @@ try {
           feedback,
         })
         if (g && g.ledger) runLedger.push(g.ledger)
-        if (!g || g.dispatchFailed || g.phaseBlocked === true) {
-          return { fail: handback(false, stageOf('green', g), `green: ${(g && (g.blockedReason || g.reason)) || 'the Green phase returned nothing'}`, { green: g }) }
+        if (!g || g.dispatchFailed) {
+          return { fail: handback(false, stageOf('green', g), `green: ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g }) }
         }
         green = g
         if (g.greenConfirmed === true) return { green: g }
-        const defect = g.contradiction
-          ? `Two tests assert opposite outcomes for the same input and cannot both pass. Decide which expectation is the correct contract and correct the other test: ${JSON.stringify(g.contradiction)}`
-          : g.testDefect
-            ? `The failing test cannot pass as written. Correct the test so a pass is reachable without weakening what it asserts: ${g.testDefect}`
-            : null
-        if (defect && escalations < MAX_ESCALATIONS) {
-          escalations += 1
-          log(`Green reported a test that cannot pass; re-authoring Red (${escalations}/${MAX_ESCALATIONS})`)
-          enterPhase('Red')
-          const reRed = await workflow('agent-teams-workforce:tdd-red', { contract, red, feedback: defect, skipDiscovery: true })
-          if (reRed && reRed.ledger) runLedger.push(reRed.ledger)
-          if (!reRed || reRed.dispatchFailed || reRed.phaseBlocked === true) {
-            return { fail: handback(false, stageOf('red', reRed), `red: ${(reRed && (reRed.blockedReason || reRed.reason)) || 'the Red re-author returned nothing'}`, { red: reRed }) }
-          }
-          red = reRed
-          attempt = 0
-          feedback = ''
-          continue
-        }
         if (attempt >= MAX_LOOPS) {
           return { fail: handback(false, 'green', `green: the tests did not pass after ${attempt} attempt(s): ${String(g.reason || g.evidence || '').slice(0, 400)}`, { green: g }) }
         }
@@ -226,7 +200,7 @@ try {
 
     enterPhase('Documentation')
     const docs = await workflow('agent-teams-workforce:documentation', { contract, green: g.green })
-    if (docs && Array.isArray(docs.ledgers)) runLedger.push(...docs.ledgers)
+    if (docs && docs.ledger) runLedger.push(docs.ledger)
 
     enterPhase('Commit')
     const committed = await workflow('agent-teams-workforce:settle', {
@@ -236,10 +210,10 @@ try {
       defaultBranch: workspace.defaultBranch || null,
       message: `${bead.id} ${bead.title || ''}`.trim(),
     })
-    if (!committed || committed.status !== 'reported' || committed.treeClean !== true) {
+    if (!committed || committed.status !== 'reported' || (Array.isArray(committed.blocked) && committed.blocked.length)) {
       const why =
         (committed && (committed.error || committed.reason || (Array.isArray(committed.blocked) && committed.blocked.join('; ')))) ||
-        (committed && committed.treeClean === false ? 'the tree is not clean after the commit' : 'the commit step returned nothing')
+        'the commit step returned nothing'
       return handback(false, !committed || committed.status === 'error' ? DISPATCH_FAILED_STAGE : 'commit', `commit: ${why}`, { commit: committed || null })
     }
 

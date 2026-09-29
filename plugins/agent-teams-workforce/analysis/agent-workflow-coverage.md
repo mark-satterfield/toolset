@@ -64,7 +64,7 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | cognito-lambda-trigger-implementer | tdd-green | Green *(implementer roster)* | Cognito Lambda trigger code |
 | completeness-checker | prd-validation | fan-out analysts | Each requirement has actor/action/outcome/criteria |
 | complexity-analyzer | tdd-refactor | Refactor | Read-only complexity/duplication advisor |
-| constitutional-agent | gate-constitutional | gate escalation | Binding ruling on novel constitutive conflicts |
+| constitutional-agent | — | — | No workflow dispatches it |
 | constraint-extractor | prd-validation | fan-out analysts | Builds constraint manifest |
 | consumer-driven-contract-test-writer | tdd-red | Red *(writer roster)* | Failing consumer-driven contract tests |
 | contract-violation-tester | adversarial | Attack *(access lane)* | Contract-violating inputs across boundaries |
@@ -136,7 +136,6 @@ Two substring false positives and comment-only mentions were excluded: `trd-auth
 | permission-escalation-tester | adversarial | Attack *(access lane)* | Privilege-escalation probing |
 | persistence-architecture-specialist | architecture | Proposals | DynamoDB schema/index tradeoffs |
 | persona-profile-writer | prd-creation | persona (parallel) | Data-driven persona profiles |
-| phase-gate-enforcer | gate-constitutional | gate | Constitutional gate: hard-stop enforcement |
 | phase-gate-enforcer | gate-enforce | gate | Reusable phase gate: pass/loop/escalate |
 | playwright-e2e-web-test-writer | tdd-red | Red *(writer roster)* | Failing Playwright web E2E tests |
 | power-tools-configuration-implementer | tdd-green | Green *(implementer roster)* | Lambda Power Tools config |
@@ -240,7 +239,6 @@ Two orphan clusters dominate: **(1) `*-lead` / orchestrator / coordinator agents
 | dependency-cve-auditor | 2 | adversarial, infra-change |
 | data-exposure-scanner | 2 | adversarial, infra-change |
 | root-cause-analyst | 2 | bug-triage, integration |
-| phase-gate-enforcer | 2 | gate-constitutional, gate-enforce |
 | acceptance-criteria-writer | 2 | bug-triage, spec-authoring |
 | ambiguity-detector | 3 | prd-validation, route-build, route-elaboration |
 | cdk-stack-author | 2 | tdd-green (roster) + infra-change (pins it as Green implementer) |

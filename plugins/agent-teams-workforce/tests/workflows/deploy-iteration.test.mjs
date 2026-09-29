@@ -62,7 +62,7 @@ async function runWithDeploys(deployResults, args = {}) {
           return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
         }
         if (call.name === 'agent-teams-workforce:tdd-red') {
-          return { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+          return { testFiles: ['tests/test_x.py'], redConfirmed: true, evidence: 'e' }
         }
         if (call.name === 'agent-teams-workforce:tdd-green') {
           greenCalls.push(call.payload || {})
@@ -73,7 +73,7 @@ async function runWithDeploys(deployResults, args = {}) {
           // is a response to a FIX, so the response changes when the fix does.
           return deployResults[Math.min(greenCalls.length - 1, deployResults.length - 1)]
         }
-        if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+        if (call.name.endsWith('gate-enforce')) {
           // Gate 5's deterministic checks are the thing under test, so that gate is judged
           // for real against the artifact; every other gate is scripted to pass.
           if (String(call.payload.gate) !== '5') return { verdict: 'pass', criteria: [], flags: [] }
@@ -235,9 +235,9 @@ test('a run that fails BEFORE the deploy phase still reports deployedToDev=false
         return { ok: true, repoPath: WORKTREE, branch: 'fix/x', isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:bug-triage') return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
-      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e' }
       if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: false, evidence: '' }
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         return { verdict: 'escalate', criteria: [], escalateTo: 'triage', flags: [] }
       }
       return {}
@@ -312,10 +312,10 @@ async function runToGate5Exhaustion({ unmetCriterion, ruling, deterministicCheck
         return { ok: true, repoPath: WORKTREE, branch: 'fix/x', isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
       if (call.name === 'agent-teams-workforce:bug-triage') return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
-      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      if (call.name === 'agent-teams-workforce:tdd-red') return { testFiles: ['t.py'], redConfirmed: true, evidence: 'e' }
       if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, evidence: 'passing', changedFiles: ['s.py'] }
       if (call.name === 'agent-teams-workforce:deploy') return NEVER_DEPLOYED
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         if (String(call.payload.gate) !== '5') return { verdict: 'pass', criteria: [], flags: [] }
         return {
           verdict: 'loop',
@@ -355,9 +355,9 @@ test('a COMPETITIVE ruling cannot waive a failed DETERMINISTIC check', async () 
 })
 
 test('the guard holds on the labels alone, even when the gate reports no deterministicChecks', async () => {
-  // gate-constitutional reports no `deterministicChecks` at all. A guard resting only on
-  // that field would silently do nothing the day `checks` are added to such a gate, so the
-  // labels are also derived locally from the gate's own `checks`.
+  // A verdict may carry no `deterministicChecks` at all. A guard resting only on that field
+  // would silently do nothing then, so the labels are also derived locally from the gate's
+  // own `checks`.
   const { result, calls } = await runToGate5Exhaustion({
     unmetCriterion: DEPLOYED_CHECK_LABEL,
     ruling: COMPETITIVE_RULING,

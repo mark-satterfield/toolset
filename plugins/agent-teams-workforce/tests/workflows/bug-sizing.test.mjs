@@ -131,7 +131,7 @@ test('bug-fix proceeds normally when triage sizes it as a fix', async () => {
       if (n.endsWith('bug-triage')) {
         return { ...DIAGNOSIS, scope: 'fix', acceptanceCriteria: [{ given: 'g', when: 'w', then: 't' }] }
       }
-      if (n.endsWith('gate-enforce') || n.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
+      if (n.endsWith('gate-enforce')) return { verdict: 'pass', criteria: [], flags: [] }
       return { ok: true, greenConfirmed: true, changedFiles: ['handler.py'], evidence: 'e', testFiles: ['t'] }
     },
     agentImpl: () => null,

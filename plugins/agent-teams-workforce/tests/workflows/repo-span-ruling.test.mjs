@@ -149,7 +149,7 @@ function compositeWorkflows({ scopingResult, outOfRepoFindings = [] }) {
   let storyN = 0
   return (call) => {
     const name = String(call.name || '')
-    if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
+    if (name.endsWith('gate-enforce')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) return RECONCILED
     if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'PRD-1', title: 'PRD One', body: 'b' }, findings: [] }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' }, sad: { path: 's' } }

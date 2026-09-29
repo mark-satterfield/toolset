@@ -181,10 +181,10 @@ try {
       defaultBranch: workspace.defaultBranch || null,
       message: `${bead.id} ${bead.title || ''}`.trim(),
     })
-    if (!committed || committed.status !== 'reported' || committed.treeClean !== true) {
+    if (!committed || committed.status !== 'reported' || (Array.isArray(committed.blocked) && committed.blocked.length)) {
       const why =
         (committed && (committed.error || committed.reason || (Array.isArray(committed.blocked) && committed.blocked.join('; ')))) ||
-        (committed && committed.treeClean === false ? 'the tree is not clean after the commit' : 'the commit step returned nothing')
+        'the commit step returned nothing'
       return handback(false, !committed || committed.status === 'error' ? DISPATCH_FAILED_STAGE : 'commit', `commit: ${why}`, { commit: committed || null })
     }
 

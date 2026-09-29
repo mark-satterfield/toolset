@@ -33,11 +33,11 @@ function run(file, settleImpl, args) {
         return { repoPath: WORKTREE, scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
       }
       if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
+      if (call.name.endsWith('gate-enforce')) {
         if (call.payload.gate === '1' || call.payload.gate === 'G1') return { verdict: 'pass', criteria: [], flags: [] }
         return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
       }
-      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true }
+      return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e' }
     },
   })
 }

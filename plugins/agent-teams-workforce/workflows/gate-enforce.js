@@ -105,7 +105,6 @@ const failDispatch = (reason, ...phases) => {
 //   checks?: [{ field, equals?, nonEmpty?, matches?, notMatches?, label? }],  // matches/notMatches: regex source, case-insensitive
 //   artifact: any,
 //   escalateTargets?: string[],
-//   structural?: { requireOk?: boolean, required?: string[], nonEmpty?: string[] },
 // }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const where = `Gate ${a.gate || '?'} (${a.phaseName || 'phase'})`
@@ -229,18 +228,7 @@ Do not modify any artifact and do not dispatch any work.`,
   }
 }
 
-const structural = a.structural && typeof a.structural === 'object' ? a.structural : null
-const structuralChecks = []
-if (structural) {
-  if (structural.requireOk === true) structuralChecks.push({ field: 'ok', equals: true, label: 'the phase reports ok:true' })
-  for (const field of Array.isArray(structural.required) ? structural.required : []) {
-    if (typeof field === 'string' && field) structuralChecks.push({ field, label: `the phase produced its required artifact '${field}'` })
-  }
-  for (const field of Array.isArray(structural.nonEmpty) ? structural.nonEmpty : []) {
-    if (typeof field === 'string' && field) structuralChecks.push({ field, nonEmpty: true, label: `'${field}' is present and non-empty` })
-  }
-}
-const checks = [...structuralChecks, ...(Array.isArray(a.checks) ? a.checks : []).filter((c) => c && typeof c === 'object' && typeof c.field === 'string' && c.field)]
+const checks = (Array.isArray(a.checks) ? a.checks : []).filter((c) => c && typeof c === 'object' && typeof c.field === 'string' && c.field)
 // Returns true when the value holds a non-blank string, a non-empty object, or an array with such an item.
 function hasContent(value) {
   if (value === undefined || value === null) return false

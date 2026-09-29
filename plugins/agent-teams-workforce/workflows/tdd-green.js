@@ -242,12 +242,10 @@ if (deadImplementers.length) {
     dispatchFailed: true,
     reason: `implementer(s) ${deadImplementers.join(', ')} returned nothing`,
     changedFiles,
-    contradiction: null,
-    testDefect: null,
     ledger: { ...ledger, ok: false },
   }
 }
 
 const stoppedAt =
   green.greenConfirmed !== true || green.noRegressions !== true ? [str(green.notes), str(green.evidence).slice(-1500)].filter(Boolean).join(' | ') : ''
-return { ...green, changedFiles, contradiction: null, testDefect: null, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }
+return { ...green, changedFiles, ...(stoppedAt ? { reason: stoppedAt } : {}), ledger }

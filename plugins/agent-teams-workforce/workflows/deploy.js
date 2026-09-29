@@ -1,7 +1,7 @@
 export const meta = {
   name: 'deploy',
   description:
-    'Shared-tail mini — Deploy. Refuses a contract with no repoPath. The smoke-test-author writes a smoke suite (or the smokeTestFiles passed in are reused), then one cdk-stack-author session deploys the one repository the contract names to AWS dev and runs the smoke tests against the deployed endpoints. Returns { deployedToDev, smokePassed, smokeTestFiles, rollout, cdkSynthOk (= deployedToDev), deployedToProd: false, ledger }, with dispatchFailed when a session returned nothing. Opens no pull request; never deploys to qa or prod.',
+    'Shared-tail mini — Deploy. Refuses a contract with no repoPath. The smoke-test-author writes a smoke suite (or the smokeTestFiles passed in are reused), then one cdk-stack-author session deploys the one repository the contract names to AWS dev and runs the smoke tests against the deployed endpoints. Returns { deployedToDev, smokePassed, smokeTestFiles, rollout, deployedToProd: false, ledger }, with dispatchFailed when a session returned nothing. Opens no pull request; never deploys to qa or prod.',
   phases: [{ title: 'Deploy-readiness', detail: 'author smoke tests, deploy to AWS dev, run the smoke tests' }],
 }
 const dispatchFailures = []
@@ -84,7 +84,7 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { contract, green?, satisfiedRed?, feedback?, smokeTestFiles?, leaseScope? }
+// args: { contract, green?, feedback?, smokeTestFiles?, leaseScope? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const c = a.contract || {}
 const green = a.green || {}
@@ -99,17 +99,14 @@ if (!repo) {
     blockedReason: why,
     deployedToDev: false,
     smokePassed: false,
-    cdkSynthOk: false,
     smokeTestFiles: [],
     deployedToProd: false,
-    leaseBlocked: null,
     blocked: [why],
     ledger: { phase: 'deploy', beadId, chosen: [], mode: 'refused', ok: false },
   }
 }
 const pinTree = `PIN YOURSELF TO THIS TREE. Your working directory is NOT the repository this work is in — you may be running in an isolation worktree of a different one — so a relative path, a bare \`git\` command or an unqualified test run reads, edits or runs the WRONG copy. Every file you read, write or run is under this absolute path; run shell commands as \`cd "${repo}" && …\` and git as \`git -C "${repo}" …\`, and report file paths relative to it:
 ${repo}`
-const noCodeChanged = !!(a.satisfiedRed && a.satisfiedRed.alreadySatisfied === true && green.greenConfirmed !== true)
 const changeLabel = c.bead ? `${c.bead.id} ${c.bead.title}` : 'feature'
 const DEV_ACCOUNT = '616930583457'
 const DEV_REGION = 'us-east-1'
@@ -125,7 +122,7 @@ const smoke = priorSmokeFiles.length
 ${pinTree}
 
 Change: ${changeLabel}
-Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${noCodeChanged ? '\nNo code changed: the existing tests already satisfy this Task. The smoke tests verify the behavior its criteria describe against the deployed endpoint.' : ''}${feedback}`,
+Changed files: ${(green.changedFiles || []).join(', ') || 'n/a'}${feedback}`,
       {
         label: 'deploy:smoke-author',
         phase: 'Deploy-readiness',
@@ -147,12 +144,10 @@ if (!smoke) {
     dispatchFailures: dispatchDeaths('Deploy-readiness'),
     reason: 'the smoke-test author returned nothing, so nothing was deployed',
     env: 'dev',
-    cdkSynthOk: false,
     smokeTestFiles: [],
     deployedToDev: false,
     smokePassed: false,
     deployedToProd: false,
-    leaseBlocked: null,
     ledger: { phase: 'deploy', stage: 'not-deployed', beadId, chosen: ['smoke-test-author'], mode: 'fixed', env: 'dev', ok: false },
   }
 }
@@ -222,11 +217,9 @@ return {
   smoke,
   rollout,
   env: 'dev',
-  cdkSynthOk: deployedToDev,
   smokeTestFiles,
   deployedToDev,
   smokePassed,
   deployedToProd: false,
-  leaseBlocked: null,
   ledger,
 }

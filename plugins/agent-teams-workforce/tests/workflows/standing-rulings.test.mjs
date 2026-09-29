@@ -147,7 +147,7 @@ test('bug-triage: diagnosis, sizing, and the expected-behavior contract all get 
 function compositeWorkflows() {
   return (call) => {
     const name = String(call.name || '')
-    if (name.endsWith('gate-enforce') || name.endsWith('gate-constitutional')) return { verdict: 'pass', criteria: [], flags: [] }
+    if (name.endsWith('gate-enforce')) return { verdict: 'pass', criteria: [], flags: [] }
     if (name.endsWith('prd-reconciliation')) {
       return {
         ok: true,
