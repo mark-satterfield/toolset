@@ -1081,7 +1081,7 @@ if (!decompositions.length) {
 }
 
 const taskStories = new Set(tasks.map((t) => t.storyKey))
-const crossStory = { ran: false, reason: null, edges: [], rejected: [], written: null }
+const crossStory = { ran: false, reason: null, edges: [], rejected: 0, written: null }
 let crossStoryWriteFailed = null
 if (taskStories.size < 2) {
   crossStory.reason = 'the Tasks sit in one Story'
@@ -1090,12 +1090,13 @@ if (taskStories.size < 2) {
   const depsHit = resumeFresh(TASK_DEPS_PHASE)
   const depscore = `python3 ${shellq(`${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`)} -C ${shellq(emitTarget)}`
   const spanArgs = `--dir ${shellq(ART_DIR)} --repos ${shellq(repos.join(','))}`
+  const edgeOut = (name) => `--out ${shellq(`${ART_DIR}/task-edges/${name}.json`)}`
   const standing = tasks.filter((t) => t.outsideBlockers.length).map((t) => t.key)
   const EDGE_WRITE_BRIEF = `WRITE EACH TASK'S EDGES TO OTHER STORIES, one command per Task:
-1. Run: ${depscore} plan-task-edges ${spanArgs}
-   It prints one JSON object whose "blockers" object names, as its keys, each Task that has blockers in other Stories.
-2. For each key of that "blockers" object${standing.length ? `, and then each of these Tasks that is not a key there: ${standing.join(', ')}` : ''}, in that order, run the command below with <TASK> replaced by that Task:
-   ${depscore} write-task-edges --epic ${shellq(epicBeadId)} --task <TASK> ${spanArgs}
+1. Run: ${depscore} plan-task-edges ${spanArgs} ${edgeOut('plan')}
+   It prints one short JSON object whose "summary"."blockers" object names, as its keys, each Task that has blockers in other Stories.
+2. For each key of that "blockers" object${standing.length ? `, and then each of these Tasks that is not a key there: ${standing.join(', ')}` : ''}, in that order, run the command below with both <TASK> replaced by that Task:
+   ${depscore} write-task-edges --epic ${shellq(epicBeadId)} --task <TASK> ${spanArgs} ${edgeOut('<TASK>')}
 Run every command in its own Bash call in the FOREGROUND (never set run_in_background, never run two at once) with the Bash tool's \`timeout\` parameter set to 600000. Record every command you ran in \`writes\`, in order, the plan command first: its exit code as \`exitCode\` and its stdout, verbatim, as \`stdout\` (append stderr when the exit code is not 0). Stop after the first command whose exit code is not 0. Do not retry, do not repair, and run no other bd command.`
   const WRITES_SCHEMA = {
     type: 'array',
@@ -1200,7 +1201,7 @@ Then, once that file is saved and recorded, and before you return — unless you
         return null
       }
     })
-    const plan = parsed[0] && parsed[0].blockers ? parsed[0] : null
+    const plan = parsed[0] && parsed[0].summary && parsed[0].summary.blockers ? parsed[0].summary : null
     const failedAt = writes.findIndex((r, i) => r.exitCode !== 0 || !parsed[i] || parsed[i].error)
     const expected = plan ? new Set([...Object.keys(plan.blockers), ...standing]).size + 1 : 1
     if (!plan || failedAt >= 0 || writes.length < expected) {
@@ -1210,8 +1211,8 @@ Then, once that file is saved and recorded, and before you return — unless you
       crossStoryWriteFailed = `${i === 0 ? 'plan-task-edges' : `write-task-edges command ${i} of ${expected - 1}`} failed: ${why}`
       crossStory.reason = `the Task edges between Stories were not all written: ${crossStoryWriteFailed}`
     } else {
-      crossStory.edges = Array.isArray(plan.edges) ? plan.edges : []
-      crossStory.rejected = Array.isArray(plan.rejected) ? plan.rejected : []
+      crossStory.edges = Object.entries(plan.blockers).flatMap(([to, froms]) => (Array.isArray(froms) ? froms : []).map((from) => ({ from, to })))
+      crossStory.rejected = Number(plan.rejected) || 0
       const written = { added: 0, removed: 0, standing: 0 }
       for (const out of parsed.slice(1)) for (const k of Object.keys(written)) written[k] += Number(out.summary && out.summary[k]) || 0
       crossStory.written = written

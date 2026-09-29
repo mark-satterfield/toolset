@@ -54,7 +54,7 @@ function edgeWrites(edges) {
   const blockers = {}
   for (const e of edges) (blockers[e.to] = blockers[e.to] || []).push(e.from)
   return [
-    ran({ ok: true, edges, rejected: [], blockers, summary: { edges: edges.length, rejected: 0 } }),
+    ran({ command: 'plan-task-edges', out: 'plan.json', warnings: [], summary: { edges: edges.length, rejected: 0, blockers } }),
     ...Object.keys(blockers).map((name) =>
       ran({ ok: true, epic: TEST_EPIC.id, task: { name, id: `bd-${name}` }, edges: [], summary: { name, id: `bd-${name}`, added: blockers[name].length, removed: 0, standing: 0 } })
     ),

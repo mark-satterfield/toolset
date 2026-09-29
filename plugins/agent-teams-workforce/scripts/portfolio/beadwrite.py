@@ -709,7 +709,11 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         "edges": accepted,
         "rejected": rejected,
         "blockers": blockers,
-        "summary": {"edges": len(accepted), "rejected": len(rejected)},
+        "summary": {
+            "edges": len(accepted),
+            "rejected": len(rejected),
+            "blockers": blockers,
+        },
     }
 
 
