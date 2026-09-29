@@ -30,16 +30,15 @@ const BLOCKED_REASON =
   'every Red writer reports this contract admits no failing test and authored none — the item is an AWS console ' +
   'account deletion; it needs a human to re-scope or re-route the work item.'
 
-// Every composite reaches tdd-red through its own entry gate; `entry` is the gate that
-// must pass for the run to get that far.
+// `entry` is a gate that must pass for the run to reach tdd-red; neither composite has one.
 const CASES = [
   { file: 'bug-fix.js', entry: null },
-  { file: 'task-to-deploy.js', entry: '1' },
+  { file: 'task-to-deploy.js', entry: null },
 ]
 
 async function runBlockedRed(file, entry) {
   return runWorkflowScript(path.join(WF, file), {
-    args: { maxLoops: 2, bead: { id: 'ssbd-4qzi', title: 'x', description: 'd', repoPath: '/repos/chassis' } },
+    args: { maxLoops: 2, bead: { id: 'ssbd-4qzi', title: 'x', description: 'd', repoPath: '/repos/chassis', story: { id: 'ssbd-st4q', title: 'chassis story' } } },
     agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') {

@@ -31,7 +31,7 @@ const okWorkspace = (repoPath) => ({
 /** Drive a spec-side composite. */
 function runSpecSide(file, { bead } = {}) {
   return runWorkflowScript(path.join(WF, file), {
-    args: { bead: bead || { id: 'ssbd-mfza', title: 'route the thing', description: 'd' } },
+    args: { bead: bead || { id: 'ssbd-mfza', title: 'route the thing', description: 'd', story: { id: 'ssbd-st7m', title: 's' } } },
     agentImpl: (call) => {
       if (call.label === 'settle:land-work') return { treeClean: true, hasWork: false, branch: 'b', prUrl: '' }
       if (call.label === 'ledger:persist') return { written: true, path: '/p.jsonl' }
@@ -60,12 +60,10 @@ for (const file of ['task-to-deploy.js', 'infra-change.js']) {
     assert.match(result.headline, /elaboration/, 'the refusal points back to where the repository is ruled')
     assert.deepEqual(result.incompleteContract, ['repoPath'])
     assert.deepEqual(workflows(calls), [], 'no repository is ruled in the build lane')
-    assert.equal(result.deployedToDev, false)
-    assert.equal(result.smokePassed, false)
   })
 
   test(`${file}: a supplied repoPath goes straight to Workspace`, async () => {
-    const { calls } = await runSpecSide(file, { bead: { id: 'ssbd-mfza', title: 't', description: 'd', repoPath: RULED } })
+    const { calls } = await runSpecSide(file, { bead: { id: 'ssbd-mfza', title: 't', description: 'd', repoPath: RULED, story: { id: 'ssbd-st7m', title: 's' } } })
     assert.ok(!workflows(calls).includes('agent-teams-workforce:repo-scoping'), 'a known repository is not re-ruled')
     assert.equal(workflows(calls)[0], 'agent-teams-workforce:workspace', 'the usual order stands')
   })

@@ -772,6 +772,23 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
         missing.append("spec_path or spec_paths")
     if not criteria["values"]:
         missing.append("acceptance criteria (nowhere in the search order)")
+    story_id = next(
+        (
+            anc
+            for anc in reader.ancestors(args.id)
+            if str(reader.get(anc).get("issue_type") or "") == "story"
+        ),
+        "",
+    )
+    story = (
+        {"id": story_id, "title": str(reader.get(story_id).get("title") or "")}
+        if story_id
+        else None
+    )
+    if story is None:
+        missing.append(
+            "story (a Task is built on its Story's branch and deploys with its Story)"
+        )
     result = {
         "id": args.id,
         "found": bool(rec),
@@ -783,6 +800,7 @@ def cmd_contract(args: argparse.Namespace, reader: Reader) -> dict:
             "title": str(rec.get("title") or ""),
             "description": str(rec.get("description") or ""),
             **contract,
+            **({"story": story} if story else {}),
         },
         "acceptanceCriteriaSource": (
             {"beadId": criteria["sourceId"], "field": criteria["sourceField"]}

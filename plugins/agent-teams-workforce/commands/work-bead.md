@@ -169,7 +169,7 @@ One line each, no more:
 
 - which composite ran, and why the router chose it
 - the phase it reached
-- deploy result (it should reach **Deploy-to-dev** and smoke-check)
+- for a Task, the commit on its Story branch (a Task deploys nothing and opens no pull request); for a bug, the deploy result
 - the `stage` and `headline` of a run that stopped, **verbatim**
 - what you did NOT do
 - the worktree and branch the work landed on

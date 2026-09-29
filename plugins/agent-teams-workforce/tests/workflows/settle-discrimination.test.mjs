@@ -42,7 +42,9 @@ function run(file, settleImpl, args) {
   })
 }
 
-for (const file of COMPOSITES) {
+// task-to-deploy and infra-change commit to the Story branch and land nothing, so the
+// landing verdicts below are bug-fix's alone.
+for (const file of ['bug-fix.js']) {
   test(`${file}: a settle agent that THREW says so — it never claims a URL was withheld`, async () => {
     const { result } = await run(file, () => {
       throw new Error('the worktree vanished under us')
@@ -83,6 +85,9 @@ for (const file of COMPOSITES) {
     assert.equal(result.prUrl, 'https://github.com/o/r/pull/42', 'the URL is trimmed before it is reported')
   })
 
+}
+
+for (const file of COMPOSITES) {
   test(`${file}: a run with no repo path stops BEFORE any tree exists`, async () => {
     // The reproduced false orphan: an identical successful run flipped ok:true -> false
     // on repoPath alone, with orphaned:{worktree:null}. A Task with no repoPath is refused

@@ -1,5 +1,5 @@
 ---
-description: "Claim the next ready Task and run it through to deploy-in-dev"
+description: "Claim the next ready Task and build it onto its Story branch"
 argument-hint: "[--dry-run]"
 allowed-tools: [Bash, Read, Workflow]
 ---
@@ -141,14 +141,12 @@ work out a repository yourself.
 
 The project's configuration reaches the composite as arguments, read from the `ATW_*`
 environment (see "Project configuration" in `AGENT-TEAMS-WORKFORCE.md`); a workflow script
-cannot read the environment itself. `ATW_PR_COMMAND` is required: if it is unset, release
-the claim, report `ATW_PR_COMMAND is unset`, and stop. Omit any other argument whose
-variable is unset, and name it in your report.
+cannot read the environment itself. Omit any argument whose variable is unset, and name it in
+your report.
 
 ```
 Workflow({scriptPath: "$ROOT/workflows/<composite>.js",
   args: {bead: <the contract's bead>,
-         prCommand: "$ATW_PR_COMMAND",
          worktreeRoot: "$ATW_WORKTREE_ROOT",
          projectRoot: "$ATW_PROJECT_ROOT",
          artifactScript: "$ATW_ARTIFACT_SCRIPT"}})
@@ -166,14 +164,14 @@ person has triaged a bug and decided it is a fix; the router never names it.)
 
 - the bead claimed, its WSJF score, and how many candidates were considered
 - which composite ran, and the router's reason
-- the phase it reached — it should reach **Deploy-to-dev** and smoke-check
+- the phase it reached — it should reach **Commit**
 - the `stage` and `headline` of a run that stopped, **verbatim**
-- the worktree and branch the work landed on
-- the PR URL, or the explicit reason there is none
+- the Story worktree and branch the work was committed on, and the commit
 
 When the result carries `requiredHumanActions`, report each verbatim, run `bd label add <id> human`, and release the claim.
 
 If the run stops, report it and stop. Do not work around it, do not edit a
 workflow mid-run, and do not fall back to a subagent beside the pipeline. Leave
-the bead claimed so the next run resumes it in the same worktree. The composite's
-settle step has already pushed and PR'd whatever was written — report that PR URL.
+the bead claimed so the next run resumes it in the same Story worktree. A Task deploys
+nothing and opens no pull request: its Story deploys and opens one pull request once its
+last Task is done.

@@ -32,7 +32,7 @@ is a `metadata set`. `-C <repoPath>` runs `bd` from another repository. Exit sta
 
 | Command | Answers |
 | --- | --- |
-| `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description and the contract — passed as-is. |
+| `contract <id>` | The whole build contract a Task carries, plus resolved criteria, the gate keys, and what is `missing`. `bead` in the result is the build composite's `bead` argument — id, title, description, the contract and the Task's `story` (id, title), whose branch the Task is built on — passed as-is. |
 | `criteria <id>` | The acceptance criteria and, critically, `sourceId` / `sourceField` / `searched` — WHERE each was found and everywhere that was looked. |
 | `fingerprint <id>` | The content fingerprint, the stored `ready_content_hash`, and whether they agree. `--scope judging` returns the judging fingerprint instead; `--explain` prints the exact object hashed. |
 | `fingerprint-batch [id ...]` | The same answer, in either `--scope`, for MANY beads in one invocation. With `--records -` it fingerprints a sweep the caller already holds, costing no tracker call; otherwise it makes ONE `bd list` call, never one per bead. |

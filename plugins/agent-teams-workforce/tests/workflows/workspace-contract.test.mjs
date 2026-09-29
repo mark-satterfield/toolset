@@ -33,7 +33,7 @@ const WORKTREE = '/repos/.worktrees/ssbd-mz1w-shared-chassis'
 /** Drive a composite with a scripted workspace result; everything else passes. */
 function run(file, { workspace, args } = {}) {
   return runWorkflowScript(path.join(WF, file), {
-    args: args || { bead: { id: 'ssbd-mz1w', title: 'w', description: 'd', repoPath: CALLER_REPO } },
+    args: args || { bead: { id: 'ssbd-mz1w', title: 'w', description: 'd', repoPath: CALLER_REPO, story: { id: 'ssbd-st01', title: 'the story' } } },
     agentImpl: () => ({ written: true, treeClean: true, hasWork: false, branch: 'b', prUrl: '' }),
     workflowImpl: (call) => {
       if (call.name === 'agent-teams-workforce:workspace') return workspace
@@ -41,12 +41,11 @@ function run(file, { workspace, args } = {}) {
         return { repoPath: '/SOMEWHERE/ELSE', scope: 'fix', acceptanceCriteria: [], affectedFiles: [], surfaces: [] }
       }
       if (call.name === 'agent-teams-workforce:infra-intent') return { provisioningIntent: 'p', affectedStacks: ['S'] }
+      // task-to-deploy and infra-change have no gates: Green and Refactor pass so they reach
+      // the Commit phase. bug-fix's gates escalate after its first writing phase.
+      if (call.name === 'agent-teams-workforce:tdd-green') return { greenConfirmed: true, noRegressions: true, evidence: 'e', changedFiles: [] }
+      if (call.name === 'agent-teams-workforce:tdd-refactor') return { testsGreen: true }
       if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
-        // task-to-deploy's Gate 1 is spec freshness, which precedes Red — pass it so
-        // every composite reaches a WRITING phase, then fail there so the run
-        // terminates quickly. The workspace assertions all concern what happened
-        // before that point.
-        if (call.payload.gate === '1') return { verdict: 'pass', criteria: [], flags: [] }
         return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
       }
       return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true, changedFiles: [] }
@@ -123,7 +122,7 @@ for (const { file, writer } of COMPOSITES) {
     }
   })
 
-  test(`${file}: settle targets the WORKSPACE tree, so there is always a branch to push`, async () => {
+  if (file === 'bug-fix.js') test(`${file}: settle targets the WORKSPACE tree, so there is always a branch to push`, async () => {
     const { calls } = await run(file, { workspace: OK_WORKSPACE })
     const settle = calls.filter((c) => c.kind === 'agent' && c.label === 'settle:land-work')
     assert.equal(settle.length, 1, 'settle runs on every exit path')
@@ -369,11 +368,21 @@ for (const { file } of COMPOSITES) {
     const { calls } = await run(file, {
       workspace: { ...OK_WORKSPACE, repoPath: WORKTREE, branch: 'develop', reused: true, defaultBranch: 'main' },
     })
-    assert.equal(
-      calls.filter((c) => c.kind === 'agent' && c.label === 'settle:land-work').length,
-      1,
-      'work on a non-default branch must still be landed',
-    )
+    if (file === 'bug-fix.js') {
+      assert.equal(
+        calls.filter((c) => c.kind === 'agent' && c.label === 'settle:land-work').length,
+        1,
+        'work on a non-default branch must still be landed',
+      )
+      return
+    }
+    // task-to-deploy / infra-change commit the Task to the Story branch and stop there.
+    const commits = calls.filter((c) => c.kind === 'workflow' && c.name === 'agent-teams-workforce:settle')
+    assert.equal(commits.length, 1, 'work on a non-default branch must still be committed')
+    assert.equal(commits[0].payload.commitOnly, true, 'the Task commits to the Story branch; it does not land')
+    assert.equal(commits[0].payload.repoPath, WORKTREE, 'the commit happens in the tree the phases wrote in')
+    assert.equal(commits[0].payload.branch, 'develop')
+    assert.equal(calls.filter((c) => c.kind === 'agent' && c.label === 'settle:commit').length, 1)
   })
 
   test(`${file}: a failed workspace step means settle touches NOTHING, least of all the caller's repo`, async () => {
@@ -384,7 +393,7 @@ for (const { file } of COMPOSITES) {
     })
     assert.equal(result.stage, 'workspace')
     assert.ok(
-      !calls.some((c) => c.kind === 'agent' && c.label === 'settle:land-work'),
+      !calls.some((c) => c.kind === 'agent' && (c.label === 'settle:land-work' || c.label === 'settle:commit')),
       'nothing was written, so there is nothing to land — and the caller\'s repository is not this run\'s to commit in',
     )
     assert.equal(result.orphaned, undefined, 'a run that never established a tree cannot have orphaned anything')

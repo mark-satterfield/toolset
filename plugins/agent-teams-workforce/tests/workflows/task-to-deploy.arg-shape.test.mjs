@@ -29,16 +29,12 @@ function run(args) {
       if (call.name === 'agent-teams-workforce:workspace') {
         return { ok: true, repoPath: WORKTREE, branch: 'feat/ssbd-nhcx', reused: false, isLinkedWorktree: true, independentlyVerified: true, defaultBranch: 'main' }
       }
-      if (call.name.endsWith('gate-enforce') || call.name.endsWith('gate-constitutional')) {
-        if (call.payload.gate === '1') return { verdict: 'pass', criteria: [], flags: [] }
-        return { verdict: 'escalate', escalateTo: 'upstream', criteria: [] }
-      }
       return { ok: true, testFiles: ['t'], redConfirmed: true, evidence: 'e', greenReachable: true }
     },
   })
 }
 
-const BEAD = { id: 'ssbd-nhcx', title: 'route the thing', description: 'd', repoPath: '/repos/web' }
+const BEAD = { id: 'ssbd-nhcx', title: 'route the thing', description: 'd', repoPath: '/repos/web', story: { id: 'ssbd-st9w', title: 'the web story' } }
 
 test('the composite the routers actually call reaches its phases instead of throwing', async () => {
   // The exact shape commands/work-bead.md and commands/next-task.md dispatch.

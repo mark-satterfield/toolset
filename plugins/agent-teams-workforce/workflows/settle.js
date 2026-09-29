@@ -1,7 +1,7 @@
 export const meta = {
   name: 'settle',
   description:
-    'Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed), or reported (treeClean, hasWork, branch, prUrl, blocked).',
+    'Lands a worktree in git: commits, pushes the branch and opens the pull request with the project PR command. With commitOnly it commits on the branch and stops: no push, no pull request. Returns { status }: not-applicable (no tree), blocked (no PR command), error (the landing agent failed), or reported (treeClean, hasWork, branch, prUrl, commit, blocked).',
   phases: [{ title: 'Settle', detail: 'commit, push and open the pull request' }],
 }
 
@@ -42,12 +42,51 @@ async function settleAgent(prompt, opts) {
   }
 }
 
-// args: { repoPath: string|null, prCommand: string|null, branch?: string|null, defaultBranch?: string|null, isLinkedWorktree?: boolean }
+// args: { repoPath: string|null, prCommand: string|null, branch?: string|null, defaultBranch?: string|null, isLinkedWorktree?: boolean,
+//         commitOnly?: boolean, message?: string }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const wt = typeof a.repoPath === 'string' && a.repoPath.trim() ? a.repoPath.trim() : null
 const prCommand = typeof a.prCommand === 'string' && a.prCommand.trim() ? a.prCommand.trim() : null
 const baseName = String(a.defaultBranch || '').trim().replace(/^refs\/heads\//, '').replace(/^origin\//, '') || 'main'
 const baseRef = `origin/${baseName}`
+const commitOnly = a.commitOnly === true
+const message = String(a.message || '').replace(/\s+/g, ' ').trim()
+
+const COMMIT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['treeClean', 'hasWork', 'branch', 'commit'],
+  properties: {
+    treeClean: { type: 'boolean' },
+    hasWork: { type: 'boolean' },
+    branch: { type: 'string' },
+    commit: { type: 'string' },
+    blocked: { type: 'array', items: { type: 'string' } },
+  },
+}
+
+async function commitRun() {
+  if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written' }
+  try {
+    const reported = await settleAgent(
+      `Commit every change in the worktree ${wt} on its current branch, or say exactly why it could not be committed.
+
+Run every git command as \`git -C "${wt}"\`.
+1. \`git -C "${wt}" rev-parse --abbrev-ref HEAD\`. If it prints ${baseName} or HEAD, commit nothing and name it in \`blocked\`.
+2. \`git -C "${wt}" status --porcelain\`. Report \`hasWork\`: true if it printed anything.
+3. If hasWork, \`git -C "${wt}" add -A\` and commit as \`type(scope): description\`${message ? ` (the change: ${message})` : ''} with NO Co-Authored-By header. \`--no-verify\` is forbidden; when a hook fails, fix every finding, stage the fixes and commit again; if a finding cannot be fixed, abort with NO commit and name it in \`blocked\`.
+4. Do not push, do not open a pull request, and do not merge.
+5. Report the branch, \`git -C "${wt}" rev-parse HEAD\` as \`commit\`, and whether \`git -C "${wt}" status --porcelain\` is now empty as \`treeClean\`.`,
+      { label: 'settle:commit', rethrow: true, phase: 'Settle', agentType: 'agent-teams-workforce:github-actions-pipeline-implementer', schema: COMMIT_SCHEMA }
+    )
+    if (!reported) return { status: 'error', error: 'the commit agent returned no result' }
+    return { status: 'reported', ...reported }
+  } catch (e) {
+    const error = e && e.message ? e.message : String(e)
+    log(`commit failed: ${error}`)
+    return { status: 'error', error }
+  }
+}
 
 async function settleRun() {
   if (!wt) return { status: 'not-applicable', reason: 'the run established no repo path, so nothing was written' }
@@ -93,4 +132,4 @@ Run every git command as \`git -C "${wt}"\`, and \`cd "${wt}"\` before the PR co
 }
 
 phase('Settle')
-return await settleRun()
+return commitOnly ? await commitRun() : await settleRun()

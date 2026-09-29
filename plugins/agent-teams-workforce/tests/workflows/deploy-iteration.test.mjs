@@ -26,6 +26,8 @@ import { runWorkflowScript, readWorkflowSource, workflowCalls, agentCalls, journ
 
 const WF = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'workflows')
 const COMPOSITES = ['task-to-deploy', 'bug-fix', 'infra-change']
+// The composites that deploy and answer the deployment scalars.
+const DEPLOYING = ['bug-fix']
 const WORKTREE = '/repos/.worktrees/ssbd-dep-chassis'
 
 // ── The iteration loop ────────────────────────────────────────────────────────
@@ -197,7 +199,7 @@ test('landing is reported separately from deployment, under its own stage token'
 // has to guess, and the guess a green run invites is "true". So every exit path answers.
 
 test('every composite answers the deployment scalars from handback, not per-return', () => {
-  for (const name of COMPOSITES) {
+  for (const name of DEPLOYING) {
     const src = readWorkflowSource(path.join(WF, `${name}.js`))
     assert.match(
       src,
@@ -255,7 +257,7 @@ test('the input refusals answer ALL THREE scalars, before handback even exists',
   // cover them and each scalar has to be carried explicitly. 6.2.1 carried two of the three
   // and its commit message claimed it carried them all — which is the same absent-field trap
   // that commit existed to close, one level down.
-  for (const [name, composite] of [['task-to-deploy', 'task-to-deploy.js'], ['bug-fix', 'bug-fix.js'], ['infra-change', 'infra-change.js']]) {
+  for (const [name, composite] of [['bug-fix', 'bug-fix.js']]) {
     const run = (bead) => runWorkflowScript(path.join(WF, composite), { args: { bead }, agentImpl: () => null, workflowImpl: () => ({}) })
 
     // A missing repoPath stops a Task at `input` and a bug at `repo-resolution` (its triage
