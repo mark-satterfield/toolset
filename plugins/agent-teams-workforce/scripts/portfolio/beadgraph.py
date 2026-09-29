@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Read the tracker once and normalize it into a graph that sequencing and scoring reason over.
 
-The tracker is `bd`. The `.beads/issues.jsonl` export is a PASSIVE artifact written by
-`bd` and can lag it, so it is a fallback only, and whichever source answered is reported
-on every command so a caller never has to guess which one it read.
+The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
+export is never read: `bd` exports only after a state-changing command, at most once per
+`export.interval`, and the export can be blocked, so it can lag the tracker by hours. A live
+read that fails is retried with backoff.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
 edge: it orders ELABORATION, and `tracks` is non-blocking in beads, so it never removes an
@@ -18,6 +19,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -189,6 +191,36 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     return done.stdout
 
 
+#: The pause before each retry of a failed live read, in seconds.
+READ_BACKOFF = (1, 2, 4, 8, 16)
+
+
+def _bd_json(args: list[str], repo: Path | None) -> object:
+    """Run a read-only `bd` command and parse its JSON stdout, retrying with backoff.
+
+    Args:
+        args: The `bd` arguments.
+        repo: The repository to run `bd` from, or None for the working directory.
+
+    Returns:
+        The parsed stdout.
+
+    Raises:
+        GraphError: Every attempt failed or printed no JSON.
+    """
+    error: Exception | None = None
+    for pause in (0, *READ_BACKOFF):
+        time.sleep(pause)
+        try:
+            return json.loads(_bd(args, repo) or "null")
+        except (GraphError, json.JSONDecodeError) as exc:
+            error = exc
+    msg = (
+        f"`bd {' '.join(args)}` failed after {len(READ_BACKOFF) + 1} attempts: {error}"
+    )
+    raise GraphError(msg)
+
+
 def now_iso() -> str:
     """The current instant, ISO 8601 UTC, to the second."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -259,7 +291,7 @@ def _metadata_text(value: object) -> str:
 
 
 def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> None:
-    """Write pipeline metadata through the beads-contract CLI and verify the read-back.
+    """Write pipeline metadata through the beads-contract CLI.
 
     Args:
         bead_id: The bead to write.
@@ -267,8 +299,7 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
         repo: The repository to run `bd` from, or None for the working directory.
 
     Raises:
-        GraphError: The CLI refused, or the value read back after the write is not the
-            value written.
+        GraphError: The CLI exited nonzero.
     """
     command = [sys.executable, str(CONTRACT)]
     if repo is not None:
@@ -278,25 +309,6 @@ def write_metadata(bead_id: str, pairs: dict[str, str], repo: Path | None) -> No
     done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode != 0:
         msg = f"metadata set on {bead_id} failed: {done.stdout.strip()} {done.stderr.strip()}"
-        raise GraphError(msg)
-    try:
-        answer = json.loads(done.stdout or "{}")
-    except json.JSONDecodeError as exc:
-        msg = f"metadata set on {bead_id} printed no read-back: {done.stdout.strip()}"
-        raise GraphError(msg) from exc
-    verified = answer.get("verified") if isinstance(answer, dict) else None
-    if not isinstance(verified, dict):
-        msg = f"metadata set on {bead_id} printed no read-back: {done.stdout.strip()}"
-        raise GraphError(msg)
-    wrong = {
-        key: verified.get(key)
-        for key, value in pairs.items()
-        if not same_value(verified.get(key), value)
-    }
-    if wrong:
-        msg = (
-            f"metadata set on {bead_id} did not hold: read back {wrong}, wrote {pairs}"
-        )
         raise GraphError(msg)
 
 
@@ -403,29 +415,15 @@ def fingerprints(records: list[dict], scope: str = SCOPE_READINESS) -> dict[str,
 
 
 def _records_from_bd(repo: Path | None, *, with_description: bool) -> list[dict]:
-    """Every issue, closed ones included, from one `bd list` call."""
+    """Every issue, closed ones included, from one live `bd list` call."""
     args = ["list", "--all", "--json", "-n", "0", "--readonly"]
     if not with_description:
         args.append("--brief")
-    payload = json.loads(_bd(args, repo) or "[]")
+    payload = _bd_json(args, repo)
     if not isinstance(payload, list):
         msg = "`bd list --json` did not return an array"
         raise GraphError(msg)
     return payload
-
-
-def _records_from_export(repo: Path | None) -> list[dict]:
-    """The passive `.beads/issues.jsonl` export — the fallback, never the preference."""
-    root = repo or Path.cwd()
-    path = root / ".beads" / "issues.jsonl"
-    if not path.is_file():
-        msg = f"no tracker: `bd` failed and {path} does not exist"
-        raise GraphError(msg)
-    records: list[dict] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            records.append(json.loads(line))
-    return records
 
 
 def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
@@ -443,7 +441,7 @@ def children(repo: Path | None, parent: str, kind: str) -> list[dict]:
         GraphError: `bd` failed or did not return an array.
     """
     args = ["list", "--parent", parent, "--type", kind, "--all", "--json", "-n", "0"]
-    payload = json.loads(_bd([*args, "--readonly"], repo) or "[]")
+    payload = _bd_json([*args, "--readonly"], repo)
     if not isinstance(payload, list):
         msg = "`bd list --json` did not return an array"
         raise GraphError(msg)
@@ -477,17 +475,14 @@ def bead_of(record: dict) -> Bead:
 
 
 def load(repo: Path | None = None, *, with_description: bool = False) -> Graph:
-    """Read the whole tracker and normalize it, preferring `bd` over the export."""
-    warnings: list[str] = []
-    try:
-        records = _records_from_bd(repo, with_description=with_description)
-        source = "bd list --all --json"
-    except GraphError as exc:
-        warnings.append(f"bd unavailable, fell back to the passive export: {exc}")
-        records = _records_from_export(repo)
-        source = ".beads/issues.jsonl (export)"
+    """Read the whole tracker live through `bd` and normalize it.
+
+    Raises:
+        GraphError: The live read failed on every retry.
+    """
+    records = _records_from_bd(repo, with_description=with_description)
     beads = {}
     for record in records:
         bead = bead_of(record)
         beads[bead.id] = bead
-    return Graph(beads=beads, source=source, records=records, warnings=warnings)
+    return Graph(beads=beads, source="bd list --all --json", records=records)

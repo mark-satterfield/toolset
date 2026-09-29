@@ -20,6 +20,13 @@ description, or in its parent Story or Epic, and the requirement is that they EX
 not that they occupy a field. Where a fact has a canonical implementation, this document names
 it and stops.
 
+## Reading beads
+
+Beads is read live through `bd`, and only through `bd`. `.beads/issues.jsonl` is never read:
+`bd` auto-exports only after a state-changing command, at most once per `export.interval`
+(60 s), and the export can be blocked, so it lags the tracker. A live read that fails is
+retried with backoff.
+
 ## Run it
 
 ```bash

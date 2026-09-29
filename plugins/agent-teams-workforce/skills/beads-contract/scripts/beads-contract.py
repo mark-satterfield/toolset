@@ -27,6 +27,7 @@ import hashlib
 import json
 import re
 import subprocess
+import time
 import sys
 
 #: `readiness` hashes the record content and the build contract; `judging` hashes only the
@@ -34,6 +35,9 @@ import sys
 SCOPE_READINESS = "readiness"
 SCOPE_JUDGING = "judging"
 SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
+
+#: The pause before each retry of a failed live `bd` read, in seconds.
+READ_BACKOFF = (1, 2, 4, 8, 16)
 
 #: The record keys the readiness fingerprint is taken over; keys outside
 #: CONTENT_HASH_PRESENT are hashed as null.
@@ -552,6 +556,28 @@ class Reader:
             raise BeadsError(msg)
         return done.stdout
 
+    def _read(self, args: list[str]) -> object:
+        """Run one read-only `bd` command live and parse its JSON, retrying with backoff.
+
+        Args:
+            args: Arguments after `bd`.
+
+        Returns:
+            The parsed stdout.
+
+        Raises:
+            BeadsError: Every attempt failed or printed no JSON.
+        """
+        error: Exception | None = None
+        for pause in (0, *READ_BACKOFF):
+            time.sleep(pause)
+            try:
+                return json.loads(self._bd(args))
+            except (BeadsError, json.JSONDecodeError) as exc:
+                error = exc
+        msg = f"`bd {' '.join(args)}` failed after {len(READ_BACKOFF) + 1} attempts: {error}"
+        raise BeadsError(msg)
+
     def get(self, bead_id: str) -> dict:
         """Return one bead's record, read-only.
 
@@ -569,12 +595,7 @@ class Reader:
         if self.offline:
             self.cache[bead_id] = {}
             return {}
-        text = self._bd(["show", bead_id, "--json", "--readonly"])
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError as exc:
-            msg = f"`bd show {bead_id} --json` did not return JSON: {exc}"
-            raise BeadsError(msg) from exc
+        payload = self._read(["show", bead_id, "--json", "--readonly"])
         if isinstance(payload, list):
             rec = payload[0] if payload else {}
         elif isinstance(payload, dict):
@@ -618,12 +639,7 @@ class Reader:
         Raises:
             BeadsError: If `bd` failed or its output could not be decoded.
         """
-        text = self._bd(["list", "--json", "--all", "--limit", "0"])
-        try:
-            payload = json.loads(text)
-        except json.JSONDecodeError as exc:
-            msg = f"`bd list --json` did not return JSON: {exc}"
-            raise BeadsError(msg) from exc
+        payload = self._read(["list", "--json", "--all", "--limit", "0", "--readonly"])
         before = set(self.cache)
         self._absorb(payload)
         return [bead_id for bead_id in self.supplied if bead_id not in before]

@@ -659,12 +659,6 @@ def run(args: argparse.Namespace) -> dict:
             key=args.key,
             root=args.project_root,
         )
-    writes = command in {
-        "write-story",
-        "write-task-edges",
-        "write-all-task-edges",
-        "story-edges",
-    }
     descriptions = command in {
         "write-story",
         "assess-plan",
@@ -675,9 +669,6 @@ def run(args: argparse.Namespace) -> dict:
     } or getattr(args, "with_description", False)
     graph = beadgraph.load(args.directory, with_description=descriptions)
     head = {"source": graph.source, "warnings": graph.warnings, "command": command}
-    if writes and graph.warnings:
-        msg = f"the tracker was not read through bd, so nothing is written: {graph.warnings}"
-        raise GraphError(msg)
     if command == "write-story":
         return head | write_story(
             graph,
@@ -837,9 +828,6 @@ def _story_edges_after(directory: Path | None) -> dict:
     """
     try:
         graph = beadgraph.load(directory)
-        if graph.warnings:
-            msg = f"the tracker was not read through bd: {graph.warnings}"
-            raise GraphError(msg)
         return story_edges(graph, Writer(directory))
     except GraphError as exc:
         return {"ok": False, "error": str(exc)}
