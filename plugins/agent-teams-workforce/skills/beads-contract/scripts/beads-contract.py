@@ -362,6 +362,21 @@ LANE_KEYS = (
     "elab_follows",
 )
 
+#: Metadata keys on a Story. `story_owned_blockers` lists the Story edges `depscore.py
+#: story-edges` created and `story_edge_reasons` is a JSON object keyed by blocker id; the
+#: `story_deploy_*`, `story_ssm_missing` and `story_pr_url` keys are the host's record of
+#: the Story's deploy.
+STORY_KEYS = (
+    "story_owned_blockers",
+    "story_owned_blockers_at",
+    "story_edge_reasons",
+    "story_deploy_state",
+    "story_deploy_attempt",
+    "story_deploy_error",
+    "story_ssm_missing",
+    "story_pr_url",
+)
+
 #: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
 KNOWN_KEYS = frozenset(
     [source for source, _, _ in CONTRACT_SCHEMA]
@@ -369,6 +384,7 @@ KNOWN_KEYS = frozenset(
     + list(LANE_KEYS)
     + list(WSJF_KEYS)
     + list(SEQUENCING_KEYS)
+    + list(STORY_KEYS)
 )
 
 

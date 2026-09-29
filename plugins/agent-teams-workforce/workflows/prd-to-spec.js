@@ -1188,6 +1188,14 @@ const scoringLine = finishOk
   ? `Epic ${epicBeadId} and ${(finishOut.summary && finishOut.summary.tasksScored) || 0} Task(s) scored; Epic ${epicMarkedDone ? 'is elaboration_state=done' : 'stays in_progress'}. `
   : `Scoring did not run for Epic ${epicBeadId}: ${(finishOut && finishOut.error) || 'no result'}. `
 log(scoringLine)
+const storyEdges = (finishOut && finishOut.storyEdges) || null
+const named = (list) => (Array.isArray(list) ? list : []).map((x) => `${(x.stories || []).join(' / ')}${(x.tasks || []).length ? ` (Tasks ${x.tasks.join(', ')})` : ''}`).join('; ')
+const storyEdgeLine = !storyEdges
+  ? ''
+  : storyEdges.ok
+    ? `Story edges: ${(storyEdges.added || []).length} added, ${(storyEdges.removed || []).length} removed, ${storyEdges.unchanged || 0} unchanged. `
+    : `Story edges NOT written — ${storyEdges.error || storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `
+if (storyEdgeLine) log(storyEdgeLine)
 const sadPromotion = (finishOut && finishOut.sad) || null
 const counted = (x) => (x && typeof x === 'object' ? (Number(x.created) || 0) + (Number(x.updated) || 0) : 0)
 const beadsEmitted =
@@ -1221,6 +1229,7 @@ const common = {
   degraded,
   beadsEmitted,
   lifecycle: { owner: lifecycle.owner, start: lifecycle.start, finish: lifecycle.finish, done: epicMarkedDone },
+  ...(storyEdges ? { storyEdges } : {}),
   ...(sadPromotion ? { sadPromotion } : {}),
   crossStoryDependencies: crossStory,
   hierarchy,
@@ -1244,6 +1253,7 @@ return {
       (removalWork.length ? `${removalWork.length} removal item(s) handed to decomposition. ` : '') +
       writeLine +
       scoringLine +
+      storyEdgeLine +
       (specFailures.length || decompositionFailures.length || crossStory.reason
         ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}.`
         : ''),

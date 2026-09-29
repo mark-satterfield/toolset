@@ -208,6 +208,16 @@ if (scores) {
   }
 }
 
+const storyEdges = summary.storyEdges || null
+const storyEdgeLine = !storyEdges
+  ? ''
+  : storyEdges.ok
+    ? `; Story edges ${storyEdges.added || 0} added, ${storyEdges.removed || 0} removed`
+    : `; Story edges NOT written — ${storyEdges.error || 'the Story order is contradictory'}${[...(storyEdges.conflicts || []), ...(storyEdges.cycles || [])]
+        .map((x) => ` [${(x.stories || []).join(' / ')}${(x.tasks || []).length ? `, Tasks ${x.tasks.join(', ')}` : ''}]`)
+        .join('')}`
+if (storyEdgeLine) log(`${target}${storyEdgeLine}`)
+
 const scoredOk = !scores || (!!scoring && scoring.ok === true)
 const scoringDeaths = scoring && scoring.ok !== true && scoring.stage === 'agent-dispatch-failed' && Array.isArray(scoring.dispatchFailures) ? scoring.dispatchFailures : []
 const failure = !settled
@@ -219,7 +229,7 @@ return {
   ok: settled && scoredOk,
   stage: !assessed ? 'agent-dispatch-failed' : !settled ? 'Assess' : !scoredOk ? (scoring && scoring.stage === 'agent-dispatch-failed' ? scoring.stage : 'Score') : 'done',
   beadId: target,
-  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}`,
+  headline: failure || `${target}: edges ${applies ? 'applied' : 'proposed'} — ${summary.added} added, ${summary.converted} converted, ${summary.removed} withdrawn, ${summary.unchanged} unchanged${scores ? ', and rescored' : ''}${storyEdgeLine}`,
   apply: applies,
   settled,
   workDir: work,

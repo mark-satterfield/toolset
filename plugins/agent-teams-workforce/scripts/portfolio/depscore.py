@@ -20,6 +20,9 @@
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
     plan-task-edges      the saved Task edges between an Epic's Stories, checked; no `bd` call
     write-task-edges     write ONE Task's edges to Tasks in the Epic's other Stories
+    story-edges          derive and write each repository's Story -> Story `blocks` edges from
+                         Epic order and Task edges; refuses, writing nothing, on a contradiction.
+                         `elaboration-finish` and a Task-level `apply-edges` run it after they write
 
 Every command prints one JSON object. With `--out FILE` the full object is written to FILE
 and stdout carries only its `summary`. `--dry-run` computes, writes nothing, and returns the
@@ -59,6 +62,7 @@ from beadwrite import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from scoring import ScoringError, judge_input, plan, record, rubric, score
+from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
 
@@ -573,6 +577,13 @@ def build_parser() -> argparse.ArgumentParser:
         )
     _dry_run_flag(wte)
 
+    sed = sub.add_parser(
+        "story-edges",
+        help="derive and write each repository's Story -> Story `blocks` edges",
+        parents=[common],
+    )
+    _dry_run_flag(sed)
+
     erl = sub.add_parser(
         "elaboration-release",
         help="clear a run's owner token from an Epic it did not finish",
@@ -618,7 +629,7 @@ def run(args: argparse.Namespace) -> dict:
             key=args.key,
             root=args.project_root,
         )
-    writes = command in {"write-story", "write-task-edges"}
+    writes = command in {"write-story", "write-task-edges", "story-edges"}
     descriptions = command in {
         "write-story",
         "assess-plan",
@@ -646,6 +657,8 @@ def run(args: argparse.Namespace) -> dict:
         return head | write_task_edges(
             graph, writer, args.epic, args.dir, split_ids(args.repos), args.task
         )
+    if command == "story-edges":
+        return head | story_edges(graph, writer)
     if command == "assess-plan":
         return head | assess_plan(
             graph, epic=args.epic, since=args.since, level=args.level, task=args.task
@@ -713,6 +726,9 @@ def run(args: argparse.Namespace) -> dict:
         summary["plannedWrites"] = len(result.get("planned") or [])
         if not result["validation"]["ok"]:
             summary["validation"] = result["validation"]
+        if level == "task" and result.get("applied") and not writer.dry_run:
+            result["storyEdges"] = _story_edges_after(args.directory)
+            summary["storyEdges"] = _story_edges_summary(result["storyEdges"])
         return head | result | {"summary": summary}
     if command == "withdraw-edge":
         return head | withdraw_edge(
@@ -739,7 +755,7 @@ def run(args: argparse.Namespace) -> dict:
             graph, writer, args.epic, owner=args.owner, reclaim=args.reclaim
         )
     if command == "elaboration-finish":
-        return head | finish(
+        finished = finish(
             graph,
             writer,
             args.epic,
@@ -748,9 +764,53 @@ def run(args: argparse.Namespace) -> dict:
             sad_files=[p.strip() for p in str(args.sad_files).split(",") if p.strip()],
             sad_root=args.sad_root,
         )
+        if not writer.dry_run:
+            finished["storyEdges"] = _story_edges_after(args.directory)
+            finished.setdefault("summary", {})["storyEdges"] = _story_edges_summary(
+                finished["storyEdges"]
+            )
+        return head | finished
     if command == "elaboration-release":
         return head | release(graph, writer, args.epic, owner=args.owner)
     return head | score(graph, writer)
+
+
+def _story_edges_after(directory: Path | None) -> dict:
+    """Run `story-edges` over the tracker as it stands after a command wrote Task edges.
+
+    Args:
+        directory: The repository to run `bd` from, or None for the working directory.
+
+    Returns:
+        The `story-edges` result, or `{ok: false, error}` when the tracker could not be read
+        through `bd`.
+    """
+    try:
+        graph = beadgraph.load(directory)
+        if graph.warnings:
+            msg = f"the tracker was not read through bd: {graph.warnings}"
+            raise GraphError(msg)
+        return story_edges(graph, Writer(directory))
+    except GraphError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _story_edges_summary(result: dict) -> dict:
+    """The part of a `story-edges` result a caller's summary carries.
+
+    Args:
+        result: The `story-edges` result.
+
+    Returns:
+        Its summary, with the refusal's conflicts and cycles, or its error.
+    """
+    if result.get("error"):
+        return {"ok": False, "error": result["error"]}
+    out = dict(result.get("summary") or {})
+    if result.get("refused"):
+        out["conflicts"] = result.get("conflicts") or []
+        out["cycles"] = result.get("cycles") or []
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
