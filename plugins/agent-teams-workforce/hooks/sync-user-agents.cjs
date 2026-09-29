@@ -7,7 +7,8 @@
  *
  * Every agents/*.md with an `mcpServers:` entry runs from its copy in the
  * user-level agents directory (see lib/user-level-agents.cjs). This hook copies
- * each one there when the copy is missing or differs, and removes a copy it
+ * each one there, with `${CLAUDE_PLUGIN_ROOT}` replaced by the absolute path of
+ * the install it copies from, when the copy is missing or differs from that, and removes a copy it
  * wrote for an agent that no longer declares `mcpServers`. It records the names
  * it owns in `.agent-teams-workforce-owned.json` in that directory and never
  * writes or removes any other file: a same-named file it does not own is left
@@ -28,6 +29,7 @@ const {
   PLUGIN_ROOT,
   installedPluginsPath,
   newestPluginRoot,
+  renderUserLevelAgent,
   userAgentsDir,
   userLevelAgentNames,
 } = require('./lib/user-level-agents.cjs');
@@ -75,7 +77,10 @@ function sync() {
   const foreign = [];
 
   for (const name of names) {
-    const source = fs.readFileSync(path.join(pluginRoot, 'agents', `${name}.md`));
+    const source = Buffer.from(
+      renderUserLevelAgent(fs.readFileSync(path.join(pluginRoot, 'agents', `${name}.md`), 'utf8'), pluginRoot),
+      'utf8'
+    );
     const destPath = path.join(destDir, `${name}.md`);
     const current = readBytes(destPath);
     if (current && !previouslyOwned.has(name) && !current.equals(source)) {

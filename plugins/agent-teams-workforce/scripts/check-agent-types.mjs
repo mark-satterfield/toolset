@@ -41,7 +41,9 @@
 // its plain name. A plain name of one of them resolves; the same name under this plugin's prefix
 // FAILS, because it runs the plugin copy without its MCP servers. A script that builds the prefix at
 // runtime (`agent-teams-workforce:${x}`) must list, in its USER_LEVEL_AGENTS set, every user-level
-// agent it names other than by a literal agentType, and nothing else.
+// agent it names other than by a literal agentType, and nothing else. A user-level agent may use
+// ${CLAUDE_PLUGIN_ROOT}, which the sync hook replaces with the install path in the copy, and FAILS
+// on any other plugin-only variable, which nothing resolves in the copy.
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
@@ -52,7 +54,9 @@ const root = process.argv[2] || path.join(here, '..')
 const workflowsDir = path.join(root, 'workflows')
 const agentsDir = path.join(root, 'agents')
 const skillsDir = path.join(root, 'skills')
-const { userLevelAgentNames } = createRequire(import.meta.url)('../hooks/lib/user-level-agents.cjs')
+const { userLevelAgentNames, UNRESOLVABLE_IN_COPY } = createRequire(import.meta.url)(
+  '../hooks/lib/user-level-agents.cjs'
+)
 const userLevel = new Set(userLevelAgentNames(root))
 
 const PREFIX = 'agent-teams-workforce:'
@@ -101,6 +105,9 @@ function declaredSkills(raw) {
 const missing = []
 const prefixedUserLevel = []
 const rosterGaps = []
+const unresolvable = [...userLevel].filter((name) =>
+  UNRESOLVABLE_IN_COPY.test(readFileSync(path.join(agentsDir, `${name}.md`), 'utf8'))
+)
 const external = []
 const missingSkills = []
 const externalSkills = []
@@ -168,6 +175,13 @@ for (const { file, name, why } of rosterGaps) {
   console.log(`FAIL  workflows/${file}  —  '${name}' ${why}; the runtime-prefixed dispatch would name it wrongly.`)
 }
 
+for (const name of unresolvable) {
+  console.log(
+    `FAIL  agents/${name}.md  —  a user-level agent names a plugin-only variable other than \${CLAUDE_PLUGIN_ROOT}; ` +
+      'its copy in the user-level agents directory cannot resolve it.'
+  )
+}
+
 for (const { file, line, name } of external) {
   console.log(
     `NOTE  workflows/${file}:${line}  —  agentType '${name}' is not a ${PREFIX} agent. ` +
@@ -209,4 +223,6 @@ if (prefixedUserLevel.length || rosterGaps.length) {
   console.log(`${prefixedUserLevel.length + rosterGaps.length} dispatch(es) name a user-level agent wrongly`)
 }
 
-process.exit(missing.length || missingSkills.length || prefixedUserLevel.length || rosterGaps.length ? 1 : 0)
+process.exit(
+  missing.length || missingSkills.length || prefixedUserLevel.length || rosterGaps.length || unresolvable.length ? 1 : 0
+)

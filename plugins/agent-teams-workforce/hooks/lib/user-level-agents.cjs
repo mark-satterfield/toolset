@@ -54,6 +54,24 @@ function userLevelAgentNames(pluginRoot = PLUGIN_ROOT) {
 }
 
 /**
+ * The text of a user-level copy of an agent: the plugin file with every
+ * `${CLAUDE_PLUGIN_ROOT}` (or `$CLAUDE_PLUGIN_ROOT`) replaced by the absolute
+ * path of the plugin install it was copied from. The variable is set only for
+ * a plugin's own hooks and commands, never for an agent's Bash calls, so the
+ * copy names the install directly.
+ *
+ * @param {string} raw
+ * @param {string} pluginRoot
+ * @returns {string}
+ */
+function renderUserLevelAgent(raw, pluginRoot) {
+  return raw.replace(/\$\{CLAUDE_PLUGIN_ROOT\}|\$CLAUDE_PLUGIN_ROOT\b/g, () => pluginRoot);
+}
+
+/** Plugin-only variables a user-level copy cannot resolve and the copy does not substitute. */
+const UNRESOLVABLE_IN_COPY = /\$\{?CLAUDE_PLUGIN_DATA\b/;
+
+/**
  * The user-level agents directory: `$CLAUDE_CONFIG_DIR/agents`, defaulting to
  * `~/.claude/agents`.
  *
@@ -122,9 +140,11 @@ function newestPluginRoot(fallbackRoot) {
 module.exports = {
   OWNED_MANIFEST,
   PLUGIN_ROOT,
+  UNRESOLVABLE_IN_COPY,
   declaresMcpServers,
   installedPluginsPath,
   newestPluginRoot,
+  renderUserLevelAgent,
   userAgentsDir,
   userLevelAgentNames,
 };
