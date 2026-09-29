@@ -1,7 +1,7 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. One read-only session inventories, for one repository, the material that already exists for every requirement of a PRD (conforms: reuse, contradicts: remove, absent: build), resolves UI requirements against the cds design artifacts, and reports upstream dependency changes. The PRD is canonical: no requirement is dropped because code exists. A saved result can be replayed instead of dispatching the session.',
+    'Leaf mini — PRD Reconciliation. One read-only session inventories, for one repository, the material that already exists for every requirement of a PRD (conforms: reuse, contradicts: remove, absent: build), resolves UI requirements against the cds design artifacts, and reports upstream dependency changes. The PRD is canonical: no requirement is dropped because code exists. A saved result can be replayed instead of dispatching the session; one that cannot be read back returns ok:false at stage replay and the session is not dispatched.',
   phases: [{ title: 'Reconciliation checks', detail: 'one read-only session inventories the material and checks upstream dependencies' }],
 }
 const dispatchFailures = []
@@ -131,12 +131,15 @@ Return found=true with the text in \`content\`, or found=false when the file is 
     const body = JSON.parse(r.content)
     return body && Array.isArray(body.requirements) ? body : null
   } catch (err) {
-    log(`Replay: the saved result is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — the reconciler runs`)
+    log(`Replay: the saved result is not valid JSON (${String((err && err.message) || err).slice(0, 120)})`)
     return null
   }
 }
 const replayedRecon = replayPath ? await readSavedRecon(replayPath) : null
 if (replayedRecon) log(`Reconciliation replayed from ${replayPath}`)
+if (replayPath && !replayedRecon) {
+  return { ok: false, stage: 'replay', reason: `the saved reconciliation at ${replayPath} could not be read back, so it is not run again` }
+}
 
 const reality = replayedRecon || await settleAgent(
   `${rulingsBlock}Take an INVENTORY of the material that already exists for this PRD, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase, the design mocks and the cloud account: read, search and query what the inventory needs, but change nothing anywhere and write no document${reconBrief ? ' other than the one result file named at the end of this brief' : ''}. Two checks, one pass — return both.

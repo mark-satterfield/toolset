@@ -409,7 +409,6 @@ async function prefetchResumeJson() {
   }
   const arch = RESUME.phases.architecture
   if (arch) want(arch, arch.names.includes('architecture-decision.md') ? 'sad-update.json' : 'architecture-triage.json')
-  if (!callerRepos.length) for (const name of ['repo-scoping-shape.json', 'repo-scoping.json']) want(RESUME.phases['repo-scoping'], name)
   if (!wanted.length) return
   const texts = await parallel(wanted.map((name) => () => readSavedText(artPath(name), `replay:read-${name}`, 'Architecture')))
   wanted.forEach((name, i) => {
@@ -418,9 +417,64 @@ async function prefetchResumeJson() {
       const parsed = JSON.parse(texts[i])
       if (parsed && typeof parsed === 'object') prefetched[name] = parsed
     } catch (err) {
-      log(`Replay: ${name} is not valid JSON (${String((err && err.message) || err).slice(0, 120)}) — its phase runs`)
+      log(`Replay: ${name} is not valid JSON (${String((err && err.message) || err).slice(0, 120)})`)
     }
   })
+}
+
+const SAVED_SPAN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['exitCode', 'placements', 'workUnits'],
+  properties: {
+    exitCode: { type: 'integer' },
+    error: { type: 'string' },
+    placements: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['repoPath', 'workUnitIds', 'obsoletes'],
+        properties: {
+          repoPath: { type: 'string' },
+          workUnitIds: { type: 'array', items: { type: 'string' } },
+          obsoletes: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    spanRationale: { type: ['string', 'null'] },
+    workUnits: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'homeKind'],
+        properties: { id: { type: 'string' }, homeKind: { type: ['string', 'null'] } },
+      },
+    },
+    designSummary: { type: ['string', 'null'] },
+  },
+}
+const SPAN_PROJECTION = [
+  'import json, sys',
+  'd = sys.argv[1]',
+  "r = json.load(open(d + '/repo-scoping.json'))",
+  "s = json.load(open(d + '/repo-scoping-shape.json'))",
+  "t = lambda v: v if isinstance(v, str) else json.dumps(v)",
+  "print(json.dumps({'placements': [{'repoPath': p.get('repoPath') or '', 'workUnitIds': [t(x) for x in p.get('workUnitIds') or []], 'obsoletes': [t(x) for x in p.get('obsoletes') or []]} for p in r.get('placements') or []], 'spanRationale': r.get('spanRationale'), 'workUnits': [{'id': t(u.get('id')), 'homeKind': u.get('homeKind')} for u in s.get('workUnits') or []], 'designSummary': s.get('designSummary')}, indent=1))",
+].join('; ')
+/** Returns the saved span ruling a resumed run replays, printed by a script, or null when it cannot be read. */
+async function readSavedSpan() {
+  const r = await settleAgent(
+    `Run exactly this one shell command, once, and change nothing else:
+
+python3 -c ${shellq(SPAN_PROJECTION)} ${shellq(ART_DIR)}
+
+It prints one JSON object. Return the process exit code as \`exitCode\` and that object's fields, copied exactly, as \`placements\`, \`spanRationale\`, \`workUnits\` and \`designSummary\`. If the command fails, return its exit code, its stderr as \`error\`, and empty \`placements\` and \`workUnits\`. Do not retry, do not repair, do not run any other command.`,
+    { label: 'replay:read-saved-span', phase: 'Repo Scoping', model: 'haiku', effort: 'low', schema: SAVED_SPAN_SCHEMA }
+  )
+  if (!r || r.exitCode !== 0 || !Array.isArray(r.placements) || !r.placements.some((p) => p && hasText(p.repoPath))) return null
+  return r
 }
 
 let runInputs = null
@@ -484,6 +538,8 @@ if (archHit) {
       ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), sadUpdate: artData(archHit, 'sad-update.json') || null } }
       : { ok: true, skipped: true, resumed: true, artifact: { skipped: true, triage: savedTriage } }
     recRuled('Architecture reused from saved artifacts.', { status: 'done' })
+  } else if (archHit.names.includes('architecture-triage.json') && !savedTriage) {
+    return partial('architecture', { reason: `the completed architecture step's saved triage in ${ART_DIR} could not be read back, so it is not triaged again` })
   }
 }
 if (!architecture) {
@@ -601,9 +657,15 @@ function architectureRulingFor(art) {
 async function runRepoScoping() {
   if (callerRepos.length) return { pinned: true }
   const scopeHit = resumeFresh('repo-scoping')
-  const saved = scopeHit ? artData(scopeHit, 'repo-scoping.json') : undefined
-  if (saved && Array.isArray(saved.placements)) {
-    const shape = artData(scopeHit, 'repo-scoping-shape.json')
+  const saved = scopeHit && ART_ON ? await readSavedSpan() : null
+  if (scopeHit && !saved) {
+    return {
+      scopeHit,
+      scoping: { ok: false, reason: `the completed repo-scoping step's saved ruling in ${ART_DIR} could not be read back, so it is not ruled again` },
+    }
+  }
+  if (saved) {
+    const shape = saved
     const placements = saved.placements
       .filter((p) => p && hasText(p.repoPath))
       .map((p) => ({ ...p, repoPath: p.repoPath.trim(), workUnitIds: Array.isArray(p.workUnitIds) ? p.workUnitIds : [] }))
@@ -824,15 +886,17 @@ async function authorSpecForRepo(repo, repoIndex) {
   const slug = repoSlug(repo)
   const specPhase = `spec:${slug}`
   const specHit = resumeFresh(specPhase)
-  const tasksHit = resumeFresh(`tasks:${slug}`)
   let recon = null
   let reconOk = false
-  if (!(specHit && tasksHit)) {
+  if (!specHit) {
     const reconPhase = `recon:${slug}`
     const reconHit = resumeFresh(reconPhase)
     const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
     recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
     if (recon && recon.ledger) runLedger.push(recon.ledger)
+    if (recon && recon.stage === 'replay') {
+      return { repo, recon: null, specAuthoring: { ok: false, stage: 'recon-replay', reason: recon.reason || 'the saved reconciliation could not be read back' } }
+    }
     reconOk = !!(recon && recon.ok !== false)
     if (reconOk) await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
     else log(`Spec Authoring for ${repo}: the current-state comparison returned no inventory (${(recon && recon.reason) || 'no result'}) — the spec is authored without one`)
