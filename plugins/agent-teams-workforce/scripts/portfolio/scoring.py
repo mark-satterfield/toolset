@@ -253,19 +253,14 @@ def plan(
 
     Returns:
         The Epics and Tasks to judge with a reason each, the judged values to adopt,
-        every open Epic's and Task's fingerprint, and a summary of counts.
-
-    Raises:
-        ScoringError: An id in `only` is not an open Epic or Task.
+        every open Epic's and Task's fingerprint, and a summary of counts. An id in
+        `only` that is not an open Epic or Task is ignored.
     """
     prints = fingerprints(graph.records, SCOPE_JUDGING)
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
     ids = {e.id for e in epics} | {t.id for t in tasks}
-    wanted = None if only is None else set(only)
-    if wanted is not None and wanted - ids:
-        msg = f"not an open Epic or Task: {', '.join(sorted(wanted - ids))}"
-        raise ScoringError(msg)
+    wanted = None if only is None else set(only) & ids
     adopt: list[str] = []
     states: dict[str, int] = {}
     judge: dict[str, list[dict]] = {"epics": [], "tasks": []}

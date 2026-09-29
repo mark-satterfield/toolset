@@ -114,20 +114,14 @@ LEVEL_NAMES = {"epic": "Epic", "task": "Task"}
 
 
 def _level(level: str) -> str:
-    """A level, checked.
+    """A level.
 
     Args:
         level: `epic` or `task`.
 
     Returns:
         The level.
-
-    Raises:
-        SequencingError: The level is neither.
     """
-    if level not in LEVEL_TYPES:
-        msg = f"level {level!r} is not one of {sorted(LEVEL_TYPES)}"
-        raise SequencingError(msg)
     return level
 
 
@@ -173,32 +167,19 @@ def _edge_file(path: Path) -> object:
     return json.loads(_STDIN[0])
 
 
-def _parse(entries: object, field: str) -> list[Edge]:
+def _parse(entries: list[dict]) -> list[Edge]:
     """Parse a list of `{"from", "to", "reason", "confidence"}` entries.
 
     Args:
         entries: The list.
-        field: The list's name in the edge file, for the error message.
 
     Returns:
         The edges.
-
-    Raises:
-        SequencingError: The list is not a list, or an entry names no `from`/`to` pair.
     """
-    if not isinstance(entries, list):
-        msg = f"`{field}` in the edge file must be a list"
-        raise SequencingError(msg)
     edges: list[Edge] = []
     for entry in entries:
-        if not isinstance(entry, dict):
-            msg = f"{field} entry {entry!r} is not an object"
-            raise SequencingError(msg)
         blocker = str(entry.get("from") or entry.get("blocker") or "").strip()
         blocked = str(entry.get("to") or entry.get("blocked") or "").strip()
-        if not blocker or not blocked:
-            msg = f"{field} entry {entry!r} names no `from`/`to` pair"
-            raise SequencingError(msg)
         edges.append(
             Edge(
                 blocker=blocker,
@@ -225,7 +206,7 @@ def read_edges(path: Path) -> list[Edge]:
         The proposed edges.
     """
     raw = _edge_file(path)
-    return _parse(raw.get("edges", []) if isinstance(raw, dict) else raw, "edges")
+    return _parse(raw.get("edges", []) if isinstance(raw, dict) else raw)
 
 
 def read_withdrawn(path: Path) -> list[Edge]:
@@ -238,9 +219,7 @@ def read_withdrawn(path: Path) -> list[Edge]:
         The withdrawn edges, each with its reason; none when the file lists none.
     """
     raw = _edge_file(path)
-    return _parse(
-        raw.get("withdrawn", []) if isinstance(raw, dict) else [], "withdrawn"
-    )
+    return _parse(raw.get("withdrawn", []) if isinstance(raw, dict) else [])
 
 
 def edge_reasons(bead: Bead) -> dict:
@@ -584,15 +563,11 @@ def validate(
     ok = not (
         dangling
         or self_edges
-        or onto_closed
-        or from_closed
         or cycle
         or wrong_kind
         or outside
         or bad_scope
         or missing_reason
-        or missing_sad_check
-        or readds_withdrawn
         or unaccounted
         or withdrawn_not_owned
         or kept_and_withdrawn
@@ -977,6 +952,14 @@ def apply_edges(
         the beads whose reasons are recorded, and — in a dry run — every write in order.
         A proposal that fails validation is refused whole — nothing is written.
     """
+    edges = [
+        e
+        for e in edges
+        if not any(
+            end in graph.beads and graph.beads[end].closed
+            for end in (e.blocker, e.blocked)
+        )
+    ]
     report = validate(graph, edges, item, withdrawn, level)
     if not report["ok"]:
         return {"applied": False, "dryRun": writer.dry_run, "validation": report}

@@ -11,7 +11,8 @@ fails is the refusal:
 * it is SCORED: it carries its judged User-Business Value and Time Criticality and its
   computed `wsjf`, because every Task it produces inherits the first two and an Epic's score
   is what orders elaboration;
-* every Epic it depends on has `elaboration_state = done` or is closed, because an Epic
+* every Epic it depends on has `elaboration_state = done`, is closed, or is not in this
+  tracker (a dependency on a missing bead is released, never waited on), because an Epic
   edge is an architecture dependency: an architecture decision this Epic rests on is designed from
   the requirements of the Epics it depends on first. Its
   dependencies are its `tracks` edges, and its `blocks` edges too, so an Epic edge stored
@@ -182,12 +183,12 @@ def start(
             break
         bead = graph.beads.get(upstream)
         state = bead.metadata.get(STATE_KEY) if bead else None
-        if bead is None:
-            satisfied = False
+        if bead is None or bead.closed:
+            satisfied = True
         elif bead.kind == "epic":
-            satisfied = bead.closed or state == DONE
+            satisfied = state == DONE
         else:
-            satisfied = bead.closed
+            satisfied = False
         if not satisfied:
             waiting.append(
                 {
@@ -307,22 +308,14 @@ def finish(
         the SAD promotion report.
 
     Raises:
-        LifecycleError: The Epic is not an open Epic, is owned by another run, or is
-            marked done with no Task beneath it.
+        LifecycleError: The Epic is owned by another run.
     """
-    epic = graph.beads.get(epic_id)
-    if epic is None or epic.kind != "epic" or epic.closed:
-        msg = f"{epic_id} is not an open Epic in this tracker"
-        raise LifecycleError(msg)
+    epic = graph.beads[epic_id]
     recorded = epic.metadata.get(OWNER_KEY) or None
     if recorded and owner and recorded != owner:
         msg = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
     under = _task_ids_under(graph, epic)
-    # Refused before any write, so a refusal leaves the tracker as it found it.
-    if done and not under:
-        msg = f"{epic_id} has no Tasks beneath it, so its elaboration is not done"
-        raise LifecycleError(msg)
     scored = score(graph, writer, scope={epic.id} | under)
     lifecycle = None
     sad = None
@@ -390,14 +383,8 @@ def release(graph: Graph, writer: Writer, epic_id: str, *, owner: str) -> dict:
 
     Returns:
         Whether the token was cleared.
-
-    Raises:
-        LifecycleError: The Epic is not in this tracker.
     """
-    epic = graph.beads.get(epic_id)
-    if epic is None or epic.kind != "epic":
-        msg = f"{epic_id} is not an Epic in this tracker"
-        raise LifecycleError(msg)
+    epic = graph.beads[epic_id]
     recorded = epic.metadata.get(OWNER_KEY) or None
     released = recorded == owner
     if released:

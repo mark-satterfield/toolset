@@ -213,7 +213,7 @@ const storyEdgeLine = !storyEdges
   ? ''
   : storyEdges.ok
     ? `; Story edges ${storyEdges.added || 0} added, ${storyEdges.removed || 0} removed`
-    : `; Story edges NOT written — ${storyEdges.error || 'the Story order is contradictory'}${[...(storyEdges.conflicts || []), ...(storyEdges.cycles || [])]
+    : `; Story edges ${storyEdges.error ? `NOT written — ${storyEdges.error}` : `${storyEdges.added || 0} added, ${storyEdges.removed || 0} removed; NOT written for ${(storyEdges.refusedStories || []).join(', ')}, whose order is contradictory`}${[...(storyEdges.conflicts || []), ...(storyEdges.cycles || [])]
         .map((x) => ` [${(x.stories || []).join(' / ')}${(x.tasks || []).length ? `, Tasks ${x.tasks.join(', ')}` : ''}]`)
         .join('')}`
 if (storyEdgeLine) log(`${target}${storyEdgeLine}`)

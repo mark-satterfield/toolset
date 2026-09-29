@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 import beadgraph
 from edgeset import (
     SequencingError,
-    scope_defect,
     standing_edges,
     withdrawal_history,
 )
@@ -53,13 +52,10 @@ def assess_context(
         `corpusDir`, `indexPath`, and a `summary` of counts.
 
     Raises:
-        SequencingError: `epic` is not an open Epic.
+        SequencingError: `corpus_ready` was passed and there is no corpus for the Epic.
     """
     epics = [b for b in graph.of_kind("epic") if not b.closed]
-    bead = next((b for b in epics if b.id == epic), None)
-    if bead is None:
-        msg = f"{epic} is not an open Epic"
-        raise SequencingError(msg)
+    bead = graph.beads[epic]
     corpus = out_dir / "prd"
     index = out_dir / "index.md"
     if corpus_ready:
@@ -166,18 +162,7 @@ def task_context(graph: Graph, task: str, out_dir: Path) -> dict:
         `withdrawn` (every edge touching it that an assessment withdrew, with the reason,
         from `edgeset.withdrawal_history`), `corpusDir`, `indexPath`, and a `summary` of
         counts.
-
-        `withdrawn` is here because `edgeset` enforces `readdsWithdrawn` at Task level as
-        well as Epic level: a proposal that re-adds a withdrawn edge without answering the
-        recorded reason is refused, so a session assessed without this list is refused for
-        a record it was never shown.
-
-    Raises:
-        SequencingError: `task` is not an open Task, or elaboration wrote it.
     """
-    defect = scope_defect(graph, task, "task")
-    if defect:
-        raise SequencingError(defect)
     tasks = [b for b in graph.of_kind("task") if not b.closed]
     bead = graph.beads[task]
     corpus = out_dir / "task"

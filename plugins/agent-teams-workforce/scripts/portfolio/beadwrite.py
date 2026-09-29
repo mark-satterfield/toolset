@@ -377,14 +377,7 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
 
     Returns:
         The Story, what was done to it, and the keyed Tasks already under it.
-
-    Raises:
-        HierarchyError: The Epic is not an open Epic.
     """
-    epic = graph.beads.get(epic_id)
-    if epic is None or epic.kind != "epic" or epic.closed:
-        msg = f"{epic_id} is not an open Epic in this tracker"
-        raise HierarchyError(msg)
     story = read_story(directory, _rel(directory, root), repo, slug)
     bead = _story_of(graph, epic_id, slug)
     existing: list[dict] = []
@@ -705,13 +698,9 @@ def plan_task_edges(directory: Path, repos: list[str]) -> dict:
         The accepted edges, the rejected ones, and each blocked Task's blockers by name.
 
     Raises:
-        HierarchyError: The mapper reported a cycle, or the edges close one over the
-            Epic's Task graph.
+        HierarchyError: The edges close a cycle over the Epic's Task graph.
     """
-    acyclic, saved = read_task_deps(directory)
-    if not acyclic:
-        msg = "task-deps.json: the mapper reported the edges between Stories imply a cycle"
-        raise HierarchyError(msg)
+    saved = read_task_deps(directory)
     slug_of, intra, _elab = _span_tasks(directory, repos)
     accepted, rejected, pairs = _accept(saved, slug_of)
     if build_order(sorted(slug_of), [*intra, *sorted(pairs)]) is None:

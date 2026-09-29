@@ -17,8 +17,8 @@ releases when the earlier Story closes, which it does when its pull request merg
 
 When the sources disagree about a pair of Stories, or the Story graph holds a cycle together
 with the hand-made Story edges and the hold an in-progress Story has on its repository (every
-other Story of that repository waits for it), nothing is written and the Stories and Tasks
-involved are named. Beads' own cycle detection does not catch this: a Story edge against a Task edge
+other Story of that repository waits for it), nothing is written for the Stories involved and
+they and their Tasks are named; every other Story's edges are written as usual. Beads' own cycle detection does not catch this: a Story edge against a Task edge
 freezes both Stories without any single edge closing a loop.
 
 Stories in different repositories never get an edge. Ownership is recorded on the later
@@ -266,15 +266,16 @@ def _reasons_text(reasons: list[dict]) -> str:
 
 
 def story_edges(graph: Graph, writer: Writer) -> dict:
-    """Derive every repository's Story edges and write the difference, or refuse the whole set.
+    """Derive every repository's Story edges and write the difference, except for refused Stories.
 
     Args:
         graph: The tracker graph, read after the Task edges were written.
         writer: The tracker writer; a dry-run writer records the writes instead.
 
     Returns:
-        `ok`, the derived `edges` with their reasons, the `conflicts` and `cycles` that
-        refused the set, the `added`, `removed` and `unchanged` edges, and a `summary`.
+        `ok` (false when a Story was refused), the derived `edges` with their reasons, the
+        `conflicts` and `cycles` and the `refusedStories` they name, the `added`, `removed`
+        and `unchanged` edges, and a `summary`.
     """
     derived = derive(graph)
     required, repos = derived["required"], derived["repos"]
@@ -306,62 +307,48 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
     cycles = []
     standing = _hand_made(graph, repos)
     holds = _in_progress_holds(graph, repos)
-    if not conflicts:
-        for group in _cycles(set(required) | standing | holds):
-            members = set(group)
-            cycles.append(
-                {
-                    "stories": group,
-                    "edges": [
-                        {
-                            "later": later,
-                            "earlier": first,
-                            "reasons": _reasons_text(required.get((later, first), []))
-                            or (
-                                "drawn by hand"
-                                if (later, first) in standing
-                                else f"{first} is in progress in the repository"
-                            ),
-                        }
-                        for later, first in sorted(set(required) | standing | holds)
-                        if later in members and first in members
-                    ],
-                    "tasks": sorted(
-                        {
-                            t
-                            for (lt, ft), rs in required.items()
-                            if lt in members and ft in members
-                            for r in rs
-                            for t in r.get("tasks", [])
-                        }
-                    ),
-                }
-            )
+    for group in _cycles(set(required) | standing | holds):
+        members = set(group)
+        cycles.append(
+            {
+                "stories": group,
+                "edges": [
+                    {
+                        "later": later,
+                        "earlier": first,
+                        "reasons": _reasons_text(required.get((later, first), []))
+                        or (
+                            "drawn by hand"
+                            if (later, first) in standing
+                            else f"{first} is in progress in the repository"
+                        ),
+                    }
+                    for later, first in sorted(set(required) | standing | holds)
+                    if later in members and first in members
+                ],
+                "tasks": sorted(
+                    {
+                        t
+                        for (lt, ft), rs in required.items()
+                        if lt in members and ft in members
+                        for r in rs
+                        for t in r.get("tasks", [])
+                    }
+                ),
+            }
+        )
     edges = [
         {"later": later, "earlier": first, "repo": repos[later], "reasons": reasons}
         for (later, first), reasons in sorted(required.items())
     ]
-    if conflicts or cycles:
-        return {
-            "ok": False,
-            "refused": True,
-            "reason": "the Story order is contradictory, so no Story edge was written",
-            "conflicts": conflicts,
-            "cycles": cycles,
-            "edges": edges,
-            "dryRun": writer.dry_run,
-            "planned": writer.planned,
-            "summary": {
-                "ok": False,
-                "conflicts": len(conflicts),
-                "cycles": len(cycles),
-                "derived": len(edges),
-            },
-        }
+    refused = sorted(
+        {x for c in conflicts for x in c["stories"]}
+        | {x for c in cycles for x in c["stories"]}
+    )
     added: list[dict] = []
     removed: list[dict] = []
     unchanged = 0
-    for story in sorted(repos):
+    for story in sorted(set(repos) - set(refused)):
         bead = graph.beads[story]
         wanted = {
             first: reasons
@@ -405,10 +392,20 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
                 story, {OWNED_KEY: final, OWNED_AT_KEY: now_iso(), REASONS_KEY: reasons}
             )
     return {
-        "ok": True,
-        "refused": False,
-        "conflicts": [],
-        "cycles": [],
+        "ok": not refused,
+        "refused": bool(refused),
+        **(
+            {
+                "reason": "the Story order of "
+                + ", ".join(refused)
+                + " is contradictory, so their Story edges were not written"
+            }
+            if refused
+            else {}
+        ),
+        "refusedStories": refused,
+        "conflicts": conflicts,
+        "cycles": cycles,
         "edges": edges,
         "added": added,
         "removed": removed,
@@ -416,10 +413,13 @@ def story_edges(graph: Graph, writer: Writer) -> dict:
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
-            "ok": True,
+            "ok": not refused,
             "derived": len(edges),
             "added": len(added),
             "removed": len(removed),
             "unchanged": unchanged,
+            "conflicts": len(conflicts),
+            "cycles": len(cycles),
+            "refusedStories": refused,
         },
     }

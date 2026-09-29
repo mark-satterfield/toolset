@@ -422,38 +422,36 @@ def _surfaces(value: object) -> list[str] | None:
         value: The saved `surfaces`.
 
     Returns:
-        The surfaces, lowercased, once each.
+        The surfaces, lowercased, once each; None when every name it declares is
+        unknown.
     """
     if not isinstance(value, list):
         return None
-    return list(
+    known = list(
         dict.fromkeys(s.lower() for s in str_list(value) if s.lower() in SURFACES)
     )
+    return known if known or not str_list(value) else None
 
 
-def _spec_refs(directory: Path, rel: str | None, slug: str, saved: dict) -> list[str]:
-    """Return the Story's spec documents a Task may cite, relative to the project root.
+def _spec_refs(directory: Path, rel: str | None, slug: str) -> list[str]:
+    """Return the Story's spec documents on disk a Task may cite, relative to the project root.
 
     Args:
         directory: The Epic's working directory.
         rel: The directory, relative to the project root, or None.
         slug: The Story's repository slug.
-        saved: The saved decomposition, whose `specDocsUnreadable` are left out.
 
     Returns:
         The references.
     """
-    unreadable = set(str_list(saved.get("specDocsUnreadable")))
-    refs = []
-    for name in (
+    names = (
         f"spec-{slug}.md",
         f"spec-{slug}.data-model.md",
         f"spec-{slug}.criteria.md",
-    ):
-        ref = f"{rel}/{name}" if rel else None
-        if ref and str(directory / name) not in unreadable and ref not in unreadable:
-            refs.append(ref)
-    return refs
+    )
+    if not rel:
+        return []
+    return [f"{rel}/{name}" for name in names if (directory / name).is_file()]
 
 
 def read_tasks(
@@ -490,10 +488,8 @@ def read_tasks(
     if order is None:
         msg = f"tasks-{slug}.json: the Task edges form a cycle"
         raise HierarchyError(msg)
-    refs = _spec_refs(directory, rel, slug, saved)
-    verified = (
-        "true" if isinstance(saved.get("specDocsUnreadable"), list) else "unknown"
-    )
+    refs = _spec_refs(directory, rel, slug)
+    verified = "true"
     strategy = (
         saved.get("testStrategy")
         if isinstance(saved.get("testStrategy"), dict)
@@ -531,16 +527,15 @@ def read_tasks(
     return tasks
 
 
-def read_task_deps(directory: Path) -> tuple[bool, list[dict]]:
+def read_task_deps(directory: Path) -> list[dict]:
     """Return the saved Task edges between Stories.
 
     Args:
         directory: The Epic's working directory.
 
     Returns:
-        Whether the mapper reported the edges acyclic, and the edges as saved
-        (`from`, `to`, `kind`, `reason`; ends are `S<i>-<local key>`).
+        The edges as saved (`from`, `to`, `kind`, `reason`; ends are
+        `S<i>-<local key>`).
     """
     saved = _read_json(directory / "task-deps.json")
-    edges = [e for e in saved.get("edges") or [] if isinstance(e, dict)]
-    return saved.get("acyclic") is not False, edges
+    return [e for e in saved.get("edges") or [] if isinstance(e, dict)]

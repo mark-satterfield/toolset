@@ -1235,9 +1235,10 @@ const storyEdges = (finishOut && finishOut.storyEdges) || null
 const named = (list) => (Array.isArray(list) ? list : []).map((x) => `${(x.stories || []).join(' / ')}${(x.tasks || []).length ? ` (Tasks ${x.tasks.join(', ')})` : ''}`).join('; ')
 const storyEdgeLine = !storyEdges
   ? ''
-  : storyEdges.ok
-    ? `Story edges: ${(storyEdges.added || []).length} added, ${(storyEdges.removed || []).length} removed, ${storyEdges.unchanged || 0} unchanged. `
-    : `Story edges NOT written — ${storyEdges.error || storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `
+  : storyEdges.error
+    ? `Story edges NOT written — ${storyEdges.error}. `
+    : `Story edges: ${(storyEdges.added || []).length} added, ${(storyEdges.removed || []).length} removed, ${storyEdges.unchanged || 0} unchanged. ` +
+      (storyEdges.ok ? '' : `Not written for ${(storyEdges.refusedStories || []).join(', ')} — ${storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `)
 if (storyEdgeLine) log(storyEdgeLine)
 const sadPromotion = (finishOut && finishOut.sad) || null
 const counted = (x) => (x && typeof x === 'object' ? (Number(x.created) || 0) + (Number(x.updated) || 0) : 0)
