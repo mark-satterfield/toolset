@@ -80,7 +80,7 @@ ${stacks ? `Stacks:\n${stacks}\n` : ''}Output:
 ${String(failure.output || '(no output was captured)').slice(-12000)}
 
 1. Find the cause in this output and in the CloudFormation stack events it points to (\`aws cloudformation describe-stack-events\`, read-only).
-2. Fix the CDK, or whatever else the deploy needs, in this tree. Stacks never export values to each other: a value one stack produces is written to an SSM parameter and read by the stack that needs it.
+2. Fix the CDK, or whatever else the deploy needs, in this tree. A value one stack passes to another goes by the cross-stack mechanism the repository's stacks already use.
 3. Run the repository's synth assertion tests. Where the fix proves a test wrong, correct the test so it asserts what the fixed template must contain; never weaken a test to make it pass.
 4. Do not commit, push, deploy or open a pull request, and never run \`cdk deploy\` or \`cdk destroy\`.
 

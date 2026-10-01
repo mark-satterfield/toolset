@@ -53,9 +53,9 @@ const DOMAIN_ROUTES = [
   {
     domain: 'Architecture',
     pattern:
-      /\b(architect|architecture|architectural|adr|trade-?off|design decision|system design|bounded context|c4|arc42|sad)\b/i,
+      /\b(architect|architecture|architectural|adr|trade-?off|design decision|system design|bounded context|c4|arc42)\b/i,
     route: [
-      'Workflow({ scriptPath: ".../workflows/architecture.js" }) — the full decide-and-record path',
+      'Workflow({ scriptPath: ".../workflows/architecture.js" }) — the full decide-and-integrate path',
       'architecture-decider — rules on options (never analyzes)',
       'integration-pattern-architect — integration options and tradeoffs',
       'security-architecture-designer — threat model, IAM, encryption',

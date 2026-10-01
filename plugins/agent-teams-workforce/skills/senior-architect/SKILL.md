@@ -1,6 +1,6 @@
 ---
 name: "senior-architect"
-description: This skill should be used when the user asks to "design system architecture", "evaluate microservices vs monolith", "create architecture diagrams", "analyze dependencies", "choose a database", "plan for scalability", "make technical decisions", or "review system design". Use for recording architecture decisions, tech stack evaluation, system design reviews, dependency analysis, and generating architecture diagrams in Mermaid, PlantUML, or ASCII format.
+description: This skill should be used when the user asks to "design system architecture", "evaluate microservices vs monolith", "create architecture diagrams", "analyze dependencies", "choose a database", "plan for scalability", "make technical decisions", or "review system design". Use for tech stack evaluation, system design reviews, dependency analysis, describing a chosen design as part of the architecture description, and generating architecture diagrams as Mermaid in Markdown.
 ---
 
 # Senior Architect
@@ -48,7 +48,7 @@ Generates architecture diagrams from project structure in multiple formats.
 **Solves:** "I need to visualize my system architecture for documentation or team discussion"
 
 **Input:** Project directory path
-**Output:** Diagram code (Mermaid, PlantUML, or ASCII)
+**Output:** Mermaid diagram source, for a view written in Markdown
 
 **Supported diagram types:**
 - `component` - Shows modules and their relationships
@@ -57,26 +57,26 @@ Generates architecture diagrams from project structure in multiple formats.
 
 **Usage:**
 ```bash
-# Mermaid format (default)
+# Component view
 python scripts/architecture_diagram_generator.py ./project --format mermaid --type component
 
-# PlantUML format
-python scripts/architecture_diagram_generator.py ./project --format plantuml --type layer
-
-# ASCII format (terminal-friendly)
-python scripts/architecture_diagram_generator.py ./project --format ascii
+# Layer view
+python scripts/architecture_diagram_generator.py ./project --format mermaid --type layer
 
 # Save to file
 python scripts/architecture_diagram_generator.py ./project -o architecture.md
 ```
 
-**Example output (D2):**
-```d2
-api_gateway -> auth_service
-api_gateway -> user_service
-auth_service -> postgresql
-user_service -> postgresql
+**Example output:**
+```mermaid
+flowchart LR
+  api_gateway --> auth_service
+  api_gateway --> user_service
+  auth_service --> postgresql
+  user_service --> postgresql
 ```
+
+Architecture diagrams are Mermaid in Markdown, so people read them in Obsidian and agents read and edit them like any other file. A generated diagram is a starting point: it goes into a view with the prose around it and the view's catalog frontmatter, in the section folder the architecture documentation model names.
 
 ---
 
@@ -318,8 +318,6 @@ Load these files for detailed information:
 ```bash
 # Architecture visualization
 python scripts/architecture_diagram_generator.py . --format mermaid
-python scripts/architecture_diagram_generator.py . --format plantuml
-python scripts/architecture_diagram_generator.py . --format ascii
 
 # Dependency analysis
 python scripts/dependency_analyzer.py . --verbose

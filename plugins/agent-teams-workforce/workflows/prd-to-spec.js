@@ -58,11 +58,6 @@ const HUMAN_ACTION_STAGE = 'requires-human-action'
 const produced = {}
 const runLedger = []
 let runDetail = null
-const withoutSadExtract = (r) => {
-  if (!r || typeof r !== 'object') return r || null
-  const { sadExtract, ...rest } = r
-  return rest
-}
 
 const EXPECTED_PHASES = [
   'Epic Lifecycle',
@@ -348,7 +343,7 @@ produced.prd = prd
 
 function derivedNames(id) {
   if (id === 'prd-validation') return ['prd-classification.json']
-  if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'sad-update.json']
+  if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'architecture-update.json']
   if (id === 'trd') return ['trd.md']
   if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json']
   if (id === 'task-deps') return ['task-deps.json']
@@ -470,7 +465,7 @@ async function prefetchResumeJson() {
     if (hit && hit.names.includes(name) && !wanted.includes(name)) wanted.push(name)
   }
   const arch = RESUME.phases.architecture
-  if (arch) want(arch, arch.names.includes('architecture-decision.md') ? 'sad-update.json' : 'architecture-triage.json')
+  if (arch) want(arch, arch.names.includes('architecture-decision.md') ? 'architecture-update.json' : 'architecture-triage.json')
   if (!wanted.length) return
   const texts = await parallel(wanted.map((name) => () => readSavedText(artPath(name), `replay:read-${name}`, 'Architecture')))
   wanted.forEach((name, i) => {
@@ -644,11 +639,11 @@ if (!requirementClasses) {
 const technicalReqs = requirementClasses.filter((r) => r.class === 'technical')
 const businessIds = new Set(requirementClasses.filter((r) => r.class === 'business').map((r) => r.id))
 const technicalOnlyIds = [...new Set(technicalReqs.map((r) => r.id))].filter((id) => !businessIds.has(id))
-const sadGaps = technicalReqs.filter((r) => r.archCoverage === 'absent')
+const archGaps = technicalReqs.filter((r) => r.archCoverage === 'absent')
 produced.requirementClasses = requirementClasses
 recRuled(
   `${requirementClasses.length} requirement(s) classified: ${businessIds.size} business, ${technicalReqs.length} technical` +
-    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; the architecture lacks ${sadGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
+    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; the architecture lacks ${archGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
   { status: 'done' }
 )
 
@@ -685,20 +680,19 @@ enterPhase('Architecture')
 const ARCH_DIMENSIONS = ['integration', 'security', 'cost', 'persistence', 'cdk', 'bounded-context', 'failure-mode']
 let archTriage = null
 let architecture = null
-let archSadExtract = null
 await prefetchResumeJson()
 const archHit = resumeFresh('architecture')
 if (archHit) {
   const hasRuling = archHit.names.includes('architecture-decision.md')
   const savedTriage = artData(archHit, 'architecture-triage.json') || null
-  const savedSkip = !hasRuling && savedTriage && savedTriage.needed === false && !sadGaps.length ? await skipBlocker(savedTriage) : null
+  const savedSkip = !hasRuling && savedTriage && savedTriage.needed === false && !archGaps.length ? await skipBlocker(savedTriage) : null
   if (savedSkip) log(`Architecture: the saved triage skipped the panel, but ${savedSkip.reason}; the PRD is triaged again`)
-  if (hasRuling || (savedTriage && savedTriage.needed === false && !sadGaps.length && !savedSkip)) {
+  if (hasRuling || (savedTriage && savedTriage.needed === false && !archGaps.length && !savedSkip)) {
     reuseFrom('architecture', archHit)
     await acceptPhase('architecture', 'reused')
     archTriage = savedTriage
     architecture = hasRuling
-      ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), architectureUpdate: artData(archHit, 'sad-update.json') || null } }
+      ? { ok: true, resumed: true, artifact: { decisionPath: artPath('architecture-decision.md'), architectureUpdate: artData(archHit, 'architecture-update.json') || null } }
       : { ok: true, skipped: true, resumed: true, artifact: { skipped: true, triage: savedTriage } }
     recRuled('Architecture reused from saved artifacts.', { status: 'done' })
   } else if (archHit.names.includes('architecture-triage.json') && !savedTriage) {
@@ -756,11 +750,11 @@ if (!architecture) {
       }
     )
   }
-  if (sadGaps.length && archTriage && archTriage.needed === false) {
+  if (archGaps.length && archTriage && archTriage.needed === false) {
     archTriage = {
       ...archTriage,
       needed: true,
-      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${sadGaps.length} technical rule(s) the architecture does not describe (${sadGaps.map((r) => r.id).join(', ')})`,
+      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${archGaps.length} technical requirement(s) the architecture does not describe (${archGaps.map((r) => r.id).join(', ')})`,
     }
   }
   const skip = archTriage && archTriage.needed === false ? await skipBlocker(archTriage) : null
@@ -790,8 +784,8 @@ if (!architecture) {
           ...(archTriage && Array.isArray(archTriage.missing) && archTriage.missing.filter(hasText).length
             ? [`Triage found the PRD needs what no architecture view covers yet: ${archTriage.missing.filter(hasText).join(' | ')}`]
             : []),
-          ...(sadGaps.length
-            ? [`The PRD states technical rules that SAD §2/§8 does not hold. Record each in the SAD, as a constraint in §2 or a crosscutting concept in §8, stated as a rule on the kind of thing it governs so that it binds only a design that has that thing: ${sadGaps.map((r) => `${r.id}: ${r.rule || r.requirement}${r.governs ? ` (governs: ${r.governs})` : ''}`).join(' | ')}`]
+          ...(archGaps.length
+            ? [`The PRD states technical requirements no architecture view describes yet. Design each one into the architecture description: in the views of the element it concerns, or in a crosscutting concept in section 8 when it is a pattern used across services, written as a description of the design, not as a rule. Section 2 holds the owner's constraints and is not written by this step; a requirement you believe belongs there goes in ruleChallenges for the owner. The requirements: ${archGaps.map((r) => `${r.id}: ${r.rule || r.requirement}${r.governs ? ` (governs: ${r.governs})` : ''}`).join(' | ')}`]
             : []),
         ],
         repoPath,
@@ -802,8 +796,6 @@ if (!architecture) {
       reviewFiles: reliedDocs(archTriage).filter((r) => r.state !== 'effective').map((r) => r.file),
       forceFullPanel: a.forceFullPanel === true ? true : undefined,
     })
-    const changed = r && r.architectureUpdate && Array.isArray(r.architectureUpdate.changedFiles) ? r.architectureUpdate.changedFiles.filter(hasText) : []
-    archSadExtract = r && r.sadExtract && !changed.length ? r.sadExtract : null
     architecture = r && r.ok === true
       ? { ok: true, artifact: r }
       : {
@@ -838,20 +830,9 @@ if (architecture.ok && !architecture.skipped) {
     archApproval = out
     const n = out.summary || {}
     log(`Architecture approval: ${n.promoted || 0} file(s) set to effective, ${n.unchanged || 0} already effective, ${(n.refused || 0) + (n.failed || 0) + (n.noFrontmatter || 0)} not set`)
-    const approved = new Set([...(out.promoted || []), ...(out.unchanged || [])])
-    if (archSadExtract && approved.size) {
-      const fileOf = (e) => (String((e && e.source) || '').trim().match(/^\/[^\s:#]+/) || [''])[0]
-      const mark = (list) => (Array.isArray(list) ? list.map((e) => (approved.has(fileOf(e)) ? { ...e, lifecycleState: 'effective' } : e)) : list)
-      archSadExtract = {
-        ...archSadExtract,
-        constraints: mark(archSadExtract.constraints),
-        solutionStrategy: mark(archSadExtract.solutionStrategy),
-        crosscuttingConcepts: mark(archSadExtract.crosscuttingConcepts),
-      }
-    }
   }
 }
-produced.architecture = withoutSadExtract(architecture.artifact)
+produced.architecture = (architecture.artifact || null)
 if (archApproval) produced.archApproval = archApproval
 produced.archReliedOn = architecture.artifact && Array.isArray(architecture.artifact.reliedOn) ? architecture.artifact.reliedOn : reliedDocs(archTriage)
 if (!architecture.ok) {
@@ -925,7 +906,7 @@ async function runRepoScoping() {
   return { scoping: ruled, scopeHit: null }
 }
 
-const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture-decision.md'), artPath('sad-update.json'), a.archPath || null].filter(Boolean)
+const TRD_INPUTS = [...PRD_INPUTS, artPath('architecture-decision.md'), artPath('architecture-update.json'), a.archPath || null].filter(Boolean)
 /** Returns { mode: 'resumed' | 'ran', trdAuthoring: { ok, artifact } }. */
 async function runTrdAuthoring() {
   const trdHit = resumeFresh('trd')
@@ -944,7 +925,6 @@ async function runTrdAuthoring() {
     }
   }
   const r = await workflow('agent-teams-workforce:trd-authoring', {
-    sadExtract: archSadExtract || undefined,
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: architecture.skipped ? undefined : architectureRulingFor(architecture.artifact),
@@ -1005,7 +985,7 @@ log(`Span: ${repos.join(', ')}${createdRepos.length ? `; created by the polyrepo
 
 enterPhase('TRD Authoring')
 if (trdAuthoring.ok && trdAuthoring.artifact && hasText(trdAuthoring.artifact.filingPath)) artReport.filing['trd.md'] = trdAuthoring.artifact.filingPath
-produced.trdAuthoring = withoutSadExtract(trdAuthoring.artifact)
+produced.trdAuthoring = (trdAuthoring.artifact || null)
 if (!trdAuthoring.ok) {
   if (trdAuthoring.artifact && trdAuthoring.artifact.stage === 'input') {
     return await holdForHuman('trd-authoring', trdAuthoring, [`trd-authoring refused its input: ${trdAuthoring.reason}`], 'what the refusal names has been supplied')
@@ -1522,10 +1502,10 @@ const runJournal = {
   removalWork,
   results: {
     reconciliationByRepo: produced.reconciliationByRepo,
-    architecture: withoutSadExtract(architecture.artifact),
+    architecture: (architecture.artifact || null),
     architectureTriage: archTriage,
     repoScoping: scoping,
-    trdAuthoring: withoutSadExtract(trdAuthoring.artifact),
+    trdAuthoring: (trdAuthoring.artifact || null),
     specAuthoring: specPairs.map((p) => ({ repoPath: p.repoPath, artifact: p.spec })),
     decomposition: decompositions,
   },

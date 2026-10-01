@@ -141,7 +141,7 @@ try {
         {
           given: `the provisioning intent for ${bead.title || 'this infra change'} on stacks ${(intent.affectedStacks || []).join(', ') || '(affected stacks)'}`,
           when: 'cdk synth runs against the changed stacks',
-          then: 'the synthesized template asserts the intended resources and their properties, the SSM parameter names the stacks write and read, and the IAM permissions (incl. S3 versioning + SSE-S3 where buckets exist), and no banned constructs are present',
+          then: 'the synthesized template asserts the intended resources and their properties, the cross-stack references the stacks write and read, and the IAM permissions the intent names',
         },
       ],
     }

@@ -58,7 +58,7 @@ This lead is the face of the following team; each member and what it does:
 - **prd-alignment-verifier** — Verifies traceability from each PRD requirement to spec section to acceptance criteria, flagging missing coverage and scope creep.
 - **acceptance-criteria-reviewer** — Validates acceptance criteria are testable, complete, and unambiguous — derivable into tests without interpretation.
 - **openapi-contract-reviewer** — Validates authored API specs against architecture decisions and contract patterns — schemas, error codes, rate limits.
-- **event-schema-reviewer** — Validates event schemas against the event API envelope format — publishing conditions, consumer obligations, retry/DLQ behavior.
+- **event-schema-reviewer** — Validates event schemas against the event envelope the architecture describes — publishing conditions, consumer obligations, retry/DLQ behavior.
 - **graphql-schema-reviewer** — Validates GraphQL schemas in specs against architecture decisions and AppSync contract patterns — resolver mappings, authorization directives.
 - **dynamodb-schema-access-pattern-reviewer** — Validates DynamoDB access patterns in the spec are implementable and performant given key design, indexes, and capacity estimates.
 - **spec-decider** — Rules on competing spec approaches, maker-checker deadlocks, and checker conflicts routed by spec-authoring-lead.

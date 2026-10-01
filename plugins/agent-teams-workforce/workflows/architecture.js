@@ -158,9 +158,12 @@ const TRIAGE_SCHEMA = {
 const APPROVED_STATE = 'effective'
 const APPROVAL_RULE = `\`lifecycle_state\` IS PER FILE. A file whose frontmatter reads \`${APPROVED_STATE}\` has itself been reviewed and approved: its content is used as given and never re-decided. That says nothing about any other file. A file in any other state (\`in-review\`) is not yet trusted: its content is input to check, may well be correct, and is reviewed before anything rests on it. Read the field in every file you open.`
 
+const OWNER_CONSTRAINTS = `The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.`
+
 const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside the product repository ${repo}; do not look for it there. Its \`arc42/\` folder is the effective version (the architecture as approved), its \`target/\` folder holds the targets in progress, and the architecture documentation model in its \`reference/\` folder says what each version and section holds.
 - \`arc42/02-architecture-constraints\` holds the owner's constraints. Read its README.md in full.
 - \`arc42/04-solution-strategy\` holds the enterprise-level strategy. Read its README.md.
+- ${OWNER_CONSTRAINTS}
 - Every other arc42 section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. Find the views of every element this decision touches by searching it (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope the element appears in, and read those views in full.
 - Open targets in \`target/\` that show the same elements are designs in progress; read them, so this decision does not contradict them.
 - Cite what you rely on by the file's absolute path and the heading inside it.`
@@ -168,7 +171,7 @@ const ARCH_WHERE = `THE ARCHITECTURE is at ${archPath}. It is not inside the pro
 const archBlock = `${ARCH_WHERE}
 ${APPROVAL_RULE}`
 
-const analystSadBlock = `${ARCH_WHERE}
+const analystArchBlock = `${ARCH_WHERE}
 ${APPROVAL_RULE} Your options take every effective file as given; content in any other state is open, and an option may keep, refine or replace it.`
 
 phase('Triage')
@@ -219,7 +222,7 @@ const makers = [
     agentType: 'integration-pattern-architect',
     dim: 'integration',
     lens: 'integration/decomposition',
-    ask: 'Propose the integration and service-decomposition approach: event-driven flows, service boundaries, and the tradeoffs of each option. Honor the platform constraints (event-driven only — no Step Functions; service isolation; SSM for cross-stack refs).',
+    ask: 'Propose the integration and service-decomposition approach: flows between services, service boundaries, and the tradeoffs of each option.',
   },
   {
     agentType: 'security-architecture-designer',
@@ -243,7 +246,7 @@ const makers = [
     agentType: 'cdk-infrastructure-designer',
     dim: 'cdk',
     lens: 'cdk-infrastructure',
-    ask: 'Propose the CDK construct topology: Lambda boundaries within the chassis, layer/packaging strategy, and the infrastructure tradeoffs of each option.',
+    ask: 'Propose the CDK construct topology: Lambda boundaries, layer and packaging approach, and the infrastructure tradeoffs of each option.',
   },
 ]
 
@@ -260,7 +263,7 @@ Propose from YOUR lens only. The other axes are covered by the analysts dispatch
   const wantsFailureModes = activeDimensions.includes('failure-mode')
 
   const jobs = activeMakers.map((m) => () =>
-    run(`${rulingsBlock}${m.ask}\n\n${decisionHeader}\n\n${analystSadBlock}\n\n${frameBlock}\n\n${SURVEY_BOUND}`, {
+    run(`${rulingsBlock}${m.ask}\n\n${decisionHeader}\n\n${analystArchBlock}\n\n${frameBlock}\n\n${SURVEY_BOUND}`, {
       label: `proposals:${m.lens}`,
       phase: 'Proposals',
       agentType: m.agentType,
@@ -278,7 +281,7 @@ ${wantsContextMap ? `
 
 ${decisionHeader}
 
-${analystSadBlock}
+${analystArchBlock}
 
 ${frameBlock}
 
@@ -327,7 +330,7 @@ ${JSON.stringify({ contextMap, failureModes }, null, 2)}`
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['admissible', 'ruling', 'imposedConstraints', 'resolvedChallenges', 'blockingRules', 'ruleChallenges', 'reliedOn'],
+  required: ['admissible', 'ruling', 'designOutcomes', 'resolvedChallenges', 'blockingRules', 'ruleChallenges', 'reliedOn'],
   properties: {
     admissible: { type: 'boolean' },
     reliedOn: {
@@ -345,7 +348,7 @@ const DECISION_SCHEMA = {
     },
     ruling: { type: 'string' },
     chosenApproach: { type: 'string' },
-    imposedConstraints: { type: 'array', items: { type: 'string' } },
+    designOutcomes: { type: 'array', items: { type: 'string' } },
     resolvedChallenges: { type: 'array', items: { type: 'string' } },
     blockingRules: {
       type: 'array',
@@ -390,18 +393,19 @@ EFFECTIVE DOCUMENTS ARE USED AS GIVEN; EVERY OTHER DOCUMENT THIS RULING RELIES O
 
 YOUR AUTHORITY, AND ITS LIMITS:
 - Normally you CHOOSE among the options proposed and state the ruling as a decision, not a discussion. Set admissible=true and fill chosenApproach.
+- State in designOutcomes what the design is once the ruling is integrated, each as a description of the design ("the settings service publishes its events through …"), not as a rule or a constraint: the architecture-maintainer writes them into the views, and section 2 holds only the owner's constraints.
 - If NO proposed option can be ruled on, set admissible=false, leave chosenApproach empty, and populate blockingRules with the specific rules that eliminated every option.
 - Classify every blocking rule as "constitutive" or "convention".
-- CONSTITUTIVE is a real external constraint — an AWS service limit, a security fundamental, a legal or contractual obligation — AND the platform bans this project holds constitutive: no Step Functions, no HTTP API v2 (REST API v1 only), no FastAPI/Flask/Django, Powertools-only Lambdas, service isolation, SSM Parameter Store rather than CloudFormation exports for cross-stack refs, and dot-only event naming.
-- CONVENTION is any other rule this project wrote for itself — a naming convention, a curated allowlist, a house pattern, a self-authored MUST in our own architecture.
+- CONSTITUTIVE is a real external constraint — an AWS service limit, a security fundamental, a legal or contractual obligation — or one of the owner's constraints in arc42 section 2.
+- CONVENTION is anything else the project wrote for itself — a naming convention, a curated allowlist, a pattern the effective architecture establishes. A pattern is followed unless the design states a reason and evidence to change it; then the ruling changes it and names the views it changes.
 - A convention MUST NOT be the reason delivery halts. If a convention is the only thing eliminating an otherwise sound design, rule it admissible and record a ruleChallenge against the convention.
 - Where a CONVENTION conflicts with industry best practice or an AWS Well-Architected principle, BEST PRACTICE WINS. Record it in ruleChallenges with the change you recommend.
 - A CONSTITUTIVE rule is never overridden. Rule on the options that honor it; if you believe the rule itself is wrong, honor it and record a ruleChallenge.
 - ruleChallenges go to the human owner; they are never applied by this run.
 
-ACCOUNT FOR EVERY SECURITY AND DATA-ISOLATION FINDING raised in the evidence, item by item: MITIGATED, with the mitigation stated as an entry in imposedConstraints; ACCEPTED RESIDUAL, with the remaining mitigations and the rationale stated as an entry in imposedConstraints; or OUT OF SCOPE, naming the requirement that owns it.
+ACCOUNT FOR EVERY SECURITY AND DATA-ISOLATION FINDING raised in the evidence, item by item: MITIGATED, with the mitigation stated as an entry in designOutcomes; ACCEPTED RESIDUAL, with the remaining mitigations and the rationale stated as an entry in designOutcomes; or OUT OF SCOPE, naming the requirement that owns it.
 
-EVERY POINT ENDS RULED, OUT OF SCOPE (naming the requirement that owns it), or BLOCKING (admissible=false). Never write "referred", "to be determined", "pending" or "open question": your ruling is integrated into the architecture, which holds the current design only. A rule challenge goes in ruleChallenges, never into the ruling, the chosen approach or the imposed constraints.`
+EVERY POINT ENDS RULED, OUT OF SCOPE (naming the requirement that owns it), or BLOCKING (admissible=false). Never write "referred", "to be determined", "pending" or "open question": your ruling is integrated into the architecture, which holds the current design only. A rule challenge goes in ruleChallenges, never into the ruling, the chosen approach or the design outcomes.`
 
 const decisionPrompt = (brief) => `${rulingsBlock}${DECIDER_CHARTER}
 
@@ -409,7 +413,7 @@ ${decisionHeader}
 
 ${archBlock}
 
-${evidenceBlock}${brief}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the imposed constraints, the challenges it resolves, every part of the architecture it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`
+${evidenceBlock}${brief}${persistBrief('architecture-decision.md', 'your ruling as ONE markdown document: whether an option is admissible, the ruling, the chosen approach, the design outcomes, the challenges it resolves, every part of the architecture it relies on with its file and disposition, any blocking rules and rule challenges, and the rationale — the same content as your structured result', { beadKey: 'architecture_decision' })}`
 let decision = await run(decisionPrompt(''), { label: 'decide:ruling', effort: 'high', phase: 'Decide', agentType: 'architecture-decider', schema: DECISION_SCHEMA })
 
 const archParts = String(archPath || '').split('/').filter(Boolean)
@@ -514,7 +518,7 @@ const ARCH_UPDATE_SCHEMA = {
 }
 
 const priorPassRefs = [
-  ART ? `the file ${ART.dir}/sad-update.json, when it exists — the report an earlier pass wrote, whose \`changedFiles\` name the views it changed` : '',
+  ART ? `the file ${ART.dir}/architecture-update.json, when it exists — the report an earlier pass wrote, whose \`changedFiles\` name the views it changed` : '',
   `\`git status --short\` and \`git diff --stat\` in the repository holding ${archPath}`,
 ].filter(Boolean)
 const PRIOR_PASS_BRIEF = `
@@ -530,7 +534,7 @@ Leave the \`lifecycle_state\` frontmatter field of every file as you find it: th
 const UPDATE_SAVE_OPTS = { extraInputs: 'the absolute path of EVERY architecture file changed, created or deleted, each in single quotes' }
 const rulingLines = `Ruling: ${decision.ruling}
 Chosen approach: ${decision.chosenApproach || '(not stated separately — see the ruling)'}
-Imposed constraints: ${(decision.imposedConstraints || []).join('; ') || 'none'}
+Design outcomes: ${(decision.designOutcomes || []).join('; ') || 'none'}
 Resolved challenges: ${(decision.resolvedChallenges || []).join('; ') || 'none'}`
 const SECTION_2_RULE = `Write nothing under \`arc42/02-architecture-constraints/\`: section 2 holds the owner's constraints, and only the owner changes them. A constraint you believe should change goes in \`openItems\`, with the constraint, the conflicting content and the reason.`
 
@@ -550,7 +554,7 @@ ${APPROVED_FILES_BRIEF}
 
 ${rulingLines}
 
-Deliver: which sections you changed, the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', UPDATE_SAVE_WHAT, UPDATE_SAVE_OPTS)}`,
+Deliver: which sections you changed, the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('architecture-update.json', UPDATE_SAVE_WHAT, UPDATE_SAVE_OPTS)}`,
   { label: 'architecture:maintain', effort: 'medium', phase: 'Integrate', agentType: 'architecture-maintainer', schema: ARCH_UPDATE_SCHEMA }
 )
 if (!architectureUpdate) {
@@ -564,7 +568,7 @@ ${APPROVED_FILES_BRIEF}
 
 ${rulingLines}
 
-Deliver: which sections were changed (by either pass), the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('sad-update.json', UPDATE_SAVE_WHAT, UPDATE_SAVE_OPTS)}`,
+Deliver: which sections were changed (by either pass), the file paths changed, created or deleted, the approved files, and a one-line summary of the change.${persistBrief('architecture-update.json', UPDATE_SAVE_WHAT, UPDATE_SAVE_OPTS)}`,
     { label: 'architecture:maintain-resume', effort: 'medium', phase: 'Integrate', agentType: 'architecture-maintainer', schema: ARCH_UPDATE_SCHEMA }
   )
 }

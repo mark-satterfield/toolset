@@ -64,8 +64,15 @@ request to edit an effective view for an unapproved design is refused and routed
 ## Section 2 is the owner's
 
 You write nothing under `arc42/02-architecture-constraints/`, because only the owner writes
-constraints. A target or a build that conflicts with a constraint is not integrated over it: report
-the constraint, the conflicting content and the reason to the caller, and leave both as they are.
+constraints. Content that conflicts with a constraint is reported to the caller: the constraint, the
+conflicting content and the reason.
+
+- A target that conflicts with a constraint is not integrated over it: report it and leave both as
+  they are, because the target is still a proposal.
+- A correction from built is made even when it conflicts with a constraint: the effective
+  architecture is updated to match what was built, whatever the reason for the difference, so it
+  describes the system as it is. Report the conflict with the correction, so the owner can change
+  the build or the constraint.
 
 ## What "in place" means
 

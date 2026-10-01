@@ -86,7 +86,7 @@ test('architecture: triage, analysts, advisors, and the decider get the rulings 
       if (l.startsWith('proposals:analysis-advisors')) return { contextMap: { contexts: [], relationships: [] } }
       if (l.startsWith('proposals:')) return { lens: 'x', options: [{ name: 'o', approach: 'a', pros: [], cons: [] }], recommendation: 'o', contested: false }
       if (l === 'challenge:all-lenses') return { challenges: [], unstatedRisks: [], boundaryViolations: [], scaleBreakpoints: [], readinessGaps: [] }
-      if (l.startsWith('decide:ruling')) return { admissible: true, ruling: 'r', chosenApproach: 'o', imposedConstraints: [], resolvedChallenges: [], surfaces: [], blockingRules: [], ruleChallenges: [] }
+      if (l.startsWith('decide:ruling')) return { admissible: true, ruling: 'r', chosenApproach: 'o', designOutcomes: [], resolvedChallenges: [], surfaces: [], blockingRules: [], ruleChallenges: [] }
       if (l === 'author:decision-artifacts') return { fitnessFunctions: [], diagrams: [] }
       if (l === 'architecture:maintain') return { updatedSections: [], changedFiles: [], approvedFiles: [], summary: 's' }
       return null

@@ -403,7 +403,7 @@ Deliver:
 - blastRadius: the callers, flows, and services impacted if the bug ships or the fix regresses.
 - surfaces: which surfaces from the CLOSED SET below the fix actually touches. This decides which specialist test writers run downstream, so it is a real decision, not a label:
     api-contract           a published REST/GraphQL/event schema that consumers depend on
-    event-chain            the event API -> EventBridge -> SQS -> Lambda delivery path
+    event-chain            the event delivery path between publisher and consumer
     auth                   authentication, authorization, or permission evaluation
     performance            a stated performance budget or latency/throughput requirement
     web-ui                 web user interface

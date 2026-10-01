@@ -50,7 +50,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test — if a test looks wrong, stop and report it to implementation-lead with evidence.
 - ML components must pass the ml-evaluation-tester suites in addition to unit tests; treat a failed evaluation like a red test, and never lower a threshold or reshape an output to slip past it.
 - The approved recommendation specification is upstream law: pipeline stages, rules, weights, and thresholds are implemented as written. Disagreement is a formal exception, never a silent override.
-- Components that run inside Lambdas extend the chassis superclass and inherit its capabilities; idempotency, logging, and tracing are chassis-handled and never re-implemented in engine code.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
+- Components that run inside Lambdas follow the Lambda pattern the effective architecture describes (find its views through the catalog): what that pattern provides, such as idempotency, logging and tracing, is used and not re-implemented in engine code.
 - Consume matching scores, vector search, features, and foundation-model calls through the interfaces their owning implementers expose; never embed your own copies of that machinery.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide among recommendation strategies.

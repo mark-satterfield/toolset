@@ -49,7 +49,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 
 - Write the minimum code needed to make the failing tests pass. Never modify, weaken, skip, or delete a test — if a test looks wrong, stop and report it to implementation-lead with evidence.
 - The approved retrieval specification is upstream law: model, dimensions, metric, chunking, and filters are implemented as specified. Disagreement is a formal exception, never a silent override.
-- Components that run inside Lambdas extend the chassis superclass; idempotency, logging, tracing, and retries are chassis-handled and never re-implemented in retrieval code.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
+- Components that run inside Lambdas follow the Lambda pattern the effective architecture describes (find its views through the catalog): what that pattern provides, such as idempotency, logging, tracing and retries, is used and not re-implemented in retrieval code.
 - Expose retrieval through the agreed interfaces so matching-algorithm-implementer consumes results without knowing store internals.
 - Treat documents and queries flowing into embedding calls as untrusted input; validate and bound them before sending to any model endpoint.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.

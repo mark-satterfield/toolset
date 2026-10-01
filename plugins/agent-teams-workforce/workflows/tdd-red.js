@@ -104,7 +104,7 @@ const infraBlock = (() => {
           .map((r) => `  - ${str(r.logicalId) || '(resource)'} ${str(r.type)}${str(r.stack) ? ` in ${str(r.stack)}` : ''}${str(r.properties) ? `: ${str(r.properties)}` : ''}`)
           .join('\n')}`
       : '',
-    refs.length ? `Cross-stack references (SSM Parameter Store, never CloudFormation exports):\n${refs.map((x) => `  - ${x}`).join('\n')}` : '',
+    refs.length ? `Cross-stack references:\n${refs.map((x) => `  - ${x}`).join('\n')}` : '',
     pi && str(pi.rationale) ? `Intent rationale: ${str(pi.rationale)}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''
@@ -116,7 +116,7 @@ const taskBlock = `${c.bead ? `${isBugContract ? 'Bug' : 'Task'} ${c.bead.id || 
 
 Affected files: ${(c.affectedFiles || []).join(', ') || 'n/a'}
 
-Unit tests mock the AWS services the code calls; no test reaches AWS. A criterion about the repository's CDK stacks is encoded as a failing \`cdk synth\` assertion test with \`aws_cdk.assertions\` (\`Template.from_stack\`), in the repository's existing synth test module where there is one: it asserts the synthesized template's resources and their properties, the SSM parameter names the stacks write and read, and the IAM permissions the criteria require.
+Unit tests mock the AWS services the code calls; no test reaches AWS. A criterion about the repository's CDK stacks is encoded as a failing \`cdk synth\` assertion test with \`aws_cdk.assertions\` (\`Template.from_stack\`), in the repository's existing synth test module where there is one: it asserts the synthesized template's resources and their properties, the cross-stack references the stacks write and read, and the IAM permissions the criteria require.
 
 Acceptance criteria to encode as tests:
 ${ac.length ? ac.map(acLine).join('\n') : isBugContract ? '(none — derive minimal coverage from the reproduction)' : '(none — derive minimal coverage from the spec documents and the description above)'}`

@@ -51,7 +51,8 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 - ML components must pass the ml-evaluation-tester suites in addition to unit tests; treat a failed evaluation like a red test, and never mute a signal or relax a threshold to slip past it.
 - The approved observability specification is upstream law: logged fields, redaction rules, metric definitions, thresholds, and alerts are implemented as written. Disagreement is a formal exception, never a silent override.
 - Redaction is constitutive: telemetry that could leak prompts, secrets, or user data is not done, regardless of how many tests pass.
-- Components that run inside Lambdas extend the chassis superclass and inherit its capabilities; idempotency, base logging, and tracing are chassis-handled — instrument on top of them, never re-implement them.
+- The constraints are the owner's, in arc42 section 2; everything else in the architecture is the design so far, followed as established patterns unless a design states a reason and evidence to change it.
+- Components that run inside Lambdas follow the Lambda pattern the effective architecture describes (find its views through the catalog): instrument on top of what that pattern provides, such as idempotency, base logging and tracing, and do not re-implement it.
 - Attach only to the instrumentation hooks bedrock-integration-implementer exposes; never reach into invocation internals to extract telemetry.
 - No self-tasking: report newly discovered work to implementation-lead; never perform or assign it yourself.
 - Analysis and decision are separate tasks performed by different agents; implement against approved decisions, never decide what should be observed or alerted on.

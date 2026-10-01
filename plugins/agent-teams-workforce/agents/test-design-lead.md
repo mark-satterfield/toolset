@@ -50,7 +50,7 @@ Before executing any write or build tools, you MUST read the local `CLAUDE.md` f
 This lead is the face of the following team; each member and what it does:
 
 - **tdd-unit-test-generator** — Writes failing unit tests from spec acceptance criteria before implementation exists, confirming each fails for the intended reason.
-- **aws-integration-test-writer** — Writes failing integration tests covering the event API to EventBridge to SQS to Lambda chain.
+- **aws-integration-test-writer** — Writes failing integration tests covering the event delivery path the effective architecture describes, hop by hop.
 - **consumer-driven-contract-test-writer** — Writes failing consumer-driven contract tests from the spec's API and event contracts.
 - **playwright-e2e-web-test-writer** — Writes failing Playwright E2E web tests for UI and API flows from spec acceptance criteria.
 - **xcuitest-writer** — Writes failing XCUITest suites for iOS features from spec acceptance criteria pre-implementation, confirming each fails for the intended reason.

@@ -40,8 +40,9 @@ this body.
 - Mermaid source authored against the `C4Context` / `C4Container` / `C4Component`
   diagram kinds, so it renders without a plugin in GitHub Markdown and (with a small
   config change) in Docusaurus.
-- A placement decision: which arc42 section the diagram belongs in, so the architecture
-  documentation stays coherent rather than becoming a pile of unlabeled pictures.
+- A placement: the arc42 section and subject folder the view belongs in, by its scope, and the
+  catalog frontmatter of the view (`view_type`, `scope`, `subject`, `shows`,
+  `lifecycle_state`), so every view can be found by the elements it shows.
 
 ## Workflow
 
@@ -71,13 +72,18 @@ this body.
    outside, your `System(yourSystem)` in the middle, `System_Ext(...)` for each third party,
    and `Rel(...)` lines connecting them with action verbs.
 
-5. **Pick the arc42 home.** Use `references/arc42-section-mapping.md`:
-   - Level 1 System Context → arc42 **section 3, Context & Scope** (business + technical
-     context).
-   - Level 2 Container and Level 3 Component → arc42 **section 5, Building Block View**
-     (level 1 / level 2 / level 3 of decomposition, mirroring the C4 zoom).
-   - Deployment-oriented views (a C4 Deployment diagram or a container-to-infrastructure
-     mapping) → arc42 **section 7, Deployment View**.
+5. **Place the view by its scope.** The architecture documentation model in the
+   architecture directory's `reference/` folder decides where a view goes;
+   `references/arc42-section-mapping.md` summarises it for C4:
+   - System context and landscape (system scope) → arc42 **section 3, Context & Scope**.
+   - Container views (system or domain scope) and component and code views (service or
+     component scope) → arc42 **section 5, Building Block View**, in the subject's folder.
+   - Deployment views (system or service scope) → arc42 **section 7, Deployment View**.
+   - The structure of a pattern used across many services → arc42 **section 8,
+     Crosscutting Concepts**.
+   Search the catalog for the subject and its elements first, so an existing view is updated
+   rather than duplicated, and write the view's catalog frontmatter. A proposed design goes in
+   `target/<subject>/`, not in `arc42/`.
 
 6. **Verify rendering for the target.** Confirm where the diagram will live — a GitHub
    README/PR/issue, or a Docusaurus site — and apply the guidance in
@@ -117,4 +123,4 @@ this body.
   `C4Container`, and `C4Component`. The only place fenced Mermaid is allowed.
 - `references/github-docusaurus-rendering.md` — how Mermaid renders natively in GitHub and
   how to enable it in Docusaurus, with the C4-specific gotchas.
-- `references/arc42-section-mapping.md` — which C4 level maps to which arc42 section (3, 5, 7).
+- `references/arc42-section-mapping.md` — what each arc42 section holds, where a C4 view goes by scope, its catalog frontmatter, and the architecture versions.

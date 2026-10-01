@@ -153,10 +153,10 @@ function ctxBlock(s, trd, constraints) {
   const trdOnDisk = trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
   return [
     `Spec ${s.id || ''}: ${s.title || ''}`,
-    s.service ? `Owning service: ${s.service} (per-service isolation — no cross-service imports, no shared tables)` : '',
+    s.service ? `Owning service: ${s.service}` : '',
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
-    'Architectural constraints (binding): REST API v1 only (HTTP API v2 banned); aws-lambda-powertools only; events over Step Functions (Step Functions banned); spec-first OpenAPI.',
+    "The architecture reaches this spec through the TRD: the owner's constraints (arc42 section 2) and the patterns the effective views establish for the API type, the runtime libraries, the event path and the data stores. Follow them as the TRD states them; a spec that departs from an established pattern states its reason and evidence. The OpenAPI contract is written before any handler code.",
     constraints && constraints.length
       ? `Context and constraints for this repository (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : '',
@@ -260,9 +260,9 @@ async function main(a) {
       settleAgent(
         `Author the three INTERFACE CONTRACT artifacts for this feature, each under its own key.
 
-1. \`apiSpec\` — the API/OpenAPI contract specification (spec-first). REST API v1 only — HTTP API v2 is banned. Define resources, methods, request/response schemas, status codes, and auth.
-2. \`eventContracts\` — the event contracts/schemas. Dot-form event naming and the standard event envelope. Events (not Step Functions) carry every orchestration/scheduling case. Define each event's name, envelope, and payload schema.
-3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the REST v1 API), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
+1. \`apiSpec\` — the API/OpenAPI contract specification (spec-first). Use the API type the TRD names. Define resources, methods, request/response schemas, status codes, and auth.
+2. \`eventContracts\` — the event contracts/schemas. Event names and the envelope follow the event pattern the TRD names. Define each event's name, envelope, and payload schema.
+3. \`errorSpec\` — the error-handling specification: error taxonomy, error responses (aligned to the API contract), retry/backoff and idempotency expectations, and how failures surface (errors stay visible — never silently swallowed).
 
 ${specMakerCtx}${contractsBrief}${pointerNote}`,
         {

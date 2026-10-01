@@ -94,7 +94,7 @@ ${repo}`
 
 const SUITE_AGENTS = {
   'aws-integration-test-runner':
-    'the event API→EventBridge→SQS→Lambda chain — usually required for backend work',
+    'the event delivery path from publisher to consumer — usually required for backend work',
   'event-flow-tester': 'event-driven flow, routing, retry, and DLQ behavior per hop',
   'data-consistency-checker': 'cross-store data consistency after the runs (partial writes, orphans, divergent state)',
   'cross-service-contract-tester': 'cross-service / cross-repo API and event contracts',
@@ -189,7 +189,7 @@ const SUITE_SCHEMA = {
 
 const envSetup = provisionEnv
   ? await settleAgent(
-      `Provision or reset the integration test environment for this change — event API, EventBridge, SQS, Lambda, and data stores — and seed required fixtures.
+      `Provision or reset the integration test environment for this change — the event path, functions and data stores the change touches — and seed required fixtures.
 
 ${pinTree}
 

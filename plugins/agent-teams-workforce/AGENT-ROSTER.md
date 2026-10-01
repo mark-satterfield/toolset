@@ -46,7 +46,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | persistence-architecture-specialist | plan | Analyzes DynamoDB schema options, GSI/LSI strategies, single vs |
 | security-architecture-designer | plan | Analyzes security approaches: IAM, Cognito flows, encryption, threat model |
 | cdk-infrastructure-designer | plan | Analyzes CDK construct options, Lambda boundaries within the chassis, and layer packaging |
-| event-schema-designer | execute | Designs event schemas within the event API envelope format |
+| event-schema-designer | execute | Designs event schemas within the event envelope the effective architecture describes |
 | api-contract-designer | execute | Produces OpenAPI/GraphQL schema proposals. No workflow currently dispatches it. |
 | cost-architecture-reviewer | plan | Estimates cost per architecture option and identifies cost cliffs |
 | bounded-context-mapper | plan | Maps domain boundaries and identifies context relationships |
@@ -59,7 +59,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | operational-readiness-reviewer | test | Evaluates operational burden of each proposal: monitoring, alerting, runbook complexity, on-call implications. |
 | architecture-decider | approve | Receives all analyses, challenges, and cost data |
 | architecture-impact-analyst | test | Judges what an architecture decision a ruling created, changed or retired reaches: finds every item citing the changed decision ids and rules each unaffected / not yet elaborated / elaborated-but-unbuilt / already-built, proposing the knock-on repair for the last. Read-only. |
-| architecture-fitness-function-author | execute | Defines testable assertions from architecture decisions, such as 'all events publish through the event API' and 'all Lambdas extend the chassis'. No workflow currently dispatches it. |
+| architecture-fitness-function-author | execute | Defines testable assertions from the owner's constraints and the patterns the effective architecture establishes, such as 'no service reads another service's table'. No workflow currently dispatches it. |
 | architecture-diagram-author | execute | Produces architecture diagrams from the decided design in the project's standard diagram format. |
 | c4-diagram-author | execute | Draws C4 views (Level 1 System Context, Level 2 Container, Level 3 Component) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
 | uml-diagram-author | execute | Draws UML views (sequence, state, activity, class) as Mermaid, for the target or the effective version of the architecture, from the design it is given. |
@@ -90,7 +90,7 @@ These agents implement the SDLC pipelines — PRD creation through deployment, p
 | prd-alignment-verifier | test | Verifies traceability: PRD requirement to spec section to acceptance criteria |
 | acceptance-criteria-reviewer | test | Validates acceptance criteria are testable, complete, and unambiguous. |
 | openapi-contract-reviewer | test | Validates API specifications match the architecture decisions and established contract patterns. |
-| event-schema-reviewer | test | Validates event schemas conform to the event API envelope format. |
+| event-schema-reviewer | test | Validates event schemas conform to the event envelope the architecture describes. |
 | dynamodb-schema-access-pattern-reviewer | test | Validates the specified access patterns are implementable and performant. |
 | graphql-schema-reviewer | test | Validates GraphQL schemas match the architecture decisions and AppSync contract patterns. |
 | spec-decider | approve | Rules on every spec artifact the independent reviewer rejects; the owning maker enacts a ruling that sends its artifact back |
@@ -142,7 +142,7 @@ shown the answer is not a checker.
 | tdd-unit-test-generator | test | Writes failing unit tests from spec acceptance criteria before implementation exists. |
 | consumer-driven-contract-test-writer | test | Writes consumer-driven contract tests ensuring API consumers and providers agree. |
 | security-test-case-designer | test | Designs security test cases from the threat model: abuse cases, negative paths, authorization matrices. |
-| aws-integration-test-writer | test | Writes integration tests against AWS infrastructure covering the event API to EventBridge to SQS to Lambda chain. |
+| aws-integration-test-writer | test | Writes integration tests against AWS infrastructure covering the event delivery path the effective architecture describes, hop by hop. |
 | playwright-e2e-web-test-writer | test | Writes Playwright end-to-end web tests for UI and API flows. |
 | performance-benchmark-writer | test | Writes performance benchmarks with explicit budgets derived from the NFRs. |
 | test-plan-strategy-reviewer | test | Reviews the test plan strategy: pyramid balance, risk coverage, environment needs. |
@@ -161,10 +161,10 @@ shown the answer is not a checker.
 | --- | --- | --- |
 | implementation-lead | orchestrate | Routes Beads tasks to the implementer sub-teams the feature requires, enforces hard constraints before any file is written, and reports to Gate 2b. |
 | chassis-extension-implementer | execute | Implements Lambda handlers as chassis superclass extensions for API endpoints and event consumers. |
-| api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK Python. |
-| event-api-client-implementer | execute | Implements clients that publish through the central event API endpoint using the standardized envelope |
+| api-gateway-cdk-implementer | execute | Implements API Gateway resources, methods, and authorizers in CDK. |
+| event-api-client-implementer | execute | Implements clients publishing events through the publishing path and envelope the effective architecture describes |
 | dynamodb-access-layer-implementer | execute | Implements DynamoDB access patterns from the data model specification: single-table patterns, GSI queries, conditional writes. |
-| event-driven-consumer-implementer | execute | Implements event consumers that receive from SQS via the EventBridge-rule-to-SQS-to-Lambda chain |
+| event-driven-consumer-implementer | execute | Implements event consumers on the delivery path the effective architecture describes |
 | power-tools-configuration-implementer | execute | Configures Lambda Power Tools: structured logging, tracing, metrics, idempotency, validation |
 | cognito-lambda-trigger-implementer | execute | Implements Cognito Lambda triggers for authentication flows. |
 | nextjs-component-implementer | execute | Implements React/Next.js components for web UI features. |
@@ -184,7 +184,7 @@ shown the answer is not a checker.
 | s3-data-lake-implementer | execute | Implements S3 data lake layout, partitioning, and lifecycle policies. |
 | athena-redshift-analytics-implementer | execute | Implements Athena queries and Redshift analytics models over the data lake. |
 | webauthn-implementer | execute | Implements WebAuthn passkey flows across web clients and the Cognito-backed auth stack. |
-| appsync-cdk-implementer | execute | Implements AppSync GraphQL APIs in CDK Python: schema wiring, resolvers, data sources, authorization. |
+| appsync-cdk-implementer | execute | Implements AppSync GraphQL APIs in CDK: schema wiring, resolvers, data sources, authorization. |
 | payments-integration-implementer | execute | Implements payment features against Stripe: checkout sessions, webhook handlers, subscription lifecycle, refunds, and idempotent payment operations |
 | email-notification-implementer | execute | Implements transactional and notification email features: responsive email templates, rendering pipelines, delivery via AWS messaging services, bounce and complaint handling. |
 | mcp-server-implementer | execute | Implements MCP servers hosted on AWS, including AgentCore Gateway-fronted deployments: tool definitions and schemas, authorization, transport configuration, and the CDK wiring to deploy them. |
@@ -209,7 +209,7 @@ shown the answer is not a checker.
 | --- | --- | --- |
 | integration-testing-lead | orchestrate | Routes test runs, aggregates results, reports to Gate 3, and routes escalations to the target the Root Cause Analyst identifies. |
 | aws-integration-test-runner | test | Runs the AWS integration test suites and reports structured results. |
-| event-flow-tester | test | Tests event flows end-to-end through the event API to EventBridge to SQS to Lambda chain. |
+| event-flow-tester | test | Tests event flows end-to-end through every hop of the event delivery path the effective architecture describes. |
 | data-consistency-checker | test | Verifies data consistency across services and stores after test runs. |
 | cross-service-contract-tester | test | Runs contract tests across service and repository boundaries. |
 | test-environment-orchestrator | execute | Provisions and resets the integration test environments. |

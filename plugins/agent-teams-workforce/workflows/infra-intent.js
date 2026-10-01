@@ -67,7 +67,7 @@ ${a.feedback ? `\nFeedback to address:\n${a.feedback}` : ''}
 Deliver CDK-expressible provisioning intent:
 - resources: each AWS resource to provision, with the CDK-expressible properties. Every s3.Bucket sets versioning enabled and SSE-S3 (S3_MANAGED) encryption. No public exposure and no over-broad IAM.
 - stacks: the CDK stacks the resources belong to.
-- crossStackRefs: cross-stack references expressed via SSM Parameter Store (never CloudFormation exports).
+- crossStackRefs: cross-stack references, by the mechanism the owner's constraints in arc42 section 2 name.
 - affectedStacks: the stacks created or modified by this intent (names).
 - rationale: why this shape, tied to the change.
 Size every resource for the load the change and the project state; prefer per-request pricing over provisioned always-on capacity unless that load requires it.`,

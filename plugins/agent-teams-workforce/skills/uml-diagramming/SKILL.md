@@ -1,6 +1,6 @@
 ---
 name: uml-diagramming
-description: Authors UML diagrams — class, sequence, state, component, and deployment — as Mermaid source for GitHub and Docusaurus, and maps each diagram to the arc42 section it belongs in (component → 5, runtime sequence/state → 6, deployment → 7, domain-model class → 8). Use when the user asks to draw a UML diagram, model a domain or class structure, sketch a sequence or interaction, model a state machine, diagram components or building blocks, show deployment topology, or place a diagram into an arc42 architecture document.
+description: Authors UML diagrams — class, sequence, state, component, and deployment — as Mermaid source for GitHub and Docusaurus, and places each one as a view in the arc42 section its scope and view type name (structure of a domain, service or component → 5, runtime flows → 6, deployment → 7, a pattern used across services → 8), with the catalog frontmatter every view carries. Use when the user asks to draw a UML diagram, model a domain or class structure, sketch a sequence or interaction, model a state machine, diagram components or building blocks, show deployment topology, or place a diagram into an arc42 architecture document.
 triggers:
   - draw a UML diagram
   - class diagram
@@ -32,7 +32,7 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 
 2. **Author the Mermaid source.** Write a fenced `mermaid` block using the correct grammar for that diagram type (`classDiagram`, `sequenceDiagram`, `stateDiagram-v2`, and the flowchart-based approximations Mermaid uses for component and deployment views). Every diagram type has a worked, copy-ready example in `references/mermaid-uml-syntax.md` — that reference file is the only place mermaid code fences live. Read it, adapt the closest example, and keep the diagram focused on one question.
 
-3. **Place it in the right arc42 section.** A UML diagram is not just a picture; it occupies a slot in the architecture narrative. Component view → section 5 (Building Block View). Runtime behavior — sequence and state diagrams — → section 6 (Runtime View). Deployment topology → section 7 (Deployment View). The domain/class model → section 8 (Crosscutting Concepts). The full mapping with rationale is in `references/arc42-section-mapping.md`.
+3. **Place it as a view.** A diagram is placed by its scope (system, domain, service, component, concept) and its view type, as the architecture documentation model in the architecture directory's `reference/` folder sets out. Structure of a domain, service or component (domain model, component, class, data model, and a component's state machine) → section 5 (Building Block View), in the subject's folder. A service's or the system's important flows (sequence, state machine, activity) → section 6 (Runtime View). Deployment → section 7 (Deployment View). A pattern used across many services → section 8 (Crosscutting Concepts). Search the catalog first so an existing view of the same subject is updated, not duplicated, and give the view its catalog frontmatter (`view_type`, `scope`, `subject`, `shows`, `lifecycle_state`). The full placement table is in `references/arc42-section-mapping.md`.
 
 4. **Confirm the render target.** GitHub renders Mermaid in Markdown automatically; Docusaurus needs the `@docusaurus/theme-mermaid` theme enabled. Both, plus where Mermaid is weaker than PlantUML, are covered in `references/rendering-targets.md`. Stay Mermaid-first; only note the PlantUML tradeoff when a diagram genuinely exceeds Mermaid's reach.
 
@@ -40,9 +40,9 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 
 | Question being answered | UML type | Mermaid grammar | arc42 section |
 |---|---|---|---|
-| What are the entities and how do they relate? | Class | `classDiagram` | 8 — Crosscutting Concepts (domain model) |
+| What are the entities and how do they relate? | Class | `classDiagram` | 5 — Building Block View (domain or component); 8 when it is the structure of a crosscutting concept |
 | Who sends what message, in what order? | Sequence | `sequenceDiagram` | 6 — Runtime View |
-| What states does an entity move through? | State | `stateDiagram-v2` | 6 — Runtime View |
+| What states does an entity move through? | State | `stateDiagram-v2` | 6 — Runtime View (a service flow); 5 for one component |
 | What are the parts and their interfaces? | Component | `flowchart` (component view) | 5 — Building Block View |
 | What runs on which node/host? | Deployment | `flowchart` (deployment view) | 7 — Deployment View |
 
@@ -59,7 +59,7 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 ## What you do NOT do
 
 - You do not generate raster images (PNG/SVG export) — you emit Mermaid text and let the render target draw it.
-- You do not author arc42 prose or the surrounding document sections — you produce the diagram and state which section it belongs in.
+- You do not author the surrounding arc42 sections — you produce the diagram, the catalog frontmatter of its view, and the section and subject folder it belongs in.
 - You do not switch tools silently. This skill is Mermaid-first; if a diagram truly needs PlantUML, say so explicitly and explain the tradeoff (see `references/rendering-targets.md`) rather than quietly emitting PlantUML.
 - You do not invent UML semantics. Class, sequence, state, component, and deployment diagrams have defined meanings; follow them.
 
@@ -68,4 +68,4 @@ Reach for it when the user wants to model structure or behavior visually: a doma
 - `references/uml-diagram-types.md` — when to choose class vs sequence vs state vs component vs deployment, and what each communicates.
 - `references/mermaid-uml-syntax.md` — real, copy-ready Mermaid examples for every type (the only file with mermaid code fences).
 - `references/rendering-targets.md` — Mermaid rendering in GitHub and Docusaurus, and where Mermaid is weak versus PlantUML.
-- `references/arc42-section-mapping.md` — which UML type maps to which arc42 section (5, 6, 7, 8).
+- `references/arc42-section-mapping.md` — where a UML view goes by scope and view type, its catalog frontmatter, and the architecture versions.

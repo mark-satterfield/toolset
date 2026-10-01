@@ -141,7 +141,7 @@ const infraBlock = (() => {
           .map((r) => `  - ${str(r.logicalId) || '(resource)'} ${str(r.type)}${str(r.stack) ? ` in ${str(r.stack)}` : ''}${str(r.properties) ? `: ${str(r.properties)}` : ''}`)
           .join('\n')}`
       : '',
-    refs.length ? `Cross-stack references (SSM Parameter Store, never CloudFormation exports):\n${refs.map((x) => `  - ${x}`).join('\n')}` : '',
+    refs.length ? `Cross-stack references:\n${refs.map((x) => `  - ${x}`).join('\n')}` : '',
     pi && str(pi.rationale) ? `Intent rationale: ${str(pi.rationale)}` : '',
   ].filter(Boolean)
   return lines.length ? `\n\n${lines.join('\n')}` : ''
