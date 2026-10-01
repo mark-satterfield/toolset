@@ -13,6 +13,7 @@ Usage:
   beads-contract.py record <id>
   beads-contract.py metadata get <id> [key ...]
   beads-contract.py metadata set <id> key=value [key=value ...]
+  beads-contract.py cds-audit <id> '<cdsAudit JSON>'
 
 Common flags:
   -C <path>          Run `bd` from this repository (passed through as `bd -C`).
@@ -389,6 +390,17 @@ STORY_KEYS = (
     "story_pr_url",
 )
 
+#: The cds audit verdict of a web-ui Task: task-to-deploy's `cdsAudit` result, written
+#: by the build lane and by `cds-audit` for a run dispatched by hand.
+CDS_AUDIT_KEYS = (
+    "cds_audit_verdict",
+    "cds_audit_findings",
+    "cds_audit_script_version",
+)
+
+#: The verdicts task-to-deploy's `cdsAudit` result carries.
+CDS_AUDIT_VERDICTS = ("pass", "fail", "blocked", "error")
+
 #: Every metadata key this pipeline writes; `metadata get` lists other keys as unrecognized.
 KNOWN_KEYS = frozenset(
     [source for source, _, _ in CONTRACT_SCHEMA]
@@ -397,6 +409,7 @@ KNOWN_KEYS = frozenset(
     + list(WSJF_KEYS)
     + list(SEQUENCING_KEYS)
     + list(STORY_KEYS)
+    + list(CDS_AUDIT_KEYS)
 )
 
 
@@ -946,6 +959,9 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
             "sequencing": {
                 key: metadata[key] for key in SEQUENCING_KEYS if key in metadata
             },
+            "cdsAudit": {
+                key: metadata[key] for key in CDS_AUDIT_KEYS if key in metadata
+            },
             "unrecognized": sorted(key for key in metadata if key not in KNOWN_KEYS),
         }
 
@@ -969,6 +985,41 @@ def cmd_metadata(args: argparse.Namespace, reader: Reader) -> dict:
         "verified": {key: written.get(key) for key, _ in updates},
         "ok": True,
     }
+
+
+def cmd_cds_audit(args: argparse.Namespace, reader: Reader) -> dict:
+    """Write a web-ui Task's cds audit verdict from task-to-deploy's `cdsAudit` result.
+
+    Args:
+        args: Parsed arguments.
+        reader: The record source.
+
+    Returns:
+        The `metadata set` result for the three cds audit keys.
+
+    Raises:
+        ContractError: The result is not a cdsAudit object with a known verdict.
+    """
+    try:
+        audit = json.loads(args.result)
+    except ValueError as exc:
+        msg = f"the cdsAudit result is not JSON: {exc}"
+        raise ContractError(msg) from exc
+    if not isinstance(audit, dict) or audit.get("verdict") not in CDS_AUDIT_VERDICTS:
+        msg = f"the cdsAudit result carries no verdict among {', '.join(CDS_AUDIT_VERDICTS)}"
+        raise ContractError(msg)
+    findings = audit.get("findings")
+    count = (
+        findings if isinstance(findings, int) and not isinstance(findings, bool) else 0
+    )
+    version = str(audit.get("scriptVersion") or "").strip()[:100]
+    args.op = "set"
+    args.pairs = [
+        f"cds_audit_verdict={audit['verdict']}",
+        f"cds_audit_findings={count}",
+        f"cds_audit_script_version={version}",
+    ]
+    return cmd_metadata(args, reader)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1049,6 +1100,14 @@ def build_parser() -> argparse.ArgumentParser:
         "pairs", nargs="*", help="keys to read, or key=value pairs to write"
     )
     metadata.set_defaults(run=cmd_metadata)
+
+    cds_audit = sub.add_parser(
+        "cds-audit",
+        help="write a web-ui Task's cds audit verdict from task-to-deploy's cdsAudit result",
+    )
+    cds_audit.add_argument("id")
+    cds_audit.add_argument("result", help="the run's `cdsAudit` object, as JSON")
+    cds_audit.set_defaults(run=cmd_cds_audit)
     return parser
 
 

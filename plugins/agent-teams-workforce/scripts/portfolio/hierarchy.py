@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -439,48 +440,155 @@ def _surfaces(value: object) -> list[str] | None:
 #: The surface whose Tasks carry the cds design system in their build contract.
 UI_SURFACE = "web-ui"
 
-#: A packaged cds build spec sits at <bundle>/<kind>/<slug>/spec/build-spec.md.
-_BUILD_SPEC_DEPTH = 4
+#: The environment variable naming the cds packages directory, the fallback for
+#: `--packages-dir` (cds:package-change writes each hand-off bundle under it).
+PACKAGES_DIR_ENV = "CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR"
+
+#: The timestamp a cds hand-off bundle's directory name ends with.
+_BUNDLE_STAMP = re.compile(r"(\d{8}T\d{6}Z)$")
 
 
-def ui_authority(directory: Path, slug: str) -> tuple[str | None, dict[str, list[str]]]:
+def _is_bundle(path: Path) -> bool:
+    """Return whether a directory is a cds hand-off bundle: it holds styles/tokens.css."""
+    return (path / "styles" / "tokens.css").is_file()
+
+
+def newest_bundle(packages_dir: str | None) -> str | None:
+    """Return the newest cds hand-off bundle under the packages directory.
+
+    Args:
+        packages_dir: The cds packages directory, or None.
+
+    Returns:
+        The absolute path of the bundle whose name ends with the latest timestamp, or
+        None when the directory is unset, missing or holds no bundle.
+    """
+    root = Path(packages_dir).expanduser() if packages_dir else None
+    if root is None or not root.is_dir():
+        return None
+    stamped = [
+        (m.group(1), d)
+        for d in root.iterdir()
+        if d.is_dir() and _is_bundle(d) and (m := _BUNDLE_STAMP.search(d.name))
+    ]
+    return str(max(stamped)[1].resolve()) if stamped else None
+
+
+def _bundle_of(spec: str) -> str | None:
+    """Return the bundle a build spec sits in: its nearest ancestor holding styles/tokens.css."""
+    for parent in Path(spec).parents:
+        if _is_bundle(parent):
+            return str(parent)
+    return None
+
+
+def ui_authority(
+    directory: Path, slug: str, packages_dir: str | None = None
+) -> tuple[str | None, dict[str, list[str]]]:
     """Return the cds bundle and the build specs per delta item the detailing resolved.
 
-    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`.
+    Reads `uiAuthority` of the repository's saved detailing, `recon-<slug>.json`. The
+    bundle is the detailing's `bundlePath` when it is a bundle, else the bundle a
+    resolved build spec sits in, else the newest bundle under the packages directory
+    (`packages_dir`, else `$CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR`).
 
     Args:
         directory: The Epic's working directory.
         slug: The Story's repository slug.
+        packages_dir: The cds packages directory, or None for the environment's.
 
     Returns:
-        The bundle path (None when the detailing names none and no build spec gives
-        one), and per delta item id its build-spec citations: the absolute
-        `build-spec.md` path, followed by `#<Section ID>` for each Section it builds.
+        The bundle path (None when none resolves), and per delta item id its build-spec
+        citations: the absolute `build-spec.md` path, followed by `#<Section ID>` for
+        each Section it builds.
     """
     path = directory / f"recon-{slug}.json"
-    if not path.is_file():
-        return None, {}
-    ua = _read_json(path).get("uiAuthority")
-    if not isinstance(ua, dict):
-        return None, {}
-    bundle = str(ua.get("bundlePath") or "").strip() or None
-    cites: dict[str, list[str]] = {}
+    ua = _read_json(path).get("uiAuthority") if path.is_file() else None
+    ua = ua if isinstance(ua, dict) else {}
+    named = str(ua.get("bundlePath") or "").strip()
+    entries = []
     for entry in ua.get("buildSpecs") or []:
         if not isinstance(entry, dict):
             continue
         item = str(entry.get("item") or "").strip()
         spec = str(entry.get("buildSpec") or "").strip()
-        if not item or not spec:
-            continue
-        if not spec.startswith("/") and bundle:
-            spec = f"{bundle.rstrip('/')}/{spec}"
-        sections = str_list(entry.get("sections"))
+        if item and spec:
+            entries.append((item, spec, str_list(entry.get("sections"))))
+    bundle = named if named and _is_bundle(Path(named)) else None
+    if bundle is None:
+        bundle = next(
+            (
+                b
+                for _, spec, _ in entries
+                if spec.startswith("/") and (b := _bundle_of(spec))
+            ),
+            None,
+        )
+    if bundle is None:
+        bundle = newest_bundle(
+            packages_dir or os.environ.get(PACKAGES_DIR_ENV, "").strip() or None
+        )
+    cites: dict[str, list[str]] = {}
+    for item, spec, sections in entries:
+        if not spec.startswith("/"):
+            base = named or bundle
+            if not base:
+                continue
+            spec = f"{base.rstrip('/')}/{spec}"
         cites.setdefault(item, []).extend(
             [f"{spec}#{x}" for x in sections] if sections else [spec]
         )
-        if bundle is None and len(Path(spec).parents) > _BUILD_SPEC_DEPTH:
-            bundle = str(Path(spec).parents[_BUILD_SPEC_DEPTH - 1])
     return bundle, cites
+
+
+def check_cds_contract(slug: str, tasks: list[Task]) -> None:
+    """Refuse a web-ui Task whose build contract does not name its cds bundle and build specs.
+
+    Every Task with the web-ui surface is built from the cds design system, so its
+    contract names the cds bundle and at least one `build-spec.md` citation, each of
+    them a file that exists.
+
+    Args:
+        slug: The Story's repository slug.
+        tasks: The Story's Tasks.
+
+    Raises:
+        HierarchyError: A web-ui Task resolves no bundle, cites no ui delta item with a
+            resolved build spec, or cites a build spec that does not exist.
+    """
+    problems = []
+    for t in tasks:
+        if UI_SURFACE not in (t.surfaces or []):
+            continue
+        if not t.cds_bundle_path:
+            problems.append(
+                f"{t.key} resolves no cds bundle (the detailing names none and "
+                f"${PACKAGES_DIR_ENV} or --packages-dir holds no bundle)"
+            )
+        if not t.cds_build_specs:
+            problems.append(
+                f"{t.key} cites, in requirementIds ({', '.join(t.requirement_ids) or 'none'}), "
+                f"no ui delta item recon-{slug}.json resolves to a cds build-spec.md; a ui "
+                "item with no packaged build spec is packaged with cds:package-change first"
+            )
+        missing = sorted(
+            {c.split("#", 1)[0] for c in t.cds_build_specs}
+            - {
+                c.split("#", 1)[0]
+                for c in t.cds_build_specs
+                if Path(c.split("#", 1)[0]).is_file()
+            }
+        )
+        if missing:
+            problems.append(
+                f"{t.key} cites build specs that do not exist: {', '.join(missing)}"
+            )
+    if problems:
+        msg = (
+            f"tasks-{slug}.json: web-ui Tasks without their cds contract: "
+            + "; ".join(problems)
+        )
+        raise HierarchyError(msg)
 
 
 def _spec_refs(directory: Path, rel: str | None, slug: str) -> list[str]:
@@ -510,6 +618,7 @@ def read_tasks(
     slug: str,
     repo: str,
     story_decision_ids: list[str],
+    packages_dir: str | None = None,
 ) -> list[Task]:
     """Return the Tasks a Story's saved `tasks-<slug>.json` carries, in build order.
 
@@ -519,6 +628,7 @@ def read_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         story_decision_ids: The Story's decision ids, which a Task citing none inherits.
+        packages_dir: The cds packages directory, or None for the environment's.
 
     Returns:
         The Tasks, with `depends_on` holding local keys; empty for a Story with no Tasks.
@@ -546,7 +656,7 @@ def read_tasks(
         else None
     )
     by_key = {t["key"]: t for t in unique}
-    bundle, ui_cites = ui_authority(directory, slug)
+    bundle, ui_cites = ui_authority(directory, slug, packages_dir)
     tasks = []
     for key in order:
         t = by_key[key]

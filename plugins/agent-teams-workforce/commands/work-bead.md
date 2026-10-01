@@ -178,6 +178,13 @@ One line each, no more:
 - what you did NOT do
 - the worktree and branch the work landed on
 - the PR URL, or the explicit reason there is none
+- for a `web-ui` Task, the `cdsAudit` verdict and finding count
+
+When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped:
+
+```bash
+python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" cds-audit <id> '<the result's cdsAudit, as JSON>'
+```
 
 If the run stops, report it. Do not work around it, do not edit the workflow
 mid-run, and do not fall back to a subagent beside the pipeline.

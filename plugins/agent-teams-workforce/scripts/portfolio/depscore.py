@@ -48,6 +48,9 @@
     prd-parse            check that a PRD file has the structure elaboration reads: readable,
                          not superseded, an H1, requirement headings with acceptance criteria
                          under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
+    spec-ui-check        check that a saved spec document has a section per `ui` item, citing a
+                         cds `spec/build-spec.md` that exists, the one the detailing resolved, and
+                         its resolved Section IDs; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -113,6 +116,7 @@ from archstate import (
 from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
+from specui import SpecUiError, spec_ui_check
 from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
@@ -604,6 +608,12 @@ def build_parser() -> argparse.ArgumentParser:
         )
         task_parser.add_argument("--repo", required=True, help="the Story's repository")
         task_parser.add_argument(
+            "--packages-dir",
+            default=None,
+            help="the cds packages directory a web-ui Task's bundle falls back to "
+            "(default: $CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR)",
+        )
+        task_parser.add_argument(
             "--project-root",
             type=Path,
             default=None,
@@ -841,6 +851,19 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
     )
     ppa.add_argument("--prd", type=Path, required=True, help="the PRD file")
+
+    sua = sub.add_parser(
+        "spec-ui-check",
+        help="check a saved spec document's UI sections against the cds build specs; "
+        "writes nothing, runs no `bd` command",
+        parents=[common],
+    )
+    sua.add_argument("--doc", type=Path, required=True, help="the saved spec document")
+    sua.add_argument(
+        "--items",
+        required=True,
+        help="the repository's ui items as JSON: [{id, buildSpec?, sections?}]",
+    )
     return parser
 
 
@@ -861,7 +884,11 @@ def run(args: argparse.Namespace) -> dict:
     head = {"command": command}
     if command == "plan-tasks":
         return head | plan_story_tasks(
-            args.dir, slug=args.slug, repo=args.repo, root=args.project_root
+            args.dir,
+            slug=args.slug,
+            repo=args.repo,
+            root=args.project_root,
+            packages_dir=args.packages_dir,
         )
     if command == "plan-task-edges":
         return head | plan_task_edges(args.dir, split_ids(args.repos))
@@ -915,6 +942,8 @@ def run(args: argparse.Namespace) -> dict:
         )
     if command == "prd-parse":
         return head | prd_parse(args.prd)
+    if command == "spec-ui-check":
+        return head | spec_ui_check(args.doc, args.items)
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(
@@ -926,6 +955,7 @@ def run(args: argparse.Namespace) -> dict:
             key=args.key,
             root=args.project_root,
             external=split_ids(args.blocked_by_external),
+            packages_dir=args.packages_dir,
         )
     descriptions = command in {
         "write-story",
@@ -1137,6 +1167,7 @@ def main(argv: list[str] | None = None) -> int:
         LifecycleError,
         GraphError,
         HierarchyError,
+        SpecUiError,
         rubric.WsjfError,
         json.JSONDecodeError,
         OSError,

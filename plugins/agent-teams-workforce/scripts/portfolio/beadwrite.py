@@ -19,6 +19,7 @@ from hierarchy import (
     HierarchyError,
     Task,
     build_order,
+    check_cds_contract,
     check_detailed_work,
     elab_slug,
     read_story,
@@ -341,7 +342,13 @@ def _assign_keys(tasks: list[Task], slug: str) -> None:
         t.elab_key = key
 
 
-def plan_tasks(directory: Path, rel: str | None, slug: str, repo: str) -> list[Task]:
+def plan_tasks(
+    directory: Path,
+    rel: str | None,
+    slug: str,
+    repo: str,
+    packages_dir: str | None = None,
+) -> list[Task]:
     """Return a Story's saved Tasks, each with its durable key, in build order.
 
     Reads `story-<slug>.json` and `tasks-<slug>.json` only; runs no `bd` command.
@@ -351,17 +358,20 @@ def plan_tasks(directory: Path, rel: str | None, slug: str, repo: str) -> list[T
         rel: The directory relative to the project root, or None.
         slug: The Story's repository slug.
         repo: The Story's repository.
+        packages_dir: The cds packages directory, or None for the environment's.
 
     Returns:
         The Tasks.
 
     Raises:
-        HierarchyError: The file holds no `tasks` list, its edges form a cycle, or a Task
-            cites no delta item the repository's detailing marks as work.
+        HierarchyError: The file holds no `tasks` list, its edges form a cycle, a Task
+            cites no delta item the repository's detailing marks as work, or a web-ui
+            Task's contract does not name its cds bundle and build specs.
     """
     saved = read_story(directory, rel, repo, slug)
-    tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids)
+    tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids, packages_dir)
     check_detailed_work(directory, slug, tasks)
+    check_cds_contract(slug, tasks)
     _assign_keys(tasks, slug)
     return tasks
 
@@ -500,7 +510,12 @@ def other_epic_tasks(graph: Graph, epic_id: str, repo: str) -> list[dict]:
 
 
 def plan_story_tasks(
-    directory: Path, *, slug: str, repo: str, root: Path | None
+    directory: Path,
+    *,
+    slug: str,
+    repo: str,
+    root: Path | None,
+    packages_dir: str | None = None,
 ) -> dict:
     """Return a Story's Tasks in build order with their durable keys; runs no `bd` command.
 
@@ -509,11 +524,12 @@ def plan_story_tasks(
         slug: The Story's repository slug.
         repo: The Story's repository.
         root: The project root spec paths are recorded relative to.
+        packages_dir: The cds packages directory, or None for the environment's.
 
     Returns:
         Each Task's local key, `elab_key`, title and the local keys it depends on.
     """
-    tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
+    tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
     return {
         "ok": True,
         "slug": slug,
@@ -562,6 +578,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     key: str,
     root: Path | None,
     external: list[str] | None = None,
+    packages_dir: str | None = None,
 ) -> dict:
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
@@ -581,6 +598,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         root: The project root spec paths are recorded relative to.
         external: Tasks of other Epics this Task is blocked by, beside the ones its saved
             `blockedByExternal` names.
+        packages_dir: The cds packages directory, or None for the environment's.
 
     Returns:
         The Task, what was done to it, its edge writes, and the blockers it carries
@@ -590,7 +608,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         HierarchyError: The key names no Task, the Epic has no Story for the slug, a Task
             it depends on is not written, or an external blocker is a Task of its own Story.
     """
-    tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
+    tasks = plan_tasks(directory, _rel(directory, root), slug, repo, packages_dir)
     by_key = {t.key: t for t in tasks}
     task = by_key.get(key)
     if task is None:

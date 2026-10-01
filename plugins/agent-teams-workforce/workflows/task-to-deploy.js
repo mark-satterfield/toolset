@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-to-deploy',
   description:
-    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed against its cds bundle with the cds plugin's tools/audit-app.py, has cds:audit-against-system rule the findings the script cannot rule on, sends violations back to Green once and stops with cds-audit when they remain (blocked-upstream when cds itself lacks what the UI needs), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
+    "Builds a Task from its build contract on its Story's branch and commits it only when the repository's whole test suite passes. Establishes (or reuses) the Story's worktree, stashing a reused tree's uncommitted changes; for an infrastructure Task authors the provisioning intent; runs the suite command the repository declares once as a baseline; loops Red until a new test fails with no new collection error and no regression; loops Green until the whole suite exits 0, routing tests the implementer names to Red in update mode; refactors, restoring the pre-refactor snapshot when the suite goes red; for a web-ui Task audits the files it changed against its cds bundle with the cds plugin's tools/audit-app.py, has cds:audit-against-system rule the findings the script cannot rule on, sends violations back through the Green loop once and stops with cds-audit when they remain (blocked-upstream when cds itself lacks what the UI needs), returning the verdict as cdsAudit; updates the documentation; then commits to the Story branch after a final green run. Stops with red-unsatisfied, blocked-upstream or no-progress when the contract cannot be built. It deploys nothing and opens no pull request: the Story deploys and opens one pull request once its last Task is done. Returns { ok, stage, beadId, storyId, headline, detailPath, branch, worktree, commit }.",
   phases: [
     { title: 'Workspace', detail: "establishes or reuses the Story's worktree every writing phase operates in" },
     { title: 'Infra Intent', detail: 'authors the provisioning intent for an infrastructure Task' },
@@ -9,7 +9,7 @@ export const meta = {
     { title: 'Red' },
     { title: 'Green' },
     { title: 'Refactor' },
-    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its cds bundle and sends violations back to Green once" },
+    { title: 'CDS Audit', detail: "audits a web-ui Task's changed files against its cds bundle and sends violations back through the Green loop once" },
     { title: 'Documentation' },
     { title: 'Commit', detail: 'runs the suite a final time and commits the Task to the Story branch' },
     { title: 'Run Ledger', detail: 'writes the run journal on every exit path' },
@@ -258,8 +258,32 @@ except ValueError:
 findings = report.get("findings") or []
 if len(findings) > int(cap):
     report["findings"], report["truncated"] = findings[: int(cap)], len(findings)
+def cell(v):
+    return "" if v is None else str(v)
+canon = "\\n".join("\\t".join(cell(f.get(k)) for k in ("file", "line", "rule", "value", "ruling")) for f in report.get("findings") or [] if isinstance(f, dict))
+h = 0x811C9DC5
+for ch in f"{cell(report.get('scriptVersion'))}\\n{done.returncode}\\n{cell(report.get('truncated'))}\\n{canon}":
+    h = ((h ^ ord(ch)) * 0x01000193) & 0xFFFFFFFF
+report["digest"] = format(h, "08x")
 print(json.dumps(report))
 sys.exit(done.returncode)`
+
+// The digest RUN_CDS_AUDIT_PY prints: FNV-1a (32-bit) over the script version, the exit status, the
+// truncated count and each finding's file, line, rule, value and ruling, by code point. The verdict is
+// computed from the relayed report only when this recomputes to the digest the script printed, so a
+// relay that drops, adds or alters a finding is refused instead of acted on.
+const cell = (v) => (v === null || v === undefined ? '' : String(v))
+function auditDigest(report, exitCode) {
+  const canon = list(report.findings)
+    .filter((f) => f && typeof f === 'object')
+    .map((f) => ['file', 'line', 'rule', 'value', 'ruling'].map((k) => cell(f[k])).join('\t'))
+    .join('\n')
+  let h = 0x811c9dc5
+  for (const ch of `${cell(report.scriptVersion)}\n${exitCode}\n${cell(report.truncated)}\n${canon}`) {
+    h = Math.imul(h ^ ch.codePointAt(0), 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
 
 const findingText = (f) => `${f.file}:${f.line} ${f.rule} ${f.value}${f.reason ? ` (${f.reason})` : ''}`
 
@@ -272,7 +296,7 @@ async function auditCds(tree, bundle, label) {
 
 python3 -c ${shq(RUN_CDS_AUDIT_PY)} ${shq(tree)} ${shq(bundle)} ${shq(String(a.cdsRoot || '').trim())} ${CDS_AUDIT_MAX_FINDINGS}
 
-It prints one JSON object on stdout and exits 0 (clean), 1 (findings) or 2 (it could not audit). Return the exit code as \`exitCode\` and that JSON object, parsed and unaltered, as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object on stdout and exits 0 (clean), 1 (findings) or 2 (it could not audit). Return the exit code as \`exitCode\` and that JSON object, parsed and unaltered (every key and value, the \`digest\` included), as \`output\`. If stdout is not JSON, return {"error": "<stdout and stderr, verbatim>"} as \`output\`. Do not retry, do not repair, do not run any other command.`,
       { label, phase: currentPhase || 'CDS Audit', model: 'haiku', effort: 'low', schema: CDS_AUDIT_RUN_SCHEMA }
     )
   } catch (err) {
@@ -282,13 +306,21 @@ It prints one JSON object on stdout and exits 0 (clean), 1 (findings) or 2 (it c
   if (!out || ![0, 1].includes(out.exitCode) || report.error || !Array.isArray(report.findings)) {
     return { error: String(report.error || `the cds audit did not run${out ? `: exit ${out.exitCode}` : ''}`).slice(0, 500), scriptVersion: report.scriptVersion || null }
   }
+  if (String(report.digest || '') !== auditDigest(report, out.exitCode)) {
+    return { error: 'the relayed cds audit report does not match the digest the audit script printed, so its findings are not the script\'s own', scriptVersion: report.scriptVersion || null }
+  }
+  if ((out.exitCode === 0) !== (report.findings.length === 0 && !report.truncated)) {
+    return { error: `the cds audit exited ${out.exitCode} with ${report.truncated || report.findings.length} finding(s)`, scriptVersion: report.scriptVersion || null }
+  }
   const scriptVersion = String(report.scriptVersion || 'unknown')
   const findings = report.findings.filter((f) => f && typeof f === 'object')
   const violations = findings.filter((f) => f.ruling !== 'judgment')
   const gaps = []
   const allowed = []
   const toJudge = findings.filter((f) => f.ruling === 'judgment')
-  if (toJudge.length) {
+  const sameFinding = (x, f) => x && x.file === f.file && Number(x.line) === Number(f.line) && x.value === f.value
+  let unruled = toJudge
+  for (let pass = 1; unruled.length && pass <= 2; pass++) {
     let judged = null
     try {
       judged = await agent(
@@ -300,22 +332,31 @@ Each finding is a class name the bundle's stylesheets do not name. Read the line
 - cds-gap: the UI needs a component or style the cds bundle does not ship, so cds changes first and the app consumes the change.
 
 Findings, one per line (file:line rule value):
-${toJudge.map(findingText).join('\n')}
+${unruled.map(findingText).join('\n')}
 
-Return one ruling per finding with its file, line and value as given, the ruling, and a one-sentence reason. Change no file.`,
-        { label: `${label}:judgment`, phase: currentPhase || 'CDS Audit', schema: CDS_JUDGMENT_SCHEMA }
+Return one ruling per finding, with its file, line and value exactly as given, the ruling, and a one-sentence reason. Change no file.`,
+        { label: `${label}:judgment${pass > 1 ? `-${pass}` : ''}`, phase: currentPhase || 'CDS Audit', schema: CDS_JUDGMENT_SCHEMA }
       )
     } catch (err) {
-      return { error: `the judgment on ${toJudge.length} cds finding(s) threw: ${String((err && err.message) || err).slice(0, 300)}`, scriptVersion }
+      return { error: `the judgment on ${unruled.length} cds finding(s) threw: ${String((err && err.message) || err).slice(0, 300)}`, scriptVersion }
     }
     const rulings = list(judged && judged.rulings)
-    for (const f of toJudge) {
-      const r = rulings.find((x) => x && x.file === f.file && x.line === f.line && x.value === f.value)
-      const ruled = { ...f, ruling: r ? r.ruling : 'violation', reason: r ? r.reason : 'no ruling was returned for this finding' }
+    const still = []
+    for (const f of unruled) {
+      const r = rulings.find((x) => sameFinding(x, f))
+      if (!r) {
+        still.push(f)
+        continue
+      }
+      const ruled = { ...f, ruling: r.ruling, reason: r.reason }
       if (ruled.ruling === 'allowed') allowed.push(ruled)
       else if (ruled.ruling === 'cds-gap') gaps.push(ruled)
       else violations.push(ruled)
     }
+    unruled = still
+  }
+  if (unruled.length) {
+    return { error: `cds:audit-against-system returned no ruling, after being asked twice, on ${unruled.length} finding(s): ${unruled.slice(0, 5).map(findingText).join('; ')}`, scriptVersion }
   }
   if (report.truncated) log(`cds audit: ${report.truncated} finding(s); the first ${CDS_AUDIT_MAX_FINDINGS} are ruled on`)
   return { report, violations, gaps, allowed, scriptVersion }
@@ -505,115 +546,116 @@ try {
       runLedger.push({ phase: 'retry:red', round: round + 1, whatChanged: `Red round ${round + 1} is given round ${round}'s suite result: ${verdict.reasons.join('; ')}` })
     }
 
-    // ── Green: loops until the whole suite exits 0 ──
+    // ── Green: loops until the whole suite exits 0. The CDS Audit sends its violations back through
+    // this same loop, with tag 'cds-green' and the findings as the first round's feedback. ──
     const baselineNote = baselineIds.size
       ? `\nThe suite already failed before this Task on: ${[...failures(baseline).values()].map(describe).join('; ')}. Green means the whole suite exits 0, so these must pass too.`
       : ''
     let green = null
     let finalRun = null
-    let greenFeedback = `${runText(redRun)}${baselineNote}`
-    let previousKey = null
-    let testPrint = null
-    for (let round = 1; ; round++) {
-      enterPhase('Green')
-      testPrint = await fingerprint(workRepoPath, [...redFiles], `green-${round}:tests-before`)
-      if (testPrint.error) return handback(false, 'green', `green: Red's test files could not be fingerprinted before Green round ${round}: ${testPrint.error}`, {})
-      const g = await workflow('agent-teams-workforce:tdd-green', {
-        contract,
-        red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
-        implementer,
-        implementers: implementersOf(green),
-        feedback: greenFeedback,
-      })
-      if (g && g.ledger) runLedger.push(g.ledger)
-      if (!g || g.dispatchFailed) {
-        return handback(false, stageOf('green', g), `green: ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g })
-      }
-      green = g
-      const testsAfter = await fingerprint(workRepoPath, Object.keys(testPrint.files), `green-${round}:tests-after`)
-      if (testsAfter.error) return handback(false, 'green', `green: Red's test files could not be fingerprinted after Green round ${round}: ${testsAfter.error}`, { green: g })
-      const touchedTests = Object.keys(testPrint.files).filter((f) => testPrint.files[f] !== testsAfter.files[f])
-      if (touchedTests.length) {
-        return handback(
-          false,
-          'green-modified-tests',
-          `green-modified-tests: Green round ${round} changed test files Red wrote, which Green leaves to Red (a test Green believes is wrong goes in testIssues): ${touchedTests.join(', ')}`,
-          { green: g, touchedTests }
-        )
-      }
-      let run = await runSuite(`green-${round}`)
-      if (!validRun(run)) {
-        return handback(false, stageOf('green', run), `green: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { green: g, run })
-      }
-      if (run.exitCode === 0) {
-        finalRun = run
-        break
-      }
-
-      const upstream = list(g.upstreamMissing)
-      if (upstream.length) {
-        return {
-          ...handback(
-            false,
-            'blocked-upstream',
-            `blocked-upstream: the suite cannot pass until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`,
-            { green: g, run, upstreamMissing: upstream }
-          ),
-          upstreamMissing: upstream,
-          evidence: runText(run).slice(0, TAIL_CHARS),
-        }
-      }
-
-      let redUpdated = false
-      const issues = list(g.testIssues)
-      if (issues.length) {
-        enterPhase('Red')
-        const updated = await workflow('agent-teams-workforce:tdd-red', {
+    /** Runs Green rounds until the suite exits 0; returns { run } when green, or { stop } (a handback) when the loop ends without it. */
+    const greenLoop = async (firstFeedback, tag, what) => {
+      let greenFeedback = firstFeedback
+      let previousKey = null
+      for (let round = 1; ; round++) {
+        enterPhase('Green')
+        const testPrint = await fingerprint(workRepoPath, [...redFiles], `${tag}-${round}:tests-before`)
+        if (testPrint.error) return { stop: handback(false, 'green', `${what}: Red's test files could not be fingerprinted before Green round ${round}: ${testPrint.error}`, {}) }
+        const g = await workflow('agent-teams-workforce:tdd-green', {
           contract,
-          testIssues: issues,
-          red: { testFiles: [...redFiles] },
-          feedback: runText(run),
+          red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
+          implementer,
+          implementers: implementersOf(green),
+          feedback: greenFeedback,
         })
-        if (updated && updated.ledger) runLedger.push(updated.ledger)
-        if (!updated || updated.dispatchFailed) {
-          return handback(false, stageOf('red', updated), `red (update): ${(updated && updated.reason) || 'the Red update returned nothing'}`, { green: g, red: updated, issues })
+        if (g && g.ledger) runLedger.push(g.ledger)
+        if (!g || g.dispatchFailed) {
+          return { stop: handback(false, stageOf('green', g), `${what}: ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g }) }
         }
-        addRedFiles(updated)
-        redUpdated = true
-        run = await runSuite(`red-update-${round}`)
+        green = g
+        const testsAfter = await fingerprint(workRepoPath, Object.keys(testPrint.files), `${tag}-${round}:tests-after`)
+        if (testsAfter.error) return { stop: handback(false, 'green', `${what}: Red's test files could not be fingerprinted after Green round ${round}: ${testsAfter.error}`, { green: g }) }
+        const touchedTests = Object.keys(testPrint.files).filter((f) => testPrint.files[f] !== testsAfter.files[f])
+        if (touchedTests.length) {
+          return {
+            stop: handback(
+              false,
+              'green-modified-tests',
+              `green-modified-tests: ${what} round ${round} changed test files Red wrote, which Green leaves to Red (a test Green believes is wrong goes in testIssues): ${touchedTests.join(', ')}`,
+              { green: g, touchedTests }
+            ),
+          }
+        }
+        let run = await runSuite(`${tag}-${round}`)
         if (!validRun(run)) {
-          return handback(false, stageOf('red', run), `red (update): the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { red: updated, run })
+          return { stop: handback(false, stageOf('green', run), `${what}: the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { green: g, run }) }
         }
-        if (run.exitCode === 0) {
-          finalRun = run
-          break
-        }
-      }
+        if (run.exitCode === 0) return { run }
 
-      const key = JSON.stringify([run.exitCode, ...[...failingIds(run)].sort()])
-      const changedNothing = !list(g.changedFiles).length && !redUpdated
-      if (changedNothing && key === previousKey) {
-        return {
-          ...handback(
-            false,
-            'no-progress',
-            `no-progress: Green round ${round} changed no file and the suite fails exactly as it did the round before`,
-            { green: g, run }
-          ),
-          evidence: runText(run).slice(0, TAIL_CHARS),
+        const upstream = list(g.upstreamMissing)
+        if (upstream.length) {
+          return {
+            stop: {
+              ...handback(
+                false,
+                'blocked-upstream',
+                `blocked-upstream: the suite cannot pass until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`,
+                { green: g, run, upstreamMissing: upstream }
+              ),
+              upstreamMissing: upstream,
+              evidence: runText(run).slice(0, TAIL_CHARS),
+            },
+          }
         }
+
+        let redUpdated = false
+        const issues = list(g.testIssues)
+        if (issues.length) {
+          enterPhase('Red')
+          const updated = await workflow('agent-teams-workforce:tdd-red', {
+            contract,
+            testIssues: issues,
+            red: { testFiles: [...redFiles] },
+            feedback: runText(run),
+          })
+          if (updated && updated.ledger) runLedger.push(updated.ledger)
+          if (!updated || updated.dispatchFailed) {
+            return { stop: handback(false, stageOf('red', updated), `red (update): ${(updated && updated.reason) || 'the Red update returned nothing'}`, { green: g, red: updated, issues }) }
+          }
+          addRedFiles(updated)
+          redUpdated = true
+          run = await runSuite(`${tag === 'green' ? '' : `${tag}-`}red-update-${round}`)
+          if (!validRun(run)) {
+            return { stop: handback(false, stageOf('red', run), `red (update): the suite runner returned no exit code: ${(run && run.reason) || 'no result'}`, { red: updated, run }) }
+          }
+          if (run.exitCode === 0) return { run }
+        }
+
+        const key = JSON.stringify([run.exitCode, ...[...failingIds(run)].sort()])
+        const changedNothing = !list(g.changedFiles).length && !redUpdated
+        if (changedNothing && key === previousKey) {
+          return {
+            stop: {
+              ...handback(false, 'no-progress', `no-progress: ${what} round ${round} changed no file and the suite fails exactly as it did the round before`, { green: g, run }),
+              evidence: runText(run).slice(0, TAIL_CHARS),
+            },
+          }
+        }
+        previousKey = key
+        if (round >= MAX_GREEN_ROUNDS) {
+          return { stop: handback(false, 'green', `${what}: the suite is not green after ${round} Green round(s): ${run.summary || `exit ${run.exitCode}`}`, { green: g, run }) }
+        }
+        greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author has ruled on the tests you named; their decisions are in the tests now.' : ''}\n${runText(run)}${baselineNote}`
+        runLedger.push({
+          phase: 'retry:green',
+          round: `${tag}-${round + 1}`,
+          whatChanged: `Green round ${round + 1} is given round ${round}'s suite result${list(g.changedFiles).length ? ` after round ${round} changed ${list(g.changedFiles).join(', ')}` : ''}${redUpdated ? ', and the tests the test author updated' : ''}`,
+        })
       }
-      previousKey = key
-      if (round >= MAX_GREEN_ROUNDS) {
-        return handback(false, 'green', `green: the suite is not green after ${round} Green round(s): ${run.summary || `exit ${run.exitCode}`}`, { green: g, run })
-      }
-      greenFeedback = `The suite is not green yet.${redUpdated ? ' The test author has ruled on the tests you named; their decisions are in the tests now.' : ''}\n${runText(run)}${baselineNote}`
-      runLedger.push({
-        phase: 'retry:green',
-        round: round + 1,
-        whatChanged: `Green round ${round + 1} is given round ${round}'s suite result${list(g.changedFiles).length ? ` after round ${round} changed ${list(g.changedFiles).join(', ')}` : ''}${redUpdated ? ', and the tests the test author updated' : ''}`,
-      })
     }
+    const built = await greenLoop(`${runText(redRun)}${baselineNote}`, 'green', 'green')
+    if (built.stop) return built.stop
+    finalRun = built.run
 
     // ── Refactor: ends green, refactored or restored to its snapshot ──
     enterPhase('Refactor')
@@ -643,7 +685,7 @@ try {
       log(`Refactor: the suite went red, so the tree was restored to ${snapshot}`)
     }
 
-    // ── CDS Audit: a web-ui Task's changes against its cds bundle; violations go back to Green once ──
+    // ── CDS Audit: a web-ui Task's changes against its cds bundle; violations go back through the Green loop once ──
     if (isUiTask) {
       enterPhase('CDS Audit')
       const bundle = contract.cdsBundlePath
@@ -660,44 +702,23 @@ try {
       if (audit.error) return auditFailed(audit, 'after Refactor')
       log(`CDS Audit: ${audit.violations.length} violation(s), ${audit.gaps.length} cds gap(s), ${audit.allowed.length} allowed`)
       if (audit.violations.length) {
-        const brief = `The cds audit found UI code that styles outside the cds design system. The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships, and add no stylesheet, inline style, color or length of your own. A finding the bundle cannot cover goes in upstreamMissing, naming the cds change it needs.
+        const brief = `The cds audit found UI code that styles outside the cds design system. The cds bundle at ${bundle} (its styles/ stylesheet set) is the only source of visual design: replace each finding with the classes and custom properties the bundle ships, and add no stylesheet, inline style, color or length of your own. A finding the bundle cannot cover goes in upstreamMissing, naming the cds change it needs. The whole suite has to stay green.
 Findings (file:line rule value):
-${audit.violations.map(findingText).join('\n')}`
+${audit.violations.map(findingText).join('\n')}${baselineNote}`
         runLedger.push({ phase: 'retry:green', round: 'cds-audit', whatChanged: `Green is given the ${audit.violations.length} cds audit violation(s) as its brief` })
-        enterPhase('Green')
-        const before = await fingerprint(workRepoPath, [...redFiles], 'cds-green:tests-before')
-        if (before.error) return handback(false, 'green', `green (cds audit): Red's test files could not be fingerprinted: ${before.error}`, {})
-        const g = await workflow('agent-teams-workforce:tdd-green', {
-          contract,
-          red: { ...red, testFiles: [...redFiles], evidence: runText(redRun) },
-          implementer,
-          implementers: implementersOf(green),
-          feedback: brief,
-        })
-        if (g && g.ledger) runLedger.push(g.ledger)
-        if (!g || g.dispatchFailed) {
-          return handback(false, stageOf('green', g), `green (cds audit): ${(g && g.reason) || 'the Green phase returned nothing'}`, { green: g })
+        const fixed = await greenLoop(brief, 'cds-green', 'green (cds audit)')
+        if (fixed.stop) {
+          cdsVerdict = { verdict: fixed.stop.stage === 'blocked-upstream' ? 'blocked' : 'fail', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
+          return { ...fixed.stop, cdsAudit: cdsVerdict }
         }
-        green = g
-        const after = await fingerprint(workRepoPath, Object.keys(before.files), 'cds-green:tests-after')
-        if (after.error) return handback(false, 'green', `green (cds audit): Red's test files could not be fingerprinted: ${after.error}`, { green: g })
-        const touched = Object.keys(before.files).filter((f) => before.files[f] !== after.files[f])
-        if (touched.length) {
-          return handback(false, 'green-modified-tests', `green-modified-tests: the cds audit Green round changed test files Red wrote: ${touched.join(', ')}`, { green: g, touchedTests: touched })
-        }
-        const upstream = list(g.upstreamMissing)
+        const upstream = list(green && green.upstreamMissing)
         if (upstream.length) {
           cdsVerdict = { verdict: 'blocked', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
           return {
-            ...handback(false, 'blocked-upstream', `blocked-upstream: the cds audit violations cannot be fixed until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { green: g, cdsAudit: audit, upstreamMissing: upstream }),
+            ...handback(false, 'blocked-upstream', `blocked-upstream: the cds audit violations cannot be fixed until something outside this Task exists: ${upstream.map((u) => u.what).join('; ')}`, { green, cdsAudit: audit, upstreamMissing: upstream }),
             upstreamMissing: upstream,
             evidence: audit.violations.map(findingText).join('\n').slice(0, TAIL_CHARS),
           }
-        }
-        const cdsRun = await runSuite('cds-green')
-        if (!validRun(cdsRun) || cdsRun.exitCode !== 0) {
-          cdsVerdict = { verdict: 'fail', findings: audit.violations.length, scriptVersion: audit.scriptVersion }
-          return handback(false, stageOf('cds-audit', cdsRun), `cds-audit: the suite is not green after the Green round that fixed the cds audit violations: ${(cdsRun && (cdsRun.summary || `exit ${cdsRun.exitCode}`)) || 'no result'}`, { green: g, cdsAudit: audit, run: cdsRun })
         }
         enterPhase('CDS Audit')
         audit = await auditCds(workRepoPath, bundle, 'cds-audit-2')

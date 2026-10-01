@@ -1147,6 +1147,7 @@ function decompArgs(pair) {
     pluginRoot: lifecycle.pluginRoot,
     artifacts: artFor(`tasks:${slug}`, [...docs.map((d) => d.path), artPath(`story-${slug}.json`)], { slug }),
     beads: beadsArgs,
+    ...(DESIGN_SYSTEM.packagesDir ? { packagesDir: DESIGN_SYSTEM.packagesDir } : {}),
   }
 }
 /** Decomposes one Story and writes its Tasks, or writes the saved task set when the step is complete; returns { ok, artifact } or { ok: false, stage, reason }. */

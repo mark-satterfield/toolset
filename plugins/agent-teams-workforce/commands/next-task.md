@@ -172,6 +172,13 @@ person has triaged a bug and decided it is a fix; the router never names it.)
 - the phase it reached — it should reach **Commit**
 - the `stage` and `headline` of a run that stopped, **verbatim**
 - the Story worktree and branch the work was committed on, and the commit
+- for a `web-ui` Task, the `cdsAudit` verdict and finding count
+
+When the result carries `cdsAudit`, record it on the Task, whether the run committed or stopped:
+
+```bash
+python3 "$ROOT/skills/beads-contract/scripts/beads-contract.py" cds-audit <id> '<the result's cdsAudit, as JSON>'
+```
 
 When the result carries `requiredHumanActions`, report each verbatim, run `bd label add <id> human`, and release the claim.
 

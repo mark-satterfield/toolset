@@ -3,10 +3,17 @@
 
 The deterministic half of a cds compliance check on product code. It reads the
 bundle's generated stylesheet set (`styles/tokens.css`, `components.css`,
-`themes.css`, `manifest.json`) as the inventory of what the design system ships
-— every class its selectors name and every custom property it declares — and
-flags, in the application files it is given, everything that styles the UI
-outside that inventory.
+`themes.css`) as the inventory of what the design system ships — every class its
+selectors name and every custom property it declares — and flags, in the
+application files it is given, everything that styles the UI outside that
+inventory. The sheets are first checked against the SHA-256 of each one that the
+bundle's `manifest.json` records; a bundle whose sheets do not match, or that has
+no readable manifest, is not audited against (exit 2).
+
+Markup and component files (.tsx, .jsx, .vue, .svelte, .html, .astro, .mdx) and
+script files (.js, .mjs, .cjs, .ts, .mts, .cts, which may hold JSX or CSS-in-JS)
+get the markup rules; stylesheets get the stylesheet rules. Type declaration
+files (.d.ts) are skipped.
 
 Usage
 -----
@@ -69,7 +76,9 @@ BUNDLE_SHEETS = ("tokens.css", "components.css", "themes.css")
 MARKUP_SUFFIXES = frozenset(
     {".tsx", ".jsx", ".vue", ".svelte", ".html", ".htm", ".astro", ".mdx"}
 )
+SCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".mts", ".cts"})
 STYLE_SUFFIXES = frozenset({".css", ".scss", ".sass", ".less", ".pcss", ".styl"})
+DECLARATION_FILE = re.compile(r"\.d\.[mc]?ts$")
 TEST_NAME = re.compile(r"\.(test|spec|stories|story)\.[^/]+$")
 TEST_DIRS = frozenset(
     {"__tests__", "__snapshots__", "tests", "test", "e2e", "cypress", "playwright"}
@@ -177,10 +186,11 @@ def inventory(styles: Path) -> dict:
 
     Returns:
         The class names its selectors name, the custom properties it declares, the
-        SHA-256 of each sheet, and whether every sheet matches manifest.json.
+        SHA-256 of each sheet, and the manifest's elements fingerprint.
 
     Raises:
-        AuditError: a sheet cannot be read.
+        AuditError: a sheet or manifest.json cannot be read, or a sheet does not
+            match the SHA-256 manifest.json records for it.
     """
     classes: set[str] = set()
     properties: set[str] = set()
@@ -198,13 +208,25 @@ def inventory(styles: Path) -> dict:
             if selector.strip().startswith("@"):
                 continue
             classes.update(SELECTOR_CLASS.findall(selector))
+    manifest_path = styles / "manifest.json"
     try:
-        manifest = json.loads((styles / "manifest.json").read_text(encoding="utf-8"))
-        recorded = manifest.get("files") or {}
-        verified = all(recorded.get(name) == digest for name, digest in hashes.items())
-        fingerprint = manifest.get("elements_semantic_sha256")
-    except (OSError, ValueError):
-        verified, fingerprint = False, None
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise AuditError(
+            f"cannot read {manifest_path}, so the bundle's sheets cannot be verified: {exc}"
+        ) from exc
+    recorded = manifest.get("files") if isinstance(manifest, dict) else None
+    recorded = recorded if isinstance(recorded, dict) else {}
+    mismatched = [
+        name for name, digest in hashes.items() if recorded.get(name) != digest
+    ]
+    if mismatched:
+        raise AuditError(
+            f"{', '.join(mismatched)} in {styles} do not match the SHA-256 {manifest_path} "
+            "records: the bundle was changed after it was packaged, so it is not the "
+            "design system cds shipped"
+        )
+    verified, fingerprint = True, manifest.get("elements_semantic_sha256")
     return {
         "classes": classes,
         "properties": properties,
@@ -245,8 +267,10 @@ def changed_files(repo: Path) -> list[str]:
 def _skip_reason(rel: str) -> str | None:
     path = Path(rel)
     suffix = path.suffix.lower()
-    if suffix not in MARKUP_SUFFIXES and suffix not in STYLE_SUFFIXES:
-        return "not a markup or stylesheet file"
+    if suffix not in MARKUP_SUFFIXES | SCRIPT_SUFFIXES | STYLE_SUFFIXES:
+        return "not a markup, script or stylesheet file"
+    if DECLARATION_FILE.search(path.name.lower()):
+        return "a type declaration file"
     if TEST_NAME.search(path.name) or TEST_DIRS.intersection(path.parts[:-1]):
         return "a test or story file"
     return None
@@ -338,7 +362,7 @@ class FileAudit:
         return out
 
     def markup(self) -> None:
-        """Audit a markup or component file."""
+        """Audit a markup, component or script file."""
         text = _strip_comments(self.text, markup=True)
         for m in INLINE_STYLE.finditer(text):
             self.add(

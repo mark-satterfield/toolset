@@ -1,6 +1,6 @@
 ---
 name: setup
-description: User-invoked only via the /cds:setup slash command — not triggered by natural language. Guides a step-by-step walkthrough to capture CUSTOMIZABLE_DESIGN_SYSTEM_* environment variable values (elements path, install mode, optional output directories) and writes them to the env block of the appropriate settings.json (global ~/.claude/settings.json or project .claude/settings.local.json). Idempotent — safe to re-run to update existing values. Does not generate CSS, mocks, Shells, or Views.
+description: User-invoked only via the /cds:setup slash command — not triggered by natural language. Guides a step-by-step walkthrough to capture CUSTOMIZABLE_DESIGN_SYSTEM_* environment variable values (elements path, install mode, optional output directories including the package-change bundle root) and writes them to the env block of the appropriate settings.json (global ~/.claude/settings.json or project .claude/settings.local.json). Idempotent — safe to re-run to update existing values. Does not generate CSS, mocks, Shells, or Views.
 allowed-tools: Read, Write, Edit, Bash, Glob
 disable-model-invocation: true
 entity_catalog_read: not-applicable   # captures env-var values only; resolves no Building Blocks term
@@ -36,6 +36,7 @@ Ask in this order. Each step gathers exactly one decision.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_STYLESHEETS_DIR` — default output for `generate-css`.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR` — default output for `compose-page` mocks.
    - `CUSTOMIZABLE_DESIGN_SYSTEM_SHELLS_DIR` — the shells output area where `compose-shell` stores composed Shells (one file per Shell, named per Shell; `compose-view` resolves Shells by name from here). When left unset, a `shells/` directory that is a sibling of the mocks directory is used automatically.
+   - `CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR` — the output root where `package-change` writes each hand-off bundle (`batch-*` directories). The agent-teams-workforce SDLC pipeline reads it, with the mocks and shells directories, to build and audit UI against the newest bundle, and refuses to elaborate an Epic while any of the three is unset.
 5. Confirm the captured values back to the user before writing.
 
 ## Pipeline

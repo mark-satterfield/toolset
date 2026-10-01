@@ -34,7 +34,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/beads-contract/scripts/beads-contract.py" 
 ```
 
 Every command prints ONE JSON object on stdout and reads `bd show --json --readonly` unless it
-is a `metadata set`. `-C <repoPath>` runs `bd` from another repository. Exit status: `0` fine,
+is a `metadata set` or a `cds-audit`. `-C <repoPath>` runs `bd` from another repository. Exit status: `0` fine,
 `2` the command refused (the object carries `error`).
 
 | Command | Answers |
@@ -47,6 +47,7 @@ is a `metadata set`. `-C <repoPath>` runs `bd` from another repository. Exit sta
 | `record <id>` | The normalized record and the field names it ACTUALLY carries. |
 | `metadata get <id> [key ...]` | Metadata, split by owning lane, with unrecognized keys named rather than hidden. |
 | `metadata set <id> k=v ...` | Writes via `bd update --set-metadata`, then reads the values back into `verified`. |
+| `cds-audit <id> '<cdsAudit JSON>'` | Writes a `web-ui` Task's `cds_audit_verdict`, `cds_audit_findings` and `cds_audit_script_version` from `task-to-deploy`'s `cdsAudit` result, refusing a verdict outside `pass`, `fail`, `blocked`, `error`; reads them back like `metadata set`. `metadata get` shows them under `cdsAudit`. |
 
 `--records <file>` makes any read command work from a JSON array of records instead of the
 tracker — how the parent and prose paths are exercised when no live bead has them. `--records -`
@@ -158,7 +159,7 @@ Readiness verdict, written by `task-ready`: `review_status`, `review_missing`, `
 Epic, and by the `wsjf-scoring` workflow, never by `task-ready`: `wsjf`,
 `wsjf_calculated_at` and the dimensions below. Build lane: `build_state`; the cds audit verdict of a `web-ui` Task, from `task-to-deploy`'s
 `cdsAudit` result: `cds_audit_verdict` (`pass`, `fail`, `blocked` or `error`),
-`cds_audit_findings`, `cds_audit_script_version`. Elaboration:
+`cds_audit_findings`, `cds_audit_script_version`, written by the build lane and, for a run dispatched by hand, with `cds-audit`. Elaboration:
 `elaboration_state`, `elaboration_state_at`, `elaboration_state_cause`,
 `elaboration_state_owner`, `artifact_spec_path`, `elab_key`, `elab_follows`.
 `elaboration_state` and its companions are written by `prd-to-spec`: `in_progress` at its
@@ -296,4 +297,4 @@ defect. Report it and stop.
   criteria, quote `sourceId` and `sourceField`.
 - **Never restate a recipe from this document into another document.** Cite the script. The
   duplicate is what drifts, and it drifts in whichever copy is wrong.
-- **Read-only unless the task is a write.** Every command except `metadata set` changes nothing.
+- **Read-only unless the task is a write.** Every command except `metadata set` and `cds-audit` changes nothing.
