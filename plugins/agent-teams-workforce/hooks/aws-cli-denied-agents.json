@@ -1,0 +1,29 @@
+{
+  "agents": [
+    "api-contract-designer",
+    "api-specification-author",
+    "architecture-decider",
+    "architecture-decision-workflow-coordinator",
+    "architecture-diagram-author",
+    "architecture-pattern-challenger",
+    "architecture-tradeoff-skeptic",
+    "bounded-context-mapper",
+    "c4-diagram-author",
+    "cost-architecture-reviewer",
+    "cost-impact-reviewer",
+    "data-model-specification-author",
+    "domain-event-modeler",
+    "event-schema-designer",
+    "failure-mode-analyst",
+    "graphql-schema-designer",
+    "integration-pattern-architect",
+    "operational-readiness-reviewer",
+    "persistence-architecture-specialist",
+    "security-architecture-designer",
+    "task-decomposer",
+    "task-dependency-mapper",
+    "trd-author",
+    "uml-diagram-author",
+    "user-story-writer"
+  ]
+}

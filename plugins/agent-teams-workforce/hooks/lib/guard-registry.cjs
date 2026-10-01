@@ -39,9 +39,12 @@ const GUARD_SCOPE = {
 
   // Rules about where work may land. Everyone bound.
   'pre-tool-protect-main-worktree.cjs': 'universal',
+  // Rules about what an elaboration agent may do: it binds the subagents it names.
+  'pre-tool-elaboration-aws-cli-guard.cjs': 'universal',
 
   // Not guards: they report or maintain, and block nothing.
   'session-start-config-conflict-check.cjs': 'advisory',
+  'sync-user-agents.cjs': 'advisory',
 };
 
 /** @returns {'orchestrator-role'|'universal'|'advisory'|null} */
