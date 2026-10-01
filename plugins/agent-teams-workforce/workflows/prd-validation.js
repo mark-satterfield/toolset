@@ -27,7 +27,7 @@ async function settleAgent(prompt, opts) {
   return null
 }
 
-// args: { prd: { id?, title?, body?, path?, repoPath?, brd? } | string, context?, brd?, standingRulings?,
+// args: { prd: { id?, title?, body?, path?, repoPath?, brd? } | string, context?, brd?,
 //         archPath?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
@@ -52,16 +52,6 @@ const repo = (typeof prdInput === 'string' ? '' : prdInput.repoPath) || '(repo p
 const context = a.context || '(no bounded-context / service-boundary notes supplied)'
 const brd = a.brd || (typeof prdInput === 'string' ? '' : prdInput.brd) || ''
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 
 const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
 const archPath = typeof a.archPath === 'string' ? a.archPath.trim() : ''
@@ -229,7 +219,7 @@ const analysisSchema = {
 }
 
 const analysis = await settleAgent(
-  `${rulingsBlock}You are an INDEPENDENT PRD validation analyst. You did not author this PRD and you never rewrite it — you only inspect it, applying EVERY lens below in one pass. Shared ground rules for all lenses:
+  `You are an INDEPENDENT PRD validation analyst. You did not author this PRD and you never rewrite it — you only inspect it, applying EVERY lens below in one pass. Shared ground rules for all lenses:
 - This is a WHAT-level PRD. A requirement that names a desired outcome without naming its implementation mechanism is NOT defective — never flag absent mechanism, thresholds, schemas, or quantified NFRs.
 - This PRD is one slice of a decomposed set: its \`Specified Elsewhere\` section names the sibling PRD that owns each requirement listed there. A requirement owned by a sibling is not a gap, a cross-PRD contract is not a conflict, and naming a sibling's behavior is not a boundary violation — flag a violation only where this PRD claims to OWN behavior a sibling owns.
 - The product is built ITERATIVELY: an absence that may legitimately arrive as its own later PRD is scheduling, not a defect — report it at INFO severity only.

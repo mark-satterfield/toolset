@@ -32,7 +32,7 @@ async function settleAgent(prompt, opts) {
 // args: {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },
 //   archPath,
-//   trdPath?, repoPath?, feedback?, standingRulings?,
+//   trdPath?, repoPath?, feedback?,
 //   architecture: { subject, targetDir, deltaDir, items?: [{ id, element, views }], decisionPath? } (the approved target and its delta),
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? }
 // }
@@ -64,16 +64,6 @@ const prd = a.prd || {}
 const repo = a.repoPath || '(repo path not provided)'
 let trdPath = a.trdPath || null
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 
 const prdContent = typeof prd.content === 'string' && prd.content.trim().length > 0
 const prdPath = typeof prd.path === 'string' && prd.path.startsWith('/') ? prd.path : ''
@@ -154,7 +144,7 @@ const MAX_REQUIREMENTS = 40
 log(`Authoring TRD at ${authorPath}`)
 
 const trd = await settleAgent(
-  `${rulingsBlock}Author the Technical Requirements Document (TRD). Write the TRD; do not write production code. Work within the repository at: ${repo}
+  `Author the Technical Requirements Document (TRD). Write the TRD; do not write production code. Work within the repository at: ${repo}
 
 WHAT THIS DOCUMENT IS FOR. The TRD is the single point at which the obligations the architecture imposes enter the build chain. The Specs, Stories and Tasks are built from it; an obligation that does not reach the TRD is built by nobody. It is NOT the full HOW — the detailed HOW lives in the Specs and Tasks. Make sure the right obligations are PRESENT AND SOURCED.
 

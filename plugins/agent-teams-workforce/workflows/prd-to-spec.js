@@ -368,7 +368,6 @@ function normalizeResume(r) {
 const RESUME = normalizeResume(a.resume)
 
 const ARTIFACT_ROOT = repoPath || a.beadsRepoPath || null
-const RULINGS_PATH = ARTIFACT_ROOT ? `${ARTIFACT_ROOT}/.claude/standing-rulings.md` : null
 const SS_ROOT = [RESUME && RESUME.root, a.projectRoot].filter(hasText).map((r) => r.replace(/\/+$/, ''))[0] || null
 const ART_EPIC = String((RESUME && RESUME.epicId) || epicBeadId || subjectId || '')
   .replace(/[^A-Za-z0-9._-]+/g, '_')
@@ -624,44 +623,6 @@ For each one return: repoPath (exactly as listed above); buildable (true when yo
   return { refusals, verdicts }
 }
 
-let runInputs = null
-if (a.runInputs && Array.isArray(a.runInputs.files)) {
-  runInputs = a.runInputs
-} else if (RULINGS_PATH) {
-  runInputs = await settleAgent(
-    `Return the contents of this one file, verbatim, if it exists: ${RULINGS_PATH}
-Return one entry with \`name\`: "rulings", \`found\`: true and its full text in \`content\`. If it does not exist, return \`name\`: "rulings", \`found\`: false, \`content\`: "". Read nothing else and write nothing.`,
-    {
-      label: 'resolve:run-inputs',
-      model: 'haiku',
-      phase: 'PRD',
-      effort: 'low',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['files'],
-        properties: {
-          files: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['name', 'found'],
-              properties: { name: { type: 'string' }, found: { type: 'boolean' }, content: { type: 'string' } },
-            },
-          },
-        },
-      },
-    }
-  )
-}
-const RULINGS_CAP = 8192
-const rulingsRead = ((runInputs && Array.isArray(runInputs.files) ? runInputs.files : []).find((f) => f && (f.name === 'rulings' || f.key === 'rulings'))) || null
-const standingRulings = rulingsRead && rulingsRead.found === true && hasText(rulingsRead.content) ? rulingsRead.content.trim().slice(0, RULINGS_CAP) : null
-const rulingsBlock = standingRulings
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it and cite it in your output.\n\n${standingRulings}\n\nEND STANDING RULINGS\n\n`
-  : ''
-
 enterPhase('Epic')
 const epic = { key: epicRef.key || epicBeadId, ...epicRef, id: epicBeadId, type: 'epic' }
 produced.epic = epic
@@ -722,7 +683,6 @@ if (archHit && savedTargetSummary && savedTargetSummary.ok === true && hasText(s
 }
 if (!architecture) {
   const r = await workflow('agent-teams-workforce:architecture', {
-    standingRulings,
     prd: { id: prd.id, title: prd.title, path: prd.path, body: prdByPath ? undefined : prd.body },
     epic: { id: epicBeadId },
     archPath: a.archPath,
@@ -817,7 +777,6 @@ async function runRepoScoping() {
     }
   }
   const ruled = await workflow('agent-teams-workforce:repo-scoping', {
-    standingRulings,
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json')]),
     prd: { id: prd.id, title: prd.title, path: prd.path },
     delta,
@@ -845,7 +804,6 @@ async function runTrdAuthoring() {
     }
   }
   const r = await workflow('agent-teams-workforce:trd-authoring', {
-    standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
     architecture: delta,
     archPath: a.archPath,
@@ -1002,7 +960,6 @@ function reconArgs(repo, slug, reconReplay) {
     artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('repo-scoping.json')], { slug }),
     ...(reconReplay ? { replay: reconReplay } : {}),
     prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
-    standingRulings,
     repos: [repo],
     dependencies: a.dependencies,
     uiRepo: placementOf(repo).some((p) => p.frontend === true),
@@ -1152,7 +1109,6 @@ function decompArgs(pair) {
   const docs = specDocsFor(pair)
   const summary = (pair.spec && pair.spec.apiSpec && pair.spec.apiSpec.summary) || (trd && trd.summary) || prdSummaryFallback()
   return {
-    standingRulings,
     spec: {
       id: prd.id,
       title: prd.title,

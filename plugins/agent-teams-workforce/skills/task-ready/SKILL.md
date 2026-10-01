@@ -196,10 +196,9 @@ different length, never hash a different field set.
    Record what you found and carry it into the review as a note. Then continue to step 5 no
    matter what it said.
 
-   **A Story never gates a Task, and a repository is never a dispatch precondition.** Both
-   are standing rulings, and this step used to violate both — it refused any Task lacking a
-   parent Story, any Story lacking an Epic, and any Task whose chain named no `repoPath`,
-   before spending a review on it. A Story is a **roll-up parent for reporting and
+   **A Story never gates a Task, and a repository is never a dispatch precondition.** This
+   step refuses no Task for lacking a parent Story, no Story for lacking an Epic, and no
+   Task whose chain names no `repoPath`. A Story is a **roll-up parent for reporting and
    tracking**; it never decides whether a Task can be worked. A recorded repo on a bead is
    at most a **hint** — the repository a piece of work belongs in is ruled when the work is
    dispatched, from the work itself, not read off a field somebody may or may not have

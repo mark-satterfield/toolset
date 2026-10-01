@@ -31,7 +31,7 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   spec: { id?, title?, description?, source?, repoPath? }, story: { id?, key?, title? },
-//   specDocs?: [{ path, ref }], repoPath?, pluginRoot, standingRulings?,
+//   specDocs?: [{ path, ref }], repoPath?, pluginRoot,
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
 //   replay?: true
@@ -62,16 +62,6 @@ const BEADS = beadsFrom(a.beads)
 const spec = a.spec || {}
 const story = a.story || {}
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 const specRef = spec.id || spec.title || '(unspecified spec)'
 const storyRef = story.key || null
 const repoPath = spec.repoPath || a.repoPath || null
@@ -180,7 +170,7 @@ if (!writable) {
 const replayed = a.replay === true
 if (replayed) log(`Decompose replayed: the Tasks are written from the saved tasks-${artSlug}.json`)
 const maker = replayed ? null : await settleAgent(
-  `${rulingsBlock}Three maker jobs on the Spec below, in order, one pass. Do NOT write code.
+  `Three maker jobs on the Spec below, in order, one pass. Do NOT write code.
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into TASKS. Each task is a coherent piece of the Story's work within the single repository named below that one agent can test and build in one session, with testable acceptance criteria. A small Story may be one task.
 - A task is BUILD work: it changes code, infrastructure or documentation. The Spec's acceptance criteria are the tests of the build tasks: each build task carries in \`acceptanceCriteria\` the criteria it satisfies, and its Red step writes those tests before it builds. A task whose only work is writing or running tests is never emitted.

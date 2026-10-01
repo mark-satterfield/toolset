@@ -23,7 +23,7 @@ async function run(prompt, opts) {
 }
 
 // args: { prd: { id?, title?, path? }, delta: { subject, targetDir, deltaDir, items: [{ id, element, views }] },
-//   epic?: { key?, title? }, standingRulings?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
+//   epic?: { key?, title? }, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 // returns: { ok, reason?, repos, placements, noCode, createdRepos, creationFailures, spanRationale, surveySummary, ledger }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
@@ -48,16 +48,6 @@ const epic = a.epic || {}
 const delta = a.delta && typeof a.delta === 'object' ? a.delta : {}
 const items = (Array.isArray(delta.items) ? delta.items : []).filter((i) => i && hasText(i.id) && hasText(i.element))
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 
 const fail = (reason, extra) => ({
   ok: false,
@@ -88,7 +78,7 @@ const itemLines = items
   .join('\n')
 
 const placed = await run(
-  `${rulingsBlock}Place each item of an approved architecture delta in the repository whose code changes for it, and CREATE each new repository the approved target names. You own the project's repositories and your records of them; repository facts come from your records and the live repositories, as the polyrepo-repo skill describes.
+  `Place each item of an approved architecture delta in the repository whose code changes for it, and CREATE each new repository the approved target names. You own the project's repositories and your records of them; repository facts come from your records and the live repositories, as the polyrepo-repo skill describes.
 
 THE APPROVED TARGET for ${prdTitle || prdId || 'this PRD'} is ${delta.targetDir}; the change alone, its delta, is ${delta.deltaDir}. Read the delta views, and the target views where a delta view leaves an element's home unstated. Each item below is one element the delta shows:
 ${itemLines}

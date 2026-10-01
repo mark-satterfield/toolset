@@ -31,7 +31,7 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
 //   items: [{ id, element, views? }] (the delta items placed in this repository),
 //   delta: { targetDir, deltaDir },
-//   mocksDir?, packagesDir?, shellsDir? (the design system's directories; the caller resolves them from its environment), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
+//   mocksDir?, packagesDir?, shellsDir? (the design system's directories; the caller resolves them from its environment), dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution),
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, slug },
 //   replay?: { files: { recon: <absolute path of a saved result> } }
 // }
@@ -56,16 +56,6 @@ const placed = (Array.isArray(a.items) ? a.items : []).filter((i) => i && hasTex
 const STATUSES = ['add', 'modify', 'remove', 'done', 'planned-elsewhere']
 const FILE_LINE = /[^\s:]+:\d+/
 
-const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
-const rulingsBlock = rulingsText
-  ? `STANDING RULINGS FROM THE PROJECT OWNER — these outrank any document they contradict (PRD, architecture, TRD, spec, bead text). Where a ruling applies to your task, apply it, and CITE the ruling in your output (e.g. "dropped migration requirement per standing ruling dev-env-no-preservation") so the trace shows the ruling working.
-
-${rulingsText}
-
-END STANDING RULINGS
-
-`
-  : ''
 
 const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true, reason: why, error: why, items: [] })
 if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
@@ -136,7 +126,7 @@ const itemLines = placed
 const prdLine = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 
 const reality = replayedRecon || await settleAgent(
-  `${rulingsBlock}DETAIL an approved architecture delta for ONE repository: for each delta item placed in it, compare what the delta says the element becomes with what the code on the repository's \`main\` holds today, and give the item one status. You are READ-ONLY: read and search, change nothing anywhere, and write no document${reconBrief ? ' other than the one result file named at the end of this brief' : ''}. Two checks, one pass — return both.
+  `DETAIL an approved architecture delta for ONE repository: for each delta item placed in it, compare what the delta says the element becomes with what the code on the repository's \`main\` holds today, and give the item one status. You are READ-ONLY: read and search, change nothing anywhere, and write no document${reconBrief ? ' other than the one result file named at the end of this brief' : ''}. Two checks, one pass — return both.
 
 ═══ CHECK 1 — the detailing ═══
 
