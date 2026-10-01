@@ -308,10 +308,16 @@ def finish(
         msg = f"{epic_id} is owned by run {recorded}, not {owner}"
         raise LifecycleError(msg)
     under = _task_ids_under(graph, epic)
-    scored = score(graph, writer, scope={epic.id} | under)
-    lifecycle = None
     persisted = not missing
-    if done and persisted:
+    finishing = done and persisted
+    scored = score(
+        graph,
+        writer,
+        scope={epic.id} | under,
+        rollup={epic.id} if finishing else frozenset(),
+    )
+    lifecycle = None
+    if finishing:
         lifecycle = {
             STATE_KEY: DONE,
             STATE_AT_KEY: now_iso(),

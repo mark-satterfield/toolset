@@ -236,8 +236,11 @@ with `aboveScale: true`; report it against the decomposition.
 
 ### The roll-up — top-down value, bottom-up cost
 
-An Epic's estimate is made before the work is known. Once its Tasks exist and every one of
-them carries a size, pass those sizes as `childSizes` with the Epic's estimate and its range:
+An Epic's estimate is made before the work is known. Its Tasks are written one by one while
+it is elaborated, so until its elaboration is done (`elaboration_state` = `done`) the Epic is
+sized by its judged estimate, never by the sum of the Tasks written so far. Once elaboration is
+done and every Task carries a size, pass those sizes as `childSizes` with the Epic's estimate
+and its range:
 the Epic's size becomes the **plain sum** of its distinct Tasks' positive sizes (a
 missing or non-positive size is left out of the sum), which need not be a
 Fibonacci number, and the score is recomputed from it. Closed Tasks count — the cost is the
@@ -248,8 +251,8 @@ A refined size outside the estimate's plausible range is flagged under `outsideR
 inconsistent estimation — and never an error.
 
 Value stays top-down: UBV and TC are never re-derived from the children, and RR-OE stays a
-function of the Epic graph, never of the Task graph. Re-run the roll-up whenever the child
-set changes.
+function of the Epic graph, never of the Task graph. Once the Epic is done, re-run the
+roll-up whenever the child set changes.
 
 ## 4. Compute
 
@@ -366,7 +369,7 @@ prose is a score no gate can see. The script emits the exact values under `metad
 | `wsjf_cod` | Cost of Delay |
 | `wsjf_size` | the size the score divides by: the estimate's rung, or the sum of the Tasks' sizes |
 | `wsjf_size_source` | `supplied` or `child-rollup` |
-| `wsjf_size_estimate` | the judged size estimate; on an Epic with Tasks it stands beside the summed size |
+| `wsjf_size_estimate` | the judged size estimate; on an elaborated Epic it stands beside the summed size |
 | `wsjf_size_low` / `wsjf_size_high` | the estimate's plausible range |
 | `wsjf_size_confidence` | confidence in the estimate, integer percent |
 | `wsjf_size_outside_range` | `true` or `false`, on a roll-up whose estimate carries a range |

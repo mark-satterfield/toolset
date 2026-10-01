@@ -62,6 +62,11 @@ SIZE_JUDGED_KEYS = (
 )
 
 
+#: The Epic lifecycle key `prd-to-spec` writes, and the state at which elaboration is done.
+ELABORATION_KEY = "elaboration_state"
+ELABORATION_DONE = "done"
+
+
 class ScoringError(RuntimeError):
     """A judgment file the recorder cannot work from."""
 
@@ -172,6 +177,28 @@ def _tasks_of(graph: Graph, epic: Bead) -> list[Bead]:
     return [b for b in graph.descendants(epic.id) if b.kind == "task"]
 
 
+def _sized_from_tasks(
+    graph: Graph, epic: Bead, rollup: frozenset[str] | set[str] = frozenset()
+) -> bool:
+    """Whether an Epic's job size is the sum of its Tasks' sizes.
+
+    Only an Epic whose elaboration is done rolls up. Until then its Tasks are being
+    written one by one, so their sum is a partial count of the work, not its size; the
+    Epic is sized by its judged estimate.
+
+    Args:
+        graph: The tracker graph.
+        epic: The Epic.
+        rollup: Epics to treat as done in this run: `elaboration-finish` scores the Epic
+            before it writes `elaboration_state=done`.
+
+    Returns:
+        True when the Epic has Tasks and its elaboration is done.
+    """
+    done = epic.metadata.get(ELABORATION_KEY) == ELABORATION_DONE or epic.id in rollup
+    return done and bool(_tasks_of(graph, epic))
+
+
 # ------------------------------------------------------------------------------------
 # What needs judging
 # ------------------------------------------------------------------------------------
@@ -270,7 +297,7 @@ def plan(
                 continue
             if level == "epics":
                 required = ("wsjf_ubv", "wsjf_tc", "wsjf_confidence")
-                if not _tasks_of(graph, bead):
+                if not _sized_from_tasks(graph, bead):
                     required += SIZE_JUDGED_KEYS
             else:
                 required = SIZE_JUDGED_KEYS
@@ -342,7 +369,8 @@ def _size_of(bead: Bead) -> dict[str, int | None]:
 def reference_jobs(graph: Graph) -> list[dict]:
     """The elaborated Epics: each one's original estimate beside its refined size.
 
-    An Epic is a reference job once it has Tasks and every one of them is sized. Its
+    An Epic is a reference job once its elaboration is done and every one of its Tasks is
+    sized. Its
     refined size is the sum of those sizes, so each reference job shows how an estimate
     made before the work was known compared with the work as decomposed.
 
@@ -354,9 +382,11 @@ def reference_jobs(graph: Graph) -> list[dict]:
     """
     jobs = []
     for epic in graph.of_kind("epic"):
+        if not _sized_from_tasks(graph, epic):
+            continue
         tasks = _tasks_of(graph, epic)
         sizes = [_size(t.metadata.get("wsjf_size")) for t in tasks]
-        if not tasks or any(size is None for size in sizes):
+        if any(size is None for size in sizes):
             continue
         estimate = _size_of(epic)
         jobs.append(
@@ -412,7 +442,7 @@ def judge_input(
         }
         if level == "epic":
             entry["prdPath"] = paths.get(bead.id)
-            entry["hasTasks"] = bool(_tasks_of(graph, bead))
+            entry["sizedFromTasks"] = _sized_from_tasks(graph, bead)
         else:
             entry["description"] = bead.description
             epic = graph.epic_of(bead.id)
@@ -557,7 +587,7 @@ def _judged_pairs(graph: Graph, level: str, bead: Bead, one: dict) -> dict[str, 
         pairs["wsjf_ubv"] = str(_value(one, "userBusinessValue", bead.id))
         pairs["wsjf_tc"] = str(_value(one, "timeCriticality", bead.id))
         pairs["wsjf_confidence"] = str(_percent(one, "confidence", bead.id))
-        if not _tasks_of(graph, bead):
+        if not _sized_from_tasks(graph, bead):
             pairs |= _size_pairs(one, bead.id)
     else:
         pairs |= _size_pairs(one, bead.id)
@@ -685,21 +715,21 @@ def _edges(beads: list[Bead]) -> list[dict[str, str]]:
     ]
 
 
-def _scoring_size(bead: Bead, *, has_tasks: bool) -> dict[str, int]:
+def _scoring_size(bead: Bead, *, rolls_up: bool) -> dict[str, int]:
     """The judged size inputs a bead hands the rubric.
 
-    The estimate is `wsjf_size_estimate`. A bead with no stored estimate and no Tasks is
-    sized by the `wsjf_size` it carries.
+    The estimate is `wsjf_size_estimate`. A bead with no stored estimate whose size does
+    not roll up from Tasks is sized by the `wsjf_size` it carries.
 
     Args:
         bead: The bead.
-        has_tasks: Whether it has Tasks, whose sizes then make its size.
+        rolls_up: Whether its Tasks' sizes make its size.
 
     Returns:
         `jobSize`, `sizeLow`, `sizeHigh` and `sizeConfidence`, each only when present.
     """
     size = _size_of(bead)
-    if size["jobSize"] is None and not has_tasks:
+    if size["jobSize"] is None and not rolls_up:
         size["jobSize"] = _size(bead.metadata.get("wsjf_size"))
     return {key: value for key, value in size.items() if value is not None}
 
@@ -726,12 +756,18 @@ def _task_size(task: Bead) -> int | None:
     return _size(task.metadata.get("wsjf_size"))
 
 
-def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]]:
+def _epic_items(
+    graph: Graph, epics: list[Bead], rollup: frozenset[str] | set[str] = frozenset()
+) -> tuple[list[dict], list[dict]]:
     """The rubric input for every open Epic, and what is missing from it.
+
+    Only an Epic whose elaboration is done hands the rubric its Tasks' sizes to sum; every
+    other Epic is sized by its judged estimate.
 
     Args:
         graph: The tracker graph.
         epics: The open Epics.
+        rollup: Epics to treat as done in this run.
 
     Returns:
         The items, and the incomplete records.
@@ -739,13 +775,14 @@ def _epic_items(graph: Graph, epics: list[Bead]) -> tuple[list[dict], list[dict]
     items: list[dict] = []
     incomplete: list[dict] = []
     for epic in epics:
-        tasks = _tasks_of(graph, epic)
+        rolls_up = _sized_from_tasks(graph, epic, rollup)
+        tasks = _tasks_of(graph, epic) if rolls_up else []
         item: dict[str, Any] = {
             "id": epic.id,
             "userBusinessValue": _int(epic.metadata.get("wsjf_ubv")),
             "timeCriticality": _int(epic.metadata.get("wsjf_tc")),
             "confidence": _int(epic.metadata.get("wsjf_confidence")),
-            **_scoring_size(epic, has_tasks=bool(tasks)),
+            **_scoring_size(epic, rolls_up=rolls_up),
         }
         sizes = [_task_size(t) for t in tasks]
         if tasks and all(s is not None for s in sizes):
@@ -786,7 +823,7 @@ def _task_items(graph: Graph, tasks: list[Bead]) -> list[dict]:
                 "timeCriticality": _int(meta.get("wsjf_tc")),
                 "confidence": _int(meta.get("wsjf_confidence")),
                 "valueFrom": epic.id if epic else None,
-                **_scoring_size(task, has_tasks=False),
+                **_scoring_size(task, rolls_up=False),
             }
         )
     return items
@@ -832,7 +869,12 @@ def _apply(
     return rows
 
 
-def score(graph: Graph, writer: Writer, scope: set[str] | None = None) -> dict:
+def score(
+    graph: Graph,
+    writer: Writer,
+    scope: set[str] | None = None,
+    rollup: frozenset[str] | set[str] = frozenset(),
+) -> dict:
     """Recompute every open Epic's and every open Task's WSJF, and write what changed.
 
     The edge lists handed to the rubric are the whole graph at each level, so a level
@@ -844,6 +886,9 @@ def score(graph: Graph, writer: Writer, scope: set[str] | None = None) -> dict:
         graph: The tracker graph.
         writer: The tracker writer; a dry-run writer records the writes instead.
         scope: The ids that may be written, or None for every open Epic and Task.
+        rollup: Epics whose size rolls up from their Tasks although their
+            `elaboration_state` is not yet `done`: the Epic `elaboration-finish` is about
+            to mark done.
 
     Returns:
         The Epic and Task scores, everything that could not be scored and why, size
@@ -852,7 +897,7 @@ def score(graph: Graph, writer: Writer, scope: set[str] | None = None) -> dict:
     """
     epics = _open(graph, "epic")
     tasks = _open(graph, "task")
-    epic_items, incomplete = _epic_items(graph, epics)
+    epic_items, incomplete = _epic_items(graph, epics, rollup)
     epic_result = rubric.score({"edges": _edges(epics), "items": epic_items}, "epic")
     task_result = rubric.score(
         {"edges": _edges(tasks), "items": _task_items(graph, tasks)}, "task"

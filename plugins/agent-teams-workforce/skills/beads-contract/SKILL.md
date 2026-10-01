@@ -181,8 +181,8 @@ to a view finds the work resting on it.
 WSJF (`wsjf`, at Epic and Task level): the dimensions a score was built from —
 `wsjf_rubric`, `wsjf_ubv`, `wsjf_tc`, `wsjf_rroe`, `wsjf_unblocks` (Task) or `wsjf_reaches`
 (Epic) — the reachability count RR-OE was banded from — `wsjf_cod`, `wsjf_size` (the size the
-score divides by: the judged estimate on the Fibonacci scale, or on an Epic with Tasks the plain
-sum of its distinct Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
+score divides by: the judged estimate on the Fibonacci scale, or on an Epic whose `elaboration_state` is
+`done` the plain sum of its distinct Tasks' sizes), `wsjf_size_source` (`supplied` or `child-rollup`), `wsjf_confidence`,
 `wsjf_value_from`. They are what lets a Task INHERIT its Epic's value and an Epic roll its size
 up from its Tasks without either one re-judging anything. The judged size is stored apart from
 the size in use: `wsjf_size_estimate` (the judged estimate, kept after an Epic's size becomes
