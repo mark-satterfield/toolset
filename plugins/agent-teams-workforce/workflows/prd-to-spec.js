@@ -1,11 +1,11 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, classifies every PRD requirement as business or technical with prd-validation, rules architecture — triage names every architecture file the PRD relies on and what it needs that the architecture lacks, and the architecture panel is skipped only when depscore.py arch-state reads every relied-on file at lifecycle_state: effective and nothing is missing (lifecycle_state is per file; an in-review file the PRD relies on is always reviewed: approved as it stands, updated or replaced); a technical rule the PRD states that the architecture does not describe convenes the panel too (the PRD is never edited) — then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, rules architecture — triage names every architecture file the PRD relies on and what it needs that the architecture lacks, and the architecture panel is skipped only when depscore.py arch-state reads every relied-on file at lifecycle_state: effective and nothing is missing (lifecycle_state is per file; an in-review file the PRD relies on is always reviewed: approved as it stands, updated or replaced) — then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective in the same phase — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
-    { title: 'PRD Validation', detail: 'classify each PRD requirement as business or technical, and whether the architecture describes each technical rule' },
+    { title: 'PRD Validation', detail: 'depscore.py prd-parse: the PRD file is readable, not superseded, has an H1, requirement headings with acceptance criteria under Requirements, and a Definition of Done; a failed check holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'triage the PRD and name the architecture files it relies on; skip the panel only when every one reads lifecycle_state: effective and nothing is missing; otherwise run the architecture mini, then depscore.py arch-approve sets every architecture file the PRD relies on, changes or creates to effective' },
     { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
@@ -342,7 +342,6 @@ recRuled(prdByPath ? `PRD read from its file by each session: ${prd.path}` : 'PR
 produced.prd = prd
 
 function derivedNames(id) {
-  if (id === 'prd-validation') return ['prd-classification.json']
   if (id === 'architecture') return ['architecture-decision.md', 'architecture-triage.json', 'architecture-update.json']
   if (id === 'trd') return ['trd.md']
   if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json']
@@ -583,69 +582,31 @@ produced.epic = epic
 recRuled(`Epic ${epicBeadId} adopted.`, { status: 'done' })
 
 enterPhase('PRD Validation')
-/** Returns the classification entries a prd-validation result or its saved file carries. */
-function classesFrom(list) {
-  const strs = (v) => (Array.isArray(v) ? v.filter(hasText).map((x) => x.trim()) : [])
-  return (Array.isArray(list) ? list : [])
-    .filter((r) => r && hasText(r.id))
-    .map((r) => {
-      const technical = r.class === 'technical'
-      return {
-        id: r.id.trim(),
-        requirement: r.requirement || '',
-        class: technical ? 'technical' : 'business',
-        governs: technical ? r.governs || '' : '',
-        rule: technical ? r.rule || '' : '',
-        archCoverage: technical ? (['covered', 'absent'].includes(r.archCoverage) ? r.archCoverage : 'unchecked') : 'n/a',
-        archRefs: technical ? strs(r.archRefs) : [],
-      }
-    })
+if (!hasText(prd.path)) {
+  const why = 'the PRD carries no file path: depscore.py prd-parse reads the PRD from its file (prd.path)'
+  return await holdForHuman('prd-parse', { reason: why }, [`Pass the PRD of ${epicBeadId} as a file in prd.path: ${why}`], 'the PRD file path has been supplied')
 }
-let requirementClasses = null
-const classHit = resumeFresh('prd-validation')
-if (classHit && ART_ON && classHit.names.includes('prd-classification.json')) {
-  const text = await readSavedText(artPath('prd-classification.json'), 'replay:read-prd-classification', 'PRD Validation')
-  try {
-    const parsed = text ? JSON.parse(text) : null
-    if (parsed && Array.isArray(parsed.requirementClasses)) requirementClasses = classesFrom(parsed.requirementClasses)
-  } catch (err) {
-    log(`Replay: prd-classification.json is not valid JSON (${String((err && err.message) || err).slice(0, 120)})`)
-  }
-  if (requirementClasses) {
-    reuseFrom('prd-validation', classHit)
-    await acceptPhase('prd-validation', 'reused')
-  } else {
-    log(`PRD Validation: the saved classification in ${ART_DIR} was not read back; the PRD is classified again`)
-  }
-}
-if (!requirementClasses) {
-  const v = await workflow('agent-teams-workforce:prd-validation', {
-    prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
-    archPath: a.archPath,
-    classifyOnly: true,
-    standingRulings,
-    artifacts: artFor('prd-validation', PRD_INPUTS),
+const prdParse = await runScript('prd:parse', 'PRD Validation', `prd-parse --prd ${shellq(prd.path)}`)
+if (!prdParse || prdParse.error) {
+  const died = dispatchDeaths('PRD Validation')
+  return partial('prd-parse', {
+    reason: `depscore.py prd-parse did not return a result for ${prd.path}: ${(prdParse && prdParse.error) || 'no result'}`,
+    ...(died.length ? { dispatchFailed: true, dispatchFailures: died } : {}),
   })
-  if (v && v.ledger) runLedger.push(v.ledger)
-  if (!v || v.ok !== true) {
-    return partial('prd-validation', {
-      reason: (v && (v.reason || v.error)) || 'prd-validation returned nothing',
-      ...(!v || v.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (v && v.dispatchFailures) || dispatchDeaths('PRD Validation') } : {}),
-    })
-  }
-  requirementClasses = classesFrom(v.requirementClasses)
-  await acceptPhase('prd-validation', 'passed')
 }
-const technicalReqs = requirementClasses.filter((r) => r.class === 'technical')
-const businessIds = new Set(requirementClasses.filter((r) => r.class === 'business').map((r) => r.id))
-const technicalOnlyIds = [...new Set(technicalReqs.map((r) => r.id))].filter((id) => !businessIds.has(id))
-const archGaps = technicalReqs.filter((r) => r.archCoverage === 'absent')
-produced.requirementClasses = requirementClasses
-recRuled(
-  `${requirementClasses.length} requirement(s) classified: ${businessIds.size} business, ${technicalReqs.length} technical` +
-    `${technicalReqs.length ? ` (${technicalReqs.map((r) => r.id).join(', ')}; the architecture lacks ${archGaps.map((r) => r.id).join(', ') || 'none'})` : ''}.`,
-  { status: 'done' }
-)
+if (prdParse.ok !== true) {
+  const failedChecks = (Array.isArray(prdParse.failed) ? prdParse.failed : []).filter((f) => f && hasText(f.check))
+  const named = failedChecks.map((f) => `${f.check} (${f.reason || 'no reason given'})`).join('; ') || 'prd-parse returned ok:false naming no check'
+  return await holdForHuman(
+    'prd-parse',
+    { reason: `the PRD at ${prd.path} failed depscore.py prd-parse: ${named}`, failedChecks },
+    [`Fix the PRD at ${prd.path} so depscore.py prd-parse passes: ${named}`],
+    'the PRD has been fixed'
+  )
+}
+const requirementHeadings = Array.isArray(prdParse.requirementHeadings) ? prdParse.requirementHeadings.filter(hasText) : []
+produced.prdParse = { prd: prd.path, requirementHeadings }
+recRuled(`PRD parsed by depscore.py prd-parse: ${requirementHeadings.length} requirement heading(s).`, { status: 'done' })
 
 /** Returns the architecture files a triage names as relied on, each { file, state }. */
 function reliedDocs(t) {
@@ -685,9 +646,9 @@ const archHit = resumeFresh('architecture')
 if (archHit) {
   const hasRuling = archHit.names.includes('architecture-decision.md')
   const savedTriage = artData(archHit, 'architecture-triage.json') || null
-  const savedSkip = !hasRuling && savedTriage && savedTriage.needed === false && !archGaps.length ? await skipBlocker(savedTriage) : null
+  const savedSkip = !hasRuling && savedTriage && savedTriage.needed === false ? await skipBlocker(savedTriage) : null
   if (savedSkip) log(`Architecture: the saved triage skipped the panel, but ${savedSkip.reason}; the PRD is triaged again`)
-  if (hasRuling || (savedTriage && savedTriage.needed === false && !archGaps.length && !savedSkip)) {
+  if (hasRuling || (savedTriage && savedTriage.needed === false && !savedSkip)) {
     reuseFrom('architecture', archHit)
     await acceptPhase('architecture', 'reused')
     archTriage = savedTriage
@@ -750,13 +711,6 @@ if (!architecture) {
       }
     )
   }
-  if (archGaps.length && archTriage && archTriage.needed === false) {
-    archTriage = {
-      ...archTriage,
-      needed: true,
-      reason: `${archTriage.reason || 'no architecture decision'}; the PRD states ${archGaps.length} technical requirement(s) the architecture does not describe (${archGaps.map((r) => r.id).join(', ')})`,
-    }
-  }
   const skip = archTriage && archTriage.needed === false ? await skipBlocker(archTriage) : null
   if (skip) {
     archTriage = { ...archTriage, needed: true, reason: `${archTriage.reason || 'no architecture decision'}; but ${skip.reason}` }
@@ -783,9 +737,6 @@ if (!architecture) {
             : []),
           ...(archTriage && Array.isArray(archTriage.missing) && archTriage.missing.filter(hasText).length
             ? [`Triage found the PRD needs what no architecture view covers yet: ${archTriage.missing.filter(hasText).join(' | ')}`]
-            : []),
-          ...(archGaps.length
-            ? [`The PRD states technical requirements no architecture view describes yet. Design each one into the architecture description: in the views of the element it concerns, or in a crosscutting concept in section 8 when it is a pattern used across services, written as a description of the design, not as a rule. Section 2 holds the owner's constraints and is not written by this step; a requirement you believe belongs there goes in ruleChallenges for the owner. The requirements: ${archGaps.map((r) => `${r.id}: ${r.rule || r.requirement}${r.governs ? ` (governs: ${r.governs})` : ''}`).join(' | ')}`]
             : []),
         ],
         repoPath,
@@ -899,7 +850,6 @@ async function runRepoScoping() {
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture-triage.json'), artPath('architecture-decision.md')]),
     prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
     architecture: architecture.skipped ? { skipped: true } : architectureRulingFor(architecture.artifact),
-    requirementClasses,
     seedRepos,
     epic: { key: epic.key, title: epic.title },
   })
@@ -1087,7 +1037,6 @@ function reconArgs(repo, slug, reconReplay) {
   const units = unitsPlacedIn(repo)
   return {
     ...(units ? { scope: { workUnits: units } } : {}),
-    technicalIds: technicalOnlyIds,
     trd: trdRef(),
     artifacts: artFor(`recon:${slug}`, PRD_INPUTS, { slug }),
     ...(reconReplay ? { replay: reconReplay } : {}),

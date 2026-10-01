@@ -158,7 +158,6 @@ function compositeWorkflows() {
         uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
       }
     }
-    if (name.endsWith('prd-validation')) return { ok: true, validatedPrd: { id: 'P1', title: 'P', body: 'b' }, findings: [] }
     if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
     if (name.endsWith('repo-scoping')) {
       return { ok: true, repos: ['/repos/alpha'], placements: [], newRepos: [], requiredHumanActions: [], reclassified: [], blocked: [], spanVerified: true }

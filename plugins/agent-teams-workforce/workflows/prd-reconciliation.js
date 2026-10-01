@@ -32,7 +32,6 @@ async function settleAgent(prompt, opts) {
 //   repos?: string[], mocksDir?, packagesDir?, dependencies?: string[], awsProfile? ('dev'),
 //   uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
 //   scope?: { workUnits: [{ id, summary?, requirementIds? }] } (the units repo-scoping placed in this repository),
-//   technicalIds?: string[] (PRD requirement ids classified technical),
 //   trd?: { path?, requirements?: [{ id, requirement, appliesTo? }] },
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, slug },
 //   replay?: { files: { recon: <absolute path of a saved result> } }
@@ -70,7 +69,6 @@ const prdBlock = prdPath.startsWith('/')
   : `${prdHeader}\n\n${prdBody}`
 const scope = a.scope && typeof a.scope === 'object' && Array.isArray(a.scope.workUnits) ? a.scope : null
 const scopeUnits = scope ? scope.workUnits.filter((u) => u && hasText(u.id)) : []
-const technicalIds = (Array.isArray(a.technicalIds) ? a.technicalIds : []).filter((x) => hasText(x)).map((x) => x.trim())
 const trdIn = a.trd && typeof a.trd === 'object' ? a.trd : null
 const trdPath = trdIn && hasText(trdIn.path) ? trdIn.path.trim() : ''
 const trdReqs = (trdIn && Array.isArray(trdIn.requirements) ? trdIn.requirements : []).filter((r) => r && hasText(r.id))
@@ -85,9 +83,6 @@ const requirementScopeBlock = [
       ? `Repository scoping placed these work units in this repository:\n${scopeUnits.map(unitLine).join('\n')}\nThe PRD requirements these units carry are this repository's. Every other PRD requirement is carried by a work unit in another repository and inventoried there: leave it out.`
       : 'Repository scoping placed no work unit in this repository: no PRD requirement is carried here. Inventory only the TRD requirements below that govern something this repository owns.'
     : 'No work units were placed for this run. Decide from the repository itself which PRD requirements govern something it owns or changes, and leave the others out.',
-  technicalIds.length
-    ? `PRD requirements ${technicalIds.join(', ')} are TECHNICAL rules — they belong in the architecture, not product requirements. Leave them out as PRD requirements: they reach a repository only through the TRD requirements below.`
-    : '',
   trdPath || trdReqs.length
     ? `The TRD${trdPath ? ` at ${trdPath}` : ''} states technical requirements, each on the design element it governs (\`appliesTo\`). A TRD requirement is this repository's when that element is one this repository owns or one of its work units builds:${trdReqs.length ? `\n${trdReqs.map((r) => `- ${r.id}${hasText(r.appliesTo) ? ` [${r.appliesTo.trim()}]` : ''} ${r.requirement || ''}`).join('\n')}` : ' read the TRD for the list.'}`
     : '',

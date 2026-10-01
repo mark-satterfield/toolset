@@ -1,8 +1,8 @@
 export const meta = {
   name: 'prd-validation',
   description:
-    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and, given args.archPath, whether the architecture already describes each technical rule; a technical requirement is a major finding, since a PRD keeps business requirements only. With classifyOnly: true the session applies the requirement-class lens alone and the run returns the classification without a verdict.',
-  phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens, or through the requirement-class lens alone' }],
+    'Leaf mini — PRD Validation. One read-only analyst session inspects a PRD through seven lenses (requirement class, ambiguity, completeness, conflict, constraints, domain boundaries, clarifications), plus an informational BRD traceability mapping when args.brd is supplied; the script consolidates the findings and fails the PRD only on a blocker finding. The requirement-class lens classifies every requirement as business or technical and, given args.archPath, whether the architecture already describes each technical rule; a technical requirement is a major finding, since a PRD keeps business requirements only.',
+  phases: [{ title: 'Validate', detail: 'one analyst session inspects the PRD through every lens' }],
 }
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
@@ -28,7 +28,7 @@ async function settleAgent(prompt, opts) {
 }
 
 // args: { prd: { id?, title?, body?, path?, repoPath?, brd? } | string, context?, brd?, standingRulings?,
-//         archPath?, classifyOnly?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
+//         archPath?, artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? } }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
 
 function artifactsFrom(x) {
@@ -65,7 +65,6 @@ END STANDING RULINGS
 
 const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
 const archPath = typeof a.archPath === 'string' ? a.archPath.trim() : ''
-const classifyOnly = a.classifyOnly === true
 
 const prdHeader = `PRD ${prdId} ${prdTitle}`.trim()
 const prdBlock = prdBody.trim() || !prdPath
@@ -136,49 +135,6 @@ function classesOf(result) {
         archRefs: technical ? list(r.archRefs) : [],
       }
     })
-}
-
-if (classifyOnly) {
-  const classified = await settleAgent(
-    `${rulingsBlock}You are an INDEPENDENT PRD analyst. You did not author this PRD and you never rewrite it. Apply ONE lens, and keep every reason under 30 words.
-
-${classLens}
-
-Also return \`summary\`: how many requirements are business and how many technical, and which technical ones the architecture lacks, in under 80 words.
-
-PRD:
-${prdBlock}
-
-READING BUDGET: the PRD${prdBody.trim() ? ', quoted above,' : ''} and the architecture views your searches point at. Read nothing else.${persistBrief(ART, 'prd-classification.json', 'your complete structured result — every key you return, exactly as you return it — as ONE JSON object')}`,
-    {
-      label: 'validate:requirement-class',
-      effort: 'medium',
-      phase: 'Validate',
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['requirementClasses', 'summary'],
-        properties: { requirementClasses: requirementClassItems, summary: { type: 'string' } },
-      },
-    }
-  )
-  if (!classified) {
-    const why = 'the classification session returned nothing; the PRD requirements were not classified'
-    return { ok: false, stage: 'agent-dispatch-failed', error: why, headline: why, reason: why, dispatchFailed: true, dispatchFailures: dispatchDeaths('Validate'), requirementClasses: [] }
-  }
-  const requirementClasses = classesOf(classified)
-  const technical = requirementClasses.filter((r) => r.class === 'technical')
-  const archGaps = technical.filter((r) => r.archCoverage === 'absent')
-  return {
-    ok: true,
-    stage: 'done',
-    headline: `${requirementClasses.length} requirement(s) classified: ${requirementClasses.length - technical.length} business, ${technical.length} technical (${archGaps.length} the architecture lacks)`,
-    summary: classified.summary,
-    requirementClasses,
-    technical,
-    archGaps,
-    ledger: { phase: 'prd-validation', beadId: null, subject: prdId || null, chosen: ['validation-analyst-requirement-class'], mode: 'classify-only', ok: true },
-  }
 }
 
 const traceabilitySchema = {

@@ -21,6 +21,9 @@
                          no `bd` call
     arch-state           read the `lifecycle_state` of the architecture files a step relies on;
                          no `bd` call
+    prd-parse            check that a PRD file has the structure elaboration reads: readable,
+                         not superseded, an H1, requirement headings with acceptance criteria
+                         under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
     write-story          write one repository's Story under an Epic from its saved document
     plan-tasks           one Story's saved Tasks in build order with their keys; no `bd` call
     write-task           write ONE Task of a Story and its edges to the Story's Tasks
@@ -74,6 +77,7 @@ from hierarchy import HierarchyError
 from archstate import promote as approve_arch
 from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
+from prds import prd_parse
 from storyedges import story_edges
 
 ELAB_KEY = "elaboration_state"
@@ -655,6 +659,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="the architecture directory every `--arch-files` path must sit under",
     )
+
+    ppa = sub.add_parser(
+        "prd-parse",
+        help="check that a PRD file has the structure elaboration reads; writes nothing, "
+        "runs no `bd` command",
+        parents=[common],
+    )
+    ppa.add_argument("--prd", type=Path, required=True, help="the PRD file")
     return parser
 
 
@@ -690,6 +702,8 @@ def run(args: argparse.Namespace) -> dict:
         return head | approve_arch(files, arch_root=args.arch_root)
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)
+    if command == "prd-parse":
+        return head | prd_parse(args.prd)
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
     if command == "write-task":
         return head | write_task(

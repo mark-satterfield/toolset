@@ -267,9 +267,6 @@ async function composite(reconResult, { onCalls, args } = {}) {
         return { verdict: 'pass', criteria: [], flags: [] }
       }
       if (name.endsWith('prd-reconciliation')) return reconResult
-      if (name.endsWith('prd-validation')) {
-        return { ok: true, validationVerdict: 'pass', validatedPrd: { body: call.payload.prd.body }, findings: [] }
-      }
       if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
       if (name.endsWith('repo-scoping')) {
         return {

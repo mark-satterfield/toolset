@@ -9,11 +9,11 @@ section headings, so a search can be narrowed before any PRD is opened.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from beadgraph import Bead, Graph
 
 #: Metadata key set on an Epic by the elaboration pipeline, shown in the index.
@@ -21,6 +21,29 @@ ELAB_KEY = "elaboration_state"
 
 #: The most headings the index lists for one PRD.
 MAX_HEADINGS = 40
+
+#: The frontmatter key holding a document's lifecycle state.
+STATE_KEY = "lifecycle_state"
+
+#: The lifecycle state of a PRD that may not be elaborated.
+SUPERSEDED = "superseded"
+
+#: The section holding a PRD's requirements, and the one holding its Definition of Done.
+REQUIREMENTS_SECTION = "Requirements"
+DONE_SECTION = "Definition of Done"
+
+#: The heading level of a PRD section, and the levels of the requirement headings in one.
+SECTION_LEVEL = 2
+REQUIREMENT_LEVELS = (3, 4)
+
+#: A level-3 or level-4 heading under Requirements that names no requirement.
+LEGEND_HEADING = "priority legend"
+
+#: The marker that opens a requirement's acceptance criteria.
+CRITERIA_MARKER = "**Acceptance Criteria:**"
+
+_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+_THEMATIC_BREAK = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
 
 
 def write_prds(epics: list[Bead], prd_dir: Path) -> dict[str, str]:
@@ -102,3 +125,163 @@ def write_index(
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _body_and_state(text: str) -> tuple[list[str], str]:
+    """Split a PRD into its body lines and its frontmatter `lifecycle_state`.
+
+    Args:
+        text: The whole PRD file.
+
+    Returns:
+        The lines after the frontmatter (all lines when there is none), and the top-level
+        `lifecycle_state` value, or an empty string when the PRD states none.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return lines, ""
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            state = ""
+            for line in lines[1:idx]:
+                if line.startswith(f"{STATE_KEY}:"):
+                    state = line[len(STATE_KEY) + 1 :].strip().strip("\"'")
+            return lines[idx + 1 :], state
+    return lines, ""
+
+
+def _outline(lines: list[str]) -> list[tuple[int, str, int]]:
+    """The headings of a PRD body, outside fenced code blocks.
+
+    Args:
+        lines: The PRD body lines.
+
+    Returns:
+        One (level, text, line index) per heading, in document order.
+    """
+    found = []
+    fenced = False
+    for idx, line in enumerate(lines):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        match = None if fenced else _HEADING.match(line)
+        if match and match.group(2):
+            found.append((len(match.group(1)), match.group(2), idx))
+    return found
+
+
+def _section(
+    lines: list[str], outline: list[tuple[int, str, int]], title: str
+) -> tuple[int, int] | None:
+    """The line range of the first level-2 section with this title.
+
+    Args:
+        lines: The PRD body lines.
+        outline: The headings from `_outline`.
+        title: The section title, compared without case.
+
+    Returns:
+        The (first, end) line indexes of the section body, or None when the PRD has no
+        such section. The body ends at the next heading of level 1 or 2.
+    """
+    for pos, (level, text, idx) in enumerate(outline):
+        if level == SECTION_LEVEL and text.strip().lower() == title.lower():
+            end = next(
+                (i for lvl, _, i in outline[pos + 1 :] if lvl <= SECTION_LEVEL),
+                len(lines),
+            )
+            return idx + 1, end
+    return None
+
+
+def prd_parse(path: Path) -> dict:
+    """Check that a PRD file has the structure elaboration reads; runs no `bd` command.
+
+    The checks: the file is readable; its frontmatter `lifecycle_state` is not
+    `superseded`; it has an H1; `## Requirements` holds at least one level-3 or level-4
+    heading other than a Priority Legend and at least one `**Acceptance Criteria:**`
+    block; `## Definition of Done` is not empty.
+
+    Args:
+        path: The PRD file.
+
+    Returns:
+        `{ok, prd, requirementHeadings, failed, summary}`: `ok` is true when every check
+        passes; `failed` names each failed check with its reason; `requirementHeadings`
+        lists the level-3 and level-4 headings under `## Requirements`.
+    """
+    failed: list[dict] = []
+    headings_found: list[str] = []
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        failed.append({"check": "readable", "reason": f"{path} is not readable: {exc}"})
+        text = None
+    if text is not None:
+        lines, state = _body_and_state(text)
+        if state.lower() == SUPERSEDED:
+            failed.append(
+                {
+                    "check": "not-superseded",
+                    "reason": f"frontmatter {STATE_KEY} is {state}",
+                }
+            )
+        outline = _outline(lines)
+        if not any(level == 1 for level, _, _ in outline):
+            failed.append({"check": "h1", "reason": "the PRD has no level-1 heading"})
+        reqs = _section(lines, outline, REQUIREMENTS_SECTION)
+        if reqs is None:
+            failed.append(
+                {
+                    "check": "requirements",
+                    "reason": f"the PRD has no `## {REQUIREMENTS_SECTION}` section",
+                }
+            )
+        else:
+            first, end = reqs
+            headings_found = [
+                t
+                for lvl, t, i in outline
+                if first <= i < end
+                and lvl in REQUIREMENT_LEVELS
+                and t.strip().lower() != LEGEND_HEADING
+            ]
+            if not headings_found:
+                failed.append(
+                    {
+                        "check": "requirement-headings",
+                        "reason": f"`## {REQUIREMENTS_SECTION}` holds no level-3 or "
+                        "level-4 requirement heading other than a Priority Legend",
+                    }
+                )
+            if not any(CRITERIA_MARKER in line for line in lines[first:end]):
+                failed.append(
+                    {
+                        "check": "acceptance-criteria",
+                        "reason": f"`## {REQUIREMENTS_SECTION}` holds no "
+                        f"`{CRITERIA_MARKER}` block",
+                    }
+                )
+        done = _section(lines, outline, DONE_SECTION)
+        if done is None or not any(
+            line.strip() and not _THEMATIC_BREAK.match(line)
+            for line in lines[done[0] : done[1]]
+        ):
+            failed.append(
+                {
+                    "check": "definition-of-done",
+                    "reason": f"`## {DONE_SECTION}` is missing or empty",
+                }
+            )
+    return {
+        "ok": not failed,
+        "prd": str(path),
+        "requirementHeadings": headings_found,
+        "failed": failed,
+        "summary": {
+            "ok": not failed,
+            "requirements": len(headings_found),
+            "failed": [f["check"] for f in failed],
+        },
+    }
