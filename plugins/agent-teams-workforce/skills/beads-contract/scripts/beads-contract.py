@@ -29,12 +29,78 @@ import json
 import re
 import subprocess
 import sys
+import time
 
 #: `readiness` hashes the record content and the build contract; `judging` hashes only the
 #: title, description, issue_type and priority.
 SCOPE_READINESS = "readiness"
 SCOPE_JUDGING = "judging"
 SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
+
+#: The pause before each retry of a `bd` command that could not reach the beads server, in
+#: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
+CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
+
+#: The `bd` subcommands that only read; any other subcommand without `--readonly` writes.
+READ_COMMANDS = frozenset(
+    {"list", "ready", "show", "search", "count", "stats", "blocked"}
+)
+
+#: A write whose commit `bd` reports as indeterminate may have applied; it is never retried.
+NEVER_RETRIED = re.compile(
+    r"write commit result indeterminate|not retried to avoid double-apply",
+    re.IGNORECASE,
+)
+
+#: (pattern, retried for a write too, reason). A write is retried only on an error that
+#: shows the command never reached the database; a read is retried on every entry.
+RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
+    (
+        re.compile(r"failed to open database", re.IGNORECASE),
+        True,
+        "bd failed opening the database (schema skew check included), before the command ran",
+    ),
+    (
+        re.compile(r"connection refused", re.IGNORECASE),
+        True,
+        "the beads server refused the connection, so the command never reached it",
+    ),
+    (
+        re.compile(r"dial tcp[^\n]*i/o timeout", re.IGNORECASE),
+        True,
+        "opening the connection timed out, so the command never reached the server",
+    ),
+    (
+        re.compile(r"i/o timeout", re.IGNORECASE),
+        False,
+        "the beads server did not answer in time; a read is safe to run again",
+    ),
+    (
+        re.compile(r"invalid connection|bad connection", re.IGNORECASE),
+        False,
+        "the connection to the beads server dropped; a read is safe to run again",
+    ),
+)
+
+
+def connection_retryable(args: list[str], stderr: str) -> str:
+    """The reason a failed `bd` command may be run again, or "" when it may not.
+
+    Args:
+        args: Arguments after `bd`.
+        stderr: What `bd` printed on standard error.
+
+    Returns:
+        The reason from RETRYABLE_CONNECTION, or "".
+    """
+    if NEVER_RETRIED.search(stderr):
+        return ""
+    is_read = "--readonly" in args or (bool(args) and args[0] in READ_COMMANDS)
+    for pattern, safe_for_write, reason in RETRYABLE_CONNECTION:
+        if pattern.search(stderr) and (safe_for_write or is_read):
+            return reason
+    return ""
+
 
 #: The record keys the readiness fingerprint is taken over; keys outside
 #: CONTENT_HASH_PRESENT are hashed as null.
@@ -553,6 +619,10 @@ class Reader:
     def _bd(self, args: list[str]) -> str:
         """Run one `bd` command and return its stdout.
 
+        A command that could not reach the beads server is run again after each pause in
+        CONNECTION_BACKOFF, as connection_retryable allows; every failed attempt is printed
+        to stderr with the command and its error.
+
         Args:
             args: Arguments after `bd`.
 
@@ -560,24 +630,48 @@ class Reader:
             The stdout text.
 
         Raises:
-            BeadsError: If `bd` is absent or exited nonzero.
+            BeadsError: If `bd` is absent, or exited nonzero with an error that is not
+                retried or on its last attempt.
         """
         command = ["bd"] + (["-C", self.repo] if self.repo else []) + args
-        try:
-            done = subprocess.run(command, capture_output=True, text=True, check=False)
-        except OSError as exc:
-            msg = f"could not run `bd`: {exc}"
-            raise BeadsError(msg) from exc
-        if done.returncode != 0:
-            msg = f"`{' '.join(command)}` exited {done.returncode}: {done.stderr.strip()[:400]}"
-            raise BeadsError(msg)
-        return done.stdout
+        attempts = len(CONNECTION_BACKOFF) + 1
+        for attempt in range(1, attempts + 1):
+            try:
+                done = subprocess.run(
+                    command, capture_output=True, text=True, check=False
+                )
+            except OSError as exc:
+                msg = f"could not run `bd`: {exc}"
+                raise BeadsError(msg) from exc
+            if done.returncode == 0:
+                if attempt > 1:
+                    print(
+                        f"[beads-contract] `{' '.join(command)}` succeeded on attempt {attempt}",
+                        file=sys.stderr,
+                    )
+                return done.stdout
+            stderr = done.stderr.strip()
+            msg = f"`{' '.join(command)}` exited {done.returncode}: {stderr[:2000]}"
+            why = connection_retryable(args, stderr)
+            if not why or attempt == attempts:
+                if why:
+                    msg += f" (failed {attempts} times to reach the beads server)"
+                raise BeadsError(msg)
+            pause = CONNECTION_BACKOFF[attempt - 1]
+            print(
+                f"[beads-contract] attempt {attempt} of {attempts} failed: {msg}; "
+                f"retrying in {pause}s because {why}",
+                file=sys.stderr,
+            )
+            time.sleep(pause)
+        msg = f"`{' '.join(command)}` was never run"
+        raise BeadsError(msg)
 
     def _read(self, args: list[str]) -> object:
-        """Run one read-only `bd` command live, once, and parse its JSON.
+        """Run one read-only `bd` command live and parse its JSON.
 
-        A failure is raised on the first occurrence, naming the command and the error `bd`
-        printed.
+        A connection failure is retried with backoff by `_bd`, each attempt printed; any
+        other failure is raised at once, naming the command and the error `bd` printed.
 
         Args:
             args: Arguments after `bd`.

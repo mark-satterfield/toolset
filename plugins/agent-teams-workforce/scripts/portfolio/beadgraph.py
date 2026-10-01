@@ -4,7 +4,9 @@
 The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
 export is never read: `bd` exports only after a state-changing command, at most once per
 `export.interval`, and the export can be blocked, so it can lag the tracker by hours. A live
-read that fails raises at once with the `bd` command and its error.
+`bd` command that could not reach the beads server is retried with bounded exponential
+backoff, each failed attempt printed to stderr; any other failure raises at once with the
+`bd` command and its error.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
 edge: it orders ELABORATION, and `tracks` is non-blocking in beads, so it never removes an
@@ -17,8 +19,10 @@ as a dependency.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -168,33 +172,124 @@ def join_ids(ids: list[str] | set[str] | tuple[str, ...]) -> str:
     return ",".join(sorted(set(ids)))
 
 
+#: The pause before each retry of a `bd` command that could not reach the beads server, in
+#: seconds: 6 attempts, 62s of waiting in all, then the error is raised.
+CONNECTION_BACKOFF = (2, 4, 8, 16, 32)
+
+#: The `bd` subcommands that only read; any other subcommand without `--readonly` writes.
+READ_COMMANDS = frozenset(
+    {"list", "ready", "show", "search", "count", "stats", "blocked"}
+)
+
+#: A write whose commit `bd` reports as indeterminate may have applied; it is never retried.
+NEVER_RETRIED = re.compile(
+    r"write commit result indeterminate|not retried to avoid double-apply",
+    re.IGNORECASE,
+)
+
+#: (pattern, retried for a write too, reason). A write is retried only on an error that
+#: shows the command never reached the database; a read is retried on every entry.
+RETRYABLE_CONNECTION: tuple[tuple[re.Pattern[str], bool, str], ...] = (
+    (
+        re.compile(r"failed to open database", re.IGNORECASE),
+        True,
+        "bd failed opening the database (schema skew check included), before the command ran",
+    ),
+    (
+        re.compile(r"connection refused", re.IGNORECASE),
+        True,
+        "the beads server refused the connection, so the command never reached it",
+    ),
+    (
+        re.compile(r"dial tcp[^\n]*i/o timeout", re.IGNORECASE),
+        True,
+        "opening the connection timed out, so the command never reached the server",
+    ),
+    (
+        re.compile(r"i/o timeout", re.IGNORECASE),
+        False,
+        "the beads server did not answer in time; a read is safe to run again",
+    ),
+    (
+        re.compile(r"invalid connection|bad connection", re.IGNORECASE),
+        False,
+        "the connection to the beads server dropped; a read is safe to run again",
+    ),
+)
+
+
+def connection_retryable(args: list[str], stderr: str) -> str:
+    """The reason a failed `bd` command may be run again, or "" when it may not.
+
+    Args:
+        args: The `bd` arguments.
+        stderr: What `bd` printed on standard error.
+
+    Returns:
+        The reason from RETRYABLE_CONNECTION, or "".
+    """
+    if NEVER_RETRIED.search(stderr):
+        return ""
+    is_read = "--readonly" in args or (bool(args) and args[0] in READ_COMMANDS)
+    for pattern, safe_for_write, reason in RETRYABLE_CONNECTION:
+        if pattern.search(stderr) and (safe_for_write or is_read):
+            return reason
+    return ""
+
+
 def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     """Run `bd`, with `stdin` on its standard input, and return stdout.
 
+    A command that could not reach the beads server is run again after each pause in
+    CONNECTION_BACKOFF, as connection_retryable allows; every failed attempt is printed to
+    stderr with the command and its error.
+
     Raises:
-        GraphError: `bd` is not on PATH or exited nonzero.
+        GraphError: `bd` is not on PATH, or exited nonzero with an error that is not
+            retried or on its last attempt.
     """
     command = ["bd", *args]
     if repo is not None:
         command += ["-C", str(repo)]
-    try:
-        done = subprocess.run(
-            command, input=stdin, capture_output=True, text=True, check=False
+    attempts = len(CONNECTION_BACKOFF) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            done = subprocess.run(
+                command, input=stdin, capture_output=True, text=True, check=False
+            )
+        except FileNotFoundError as exc:  # pragma: no cover - environment, not logic
+            msg = "`bd` is not on PATH"
+            raise GraphError(msg) from exc
+        if done.returncode == 0:
+            if attempt > 1:
+                print(
+                    f"[beadgraph] `{' '.join(command)}` succeeded on attempt {attempt}",
+                    file=sys.stderr,
+                )
+            return done.stdout
+        stderr = done.stderr.strip()
+        msg = f"`{' '.join(command)}` exited {done.returncode}: {stderr}"
+        why = connection_retryable(args, stderr)
+        if not why or attempt == attempts:
+            if why:
+                msg += f" (failed {attempts} times to reach the beads server)"
+            raise GraphError(msg)
+        pause = CONNECTION_BACKOFF[attempt - 1]
+        print(
+            f"[beadgraph] attempt {attempt} of {attempts} failed: {msg}; "
+            f"retrying in {pause}s because {why}",
+            file=sys.stderr,
         )
-    except FileNotFoundError as exc:  # pragma: no cover - environment, not logic
-        msg = "`bd` is not on PATH"
-        raise GraphError(msg) from exc
-    if done.returncode != 0:
-        msg = f"`{' '.join(command)}` exited {done.returncode}: {done.stderr.strip()}"
-        raise GraphError(msg)
-    return done.stdout
+        time.sleep(pause)
+    msg = f"`{' '.join(command)}` was never run"
+    raise GraphError(msg)
 
 
 def _bd_json(args: list[str], repo: Path | None) -> object:
-    """Run a read-only `bd` command once and parse its JSON stdout.
+    """Run a read-only `bd` command and parse its JSON stdout.
 
-    A failure is raised on the first occurrence, naming the command and the error `bd`
-    printed, so the session that ran it sees it at once.
+    A connection failure is retried with backoff by `_bd`, each attempt printed; any other
+    failure is raised at once, naming the command and the error `bd` printed.
 
     Args:
         args: The `bd` arguments.
