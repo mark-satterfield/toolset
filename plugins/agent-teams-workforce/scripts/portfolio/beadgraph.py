@@ -4,7 +4,7 @@
 The tracker is read live through `bd`, and only through `bd`. The `.beads/issues.jsonl`
 export is never read: `bd` exports only after a state-changing command, at most once per
 `export.interval`, and the export can be blocked, so it can lag the tracker by hours. A live
-read that fails is retried with backoff.
+read that fails raises at once with the `bd` command and its error.
 
 Two dependency types carry order, one per level. An Epic-to-Epic dependency is a `tracks`
 edge: it orders ELABORATION, and `tracks` is non-blocking in beads, so it never removes an
@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -191,12 +190,11 @@ def _bd(args: list[str], repo: Path | None, stdin: str | None = None) -> str:
     return done.stdout
 
 
-#: The pause before each retry of a failed live read, in seconds.
-READ_BACKOFF = (1, 2, 4, 8, 16)
-
-
 def _bd_json(args: list[str], repo: Path | None) -> object:
-    """Run a read-only `bd` command and parse its JSON stdout, retrying with backoff.
+    """Run a read-only `bd` command once and parse its JSON stdout.
+
+    A failure is raised on the first occurrence, naming the command and the error `bd`
+    printed, so the session that ran it sees it at once.
 
     Args:
         args: The `bd` arguments.
@@ -206,19 +204,14 @@ def _bd_json(args: list[str], repo: Path | None) -> object:
         The parsed stdout.
 
     Raises:
-        GraphError: Every attempt failed or printed no JSON.
+        GraphError: `bd` failed or printed no JSON.
     """
-    error: Exception | None = None
-    for pause in (0, *READ_BACKOFF):
-        time.sleep(pause)
-        try:
-            return json.loads(_bd(args, repo) or "null")
-        except (GraphError, json.JSONDecodeError) as exc:
-            error = exc
-    msg = (
-        f"`bd {' '.join(args)}` failed after {len(READ_BACKOFF) + 1} attempts: {error}"
-    )
-    raise GraphError(msg)
+    out = _bd(args, repo)
+    try:
+        return json.loads(out or "null")
+    except json.JSONDecodeError as exc:
+        msg = f"`bd {' '.join(args)}` printed no JSON: {exc}: {out.strip()[:400]}"
+        raise GraphError(msg) from exc
 
 
 def now_iso() -> str:

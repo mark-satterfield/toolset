@@ -28,7 +28,6 @@ import hashlib
 import json
 import re
 import subprocess
-import time
 import sys
 
 #: `readiness` hashes the record content and the build contract; `judging` hashes only the
@@ -36,9 +35,6 @@ import sys
 SCOPE_READINESS = "readiness"
 SCOPE_JUDGING = "judging"
 SCOPES = (SCOPE_READINESS, SCOPE_JUDGING)
-
-#: The pause before each retry of a failed live `bd` read, in seconds.
-READ_BACKOFF = (1, 2, 4, 8, 16)
 
 #: The record keys the readiness fingerprint is taken over; keys outside
 #: CONTENT_HASH_PRESENT are hashed as null.
@@ -578,7 +574,10 @@ class Reader:
         return done.stdout
 
     def _read(self, args: list[str]) -> object:
-        """Run one read-only `bd` command live and parse its JSON, retrying with backoff.
+        """Run one read-only `bd` command live, once, and parse its JSON.
+
+        A failure is raised on the first occurrence, naming the command and the error `bd`
+        printed.
 
         Args:
             args: Arguments after `bd`.
@@ -587,17 +586,14 @@ class Reader:
             The parsed stdout.
 
         Raises:
-            BeadsError: Every attempt failed or printed no JSON.
+            BeadsError: `bd` failed or printed no JSON.
         """
-        error: Exception | None = None
-        for pause in (0, *READ_BACKOFF):
-            time.sleep(pause)
-            try:
-                return json.loads(self._bd(args))
-            except (BeadsError, json.JSONDecodeError) as exc:
-                error = exc
-        msg = f"`bd {' '.join(args)}` failed after {len(READ_BACKOFF) + 1} attempts: {error}"
-        raise BeadsError(msg)
+        out = self._bd(args)
+        try:
+            return json.loads(out)
+        except json.JSONDecodeError as exc:
+            msg = f"`bd {' '.join(args)}` printed no JSON: {exc}: {out.strip()[:400]}"
+            raise BeadsError(msg) from exc
 
     def get(self, bead_id: str) -> dict:
         """Return one bead's record, read-only.
