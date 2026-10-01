@@ -5,7 +5,8 @@
 // `plan-tasks` and one `write-task` per Task, and the cross-Story mapper runs one
 // `write-all-task-edges`, each returning the commands' stdout as `writes`. On a replay a
 // runner session runs the same commands (`beads:write-story`, `beads:write-tasks`,
-// `beads:write-all-task-edges`). `epic:finish` is a runner session. A
+// `beads:write-all-task-edges`). `epic:finish`, `prd:parse`, `arch:delta` and
+// `arch:target-remove` are runner sessions. A
 // fixture that expects a successful run answers them the way the commands answer when every
 // write landed.
 
@@ -26,6 +27,21 @@ export const ARTIFACT_ARGS = Object.freeze({ artifactScript: '/opt/sdlc/artifact
  * refuses at its start without one.
  */
 export const TEST_EPIC = Object.freeze({ id: 'bd-E1', key: 'E1', title: 'Test Epic' })
+
+/** The delta items `depscore.py arch-delta` lists for the fixtures' approved target. */
+export const TEST_DELTA_ITEMS = Object.freeze([
+  Object.freeze({ id: 'D1', element: 'auth-service', views: ['/arch/target/mfa/delta/05-building-block-view/mfa.md'] }),
+])
+
+/** An architecture result with an approved target and its delta, as the architecture mini returns it. */
+export const TEST_ARCHITECTURE = Object.freeze({
+  ok: true,
+  subject: 'mfa',
+  targetDir: '/arch/target/mfa',
+  deltaDir: '/arch/target/mfa/delta',
+  decisionPath: '/proj/art/architecture/decision.md',
+  architectureUpdate: { changedFiles: [], createdFiles: [] },
+})
 
 /** The Epic's judged values, as the lifecycle check reads them off the Epic bead. */
 export const TEST_EPIC_VALUE = Object.freeze({ id: 'bd-E1', userBusinessValue: 8, timeCriticality: 3, confidence: 80 })
@@ -80,9 +96,15 @@ function slugOf(call) {
  * @param {string[]} [opts.taskKeys] the Task keys a replayed `beads:write-tasks` reports as created
  * @returns {(call: object) => object|null} the reply, or null when it is not one of those calls
  */
-export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys = ['T1'] } = {}) {
+export function lifecycleRunner({ refusal = null, crossStoryEdges = [], taskKeys = ['T1'], deltaItems = TEST_DELTA_ITEMS } = {}) {
   return (call) => {
     if (call.kind !== 'agent') return null
+    if (call.label === 'resolve-plugin-root') return { exitCode: 0, output: { pluginRoot: '/opt/plugins/agent-teams-workforce', problem: null } }
+    if (call.label === 'prd:parse') return { exitCode: 0, output: { ok: true, requirementHeadings: ['R1'], failed: [] } }
+    if (call.label === 'arch:delta') {
+      return { exitCode: 0, output: { ok: true, refusals: [], items: deltaItems, summary: { ok: true, items: deltaItems.length } } }
+    }
+    if (call.label === 'arch:target-remove') return { exitCode: 0, output: { ok: true, refusals: [], removed: true, commit: 'abc1234' } }
     if (call.label === 'epic:start') {
       return {
         pluginRoot: '/opt/plugins/agent-teams-workforce',

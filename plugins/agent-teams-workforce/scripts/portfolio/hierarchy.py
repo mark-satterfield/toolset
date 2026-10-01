@@ -12,7 +12,7 @@ from __future__ import annotations
 import ast
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 #: The surfaces a Task may declare; anything else is dropped.
@@ -203,6 +203,7 @@ class Task:
     verified: str
     reuses: str | None = None
     elab_key: str | None = None
+    blocked_by_external: list[str] = field(default_factory=list)
 
 
 def _sizes(score: dict | None) -> dict[str, str] | None:
@@ -522,9 +523,54 @@ def read_tasks(
                 reuses=next(iter(str_list([t.get("reuses")])), None)
                 if isinstance(t.get("reuses"), str)
                 else None,
+                blocked_by_external=list(
+                    dict.fromkeys(str_list(t.get("blockedByExternal")))
+                ),
             )
         )
     return tasks
+
+
+#: The detailing statuses that make work: a Task exists only for an item carrying one.
+WORK_STATUSES = ("add", "modify", "remove")
+
+
+def check_detailed_work(directory: Path, slug: str, tasks: list[Task]) -> None:
+    """Refuse Tasks that build no delta item the repository's detailing marks as work.
+
+    The detailing of a repository, `recon-<slug>.json`, gives each delta item placed in it
+    a status; only `add`, `modify` and `remove` make work. Every Task cites, in its
+    `requirementIds`, at least one item with one of those statuses. A Story whose detailing
+    is not saved, or saves no `items` list, is not checked.
+
+    Args:
+        directory: The Epic's working directory.
+        slug: The Story's repository slug.
+        tasks: The Story's Tasks.
+
+    Raises:
+        HierarchyError: A Task cites no delta item that makes work.
+    """
+    path = directory / f"recon-{slug}.json"
+    if not path.is_file():
+        return
+    saved = _read_json(path)
+    items = saved.get("items")
+    if not isinstance(items, list):
+        return
+    work = {
+        str(i.get("id")).strip()
+        for i in items
+        if isinstance(i, dict) and i.get("status") in WORK_STATUSES
+    }
+    idle = [t.key for t in tasks if not work.intersection(t.requirement_ids)]
+    if idle:
+        msg = (
+            f"tasks-{slug}.json: {', '.join(idle)} cite no delta item recon-{slug}.json "
+            f"marks {', '.join(WORK_STATUSES)} in requirementIds; a Task is made only "
+            f"for such an item ({', '.join(sorted(work)) or 'none here'})"
+        )
+        raise HierarchyError(msg)
 
 
 def read_task_deps(directory: Path) -> list[dict]:

@@ -19,6 +19,7 @@ from hierarchy import (
     HierarchyError,
     Task,
     build_order,
+    check_detailed_work,
     elab_slug,
     read_story,
     read_task_deps,
@@ -346,10 +347,12 @@ def plan_tasks(directory: Path, rel: str | None, slug: str, repo: str) -> list[T
         The Tasks.
 
     Raises:
-        HierarchyError: The file holds no `tasks` list, or its edges form a cycle.
+        HierarchyError: The file holds no `tasks` list, its edges form a cycle, or a Task
+            cites no delta item the repository's detailing marks as work.
     """
     saved = read_story(directory, rel, repo, slug)
     tasks = read_tasks(directory, rel, slug, repo, saved.decision_ids)
+    check_detailed_work(directory, slug, tasks)
     _assign_keys(tasks, slug)
     return tasks
 
@@ -376,7 +379,8 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
         root: The project root artifact paths are recorded relative to.
 
     Returns:
-        The Story, what was done to it, and the keyed Tasks already under it.
+        The Story, what was done to it, the keyed Tasks already under it, and the open
+        Tasks of other Epics built in the same repository.
     """
     story = read_story(directory, _rel(directory, root), repo, slug)
     bead = _story_of(graph, epic_id, slug)
@@ -421,6 +425,7 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
             "decisionIds": story.decision_ids,
         },
         "existingTasks": existing,
+        "otherEpicTasks": other_epic_tasks(graph, epic_id, repo),
         "dryRun": writer.dry_run,
         "planned": writer.planned,
         "summary": {
@@ -431,6 +436,58 @@ def write_story(  # noqa: PLR0913 - the caller's facts, one each
             "updated": int(action == "updated"),
         },
     }
+
+
+def _same_repo(a: object, b: str) -> bool:
+    """Whether two repository paths name the same checkout.
+
+    Args:
+        a: A recorded repository path.
+        b: The repository path to compare with.
+
+    Returns:
+        True when both, with trailing separators removed, are the same path.
+    """
+    return isinstance(a, str) and a.strip().rstrip("/") == b.strip().rstrip("/")
+
+
+def other_epic_tasks(graph: Graph, epic_id: str, repo: str) -> list[dict]:
+    """Return the open Tasks of other Epics that are built in this repository.
+
+    A Task is built in the repository its `repoPath` metadata names, or, when it records
+    none, the one its Story records.
+
+    Args:
+        graph: The tracker graph, read with descriptions.
+        epic_id: The Epic being elaborated; its own Tasks are left out.
+        repo: The repository.
+
+    Returns:
+        Each Task's id, title, the start of its description, its status and its Epic.
+    """
+    out = []
+    for task in graph.of_kind("task"):
+        if task.closed:
+            continue
+        parent = graph.beads.get(task.parent) if task.parent else None
+        where = task.metadata.get("repoPath") or (
+            parent.metadata.get("repoPath") if parent else None
+        )
+        if not _same_repo(where, repo):
+            continue
+        epic = graph.epic_of(task.id)
+        if epic is not None and epic.id == epic_id:
+            continue
+        out.append(
+            {
+                "id": task.id,
+                "title": task.title,
+                "description": task.description[:300],
+                "status": task.status,
+                "epic": epic.id if epic else None,
+            }
+        )
+    return out
 
 
 def plan_story_tasks(
@@ -457,6 +514,7 @@ def plan_story_tasks(
                 "elabKey": t.elab_key,
                 "title": t.title,
                 "dependsOn": t.depends_on,
+                "blockedByExternal": t.blocked_by_external,
             }
             for t in tasks
         ],
@@ -494,6 +552,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
     repo: str,
     key: str,
     root: Path | None,
+    external: list[str] | None = None,
 ) -> dict:
     """Write ONE Task of a Story, and its `blocks` edges to the Story's other Tasks.
 
@@ -511,14 +570,16 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         repo: The Story's repository.
         key: The Task's local key in `tasks-<slug>.json`, as `plan-tasks` returns it.
         root: The project root spec paths are recorded relative to.
+        external: Tasks of other Epics this Task is blocked by, beside the ones its saved
+            `blockedByExternal` names.
 
     Returns:
         The Task, what was done to it, its edge writes, and the blockers it carries
         outside the Story.
 
     Raises:
-        HierarchyError: The key names no Task, the Epic has no Story for the slug, or a
-            Task it depends on is not written.
+        HierarchyError: The key names no Task, the Epic has no Story for the slug, a Task
+            it depends on is not written, or an external blocker is a Task of its own Story.
     """
     tasks = plan_tasks(directory, _rel(directory, root), slug, repo)
     by_key = {t.key: t for t in tasks}
@@ -550,6 +611,15 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
             )
             raise HierarchyError(msg)
         blockers.append(blocker.id)
+    story_ids = {b.id for b in keyed.values()}
+    outer = list(dict.fromkeys([*task.blocked_by_external, *(external or [])]))
+    inner = [b for b in outer if b in story_ids]
+    if inner:
+        msg = (
+            f"{key}: {', '.join(inner)} are Tasks of {story_id}; an edge inside the Story "
+            f"is a saved edge, not an external blocker"
+        )
+        raise HierarchyError(msg)
     bead = keyed.get(task.elab_key or "")
     text = task_text(task, root)
     meta = task_metadata(task)
@@ -569,10 +639,14 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
             notes=f"repoPath: {task.repo_path}" if task.repo_path else None,
             metadata=meta,
         )
-        if blockers:
-            args += ["--deps", ",".join(f"blocked-by:{b}" for b in blockers)]
+        if blockers or outer:
+            args += [
+                "--deps",
+                ",".join(f"blocked-by:{b}" for b in [*blockers, *outer]),
+            ]
         task_id, action = writer.create(args, task.elab_key or key), "created"
-        edges["added"] = len(blockers)
+        edges["added"] = len(blockers) + len(outer)
+        outside = outer
     elif bead.status != OPEN:
         task_id, action = bead.id, "unchanged-started"
     else:
@@ -580,8 +654,7 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         action = (
             "updated" if _refresh(writer, bead, task.title, text, meta) else "unchanged"
         )
-        story_ids = {b.id for b in keyed.values()}
-        add = [b for b in blockers if b not in bead.blockers]
+        add = [b for b in [*blockers, *outer] if b not in bead.blockers]
         drop = [b for b in bead.blockers if b in story_ids and b not in blockers]
         if add:
             lines = [
@@ -594,9 +667,11 @@ def write_task(  # noqa: PLR0913 - the caller's facts, one each
         edges = {
             "added": len(add),
             "removed": len(drop),
-            "standing": len(blockers) - len(add),
+            "standing": len(blockers) + len(outer) - len(add),
         }
-        outside = [b for b in bead.blockers if b not in story_ids]
+        outside = list(
+            dict.fromkeys([*(b for b in bead.blockers if b not in story_ids), *outer])
+        )
     return {
         "ok": True,
         "story": story_id,
@@ -868,8 +943,9 @@ def unpersisted(
 
     Every repository of the span has its saved `story-<slug>.json` and `tasks-<slug>.json`,
     its Story under the Epic, and a Task bead under that Story for every saved Task; every
-    open Task carries its saved blockers in its own Story, and, when `task-deps.json` is
-    saved, its blockers in other Stories. Reads the documents and the graph only.
+    open Task carries its saved blockers in its own Story and the Tasks of other Epics its
+    saved `blockedByExternal` names, and, when `task-deps.json` is saved, its blockers in
+    other Stories. Reads the documents and the graph only.
 
     Args:
         graph: The tracker graph.
@@ -909,6 +985,11 @@ def unpersisted(
                 held = keyed.get(blocker.elab_key or "") if blocker else None
                 if held is None or held.id not in bead.blockers:
                     missing.append(f"edge {dep} -> {t.key} in story:{slug}")
+            missing.extend(
+                f"edge {b} -> {t.key} in story:{slug} from another Epic"
+                for b in t.blocked_by_external
+                if b not in bead.blockers
+            )
     if not missing and (directory / "task-deps.json").is_file():
         try:
             blockers = plan_task_edges(directory, repos)["blockers"]

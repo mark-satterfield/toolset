@@ -1,8 +1,8 @@
 export const meta = {
   name: 'prd-reconciliation',
   description:
-    'Leaf mini — PRD Reconciliation. One read-only session inventories, for one repository, the material that already exists for each requirement that governs something the repository owns or changes (conforms: reuse, contradicts: remove, absent: build, not-applicable: it governs nothing here), resolves UI requirements against the cds design artifacts, and reports upstream dependency changes. The requirements follow the work units repo-scoping placed in the repository, plus the TRD requirements on what those units build; a PRD requirement classified technical reaches a repository only through the TRD. The PRD is canonical: no requirement is dropped because code exists. A saved result can be replayed instead of dispatching the session; when it is not read back, the session takes the inventory again.',
-  phases: [{ title: 'Reconciliation checks', detail: 'one read-only session inventories the material and checks upstream dependencies' }],
+    'Leaf mini — per-repository detailing of an approved architecture delta. One read-only session compares each delta item placed in one repository (one element the delta shows) with the code on that repository\'s main, gives it one status — add, modify, remove, done, or planned-elsewhere — each citing file:line (planned-elsewhere names the open bead that plans it), resolves UI items against the cds design artifacts, and reports upstream dependency changes. The script fails the run, naming the items, when an item is missing or listed twice, carries a status outside that set, or lacks its citation; a failed detailing blocks that repository\'s Spec. A saved result can be replayed instead of dispatching the session; when it is not read back, the session details the repository again.',
+  phases: [{ title: 'Detailing', detail: 'one read-only session compares each delta item placed in the repository with the code on its main, and checks upstream dependencies' }],
 }
 const dispatchFailures = []
 function dispatchDeaths(...phases) {
@@ -28,28 +28,32 @@ async function settleAgent(prompt, opts) {
 }
 
 // args: {
-//   prd: { id?, title?, body?, path?, repoPath? },
-//   repos?: string[], mocksDir?, packagesDir?, dependencies?: string[], awsProfile? ('dev'),
-//   uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
-//   scope?: { workUnits: [{ id, summary?, requirementIds? }] } (the units repo-scoping placed in this repository),
-//   trd?: { path?, requirements?: [{ id, requirement, appliesTo? }] },
+//   prd: { id?, title?, path?, repoPath? }, repos: [<the one repository>],
+//   items: [{ id, element, views? }] (the delta items placed in this repository),
+//   delta: { targetDir, deltaDir },
+//   mocksDir?, packagesDir?, dependencies?: string[], uiRepo?: boolean (false skips the cds UI resolution), standingRulings?,
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, slug },
 //   replay?: { files: { recon: <absolute path of a saved result> } }
 // }
+// returns { ok, items, counts, uiAuthority, dependencyChanges, evidenceSummary, ledger }
+//   or { ok: false, reason, failedItems?, dispatchFailed? }
 const a = (typeof args === 'string' ? JSON.parse(args) : args) || {}
-const prdInput = a.prd || {}
-const prdBody = typeof prdInput === 'string' ? prdInput : prdInput.body || ''
-const prdId = (typeof prdInput === 'string' ? '' : prdInput.id) || ''
-const prdTitle = (typeof prdInput === 'string' ? '' : prdInput.title) || ''
-const repoPath = (typeof prdInput === 'string' ? '' : prdInput.repoPath) || a.repoPath || ''
-const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => r)
-const dependencies = Array.isArray(a.dependencies) ? a.dependencies : []
-const awsProfile = a.awsProfile || 'dev'
+const prdInput = a.prd && typeof a.prd === 'object' ? a.prd : {}
+const prdId = prdInput.id || ''
+const prdTitle = prdInput.title || ''
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
+const repoPath = prdInput.repoPath || a.repoPath || ''
+const repos = (Array.isArray(a.repos) && a.repos.length ? a.repos : [repoPath]).filter((r) => hasText(r))
+const dependencies = Array.isArray(a.dependencies) ? a.dependencies : []
 const repoRoot = hasText(repoPath) ? repoPath.replace(/\/+$/, '') : ''
 const uiCheck = a.uiRepo !== false
 const mocksDir = !uiCheck ? '' : hasText(a.mocksDir) ? a.mocksDir.trim() : repoRoot ? `${repoRoot}/design-mocks` : ''
 const packagesDir = !uiCheck ? '' : hasText(a.packagesDir) ? a.packagesDir.trim() : mocksDir ? `${mocksDir}/packages` : ''
+const delta = a.delta && typeof a.delta === 'object' ? a.delta : {}
+const placed = (Array.isArray(a.items) ? a.items : []).filter((i) => i && hasText(i.id) && hasText(i.element))
+
+const STATUSES = ['add', 'modify', 'remove', 'done', 'planned-elsewhere']
+const FILE_LINE = /[^\s:]+:\d+/
 
 const rulingsText = typeof a.standingRulings === 'string' ? a.standingRulings.trim() : ''
 const rulingsBlock = rulingsText
@@ -62,50 +66,12 @@ END STANDING RULINGS
 `
   : ''
 
-const prdPath = typeof prdInput === 'string' ? '' : String(prdInput.path || '')
-const prdHeader = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
-const prdBlock = prdPath.startsWith('/')
-  ? `${prdHeader}\n\nThe PRD is the document at ${prdPath}. Read it in full before you start.`
-  : `${prdHeader}\n\n${prdBody}`
-const scope = a.scope && typeof a.scope === 'object' && Array.isArray(a.scope.workUnits) ? a.scope : null
-const scopeUnits = scope ? scope.workUnits.filter((u) => u && hasText(u.id)) : []
-const trdIn = a.trd && typeof a.trd === 'object' ? a.trd : null
-const trdPath = trdIn && hasText(trdIn.path) ? trdIn.path.trim() : ''
-const trdReqs = (trdIn && Array.isArray(trdIn.requirements) ? trdIn.requirements : []).filter((r) => r && hasText(r.id))
-const unitLine = (u) => {
-  const ids = (Array.isArray(u.requirementIds) ? u.requirementIds : []).filter((x) => hasText(x))
-  return `- ${u.id}${hasText(u.summary) ? `: ${u.summary.trim()}` : ''}${ids.length ? `\n    PRD requirements: ${ids.join(', ')}` : ''}`
-}
-const requirementScopeBlock = [
-  'A requirement is THIS REPOSITORY\'S when it governs something this repository owns or changes. Inventory those, and only those.',
-  scope
-    ? scopeUnits.length
-      ? `Repository scoping placed these work units in this repository:\n${scopeUnits.map(unitLine).join('\n')}\nThe PRD requirements these units carry are this repository's. Every other PRD requirement is carried by a work unit in another repository and inventoried there: leave it out.`
-      : 'Repository scoping placed no work unit in this repository: no PRD requirement is carried here. Inventory only the TRD requirements below that govern something this repository owns.'
-    : 'No work units were placed for this run. Decide from the repository itself which PRD requirements govern something it owns or changes, and leave the others out.',
-  trdPath || trdReqs.length
-    ? `The TRD${trdPath ? ` at ${trdPath}` : ''} states technical requirements, each on the design element it governs (\`appliesTo\`). A TRD requirement is this repository's when that element is one this repository owns or one of its work units builds:${trdReqs.length ? `\n${trdReqs.map((r) => `- ${r.id}${hasText(r.appliesTo) ? ` [${r.appliesTo.trim()}]` : ''} ${r.requirement || ''}`).join('\n')}` : ' read the TRD for the list.'}`
-    : '',
-  'Give each inventoried requirement its id as its source writes it and set `source` to "prd" or "trd".',
-].filter(hasText).join('\n\n')
+const refuse = (why) => ({ ok: false, stage: 'input', deterministicFailure: true, reason: why, error: why, items: [] })
+if (repos.length !== 1) return refuse(`detailing is scoped to ONE repository; ${repos.length} were supplied`)
+if (!hasText(delta.deltaDir)) return refuse('no delta supplied: delta.deltaDir names the views the items come from')
+if (!placed.length) return refuse(`no delta item is placed in ${repos[0]}`)
 
-const repoBlock = repos.length
-  ? repos.map((r, i) => `${i + 1}. ${r}`).join('\n')
-  : '(no repo paths supplied — discover the repositories this PRD touches from the PRD text)'
-
-const singleRepo = repos.length === 1
-const CALLS_PER_REQUIREMENT = singleRepo ? 4 : 6
-const scopeBlock = singleRepo
-  ? `THE ONE REPOSITORY YOU SEARCH — this run is scoped to it, and only it:
-${repoBlock}
-
-Search THIS repository. Do not survey the other repositories in the project, and do not go
-looking for a requirement's implementation elsewhere: another repository's copy of this run
-covers it. A requirement that is this repository's but whose material is not here is \`absent\`.`
-  : `Repositories in scope:
-${repoBlock}`
-
-phase('Reconciliation checks')
+phase('Detailing')
 
 function artifactsFrom(x) {
   if (!x || typeof x !== 'object') return null
@@ -139,7 +105,7 @@ ${path}
 Return found=true with the text in \`content\`, or found=false when the file is absent or unreadable.`,
     {
       label: 'replay:read-saved-recon',
-      phase: 'Reconciliation checks',
+      phase: 'Detailing',
       effort: 'low',
       schema: {
         type: 'object',
@@ -152,87 +118,60 @@ Return found=true with the text in \`content\`, or found=false when the file is 
   if (!r || r.found !== true || typeof r.content !== 'string') return null
   try {
     const body = JSON.parse(r.content)
-    return body && Array.isArray(body.requirements) ? body : null
+    return body && Array.isArray(body.items) ? body : null
   } catch (err) {
     log(`Replay: the saved result is not valid JSON (${String((err && err.message) || err).slice(0, 120)})`)
     return null
   }
 }
 const replayedRecon = replayPath ? await readSavedRecon(replayPath) : null
-if (replayedRecon) log(`Reconciliation replayed from ${replayPath}`)
-if (replayPath && !replayedRecon) log(`Replay: the saved reconciliation at ${replayPath} was not read back; the inventory is taken again`)
+if (replayedRecon) log(`Detailing replayed from ${replayPath}`)
+if (replayPath && !replayedRecon) log(`Replay: the saved detailing at ${replayPath} was not read back; the repository is detailed again`)
+
+const itemLines = placed
+  .map((i) => `- ${i.id}: ${i.element}${Array.isArray(i.views) && i.views.length ? `\n    delta views: ${i.views.join('; ')}` : ''}`)
+  .join('\n')
+const prdLine = `PRD ${prdId}${prdTitle ? `: ${prdTitle}` : ''}`.trim()
 
 const reality = replayedRecon || await settleAgent(
-  `${rulingsBlock}Take an INVENTORY of the material that already exists for this PRD, and detect upstream changes that invalidate what it assumes. You are READ-ONLY over the codebase, the design mocks and the cloud account: read, search and query what the inventory needs, but change nothing anywhere and write no document${reconBrief ? ' other than the one result file named at the end of this brief' : ''}. Two checks, one pass — return both.
+  `${rulingsBlock}DETAIL an approved architecture delta for ONE repository: for each delta item placed in it, compare what the delta says the element becomes with what the code on the repository's \`main\` holds today, and give the item one status. You are READ-ONLY: read and search, change nothing anywhere, and write no document${reconBrief ? ' other than the one result file named at the end of this brief' : ''}. Two checks, one pass — return both.
 
-═══ THE RULE THAT GOVERNS THIS ENTIRE TASK ═══
+═══ CHECK 1 — the detailing ═══
 
-THE PRD IS CANONICAL. It overrides whatever is deployed today. Code that already ships is
-MATERIAL, not authority:
+${prdLine}
 
-  - material that CONFORMS to the PRD is reused;
-  - material that CONTRADICTS the PRD is removed;
-  - where nothing exists, it gets built.
+THE REPOSITORY — this run is scoped to it, and only it:
+  ${repos[0]}
+Read its code as committed on \`main\` (\`git -C <repo> grep -n <term> main\`, \`git -C <repo> show main:<path>\`). Do not survey other repositories.
 
-Every requirement that is this repository's comes back in your inventory with a status. What
-exists never subtracts from it: you never drop one because code exists, never narrow one, and
-never defer one.
+THE APPROVED TARGET is ${delta.targetDir || '(the folder above the delta)'}, and the change alone, its delta, is ${delta.deltaDir}. What the delta views say about an element is what it becomes; read the target views where a delta view needs their context.
 
-WHEN THE PRD AND THE DEPLOYED SYSTEM DISAGREE, THE PRD WINS. That produces one thing: removal
-work, named precisely.
+THE ITEMS PLACED IN THIS REPOSITORY (each one element the delta shows):
+${itemLines}
 
-═══ CHECK 1 — the material inventory ═══
+Give every item above exactly one entry, with one status:
+- add      — the delta adds the element and the code on \`main\` does not hold it. \`from\` is "absent"; \`to\` is what the delta adds.
+- modify   — the code holds the element and the delta changes it. \`from\` is what the code holds; \`to\` is what the delta makes it.
+- remove   — the delta removes the element and the code still holds it. \`from\` is what the code holds; \`to\` is "removed".
+- done     — the code on \`main\` already holds the element as the delta shows it. \`from\` and \`to\` are both that state.
+- planned-elsewhere — an open bead of another Epic (a Story or Task planned and not built) already plans this change. Name it in \`plannedBy\` (the bead id; read beads with \`bd list\`, \`bd show\`, \`bd search\` only).
 
-${prdBlock}
+Cite evidence for every status in \`evidence\`: a \`file:line\` on \`main\` you read. For \`add\`, cite the file and line where the element attaches (the route table, the stack, the module that will hold it). A \`planned-elsewhere\` item carries its bead id in \`plannedBy\` and the \`file:line\` it rests on where there is one. An item with no citation fails the run.
 
-${scopeBlock}
+Also classify the SURFACE each item lives on, in \`surface\`: ui | service | infra | data | unknown.
 
-${requirementScopeBlock}
+${uiCheck ? `═══ UI ITEMS ARE RESOLVED AGAINST THE cds DESIGN SYSTEM ═══
 
-Enumerate every requirement that is this repository's, and for each one classify the MATERIAL
-— what exists today relative to what the requirement asks for:
-
-- conforms    — an implementation exists and it MATCHES what the PRD asks for. Name what to
-                reuse in \`conformingMaterial\`.
-- contradicts — an implementation exists but it DIFFERS from what the PRD asks for. Name
-                exactly what must be deleted or replaced in \`removalTargets\`.
-- absent      — nothing exists. Say what is missing in \`missing\`.
-- not-applicable — the requirement governs a kind of thing this repository neither has nor
-                gets from its work units (a bucket rule, where the repository has no bucket and
-                its work units build none). Say in \`reason\` what it governs and cite what the
-                repository does own. Never use it for a requirement whose subject is here.
-
-Also classify the SURFACE each requirement lives on, in \`surface\`: ui | service | infra | data | unknown.
-
-Cite concrete evidence for every status in \`evidence\`: a \`file:line\` you read, a URL, a
-deployed endpoint you called, or an \`arn:aws\` identifier.
-
-You hold AWS credentials. Checking a live endpoint is legitimate — a capability can be fully
-implemented in the repository and switched off in infrastructure. EVERY aws command you run
-MUST pass \`--profile ${awsProfile}\`.
-
-Look specifically for the material that is easy to miss:
-- an implementation that is complete but DISABLED by a feature flag, a commented-out
-  construct, or an infrastructure switch;
-- a frontend fully scaffolded over a backend that does not exist, or the reverse;
-- a capability live for some cases and not others;
-- a route table, handler list, or CDK stack that already serves what the PRD asks for;
-- code that serves a SUPERSEDED version of this behaviour — that is \`contradicts\`.
-
-${uiCheck ? `═══ UI REQUIREMENTS ARE RESOLVED AGAINST THE cds DESIGN SYSTEM ═══
-
-For every requirement whose \`surface\` is \`ui\`, the design system's output is the authority,
-highest first:
+For every item whose \`surface\` is \`ui\`, the design system's output is the target state, highest first:
 
   1. THE cds HAND-OFF BUNDLE — the packaged artifact: its \`spec/build-spec.md\` together
      with the composed HTML under \`design/\`.
   2. THE LOOSE COMPOSED ARTIFACT under \`design-mocks/{shells,pages,views}/\` — used when
      the artifact is not in the bundle.
-  3. THE PRD's PROSE about layout.
-  4. WHAT IS CURRENTLY DEPLOYED — never authoritative for UI.
+  3. The delta views.
 
 Bundle root:
-${packagesDir ? `  ${packagesDir}` : '  the design-mocks/packages/ directory under the repository this run operates on'}
+${packagesDir ? `  ${packagesDir}` : '  the design-mocks/packages/ directory under the repository'}
 Resolve \`CUSTOMIZABLE_DESIGN_SYSTEM_PACKAGE_DIR\` from the environment first when it is set.
 The root holds dated \`batch-*\` directories — TAKE THE MOST RECENT ONE and record it in
 \`uiAuthority.bundlePath\`. Inside a batch:
@@ -245,72 +184,62 @@ The root holds dated \`batch-*\` directories — TAKE THE MOST RECENT ONE and re
   styles/                           ONE shared stylesheet set for every artifact in the bundle
   assets/                           shared assets
 
-START AT \`MANIFEST.tsv\` to match a UI requirement to its artifact, then read that artifact's
+START AT \`MANIFEST.tsv\` to match a UI item to its artifact, then read that artifact's
 \`spec/build-spec.md\`.
 
 An artifact listed in \`unpackaged.md\` is not yet packaged; use the loose composed artifact under
 ${mocksDir ? `  ${mocksDir}/{shells,pages,views}/` : '  design-mocks/{shells,pages,views}/'}
 (resolve \`CUSTOMIZABLE_DESIGN_SYSTEM_MOCKS_DIR\` / \`_SHELLS_DIR\` first when set).
 
-Cite the artifact path you used as the evidence for every \`ui\` requirement. List every artifact
+Cite the artifact path you used beside the \`file:line\` for every \`ui\` item. List every artifact
 path you opened in \`uiAuthority.artifactsConsulted\`, the loose shells and pages in
 \`uiAuthority.shellsConsulted\` / \`uiAuthority.pagesConsulted\`, and the mocks directory in
 \`uiAuthority.mocksDir\`.
 
-A UI requirement is \`conforms\` ONLY when the deployed UI matches the packaged artifact (or, for an
-unpackaged one, the composed artifact). Anything else is \`contradicts\`, and NEVER an
-architecture question: name the deployed markup or component to bring into line in
-\`removalTargets\`.
-
 If neither the bundle nor the mocks directory exists, say so in \`evidenceSummary\`.` : `═══ THIS REPOSITORY HOLDS NO UI ═══
 
-Do not look for the cds hand-off bundle, the design mocks or any deployed UI. A requirement whose
-\`surface\` is \`ui\` is \`absent\` here with the evidence "not a UI repository".`}
+Do not look for the cds hand-off bundle or the design mocks.`}
 
 ═══ SEARCH BUDGET ═══
 
-Work requirement by requirement and stop searching for each the moment its status is settled:
-one decisive hit settles \`conforms\` or \`contradicts\`; two or three well-aimed searches that all
-miss settle \`absent\`. Roughly ${CALLS_PER_REQUIREMENT} tool calls per requirement. Cover every
-requirement once before you deepen any of them, and when the budget is spent, stop and return
-your structured output with what you have.
+Work item by item and stop searching for each the moment its status is settled. Cover every
+item once before you deepen any of them, and when the budget is spent, stop and return your
+structured output with what you have.
 
 ═══ CHECK 2 — upstream dependency changes ═══
 
-Upstream dependencies the PRD relies on:
-${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') : '(none declared in args — discover them from the PRD text and the repositories above)'}
+Upstream dependencies the work relies on:
+${dependencies.length ? dependencies.map((d, i) => `${i + 1}. ${d}`).join('\n') : '(none declared in args — discover them from the repository\'s manifests, lockfiles and imports)'}
 
-Determine whether any upstream contract, shared schema, event, library version, or interface the PRD assumes has changed in a way that invalidates one of its assumptions.${singleRepo ? ' Check the dependencies THIS repository consumes, as its manifests, lockfiles and imports show them.' : ''} Return under \`dependencyChanges\`:
+Determine whether any upstream contract, shared schema, event, library version, or interface the delta assumes has changed in a way that invalidates it. Check the dependencies THIS repository consumes, as its manifests, lockfiles and imports on \`main\` show them. Return under \`dependencyChanges\`:
 - current: true if no invalidating upstream change is found, false otherwise.
 - changeFindings: each invalidating change (dependency, change, invalidates).
 - evidence: how you verified the dependency state (under 60 words).${reconBrief}`,
   {
-    label: 'reconcile:reality-and-dependencies',
-    phase: 'Reconciliation checks',
+    label: 'detail:delta-and-dependencies',
+    phase: 'Detailing',
     effort: 'medium',
     agentType: 'prd-reality-reconciler',
     schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['requirements', 'evidenceSummary', 'dependencyChanges'],
+      required: ['items', 'evidenceSummary', 'dependencyChanges'],
       properties: {
-        requirements: {
+        items: {
           type: 'array',
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['id', 'requirement', 'status', 'evidence', 'surface'],
+            required: ['id', 'element', 'status', 'from', 'to', 'evidence', 'surface'],
             properties: {
               id: { type: 'string' },
-              requirement: { type: 'string' },
-              source: { type: 'string', enum: ['prd', 'trd'] },
-              status: { type: 'string', enum: ['conforms', 'contradicts', 'absent', 'not-applicable'] },
+              element: { type: 'string' },
+              status: { type: 'string', enum: STATUSES },
+              from: { type: 'string' },
+              to: { type: 'string' },
               evidence: { type: 'array', items: { type: 'string' } },
+              plannedBy: { type: 'string' },
               surface: { type: 'string', enum: ['ui', 'service', 'infra', 'data', 'unknown'] },
-              conformingMaterial: { type: 'array', items: { type: 'string' } },
-              removalTargets: { type: 'array', items: { type: 'string' } },
-              missing: { type: 'string' },
-              reason: { type: 'string' },
             },
           },
         },
@@ -358,47 +287,47 @@ if (!reality) {
   const deaths = dispatchDeaths()
   return {
     ok: false,
-    reason: `the reality reconciler returned nothing, so no reconciliation was performed (${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}).`,
+    reason: `the detailing session returned nothing, so ${repos[0]} was not detailed (${deaths.map((f) => f.note).join('; ') || 'no dispatch was recorded'}).`,
     dispatchFailed: true,
     dispatchFailures: deaths,
-    requirements: [],
-    conformsCount: 0,
-    contradictsCount: 0,
-    absentCount: 0,
-    notApplicableCount: 0,
-    removalWork: [],
-    reuseWork: [],
-    uiAuthority: { bundlePath: null, mocksDir: mocksDir || null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
+    items: [],
   }
 }
 
 const list = (v) => (Array.isArray(v) ? v.filter((x) => hasText(x)).map((x) => x.trim()) : [])
-const requirements = (Array.isArray(reality.requirements) ? reality.requirements : []).map((r, i) => {
-  const status = r && ['conforms', 'contradicts', 'not-applicable'].includes(r.status) ? r.status : 'absent'
-  return {
-    id: hasText(r && r.id) ? r.id : `R${i + 1}`,
-    source: r && r.source === 'trd' ? 'trd' : 'prd',
-    requirement: (r && r.requirement) || '',
-    status,
-    evidence: list(r && r.evidence),
-    conformingMaterial: status === 'conforms' ? list(r && r.conformingMaterial) : [],
-    removalTargets: status === 'contradicts' ? list(r && r.removalTargets) : [],
-    missing: status === 'absent' ? (r && r.missing) || null : null,
-    reason: status === 'not-applicable' ? (r && r.reason) || null : null,
-    surface: (r && r.surface) || 'unknown',
-  }
-})
-const dependencyChanges = reality.dependencyChanges || null
-const conformsCount = requirements.filter((r) => r.status === 'conforms').length
-const contradictsCount = requirements.filter((r) => r.status === 'contradicts').length
-const absentCount = requirements.filter((r) => r.status === 'absent').length
-const notApplicableCount = requirements.filter((r) => r.status === 'not-applicable').length
-const removalWork = requirements
-  .filter((r) => r.status === 'contradicts' && r.removalTargets.length)
-  .map((r) => ({ requirementId: r.id, requirement: r.requirement, targets: r.removalTargets }))
-const reuseWork = requirements
-  .filter((r) => r.status === 'conforms' && r.conformingMaterial.length)
-  .map((r) => ({ requirementId: r.id, requirement: r.requirement, material: r.conformingMaterial }))
+const items = (Array.isArray(reality.items) ? reality.items : []).filter((r) => r && typeof r === 'object').map((r) => ({
+  id: hasText(r.id) ? r.id.trim() : '',
+  element: r.element || '',
+  status: typeof r.status === 'string' ? r.status.trim() : '',
+  from: r.from || '',
+  to: r.to || '',
+  evidence: list(r.evidence),
+  plannedBy: hasText(r.plannedBy) ? r.plannedBy.trim() : null,
+  surface: r.surface || 'unknown',
+}))
+
+const placedIds = new Set(placed.map((i) => i.id))
+const counted = new Map()
+for (const r of items) counted.set(r.id, (counted.get(r.id) || 0) + 1)
+const failedItems = [
+  ...placed.filter((i) => !counted.has(i.id)).map((i) => ({ id: i.id, problem: `${i.element} has no entry` })),
+  ...[...counted.entries()].filter(([id, n]) => placedIds.has(id) && n > 1).map(([id]) => ({ id, problem: 'listed more than once' })),
+  ...items.filter((r) => !placedIds.has(r.id)).map((r) => ({ id: r.id || '(no id)', problem: 'not an item placed in this repository' })),
+  ...items.filter((r) => placedIds.has(r.id) && !STATUSES.includes(r.status)).map((r) => ({ id: r.id, problem: `status ${JSON.stringify(r.status)} is not one of ${STATUSES.join(', ')}` })),
+  ...items
+    .filter((r) => placedIds.has(r.id) && STATUSES.includes(r.status) && r.status !== 'planned-elsewhere' && !r.evidence.some((e) => FILE_LINE.test(e)))
+    .map((r) => ({ id: r.id, problem: `${r.status} cites no file:line` })),
+  ...items
+    .filter((r) => placedIds.has(r.id) && r.status === 'planned-elsewhere' && !r.plannedBy)
+    .map((r) => ({ id: r.id, problem: 'planned-elsewhere names no bead in plannedBy' })),
+]
+if (failedItems.length) {
+  const why = `the detailing of ${repos[0]} is not usable — ${failedItems.map((f) => `${f.id}: ${f.problem}`).join('; ')}`
+  log(why)
+  return { ok: false, stage: 'detailing', reason: why, error: why, failedItems, items }
+}
+
+const counts = Object.fromEntries(STATUSES.map((s) => [s, items.filter((r) => r.status === s).length]))
 const ua = reality.uiAuthority || {}
 const uiAuthority = {
   bundlePath: hasText(ua.bundlePath) ? ua.bundlePath.trim() : null,
@@ -408,23 +337,15 @@ const uiAuthority = {
   pagesConsulted: list(ua.pagesConsulted),
 }
 
-log(
-  `Reconciliation: ${requirements.length} requirement(s) inventoried — ${conformsCount} conform (reuse), ` +
-    `${contradictsCount} contradict (remove), ${absentCount} absent (build), ${notApplicableCount} not applicable.`
-)
+log(`Detailing of ${repos[0]}: ${items.length} item(s) — ${STATUSES.map((s) => `${counts[s]} ${s}`).join(', ')}.`)
 
 return {
   ok: true,
   ...(replayedRecon ? { resumed: true } : {}),
-  requirements,
-  conformsCount,
-  contradictsCount,
-  absentCount,
-  notApplicableCount,
-  removalWork,
-  reuseWork,
+  items,
+  counts,
   uiAuthority,
-  dependencyChanges,
+  dependencyChanges: reality.dependencyChanges || null,
   evidenceSummary: reality.evidenceSummary || null,
   ledger: {
     phase: 'prd-reconciliation',
@@ -434,12 +355,8 @@ return {
     mode: 'combined',
     uiCheck,
     resumed: !!replayedRecon,
-    requirementCount: requirements.length,
-    conformsCount,
-    contradictsCount,
-    absentCount,
-    notApplicableCount,
-    removalWork: removalWork.length,
+    itemCount: items.length,
+    ...counts,
     ok: true,
   },
 }

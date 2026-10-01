@@ -17,6 +17,10 @@ file approves every view in it.
 owner's constraints) so the architecture step can prove no session wrote there.
 `depscore.py arch-target` runs `write_target`, which checks an approved draft and writes it to
 `target/<subject>/` as `in-review`.
+`depscore.py arch-delta` runs `delta_items`, which lists the elements a target's delta shows,
+one item per element, for the phases that make Specs and Tasks from the delta.
+`depscore.py arch-target-remove` runs `remove_target`, which deletes `target/<subject>/` once
+the Specs and Tasks made from its delta are written, and commits the removal.
 """
 
 from __future__ import annotations
@@ -528,4 +532,195 @@ def write_target(
             out.write_text(text, encoding="utf-8")
         else:
             shutil.copyfile(path, out)
+    return report
+
+
+def _unquote(value: str) -> str:
+    """Strip one pair of matching YAML quotes from a scalar.
+
+    Args:
+        value: The scalar as written.
+
+    Returns:
+        The scalar without its quotes.
+    """
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:  # noqa: PLR2004 - a quote pair
+        return value[1:-1]
+    return value
+
+
+def _catalog(path: Path) -> dict:
+    """Read a view's catalog frontmatter: `view_type`, `scope`, `subject` and `shows`.
+
+    `shows` is read as a block list (`- name` lines) or a flow list (`[a, b]`).
+
+    Args:
+        path: The view file.
+
+    Returns:
+        The four keys; a missing scalar is an empty string and a missing list is empty.
+    """
+    out: dict = {"view_type": "", "scope": "", "subject": "", "shows": []}
+    split = _split_frontmatter(path.read_text(encoding="utf-8"))
+    if split is None:
+        return out
+    lines, start, close = split
+    idx = start
+    while idx < close:
+        line = lines[idx]
+        idx += 1
+        if ":" not in line or line[:1].isspace():
+            continue
+        key, _, rest = line.partition(":")
+        key, rest = key.strip(), rest.strip()
+        if key not in out:
+            continue
+        if key != "shows":
+            out[key] = _unquote(rest)
+            continue
+        if rest.startswith("[") and rest.endswith("]"):
+            out["shows"] = [_unquote(x) for x in rest[1:-1].split(",") if x.strip()]
+            continue
+        while idx < close and lines[idx].lstrip().startswith("- "):
+            out["shows"].append(_unquote(lines[idx].lstrip()[2:]))
+            idx += 1
+    out["shows"] = [s for s in dict.fromkeys(out["shows"]) if s]
+    return out
+
+
+def delta_items(delta_dir: str) -> dict:
+    """List the elements a target's delta shows, one item per element.
+
+    An item is one element named in the `shows` frontmatter of a delta view, with every
+    delta view that shows it. Items are numbered `D1`, `D2` ... in element-name order, so
+    the same delta always yields the same ids. Runs no `bd` command and writes nothing.
+
+    Args:
+        delta_dir: The `target/<subject>/delta/` directory.
+
+    Returns:
+        `ok`, the refusals, the delta views, and the items.
+    """
+    root = Path(delta_dir).resolve()
+    if root.name != DELTA_FOLDER or not root.is_dir():
+        none = [f"{root} is not a {DELTA_FOLDER}/ directory"]
+        return {
+            "ok": False,
+            "refusals": none,
+            "summary": {"ok": False, "refusals": none},
+        }
+    views = [p for p in _draft_files(root) if p.suffix == ".md"]
+    shown: dict[str, list[str]] = {}
+    listed = []
+    refusals = []
+    for view in views:
+        cat = _catalog(view)
+        listed.append({"path": str(view), **cat})
+        if not cat["shows"]:
+            refusals.append(f"{view} names no element in `shows`")
+        for element in cat["shows"]:
+            shown.setdefault(element, []).append(str(view))
+    if not views:
+        refusals.append(f"{root} holds no view")
+    items = [
+        {"id": f"D{n}", "element": element, "views": shown[element]}
+        for n, element in enumerate(sorted(shown, key=str.casefold), start=1)
+    ]
+    return {
+        "ok": not refusals,
+        "refusals": refusals,
+        "deltaDir": str(root),
+        "views": listed,
+        "items": items,
+        "summary": {
+            "ok": not refusals,
+            "refusals": refusals,
+            "views": len(listed),
+            "items": len(items),
+        },
+    }
+
+
+def remove_target(arch_root: str, target_dir: str, *, message: str) -> dict:
+    """Delete one `target/<subject>/` folder and commit the removal.
+
+    The folder must be a direct child of `<arch_root>/target/`. Its tracked files are
+    removed with `git rm` and committed on their own (`git commit -- <folder>`), so changes
+    staged elsewhere in the repository stay out of the commit; files git does not track are
+    deleted from disk. A folder already gone is reported, not refused.
+
+    Args:
+        arch_root: The architecture directory holding `target/`.
+        target_dir: The target folder to remove.
+        message: The commit message.
+
+    Returns:
+        `ok`, the refusals, whether the folder was removed, the commit, and git's output.
+    """
+    root = _arch_root(arch_root)
+    if root is None:
+        none = ["no architecture directory was given"]
+        return {
+            "ok": False,
+            "refusals": none,
+            "summary": {"ok": False, "refusals": none},
+        }
+    folder = Path(target_dir).resolve()
+    targets = (root / TARGET_FOLDER).resolve()
+    if folder.parent != targets:
+        why = [f"{folder} is not a subject folder directly under {targets}"]
+        return {"ok": False, "refusals": why, "summary": {"ok": False, "refusals": why}}
+    report: dict = {
+        "ok": True,
+        "refusals": [],
+        "targetDir": str(folder),
+        "commit": None,
+    }
+    if not folder.exists():
+        report["removed"] = False
+        report["summary"] = {"ok": True, "removed": False, "commit": None}
+        return report
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), *argv],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    tracked = git("ls-files", "--", str(folder))
+    if tracked.returncode != 0:
+        why = [f"git ls-files failed: {tracked.stderr.strip()}"]
+        return report | {
+            "ok": False,
+            "refusals": why,
+            "summary": {"ok": False, "refusals": why},
+        }
+    if tracked.stdout.strip():
+        rm = git("rm", "-r", "-q", "--", str(folder))
+        if rm.returncode != 0:
+            why = [f"git rm failed: {rm.stderr.strip()}"]
+            return report | {
+                "ok": False,
+                "refusals": why,
+                "summary": {"ok": False, "refusals": why},
+            }
+    if folder.exists():
+        shutil.rmtree(folder)
+    if tracked.stdout.strip():
+        done = git("commit", "-q", "-m", message, "--", str(folder))
+        if done.returncode != 0:
+            why = [f"git commit failed: {(done.stderr or done.stdout).strip()}"]
+            return report | {
+                "ok": False,
+                "removed": True,
+                "refusals": why,
+                "summary": {"ok": False, "removed": True, "refusals": why},
+            }
+        head = git("rev-parse", "--short", "HEAD")
+        report["commit"] = head.stdout.strip() or None
+    report["removed"] = True
+    report["summary"] = {"ok": True, "removed": True, "commit": report["commit"]}
     return report

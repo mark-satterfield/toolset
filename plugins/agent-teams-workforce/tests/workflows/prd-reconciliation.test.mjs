@@ -1,24 +1,17 @@
-// A PRD says what the product MUST BE. What already ships is material, not authority.
+// The detailing of one repository: each delta item placed in it, compared with the code on
+// its main, gets one status — add, modify, remove, done, planned-elsewhere — with a citation.
 //
-// prd-to-spec used to read the two the other way round: it reconciled the PRD against
-// reality and then specified the REMAINDER — a generated "delta PRD" — so a requirement
-// with code behind it was written off as done, a PRD whose requirements were all built
-// was CLOSED, and the phases downstream never saw the document anybody wrote. That
-// inverts the rule. The PRD is canonical: material that conforms is reused, material that
-// contradicts is REMOVED (the PRD wins, and that is settled by definition rather than
-// argued), and what is absent is built. Nothing is ever subtracted from the ask.
-//
-// These tests hold the properties that make the inversion impossible to reintroduce:
-// every requirement comes back, a status with no evidence behind it is not honoured,
-// removal and reuse are first-class work, downstream reads the ORIGINAL PRD, and a UI
-// difference never convenes an architecture panel.
+// These tests hold the properties that make the detailing usable downstream: every placed item
+// comes back exactly once, a status outside the five or an uncited status fails the run, the UI
+// is resolved bundle-first, and the composite details per repository after the TRD and blocks a
+// repository's Spec when its detailing fails.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runWorkflowScript, workflowCalls, agentCalls } from './helpers/run-workflow.mjs'
-import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS } from './helpers/bead-writer.mjs'
+import { withLifecycle, TEST_EPIC, ARTIFACT_ARGS, TEST_ARCHITECTURE, TEST_DELTA_ITEMS } from './helpers/bead-writer.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const WORKFLOWS = path.resolve(HERE, '..', '..', 'workflows')
@@ -28,20 +21,24 @@ const prdToSpec = path.join(WORKFLOWS, 'prd-to-spec.js')
 const PRD = {
   id: 'ssbd-sp6n',
   title: 'Multi-factor authentication',
-  body: 'R1. A user can enrol a TOTP authenticator.\nR2. A user is challenged for MFA at sign-in.',
   path: '/docs/prd/mfa.md',
   repoPath: '/repo/auth',
 }
-
+const ITEMS = [
+  { id: 'D1', element: 'auth-service', views: ['/arch/target/mfa/delta/05-building-block-view/mfa.md'] },
+  { id: 'D2', element: 'mfa-table', views: ['/arch/target/mfa/delta/05-building-block-view/mfa.md'] },
+]
+const DELTA = { targetDir: '/arch/target/mfa', deltaDir: '/arch/target/mfa/delta' }
 const DEPENDENCY_CLEAN = { current: true, changeFindings: [], evidence: 'lockfiles unchanged' }
+const LABEL = 'detail:delta-and-dependencies'
 
-/** Scripted reconciler — the ONE checker session that carries both checks. */
-function reconcileAgents({ requirements, uiAuthority }) {
+/** Scripted detailing — the ONE session that carries both checks. */
+function detailAgents({ items, uiAuthority }) {
   return (call) => {
-    if (call.label === 'reconcile:reality-and-dependencies') {
+    if (call.label === LABEL) {
       return {
-        requirements,
-        evidenceSummary: 'read the auth service and queried the deployed pool',
+        items,
+        evidenceSummary: 'read the auth service on main',
         dependencyChanges: DEPENDENCY_CLEAN,
         ...(uiAuthority ? { uiAuthority } : {}),
       }
@@ -50,121 +47,69 @@ function reconcileAgents({ requirements, uiAuthority }) {
   }
 }
 
-async function reconcile(scripted, args = {}) {
+async function detail(scripted, args = {}) {
   return runWorkflowScript(reconciliation, {
-    args: { prd: PRD, repos: ['/repo/auth'], ...args },
-    agentImpl: reconcileAgents(scripted),
+    args: { prd: PRD, repos: ['/repo/auth'], items: ITEMS, delta: DELTA, ...args },
+    agentImpl: detailAgents(scripted),
   })
 }
 
-// ── Nothing is subtracted ───────────────────────────────────────────────────────
+const item = (id, status, extra = {}) => ({
+  id,
+  element: ITEMS.find((i) => i.id === id).element,
+  status,
+  from: 'x',
+  to: 'y',
+  evidence: ['services/auth/mfa.py:118'],
+  surface: 'service',
+  ...extra,
+})
 
-test('a PRD whose requirements all conform is REUSED, not closed — every requirement still comes back', async () => {
-  const { result, calls } = await reconcile({
-    requirements: [
-      {
-        id: 'R1',
-        requirement: 'enrol TOTP',
-        status: 'conforms',
-        evidence: ['services/auth/mfa.py:118'],
-        conformingMaterial: ['services/auth/mfa.py enrolment flow'],
-        surface: 'service',
-      },
-      {
-        id: 'R2',
-        requirement: 'challenge at sign-in',
-        status: 'conforms',
-        evidence: ['https://api.dev/auth/mfa/challenge — 200'],
-        conformingMaterial: ['the deployed challenge endpoint'],
-        surface: 'service',
-      },
-    ],
-  })
+// ── every placed item comes back, with one status ───────────────────────────────
+
+test('every placed item comes back with its status, from and to', async () => {
+  const { result, calls } = await detail({ items: [item('D1', 'modify'), item('D2', 'add', { from: 'absent' })] })
   assert.equal(result.ok, true)
-  assert.equal(result.requirements.length, 2, 'the inventory is never shorter than the PRD')
-  assert.equal(result.conformsCount, 2)
-  assert.equal(result.absentCount, 0)
-  assert.equal(result.reuseWork.length, 2, 'conforming material is named so the spec builds ON it')
-  assert.equal(result.removalWork.length, 0)
-  assert.equal(
-    calls.filter((c) => c.kind === 'agent').length,
-    1,
-    'the mini writes no document at all — one checker session and nothing else',
-  )
+  assert.equal(result.items.length, 2)
+  assert.deepEqual(result.counts, { add: 1, modify: 1, remove: 0, done: 0, 'planned-elsewhere': 0 })
+  assert.equal(calls.filter((c) => c.kind === 'agent').length, 1, 'one detailing session and nothing else')
 })
 
-test('nothing built at all is every requirement absent — the mini does not assume the work exists either', async () => {
-  const { result } = await reconcile({
-    requirements: [
-      { id: 'R1', requirement: 'enrol TOTP', status: 'absent', evidence: ['no match for "totp" under services/auth/'], missing: 'the enrolment flow' },
-      { id: 'R2', requirement: 'challenge at sign-in', status: 'absent', evidence: ['no match for "mfa" in routes.py:1-400'], missing: 'the challenge' },
-    ],
-  })
-  assert.equal(result.absentCount, 2)
-  assert.equal(result.requirements.length, 2)
-  assert.equal(result.requirements[0].missing, 'the enrolment flow', 'what is missing survives for the builder')
+test('a placed item with no entry fails the run, naming it', async () => {
+  const { result } = await detail({ items: [item('D1', 'done')] })
+  assert.equal(result.ok, false)
+  assert.equal(result.stage, 'detailing')
+  assert.ok(result.failedItems.some((f) => f.id === 'D2'))
 })
 
-test('material that contradicts the PRD becomes REMOVAL work, not a smaller PRD', async () => {
-  // The whole inversion in one test. A contradiction used to shrink the ask; it is the
-  // same ask plus a deletion, and the deletion has to reach decomposition or nobody does it.
-  const { result } = await reconcile({
-    requirements: [
-      {
-        id: 'R1',
-        requirement: 'enrol TOTP',
-        status: 'contradicts',
-        evidence: ['services/auth/sms_mfa.py:44'],
-        removalTargets: ['services/auth/sms_mfa.py', 'infra/auth_stack.py:202 SMS config'],
-        surface: 'service',
-      },
-    ],
-  })
-  assert.equal(result.contradictsCount, 1)
-  assert.equal(result.requirements.length, 1, 'the requirement stays in scope')
-  assert.deepEqual(result.removalWork, [
-    {
-      requirementId: 'R1',
-      requirement: 'enrol TOTP',
-      targets: ['services/auth/sms_mfa.py', 'infra/auth_stack.py:202 SMS config'],
-    },
-  ])
+test('an unrecognised status fails the run naming the item, rather than being coerced', async () => {
+  const { result } = await detail({ items: [item('D1', 'conforms'), item('D2', 'add')] })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /D1: status "conforms" is not one of add, modify, remove, done, planned-elsewhere/)
 })
 
-// ── evidence ────────────────────────────────────────────────────────────────────
-
-test('a schema that permitted an evidence-free status would defeat the whole check', async () => {
-  const { calls } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
-  })
-  const schema = agentCalls(calls, 'reconcile:reality-and-dependencies')[0].opts.schema
-  const item = schema.properties.requirements.items
-  assert.ok(item.required.includes('evidence'), 'evidence is required of every requirement, whatever its status')
-  assert.equal(
-    item.properties.evidence.minItems,
-    undefined,
-    'an empty evidence array is caught by the reduction, which demotes that one requirement — a schema bound would discard the whole inventory',
-  )
-  assert.deepEqual(
-    item.properties.status.enum,
-    ['conforms', 'contradicts', 'absent'],
-    'the three statuses describe the MATERIAL — there is no status that retires a PRD requirement',
-  )
+test('a status with no file:line fails the run; planned-elsewhere names its bead instead', async () => {
+  const { result } = await detail({ items: [item('D1', 'add', { evidence: ['looked around'] }), item('D2', 'planned-elsewhere', { evidence: [] })] })
+  assert.equal(result.ok, false)
+  assert.match(result.reason, /D1: add cites no file:line/)
+  assert.match(result.reason, /D2: planned-elsewhere names no bead in plannedBy/)
+  const ok = await detail({ items: [item('D1', 'done'), item('D2', 'planned-elsewhere', { evidence: [], plannedBy: 'ssbd-abc' })] })
+  assert.equal(ok.result.ok, true)
 })
 
-// RETIRED WITH CHECK 1c. Three tests here asserted `architectureNeeded`,
-// `architectureQuestions` and the script-side UI-question guard. Nothing consumed any of
-// those after PRD Reconciliation moved into the per-repo spec step, so the check itself is
-// gone from the mini — and a test asserting behaviour the code no longer has is not a
-// regression net, it is a second copy of the dead code. Whether an architecture panel
-// convenes is covered where it is now decided: `triage:architecture-needed` over the PRD,
-// in the prd-to-spec tests.
+test('the schema holds the five statuses and requires evidence of every item', async () => {
+  const { calls } = await detail({ items: [item('D1', 'done'), item('D2', 'done')] })
+  const schema = agentCalls(calls, LABEL)[0].opts.schema
+  const entry = schema.properties.items.items
+  assert.ok(entry.required.includes('evidence'))
+  assert.deepEqual(entry.properties.status.enum, ['add', 'modify', 'remove', 'done', 'planned-elsewhere'])
+})
 
 // ── the UI authority chain ──────────────────────────────────────────────────────
 
-test('the resolved cds bundle travels with the inventory so spec authoring can read its build-specs', async () => {
-  const { result } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'], surface: 'ui' }],
+test('the resolved cds bundle travels with the detailing so spec authoring can read its build-specs', async () => {
+  const { result } = await detail({
+    items: [item('D1', 'add', { surface: 'ui' }), item('D2', 'done')],
     uiAuthority: {
       bundlePath: '/repo/auth/design-mocks/packages/batch-20260819T191805Z',
       artifactsConsulted: ['views/settings-profile/spec/build-spec.md'],
@@ -177,119 +122,66 @@ test('the resolved cds bundle travels with the inventory so spec authoring can r
   assert.equal(result.uiAuthority.mocksDir, '/repo/auth/design-mocks', 'the mocks directory is derived from the repo when not stated')
 })
 
-test('the reconciler is pointed at the hand-off bundle FIRST and the loose mocks second', async () => {
-  const { calls } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
-  })
-  const [checker] = agentCalls(calls, 'reconcile:reality-and-dependencies')
-  assert.match(checker.prompt, /HAND-OFF BUNDLE/, 'the packaged artifact is the highest UI authority')
-  assert.match(checker.prompt, /MANIFEST\.tsv/, 'and it is told to start at the cheap index')
-  assert.match(checker.prompt, /NEVER an\s*\n?\s*architecture question/, 'a UI difference is settled, not adjudicated')
+test('the detailing is pointed at the hand-off bundle FIRST and the loose mocks second', async () => {
+  const { calls } = await detail({ items: [item('D1', 'done'), item('D2', 'done')] })
+  const [checker] = agentCalls(calls, LABEL)
+  assert.match(checker.prompt, /HAND-OFF BUNDLE/)
+  assert.match(checker.prompt, /MANIFEST\.tsv/)
   assert.ok(checker.prompt.includes('/repo/auth/design-mocks/packages'), 'the bundle root is derived from the repo the run operates on')
 })
 
-// ── the checks are one session, and it is a leaf ────────────────────────────────
+// ── one session, a leaf, scoped to one repository ───────────────────────────────
 
-test('reality and dependency currency are both checked by ONE checker session', async () => {
-  // The two checks were two sessions, each paying a full session-start to read the
-  // same PRD. Both are checks on a document authored upstream, so one session
-  // carrying both preserves segregation of duties at half the cost (ssbd-qrpf0).
-  const { calls, result } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
-  })
-  const combined = agentCalls(calls, 'reconcile:reality-and-dependencies')
-  assert.equal(combined.length, 1, 'exactly one checker session runs both checks')
+test('the detailing and dependency currency are both checked by ONE session', async () => {
+  const { calls, result } = await detail({ items: [item('D1', 'done'), item('D2', 'done')] })
+  const combined = agentCalls(calls, LABEL)
+  assert.equal(combined.length, 1)
   assert.equal(combined[0].opts.agentType, 'prd-reality-reconciler')
-  assert.match(combined[0].prompt, /CHECK 2/, 'the dependency check is part of the same dispatch')
-  assert.ok(result.dependencyChanges, 'the dependency-change verdict still crosses back to the caller')
-})
-
-test('the reconciler is told to pin every aws command to a profile', async () => {
-  // Full admin credentials against the wrong account is the failure mode that makes
-  // live verification worse than not doing it.
-  const { calls } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
-  })
-  assert.match(agentCalls(calls, 'reconcile:reality-and-dependencies')[0].prompt, /--profile dev/)
+  assert.match(combined[0].prompt, /CHECK 2/)
+  assert.ok(result.dependencyChanges)
 })
 
 test('the mini is a leaf — it never nests another workflow', async () => {
-  const { calls } = await reconcile({
-    requirements: [{ id: 'R1', requirement: 'x', status: 'absent', evidence: ['e'] }],
-  })
+  const { calls } = await detail({ items: [item('D1', 'done'), item('D2', 'done')] })
   assert.equal(calls.filter((c) => c.kind === 'workflow').length, 0)
+})
+
+test('more than one repository is refused before any session runs', async () => {
+  const { result, calls } = await detail({ items: [] }, { repos: ['/repo/a', '/repo/b'] })
+  assert.equal(result.ok, false)
+  assert.equal(result.stage, 'input')
+  assert.equal(calls.filter((c) => c.kind === 'agent').length, 0)
 })
 
 // ── the composite ───────────────────────────────────────────────────────────────
 
-const RECON_OK = {
+const DETAIL_OK = {
   ok: true,
-  requirements: [
-    { id: 'R1', requirement: 'a', status: 'conforms', evidence: ['x:1'], conformingMaterial: ['x.py'], surface: 'service', repos: ['/repo/auth'] },
-    { id: 'R2', requirement: 'b', status: 'absent', evidence: ['y:2'], missing: 'b', surface: 'service', repos: ['/repo/auth'] },
-  ],
-  conformsCount: 1,
-  contradictsCount: 0,
-  absentCount: 1,
-  removalWork: [],
-  reuseWork: [{ requirementId: 'R1', requirement: 'a', material: ['x.py'], repos: ['/repo/auth'] }],
-  repos: ['/repo/auth'],
-  existingRepos: ['/repo/auth'],
-  spansMultipleRepos: false,
+  items: [{ id: 'D1', element: 'auth-service', status: 'modify', from: 'password only', to: 'password and TOTP', evidence: ['auth.py:3'], plannedBy: null, surface: 'service' }],
+  counts: { add: 0, modify: 1, remove: 0, done: 0, 'planned-elsewhere': 0 },
   uiAuthority: { bundlePath: null, mocksDir: null, artifactsConsulted: [], shellsConsulted: [], pagesConsulted: [] },
   ledger: { phase: 'prd-reconciliation' },
 }
 
-// WHERE THE COMPARISON RUNS IS THE WHOLE SUBJECT OF THIS SECTION, AND IT MOVED.
-//
-// It used to run at the front of prd-to-spec, ahead of every gate, and feed PRD
-// validation, the architecture panel and the TRD. That made what is deployed in a dev
-// account into a form of requirement. A PRD is WHAT and never knows what is deployed; a
-// TRD is HOW and derives it from the PRD and the architecture on best-practice grounds, blind to
-// the status quo; the SPEC is the only layer that asks "X is what we want, Y is what we
-// have, how do we turn Y into X", and it asks it there because it is the only layer scoped
-// to ONE repository — the only scope at which the question has a concrete answer.
-//
-// So `composite` now runs the pipeline all the way to spec authoring, where the
-// reconciliation lives. Everything the old tests pinned still holds; what changed is when
-// it is observable.
-
-/** Run prd-to-spec all the way through, with every gate passing and every mini minimal. */
-async function composite(reconResult, { onCalls, args } = {}) {
+/** Run prd-to-spec all the way through, with every mini minimal. */
+async function composite(detailResult) {
   const seen = []
   let storyN = 0
   const { result, calls, logs } = await runWorkflowScript(prdToSpec, {
-    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, ...ARTIFACT_ARGS, ...(args || {}) },
+    args: { prd: { ...PRD }, repoPath: '/repo/auth', epic: TEST_EPIC, archPath: '/arch', ...ARTIFACT_ARGS },
     workflowImpl: (call) => {
       seen.push(call)
       const name = String(call.name || '')
-      if (name.endsWith('gate-enforce')) {
-        return { verdict: 'pass', criteria: [], flags: [] }
-      }
-      if (name.endsWith('prd-reconciliation')) return reconResult
-      if (name.endsWith('architecture')) return { ok: true, decision: { id: 'AD-1' } }
+      if (name.endsWith('prd-reconciliation')) return detailResult
+      if (name.endsWith('architecture')) return { ...TEST_ARCHITECTURE }
       if (name.endsWith('repo-scoping')) {
-        return {
-          ok: true,
-          repos: ['/repo/auth'],
-          placements: [{ repoPath: '/repo/auth', repoName: 'auth', workUnitIds: [], rationale: 'r', verified: true }],
-          newRepos: [],
-          requiredHumanActions: [],
-          reclassified: [],
-          blocked: [],
-          spanVerified: true,
-        }
+        return { ok: true, repos: ['/repo/auth'], placements: [{ repoPath: '/repo/auth', repoName: 'auth', itemIds: TEST_DELTA_ITEMS.map((i) => i.id), frontend: false, rationale: 'r' }], noCode: [], createdRepos: [], creationFailures: [] }
       }
-      if (name.endsWith('trd-authoring')) return { ok: true, trd: { id: 'TRD-1', summary: 'sum' } }
+      if (name.endsWith('trd-authoring')) return { ok: true, trdPath: '/proj/trd.md', trd: { id: 'TRD-1', summary: 'sum' } }
       if (name.endsWith('spec-authoring')) {
         storyN += 1
         const repoPath = (call.payload && call.payload.repoPath) || null
-        return {
-          ok: true,
-          specSet: { apiSpec: {} },
-          story: { key: `S${storyN}`, type: 'story', id: `bd-S${storyN}`, elabKey: `story:S${storyN}`, title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' },
-          outOfRepoFindings: [],
-        }
+        return { ok: true, story: { key: `S${storyN}`, type: 'story', id: `bd-S${storyN}`, elabKey: `story:S${storyN}`, title: `Story for ${repoPath}`, description: 'd', repoPath, parentEpicKey: 'E1' } }
       }
       if (name.endsWith('task-decomposition')) {
         const sk = ((call.payload && call.payload.story) || {}).key || 'S?'
@@ -299,115 +191,47 @@ async function composite(reconResult, { onCalls, args } = {}) {
     },
     agentImpl: withLifecycle(),
   })
-  if (onCalls) onCalls(calls)
   return { result, seen, calls, logs }
 }
 
-test('the comparison runs at SPEC AUTHORING — after the TRD, never before it', async () => {
-  const { seen } = await composite(RECON_OK)
+test('the detailing runs per repository after the span and the TRD, immediately before its spec', async () => {
+  const { seen, result } = await composite(DETAIL_OK)
+  assert.equal(result.ok, true, result.headline)
   const idx = (suffix) => seen.findIndex((c) => String(c.name || '').endsWith(suffix))
   const reconIdx = idx('prd-reconciliation')
-  assert.ok(reconIdx >= 0, 'the composite still reconciles')
-  assert.ok(reconIdx > idx('architecture'), 'the architecture panel designs from the PRD and the architecture')
-  assert.ok(reconIdx > idx('repo-scoping'), 'the span is ruled before anything looks at what is deployed')
-  assert.ok(reconIdx > idx('trd-authoring'), 'the TRD is HOW, derived from best practice and blind to the status quo')
-  assert.ok(reconIdx < idx('spec-authoring'), 'and it lands immediately before the spec that has to turn Y into X')
-})
-
-test('neither architecture nor the TRD is handed a deployed-state inventory', async () => {
-  // The negative half, and the one that matters: the relocation is only real if the
-  // upstream phases genuinely stop receiving the material. The inventory's own header text
-  // is the marker — it is what `renderInventory` emits and nothing else in the run does.
-  const { seen, calls } = await composite(RECON_OK)
-  const INVENTORY = /MATERIAL INVENTORY FOR/
-  for (const suffix of ['architecture', 'trd-authoring', 'repo-scoping']) {
-    const call = seen.find((c) => String(c.name || '').endsWith(suffix))
-    assert.ok(call, `${suffix} ran`)
-    assert.ok(
-      !INVENTORY.test(JSON.stringify(call.payload)),
-      `${suffix} must derive from the PRD and the architecture, never from what happens to be deployed`,
-    )
-  }
-  // The architecture triage is dispatched by the composite directly rather than through a
-  // mini, so it is checked at the agent level.
-  for (const c of agentCalls(calls, 'triage:architecture-needed')) {
-    assert.ok(!INVENTORY.test(c.prompt), 'the triage judges the PRD, not the deployed system')
-  }
-  // And it DOES reach the spec, through the constraints channel that already existed.
-  const spec = seen.find((c) => String(c.name || '').endsWith('spec-authoring'))
-  assert.ok(
-    spec.payload.constraints.some((x) => INVENTORY.test(String(x))),
-    'the spec is the layer that reuses, removes or builds, so it is the layer that gets the inventory',
-  )
-})
-
-test('the comparison is scoped to ONE repository, and it is the ruled path', async () => {
-  const { seen } = await composite(RECON_OK)
-  const recons = seen.filter((c) => String(c.name || '').endsWith('prd-reconciliation'))
-  assert.equal(recons.length, 1, 'one per repository in the ruled span')
-  assert.deepEqual(recons[0].payload.repos, ['/repo/auth'], 'the search narrows to the repository the Story covers')
-  assert.equal(recons[0].payload.prd.body, PRD.body, 'the REQUIREMENTS never narrow — only the search does')
-})
-
-test('a PRD whose requirements ALL conform is not closed — the run carries on', async () => {
-  // The close short-circuit is deleted. No work item is ever ended on the grounds that
-  // code exists: the material is reused, and the PRD is still specified.
-  const { result } = await composite({
-    ...RECON_OK,
-    requirements: [{ id: 'R1', requirement: 'a', status: 'conforms', evidence: ['x:1'], conformingMaterial: ['x.py'], surface: 'service' }],
-    conformsCount: 1,
-    absentCount: 0,
-  })
-  assert.notEqual(result.action, 'close')
-})
-
-test('an infrastructure-only PRD is not rerouted away from the pipeline', async () => {
-  // `infraOnly` was retired with check 1c and the mini no longer emits it. The fixture is
-  // kept SYNTHETIC on purpose: it is the only thing that makes this a regression guard
-  // against reintroducing the reroute, which was computed off the subtracted remainder.
-  // Drop it and the test asserts nothing.
-  const { result } = await composite({ ...RECON_OK, infraOnly: true })
-  assert.notEqual(result.action, 'reroute')
-  assert.equal(result.composite, undefined)
-})
-
-test('every phase that sees a PRD sees the same text — none of them a narrowed one', async () => {
-  // The run reaches every phase now, so this sweeps the whole pipeline. Phases carry the text under different keys — trd-authoring
-  // takes `content`, the rest take `body` — so the invariant is the TEXT, not the field
-  // name: no phase anywhere receives a subtracted or rewritten PRD.
-  const { seen } = await composite(RECON_OK)
-  const withPrd = seen.filter((c) => c.payload && c.payload.prd && typeof c.payload.prd === 'object')
-  assert.ok(withPrd.length >= 3, `more than one phase reads the PRD (saw ${withPrd.length})`)
-  for (const c of withPrd) {
-    const text = c.payload.prd.body || c.payload.prd.content
-    assert.equal(text, PRD.body, `${c.name} must receive the original PRD, not a narrowed one`)
-  }
-})
-
-test('removal discovered at spec time still reaches the task briefs', async () => {
-  // The half of the old front-end phase that MUST survive the move. A contradiction that
-  // nobody writes a task to delete stays deployed, so the item has to travel from the
-  // per-repo comparison, through placement, into the decomposition brief.
-  const { seen, result } = await composite({
-    ...RECON_OK,
-    requirements: [
-      { id: 'R1', requirement: 'a', status: 'contradicts', evidence: ['x:1'], removalTargets: ['old.py'], surface: 'service', repos: [] },
-    ],
-    conformsCount: 0,
-    contradictsCount: 1,
-    absentCount: 0,
-    removalWork: [{ requirementId: 'R1', requirement: 'a', targets: ['old.py'], repos: [] }],
-    reuseWork: [],
-  })
-  const decomp = seen.find((c) => String(c.name || '').endsWith('task-decomposition'))
-  assert.ok(decomp, 'decomposition ran')
-  assert.match(decomp.payload.spec.description, /REMOVAL WORK — part of this Story/)
-  assert.match(decomp.payload.spec.description, /old\.py/, 'the target itself has to be in the brief')
-  assert.equal(result.ok, true)
-  assert.equal(result.removalNotEmitted, undefined)
-})
-
-test('the comparison is a workflow dispatch of its own', async () => {
-  const { seen } = await composite(RECON_OK)
+  assert.ok(reconIdx > idx('architecture'))
+  assert.ok(reconIdx > idx('repo-scoping'))
+  assert.ok(reconIdx > idx('trd-authoring'))
+  assert.ok(reconIdx < idx('spec-authoring'))
   assert.equal(workflowCalls(seen, 'agent-teams-workforce:prd-reconciliation').length, 1)
+})
+
+test('the detailing receives the delta items placed in its one repository', async () => {
+  const { seen } = await composite(DETAIL_OK)
+  const recon = seen.find((c) => String(c.name || '').endsWith('prd-reconciliation'))
+  assert.deepEqual(recon.payload.repos, ['/repo/auth'])
+  assert.deepEqual(recon.payload.items.map((i) => i.id), TEST_DELTA_ITEMS.map((i) => i.id))
+  assert.equal(recon.payload.delta.deltaDir, TEST_ARCHITECTURE.deltaDir)
+})
+
+test('the spec is told the change for each add, modify or remove item, and gets the target and delta views', async () => {
+  const { seen } = await composite(DETAIL_OK)
+  const spec = seen.find((c) => String(c.name || '').endsWith('spec-authoring'))
+  assert.ok(spec.payload.constraints.some((x) => /CHANGE: password only → password and TOTP/.test(String(x))))
+  assert.equal(spec.payload.architecture.deltaDir, TEST_ARCHITECTURE.deltaDir)
+})
+
+test('a failed detailing blocks that repository\'s Spec', async () => {
+  const { seen, result } = await composite({ ok: false, stage: 'detailing', reason: 'D1: status "x" is not one of add, modify, remove, done, planned-elsewhere', items: [] })
+  assert.equal(seen.filter((c) => String(c.name || '').endsWith('spec-authoring')).length, 0, 'no spec is authored without its detailing')
+  assert.equal(result.ok, false)
+})
+
+test('the target folder is removed once the Epic is done', async () => {
+  const { calls, result } = await composite(DETAIL_OK)
+  assert.equal(result.ok, true)
+  const removal = agentCalls(calls, 'arch:target-remove')
+  assert.equal(removal.length, 1)
+  assert.match(removal[0].prompt, /arch-target-remove --arch-root '\/arch' --target-dir '\/arch\/target\/mfa'/)
+  assert.equal(result.targetRemoval.removed, true)
 })

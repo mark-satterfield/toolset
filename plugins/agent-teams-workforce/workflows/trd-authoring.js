@@ -1,9 +1,9 @@
 export const meta = {
   name: 'trd-authoring',
   description:
-    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the architecture. A filing-clerk session names the TRD file when the caller gives no path, then one trd-author session reads the owner\'s constraints in section 2 and the views of every element the PRD\'s design has, found through the catalog frontmatter, and writes the TRD in one pass: PRD business requirements that need technical elaboration plus the obligations the architecture imposes, each citing its PRD requirement or the architecture file it comes from and naming the design element it applies to. An obligation is stated only where the design has the thing it governs; a technical rule reaches the TRD from the architecture, never from the PRD.',
+    'Leaf mini — authors a Technical Requirements Document (TRD) from a PRD plus the approved target and delta of its architecture. A filing-clerk session names the TRD file when the caller gives no path, then one trd-author session reads the owner\'s constraints in section 2, the target and delta views, and the effective views of the elements the delta adds or changes, and writes the TRD in one pass: PRD business requirements that need technical elaboration plus the obligations the architecture imposes on the elements the delta adds or changes, each citing its PRD requirement or the view path it comes from and naming the element it applies to. Refuses a run with no target and delta. A technical rule reaches the TRD from the architecture, never from the PRD.',
   phases: [
-    { title: 'Author TRD', detail: 'author the TRD from the PRD and the architecture views it touches, one pass' },
+    { title: 'Author TRD', detail: 'author the TRD from the PRD and the target and delta views, one pass' },
   ],
 }
 const dispatchFailures = []
@@ -33,7 +33,7 @@ async function settleAgent(prompt, opts) {
 //   prd: { id?, title?, path?, content?, acceptanceCriteria?: any[] },
 //   archPath,
 //   trdPath?, repoPath?, feedback?, standingRulings?,
-//   architecture?: { decision?, decisionPath?, architectureUpdate? } (the ruling this PRD's design rests on),
+//   architecture: { subject, targetDir, deltaDir, items?: [{ id, element, views }], decisionPath? } (the approved target and its delta),
 //   artifacts?: { dir, relDir?, epicId, script, phase, inputs?, beadId? }
 // }
 // returns { ok, trdPath, filingPath, trd, decisionIds } or { ok: false, stage, reason, ... }
@@ -87,6 +87,13 @@ if (!archPath.startsWith('/')) {
   return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
 }
 
+const hasText = (v) => typeof v === 'string' && v.trim().length > 0
+const target = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
+if (!target || !hasText(target.targetDir) || !hasText(target.deltaDir)) {
+  const why = 'no approved target and delta supplied — architecture.targetDir and architecture.deltaDir name the views the TRD states obligations on.'
+  return { ok: false, stage: 'input', deterministicFailure: true, error: why, reason: why }
+}
+
 const died = (...phases) => {
   const deaths = dispatchDeaths(...phases)
   return deaths.length ? { dispatchFailed: true, dispatchFailures: deaths } : {}
@@ -95,17 +102,15 @@ const died = (...phases) => {
 const archText = `THE ARCHITECTURE is at ${archPath}. It is not inside the product repository ${repo}. Its \`arc42/\` folder is the effective version (the approved architecture), its \`target/\` folder holds the targets in progress, and the architecture documentation model in its \`reference/\` folder says what each version and section holds.
 - \`arc42/02-architecture-constraints\` holds the owner's constraints. Read its README.md in full.
 - \`arc42/04-solution-strategy\` holds the enterprise-level strategy. Read its README.md.
-- Every other arc42 section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog. For each element this PRD's design has — each service, store, API, event, data flow and boundary — find the views that show it by searching that frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them in full. The views in \`arc42/08-crosscutting-concepts\` describe patterns used across services; read every one whose concept applies to an element the design has.
-- Open targets in \`target/\` that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
+- Every other arc42 section is the design so far, as views. Each view's frontmatter names its \`view_type\`, \`scope\`, \`subject\` and every element it \`shows\`: that frontmatter is the catalog.
+- THIS PRD'S APPROVED TARGET is ${target.targetDir}, and the change alone, its delta, is ${target.deltaDir}. Read every delta view in full, and the target views that show the elements the delta adds or changes. For each such element, find its effective views by searching the catalog frontmatter (\`subject:\` and the \`shows:\` lists) for the element's name, at every scope, and read them. The views in \`arc42/08-crosscutting-concepts\` describe patterns used across services; read every one whose concept applies to an element the delta adds or changes.
+- Other open targets in \`target/\` that show the same elements are designs in progress; read them, so this TRD does not contradict them.`
 const prdText = prdContent
   ? prd.content
   : `PRD ${prd.id || ''}${prd.title ? `: ${prd.title}` : ''}\n\nThe PRD is the document at ${prdPath}. Read that ONE file in full before you author anything; every requirement in it is in scope.`
 
-const hasText = (v) => typeof v === 'string' && v.trim().length > 0
-const ruling = a.architecture && typeof a.architecture === 'object' ? a.architecture : null
-const rulingBlock = ruling
-  ? `\nArchitecture ruling this PRD's design rests on:\n${JSON.stringify({ decision: ruling.decision, architectureUpdate: ruling.architectureUpdate }, null, 2)}${hasText(ruling.decisionPath) ? `\nThe ruling itself is the document at ${ruling.decisionPath}. Read it.` : ''}\n`
-  : '\nNo architecture ruling was made for this PRD: the design is the one the PRD and the architecture already imply.\n'
+const deltaItems = (Array.isArray(target.items) ? target.items : []).filter((i) => i && hasText(i.id) && hasText(i.element))
+const deltaBlock = `\nTHE ELEMENTS THE DELTA SHOWS (the delta items; name each requirement's \`appliesTo\` as the item's element is named here):\n${deltaItems.length ? deltaItems.map((i) => `- ${i.id}: ${i.element}`).join('\n') : '(read them from the delta views\' \`shows\` frontmatter)'}\n${hasText(target.decisionPath) ? `The architecture decision that approved the target is the document at ${target.decisionPath}.\n` : ''}`
 const feedback = typeof a.feedback === 'string' && a.feedback.trim() ? `[Gate feedback from the previous run of this phase] ${a.feedback.trim()}` : ''
 
 phase('Author TRD')
@@ -161,16 +166,16 @@ THE TRD'S REQUIREMENTS COME FROM TWO SOURCES.
 
 Read the architecture as the block below says, and for every view you read ask what it demands of anything this PRD builds.
 
-AN OBLIGATION BINDS ONLY WHAT THE DESIGN HAS. An obligation about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where this PRD's design — the PRD and the architecture ruling below — has that thing, and the requirement names it: "the design has bucket <name>, so <name> is versioned and SSE-S3 encrypted [<view path>]". A design with no bucket carries no bucket obligation, and an obligation is never a reason to add the thing it governs: things are added by the design, where things of one kind are shared whenever the design allows. Set \`appliesTo\` on every requirement to the design element it governs, named as the design names it (for a PRD elaboration, the service, store or interface that satisfies it).
+AN OBLIGATION BINDS ONLY WHAT THE DELTA ADDS OR CHANGES. An obligation about a kind of thing (an S3 bucket, a Lambda function, a DynamoDB table, a VPC endpoint) is stated only where the delta adds or changes that thing, and the requirement names it: "the delta adds bucket <name>, so <name> is versioned and SSE-S3 encrypted [<view path>]". An element the delta does not touch carries no obligation here, and an obligation is never a reason to add the thing it governs: things are added by the target. Set \`appliesTo\` on every requirement to the element it governs, named as the delta names it.
 
-APPROVED FILES ARE SETTLED. \`lifecycle_state: effective\` is the approved state: a file that reads it has been reviewed and approved. Use it as given and cite it; do not re-decide, reinterpret or narrow it. A file in any other state is open to review: before a requirement rests on one, check it against the PRD and the architecture ruling below, and name each such file you rely on in your \`summary\`. Read the field in every file you open.
+APPROVED FILES ARE SETTLED. \`lifecycle_state: effective\` is the approved state: a file that reads it has been reviewed and approved. Use it as given and cite it; do not re-decide, reinterpret or narrow it. This PRD's target and delta views read \`in-review\` because they are integrated after review; the architecture step approved them, and they are the design you state obligations on. Any other file in a state other than \`effective\` is open to review: before a requirement rests on one, check it against the PRD and the target, and name each such file you rely on in your \`summary\`. Read the field in every file you open.
 
-CITE THE ARCHITECTURE; DO NOT RESTATE IT. A requirement that names the obligation and cites the view that describes it is complete and is the preferred shape. Where the architecture already settles a point a PRD requirement raises, cite that view. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
+CITE THE ARCHITECTURE; DO NOT RESTATE IT. A requirement that names the obligation and cites the view path that describes it (a target, delta or effective view) is complete and is the preferred shape. Where the architecture already settles a point a PRD requirement raises, cite that view. A correct TRD is often very short; where the architecture obliges nothing new, write nothing for it.
 
 ${writeBrief}
 PRD (source of product requirements):
 ${prdText}
-${rulingBlock}
+${deltaBlock}
 ${Array.isArray(prd.acceptanceCriteria) && prd.acceptanceCriteria.length ? `\nPRD acceptance criteria:\n${prd.acceptanceCriteria.map((x, i) => `${i + 1}. ${typeof x === 'string' ? x : JSON.stringify(x)}`).join('\n')}` : ''}
 
 ${archText}
@@ -180,7 +185,7 @@ Each technical requirement has a stable ID, NAMES ITS SOURCE, names the design e
 
 Return at most ${MAX_REQUIREMENTS} technical requirements, each under 60 words, and keep the TRD document under about 25,000 characters: consolidate related obligations into one requirement rather than splitting them. Cite every view a requirement rests on in \`archRefs\`.
 
-CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at the top of the TRD with \`decisionIds:\` listing every view any requirement depends on, and on each requirement the views it depends on. Cite a view by its path relative to the arc42 folder, with \`#<heading>\` when the requirement rests on one part of it (for example \`08-crosscutting-concepts/<concept>.md#<heading>\`); cite only files you read, and never a section number in place of one.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
+CITE THE VIEWS IN THE DOCUMENT AS WELL AS IN YOUR RESULT: YAML frontmatter at the top of the TRD with \`decisionIds:\` listing every view any requirement depends on, and on each requirement the views it depends on. Cite an effective view by its path relative to the arc42 folder and a target or delta view by its path relative to the architecture directory (for example \`target/<subject>/delta/<section>/<view>.md\`), with \`#<heading>\` when the requirement rests on one part of it; cite only files you read, and never a section number in place of one.${persistBrief(ART, 'trd.md', 'the complete TRD as a markdown document', { beadKey: 'trd' })}`,
   {
     label: 'author:trd',
     phase: 'Author TRD',

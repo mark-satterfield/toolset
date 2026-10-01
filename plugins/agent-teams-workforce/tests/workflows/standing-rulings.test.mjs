@@ -54,13 +54,15 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
   // It also writes no document now, so there is no second dispatch to thread them to.
   const { calls } = await runWorkflowScript(path.join(WF, 'prd-reconciliation.js'), {
     args: {
-      prd: { id: 'P1', title: 't', body: 'R1. migrate data', path: '/prd/p.md', repoPath: '/repo' },
+      prd: { id: 'P1', title: 't', path: '/prd/p.md', repoPath: '/repo' },
+      items: [{ id: 'D1', element: 'data-store' }],
+      delta: { targetDir: '/arch/target/x', deltaDir: '/arch/target/x/delta' },
       standingRulings: RULINGS,
     },
     agentImpl: (call) => {
-      if (call.label === 'reconcile:reality-and-dependencies') {
+      if (call.label === 'detail:delta-and-dependencies') {
         return {
-          requirements: [{ id: 'R1', requirement: 'migrate data', status: 'absent', evidence: ['no match in services/'] }],
+          items: [{ id: 'D1', element: 'data-store', status: 'add', from: 'absent', to: 'x', evidence: ['services/store.py:1'], surface: 'data' }],
           evidenceSummary: 's',
           dependencyChanges: { current: true, changeFindings: [], evidence: 'e' },
         }
@@ -68,7 +70,7 @@ test('prd-reconciliation: the one checker session receives the rulings — and i
       return null
     },
   })
-  const [checker] = agentCalls(calls, 'reconcile:reality-and-dependencies')
+  const [checker] = agentCalls(calls, 'detail:delta-and-dependencies')
   assert.ok(checker.prompt.includes(MARKER), 'the reconciliation checker judges reality against the rulings')
   assert.equal(calls.filter((c) => c.kind === 'agent').length, 1, 'the mini authors nothing, so it dispatches once')
 })

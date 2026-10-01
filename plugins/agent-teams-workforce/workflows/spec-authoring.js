@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-authoring',
   description:
-    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — Spec authoring. Three maker sessions author, in parallel, the implementation-ready spec set for one repository from the TRD and the approved target and delta views, specifying the change for the delta items the repository\'s detailing marks add, modify or remove: API/OpenAPI, event and error contracts; the data model; the acceptance criteria and Definition of Done. One more session authors the ONE Story the Spec pairs with, scoped to args.repoPath, saves it as story-<slug>.json, and writes that ONE Story bead itself with one depscore.py write-story command, keyed by its elab_key, whose full result — the keyed Tasks already under the Story among it — lands in story-<slug>.written.json. With replay: true no session authors, and one runner session runs write-story from the saved story-<slug>.json. Whether the bead landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Author specs', detail: 'three maker sessions author the spec artifacts in parallel' },
     { title: 'Emit story', detail: 'author the ONE Story this Spec pairs with — container only, single repo — and write its bead with depscore.py write-story' },
@@ -32,6 +32,7 @@ async function settleAgent(prompt, opts) {
 
 // args: {
 //   spec: { id?, title?, summary?, service?, repoPath? }, trd?, constraints?: string[],
+//   architecture?: { targetDir, deltaDir } (the approved target and its delta),
 //   accessPatterns?: string[], repoPath, storyKey? ('S1'), epic: { key?, id?, title? },
 //   artifacts: { dir, relDir?, epicId, script, phase, slug, inputs? },
 //   beads: { script, repo, epicId, projectRoot? }  (script: the absolute depscore.py path),
@@ -148,8 +149,8 @@ It prints one JSON object on stdout. Return the process exit code as \`exitCode\
 }
 const beadsFrom = (x) => (x && typeof x === 'object' && ['script', 'repo', 'epicId'].every((k) => hasText(x[k])) ? x : null)
 
-/** Returns the context block every maker reads: spec header, binding constraints and the TRD. */
-function ctxBlock(s, trd, constraints) {
+/** Returns the context block every maker reads: spec header, binding constraints, the target and delta views, and the TRD. */
+function ctxBlock(s, trd, constraints, arch) {
   const trdOnDisk = trd && typeof trd.trdPath === 'string' && trd.trdPath.startsWith('/')
   return [
     `Spec ${s.id || ''}: ${s.title || ''}`,
@@ -157,6 +158,9 @@ function ctxBlock(s, trd, constraints) {
     s.summary ? `What this spec must cover:\n${s.summary}` : '',
     `Work within the repository at: ${s.repoPath || '(repo path not provided — author against the supplied context only)'}`,
     "The architecture reaches this spec through the TRD: the owner's constraints (arc42 section 2) and the patterns the effective views establish for the API type, the runtime libraries, the event path and the data stores. Follow them as the TRD states them; a spec that departs from an established pattern states its reason and evidence. The OpenAPI contract is written before any handler code.",
+    arch && hasText(arch.deltaDir)
+      ? `THE APPROVED TARGET is ${arch.targetDir || '(the folder above the delta)'}, and the change alone, its delta, is ${arch.deltaDir}. Read the delta views for the items listed below, and the target views they need: the spec specifies the change they show for this repository, and nothing the delta does not change.`
+      : '',
     constraints && constraints.length
       ? `Context and constraints for this repository (binding):\n${constraints.map((c, i) => `${i + 1}. ${c}`).join('\n')}`
       : '',
@@ -245,7 +249,7 @@ async function main(a) {
     }, w && w.summary, null)
   }
 
-  const ctx = ctxBlock(s, trd, constraints)
+  const ctx = ctxBlock(s, trd, constraints, a && a.architecture)
   const specMakerCtx = `${ctx}\n\n${makerRules({ cites: true })}`
   const criteriaMakerCtx = `${ctx}\n\n${makerRules({ cites: false })}`
   const contractsBrief = persistBrief(ART, `spec-${artSlug}.md`, 'the three contract artifacts you return — apiSpec, eventContracts and errorSpec — as ONE markdown document with a section for each, carrying each artifact\'s full content')

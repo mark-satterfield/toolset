@@ -1,18 +1,18 @@
 export const meta = {
   name: 'prd-to-spec',
   description:
-    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — rules the repo span, authors the TRD, reconciles per repo only the requirements that govern something that repo owns or changes and authors one Spec and Story per repo (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, beadsEmitted and lifecycle.',
+    'Composite: elaborates an existing, scored Epic and its PRD into Stories and Tasks written to beads. It starts the Epic lifecycle with depscore.py elaboration-start, checks the PRD file with depscore.py prd-parse (readable, not superseded, an H1, requirement headings with acceptance criteria, a Definition of Done) and holds the Epic for a person when a check fails, runs the architecture mini for every PRD (it is never skipped: a PRD the effective version already serves gets a delta that says so), which writes the Epic\'s target and delta under target/<subject>/ and integrates the approved target into the effective version, and holds the Epic for the owner on an owner concern or PRD defect before any Story or Task exists — lists the delta items with depscore.py arch-delta (one per element the delta shows), rules the repo span as the repositories the delta changes (the polyrepo-steward places each item and creates the new repositories the target names), authors the TRD from the target and delta views, details per repo each placed item against the code on main (add, modify, remove, done, planned-elsewhere; a failed detailing blocks that repo\'s Spec) and authors one Spec and Story per repo for its add, modify and remove items (the session that authors the Story writes its bead with depscore.py write-story), decomposes each Story into Tasks for those items only, with a blocks edge onto an open Task of another Epic instead of a duplicate (the session that decomposes it writes each Task bead with one depscore.py write-task command, in build order), derives the Task edges between Stories (the session that derives them writes every Task\'s edges with one depscore.py write-all-task-edges command), then scores the Epic and its Tasks and sets it done with depscore.py elaboration-finish, which reads beads and sets it done only when beads holds every Story, Task and edge the span\'s saved documents name; once it is done, depscore.py arch-target-remove deletes target/<subject>/ and commits the removal. Every bead write is keyed by elab_key, so a rerun updates what exists. When beads does not hold them, the run returns ok:false at stage hierarchy-not-persisted naming what is missing. Returns { ok, stage, beadId, headline, detailPath } plus hierarchy, repoSpan, targetRemoval, beadsEmitted and lifecycle.',
   phases: [
     { title: 'Epic Lifecycle', detail: 'depscore.py elaboration-start: refuse with a named reason, or mark the Epic in_progress' },
     { title: 'PRD', detail: 'resolve the PRD text or path supplied by the caller' },
     { title: 'PRD Validation', detail: 'depscore.py prd-parse: the PRD file is readable, not superseded, has an H1, requirement headings with acceptance criteria under Requirements, and a Definition of Done; a failed check holds the Epic for a person' },
     { title: 'Epic', detail: "adopt the caller's Epic" },
     { title: 'Architecture', detail: 'the architecture mini writes the target and delta for the Epic and integrates the approved target into the effective version; an owner concern or PRD defect holds the Epic for the owner' },
-    { title: 'Repo Scoping', detail: 'rule the repo span, unless the caller pinned one' },
-    { title: 'TRD Authoring', detail: 'author the TRD once per PRD' },
-    { title: 'Spec Authoring', detail: 'per repo: reconcile the requirements that govern what the repo owns or changes, then author the Spec and write its Story bead' },
-    { title: 'Task Decomposition', detail: 'per Story: decompose into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
-    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when beads holds every Story, Task and edge the saved documents name' },
+    { title: 'Repo Scoping', detail: 'the polyrepo-steward places each delta item; the span is the repositories the delta changes' },
+    { title: 'TRD Authoring', detail: 'author the TRD once per PRD from the target and delta views' },
+    { title: 'Spec Authoring', detail: 'per repo: detail each placed delta item against the code on main, then author the Spec for its add, modify and remove items and write its Story bead' },
+    { title: 'Task Decomposition', detail: 'per Story: decompose its add, modify and remove items into Tasks, each Task bead written with its edges as it is saved; then derive the Task edges between Stories and write them with one command' },
+    { title: 'Finish', detail: 'depscore.py elaboration-finish: score the Epic and its Tasks; set done when beads holds every Story, Task and edge the saved documents name; then depscore.py arch-target-remove deletes target/<subject>/ and commits the removal' },
     { title: 'Run Ledger', detail: 'log the run journal on every exit path' },
   ],
 }
@@ -44,9 +44,7 @@ if (!a.prd) return { ok: false, stage: 'input', error: 'no prd supplied' }
 const hasText = (v) => typeof v === 'string' && v.trim().length > 0
 const shellq = (v) => `'${String(v).replace(/'/g, "'\\''")}'`
 const repoPath = a.repoPath || a.prd.repoPath || null
-const callerRepos = (Array.isArray(a.repos) ? a.repos : []).filter((r) => r != null && String(r).trim() !== '')
-const seedRepos = callerRepos.length ? callerRepos : repoPath ? [repoPath] : []
-let repos = callerRepos.slice()
+let repos = []
 const epicRef = a.epic && typeof a.epic === 'object' ? a.epic : {}
 const epicBeadId = String(epicRef.id || epicRef.beadId || '').trim()
 const subjectId = a.prd.id || a.prd.path || epicRef.key || epicBeadId || null
@@ -345,7 +343,7 @@ const ARCHITECTURE_DELIVERABLES = ['architecture/survey.md', 'architecture/surve
 function derivedNames(id) {
   if (id === 'architecture') return ARCHITECTURE_DELIVERABLES.slice()
   if (id === 'trd') return ['trd.md']
-  if (id === 'repo-scoping') return ['repo-scoping.json', 'repo-scoping-shape.json']
+  if (id === 'repo-scoping') return ['repo-scoping.json']
   if (id === 'task-deps') return ['task-deps.json']
   const m = /^(recon|spec|tasks):([A-Za-z0-9._-]+)$/.exec(id)
   if (!m) return []
@@ -485,7 +483,7 @@ async function prefetchResumeJson() {
 const SAVED_SPAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['exitCode', 'placements', 'workUnits'],
+  required: ['exitCode', 'placements', 'noCode'],
   properties: {
     exitCode: { type: 'integer' },
     error: { type: 'string' },
@@ -494,39 +492,32 @@ const SAVED_SPAN_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['repoPath', 'workUnitIds', 'obsoletes'],
+        required: ['repoPath', 'itemIds', 'frontend'],
         properties: {
           repoPath: { type: 'string' },
-          workUnitIds: { type: 'array', items: { type: 'string' } },
-          obsoletes: { type: 'array', items: { type: 'string' } },
+          itemIds: { type: 'array', items: { type: 'string' } },
+          frontend: { type: 'boolean' },
         },
       },
     },
-    spanRationale: { type: ['string', 'null'] },
-    workUnits: {
+    noCode: {
       type: 'array',
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'homeKind', 'summary', 'requirementIds'],
-        properties: {
-          id: { type: 'string' },
-          homeKind: { type: ['string', 'null'] },
-          summary: { type: ['string', 'null'] },
-          requirementIds: { type: 'array', items: { type: 'string' } },
-        },
+        required: ['itemId', 'reason'],
+        properties: { itemId: { type: 'string' }, reason: { type: 'string' } },
       },
     },
-    designSummary: { type: ['string', 'null'] },
+    spanRationale: { type: ['string', 'null'] },
   },
 }
 const SPAN_PROJECTION = [
   'import json, sys',
   'd = sys.argv[1]',
   "r = json.load(open(d + '/repo-scoping.json'))",
-  "s = json.load(open(d + '/repo-scoping-shape.json'))",
   "t = lambda v: v if isinstance(v, str) else json.dumps(v)",
-  "print(json.dumps({'placements': [{'repoPath': p.get('repoPath') or '', 'workUnitIds': [t(x) for x in p.get('workUnitIds') or []], 'obsoletes': [t(x) for x in p.get('obsoletes') or []]} for p in r.get('placements') or []], 'spanRationale': r.get('spanRationale'), 'workUnits': [{'id': t(u.get('id')), 'homeKind': u.get('homeKind'), 'summary': u.get('summary'), 'requirementIds': [t(x) for x in u.get('requirementIds') or []]} for u in s.get('workUnits') or []], 'designSummary': s.get('designSummary')}, indent=1))",
+  "print(json.dumps({'placements': [{'repoPath': p.get('repoPath') or '', 'itemIds': [t(x) for x in p.get('itemIds') or []], 'frontend': p.get('frontend') is True} for p in r.get('placements') or []], 'noCode': [{'itemId': t(n.get('itemId')), 'reason': str(n.get('reason') or '')} for n in r.get('noCode') or []], 'spanRationale': r.get('spanRationale')}, indent=1))",
 ].join('; ')
 /** Returns the saved span ruling a resumed run replays, printed by a script, or null when it cannot be read. */
 async function readSavedSpan() {
@@ -535,10 +526,16 @@ async function readSavedSpan() {
 
 python3 -c ${shellq(SPAN_PROJECTION)} ${shellq(ART_DIR)}
 
-It prints one JSON object. Return the process exit code as \`exitCode\` and that object's fields, copied exactly, as \`placements\`, \`spanRationale\`, \`workUnits\` and \`designSummary\`. If the command fails, return its exit code, its stderr as \`error\`, and empty \`placements\` and \`workUnits\`. Do not retry, do not repair, do not run any other command.`,
+It prints one JSON object. Return the process exit code as \`exitCode\` and that object's fields, copied exactly, as \`placements\`, \`noCode\` and \`spanRationale\`. If the command fails, return its exit code, its stderr as \`error\`, and empty \`placements\` and \`noCode\`. Do not retry, do not repair, do not run any other command.`,
     { label: 'replay:read-saved-span', phase: 'Repo Scoping', model: 'haiku', effort: 'low', schema: SAVED_SPAN_SCHEMA }
   )
   if (!r || r.exitCode !== 0 || !Array.isArray(r.placements) || !r.placements.some((p) => p && hasText(p.repoPath))) return null
+  const placed = new Set([...r.placements.flatMap((p) => (p && Array.isArray(p.itemIds) ? p.itemIds : [])), ...(Array.isArray(r.noCode) ? r.noCode : []).map((n) => n && n.itemId)])
+  const unplaced = deltaItems.filter((i) => !placed.has(i.id)).map((i) => i.id)
+  if (unplaced.length) {
+    log(`Repo Scoping: the saved placement does not place ${unplaced.join(', ')} of the delta; the span is ruled again`)
+    return null
+  }
   return r
 }
 
@@ -646,7 +643,6 @@ if (!architecture) {
     archPath: a.archPath,
     subject: hasText(a.architectureSubject) ? a.architectureSubject : undefined,
     repoPath,
-    seedRepos,
     maxRounds: Number.isInteger(a.maxArchitectureRounds) ? a.maxArchitectureRounds : undefined,
     depscore: { script: `${lifecycle.pluginRoot}/scripts/portfolio/depscore.py`, repo: emitTarget },
     artifacts: artFor('architecture', PRD_INPUTS, { beadId: epicBeadId }),
@@ -685,32 +681,43 @@ if (!architecture.ok) {
   }
   return partial('architecture', architecture)
 }
+const archArt = architecture.artifact || {}
+if (!hasText(archArt.targetDir) || !hasText(archArt.deltaDir)) {
+  return partial('architecture', { reason: 'the architecture result names no target and delta directory, which every later phase reads' })
+}
+const deltaList = await runScript('arch:delta', 'Architecture', `arch-delta --delta-dir ${shellq(archArt.deltaDir)}`)
+if (!deltaList || deltaList.error || deltaList.ok !== true) {
+  const why = deltaList && !deltaList.error
+    ? `depscore.py arch-delta refused the delta at ${archArt.deltaDir}: ${(deltaList.refusals || []).join('; ') || 'no reason given'}`
+    : `depscore.py arch-delta did not list the delta at ${archArt.deltaDir}: ${(deltaList && deltaList.error) || 'no result'}`
+  return partial('architecture', { reason: why })
+}
+const deltaItems = (Array.isArray(deltaList.items) ? deltaList.items : [])
+  .filter((i) => i && hasText(i.id) && hasText(i.element))
+  .map((i) => ({ id: i.id, element: i.element, views: Array.isArray(i.views) ? i.views.filter(hasText) : [] }))
+/** The approved target and its delta, as every later phase reads them. */
+const delta = {
+  subject: archArt.subject || null,
+  targetDir: archArt.targetDir,
+  deltaDir: archArt.deltaDir,
+  decisionPath: archArt.decisionPath || artPath('architecture/decision.md'),
+  items: deltaItems,
+}
+produced.delta = delta
+log(`Delta: ${deltaItems.length} item(s) in ${delta.deltaDir}`)
 
 let scoping = null
-/** Returns the fields of an architecture result that repo scoping and TRD authoring read: the target, its delta and the decision. */
-function architectureRulingFor(art) {
-  if (!art || typeof art !== 'object') return null
-  const out = {}
-  for (const k of ['subject', 'targetDir', 'deltaDir', 'deltaFiles', 'decisionPath']) if (art[k] !== undefined) out[k] = art[k]
-  if (art.decision && typeof art.decision === 'object') out.decision = { verdict: art.decision.verdict, summary: art.decision.summary }
-  if (art.architectureUpdate && typeof art.architectureUpdate === 'object') out.architectureUpdate = { summary: art.architectureUpdate.summary, changedFiles: art.architectureUpdate.changedFiles, createdFiles: art.architectureUpdate.createdFiles }
-  return out
-}
-/** Returns { pinned } for a caller-pinned span, else { scoping, scopeHit }. */
+/** Returns { scoping, scopeHit }: the saved placement on a resume, else a fresh one. */
 async function runRepoScoping() {
-  if (callerRepos.length) return { pinned: true }
   const scopeHit = resumeFresh('repo-scoping')
   const saved = scopeHit && ART_ON ? await readSavedSpan() : null
   if (scopeHit && !saved) log(`Repo Scoping: the saved ruling in ${ART_DIR} was not read back; the span is ruled again`)
   if (saved) {
-    const shape = saved
     const placements = saved.placements
       .filter((p) => p && hasText(p.repoPath))
-      .map((p) => ({ ...p, repoPath: p.repoPath.trim(), workUnitIds: Array.isArray(p.workUnitIds) ? p.workUnitIds : [] }))
+      .map((p) => ({ ...p, repoPath: p.repoPath.trim(), itemIds: Array.isArray(p.itemIds) ? p.itemIds : [], frontend: p.frontend === true }))
     const spanRepos = []
     for (const p of placements) if (!spanRepos.includes(p.repoPath)) spanRepos.push(p.repoPath)
-    const obsoleteCode = []
-    for (const p of placements) for (const o of Array.isArray(p.obsoletes) ? p.obsoletes : []) if (hasText(o)) obsoleteCode.push({ repoPath: p.repoPath, what: o })
     return {
       scopeHit,
       scoping: {
@@ -718,10 +725,8 @@ async function runRepoScoping() {
         resumed: true,
         repos: spanRepos,
         placements,
+        noCode: Array.isArray(saved.noCode) ? saved.noCode : [],
         createdRepos: [],
-        obsoleteCode,
-        workUnits: shape && Array.isArray(shape.workUnits) ? shape.workUnits : [],
-        designSummary: (shape && shape.designSummary) || null,
         spanRationale: saved.spanRationale || null,
       },
     }
@@ -729,9 +734,8 @@ async function runRepoScoping() {
   const ruled = await workflow('agent-teams-workforce:repo-scoping', {
     standingRulings,
     artifacts: artFor('repo-scoping', [...PRD_INPUTS, artPath('architecture/decision.md'), artPath('architecture/target.json')]),
-    prd: { id: prd.id, title: prd.title, body: prd.body, path: prd.path },
-    architecture: architectureRulingFor(architecture.artifact),
-    seedRepos,
+    prd: { id: prd.id, title: prd.title, path: prd.path },
+    delta,
     epic: { key: epic.key, title: epic.title },
   })
   return { scoping: ruled, scopeHit: null }
@@ -758,7 +762,7 @@ async function runTrdAuthoring() {
   const r = await workflow('agent-teams-workforce:trd-authoring', {
     standingRulings,
     prd: { id: prd.id, title: prd.title, content: prd.body, path: prd.path, acceptanceCriteria: prd.acceptanceCriteria },
-    architecture: architectureRulingFor(architecture.artifact),
+    architecture: delta,
     archPath: a.archPath,
     trdPath: a.trdPath,
     artifacts: artFor('trd', TRD_INPUTS, { beadId: epicBeadId }),
@@ -783,34 +787,21 @@ if (trdAuthoring.ok) await acceptPhase('trd', trdSettled.mode === 'resumed' ? 'r
 
 enterPhase('Repo Scoping')
 if (!scopeSettled) return partial('repo-scoping', { reason: 'repo scoping threw' })
-if (scopeSettled.pinned) {
-  repos = callerRepos
-  recRuled(`Repo span pinned by the caller: ${repos.join(', ')}.`, { status: 'skipped', skipReason: 'the caller pinned the span' })
-} else {
-  scoping = scopeSettled.scoping
-  if (scoping && scoping.ledger) runLedger.push(scoping.ledger)
-  produced.repoScoping = scoping || null
-  if (!scoping || scoping.ok === false) {
-    return partial('repo-scoping', {
-      reason: (scoping && scoping.reason) || 'repo scoping returned nothing',
-      ...(!scoping || scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (scoping && scoping.dispatchFailures) || [] } : {}),
-    })
-  }
-  if (scoping.resumed === true) reuseFrom('repo-scoping', scopeSettled.scopeHit)
-  await acceptPhase('repo-scoping', scoping.resumed === true ? 'reused' : 'passed')
-  repos = Array.isArray(scoping.repos) ? scoping.repos : []
-  recRuled(`Repo span ruled: ${repos.join(', ') || 'no repository'}.`, { status: 'done' })
+scoping = scopeSettled.scoping
+if (scoping && scoping.ledger) runLedger.push(scoping.ledger)
+produced.repoScoping = scoping || null
+if (!scoping || scoping.ok === false) {
+  return partial('repo-scoping', {
+    reason: (scoping && scoping.reason) || 'repo scoping returned nothing',
+    ...(!scoping || scoping.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (scoping && scoping.dispatchFailures) || [] } : {}),
+  })
 }
+if (scoping.resumed === true) reuseFrom('repo-scoping', scopeSettled.scopeHit)
+await acceptPhase('repo-scoping', scoping.resumed === true ? 'reused' : 'passed')
+repos = Array.isArray(scoping.repos) ? scoping.repos : []
+recRuled(`Repo span: ${repos.join(', ') || 'no repository'}, the repositories the delta changes.`, { status: 'done' })
 if (!repos.length) return partial('repo-scoping', { reason: 'the span names no repository' })
-const createdRepos = (scoping && Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
-const obsoleteRemovalWork = (scoping && Array.isArray(scoping.obsoleteCode) ? scoping.obsoleteCode : [])
-  .filter((o) => o && hasText(o.what))
-  .map((o, i) => ({
-    requirementId: `OBSOLETE-${i + 1}`,
-    requirement: 'code the ruled architecture supersedes',
-    targets: [o.what],
-    repos: hasText(o.repoPath) ? [o.repoPath] : [],
-  }))
+const createdRepos = (Array.isArray(scoping.createdRepos) && scoping.createdRepos) || []
 log(`Span: ${repos.join(', ')}${createdRepos.length ? `; created by the polyrepo-steward: ${createdRepos.map((c) => (c && c.name) || String(c)).join(', ')}` : ''}`)
 
 enterPhase('TRD Authoring')
@@ -828,28 +819,28 @@ const prdSummaryFallback = () => (hasText(prd.path) ? `The PRD is the document a
 
 enterPhase('Spec Authoring')
 const INVENTORY_CAP = 12000
+const WORK_STATUSES = ['add', 'modify', 'remove']
+const workItems = (recon) => (Array.isArray(recon && recon.items) ? recon.items : []).filter((r) => r && WORK_STATUSES.includes(r.status))
+const idleItems = (recon) => (Array.isArray(recon && recon.items) ? recon.items : []).filter((r) => r && !WORK_STATUSES.includes(r.status))
 const inventoryLine = (r) => {
-  const bits = [`- ${r.id}${r.surface ? ` (${r.surface})` : ''} [${r.status}] ${r.requirement}`]
-  if (r.status === 'conforms' && Array.isArray(r.conformingMaterial) && r.conformingMaterial.length) bits.push(`    REUSE (do not rebuild): ${r.conformingMaterial.join('; ')}`)
-  if (r.status === 'contradicts' && Array.isArray(r.removalTargets) && r.removalTargets.length) bits.push(`    REMOVE (the PRD wins): ${r.removalTargets.join('; ')}`)
-  if (r.status === 'absent' && hasText(r.missing)) bits.push(`    ABSENT: ${r.missing}`)
-  if (r.status === 'conforms') bits.push('    NO NEW WORK: it exists and matches.')
+  const bits = [`- ${r.id}${r.surface ? ` (${r.surface})` : ''} [${r.status}] ${r.element}`, `    CHANGE: ${r.from || '(unstated)'} → ${r.to || '(unstated)'}`]
   if (Array.isArray(r.evidence) && r.evidence.length) bits.push(`    evidence: ${r.evidence.join('; ')}`)
   return bits.join('\n')
 }
-const inScope = (recon) => (Array.isArray(recon && recon.requirements) ? recon.requirements : []).filter((r) => r && r.status !== 'not-applicable')
 const renderInventory = (recon, repo) => {
-  if (!recon || !Array.isArray(recon.requirements)) return ''
-  const reqs = inScope(recon)
-  if (!reqs.length) {
-    return `SCOPE OF ${repo}: no PRD or TRD requirement governs anything this repository owns or changes. Specify only the removal work named for it, if any, and nothing else.`
-  }
+  const work = workItems(recon)
+  const idle = idleItems(recon)
+  const idleLine = idle.length
+    ? `\n\nNo specification for these items: ${idle.map((r) => `${r.id} ${r.element} [${r.status}${r.plannedBy ? ` by ${r.plannedBy}` : ''}]`).join('; ')}.`
+    : ''
+  if (!work.length) return `THE DELTA FOR ${repo}: no item placed here is marked add, modify or remove, so there is no change to specify.${idleLine}`
   return (
-    `SCOPE AND MATERIAL INVENTORY FOR ${repo} — the requirements below are this repository's, and only these. A PRD or TRD requirement not listed here is carried by another repository's Story or governs nothing this repository has: do not specify it.\n` +
-    '  conforms    — exists and matches: REUSE it; it needs no new work.\n' +
-    '  contradicts — exists and differs: the requirement wins; specify its REMOVAL or replacement.\n' +
-    '  absent      — nothing exists: build it.\n\n' +
-    reqs.map(inventoryLine).join('\n')
+    `THE DELTA FOR ${repo} — specify the change for each item below, and only these: the code on main holds the \`from\` state, and the approved target makes it the \`to\` state.\n` +
+    '  add    — the element is new here: specify it.\n' +
+    '  modify — the element exists: specify the change from what it is to what the target makes it.\n' +
+    '  remove — the element is removed: specify its removal.\n\n' +
+    work.map(inventoryLine).join('\n') +
+    idleLine
   ).slice(0, INVENTORY_CAP)
 }
 const renderDependencies = (recon) => {
@@ -857,74 +848,47 @@ const renderDependencies = (recon) => {
   if (!dc || dc.current !== false) return ''
   const findings = Array.isArray(dc.changeFindings) ? dc.changeFindings.filter((f) => f && hasText(f.dependency)) : []
   return (
-    'UPSTREAM DEPENDENCY CHANGES since the PRD was written. Specify against what is true now; no requirement is narrowed by them.\n\n' +
+    'UPSTREAM DEPENDENCY CHANGES since the delta was designed. Specify against what is true now.\n\n' +
     findings.map((f) => `- ${f.dependency}\n    changed: ${f.change || '(unstated)'}\n    invalidates: ${f.invalidates || '(unstated)'}`).join('\n')
   )
 }
 const renderUiAuthority = (recon) => {
   const ua = (recon && recon.uiAuthority) || {}
   const artifacts = (Array.isArray(ua.artifactsConsulted) ? ua.artifactsConsulted : []).filter(hasText)
-  const uiIds = (Array.isArray(recon && recon.requirements) ? recon.requirements : []).filter((r) => r && r.surface === 'ui').map((r) => r.id)
+  const uiIds = workItems(recon).filter((r) => r.surface === 'ui').map((r) => r.id)
   if (!uiIds.length && !hasText(ua.bundlePath) && !hasText(ua.mocksDir)) return ''
   return [
-    'UI AUTHORITY — for a `ui` requirement the cds design artifacts are the source of truth, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the composed artifact under design-mocks/, the PRD prose. What is deployed is never authoritative.',
-    uiIds.length ? `UI requirements in this PRD: ${uiIds.join(', ')}.` : '',
+    'UI AUTHORITY — for a `ui` item the cds design artifacts are the target state, in this order: the packaged cds bundle artifact (its `spec/build-spec.md` and composed HTML), the composed artifact under design-mocks/, the delta views.',
+    uiIds.length ? `UI items: ${uiIds.join(', ')}.` : '',
     hasText(ua.bundlePath)
-      ? `cds HAND-OFF BUNDLE: ${ua.bundlePath}\nSpecify each UI requirement from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${ua.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
+      ? `cds HAND-OFF BUNDLE: ${ua.bundlePath}\nSpecify each UI item from that artifact's \`spec/build-spec.md\` by reference. Styling is the bundle's shared stylesheet set at ${ua.bundlePath}/styles/; specify no new CSS, tokens or component stylesheet.`
       : 'No cds hand-off bundle was resolved. Specify against the composed artifact under design-mocks/ and record in the spec which artifact you used.',
     hasText(ua.mocksDir) ? `Composed mocks: ${ua.mocksDir}` : '',
-    artifacts.length ? `Artifacts matched to these requirements:\n${artifacts.map((x) => `  - ${x}`).join('\n')}` : '',
+    artifacts.length ? `Artifacts matched to these items:\n${artifacts.map((x) => `  - ${x}`).join('\n')}` : '',
   ].filter(hasText).join('\n\n')
 }
 const specConstraints = (recon, repo) => {
   const c = [renderInventory(recon, repo), renderDependencies(recon), renderUiAuthority(recon)].filter(hasText)
   return c.length ? c : undefined
 }
-const uiRepos = (() => {
-  const units = scoping && Array.isArray(scoping.workUnits) ? scoping.workUnits : []
-  const placements = scoping && Array.isArray(scoping.placements) ? scoping.placements : []
-  const frontend = new Set(units.filter((u) => u && u.homeKind === 'frontend' && hasText(u.id)).map((u) => u.id))
-  const held = new Set(
-    placements
-      .filter((p) => p && hasText(p.repoPath) && Array.isArray(p.workUnitIds) && p.workUnitIds.some((id) => frontend.has(id)))
-      .map((p) => p.repoPath.trim())
-  )
-  return held.size ? held : null
-})()
-/** Returns the work units repo scoping placed in one repository, or null when the caller pinned the span. */
-function unitsPlacedIn(repo) {
-  if (!scoping) return null
-  const here = String(repo).trim()
-  const ids = new Set(
-    (Array.isArray(scoping.placements) ? scoping.placements : [])
-      .filter((p) => p && hasText(p.repoPath) && p.repoPath.trim() === here)
-      .flatMap((p) => (Array.isArray(p.workUnitIds) ? p.workUnitIds : []))
-  )
-  return (Array.isArray(scoping.workUnits) ? scoping.workUnits : [])
-    .filter((u) => u && ids.has(u.id))
-    .map((u) => ({ id: u.id, summary: u.summary || '', requirementIds: Array.isArray(u.requirementIds) ? u.requirementIds : [] }))
-}
-/** Returns the TRD reference prd-reconciliation reads the TRD requirements from. */
-function trdRef() {
-  const reqs = trd && Array.isArray(trd.requirements) ? trd.requirements : []
-  return {
-    path: trdAuthoring.artifact.trdPath || (trd && trd.trdPath) || null,
-    requirements: reqs.map((r) => ({ id: r.id, requirement: r.requirement, appliesTo: r.appliesTo || '' })),
-  }
+const placementOf = (repo) => (Array.isArray(scoping.placements) ? scoping.placements : []).filter((p) => p && hasText(p.repoPath) && p.repoPath.trim() === String(repo).trim())
+/** Returns the delta items repo scoping placed in one repository. */
+function itemsPlacedIn(repo) {
+  const ids = new Set(placementOf(repo).flatMap((p) => (Array.isArray(p.itemIds) ? p.itemIds : [])))
+  return deltaItems.filter((i) => ids.has(i.id))
 }
 /** Returns the prd-reconciliation arguments for one repository. */
 function reconArgs(repo, slug, reconReplay) {
-  const units = unitsPlacedIn(repo)
   return {
-    ...(units ? { scope: { workUnits: units } } : {}),
-    trd: trdRef(),
-    artifacts: artFor(`recon:${slug}`, PRD_INPUTS, { slug }),
+    items: itemsPlacedIn(repo),
+    delta: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
+    artifacts: artFor(`recon:${slug}`, [...PRD_INPUTS, artPath('repo-scoping.json')], { slug }),
     ...(reconReplay ? { replay: reconReplay } : {}),
-    prd: { ...prd, repoPath: repo },
+    prd: { id: prd.id, title: prd.title, path: prd.path, repoPath: repo },
     standingRulings,
     repos: [repo],
     dependencies: a.dependencies,
-    uiRepo: uiRepos ? uiRepos.has(String(repo).trim()) : undefined,
+    uiRepo: placementOf(repo).some((p) => p.frontend === true),
   }
 }
 /** Returns the spec-authoring arguments for one repository. */
@@ -937,34 +901,43 @@ function specArgs(repo, storyKey, slug, recon) {
       repoPath: repo,
     },
     trd,
+    architecture: { targetDir: delta.targetDir, deltaDir: delta.deltaDir },
     accessPatterns: a.accessPatterns,
     repoPath: repo,
     storyKey,
     epic,
-    artifacts: artFor(`spec:${slug}`, [artPath('trd.md'), artPath('repo-scoping.json'), ...PRD_INPUTS], { slug }),
+    artifacts: artFor(`spec:${slug}`, [artPath('trd.md'), artPath('repo-scoping.json'), artPath(`recon-${slug}.json`), ...PRD_INPUTS], { slug }),
     beads: beadsArgs,
     constraints: specConstraints(recon, repo),
   }
 }
-/** Reconciles one repository and authors its Spec and Story, or replays the saved Story; returns { repo, recon, specAuthoring }. */
+/** Details one repository's delta items, then authors its Spec and Story, or replays the saved Story; returns { repo, recon, specAuthoring }. */
 async function authorSpecForRepo(repo, repoIndex) {
   const storyKey = `S${repoIndex + 1}`
   const slug = repoSlug(repo)
   const specPhase = `spec:${slug}`
   const specHit = resumeFresh(specPhase)
-  let recon = null
-  let reconOk = false
-  if (!specHit) {
-    const reconPhase = `recon:${slug}`
-    const reconHit = resumeFresh(reconPhase)
-    const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
-    recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
-    if (recon && recon.ledger) runLedger.push(recon.ledger)
-    reconOk = !!(recon && recon.ok !== false)
-    if (reconOk) await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
-    else log(`Spec Authoring for ${repo}: the current-state comparison returned no inventory (${(recon && recon.reason) || 'no result'}) — the spec is authored without one`)
+  const reconPhase = `recon:${slug}`
+  const reconHit = resumeFresh(reconPhase)
+  const reconReplay = reconHit && ART_ON && reconHit.names.includes(`recon-${slug}.json`) ? { files: { recon: artPath(`recon-${slug}.json`) } } : null
+  const recon = await workflow('agent-teams-workforce:prd-reconciliation', reconArgs(repo, slug, reconReplay))
+  if (recon && recon.ledger) runLedger.push(recon.ledger)
+  if (!recon || recon.ok !== true) {
+    const why = `the detailing of ${repo} failed, so its Spec is not authored: ${(recon && recon.reason) || 'prd-reconciliation returned nothing'}`
+    log(`Spec Authoring for ${repo}: ${why}`)
+    return {
+      repo,
+      recon: null,
+      specAuthoring: {
+        ok: false,
+        stage: 'detailing',
+        reason: why,
+        ...(!recon || recon.dispatchFailed === true ? { dispatchFailed: true, dispatchFailures: (recon && recon.dispatchFailures) || [] } : {}),
+      },
+    }
   }
-  const args = specArgs(repo, storyKey, slug, reconOk ? recon : null)
+  await acceptPhase(reconPhase, reconReplay && recon.resumed === true ? 'reused' : 'passed')
+  const args = specArgs(repo, storyKey, slug, recon)
   const r = await workflow('agent-teams-workforce:spec-authoring', specHit ? { ...args, replay: true } : args)
   const specAuthoring = r && r.ok === true && r.story
     ? { ok: true, artifact: r }
@@ -976,7 +949,7 @@ async function authorSpecForRepo(repo, repoIndex) {
       }
   if (specAuthoring.ok && specHit) reuseFrom(specPhase, specHit)
   if (specAuthoring.ok) await acceptPhase(specPhase, specHit ? 'reused' : 'passed')
-  return { repo, recon: reconOk ? recon : null, specAuthoring }
+  return { repo, recon, specAuthoring }
 }
 for (const r of repos) repoSlug(r)
 const specResults = await parallel(repos.map((repo, repoIndex) => () => authorSpecForRepo(repo, repoIndex)))
@@ -1006,11 +979,6 @@ for (const [repoIndex, repo] of repos.entries()) {
   })
   recRuled(`Spec and Story ${art.story.key || art.story.title} for ${repo}.`)
 }
-const removalWork = []
-for (const [repo, recon] of reconByRepo) {
-  for (const w of Array.isArray(recon.removalWork) ? recon.removalWork : []) if (w) removalWork.push({ ...w, repos: [repo] })
-}
-removalWork.push(...obsoleteRemovalWork)
 produced.reconciliationByRepo = Array.from(reconByRepo, ([rp, recon]) => ({ repoPath: rp, recon }))
 produced.specPairs = specPairs
 produced.specFailures = specFailures
@@ -1024,26 +992,15 @@ if (!specPairs.length) {
 recRuled(`${specPairs.length} of ${repos.length} repo(s) specified.`, { status: 'done' })
 
 enterPhase('Task Decomposition')
-const removalBrief = (repo) => {
-  const mine = removalWork.filter((w) => Array.isArray(w.targets) && w.targets.some(hasText) && (!w.repos.length || w.repos.includes(repo)))
-  if (!mine.length) return ''
-  return (
-    '\n\n=== REMOVAL WORK — part of this Story ===\n' +
-    'The PRD contradicts or supersedes the material below. Emit removal tasks for it alongside the build tasks. If the material is not in this repository, say so in your output rather than inventing a task.\n' +
-    mine.map((w) => `- ${w.requirementId || '(unidentified)'}: ${w.requirement || ''}\n    remove: ${w.targets.filter(hasText).join('; ')}`).join('\n')
-  )
-}
 const inventoryBrief = (repo) => {
   const recon = reconByRepo.get(repo)
-  const reqs = Array.isArray(recon && recon.requirements) ? recon.requirements : []
-  if (!reqs.length) return ''
-  const line = (status) => reqs.filter((r) => r.status === status).map((r) => r.id)
-  const work = [...line('absent'), ...line('contradicts')]
-  const none = [...line('conforms'), ...line('not-applicable')]
+  const work = workItems(recon)
+  const idle = idleItems(recon)
+  if (!work.length && !idle.length) return ''
   return (
-    '\n\n=== MATERIAL INVENTORY — what needs a Task ===\n' +
-    `Needs work (absent: build; contradicts: remove or replace): ${work.join(', ') || 'none'}\n` +
-    `No Task (conforms, or not applicable to this repository): ${none.join(', ') || 'none'}`
+    '\n\n=== DELTA DETAILING — what needs a Task ===\n' +
+    `Needs a Task (add, modify, remove): ${work.map((r) => `${r.id} ${r.element} [${r.status}]`).join('; ') || 'none'}\n` +
+    `No Task (done, or planned by another Epic's bead): ${idle.map((r) => `${r.id} ${r.element} [${r.status}${r.plannedBy ? ` by ${r.plannedBy}` : ''}]`).join('; ') || 'none'}`
   )
 }
 const stories = specPairs.map((p) => p.story)
@@ -1079,7 +1036,7 @@ function decompArgs(pair) {
     spec: {
       id: prd.id,
       title: prd.title,
-      description: `SUMMARY (navigation aid only — the contract is in the spec documents):\n${summary}` + inventoryBrief(pair.repoPath) + removalBrief(pair.repoPath),
+      description: `SUMMARY (navigation aid only — the contract is in the spec documents):\n${summary}` + inventoryBrief(pair.repoPath),
       source: 'spec-authoring output',
       repoPath: pair.repoPath,
     },
@@ -1312,6 +1269,27 @@ const storyEdgeLine = !storyEdges
     : `Story edges: ${(storyEdges.added || []).length} added, ${(storyEdges.removed || []).length} removed, ${storyEdges.unchanged || 0} unchanged. ` +
       (storyEdges.ok ? '' : `Not written for ${(storyEdges.refusedStories || []).join(', ')} — ${storyEdges.reason}${named(storyEdges.conflicts) ? `; the sources disagree on ${named(storyEdges.conflicts)}` : ''}${named(storyEdges.cycles) ? `; a cycle runs through ${named(storyEdges.cycles)}` : ''}. `)
 if (storyEdgeLine) log(storyEdgeLine)
+const targetRemoval = { removed: false, commit: null, reason: null }
+if (epicMarkedDone && !unheld.length) {
+  if (!hasText(a.archPath)) {
+    targetRemoval.reason = 'no archPath was passed, so the target folder was not removed'
+  } else {
+    const message = `docs(architecture): remove the ${delta.subject || 'approved'} target once the Specs and Tasks made from its delta are written`
+    const removed = await runScript('arch:target-remove', 'Finish', `arch-target-remove --arch-root ${shellq(a.archPath)} --target-dir ${shellq(delta.targetDir)} --message ${shellq(message)}`)
+    if (removed && !removed.error && removed.ok === true) {
+      targetRemoval.removed = removed.removed === true
+      targetRemoval.commit = removed.commit || null
+    } else {
+      targetRemoval.reason = removed && !removed.error ? (removed.refusals || []).join('; ') || 'refused' : (removed && removed.error) || 'no result'
+    }
+  }
+} else {
+  targetRemoval.reason = 'the Epic is not done, so its Specs and Tasks are not all written'
+}
+const targetLine = targetRemoval.removed
+  ? `Target ${delta.targetDir} removed${targetRemoval.commit ? ` (commit ${targetRemoval.commit})` : ''}. `
+  : `Target ${delta.targetDir} kept: ${targetRemoval.reason || 'it was already gone'}. `
+log(targetLine)
 const counted = (x) => (x && typeof x === 'object' ? (Number(x.created) || 0) + (Number(x.updated) || 0) : 0)
 const beadsEmitted =
   specPairs.reduce((n, p) => n + counted(p.spec && p.spec.summary), 0) +
@@ -1328,7 +1306,7 @@ const runJournal = {
   prd,
   specFailures,
   decompositionFailures,
-  removalWork,
+  delta,
   results: {
     reconciliationByRepo: produced.reconciliationByRepo,
     architecture: (architecture.artifact || null),
@@ -1347,6 +1325,7 @@ const common = {
   crossStoryDependencies: crossStory,
   hierarchy,
   repoSpan: repos,
+  targetRemoval,
   ...(createdRepos.length ? { createdRepos } : {}),
 }
 if (unheld.length) {
@@ -1360,12 +1339,12 @@ return {
     true,
     'finish',
     `1 epic, ${specPairs.length} story/stories, ${tasks.length} task(s) for the PRD at ${prd.path || prd.id || prd.title || '(unpathed)'}. ` +
-      `Span: ${repos.join(', ')}${scoping ? '' : ' (pinned by the caller)'}. ` +
+      `Span: ${repos.join(', ')}. ` +
       `Architecture approved for ${(architecture.artifact && architecture.artifact.subject) || 'the Epic'}; its target is integrated into the effective version. ` +
-      (removalWork.length ? `${removalWork.length} removal item(s) handed to decomposition. ` : '') +
       writeLine +
       scoringLine +
       storyEdgeLine +
+      targetLine +
       (specFailures.length || decompositionFailures.length || crossStory.reason
         ? `DEGRADED: ${specFailures.length} repo(s) produced no spec, ${decompositionFailures.length} Story/Stories produced no tasks${crossStory.reason ? `, ${crossStory.reason}` : ''}.`
         : ''),

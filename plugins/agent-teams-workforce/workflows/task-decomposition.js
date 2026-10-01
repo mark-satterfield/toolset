@@ -1,7 +1,7 @@
 export const meta = {
   name: 'task-decomposition',
   description:
-    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests, and a requirement whose material conforms or that does not apply to the repository gets no Task; a Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
+    'Leaf mini — decomposes ONE Spec into TASKS ONLY, parented to the Story that Spec pairs with, in the Story\'s single repo. A Task is build work: the Spec\'s acceptance criteria are the tests inside the build Tasks, written by their Red step, so no Task only writes tests. Tasks are made only for the delta items the repository\'s detailing marks add, modify or remove: depscore.py plan-tasks refuses a Task that cites none of them in requirementIds, and a done or planned-elsewhere item gets no Task. An open Task of another Epic in the same repository that already plans the work is not duplicated: the Tasks that need it carry its id in blockedByExternal, and write-task writes that blocks edge. A Story with nothing to build gets no Tasks and goes straight to deploy and verify. One maker session decomposes, names the dependency edges and sizes every task, saves the result as tasks-<slug>.json, and writes each Task bead itself: depscore.py plan-tasks reads that file, runs no bd command, and lists the Tasks in build order with their elab_keys (it makes repeated task keys unique as K, K-2, K-3, applying an edge on K to each, drops edges that do not join two known tasks, and refuses a cyclic graph); then the maker runs one depscore.py write-task command per Task, one at a time in that order, each writing ONE Task bead under the Epic\'s Story for the slug, found in beads, with its metadata, size fingerprint and blocks edges to the Tasks written before it. With replay: true the maker does not run, and one runner session runs the same commands from the saved tasks-<slug>.json. Whether the beads landed is read from beads by depscore.py elaboration-finish, not judged here.',
   phases: [
     { title: 'Decompose', detail: 'one maker session: Spec -> tasks + dependency edges + job sizes, each Task bead written by one depscore.py write-task command as it is saved' },
   ],
@@ -88,8 +88,8 @@ const docsBlock = specDocs.length
 
 const writtenPath = ART ? `${ART.dir}/story-${artSlug}.written.json` : null
 const existingBlock = writtenPath
-  ? `\n\nEXISTING TASKS under this Story: read the file ${writtenPath} — the result of writing this Story — and take its "existingTasks" list (none when the file or the list is absent or empty). When a task you write covers the same work as one of them, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.`
-  : '\n\nEXISTING TASKS: none. Set every task\'s `reuses` to null.'
+  ? `\n\nEXISTING TASKS under this Story: read the file ${writtenPath} — the result of writing this Story — and take its "existingTasks" list (none when the file or the list is absent or empty). When a task you write covers the same work as one of them, set its \`reuses\` to that task's exact elabKey; otherwise set \`reuses\` to null. Never reuse one elabKey for two tasks.\n\nOPEN TASKS OF OTHER EPICS in this repository: take the "otherEpicTasks" list of the same file (none when it is absent or empty). When work you would give a task is already planned by one of them, or by a bead a \`planned-elsewhere\` item names, do not write that task: put that Task's id in \`blockedByExternal\` of every task of yours that needs the work built first. Otherwise set \`blockedByExternal\` to an empty list.`
+  : '\n\nEXISTING TASKS: none. Set every task\'s `reuses` to null and its `blockedByExternal` to an empty list.'
 
 const specBlock = `Spec ${spec.id || ''}: ${spec.title || ''}
 ${spec.description || ''}
@@ -103,7 +103,7 @@ const SURFACES = ['api-contract', 'event-chain', 'auth', 'performance', 'web-ui'
 const taskSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria', 'definitionOfDone', 'specPaths', 'specSections', 'requirementIds', 'surfaces', 'reuses'],
+  required: ['key', 'title', 'description', 'type', 'acceptanceCriteria', 'definitionOfDone', 'specPaths', 'specSections', 'requirementIds', 'surfaces', 'reuses', 'blockedByExternal'],
   properties: {
     key: { type: 'string' },
     title: { type: 'string' },
@@ -116,6 +116,7 @@ const taskSchema = {
     requirementIds: { type: 'array', items: { type: 'string' } },
     decisionIds: { type: 'array', items: { type: 'string' } },
     reuses: { type: ['string', 'null'] },
+    blockedByExternal: { type: 'array', items: { type: 'string' } },
     surfaces: { type: ['array', 'null'], items: { type: 'string', enum: SURFACES } },
   },
 }
@@ -140,7 +141,7 @@ const writeCommand = writable ? `python3 ${shq(BEADS.script)} -C ${shq(BEADS.rep
 const WRITE_BRIEF = `WRITE EACH TASK BEAD, one command per Task:
 1. Run: ${planCommand}
    It prints one JSON object whose "tasks" list holds the tasks in build order, each with its "key".
-2. For each entry of that "tasks" list, in that order, run the command below with <KEY> replaced by the entry's "key":
+2. For each entry of that "tasks" list, in that order, run the command below with <KEY> replaced by the entry's "key", appending \`--blocked-by-external <ids>\` (the entry's "blockedByExternal", comma-joined) when that list is not empty:
    ${writeCommand}
 Run every command in its own Bash call in the FOREGROUND (never set run_in_background, never run two at once) with the Bash tool's \`timeout\` parameter set to 600000. Record every command you ran in \`writes\`, in order, the plan command first: its exit code as \`exitCode\` and its stdout as \`stdout\` (append stderr when the exit code is not 0). Stop after the first command whose exit code is not 0. Do not retry, do not repair, and run no other bd command.`
 const WRITES_SCHEMA = {
@@ -183,15 +184,16 @@ const maker = replayed ? null : await settleAgent(
 
 JOB 1 — DECOMPOSE (return in \`tasks\` + \`rationale\`): decompose the Spec into TASKS. Each task is a coherent piece of the Story's work within the single repository named below that one agent can test and build in one session, with testable acceptance criteria. A small Story may be one task.
 - A task is BUILD work: it changes code, infrastructure or documentation. The Spec's acceptance criteria are the tests of the build tasks: each build task carries in \`acceptanceCriteria\` the criteria it satisfies, and its Red step writes those tests before it builds. A task whose only work is writing or running tests is never emitted.
-- A requirement the material inventory marks \`conforms\` (it exists and matches) or \`not-applicable\` gets no task. Only \`absent\` (build it) and \`contradicts\` (remove or replace it) make work, together with any removal work named below.
+- Only a delta item the detailing marks \`add\`, \`modify\` or \`remove\` makes work; a \`done\` or \`planned-elsewhere\` item gets no task. Every task cites in \`requirementIds\` at least one such item it builds: depscore.py plan-tasks refuses a task that cites none, and no bead is written.
 - When nothing needs building, return an empty \`tasks\` list with empty \`edges\` and \`scores\`, and say why in \`rationale\`. The Story then has no Tasks and goes straight to deploy and verify. Give each a unique local "key" (T1, T2, …). You emit TASKS ONLY — every item has type "task". Do not emit an Epic, a Story, or a loose feature: the Epic and the Story already exist upstream, and every task you emit is a child of the Story named below.
 
 Every task also carries its CONTRACT, taken from the spec documents listed below:
 - \`specPaths\`: the spec documents this task builds against, cited EXACTLY as the "cite as" value given for each. At least one.
 - \`specSections\`: the headings or anchors inside those documents that define this task.
-- \`requirementIds\`: the PRD/TRD requirement ids the task satisfies, as the documents write them.
+- \`requirementIds\`: the delta item ids (D1, D2, …) the task builds, as the detailing below lists them, and the TRD requirement ids it satisfies.
 - \`decisionIds\`: the architecture views the spec documents cite for the part of the design this task builds, each a path relative to the arc42 folder with its \`#<heading>\` where the spec gives one. Copy them; never invent one.
 - \`definitionOfDone\`: the Definition of Done items that apply to this task, from the spec's DoD.
+- \`blockedByExternal\`: the ids of open Tasks of other Epics that must be built before this task, as described under OPEN TASKS OF OTHER EPICS below; an empty list when there are none.
 - \`surfaces\`: the boundaries the task touches, from the enum only (${SURFACES.join(', ')}). An empty list means it touches none of them; null means the spec does not settle it.
 And once for the whole set, \`testStrategy\`: the test strategy the spec states (pyramid, coverageThreshold, envMatrix, and the section it came from as \`source\`), or null when the spec states none.
 

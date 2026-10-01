@@ -27,6 +27,11 @@
                          `in-review`; refuses a draft with no delta, a file in section 2, a view
                          without catalog frontmatter, or a subject named for the Epic or PRD;
                          no `bd` call
+    arch-delta           list the elements a target's delta shows, one item per element with
+                         the delta views that show it, numbered D1, D2 ... in element-name
+                         order; no `bd` call
+    arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
+                         holding it; no `bd` call
     prd-parse            check that a PRD file has the structure elaboration reads: readable,
                          not superseded, an H1, requirement headings with acceptance criteria
                          under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
@@ -81,7 +86,7 @@ from beadwrite import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from archstate import promote as approve_arch
-from archstate import snapshot_constraints, write_target
+from archstate import delta_items, remove_target, snapshot_constraints, write_target
 from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
@@ -561,6 +566,12 @@ def build_parser() -> argparse.ArgumentParser:
     wta.add_argument(
         "--key", required=True, help="the Task's key, as plan-tasks lists it"
     )
+    wta.add_argument(
+        "--blocked-by-external",
+        default="",
+        help="Tasks of other Epics this Task is blocked by, comma-separated, beside the "
+        "ones its saved blockedByExternal names",
+    )
     for task_parser in (pta, wta):
         task_parser.add_argument(
             "--dir", required=True, type=Path, help="the Epic's working directory"
@@ -702,6 +713,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="the architecture directory every `--arch-files` path must sit under",
     )
 
+    adl = sub.add_parser(
+        "arch-delta",
+        help="list the elements a target's delta shows, one item per element; writes "
+        "nothing, runs no `bd` command",
+        parents=[common],
+    )
+    adl.add_argument(
+        "--delta-dir", required=True, help="the target/<subject>/delta/ directory"
+    )
+
+    atr = sub.add_parser(
+        "arch-target-remove",
+        help="delete target/<subject>/ and commit the removal; runs no `bd` command",
+        parents=[common],
+    )
+    atr.add_argument(
+        "--arch-root", required=True, help="the architecture directory holding target/"
+    )
+    atr.add_argument(
+        "--target-dir", required=True, help="the target/<subject>/ folder to remove"
+    )
+    atr.add_argument("--message", required=True, help="the commit message")
+
     ppa = sub.add_parser(
         "prd-parse",
         help="check that a PRD file has the structure elaboration reads; writes nothing, "
@@ -756,6 +790,12 @@ def run(args: argparse.Namespace) -> dict:
         )
     if command == "arch-state":
         return head | arch_states(split_ids(args.arch_files), arch_root=args.arch_root)
+    if command == "arch-delta":
+        return head | delta_items(args.delta_dir)
+    if command == "arch-target-remove":
+        return head | remove_target(
+            args.arch_root, args.target_dir, message=args.message
+        )
     if command == "prd-parse":
         return head | prd_parse(args.prd)
     writer = Writer(args.directory, dry_run=getattr(args, "dry_run", False))
@@ -768,6 +808,7 @@ def run(args: argparse.Namespace) -> dict:
             repo=args.repo,
             key=args.key,
             root=args.project_root,
+            external=split_ids(args.blocked_by_external),
         )
     descriptions = command in {
         "write-story",
