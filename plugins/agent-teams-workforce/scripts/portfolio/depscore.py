@@ -32,6 +32,8 @@
                          order; no `bd` call
     arch-target-remove   delete `target/<subject>/` and commit the removal in the repository
                          holding it; no `bd` call
+    arch-built-remove    delete the `built/<subject>/` files the effective version now matches
+                         and commit the removal in the repository holding them; no `bd` call
     prd-parse            check that a PRD file has the structure elaboration reads: readable,
                          not superseded, an H1, requirement headings with acceptance criteria
                          under `## Requirements`, a non-empty `## Definition of Done`; no `bd` call
@@ -86,7 +88,13 @@ from beadwrite import (
 from elaboration import LifecycleError, finish, release, start
 from hierarchy import HierarchyError
 from archstate import promote as approve_arch
-from archstate import delta_items, remove_target, snapshot_constraints, write_target
+from archstate import (
+    delta_items,
+    remove_built,
+    remove_target,
+    snapshot_constraints,
+    write_target,
+)
 from archstate import states as arch_states
 from scoring import ScoringError, judge_input, plan, record, rubric, score
 from prds import prd_parse
@@ -736,6 +744,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     atr.add_argument("--message", required=True, help="the commit message")
 
+    abr = sub.add_parser(
+        "arch-built-remove",
+        help="delete built/<subject>/ files the effective version now matches and commit "
+        "the removal; runs no `bd` command",
+        parents=[common],
+    )
+    abr.add_argument(
+        "--arch-root", required=True, help="the architecture directory holding built/"
+    )
+    abr.add_argument(
+        "--files", required=True, help="the built files to remove, comma-separated"
+    )
+    abr.add_argument("--message", required=True, help="the commit message")
+
     ppa = sub.add_parser(
         "prd-parse",
         help="check that a PRD file has the structure elaboration reads; writes nothing, "
@@ -795,6 +817,10 @@ def run(args: argparse.Namespace) -> dict:
     if command == "arch-target-remove":
         return head | remove_target(
             args.arch_root, args.target_dir, message=args.message
+        )
+    if command == "arch-built-remove":
+        return head | remove_built(
+            args.arch_root, split_ids(args.files), message=args.message
         )
     if command == "prd-parse":
         return head | prd_parse(args.prd)

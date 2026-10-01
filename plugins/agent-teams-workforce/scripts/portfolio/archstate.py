@@ -21,6 +21,8 @@ owner's constraints) so the architecture step can prove no session wrote there.
 one item per element, for the phases that make Specs and Tasks from the delta.
 `depscore.py arch-target-remove` runs `remove_target`, which deletes `target/<subject>/` once
 the Specs and Tasks made from its delta are written, and commits the removal.
+`depscore.py arch-built-remove` runs `remove_built`, which deletes the `built/<subject>/` files
+the effective version has been corrected to match, and commits the removal.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ EFFECTIVE_FOLDER = "arc42"
 CONSTRAINTS_FOLDER = "02-architecture-constraints"
 TARGET_FOLDER = "target"
 DELTA_FOLDER = "delta"
+BUILT_FOLDER = "built"
 CATALOG_KEYS = ("view_type", "scope", "subject", "shows")
 SUBJECT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 DATE_IN_NAME = re.compile(r"\d{4}-\d{2}(-\d{2})?")
@@ -723,4 +726,96 @@ def remove_target(arch_root: str, target_dir: str, *, message: str) -> dict:
         report["commit"] = head.stdout.strip() or None
     report["removed"] = True
     report["summary"] = {"ok": True, "removed": True, "commit": report["commit"]}
+    return report
+
+
+def _refused(why: list[str]) -> dict:
+    return {"ok": False, "refusals": why, "summary": {"ok": False, "refusals": why}}
+
+
+def remove_built(arch_root: str, files: list[str], *, message: str) -> dict:
+    """Delete built files the effective version now matches, and commit the removal.
+
+    Every file must sit inside a subject folder under `<arch_root>/built/`. Tracked files are
+    removed with `git rm` and committed on their own (`git commit -- <paths>`), so changes
+    staged elsewhere in the repository stay out of the commit; files git does not track are
+    deleted from disk. A subject folder left empty is deleted. A file already gone is
+    reported, not refused.
+
+    Args:
+        arch_root: The architecture directory holding `built/`.
+        files: The built files to remove, as absolute paths.
+        message: The commit message.
+
+    Returns:
+        `ok`, the refusals, the files removed and already gone, the commit, and git's output.
+    """
+    root = _arch_root(arch_root)
+    if root is None:
+        return _refused(["no architecture directory was given"])
+    built = (root / BUILT_FOLDER).resolve()
+    wanted = [Path(str(f).strip()).resolve() for f in files if str(f).strip()]
+    if not wanted:
+        return _refused(["no built file was named"])
+    outside = [
+        str(f)
+        for f in wanted
+        if not f.is_relative_to(built) or len(f.relative_to(built).parts) < 2  # noqa: PLR2004
+    ]
+    if outside:
+        return _refused(
+            [f"not inside a subject folder under {built}: {', '.join(outside)}"]
+        )
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(  # noqa: S603
+            ["git", "-C", str(root), *argv],  # noqa: S607
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    present = [f for f in wanted if f.exists()]
+    gone = [str(f) for f in wanted if not f.exists()]
+    report: dict = {
+        "ok": True,
+        "refusals": [],
+        "removed": [],
+        "gone": gone,
+        "commit": None,
+    }
+    tracked: list[str] = []
+    for f in present:
+        listed = git("ls-files", "--", str(f))
+        if listed.returncode != 0:
+            return report | _refused([f"git ls-files failed: {listed.stderr.strip()}"])
+        if listed.stdout.strip():
+            tracked.append(str(f))
+    if tracked:
+        rm = git("rm", "-q", "--", *tracked)
+        if rm.returncode != 0:
+            return report | _refused([f"git rm failed: {rm.stderr.strip()}"])
+    for f in present:
+        if f.exists():
+            f.unlink()
+        report["removed"].append(str(f))
+    for folder in sorted({built / f.relative_to(built).parts[0] for f in present}):
+        for sub in sorted((d for d in folder.rglob("*") if d.is_dir()), reverse=True):
+            if not any(sub.iterdir()):
+                sub.rmdir()
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
+    if tracked:
+        done = git("commit", "-q", "-m", message, "--", *tracked)
+        if done.returncode != 0:
+            why = [f"git commit failed: {(done.stderr or done.stdout).strip()}"]
+            return report | _refused(why)
+        head = git("rev-parse", "--short", "HEAD")
+        report["commit"] = head.stdout.strip() or None
+    report["summary"] = {
+        "ok": True,
+        "removed": len(report["removed"]),
+        "gone": len(gone),
+        "commit": report["commit"],
+    }
     return report
